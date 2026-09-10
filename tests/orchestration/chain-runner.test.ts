@@ -4,7 +4,14 @@
  * createDefaultCompletionCheck (with real task system), and event emission.
  */
 
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -168,6 +175,19 @@ function planReviewReport(planSlug: string, reviewRound: number): string {
 	return `${PLAN_REVIEW_REPORT_TOKEN}: ${JSON.stringify({ planSlug, reviewRound })}`;
 }
 
+function reviewRevisionReport(
+	planSlug: string,
+	reviewRound: number,
+	status: "addressed" | "unaddressed" = "addressed",
+): string {
+	return `${REVIEW_REVISION_REPORT_TOKEN}: ${JSON.stringify({
+		planSlug,
+		reviewRound,
+		status,
+		...(status === "unaddressed" && { reason: "Revision remains incomplete." }),
+	})}`;
+}
+
 async function writePlanReviewTarget(options: {
 	projectRoot: string;
 	planSlug: string;
@@ -218,13 +238,20 @@ function successfulTestSpawn(
 }
 
 function reviewReportSpawner(assistantText: string): AgentSpawner {
+	const parsed = parseReviewReportLine(assistantText);
 	return {
 		spawn: vi.fn(async (config) =>
 			successfulTestSpawn(
 				config.role,
 				config.role === "plan-reviewer"
 					? assistantText
-					: `${config.role} completed`,
+					: config.prompt.includes("Revision purpose:") &&
+							parsed?.kind === "plan-review"
+						? reviewRevisionReport(
+								parsed.target.planSlug,
+								parsed.target.reviewRound,
+							)
+						: `${config.role} completed`,
 			),
 		),
 		dispose: vi.fn(),
@@ -1734,7 +1761,9 @@ describe("runChain", () => {
 											text:
 												config.role === "plan-reviewer"
 													? testCase.assistantText
-													: `${config.role} completed`,
+													: config.prompt.includes("Revision purpose:")
+														? reviewRevisionReport("review-target", 1)
+														: `${config.role} completed`,
 										},
 									],
 								},
@@ -1869,6 +1898,508 @@ describe("runChain", () => {
 		}
 	});
 
+	// @cosmo-behavior plan:chain-stage-context#B-007
+	test("records a typed review block as an unsuccessful inline chain result", async () => {
+		const terminal = reviewRevisionReport("review-target", 1);
+		const cases = [
+			{
+				name: "missing",
+				assistantText: "Revision completed without a machine report.",
+				reason: "missing-review-report",
+			},
+			{
+				name: "malformed JSON",
+				assistantText: `${REVIEW_REVISION_REPORT_TOKEN}: {not-json}`,
+				reason: "malformed-review-report",
+			},
+			{
+				name: "unknown key",
+				assistantText: `${terminal.slice(0, -1)},"extra":true}`,
+				reason: "malformed-review-report",
+			},
+			{
+				name: "unknown status",
+				assistantText: `${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"review-target","reviewRound":1,"status":"done"}`,
+				reason: "malformed-review-report",
+			},
+			{
+				name: "unaddressed without reason",
+				assistantText: `${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"review-target","reviewRound":1,"status":"unaddressed"}`,
+				reason: "malformed-review-report",
+			},
+			{
+				name: "unaddressed with blank reason",
+				assistantText: `${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"review-target","reviewRound":1,"status":"unaddressed","reason":"   "}`,
+				reason: "malformed-review-report",
+			},
+			{
+				name: "zero round",
+				assistantText: reviewRevisionReport("review-target", 0),
+				reason: "malformed-review-report",
+			},
+			{
+				name: "noninteger round",
+				assistantText: reviewRevisionReport("review-target", 1.5),
+				reason: "malformed-review-report",
+			},
+			{
+				name: "multiple",
+				assistantText: `${terminal}\n${terminal}`,
+				reason: "multiple-review-reports",
+			},
+			{
+				name: "nonterminal",
+				assistantText: `${terminal}\nTrailing revision prose.`,
+				reason: "nonterminal-review-report",
+			},
+			{
+				name: "reported unaddressed",
+				assistantText: reviewRevisionReport("review-target", 1, "unaddressed"),
+				reason: "revision-reported-unaddressed",
+			},
+			{
+				name: "wrong target",
+				assistantText: reviewRevisionReport("self-attested-target", 1),
+				reason: "mismatched-review-target",
+			},
+			{
+				name: "stale round",
+				assistantText: terminal,
+				mutate: async (projectRoot: string) => {
+					await writeFile(
+						join(
+							projectRoot,
+							"missions",
+							"plans",
+							"review-target",
+							"review-2.md",
+						),
+						"# Plan Review\n\n## Findings\n\n## Assessment\n\nReview complete.\n",
+						"utf-8",
+					);
+				},
+				reason: "stale-review-round",
+			},
+			{
+				name: "unsafe review entry",
+				assistantText: terminal,
+				mutate: async (projectRoot: string) => {
+					const reviewPath = join(
+						projectRoot,
+						"missions",
+						"plans",
+						"review-target",
+						"review.md",
+					);
+					await rm(reviewPath);
+					await mkdir(reviewPath);
+				},
+				reason: "unsafe-review-entry",
+			},
+			{
+				name: "unreadable plan artifact",
+				assistantText: terminal,
+				mutate: async (projectRoot: string) => {
+					const planPath = join(
+						projectRoot,
+						"missions",
+						"plans",
+						"review-target",
+						"plan.md",
+					);
+					await rm(planPath);
+					await mkdir(planPath);
+				},
+				reason: "plan-artifact-io",
+			},
+			{
+				name: "inactive plan after review",
+				assistantText: terminal,
+				mutate: async (projectRoot: string) => {
+					await writeFile(
+						join(projectRoot, "missions", "plans", "review-target", "plan.md"),
+						"---\ntitle: Review target\nstatus: completed\n---\n\n## Decision Log\n",
+						"utf-8",
+					);
+				},
+				reason: "inactive-plan",
+			},
+			{
+				name: "incompletely referenced findings",
+				assistantText: terminal,
+				mutate: async (projectRoot: string) => {
+					await writeFile(
+						join(
+							projectRoot,
+							"missions",
+							"plans",
+							"review-target",
+							"review.md",
+						),
+						`# Plan Review
+
+## Findings
+
+- id: PR-001
+  dimension: interface-fidelity
+  severity: high
+  title: "Blocking finding"
+  plan_refs: D-001
+  code_refs: lib/example.ts:1
+  description: |
+    Concrete description.
+
+## Assessment
+
+Review incomplete.
+`,
+						"utf-8",
+					);
+				},
+				reason: "missing-review-reference",
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const projectRoot = await mkdtemp(
+				join(
+					tmpdir(),
+					`chain-revision-block-${testCase.name.replaceAll(" ", "-")}-`,
+				),
+			);
+			try {
+				await writePlanReviewTarget({ projectRoot, planSlug: "review-target" });
+				const events: ChainEvent[] = [];
+				let plannerSpawns = 0;
+				spawnerRef.current = {
+					spawn: vi.fn(async (config) => {
+						if (config.role === "plan-reviewer") {
+							return successfulTestSpawn(
+								config.role,
+								planReviewReport("review-target", 1),
+							);
+						}
+						if (config.role === "planner") {
+							plannerSpawns += 1;
+							if (plannerSpawns === 2) {
+								if ("mutate" in testCase) {
+									await testCase.mutate(projectRoot);
+								}
+								return successfulTestSpawn(config.role, testCase.assistantText);
+							}
+						}
+						return successfulTestSpawn(config.role);
+					}),
+					dispose: vi.fn(),
+				};
+				const result = await runChain(
+					makeConfig(
+						parseChain(
+							"planner -> plan-reviewer -> planner -> task-manager",
+							defaultRegistry,
+						),
+						{
+							projectRoot,
+							onEvent: (event) => events.push(event),
+						},
+					),
+				);
+
+				expect(result.success, testCase.name).toBe(false);
+				expect(result.stageResults, testCase.name).toHaveLength(3);
+				const revisionResult = result.stageResults[2];
+				expect(revisionResult, testCase.name).toMatchObject({
+					success: false,
+					reviewRoundBlock: { reason: testCase.reason },
+				});
+				const block = revisionResult?.reviewRoundBlock;
+				const identity = block?.planSlug
+					? ` for ${block.planSlug}${block.reviewRound ? ` round ${block.reviewRound}` : ""}`
+					: "";
+				expect(revisionResult?.error, testCase.name).toBe(
+					`Plan review target${identity} blocked: ${testCase.reason}`,
+				);
+				expect(result.errors, testCase.name).toEqual([revisionResult?.error]);
+				expect(events, testCase.name).toContainEqual(
+					expect.objectContaining({
+						type: "unaddressed_review_round",
+						block: expect.objectContaining({ reason: testCase.reason }),
+					}),
+				);
+				expect(spawnerRef.current.spawn, testCase.name).toHaveBeenCalledTimes(
+					3,
+				);
+			} finally {
+				await rm(projectRoot, { recursive: true, force: true });
+			}
+		}
+	});
+
+	// @cosmo-behavior plan:chain-stage-context#B-009
+	test("starts task decomposition only for earlier reviewer-bound addressed evidence", async () => {
+		for (const findings of ["none", "referenced"] as const) {
+			const projectRoot = await mkdtemp(
+				join(tmpdir(), `chain-revision-addressed-${findings}-`),
+			);
+			try {
+				await writePlanReviewTarget({ projectRoot, planSlug: "review-target" });
+				const planPath = join(
+					projectRoot,
+					"missions",
+					"plans",
+					"review-target",
+					"plan.md",
+				);
+				if (findings === "referenced") {
+					await Promise.all([
+						writeFile(
+							planPath,
+							`---
+title: Review target
+status: active
+---
+
+## Decision Log
+
+- **D-001 - Address the review**
+  - Decision: address review.md PR-001 and review.md PR-002.
+  - Decided-by: derived
+`,
+							"utf-8",
+						),
+						writeFile(
+							join(
+								projectRoot,
+								"missions",
+								"plans",
+								"review-target",
+								"review.md",
+							),
+							`# Plan Review
+
+## Findings
+
+- id: PR-001
+  dimension: interface-fidelity
+  severity: high
+  title: "High finding"
+  plan_refs: D-001
+  code_refs: lib/example.ts:1
+  description: |
+    Concrete description.
+
+- id: PR-002
+  dimension: behavior-spec
+  severity: medium
+  title: "Medium finding"
+  plan_refs: D-001
+  code_refs: tests/example.test.ts:1
+  description: |
+    Concrete description.
+
+## Assessment
+
+Review complete.
+`,
+							"utf-8",
+						),
+					]);
+				}
+				const planBeforeRun = await readFile(planPath, "utf-8");
+				const events: ChainEvent[] = [];
+				spawnerRef.current = {
+					spawn: vi.fn(async (config) => {
+						if (config.role === "plan-reviewer") {
+							return successfulTestSpawn(
+								config.role,
+								planReviewReport("review-target", 1),
+							);
+						}
+						if (config.prompt.includes("Revision purpose:")) {
+							return successfulTestSpawn(
+								config.role,
+								reviewRevisionReport("review-target", 1),
+							);
+						}
+						return successfulTestSpawn(config.role);
+					}),
+					dispose: vi.fn(),
+				};
+				const steps = parseChain(
+					"planner -> plan-reviewer -> planner -> task-manager",
+					defaultRegistry,
+				);
+				const result = await runChain(
+					makeConfig(steps, {
+						projectRoot,
+						onEvent: (event) => events.push(event),
+					}),
+				);
+
+				expect(result.success, findings).toBe(true);
+				expect(result.errors, findings).toEqual([]);
+				expect(
+					vi
+						.mocked(spawnerRef.current.spawn)
+						.mock.calls.map(([config]) => config.role),
+					findings,
+				).toEqual(["planner", "plan-reviewer", "planner", "task-manager"]);
+				expect(
+					events.some((event) => event.type === "unaddressed_review_round"),
+					findings,
+				).toBe(false);
+				expect(await readFile(planPath, "utf-8"), findings).toBe(planBeforeRun);
+
+				spawnerRef.current = reviewReportSpawner(
+					"Fresh run must repeat plan review.",
+				);
+				const freshResult = await runChain(makeConfig(steps, { projectRoot }));
+				expect(freshResult.success, `${findings} fresh run`).toBe(false);
+				expect(
+					vi
+						.mocked(spawnerRef.current.spawn)
+						.mock.calls.map(([config]) => config.role),
+					`${findings} fresh run`,
+				).toEqual(["planner", "plan-reviewer"]);
+			} finally {
+				await rm(projectRoot, { recursive: true, force: true });
+			}
+		}
+	});
+
+	// @cosmo-behavior plan:chain-stage-context#B-013
+	test("gates a looping revision stage once after its final iteration", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "chain-loop-revision-"));
+		try {
+			await writePlanReviewTarget({ projectRoot, planSlug: "review-target" });
+			const createLoopingSteps = () => {
+				const steps = parseChain(
+					"planner -> plan-reviewer -> planner -> task-manager",
+					defaultRegistry,
+				);
+				let completionChecks = 0;
+				const revision = steps[2];
+				if (!revision || "kind" in revision) {
+					throw new Error("Expected a revision stage.");
+				}
+				steps[2] = {
+					...revision,
+					loop: true,
+					completionCheck: async () => {
+						completionChecks += 1;
+						return completionChecks >= 3;
+					},
+				};
+				return steps;
+			};
+
+			let plannerSpawns = 0;
+			const addressedEvents: ChainEvent[] = [];
+			spawnerRef.current = {
+				spawn: vi.fn(async (config) => {
+					if (config.role === "plan-reviewer") {
+						return successfulTestSpawn(
+							config.role,
+							planReviewReport("review-target", 1),
+						);
+					}
+					if (config.role === "planner") {
+						plannerSpawns += 1;
+						return successfulTestSpawn(
+							config.role,
+							plannerSpawns === 3
+								? reviewRevisionReport("review-target", 1)
+								: "Intermediate revision output without a report.",
+						);
+					}
+					return successfulTestSpawn(config.role);
+				}),
+				dispose: vi.fn(),
+			};
+			const addressedResult = await runChain(
+				makeConfig(createLoopingSteps(), {
+					projectRoot,
+					onEvent: (event) => addressedEvents.push(event),
+				}),
+			);
+
+			expect(addressedResult.success).toBe(true);
+			expect(addressedResult.stageResults[2]).toMatchObject({
+				success: true,
+				iterations: 2,
+			});
+			expect(
+				vi
+					.mocked(spawnerRef.current.spawn)
+					.mock.calls.map(([config]) => config.role),
+			).toEqual([
+				"planner",
+				"plan-reviewer",
+				"planner",
+				"planner",
+				"task-manager",
+			]);
+			expect(
+				addressedEvents.filter(
+					(event) => event.type === "unaddressed_review_round",
+				),
+			).toEqual([]);
+
+			plannerSpawns = 0;
+			const omittedEvents: ChainEvent[] = [];
+			spawnerRef.current = {
+				spawn: vi.fn(async (config) => {
+					if (config.role === "plan-reviewer") {
+						return successfulTestSpawn(
+							config.role,
+							planReviewReport("review-target", 1),
+						);
+					}
+					if (config.role === "planner") {
+						plannerSpawns += 1;
+						return successfulTestSpawn(
+							config.role,
+							plannerSpawns === 2
+								? reviewRevisionReport("review-target", 1)
+								: "Final revision output omitted the report.",
+						);
+					}
+					return successfulTestSpawn(config.role);
+				}),
+				dispose: vi.fn(),
+			};
+			const omittedResult = await runChain(
+				makeConfig(createLoopingSteps(), {
+					projectRoot,
+					onEvent: (event) => omittedEvents.push(event),
+				}),
+			);
+
+			expect(omittedResult.success).toBe(false);
+			expect(omittedResult.stageResults[2]).toMatchObject({
+				success: false,
+				iterations: 2,
+				reviewRoundBlock: { reason: "missing-review-report" },
+			});
+			expect(omittedResult.stageResults[2]?.error).toBeTruthy();
+			expect(omittedResult.errors).toEqual([
+				omittedResult.stageResults[2]?.error,
+			]);
+			expect(
+				vi
+					.mocked(spawnerRef.current.spawn)
+					.mock.calls.map(([config]) => config.role),
+			).toEqual(["planner", "plan-reviewer", "planner", "planner"]);
+			expect(
+				omittedEvents.filter(
+					(event) => event.type === "unaddressed_review_round",
+				),
+			).toHaveLength(1);
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
 	test("replaces prior review state and ignores nonparticipating reviewers", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "chain-review-replace-"));
 		try {
@@ -1881,7 +2412,15 @@ describe("runChain", () => {
 			spawnerRef.current = {
 				spawn: vi.fn(async (config) => {
 					if (config.role !== "plan-reviewer") {
-						return successfulTestSpawn(config.role);
+						return successfulTestSpawn(
+							config.role,
+							config.prompt.includes("Revision purpose:")
+								? reviewRevisionReport(
+										`target-${participatingReviewer === 1 ? "a" : "b"}`,
+										1,
+									)
+								: `${config.role} completed`,
+						);
 					}
 					participatingReviewer += 1;
 					return successfulTestSpawn(

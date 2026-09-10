@@ -22,6 +22,7 @@ import {
 	parseTerminalReviewReport,
 	REVIEW_REVISION_REPORT_TOKEN,
 	validatePlanReviewReport,
+	validateReviewRevisionReport,
 } from "../../lib/orchestration/review-revision.ts";
 import {
 	appendBoundReviewTarget,
@@ -299,6 +300,31 @@ describe("runStart durable chain characterization", () => {
 				kind: "review-revision",
 				target: { planSlug: "full-review-text", reviewRound: 1 },
 				status: "addressed",
+			},
+		});
+		expect(
+			await validateReviewRevisionReport({
+				assistantText: `Revision complete.\n${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"full-review-text","reviewRound":1,"status":"addressed"}`,
+				projectRoot,
+				expectedTarget: { planSlug: "full-review-text", reviewRound: 1 },
+			}),
+		).toEqual({
+			status: "accepted",
+			target: { planSlug: "full-review-text", reviewRound: 1 },
+		});
+		expect(
+			await validateReviewRevisionReport({
+				assistantText: `${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"full-review-text","reviewRound":1,"status":"unaddressed","reason":"One finding remains."}`,
+				projectRoot,
+				expectedTarget: { planSlug: "full-review-text", reviewRound: 1 },
+			}),
+		).toEqual({
+			status: "unaddressed",
+			block: {
+				reason: "revision-reported-unaddressed",
+				planSlug: "full-review-text",
+				reviewRound: 1,
+				reportedReason: "One finding remains.",
 			},
 		});
 

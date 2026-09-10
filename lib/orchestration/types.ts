@@ -6,7 +6,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentRegistry } from "../agents/resolver.ts";
 import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import type { EpisodeWarningReporter } from "../memory/episode.ts";
-import type { ReviewRoundBlock } from "./review-revision.ts";
+import type { PlanReviewTarget, ReviewRoundBlock } from "./review-revision.ts";
 
 // ============================================================================
 // Agent Roles
@@ -208,6 +208,19 @@ export interface ChainStats {
 // ============================================================================
 // Execution Results
 // ============================================================================
+
+/** Run-local plan-review evidence; addressed index and round are recorded atomically. */
+export type InlinePlanReviewState =
+	| {
+			target: PlanReviewTarget;
+			addressedAtTopologyIndex?: undefined;
+			addressedReviewRound?: undefined;
+	  }
+	| {
+			target: PlanReviewTarget;
+			addressedAtTopologyIndex: number;
+			addressedReviewRound: number;
+	  };
 
 /** Result of executing a single stage */
 export interface StageResult {

@@ -1,5 +1,6 @@
 import {
 	assessPlanReviewRound,
+	type BlockedPlanReviewRound,
 	type PlanReviewRoundBlockReason,
 } from "../plans/index.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
@@ -12,13 +13,15 @@ export interface PlanReviewTarget {
 	reviewRound: number;
 }
 
-export type ReviewRoundBlockReason =
+type ReviewRoundBlockReason =
 	| "missing-review-report"
 	| "malformed-review-report"
 	| "multiple-review-reports"
 	| "nonterminal-review-report"
+	| "missing-review-target"
 	| "mismatched-review-target"
 	| "ambiguous-review-target"
+	| "revision-reported-unaddressed"
 	| PlanReviewRoundBlockReason;
 
 export interface ReviewRoundBlock {
@@ -28,19 +31,26 @@ export interface ReviewRoundBlock {
 	expectedPlanSlug?: string;
 	latestReviewRound?: number;
 	findingIds?: readonly string[];
+	reportedReason?: string;
 }
 
 export type ReviewCheck =
 	| { status: "accepted"; target: PlanReviewTarget }
 	| { status: "unaddressed"; block: ReviewRoundBlock };
 
-export interface ValidatePlanReviewReportOptions {
+interface ValidatePlanReviewReportOptions {
 	assistantText: string;
 	projectRoot: string;
 	expectedPlanSlug?: string;
 }
 
-export type ReviewReport =
+interface ValidateReviewRevisionReportOptions {
+	assistantText: string;
+	projectRoot: string;
+	expectedTarget?: PlanReviewTarget;
+}
+
+type ReviewReport =
 	| { kind: "plan-review"; target: PlanReviewTarget }
 	| {
 			kind: "review-revision";
@@ -96,7 +106,7 @@ export function parseReviewReportLine(line: string): ReviewReport | undefined {
 		: undefined;
 }
 
-export type TerminalReviewReportCheck =
+type TerminalReviewReportCheck =
 	| { status: "accepted"; report: ReviewReport }
 	| { status: "unaddressed"; block: ReviewRoundBlock };
 
@@ -158,22 +168,7 @@ export async function validatePlanReviewReport(
 		assessment: "target",
 	});
 	if (assessment.status === "blocked") {
-		return {
-			status: "unaddressed",
-			block: {
-				reason: assessment.reason,
-				planSlug: assessment.planSlug,
-				...(assessment.reviewRound !== undefined && {
-					reviewRound: assessment.reviewRound,
-				}),
-				...(assessment.latestReviewRound !== undefined && {
-					latestReviewRound: assessment.latestReviewRound,
-				}),
-				...(assessment.findingIds !== undefined && {
-					findingIds: assessment.findingIds,
-				}),
-			},
-		};
+		return blockAssessment(assessment);
 	}
 
 	if (
@@ -192,6 +187,85 @@ export async function validatePlanReviewReport(
 	}
 
 	return { status: "accepted", target };
+}
+
+/** Validate one terminal revision report against the bound target and artifacts. */
+export async function validateReviewRevisionReport(
+	options: ValidateReviewRevisionReportOptions,
+): Promise<ReviewCheck> {
+	const parsed = parseTerminalReviewReport(
+		options.assistantText,
+		"review-revision",
+	);
+	if (parsed.status === "unaddressed") return parsed;
+	if (parsed.report.kind !== "review-revision") {
+		return blockReport("malformed-review-report");
+	}
+	const { report } = parsed;
+	const target = report.target;
+
+	if (options.expectedTarget === undefined) {
+		return blockReport("missing-review-target", target);
+	}
+	if (
+		target.planSlug !== options.expectedTarget.planSlug ||
+		target.reviewRound !== options.expectedTarget.reviewRound
+	) {
+		return {
+			status: "unaddressed",
+			block: {
+				reason: "mismatched-review-target",
+				planSlug: target.planSlug,
+				reviewRound: target.reviewRound,
+				expectedPlanSlug: options.expectedTarget.planSlug,
+				latestReviewRound: options.expectedTarget.reviewRound,
+			},
+		};
+	}
+	if (report.status === "unaddressed") {
+		return {
+			status: "unaddressed",
+			block: {
+				reason: "revision-reported-unaddressed",
+				planSlug: target.planSlug,
+				reviewRound: target.reviewRound,
+				reportedReason: report.reason,
+			},
+		};
+	}
+
+	const assessment = await assessPlanReviewRound({
+		projectRoot: options.projectRoot,
+		planSlug: target.planSlug,
+		reviewRound: target.reviewRound,
+		assessment: "addressed",
+	});
+	if (assessment.status === "blocked") {
+		return blockAssessment(assessment);
+	}
+
+	return { status: "accepted", target };
+}
+
+function blockAssessment(
+	assessment: BlockedPlanReviewRound,
+): Extract<ReviewCheck, { status: "unaddressed" }> {
+	return {
+		status: "unaddressed",
+		block: {
+			reason: assessment.reason,
+			planSlug: assessment.planSlug,
+			...(assessment.reviewRound !== undefined && {
+				reviewRound: assessment.reviewRound,
+			}),
+			...(assessment.latestReviewRound !== undefined && {
+				latestReviewRound: assessment.latestReviewRound,
+			}),
+			...(assessment.findingIds !== undefined && {
+				findingIds: assessment.findingIds,
+			}),
+		},
+	};
 }
 
 function blockReport(

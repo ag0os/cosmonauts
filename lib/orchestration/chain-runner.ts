@@ -24,6 +24,7 @@ import {
 	type ReviewCheck,
 	type ReviewRoundBlock,
 	validatePlanReviewReport,
+	validateReviewRevisionReport,
 } from "./review-revision.ts";
 import type { StagePromptPurpose } from "./stage-prompts.ts";
 import {
@@ -42,6 +43,7 @@ import type {
 	ChainStage,
 	ChainStats,
 	ChainStep,
+	InlinePlanReviewState,
 	ParallelGroupStep,
 	SpawnConfig,
 	SpawnEvent,
@@ -279,12 +281,7 @@ interface ChainExecutionState {
 	errors: string[];
 	totalIterations: number;
 	statsDurationMs: number;
-	activePlanReview?: ActivePlanReview;
-}
-
-interface ActivePlanReview {
-	target: PlanReviewTarget;
-	addressedAtTopologyIndex?: number;
+	activePlanReview?: InlinePlanReviewState;
 }
 
 interface ChainStepOutcome {
@@ -381,6 +378,27 @@ async function runChainStep(
 			statsDurationMs: result.stats?.durationMs ?? 0,
 		};
 	}
+	if (
+		promptContext.purpose.kind === "revision" &&
+		promptContext.purpose.reviewKind === "plan"
+	) {
+		const result = await runPlanRevisionStage(
+			stage,
+			stepIndex,
+			config,
+			spawner,
+			constraints,
+			promptContext,
+			state,
+		);
+		return {
+			results: [result],
+			success: result.success,
+			error: result.error,
+			loopIterations: stage.loop ? result.iterations : 0,
+			statsDurationMs: result.stats?.durationMs ?? 0,
+		};
+	}
 	const result = await runObservedStage(
 		stage,
 		stepIndex,
@@ -397,6 +415,53 @@ async function runChainStep(
 		loopIterations: stage.loop ? result.iterations : 0,
 		statsDurationMs: result.stats?.durationMs ?? 0,
 	};
+}
+
+async function runPlanRevisionStage(
+	stage: ChainStage,
+	stageIndex: number,
+	config: ChainConfig,
+	spawner: AgentSpawner,
+	constraints: StageConstraints,
+	promptContext: StagePromptContext,
+	state: ChainExecutionState,
+): Promise<StageResult> {
+	emit(config, { type: "stage_start", stage, stageIndex });
+	let assistantText: string | undefined;
+	const result = await runStageWithPromptContext(
+		stage,
+		config,
+		spawner,
+		constraints,
+		promptContext,
+		(text) => {
+			assistantText = text;
+		},
+	);
+	let finalized = result;
+
+	if (result.success) {
+		const check = await validateReviewRevisionReport({
+			assistantText: assistantText ?? "",
+			projectRoot: config.projectRoot,
+			expectedTarget: state.activePlanReview?.target,
+		});
+		if (check.status === "accepted") {
+			const activePlanReview = state.activePlanReview;
+			if (activePlanReview) {
+				state.activePlanReview = {
+					...activePlanReview,
+					addressedAtTopologyIndex: stageIndex,
+					addressedReviewRound: check.target.reviewRound,
+				};
+			}
+		} else {
+			finalized = blockPlanReviewStage(result, check.block, config);
+		}
+	}
+
+	emitStageCompletion(config, stage, finalized);
+	return finalized;
 }
 
 async function runObservedStage(
