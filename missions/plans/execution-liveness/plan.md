@@ -92,9 +92,8 @@ cancellation.
   lease expiry is narrowed by D-001/D-006: mere expiry cannot safely replace an
   unconfirmed potentially mutating attempt. D-001 through D-010 supersede the
   corresponding 2026-09-11 plan wording. Decided by: codex-proposed,
-  2026-09-13; unratified — the human shared the review but did not decide
-  these changes. The expiry narrowing in D-001/D-006 deviates from review
-  F-003 and awaits a human ruling (see the disposition re-review).
+  2026-09-13; human-accepted 2026-09-14 (derived). The expiry narrowing in
+  D-001/D-006 deviated from review F-003 and is resolved by D-012.
 
 - **D-012 — Expiry quarantine closes the crashed-holder gap.** Expiry never
   authorizes a competing claim, but a scheduler pass that observes an expired
@@ -103,10 +102,12 @@ cancellation.
   step becomes terminal-blocked with reason `lease_expired` and the persisted
   holder identity, the token is revoked (late writes remain non-promotable per
   B-001/B-014), no replacement attempt starts, and the run finalizes under
-  B-018. In shadow mode the pass records `would-quarantine` instead. Recovery
+  B-018. Quarantine is not gated by liveness mode, because it cancels no live
+  work and starts none; shadow gates deadline-driven cancellation only. Recovery
   remains an operator-started replacement run. This closes the gap D-001/D-006
   opened by dropping review finding F-003's post-expiry state without naming a
-  replacement. Decided by: human, 2026-09-13 (ratified).
+  replacement. Decided by: human, 2026-09-13 (ratified); amended to
+  mode-independent by human, 2026-09-14 (ratified).
 
 ## Behaviors
 
@@ -315,7 +316,7 @@ cancellation.
 - Source: AC-014
 - Context: a scheduler pass finds a `running` step whose lease expired under a holder it does not own, with no settlement evidence
 - Action: it evaluates expiry after rebasing any detected clock discontinuity
-- Expected: the step becomes terminal-blocked recording `lease_expired` and holder identity, the token is revoked, no replacement attempt starts, and the run finalizes; shadow mode records `would-quarantine` and changes nothing
+- Expected: the step becomes terminal-blocked recording `lease_expired` and holder identity, the token is revoked, no replacement attempt starts, and the run finalizes; the outcome is identical under shadow and enforce
 - Seam: `lib/durable-runtime/scheduler.ts`; `lib/durable-runtime/scheduler-state.ts`; `lib/durable-runtime/types.ts`
 - Test: `tests/durable-runtime/scheduler-liveness.test.ts` > `quarantines an expired unowned attempt without starting a replacement`
 - Marker: `@cosmo-behavior plan:execution-liveness#B-021`

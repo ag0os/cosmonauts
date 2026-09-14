@@ -1,7 +1,7 @@
 # Execution Liveness Independent Review — Disposition
 
-**Status:** Actioned by codex on its own; the expiry refinement and every
-2026-09-13 decision entry are codex-proposed and unratified (see re-review)  
+**Status:** Actioned by codex on its own, then audited; the crashed-holder gap
+it opened is closed and the human accepted the slate on 2026-09-14  
 **Reviewed:** 2026-09-13  
 **Code basis:** `main` at `2bb5340` plus the uncommitted execution-liveness overlay  
 **Source:** private Claude artifact
@@ -129,25 +129,21 @@ behavior `B-021`, and TASK-678 AC#7:
 > attempt: the step becomes terminal-blocked with reason `lease_expired` and the
 > persisted holder identity. Quarantine revokes the token (late writes stay
 > non-promotable per B-001/B-014) and starts no new attempt; the run then
-> finalizes under B-018. In shadow mode the pass records `would-quarantine`
-> instead. Recovery remains an operator-started replacement run after the holder
-> identity is confirmed dead.
+> finalizes under B-018. Recovery remains an operator-started replacement run
+> after the holder identity is confirmed dead.
 
 The clock-discontinuity precondition was added to the original draft so a shared
 host suspension cannot quarantine a healthy owner.
 
-### Open follow-up: should quarantine be shadow-gated?
+**Amended 2026-09-14 (human-ratified): quarantine is not gated by liveness
+mode.** The first form was shadow-gated, which would have left a crashed holder
+wedging its run on delivery, recording only `would-quarantine` until TASK-685
+enabled enforcement. Shadow exists to avoid cancelling live work; quarantine
+cancels nothing and starts nothing, so the gate bought no safety and deferred
+the fix this slice exists to ship. Shadow now covers deadline-driven
+cancellation only.
 
-As ratified, quarantine is shadow-gated, and shadow is the default. That means a
-crashed holder still wedges its run when this slice ships, and only records
-`would-quarantine` until TASK-685 enables enforcement. The argument for making
-quarantine unconditional is that shadow mode exists to avoid cancelling live
-work, while quarantine cancels nothing: it starts no attempt and only stops the
-run from pretending an unowned attempt is alive. Terminal-blocked with evidence
-is strictly better than wedged forever. A human decision; until it is made, the
-ratified shadow-gated form stands.
-
-### Provenance corrected
+### Provenance corrected, then accepted
 
 The human confirmed on 2026-09-13 that they shared the review with codex and
 did not decide the changes; codex decided them on its own. The "human
@@ -155,8 +151,13 @@ acceptance" attributions were therefore corrected to "codex-proposed,
 unratified" in `orchestration-future.md` (D-012, plus amendment notes on
 D-001 and D-007), `autonomy.md` (D-001 to D-004), `autonomy-host/plan.md`
 (D-004), the execution-liveness plan (D-011) and spec (Intent note), and the
-`ROADMAP.md` overlay. Nothing was reverted; the changes stand as proposals
-until a human ratifies them.
+`ROADMAP.md` overlay. Nothing was reverted.
+
+The human accepted that slate on 2026-09-14. The execution-liveness spec
+invariants are ratified ground and now say so. The plan and architecture
+decision entries record codex authorship with human acceptance and stay
+`derived`, so an implementer may still amend them on the record rather than
+escalating.
 
 ### Derived omissions applied on the record
 

@@ -29,9 +29,9 @@ are ready to promote.
     spawning outside durable orchestration.
   - Why: One substrate gives every orchestration mode the same attempts, leases,
     cancellation, events, artifacts, recovery, and control semantics.
-  - Decided-by: human architecture dialogue, 2026-09-11. Amended 2026-09-13
-    (codex-proposed from the independent review, unratified): the
-    current-exceptions sentence.
+  - Decided-by: human architecture dialogue, 2026-09-11. Amended 2026-09-13 by
+    codex from the independent review and human-accepted 2026-09-14 (derived):
+    the current-exceptions sentence.
 
 - `D-002 - Authoring and coordination modes remain distinct`
   - Decision: Chain, Drive, declared-graph, swarm, and script-coordinated modes
@@ -99,8 +99,9 @@ are ready to promote.
     non-durable. Lease liveness and execution progress answer different
     questions and must not mask each other.
   - Decided-by: human architecture dialogue, 2026-09-10 through 2026-09-11.
-    Amended 2026-09-13 (codex-proposed from the independent review,
-    unratified): the unsuperseded-token and lease-expiry sentences.
+    Amended 2026-09-13 by codex from the independent review and
+    human-accepted 2026-09-14 (derived): the unsuperseded-token and lease-expiry
+    sentences, as further amended by the execution-liveness quarantine ruling.
 
 - `D-008 - Artifacts carry substantive graph state`
   - Decision: Structured artifact references carry durable outputs between
@@ -166,9 +167,9 @@ are ready to promote.
     forward design until every legacy execution path is removed.
   - Why: Target boundaries guide convergence, while explicit exceptions prevent
     plans and tests from assuming authority or evidence paths that do not exist.
-  - Decided-by: codex-proposed from the independent architecture review,
-    2026-09-13; unratified (the human shared the review but did not decide
-    this change).
+  - Decided-by: codex-proposed from the independent architecture review, 2026-09-13;
+    human-accepted 2026-09-14 (derived: an implementer may amend it on the
+    record).
 
 ## Boundary Model
 

@@ -9,7 +9,7 @@ Re-assessed and reordered **2026-08-25** in a human-led re-planning session, rep
 Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `vendored-skills` — added 2026-08-26 — `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1/§10.2 amendments in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
 
 Orchestration dependency overlay, ratified **2026-09-11** and amended by codex
-after independent review **2026-09-13** (amendment unratified): the active `execution-liveness` plan is the
+after independent review **2026-09-13** and human-accepted **2026-09-14**: the active `execution-liveness` plan is the
 urgent reliability insertion before new work on `drive-envelope`. It does not
 replace the portable-harness spine. Once liveness is proven, resume that spine
 through `drive-envelope`; graph work then starts with artifact handoff and an

@@ -31,7 +31,8 @@ The following invariants are binding:
   consequence: a scheduler pass that observes an expired lease it does not hold,
   carrying no settlement evidence and surviving any clock-discontinuity rebase,
   quarantines the attempt into terminal-blocked and revokes its token without
-  starting a replacement.
+  starting a replacement. Quarantine is not gated by liveness mode: it cancels
+  nothing and starts nothing, so it applies under shadow and enforce alike.
 - **INV-002 — Ownership, activity, and host availability differ:** heartbeat
   proves claim ownership; `lastActivityAt` records useful execution progress;
   a detected host clock discontinuity is recorded separately and rebases idle
@@ -58,10 +59,11 @@ The following invariants are binding:
   sessions, events, full opaque results, normalized results, and artifacts
   outside the coordinator context that initiated them.
 
-Provenance note (2026-09-13): the quarantine rule in INV-001 and AC-014 is
-human-ratified. The remaining expiry and terminal-blocked wording in INV-001 and
-INV-003 is codex-proposed from the independent review and awaits human
-confirmation; see the disposition re-review.
+Provenance note: the quarantine rule in INV-001 and AC-014 was human-ratified
+2026-09-13 and made mode-independent 2026-09-14. The remaining INV-001 and
+INV-003 wording was drafted by codex from the independent review and accepted by
+the human on 2026-09-14; these invariants are ratified ground and change only by
+human decision.
 
 If availability conflicts with ownership or cancellation safety, INV-001 and
 INV-003 win. Recovery from a terminal-blocked attempt is an operator-started
@@ -146,8 +148,8 @@ evidence.
   rebased idle evaluation, quarantines the attempt: the step becomes
   terminal-blocked recording `lease_expired` and the persisted holder identity,
   the token is revoked so late writes stay non-promotable, and no replacement
-  attempt starts in that run. In shadow mode the pass records a
-  `would-quarantine` observation instead.
+  attempt starts in that run. Quarantine applies in both liveness modes, because
+  it cancels no live work; only deadline-driven cancellation is shadowed.
 - **AC-013:** The 200-character chain summary contract, spawn depth/concurrency
   rejection, Drive task policy, and coordinator/harness neutrality remain
   unchanged except for the explicit Drive timeout mapping in AC-010.

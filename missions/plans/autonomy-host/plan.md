@@ -46,8 +46,9 @@ process never permits either service to mutate the other's records.
   and silent acknowledgement for cost discipline. Heartbeat remains the
   execution-ownership term in `execution-liveness`.
 - **D-004 — Review amendment, 2026-09-13.** D-001 through D-003 and the matching
-  spec edits are codex-proposed from the independent orchestration review and
-  await human ratification. W1 stays in-process and off by default; no runtime
+  spec edits were drafted by codex from the independent orchestration review
+  and human-accepted 2026-09-14; they remain derived, so an implementer may
+  amend them on the record. W1 stays in-process and off by default; no runtime
   implementation is added by this amendment.
 
 ## Scope

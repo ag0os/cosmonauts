@@ -28,7 +28,7 @@ attempts; the episodic log owns autonomy wake-state, audit, and memory.
   - Why: One eventual host reduces lifecycle duplication without overstating
     current integration or blocking the safe incremental host.
   - Decided-by: autonomy planning; amended 2026-09-13 by codex from the
-    independent architecture review, unratified.
+    independent architecture review and human-accepted 2026-09-14 (derived).
 
 - `D-002 - Host sharing does not merge state authority`
   - Decision: Orchestration's `RunStore` remains authoritative for graphs,
@@ -40,8 +40,9 @@ attempts; the episodic log owns autonomy wake-state, audit, and memory.
     leases or terminalize steps; use one undifferentiated durable store.
   - Why: Trigger scheduling and attempt execution have different invariants and
     recovery semantics even if one process hosts both.
-  - Decided-by: codex-proposed from the independent architecture review,
-    2026-09-13; unratified.
+  - Decided-by: codex-proposed from the independent architecture review, 2026-09-13;
+    human-accepted 2026-09-14 (derived: an implementer may amend it on the
+    record).
 
 - `D-003 - Execution heartbeat vocabulary belongs to orchestration`
   - Decision: Autonomy calls its empty-cycle optimization `skip-empty wake`,
@@ -51,8 +52,9 @@ attempts; the episodic log owns autonomy wake-state, audit, and memory.
     renewal.
   - Why: Ownership, execution activity, host availability, and an empty wake are
     different facts and must remain distinguishable in evidence and policy.
-  - Decided-by: codex-proposed from the independent architecture review,
-    2026-09-13; unratified.
+  - Decided-by: codex-proposed from the independent architecture review, 2026-09-13;
+    human-accepted 2026-09-14 (derived: an implementer may amend it on the
+    record).
 
 - `D-004 - Autonomy triggers runs; orchestration owns coordinator loops`
   - Decision: A wake handler may request a spawn, Chain, Drive, or future graph
@@ -63,8 +65,9 @@ attempts; the episodic log owns autonomy wake-state, audit, and memory.
     claim it delivers durable coordinator loops as a side effect.
   - Why: One execution authority prevents competing leases, deadlines, and
     terminal-state writers.
-  - Decided-by: codex-proposed from the independent architecture review,
-    2026-09-13; unratified.
+  - Decided-by: codex-proposed from the independent architecture review, 2026-09-13;
+    human-accepted 2026-09-14 (derived: an implementer may amend it on the
+    record).
 
 ## Boundary Model
 
