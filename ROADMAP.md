@@ -29,6 +29,29 @@ and `living-memory-fidelity` shipped and are archived; their knowledge is in
 scheduler attempt/lease/cancellation seam; do not implement the overlapping
 `autonomy-host` lifecycle seam ahead of that contract.
 
+Quality pause, human-prioritized **2026-09-14**: before continuing active-plan
+or new feature development, complete `test-health-audit`, then
+`project-health-audit`. These two items temporarily precede the active-plan and
+portable-harness queues; once both establish trustworthy baselines, resume the
+existing dependency order.
+
+### `test-health-audit`: Make the Test Suite Trustworthy
+
+Establish a test-evidence method and use it to audit and remediate the existing suite so green tests provide meaningful development guardrails.
+
+- Adapt the deintroverter study's evidence-chain and graduated-verdict approach to Cosmonauts tests, covering execution integrity, production or artifact grounding, contract alignment, fault sensitivity, composition realism, and determinism
+- Inventory every test and explicit gap; identify test-local assertions, mock-supplied outcomes, missing consumer seams or composition roots, wrong-side expectations, undiscovered tests, skips, and todos without treating heuristic findings as automatic failures
+- Calibrate the method against known historical false-confidence cases, then use targeted mutation probes to prove that critical tests fail for the defects they claim to prevent
+- Remediate confirmed weaknesses and leave a documented, repeatable assessment method plus a trustworthy suite baseline; cross-link `behavioral-regression` and `deliverable-completeness-gates` rather than duplicating their concerns
+
+### `project-health-audit`: Establish a Clean Static-Health Baseline
+
+After `test-health-audit`, use the shipped static-analysis capabilities to assess and remediate the whole repository before feature development resumes.
+
+- Run every bound project-scope gate-facing capability—dead code, duplication, complexity, and boundary conformance—and report unbound, unsupported, or failed capabilities explicitly rather than treating missing evidence as clean
+- Trace and confirm findings before remediation, resolve real defects or record narrowly justified baselines, and rerun the supported analyses plus the full test, lint, and typecheck gates
+- Produce a reproducible whole-project health record that future work can compare against; consume the existing analysis surface without expanding providers or duplicating the separate `analysis-tools` and `worker-inloop-analysis` roadmap scopes
+
 ### `drive-envelope`: Drive as a Free Envelope
 
 Decouple Drive's value (isolation, gates, session capture, reporting) from the plan+task ceremony so one-off and externally-triggered work can use it too.
