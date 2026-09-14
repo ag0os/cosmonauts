@@ -8,14 +8,35 @@ Re-assessed and reordered **2026-08-25** in a human-led re-planning session, rep
 
 Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `vendored-skills` — added 2026-08-26 — `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1/§10.2 amendments in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
 
-Active plans are not roadmap items: `chain-stage-context` (picked up 2026-09-09 — was the top of this queue), `living-memory-structural-hardening`, `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`. `harness-adapters`, `living-memory` and `living-memory-fidelity` shipped and are archived; their knowledge is in `knowledge/` and `memory/agent/proposals/`.
+Orchestration dependency overlay, ratified **2026-09-11** and amended by codex
+after independent review **2026-09-13** (amendment unratified): the active `execution-liveness` plan is the
+urgent reliability insertion before new work on `drive-envelope`. It does not
+replace the portable-harness spine. Once liveness is proven, resume that spine
+through `drive-envelope`; graph work then starts with artifact handoff and an
+enforced durable read-only fan-out/all-join slice before routers, durable
+nesting, or swarm coordination. Later slices advance in the dependency order in
+`missions/architecture/orchestration-future.md`. Every slice must remain neutral
+across coordinator harness, coordinator policy, execution transport, and model
+provider. Claude Code is a reference dogfood client, not an architectural
+default.
+
+Active plans are not roadmap items: `execution-liveness`,
+`living-memory-structural-hardening`, `autonomy-host`, `coding-extraction`, and
+`superplanning-integration` (plus the deferred `web-research` spec) live under
+`missions/plans/`. `chain-stage-context`, `harness-adapters`, `living-memory`,
+and `living-memory-fidelity` shipped and are archived; their knowledge is in
+`knowledge/` and `memory/agent/proposals/`. `execution-liveness` owns the shared
+scheduler attempt/lease/cancellation seam; do not implement the overlapping
+`autonomy-host` lifecycle seam ahead of that contract.
 
 ### `drive-envelope`: Drive as a Free Envelope
 
 Decouple Drive's value (isolation, gates, session capture, reporting) from the plan+task ceremony so one-off and externally-triggered work can use it too.
 
 - "Run N drive agents on X" from a prompt/brief — no plan or task required; plan-backed Drive unchanged
-- Callable internally (agent, chain) and externally (any harness with cosmonauts knowledge driving the CLI non-interactively)
+- Establish a coordinator-neutral run-control contract for start/attach, status/watch, messaging or artifact submission, approval, cancellation, and later graph decisions; the CLI is its first adapter, not its definition
+- Callable internally (Pi-hosted agent or chain) and externally (Claude Code, Codex, or any future harness adapter) without changing Drive policy
+- Coordinator host, coordinator policy, worker execution transport, and model provider are independent selections; compatibility is explicit and incompatible combinations fail before execution
 - Free-form runs still record sessions and outcomes, so they feed the memory loop like plan-backed runs
 - Source of truth: `missions/architecture/orchestration-future.md` (extends the `runStart` seam)
 
@@ -38,7 +59,13 @@ Today the portable-harness thesis is only half true. Switch harness and your **c
 
 ### `coordinator-packages`: Packaged Cosmonauts Coordinators for Any Harness
 
-Launch an external harness (Claude Code, Codex) already *being* a cosmonauts coordinator — a packaged agent whose identity is "coordinate this cosmonauts project through the CLI", in flavors (cosmo = general assistant, cody = coding coordinator). The binary-export mechanism exists (`cosmonauts export`, Claude-Forge-style; `packages/cosmo-spec-writer-claude` and `cosmo-worker-codex` prove it); this makes coordinators first-class and thin.
+Launch a supported external harness (Claude Code, Codex, and future adapters)
+already *being* a cosmonauts coordinator — a packaged agent whose identity is
+"coordinate this cosmonauts project through the run-control surface", in flavors
+(cosmo = general assistant, cody = coding coordinator). The binary-export
+mechanism exists (`cosmonauts export`, Claude-Forge-style;
+`packages/cosmo-spec-writer-claude` and `cosmo-worker-codex` prove it); this makes
+coordinators first-class and thin without making either harness privileged.
 
 - Coordinator personas get a git-tracked native home — today each package's external-safe system prompt (`packages/*/*-system.md`) is hand-written and gitignored, the same no-source-of-truth disease the commands had
 - Thin-coordinator principle: the package carries identity + CLI knowledge; skills and commands come from the `harness-adapters` sync (`skillDelivery: "reference"`, not inline-frozen), so a running coordinator never drifts from the repo
@@ -47,10 +74,13 @@ Launch an external harness (Claude Code, Codex) already *being* a cosmonauts coo
 
 ### `external-session-capture`: Externally-Coordinated Sessions Feed the Memory Loop
 
-Work coordinated from outside (Claude Code, Codex, …) currently leaves nothing our memory system can read; define the capture contract.
+Work coordinated from outside (Claude Code, Codex, and future adapters)
+currently leaves nothing our memory system can read; define one harness-neutral
+capture contract.
 
 - Specify what an externally-coordinated run leaves behind — transcript tier, episode pointers, artifacts — and where it lands
-- Adapter-side hook: the `harness-adapters` exports carry the capture instructions/mechanism, so capture is part of using cosmonauts from outside, not a separate chore
+- Adapter-side hook: every `harness-adapters` export carries the same minimum capture instructions/mechanism; richer native transcripts are optional capability evidence, not a different lifecycle
+- A coordinator may detach, lose context, or be replaced; the next coordinator reconstructs continuity from durable run state, decisions, summaries, messages, and artifact references
 - The contract becomes a source behind `living-memory`'s pluggable-sources seam (§10.1: the re-spec consumes this)
 - Cross-links: `harness-adapters` · `missions/architecture/knowledge-and-memory.md` §5
 
@@ -68,6 +98,7 @@ Every memory/knowledge feature shipped so far is gated OFF and unconsumed; all r
 No evals drive development today; changes to agents and workflows land unmeasured. Start with a scoreboard over signals we already produce.
 
 - Harvest existing artifacts into a persistent scoreboard with baselines: drive/chain run stats, gate outcomes, review-round counts, test/lint results, cost per plan
+- Add liveness signals already available or introduced by `execution-liveness`: terminalization latency, false timeout count, rejected late commits, descendant-cancellation outcome, and session-evidence availability
 - Every factory change — prompt, agent, workflow — lands against a baseline instead of an anecdote
 - Deferred rungs, on purpose: frozen task suites replayed against agent/prompt changes; retrieval A/B (pairs with `knowledge-adoption` evidence)
 
@@ -103,6 +134,8 @@ Static-analysis feedback inside the worker's write loop, not only at end-of-task
 Real-time coordinator↔worker↔verifier interaction — reframed 2026-08-25 from `agent-swarms` breadth: the live triangle is the value; N-agent parallelism is not a goal until it proves value.
 
 - First: assess what orchestration/messaging surfaces already exist and what a coordinator actually needs mid-run
+- Both attached external coordinators and Pi-hosted coordinators use the same validated command and decision schemas; neither may write scheduler state or launch a backend directly
+- Coordinator context is a cache for judgment, never the continuity store; graph state, events, summaries, messages, and artifacts allow detach/reattach or harness replacement
 - Reference design for the mailbox: SwarmForge's validated send — closed header schema, generated bodies, durable per-agent queues where state is file location, refuse-never-repair (`missions/architecture/spikes/swarmforge-workflow-spec.md`)
 - Merges the former `agent-messaging` idea: push-based completion/events replacing filesystem polling, idempotency keys, depth-aware dispatch
 - Breadth swarms and the later waves stay in the source of truth: `missions/architecture/orchestration-future.md`
@@ -144,7 +177,7 @@ The base that lets a domain or agent run on a schedule, wake periodically, react
 
 - Layer A (base): triggers (interval / one-shot / event-wait / always-on) · lifecycle host (in-process → child → daemon) · durable wake-state · cost-efficient wake handler
 - Layer B (acting agents): trust tiers + audit log + caps + escalate-to-human + a steering channel
-- Shares ONE long-lived host + durable store with the orchestration durable runtime
+- Targets one long-lived host process with orchestration, while preserving separate authorities: the run store owns graph attempts and the episodic log owns autonomy wake-state/audit
 - Consumers (folded in): executive assistant, `ambient-cosmo`, external `channels`; cross-links `agent-interaction`
 - Source of truth: `missions/architecture/autonomy.md`
 
@@ -265,15 +298,24 @@ A specialized domain for product work — idea validation, product planning, pro
 - Detailed design exists: `missions/plans/superplanning-integration/{plan.md,spec.md}` (the product-domain sections)
 - Cross-links: `domains` · `agent-tools` · `factory-modes`
 
-### `drive-timeout-semantics`: Timeouts That Know Whether Work Is Happening
+### `drive-timeout-semantics`: Suspension and Work Salvage After Drive Conformance
 
-Drive's `--task-timeout` is pure wall-clock, and a timeout discards everything the worker did. Both cost real work on the `living-memory` run (14 Drive runs, 20 tasks) and both make long detached runs unsafe to leave unattended on a laptop.
+The active `execution-liveness` plan owns the universal distinction between
+lease heartbeat, useful activity, host clock discontinuity, explicit
+idle/hard-deadline policy, and settlement-based cancellation. Its `TASK-682`
+must first map Drive's current 30-minute backend cap into explicit scheduler
+`hardTimeoutMs` policy and remove the abandoning backend-local timer. Until that
+task ships, Drive timeout behavior is unchanged. Afterward this item owns the
+remaining product decisions about suspension disposition and preserving useful
+work after cancellation. Both cost real work on the `living-memory` run (14
+Drive runs, 20 tasks) and make long detached runs unsafe to leave unattended on
+a laptop.
 
-- **Heartbeat-aware timeout.** `TASK-609` (60 min) and `TASK-610` (120 min) both failed as "timed out" while the machine was asleep. `TASK-610`'s heartbeat never advanced past `spawn_started` and it produced zero file changes in two hours; it then finished in ~10 minutes once the machine was awake. The failure presents as a task or backend fault, so the operator diagnoses the wrong thing. Treat a non-advancing heartbeat as distinct from elapsed wall-clock: pause the clock, or report "no heartbeat progress" as its own outcome
+- **Host-suspension product semantics.** `TASK-609` (60 min) and `TASK-610` (120 min) both failed as "timed out" while the machine was asleep. `TASK-610`'s heartbeat never advanced past `spawn_started` and it produced zero file changes in two hours; it then finished in ~10 minutes once the machine was awake. `execution-liveness` now records and rebases a detected clock discontinuity so it cannot manufacture worker idleness; this item decides the Drive-facing outcome, reporting, and resume experience for that interval
 - **Salvage on timeout.** `TASK-609`'s worker had every substantive AC green but died before the mandatory `types.ts` re-pin and formatting. Drive committed nothing, so a rerun would have redone ~1160 correct lines; the coordinator salvaged it by hand. Commit worker output as WIP on timeout, or grant a finalization grace window, so a resume can complete rather than restart — finalization is cheap and mechanical, and discarding a whole task for missing it is the most expensive possible failure mode
 - Same family as the shipped-but-open `verified_commit_failed` / resume-finalize gap in `missions/reviews/drive-improvement-observations-artifact-format-redesign.md`: work that succeeded is lost because finalization did not
 - Evidence: `missions/reviews/improvements/living-memory-implementation.md` (14 run IDs)
-- Cross-links: `drive-envelope` (same orchestration seam) · `autonomy` (unattended runs are exactly where a wall-clock lie is unrecoverable) · `factory-evals` (timeout and heartbeat outcomes are scoreboard signals)
+- Cross-links: `execution-liveness` (owns the shared attempt contract) · `drive-envelope` (same orchestration seam) · `autonomy` (unattended runs are exactly where a wall-clock lie is unrecoverable) · `factory-evals` (timeout and heartbeat outcomes are scoreboard signals)
 
 ### `deliverable-completeness-gates`: Gates That Notice What The Backlog Never Named
 
@@ -301,6 +343,10 @@ Two Drive behaviours that cost real work on the `living-memory-fidelity` run (11
 ### `qm-chain-safety`: The Quality Manager Chain Writes Outside Its Plan
 
 The QM chain has now destroyed committed work product on an unrelated plan at least twice, and its findings need triage before any is acted on.
+
+This is independent from `execution-liveness`: bounded attempts prevent silent
+forever-runs but do not make shared review filenames safe or validate findings
+against the current diff.
 
 - **It overwrites review records it did not create.** On the `living-memory-fidelity` run it wrote its findings into `missions/reviews/{performance,security,ux}-review-round-1.md` — the *parent* plan's records — replacing their content (158 insertions, 298 deletions). Recovered by preserving the new content, restoring the tracked files, and relocating the findings to `missions/reviews/qm/`. The same behaviour is recorded independently in the `analysis-capability-runtime` distillation, where it clobbered `planning-system-hardening`'s artifacts. Give the chain an explicit plan-scoped output path, or have it refuse to modify a file it did not create
 - **It cannot run concurrently with a codex review.** Launched together in the background, both were killed by the OS for memory exhaustion — the QM produced zero output and codex produced 1.1 MB then died. Either make the sequential ordering explicit and enforced, or make the panel's footprint bounded

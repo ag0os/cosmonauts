@@ -6,9 +6,9 @@ an agent or domain declares its wake conditions, and a host fires them —
 on an interval, after a delay, on an event/condition, or as a re-arming
 always-on loop — with state carried across wakes and without wasteful or
 noisy empty cycles. It is deliberately domain-agnostic plumbing: the same
-substrate later powers the executive assistant and ambient Cosmo, and it
-satisfies the orchestration runtime's deferred scheduler-form seam from the
-always-on side (one host, not two daemons).
+substrate later powers the executive assistant and ambient Cosmo. It is the
+autonomy-side service that may share a future host process with orchestration;
+it does not own orchestration attempts, coordinator loops, or run state.
 
 Per the 2026-07-17 ◆reassess decision this ships as infrastructure,
 **in-process only** (wakes live and die with a running cosmonauts process)
@@ -44,7 +44,7 @@ declared times. Each consequential wake leaves an episode record — the
 episodic log is the wake-state, so "what did the host do and why" is answered
 the same way as any other memory question.
 
-**Cost discipline (the `heartbeat` value):** a wake that finds nothing to do
+**Cost discipline (skip-empty wakes):** a wake that finds nothing to do
 is skipped silently — no user-facing noise, no episode spam, no payload cost.
 Duplicate pending wakes dedup. The human never sees a stream of empty ticks.
 
@@ -83,6 +83,9 @@ next rung, not this plan.)
   honors its schedule across the restart).
 - Trigger declaration, the vocabulary, the gate, and the wake-state contract
   are documented.
+- Payloads are requested through orchestration's control boundary; the autonomy
+  host never launches a backend or mutates run attempts, leases, deadlines,
+  cancellation, or terminal state directly.
 
 ## Scope
 
@@ -104,8 +107,9 @@ Excluded:
 - Governance (trust tiers, caps, steering channel — autonomy W3); v1 payloads
   are the lightest-governance kind (dreaming, checks on machine state).
 - Executive assistant, ambient Cosmo, channels/transports.
-- Orchestration's durable-coordinator-loops themselves — this plan delivers
-  the shared host seam they will use, not the loops.
+- Orchestration's durable-coordinator-loops, attempt ownership, deadlines, and
+  cancellation. This plan delivers only the autonomy-side in-process host
+  service; future process sharing remains an explicit integration step.
 
 ## Assumptions
 
@@ -127,9 +131,9 @@ Excluded:
 
 - Declaration schema and its home: agent definition vs domain manifest vs
   both (an open decision named in the source-of-truth doc).
-- Is the host the orchestration scheduler process or a sibling sharing the
-  store? The doc leans "same process" — the planner should confirm against
-  the current durable-runtime code rather than re-litigate on paper.
+- Which long-lived process first hosts the in-process autonomy service, and what
+  public orchestration command/event seam it uses. Even if the same process is
+  selected, the episodic wake-state and orchestration run store stay distinct.
 - Retry policy shape: fixed small N with backoff, or per-trigger declared?
 - What, if anything, of the always-on loop form is worth demonstrating in v1
   beyond interval + one-shot + condition (the loop is the least-needed form
