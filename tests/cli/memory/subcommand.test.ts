@@ -188,7 +188,7 @@ describe("memory owner CLI", () => {
 		const home = join(tmp.path, "real-corpus-copy-home");
 		const userCosmonautsRoot = join(home, ".cosmonauts");
 		const expectedCorpusDigest =
-			"adc3ef70a5e75cad8813db9a3ab954d4da84ebfeafbb75703529048007469932";
+			"1cf7a0706f7e22d8cd7079f3531f1ad1f5a51bf45f0ad7c436750fa122ffe2a9";
 
 		const sourceBefore = await corpusSnapshot(sourceKnowledgeRoot);
 		expect(sourceBefore).toMatchObject({

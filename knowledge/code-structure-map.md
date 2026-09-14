@@ -139,7 +139,7 @@ Surfaces:
   **`setsid` double-fork daemon** so the orchestrator reparents to PID 1 in its own
   session, immune to the harness. The framework-side fix landed separately as
   `Separate detached launch from result waiting`. See
-  `memory/drive-resilience-state-model.md`.
+  `knowledge/drive-resilience-state-model.md`.
 - **Recovering a dead mid-task run.** The interrupted task is left `In Progress`
   and its worktree is either *complete-but-uncommitted* (Drive died before its
   finalize/commit step) or *empty*. Verify the partial work green, then either
@@ -150,7 +150,7 @@ Surfaces:
   deliverable — the plan-local `analysis-tools-audit.md` (B-001's evidence) — was
   left **untracked** after the worker wrote it; committed manually. Same class of
   boundary artifact as the `missions/tasks/config.json` note in
-  `memory/task-id-system.md`. Always `git status` after a Drive run.
+  `knowledge/task-id-system.md`. Always `git status` after a Drive run.
 - **The quality-manager under-remediated.** It found and fixed real issues
   (typecheck, config-in-fingerprint, fallow public surface) across REVIEW-FIX
   commits, but signed off **merge-ready** while its own round-2 review had flagged

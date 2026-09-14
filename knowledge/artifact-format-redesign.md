@@ -44,7 +44,7 @@ Cosmonauts now has a canonical work-artifact system centered on `/skill:work-art
 ## Files Changed
 - `domains/shared/skills/work-artifacts/SKILL.md` and `domains/shared/skills/work-artifacts/references/*.md` — new canonical shared artifact dispatcher and references for workflow tiers, artifact formats, behavior spine, gate contracts, visual primitives, and examples.
 - `domains/shared/skills/architecture/SKILL.md` — new dispatcher for active architecture records and architecture usefulness rules.
-- `domains/shared/skills/plan/SKILL.md`, `domains/shared/skills/task/SKILL.md`, `bundled/coding/coding/skills/tdd/SKILL.md` — refactored toward procedural ownership while routing artifact rules to `work-artifacts`.
+- `domains/shared/skills/plan/SKILL.md`, `domains/shared/skills/task/SKILL.md`, `bundled/coding/skills/tdd/SKILL.md` — refactored toward procedural ownership while routing artifact rules to `work-artifacts`.
 - `bundled/coding/coding/prompts/{spec-writer,planner,task-manager,worker,plan-reviewer,reviewer,verifier,integration-verifier,quality-manager}.md` — updated producer and consumer prompt routing for tiers, behavior markers, architecture context, gate ladders, and scoped artifact review.
 - `bundled/coding/coding/agents/{planner,spec-writer,task-manager,plan-reviewer}.ts` — explicit allowlists updated so artifact-producing and plan-review agents can load shared artifact skills.
 - `tests/prompts/*` and `tests/agents/skills.test.ts` — text-contract coverage added/updated for all B-001 through B-020 behaviors and explicit skill availability.

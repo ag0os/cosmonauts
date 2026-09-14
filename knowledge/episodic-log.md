@@ -129,5 +129,5 @@ change is optional `RetrievedMemoryRecord.source`.
   `bun link`ed to the repo, so `cosmonauts task create` in a scratch project with
   `episodicLog.enabled` exercises the real branch code end to end.
 - **7 enabled-only detached-terminal/resume edge cases deferred** — see
-  `missions/plans/episodic-log-detached-hardening/spec.md`; concrete file:line
+  `missions/archive/plans/episodic-log-detached-hardening/spec.md`; concrete file:line
   evidence in the archived `missions/archive/plans/episodic-log/qm-review.md`.
