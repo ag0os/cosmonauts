@@ -135,14 +135,21 @@ export async function inspectKnowledgeSurfaceBackfill(options: {
 
 	const inventory = await readFrozenInventory(projectRoot);
 	const archivedPlanSlugs = await listArchivedPlanSlugs(projectRoot);
-	if (!sameStrings(archivedPlanSlugs, inventory.archivedPlanSlugs)) {
+	const archivedOnDisk = new Set(archivedPlanSlugs);
+	const vanished = inventory.archivedPlanSlugs.filter(
+		(slug) => !archivedOnDisk.has(slug),
+	);
+	if (vanished.length > 0) {
 		throw inventoryAmendmentError(
-			"archived plan directories no longer match the frozen inventory",
+			`frozen archived plan directories are no longer present in the repository: ${vanished.join(", ")}`,
 		);
 	}
+	// Plans archived after the inventory was frozen are outside this completed
+	// backfill's batch, so a growing archive is not drift.
+	const frozenArchived = new Set(inventory.archivedPlanSlugs);
 	const distilled = new Set(inventory.distilledSlugs);
 	const derivedMissing = archivedPlanSlugs.filter(
-		(slug) => !distilled.has(slug),
+		(slug) => frozenArchived.has(slug) && !distilled.has(slug),
 	);
 	if (!sameStrings(derivedMissing, inventory.missingSlugs)) {
 		throw inventoryAmendmentError(
@@ -173,6 +180,20 @@ export async function runKnowledgeSurfaceBackfill(
 ): Promise<KnowledgeSurfaceBackfillResult> {
 	throwIfAborted(options.signal);
 	const projectRoot = resolve(options.projectRoot);
+	// Executing the batch requires the archive to match the freeze exactly: a
+	// plan archived since then would belong in a batch this inventory cannot
+	// describe. Auditing the frozen batch tolerates a grown archive.
+	const inventory = await readFrozenInventory(projectRoot);
+	if (
+		!sameStrings(
+			await listArchivedPlanSlugs(projectRoot),
+			inventory.archivedPlanSlugs,
+		)
+	) {
+		throw inventoryAmendmentError(
+			"archived plan directories no longer match the frozen inventory",
+		);
+	}
 	const inspected = await inspectKnowledgeSurfaceBackfill({ projectRoot });
 	const now = options.now ?? (() => new Date());
 	const configIO = options.configIO ?? defaultConfigIO;

@@ -272,6 +272,33 @@ describe("knowledge surface recoverable backfill", () => {
 		await expectMissing(fixture.snapshotPath);
 	});
 
+	test("audits the frozen batch after later plans are archived", async () => {
+		const fixture = await createBackfillFixture(["alpha-plan"]);
+		await mkdir(
+			join(fixture.root, "missions", "archive", "plans", "archived-later"),
+			{ recursive: true },
+		);
+
+		const inspected = await inspectKnowledgeSurfaceBackfill({
+			projectRoot: fixture.root,
+		});
+
+		expect(inspected.missingSlugs).toEqual(["alpha-plan"]);
+		expect(inspected.sourceInputs.every((input) => input.verified)).toBe(true);
+	});
+
+	test("refuses to audit when a frozen archived plan disappears", async () => {
+		const fixture = await createBackfillFixture(["alpha-plan", "beta-plan"]);
+		await rm(join(fixture.root, "missions", "archive", "plans", "beta-plan"), {
+			recursive: true,
+			force: true,
+		});
+
+		await expect(
+			inspectKnowledgeSurfaceBackfill({ projectRoot: fixture.root }),
+		).rejects.toThrow(/no longer present in the repository: beta-plan/);
+	});
+
 	test("restores unchanged temporary config and removes all same-batch proposals after failure", async () => {
 		const fixture = await createBackfillFixture(["alpha-plan", "beta-plan"]);
 		const originalConfig = await readFile(fixture.configPath);
