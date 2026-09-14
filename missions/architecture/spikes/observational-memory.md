@@ -25,6 +25,10 @@ internal coordinators instead of relying on external harnesses.
 > §7.1, "ratify all"). §7 lists what remains open. The repository was
 > unchanged by the investigation itself — all trial scaffolding lives outside
 > it (§8).
+>
+> **Adoption design 2026-09-14:** §9 records the human's conversational rulings on
+> how OM is scoped and gated (two settings, switch-as-A/B, coordinators only, ship
+> OFF) for pickup as ROADMAP `observational-memory-adoption` after the quality pause.
 
 ---
 
@@ -559,12 +563,142 @@ not follow it into source that fails our strictness (§7).
 
 ---
 
+## 9. Adoption design — 2026-09-14 (Decided-by: human, in conversation; not yet a spec)
+
+Recorded so the design survives the quality pause and can be lifted straight into a
+`spec.md` when the ROADMAP item `observational-memory-adoption` is picked up. Every
+ruling below was stated by the human on 2026-09-14 in a design dialogue and is
+**conversational, not ratified as spec** — the spec's `## Intent` must restate it
+for ratification. D-1..D-7 (§6) remain the ratified base; nothing here reverses them.
+D-7 ("do not adopt yet; re-decide after the §5 A/B") is *refined*, not overturned: the
+A/B becomes a product capability instead of a one-off run (9.3).
+
+### 9.1 A finding that reshapes the question: `AgentDefinition.session` is dead config
+
+`AgentDefinition.session: "ephemeral" | "persistent"` (`lib/agents/types.ts:16,39`) is
+declared, set on exactly two agents (`main/cosmo`, `coding/cody`), and **read by
+nothing at runtime** (`grep` for `def.session` / `definition.session` / `"persistent"`
+outside the type and the two definitions returns no consumer). Persistence is decided
+entirely by invocation:
+
+| Path | Who decides | Result |
+| --- | --- | --- |
+| Interactive TUI | `cli/main.ts:666` hard-codes `persistent: true` | file-backed |
+| Print mode, `init` | `cli/main.ts:598,630` hard-code `persistent: false` | in-memory |
+| Spawned agent | `lib/orchestration/session-factory.ts:106` checks `planSlug` only | file-backed iff plan-linked |
+
+So §3.4's "print mode overrides the agent definition" is generous: there is nothing to
+override. Persistence is *already* a per-invocation property; the per-agent field is
+decoration. Any reading of `session: "persistent"` as a proxy for "long-running and
+interactive" (the bias that produced the "OM rides with persistence" framing) rests on a
+field the runtime ignores.
+
+### 9.2 Ruling: persistence and OM are two settings, not one
+
+**Persistence** is whether the session ledger survives the process. **OM** is what gets
+written into that ledger each turn and what compaction renders. D-6 already separates
+the two axes (across-run continuity vs within-run extension); 9.1 shows the code
+already treats the first as invocation-decided. OM therefore becomes a *second*
+invocation-level switch, with a per-agent default, rather than a consequence of
+persistence. Owner's stated reasons: (a) an end-user A/B is only possible if the two
+variables move independently — "my normal long session" vs "the same session with OM";
+(b) per-session opt-out for cost, noise, or because something else is under test;
+(c) they are merely correlated, not the same thing.
+
+Because OM stores nothing outside the Pi session ledger (§2.2), all four cells are
+coherent without further design:
+
+| Persistence | OM | Meaning |
+| --- | --- | --- |
+| ephemeral | off | today's workers — unchanged |
+| ephemeral | on | within-run context extension only; memory dies with the process, which is all it was for. The natural case for `coordinator` on a long chain/Drive run |
+| persistent | off | today's cosmo/cody with plain native compaction — **the A/B control**, available to every user |
+| persistent | on | the file-backed ledger carries observations/reflections, so `--continue` resumes them (OM reads back by scanning `getBranch()`, §2.2). Across-run continuity falls out of persistence for free |
+
+"Should print mode ever be persistent" is a separate switch nobody has asked for; it
+is not an OM question and is out of scope here.
+
+### 9.3 Ruling: the switch *is* the A/B; ship it OFF by default
+
+The §5 experiment stays the gate for flipping any default ON, but it is run **through
+the shipped switch**, not through one-off trial scaffolding (§8). Adoption means: OM is
+in the repo, every default is OFF, and the toggle is the instrument — anyone can run
+"same work, OM on vs off" in print mode and compare compaction count, post-compaction
+task coherence, and `recall_evidence` usage. Cost (§7, still unmeasured: three
+background workers, `agentMaxTurns` 8, per turn) is accepted as *unknown at ship time*
+precisely because the switch bounds the exposure: nothing spends until someone turns
+it on. Measuring cost is the first thing the switch is used for.
+
+### 9.4 Scope: interactive sessions and coordinators, never fan-out workers
+
+OM is for interactive sessions and coordinators of any kind — persistent (`cosmo`,
+`cody`) and ephemeral (`coordinator`) alike. Workers, reviewers, planners and the other
+17 ephemeral agents do not get it: cosmonauts already preserves context by spreading
+implementation across many short worker runs; the long-context need is coordination.
+Consequence (inference, not ruling): §7's "multi-agent semantics undesigned" blocker
+*dissolves* rather than needing a solution — no fanned-out worker ever runs OM, so
+there is no chain/Drive fan-out semantics to design.
+
+### 9.5 Proposed shape (agent's recommendation, accepted in conversation — re-openable in the spec)
+
+1. **Persistence stays invocation-decided**, as it already is. The dead `session` field
+   is either dropped or made an honoured default; recommendation is *drop*, since
+   honouring it would silently change what `cosmonauts -p -a cody` does today.
+2. **Per-agent default = membership in `AgentDefinition.extensions`** once an
+   `observational-memory` shared extension exists — the exact precedent of
+   `agent-memory` / `architecture-memory` in `lib/agents/session-assembly.ts:168-190`.
+   `coordinator`, `cosmo`, `cody` list it; nothing else does.
+3. **Per-invocation override**, three surfaces, in delivery order:
+   - a CLI flag pair (`--om` / `--no-om`) — first, because it is what makes the
+     print-mode A/B scriptable;
+   - a project-config gate key shipped OFF (mirror of `knowledgeSurface.enabled`),
+     so listing the extension does nothing until the project opts in;
+   - an in-session toggle command, built as a shared extension on the
+     `agent-switch` pattern (`domains/shared/extensions/agent-switch`).
+   Precedence: flag > in-session toggle > project config > agent definition.
+4. **Adapter, not fork** (D-3, LM-D-003 unchanged): OM loaded unmodified behind an
+   adapter that renames `recall` → `recall_evidence` (§4.1). The Reflector →
+   proposals source (D-5) is **not** part of this item; it belongs to `living-memory`'s
+   pluggable-sources seam and is listed there.
+
+### 9.6 Still open — for the spec to rule
+
+- **Packaging.** OM ships raw `.ts` that fails our `noUncheckedIndexedAccess` (25
+  errors at 3.0.4, §7). The trial adapter dodged it with a computed import specifier.
+  Options: plain npm dependency with the type boundary at the adapter (the trial's
+  shape, made deliberate); vendored copy; fork. This is the *same class* of question
+  `vendored-skills` asks about third-party skills (adopting upstream artifacts as
+  in-repo source, provenance across two hops, editability) — but this item is **not
+  blocked on it**: the npm-dependency option needs no vendoring ruling at all. The
+  spec should pick one and say why.
+- `master` vs `3.0.4` (§7) — master uses `agent_settled` and may interact differently
+  with our teardown; pick a pin.
+- The stale-ctx defect (§3.3a) — reproduced, not diagnosed; an OFF-by-default ship
+  does not require fixing it first, but the A/B does, since it discards work.
+- Whether `coordinator` defaults ON before a cost number exists, or only after the
+  first measured A/B.
+
+### 9.7 Sequencing
+
+Human-stated 2026-09-14: work on this **after the quality pause** (`test-health-audit`
+→ `project-health-audit`), and not as a plan yet. Recorded as ROADMAP item
+`observational-memory-adoption`, placed immediately after the two audits with a
+"confirm against the resumed dependency order" note, so the pause and the spine are
+both respected. Per LM-D-006 this is ladder step (4) "A/B, then fork/L1": steps
+(1)–(3) executed 2026-09-01..09-09.
+
+---
+
 ## Cross-links
 
 - `missions/architecture/knowledge-and-memory.md` — §7 (the pump), §10.1 (the two
   dispositions this spike addresses), §11 (proposals-area ruling / INV-1)
-- `ROADMAP.md` — `observational-memory` (D-1/D-2 amend it), `knowledge-adoption`
-  (§5's experiment feeds its two open bullets), `vendored-skills` (§7 packaging)
+- `ROADMAP.md` — `observational-memory` (closed; D-1/D-2 amended it),
+  `observational-memory-adoption` (§9), `knowledge-adoption` (§5's experiment feeds
+  its two open bullets), `vendored-skills` (§7/§9.6 packaging — same question class,
+  not a blocker)
+- `lib/agents/types.ts`, `cli/main.ts`, `lib/orchestration/session-factory.ts` — §9.1
+  persistence is invocation-decided; `AgentDefinition.session` has no consumer
 - `knowledge/observability/gotcha-do-not-assume-automatic-compaction-works-for-ephemeral-sessions-9608b54dbb0d.md`
   — §3.4 is this gotcha, now load-bearing
 - `domains/shared/skills/pi/SKILL.md` — written against 0.80.6; updates with any bump (D-2)

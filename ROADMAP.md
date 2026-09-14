@@ -52,6 +52,19 @@ After `test-health-audit`, use the shipped static-analysis capabilities to asses
 - Trace and confirm findings before remediation, resolve real defects or record narrowly justified baselines, and rerun the supported analyses plus the full test, lint, and typecheck gates
 - Produce a reproducible whole-project health record that future work can compare against; consume the existing analysis surface without expanding providers or duplicating the separate `analysis-tools` and `worker-inloop-analysis` roadmap scopes
 
+### `observational-memory-adoption`: OM as a Switch, Shipped Off
+
+*Added 2026-09-14 from a human design dialogue; placement immediately after the quality pause is the human's stated preference ("probably after the pause") — confirm against the resumed dependency order (`execution-liveness` → `drive-envelope`) when the pause lifts. Off by default and neutral to the portable-harness spine, so it blocks nothing and nothing blocks it.*
+
+Adopt `pi-observational-memory` behind an adapter as an opt-in switch for interactive sessions and coordinators, so the spike-§5 A/B becomes something any user can run rather than a one-off experiment.
+
+- Persistence and OM are two independent settings: persistence stays invocation-decided (it already is — `AgentDefinition.session` has no runtime consumer; decide whether to drop it), OM is a second switch with a per-agent default via `extensions` membership (`coordinator`, `cosmo`, `cody`) and a per-invocation override — CLI flag pair first, project-config gate shipped OFF, in-session toggle last
+- Every default ships OFF; the switch is the A/B instrument and the first thing it measures is the unmeasured per-turn cost of the three background workers
+- Workers and every other fan-out agent never get OM — no multi-agent semantics to design
+- Adapter, not fork: OM loaded unmodified, `recall` renamed to `recall_evidence`; the Reflector→proposals source stays with `living-memory`
+- Spec must rule packaging (npm dependency with the type boundary at the adapter vs vendored vs fork — same question class as `vendored-skills`, not blocked on it), the `master` vs `3.0.4` pin, and whether the stale-ctx defect is fixed before the A/B
+- Source of truth: `missions/architecture/spikes/observational-memory.md` §9 (design), §5 (the A/B), §6 D-1..D-7 (ratified base)
+
 ### `drive-envelope`: Drive as a Free Envelope
 
 Decouple Drive's value (isolation, gates, session capture, reporting) from the plan+task ceremony so one-off and externally-triggered work can use it too.

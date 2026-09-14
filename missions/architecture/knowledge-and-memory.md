@@ -426,7 +426,9 @@ infrastructure-first stance stands; the queue changes as follows:
      and whether a continuously-maintained observation log subsumes working
      state. *(ROADMAP: `observational-memory`.)* *(Completed 2026-08-28 —
      spike `missions/architecture/spikes/observational-memory.md`; all seven
-     dispositions ratified 2026-09-01; see §10.2.)*
+     dispositions ratified 2026-09-01; see §10.2. Adoption design recorded
+     2026-09-14 in spike §9 → ROADMAP `observational-memory-adoption`,
+     queued after the quality pause.)*
 3. **② Working state — parked pending the OM investigation.** *Supersedes
    "small; could ride with 1":* an observation log may provide "where we left
    off" for free; build the singleton only if the investigation says
