@@ -65,16 +65,16 @@ Adopt `pi-observational-memory` behind an adapter as an opt-in switch for intera
 - Spec must rule packaging (npm dependency with the type boundary at the adapter vs vendored vs fork — same question class as `vendored-skills`, not blocked on it), the `master` vs `3.0.4` pin, and whether the stale-ctx defect is fixed before the A/B
 - Source of truth: `missions/architecture/spikes/observational-memory.md` §9 (design), §5 (the A/B), §6 D-1..D-7 (ratified base)
 
-### `drive-envelope`: Drive as a Free Envelope
+### `drive-envelope`: Shared Durable Execution Envelope
 
-Decouple Drive's value (isolation, gates, session capture, reporting) from the plan+task ceremony so one-off and externally-triggered work can use it too.
+Extract a backend-neutral, one-shot execution envelope from Drive's proven run machinery so plan-backed Drive, free-form briefs, and internal callers can share durable execution without sharing Drive task policy.
 
-- "Run N drive agents on X" from a prompt/brief — no plan or task required; plan-backed Drive unchanged
-- Establish a coordinator-neutral run-control contract for start/attach, status/watch, messaging or artifact submission, approval, cancellation, and later graph decisions; the CLI is its first adapter, not its definition
-- Callable internally (Pi-hosted agent or chain) and externally (Claude Code, Codex, or any future harness adapter) without changing Drive policy
-- Coordinator host, coordinator policy, worker execution transport, and model provider are independent selections; compatibility is explicit and incompatible combinations fail before execution
-- Free-form runs still record sessions and outcomes, so they feed the memory loop like plan-backed runs
-- Source of truth: `missions/architecture/orchestration-future.md` (extends the `runStart` seam)
+- Run one or N workers from a brief without creating a plan or tasks; existing plan-backed Drive behavior remains unchanged
+- Establish a coordinator-neutral contract for start/attach, status/watch, input and artifact submission, approval, cancellation, and terminal reporting; the CLI is its first adapter, not its definition
+- Keep coordinator host, orchestration frontend and policy, worker execution transport, and model provider independently selectable; validate capabilities and reject incompatible combinations before execution
+- Share lower-level launch, prompt materialization, output and artifact capture, cancellation, timeout, and cleanup mechanics while Drive retains task selection, gates, state transitions, commits, and recovery; chains remain role/handoff pipelines and never call the full Drive loop
+- Persist outcomes, reports, artifacts, and available session evidence for recovery and memory; routers, durable nesting and loops, per-stage chain configuration, and parallel mutable execution remain later slices
+- Source of truth: `missions/architecture/orchestration-future.md`
 
 ### `vendored-skills`: Cosmonauts Carries Third-Party Skills Too
 
