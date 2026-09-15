@@ -35,15 +35,6 @@ or new feature development, complete `test-health-audit`, then
 portable-harness queues; once both establish trustworthy baselines, resume the
 existing dependency order.
 
-### `test-health-audit`: Make the Test Suite Trustworthy
-
-Establish a test-evidence method and use it to audit and remediate the existing suite so green tests provide meaningful development guardrails.
-
-- Adapt the deintroverter study's evidence-chain and graduated-verdict approach to Cosmonauts tests, covering execution integrity, production or artifact grounding, contract alignment, fault sensitivity, composition realism, and determinism
-- Inventory every test and explicit gap; identify test-local assertions, mock-supplied outcomes, missing consumer seams or composition roots, wrong-side expectations, undiscovered tests, skips, and todos without treating heuristic findings as automatic failures
-- Calibrate the method against known historical false-confidence cases, then use targeted mutation probes to prove that critical tests fail for the defects they claim to prevent
-- Remediate confirmed weaknesses and leave a documented, repeatable assessment method plus a trustworthy suite baseline; cross-link `behavioral-regression` and `deliverable-completeness-gates` rather than duplicating their concerns
-
 ### `project-health-audit`: Establish a Clean Static-Health Baseline
 
 After `test-health-audit`, use the shipped static-analysis capabilities to assess and remediate the whole repository before feature development resumes.
