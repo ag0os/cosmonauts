@@ -21,6 +21,6 @@ This checkpoint independently verifies derivation provenance before calibration 
 <!-- AC:BEGIN -->
 - [ ] #1 I1 independently confirms that every inventory entry traces to cited non-test authority and that no test, behavior marker, coverage artifact, or census identity defined an entry.
 - [ ] #2 Every enumerated shipped surface and authority group has a positive coverage statement or explicit unavailable/blocked evidence; missing architecture-map shards remain visible rather than clean.
-- [ ] #3 Every entry has verifiable authority, consequence-based criticality, applicable boundary set, and path/caller/defect axes, and human judgments carry human-reviewed provenance.
+- [ ] #3 Every entry has verifiable authority, consequence-based criticality, applicable boundary set, and path/caller/defect axes, and every judgment carries agent-assessed provenance (agent id, model identifier and version, consulted authorities).
 - [ ] #4 The current epoch’s inventory and source-log digests are frozen and pass schema/freshness plus B-006 artifact-conformance checks.
 <!-- AC:END -->

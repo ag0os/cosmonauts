@@ -21,6 +21,6 @@ This checkpoint materializes the source side of the current epoch before any hea
 <!-- AC:BEGIN -->
 - [ ] #1 C1 records a current-epoch source census covering all current `tests/**/*.test.ts` declarations, parameterized case expectations, source spans, and explicit unsupported/dynamic-registration limitations, without issuing a health or clean conclusion.
 - [ ] #2 The current epoch index/immutable manifest and raw source evidence are valid at the explicit audit root, and a missing or stale census digest prevents unit preparation.
-- [ ] #3 `docs/test-health-audit.md` v1 is available to stage-4-and-later reviewers with the explicit-root interface, assessment rubric, consent boundary, and rerun rules, while `package.json` remains unchanged.
+- [ ] #3 `docs/test-health-audit.md` v1 is available to stage-4-and-later assessing agents with the explicit-root interface, assessment rubric, consent boundary, and rerun rules, while `package.json` remains unchanged.
 - [ ] #4 Bound correctness and B-002 artifact-conformance evidence pass at this revision; the mutation rung remains explicitly unbound and not generically enforced.
 <!-- AC:END -->

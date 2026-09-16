@@ -2,14 +2,16 @@
 title: Test Health Audit
 status: active
 createdAt: '2026-09-15T21:15:54.575Z'
-updatedAt: '2026-09-16T02:35:00.000Z'
+updatedAt: '2026-09-16T04:10:00.000Z'
 ---
 
 ## Overview
 
 This plan implements the ratified quality pause in `spec.md`: establish a repeatable test-health assessment method, apply it to the complete current Vitest suite, remediate confirmed weaknesses or remove them from claimed guardrail evidence, and present a revision-pinned baseline for project-owner ratification. It is planned quality/refactor work, not a feature.
 
-Repository exploration on 2026-09-15 enumerated 267 `tests/**/*.test.ts` files. File count is only the starting census: the audit batches by auditable test declarations and relevant source span, and permits subdivisions inside very large test files. Generated objective evidence plus bounded, resumable human-review work units avoid asking one agent to hand-write the suite’s profiles in one session.
+Repository exploration on 2026-09-15 enumerated 267 `tests/**/*.test.ts` files. File count is only the starting census: the audit batches by auditable test declarations and relevant source span, and permits subdivisions inside very large test files. Generated objective evidence plus bounded, resumable assessment work units avoid asking one agent to hold the whole suite in one context.
+
+The audit runs **unattended** from census to eligibility (spec `INV-008`, `AC-016`). Every health judgment is produced by an assessing agent from the project’s ratified authorities and curated knowledge, recorded with its evidence and assessor provenance; calibration is what licenses those judgments. The project owner is contacted exactly once, at the terminal ratification, and receives a single packet: the eligibility record, the accepted residual uncertainty, and any contract questions that turned out to lack a ratified authority. No earlier stage stops for a human.
 
 Evidence lives under `missions/plans/test-health-audit/audit/` and archives with the plan. The repeatable method and repo-local audit utility remain under `docs/` and `scripts/`. The work cross-links, but does not implement, `ROADMAP.md` items `behavioral-regression` and `deliverable-completeness-gates`. It does not start `project-health-audit`; that remains the next quality-pause stage. Active-plan and feature work remains paused throughout this plan and the subsequent gate required by the roadmap.
 
@@ -39,7 +41,8 @@ Governing sources:
 - `docs/testing.md` owns canonical structure, mock-strategy order, and “Tests As Evidence.” A test pinning ratified behavior changes only after its governing ground changes through the deviation protocol.
 - `AGENTS.md` owns Pi-First, TypeScript/test conventions, and project verification gates. Pi has no repository-test audit facility; use the pinned Vitest 3.2.4 public reporter contract and the already-direct TypeScript dependency rather than adding a provider or framework.
 - `missions/architecture/code-structure-map.md` defines the derived map as mechanical evidence. The live architecture-map reader and `memory/architecture/` currently expose no module shards, so map evidence is unavailable, never clean.
-- `domains/shared/skills/work-artifacts/references/deviation-protocol.md` owns mutability, deviation routing, and human-only ratification.
+- `domains/shared/skills/work-artifacts/references/deviation-protocol.md` owns mutability, deviation routing, and human-only ratification. Ratification stays human-only; *assessment* is not ratification, so agent-assessed conclusions are ordinary derived work under this protocol.
+- Spec `INV-008`, `AC-016`, and ratified `D-005`/`D-006` (user ratified, 2026-09-16) own the autonomy boundary: agents assess, the human decides once, and an expectation may be corrected only against a cited ratified authority.
 
 Verified execution surfaces:
 
@@ -56,10 +59,10 @@ Verified calibration evidence includes the no-runtime-consumer `AgentDefinition.
 These ratified assumptions are settled and carried verbatim:
 
 - The existing Bun and Vitest commands are the initial supported execution surface, but the audit verifies rather than assumes their completeness.
-- Ratified specifications, architecture decisions, and explicit human rulings outrank test expectations and current implementation behavior. When authoritative sources conflict or are absent, alignment remains unresolved.
+- Ratified specifications, architecture decisions, explicit human rulings, and the project's curated knowledge records outrank test expectations and current implementation behavior. An assessing agent is expected to consult them directly. When authoritative sources conflict or are absent, alignment remains unresolved.
 - Criticality is based on user impact, data or artifact durability, concurrency, recovery, security, irreversible effects, and architectural dependency—not coverage percentage.
 - Mocks, fixtures, synthetic projects, and isolated units are legitimate when their role and limitations are explicit and deeper risks are covered elsewhere.
-- An objective observation may still require human judgment about significance; automation does not convert a heuristic into a fact.
+- An objective observation may still require judgment about significance, and an agent supplies that judgment on the record; automation does not convert a heuristic into a fact, and calling a conclusion agent-assessed does not make it objective.
 - The trustworthy baseline is revision-specific and records enough context to be repeated after material production, test, runner, or configuration changes.
 - The later `project-health-audit` consumes the trustworthy test baseline and the already shipped analysis capabilities; it does not need to be pulled forward into this work.
 
@@ -113,10 +116,10 @@ These ratified assumptions are settled and carried verbatim:
   - Why: the historical probe destroyed uncommitted fixes.
   - Decided by: planner-proposed, 2026-09-15.
 
-- **D-009 - Objective observations and heuristic judgments use separate lanes** *(schema ownership clarified by D-015, 2026-09-15)*
-  - Decision: only objective integrity failures may fail the audit command. Role, contract authority, evidence-chain adequacy, criticality, disposition, and portfolio sufficiency remain human-reviewed; heuristic candidates never become CI failures here.
-  - Alternatives: gate every detectable smell; make all evidence prose-only.
-  - Why: preserves `INV-006` while retaining repeatability.
+- **D-009 - Mechanical observations and reasoned judgments use separate lanes** *(schema ownership clarified by D-015; lane renamed for agent assessment by D-027, 2026-09-16)*
+  - Decision: only objective integrity failures may fail the audit command. Role, contract authority, evidence-chain adequacy, criticality, disposition, and portfolio sufficiency are `agent-assessed-judgment` values — never mechanical collector defaults, and never CI failures here.
+  - Alternatives: gate every detectable smell; make all evidence prose-only; require human review of each judgment.
+  - Why: preserves `INV-006` as amended — the lane split is between *mechanical observation* and *reasoned judgment*, not between machine and human. A collector that silently defaults a judgment would launder an unassessed field into evidence; an agent that records its reasoning does not.
   - Decided by: planner-proposed, 2026-09-15.
 
 - **D-010 - Automation establishes eligibility, never ratification** *(revision/digest transition clarified by D-013, 2026-09-15)*
@@ -126,7 +129,7 @@ These ratified assumptions are settled and carried verbatim:
   - Decided by: planner-proposed, 2026-09-15.
 
 - **D-011 - Unknown lifecycle phase remains blocked evidence**
-  - Decision: collect every public Vitest error/result, module error, hook name/event, and stack. Label an error `collection`, `import`, `setup`, `test`, or `teardown` as `observed` only when the public payload directly establishes it; otherwise record `phase: unknown`, basis `blocked`, and an assessment limitation. Stack-based attribution may be a human-reviewed heuristic but cannot replace the blocked objective record.
+  - Decision: collect every public Vitest error/result, module error, hook name/event, and stack. Label an error `collection`, `import`, `setup`, `test`, or `teardown` as `observed` only when the public payload directly establishes it; otherwise record `phase: unknown`, basis `blocked`, and an assessment limitation. Stack-based attribution may be an agent-assessed heuristic but cannot replace the blocked objective record.
   - Alternatives: infer hook phase from event adjacency; promise phase fidelity the 3.2.4 reporter API does not expose; omit the error.
   - Why: addresses `review-1.md PR-001` without narrowing AC-003—every error stays visible and unavailable phase evidence cannot become clean (`INV-005`, `INV-006`).
   - Decided by: planner, addressing review-1.md PR-001, 2026-09-15.
@@ -151,16 +154,16 @@ These ratified assumptions are settled and carried verbatim:
   - Why: addresses `review-1.md PR-005`; the ratified corpus calibrates the method, not vice versa (`AC-009`).
   - Decided by: planner, addressing review-1.md PR-005, 2026-09-15.
 
-- **D-015 - Assessment lane and provenance live on every assessed value**
-  - Decision: identity/runtime facts and every human judgment use an `AssessedValue<T>` envelope with lane, assessor, time/tool version, evidence, and override history. Validators require human-reviewed provenance for role, claim/authority, chain adequacy, non-Execution dimension conclusions, criticality, disposition, and portfolio sufficiency; collectors cannot populate those values as defaults. Execution observations may be objective; heuristic candidates stay separate until reviewed.
-  - Alternatives: one record-level reviewer; infer authorship from evidence basis; label only final recommendations.
+- **D-015 - Assessment lane and provenance live on every assessed value** *(assessor is an agent per D-027, 2026-09-16)*
+  - Decision: identity/runtime facts and every reasoned judgment use an `AssessedValue<T>` envelope with lane, assessor, time/tool version, evidence, and override history. Validators require `agent-assessed-judgment` provenance — agent id plus model identifier and version — for role, claim/authority, chain adequacy, non-Execution dimension conclusions, criticality, disposition, and portfolio sufficiency; mechanical collectors cannot populate those values as defaults. Execution observations may be objective.
+  - Alternatives: one record-level assessor; infer authorship from evidence basis; label only final recommendations.
   - Why: addresses `review-1.md PR-006` and makes D-009 enforceable before parallel work (`INV-006`).
   - Decided by: planner, addressing review-1.md PR-006, 2026-09-15.
 
-- **D-016 - Review work is bounded by identities and source span, not file count**
-  - Decision: generate work units capped at 50 auditable profile identities, 2,500 relevant source lines, and eight source files, whichever is reached first. Oversized files split at top-level/nested suite boundaries, then declaration ranges if one suite remains oversized; each subdivision carries the same file-context/import/helper digest. At most two reviewer sessions run concurrently and write disjoint unit shards. Actual unit count is census-derived; 18 is not assumed.
+- **D-016 - Assessment work is bounded by identities and source span, not file count** *(bound reinterpreted as agent context by D-027, 2026-09-16)*
+  - Decision: generate work units capped at 50 auditable profile identities, 2,500 relevant source lines, and eight source files, whichever is reached first. Oversized files split at top-level/nested suite boundaries, then declaration ranges if one suite remains oversized; each subdivision carries the same file-context/import/helper digest. Assessing-agent sessions write disjoint unit shards; concurrency is bounded by machine resources rather than by human attention, and the recorded memory-pressure incident is the reason to raise it deliberately rather than all at once. Actual unit count is census-derived; 18 is not assumed.
   - Alternatives: D-005’s fifteen-file batches; one entire large file per session; one profile file per test.
-  - Why: addresses `review-1.md PR-007`; current 7,205-, 3,017-, and 2,054-line test callbacks prove file count is not a workload bound.
+  - Why: addresses `review-1.md PR-007`; current 7,205-, 3,017-, and 2,054-line test callbacks prove file count is not a workload bound. Under D-027 the cap sizes an assessing agent's context window and keeps one failed session cheap; it is no longer a human-attention budget.
   - Supersedes: D-005’s at-most-15-file sizing and the claimed 18-session schedule.
   - Decided by: planner, addressing review-1.md PR-007, 2026-09-15.
 
@@ -188,11 +191,12 @@ These ratified assumptions are settled and carried verbatim:
   - Why: calibration is expected to amend the method on a miss, so without this the audit had to mutate an immutable manifest, write evidence against a stale method digest, or wedge after the first miss. Wave batching bounds the human re-review radius that whole-module staleness would otherwise multiply.
   - Decided by: chain plan-reviewer (PR-001) + independent review, 2026-09-16.
 
-- **D-021 - Every unresolved confirmed weakness is ruled on before eligibility** *(Added 2026-09-16 after review)*
-  - Decision: an `unresolved` row of any criticality routes to the human-decision checkpoint before baseline eligibility is evaluated; the ruling either supplies closing authority or classifies the row as excluded from guardrail evidence.
-  - Alternatives: halting only on critical unresolved rows; letting a noncritical unresolved row pass as accepted uncertainty.
-  - Why: baseline condition 5 requires every confirmed weakness to be closed, replaced, removed, or excluded, so a noncritical unresolved row previously failed eligibility and returned to the stage that produced it — a state with no exit. The rejected alternative would weaken ratified AC-012 and needs human approval, not a derived amendment.
-  - Decided by: chain plan-reviewer (PR-004), 2026-09-16.
+- **D-021 - An unresolved row is a batched packet line item, never a run-stopping gate** *(Added 2026-09-16 after review; rewritten the same day on user ruling)*
+  - Decision: a confirmed weakness whose authority is absent or self-contradicting is recorded `unresolved` with its drafted question and the audit **continues**. Unresolved rows accumulate into the ratification packet, where the owner answers them together with the baseline decision. Baseline condition 5 is satisfied for such a row by the recorded, batched question — not by a prior ruling — so eligibility can be reached with unresolved rows present, and `established` still cannot.
+  - Alternatives: routing each unresolved row to a human before eligibility (the first version of this decision); halting only on critical rows; letting an unresolved row pass silently as accepted uncertainty.
+  - Why: the first version made the owner adjudicate item by item, which is exactly what the user rejected on 2026-09-16 — the plan's purpose is a system that decides test health, not a decision queue. Batching preserves the no-exit fix (the row has a defined destination) and preserves ratified AC-012 (no contract changes on agent judgment alone) while reducing human contact to one packet.
+  - Supersedes: the pre-eligibility human-ruling requirement of this decision's first version.
+  - Decided by: user ratified, 2026-09-16.
 
 - **D-022 - Probe sandboxes are seeded from tracked files and carry a real repository** *(Added 2026-09-16 after review; refines D-012)*
   - Decision: seed the sandbox from `git ls-files` plus a recorded untracked allowlist, provision a working repository at the sandbox root, symlink `node_modules`, and direct the Vitest cache away from the shared `node_modules/.vite`.
@@ -219,19 +223,37 @@ These ratified assumptions are settled and carried verbatim:
   - Decided by: independent review, design-attack lens (verified by running the command), 2026-09-16.
 
 - **D-026 - Inventory independence is a derivation rule, not a property of the pack** *(Added 2026-09-16 after review; clarifies D-007)*
-  - Decision: the pack excludes the census identity set, test files, and coverage output; where an authority incidentally cites a test path or marker, the reviewer does not open it and the source log records the authority rather than the citation. The provable claim is that every entry traces to a cited non-test authority and no entry cites a test, marker, or coverage artifact as its authority.
+  - Decision: the pack excludes the census identity set, test files, and coverage output; where an authority incidentally cites a test path or marker, the assessing agent does not open it and the source log records the authority rather than the citation. The provable claim is that every entry traces to a cited non-test authority and no entry cites a test, marker, or coverage artifact as its authority.
   - Alternatives: claiming the pack contains no test references (false — `missions/architecture/living-memory.md` cites `tests/memory/interface.test.ts`); adding a redaction step.
-  - Why: independence was stated as a property of the pack that the pack does not have. Stating it as a derivation rule keeps `AC-008` provable without machinery that cannot verify a human's attention.
+  - Why: independence was stated as a property of the pack that the pack does not have. Stating it as a derivation rule keeps `AC-008` provable without machinery that cannot verify an assessor's attention — and under D-027 the rule is more checkable, not less, because an agent's consulted-source log is itself recorded evidence.
   - Decided by: independent review, design-attack lens, 2026-09-16.
+
+- **D-027 - Assessment is agent work; the human decides once** *(Added 2026-09-16 on user ruling; implements spec `INV-008`/`D-005`)*
+  - Decision: every health judgment — role, claim, evidence chain, all seven dimension conclusions, criticality, disposition, portfolio sufficiency — is produced by an assessing agent consulting ratified authorities and `knowledge/`, and recorded with agent id, model identifier, model version, and the sources it consulted. The `AssessmentLane` values become `objective-observation` and `agent-assessed-judgment`. No stage blocks on human input.
+  - Alternatives: human review of each profile (the prior design, which made 267 tests a human queue); a hybrid sampling review; no assessment provenance at all.
+  - Why: the user ruled on 2026-09-16 that the framework's models and curated knowledge are sufficient to judge test health, and that the plan's purpose is a system producing healthy tests rather than a decision queue. Trust comes from calibration plus recorded, re-derivable evidence — which is *stronger* than human review here, because an agent's consulted-source log is auditable in a way a reviewer's attention is not.
+  - Decided by: user ratified, 2026-09-16.
+
+- **D-028 - Contract corrections require a cited authority, not a human** *(Added 2026-09-16 on user ruling; implements spec `D-006`)*
+  - Decision: an assessing agent may correct a wrong-side expectation whenever a ratified authority exists — a spec, an architecture record, a `knowledge/` record, or a prior human ruling — citing it in the ledger row. Only an absent or self-contradicting authority yields `unresolved`, and those batch into the ratification packet under D-021.
+  - Alternatives: every contract correction through a human; full agent authority over product intent even with no authority to cite.
+  - Why: reading an authority is ordinary agent work and needs no gate, so the common path is unattended. But where no authority exists, "correct the test" and "declare current behavior intended" are the same act, and the spec's own calibration corpus carries that exact defect (an expectation encoding six retirements under a maximum of five). The guard is narrow by construction: it triggers only on missing or contradictory authority, which the inventory pass has already enumerated.
+  - Decided by: user ratified, 2026-09-16.
+
+- **D-029 - One ratification packet is the whole human surface** *(Added 2026-09-16 on user ruling)*
+  - Decision: `baseline.md` carries a single `## Ratification packet` section containing the eligibility record, every `unresolved` contract question with its drafted options and the agent's recommendation, the residual-uncertainty register, and the critical-portfolio summary. The owner answers it in one pass. Nothing else in the audit solicits human input, and the packet is assembled incrementally so it is complete the moment eligibility is reached.
+  - Alternatives: separate escalations per stage; a mid-run question queue the owner drains as it fills.
+  - Why: makes "human as last resort at one particular point" a structural property of an artifact rather than a discipline the agents must remember. It also means the owner sees every question in context, against the finished evidence, instead of deciding items before the evidence that would inform them exists.
+  - Decided by: user ratified, 2026-09-16.
 
 ## Behaviors
 
 ### B-001 - Independent dimensions, evidence bases, grounding forms, and authorship lanes
 
 - Source: AC-001, AC-005, AC-006, AC-014
-- Context: profile fixtures cover production functions, shipped files/prompts, configuration, CLI output, subprocesses, events, persisted state, and composition roots, with objective observations and human judgments
+- Context: profile fixtures cover production functions, shipped files/prompts, configuration, CLI output, subprocesses, events, persisted state, and composition roots, with mechanical observations and agent-assessed judgments
 - Action: the schema validates the records
-- Expected: all seven dimensions, the evidence basis, the reason classes, the portfolio conclusions, and the dispositions accept only the spec's ratified vocabularies, and each dimension has one common evidence basis; no score/overall-health label is accepted; Grounding and Realism remain independent/non-ranked; every assessed value has enforceable objective or human-reviewed provenance; absent/conflicting authority is `unresolved`; and every legitimate system-under-test form is representable with its concrete expected Grounding/Realism combination
+- Expected: all seven dimensions, the evidence basis, the reason classes, the portfolio conclusions, and the dispositions accept only the spec's ratified vocabularies, and each dimension has one common evidence basis; no score/overall-health label is accepted; Grounding and Realism remain independent/non-ranked; every assessed value has enforceable `objective-observation` or `agent-assessed-judgment` provenance, the latter carrying agent id and model identifier/version; absent/conflicting authority is `unresolved`; and every legitimate system-under-test form is representable with its concrete expected Grounding/Realism combination
 - Seam: `scripts/test-health-audit/schema.ts`
 - Test: `tests/scripts/test-health-audit/schema.test.ts` > `preserves seven dimensions all grounding forms and field-level assessment provenance without a score`
 - Marker: `@cosmo-behavior plan:test-health-audit#B-001`
@@ -260,8 +282,8 @@ These ratified assumptions are settled and carried verbatim:
 
 - Source: AC-004, AC-005, AC-006
 - Context: an epoch contains weighted work units, including subdivisions of oversized files and grouped parameterized cases sharing one chain
-- Action: reviewers complete disjoint NDJSON unit shards and the epoch validator aggregates them
-- Expected: every auditable identity appears exactly once with source/runtime/case count, human-reviewed role/claim/authority/chain, seven conclusions and bases, reasons/counterevidence/uncertainty, portfolio contribution, disposition, field-level provenance, and material-input digests; no unit exceeds the declared workload caps except one indivisible test; missing/duplicate/stale/malformed records block aggregation; restart reconstructs progress from persisted shards and carry-forward requires rehashed unchanged inputs
+- Action: assessing agents complete disjoint NDJSON unit shards and the epoch validator aggregates them
+- Expected: every auditable identity appears exactly once with source/runtime/case count, agent-assessed role/claim/authority/chain carrying agent id and model identifier/version, seven conclusions and bases, reasons/counterevidence/uncertainty, portfolio contribution, disposition, field-level provenance, and material-input digests; no unit exceeds the declared workload caps except one indivisible test; missing/duplicate/stale/malformed records block aggregation; restart reconstructs progress from persisted shards and carry-forward requires rehashed unchanged inputs
 - Seam: `missions/plans/test-health-audit/audit/epochs/<epoch-id>/profiles/*.ndjson`, `missions/plans/test-health-audit/audit/epochs/<epoch-id>/manifest.json`
 - Test: `tests/scripts/test-health-audit/artifacts.test.ts` > `requires one fresh complete profile per identity and safely subdivides oversized files across resumable units`
 - Marker: `@cosmo-behavior plan:test-health-audit#B-004`
@@ -270,7 +292,7 @@ These ratified assumptions are settled and carried verbatim:
 
 - Source: AC-007, AC-009
 - Context: tests can assert local data, receive outcomes from doubles, encode the wrong contract side, stop before consumer/composition/caller paths, or survive defects, while focused/mediated tests may validly protect one boundary
-- Action: the reviewer classifies each evidence chain against calibrated controls
+- Action: the assessing agent classifies each evidence chain against calibrated controls
 - Expected: ratified reason classes are applied where evidenced; a test counts only for boundaries/axes it protects; no meaningful claim is explicit when none exists; mock use/directness/depth alone never decides value; the `AgentDefinition.session` specimen is excluded from runtime guardrail evidence with an `observational-memory-adoption` pointer and is not changed here
 - Seam: `scripts/test-health-audit/schema.ts`, `missions/plans/test-health-audit/audit/epochs/<epoch-id>/profiles/*.ndjson`
 - Test: `tests/scripts/test-health-audit/schema.test.ts` > `classifies false-confidence chains without automatically demoting mocks mediation or focused units`
@@ -280,7 +302,7 @@ These ratified assumptions are settled and carried verbatim:
 
 - Source: AC-008
 - Context: a restricted inventory evidence pack contains current package/CLI/domain surfaces, shipped docs/ratified contracts, architecture records, and incident/risk records but no tests, markers, or coverage
-- Action: reviewers derive and freeze inventory work units before test-to-portfolio joining
+- Action: assessing agents derive and freeze inventory work units before test-to-portfolio joining
 - Expected: every important shipped behavior/risk family records authority, consequence-based criticality, applicable producer/consumer/adapter/persisted-state/event/alternate-path/composition-root boundaries, and path/caller/defect axes; source-log provenance proves tests/markers/coverage did not define it; later additions require a cited non-test authority and a new epoch
 - Seam: `missions/plans/test-health-audit/audit/epochs/<epoch-id>/behavior-risk-inventory.json`
 - Test: `tests/scripts/test-health-audit/artifacts.test.ts` > `rejects test-derived inventory and requires authority criticality boundaries and defect axes`
@@ -311,7 +333,7 @@ These ratified assumptions are settled and carried verbatim:
 - Source: AC-012
 - Context: a profile/portfolio/probe confirms a weakness
 - Action: the loop traces authority, applies the deviation classifier, repairs/replaces/removes or excludes the guardrail test-first, and creates a successor evidence epoch
-- Expected: each weakness has affected claims, scope, before/action/closure evidence, profile/matrix updates, and `closed`, `excluded-from-guardrail`, or `unresolved`; absent/conflicting authority remains unresolved for human ruling; no expected behavior changes merely to match production; material changes invalidate or explicitly carry profiles under D-013
+- Expected: each weakness has affected claims, scope, before/action/closure evidence, profile/matrix updates, and `closed`, `excluded-from-guardrail`, or `unresolved`; a correction against a cited ratified authority closes autonomously, while absent or self-contradicting authority yields `unresolved` with a drafted packet question and the run continues rather than halting; no expected behavior changes merely to match production or on agent judgment alone; material changes invalidate or explicitly carry profiles under D-013
 - Seam: `missions/plans/test-health-audit/audit/epochs/<epoch-id>/remediation-ledger.md`
 - Test: `tests/scripts/test-health-audit/artifacts.test.ts` > `requires authorized closure or guardrail exclusion and blocks unratified contract changes`
 - Marker: `@cosmo-behavior plan:test-health-audit#B-009`
@@ -321,7 +343,7 @@ These ratified assumptions are settled and carried verbatim:
 - Source: AC-011, AC-014, AC-015
 - Context: one candidate epoch contains the complete ten deliverable bundles
 - Action: the explicit-root audit validator checks schemas, provenance, freshness, scope, and gate recommendations
-- Expected: all bundles link to one epoch/digest; recommendations label `objective-candidate` versus `human-reviewed-heuristic`, cite calibration/limitations, activate no CI gate, cross-link `behavioral-regression` and `deliverable-completeness-gates`, and contain no project-health/provider-expansion work; fixture validator tests remain valid after plan archival
+- Expected: all bundles link to one epoch/digest; recommendations label `objective-candidate` versus `agent-assessed-heuristic`, cite calibration/limitations, activate no CI gate, cross-link `behavioral-regression` and `deliverable-completeness-gates`, and contain no project-health/provider-expansion work; fixture validator tests remain valid after plan archival
 - Seam: `missions/plans/test-health-audit/audit/epochs/<epoch-id>/gate-recommendations.md`, `scripts/test-health-audit/artifacts.ts`, `scripts/test-health-audit/cli.ts`
 - Test: `tests/scripts/test-health-audit/artifacts.test.ts` > `validates all ten bundles in one epoch and forbids heuristic CI activation or active-plan coupling`
 - Marker: `@cosmo-behavior plan:test-health-audit#B-010`
@@ -368,7 +390,7 @@ Core assessed-value contract:
 
 ```ts
 type EvidenceBasis = "observed" | "probe-confirmed" | "reasoned" | "missing" | "blocked";
-type AssessmentLane = "objective-observation" | "human-reviewed-judgment";
+type AssessmentLane = "objective-observation" | "agent-assessed-judgment";
 
 type TestSurface = "normal" | "watch" | "coverage" | "repeat" | "shuffle" | "isolation";
 type RuntimeState = "collected" | "passed" | "failed" | "skipped" | "todo" | "not-collected" | "errored";
@@ -404,7 +426,10 @@ interface AssessedValue<T> {
   value: T;
   lane: AssessmentLane;
   basis: EvidenceBasis;
-  assessor: { kind: "collector"; id: string; version: string; observedAt: string } | { kind: "human"; id: string; reviewedAt: string };
+  assessor:
+    | { kind: "collector"; id: string; version: string; observedAt: string }
+    | { kind: "agent"; id: string; model: string; modelVersion: string; assessedAt: string; consultedAuthorities: EvidenceRef[] }
+    | { kind: "human"; id: string; reviewedAt: string };
   evidence: EvidenceRef[];
   counterevidence: EvidenceRef[];
   uncertainty: string[];
@@ -436,7 +461,7 @@ interface TestEvidenceProfile {
 }
 ```
 
-`SystemUnderTestRef.sutKind` enumerates the spec's legitimate system-under-test forms. Conclusion, basis, reason, portfolio, and disposition unions use the spec’s spelling exactly. There is no score, overall-health field, or universal per-test verdict. Validator rules require human lane for D-009’s judgments; an objective collector may suggest a separate candidate but cannot populate them.
+`SystemUnderTestRef.sutKind` enumerates the spec's legitimate system-under-test forms. Conclusion, basis, reason, portfolio, and disposition unions use the spec’s spelling exactly. There is no score, overall-health field, or universal per-test verdict. Validator rules require the `agent-assessed-judgment` lane with a `kind: "agent"` assessor for D-009’s judgments; a mechanical collector may suggest a separate candidate but cannot populate them. The `kind: "human"` assessor appears only inside the ratification packet, never on a profile.
 
 Stable profile ID is a hash of root-relative path, normalized nested declaration title/template, and same-title declaration ordinal. Location and Vitest runtime ID are separate. Parameterized cases share a profile only for one declaration/evidence chain; every case name/count remains visible.
 
@@ -450,7 +475,7 @@ The census precedes every suite/test-health conclusion:
 4. Invoke coverage once through `bun run test:coverage` with the reporter. Coverage percentages remain context only.
 5. Run two additional normal checks: one same-order repeat and one `--sequence.shuffle --sequence.seed <recorded>` run. This fixed regimen is bounded evidence, not proof of universal determinism.
 6. Preserve full-suite outcomes for `tests/driver/cross-plan-commit-lock.test.ts`, `tests/plans/archive.test.ts`, and `tests/extensions/project-tools.test.ts`; run each twice in isolation after full collection and record full-versus-isolation evidence. Isolation never excuses a full-suite failure.
-7. Reconcile source declarations, collected modules, ready/result cases, suite/module errors, hook events, filters, and surface differences. Individual assertion execution is `unknown` unless unconditional observation/probe establishes it; AST conditional/unreachable candidates are human-reviewed heuristics.
+7. Reconcile source declarations, collected modules, ready/result cases, suite/module errors, hook events, filters, and surface differences. Individual assertion execution is `unknown` unless unconditional observation/probe establishes it; AST conditional/unreachable candidates are agent-assessed heuristics.
 
 Error records contain `phase`, `phaseBasis`, original serialized payload, entity/test/module, and command. Public module errors can establish collection/outside-run failure; aggregated case/suite errors do not automatically establish hook versus test-body phase. Unknown phase is visible blocked evidence under D-011.
 
@@ -460,20 +485,20 @@ Census state is `complete`, `incomplete`, or `blocked`. `incomplete` exits only 
 
 ### 3. Independent behavior/risk inventory
 
-An inventory reviewer receives a restricted evidence pack that excludes the census identity set, test files, and coverage output, containing:
+An inventory-assessing agent receives a restricted evidence pack that excludes the census identity set, test files, and coverage output, containing:
 
 - current bin/CLI/domain/public and shipped-artifact surfaces;
 - shipped docs and ratified current/archived contracts describing current behavior;
 - active architecture decisions governing current code; and
 - durability, persistence, recovery, concurrency, security, irreversible-effect, and architectural-dependency incidents.
 
-Some authorities incidentally cite test paths or behavior markers — `missions/architecture/living-memory.md` cites `tests/memory/interface.test.ts`, and `docs/testing.md` names `tests/setup.ts`. Such a citation is never an inventory source: an entry cites the authority's behavioral statement, and the reviewer does not open a cited test file. The source log records the authority, not the citation. The provable form of the independence claim is therefore that every entry traces to a cited non-test authority in the frozen source log, and no entry cites a test, marker, or coverage artifact as its authority.
+Some authorities incidentally cite test paths or behavior markers — `missions/architecture/living-memory.md` cites `tests/memory/interface.test.ts`, and `docs/testing.md` names `tests/setup.ts`. Such a citation is never an inventory source: an entry cites the authority's behavioral statement, and the agent does not open a cited test file — its consulted-source log records which authorities it actually read, so the rule is checkable after the fact. The source log records the authority, not the citation. The provable form of the independence claim is therefore that every entry traces to a cited non-test authority in the frozen source log, and no entry cites a test, marker, or coverage artifact as its authority.
 
 Partition the authority list into bounded source work units, merge duplicate behavior/risk families only when authority/consequence/boundaries remain explicit, then freeze the source-log and inventory digest. Completion requires a positive coverage statement for every enumerated shipped surface/authority group, not an arbitrary entry cap. Each entry has intended contract/authority, criticality/consequence, applicable producer/consumer/adapter/persisted-state/event/alternate-path/composition-root boundaries, and realistic path/caller/axis defect classes. A later non-test authority discovery creates a successor epoch.
 
 ### 4. Calibration contract
 
-Every row records stable ID, polarity, source, expected conclusions/bases/reasons/portfolio effect, actuals, reviewer, and pass/miss. Every row predeclares all four D-014 fields — expected dimension conclusion(s), evidence basis, reason code(s), and portfolio effect — each written as the ratified vocabulary token in backticks, with any field deliberately left open for that row written as `unconstrained` rather than omitted. Each control also names an exact source identity (a declaration's executable title, not a whole file). The recorded `expected` columns must transcribe this table verbatim; a divergence between the table and the recorded expected is itself a calibration miss. Required obligations:
+Calibration is what licenses agent autonomy under D-027: it is the evidence that an assessing agent's judgments track the historical defect classes before those judgments are trusted against the suite. Every row records stable ID, polarity, source, expected conclusions/bases/reasons/portfolio effect, actuals, assessor (agent id and model identifier/version), and pass/miss. Every row predeclares all four D-014 fields — expected dimension conclusion(s), evidence basis, reason code(s), and portfolio effect — each written as the ratified vocabulary token in backticks, with any field deliberately left open for that row written as `unconstrained` rather than omitted. Each control also names an exact source identity (a declaration's executable title, not a whole file). The recorded `expected` columns must transcribe this table verbatim; a divergence between the table and the recorded expected is itself a calibration miss. Required obligations:
 
 | ID | Control | Predeclared pass obligation |
 |---|---|---|
@@ -510,9 +535,9 @@ Historical sources are `missions/reviews/improvements/living-memory-implementati
 
 `audit/index.json` atomically names `currentEpochId` and prior epoch IDs. Each `audit/epochs/<id>/manifest.json` is immutable and contains evaluated HEAD, complete working-tree content digest for material inputs, command definitions, method/schema version, census/inventory digests, authority/SUT input digests, and deterministic work-unit assignments. No correctness outcome depends on an in-memory progress map.
 
-Work units are lexically deterministic after enforcing D-016 caps. Large files split at suite/declaration boundaries and each unit receives shared file-context/import/helper evidence. One reviewer owns one unit; at most two run concurrently; unit paths are disjoint. Each unit writes a temporary sibling and atomically renames after validation. Progress is reconstructed from valid current-epoch unit files. A failed session loses at most its bounded unit.
+Work units are lexically deterministic after enforcing D-016 caps. Large files split at suite/declaration boundaries and each unit receives shared file-context/import/helper evidence. One assessing agent owns one unit and unit paths are disjoint; concurrency is bounded by machine resources rather than human attention, raised deliberately given the recorded memory-pressure incident. Each unit writes a temporary sibling and atomically renames after validation. Progress is reconstructed from valid current-epoch unit files. A failed session loses at most its bounded unit.
 
-Create a successor epoch on any material change to a frozen input: remediation, an inventory/authority change, a calibration- or disagreement-driven method/schema amendment, or an added or removed test file. A method/schema amendment therefore never writes new evidence against a stale method digest and never mutates an immutable manifest. Recollect required command evidence. For each prior human judgment, recompute all material-input digests. If unchanged, copy the profile into the successor with `carriedFrom`; refresh current runtime observations. If any test/SUT/contract/inventory/method/runner/config/setup input changed or was omitted, re-review it. The final candidate epoch therefore contains a complete current profile set rather than cross-revision references; the complete-current-profile obligation binds at that final candidate epoch, not at each intermediate one.
+Create a successor epoch on any material change to a frozen input: remediation, an inventory/authority change, a calibration- or disagreement-driven method/schema amendment, or an added or removed test file. A method/schema amendment therefore never writes new evidence against a stale method digest and never mutates an immutable manifest. Recollect required command evidence. For each prior agent-assessed judgment, recompute all material-input digests. If unchanged, copy the profile into the successor with `carriedFrom`; refresh current runtime observations. If any test/SUT/contract/inventory/method/runner/config/setup input changed or was omitted, re-assess it. The final candidate epoch therefore contains a complete current profile set rather than cross-revision references; the complete-current-profile obligation binds at that final candidate epoch, not at each intermediate one.
 
 Digest granularity is pinned so invalidation neither over- nor under-fires: `materialInputs`/`EvidenceDigest` covers the recorded declaration span cited in the profile's evidence chain for `production-function` system-under-test refs, and whole-file content for runner, config, setup, and contract inputs. Without this a hub-module edit would invalidate every profile citing the file — 59 test files reference `lib/tasks` alone.
 
@@ -534,7 +559,7 @@ Sandbox protocol:
 8. Restore/delete only the sandbox mutation from a copy, verify sandbox pre-mutation target digest/mode/realpath, and rerun green.
 9. Delete sandbox and prove source-checkout status/path digests are identical. The source checkout was never mutated, so crash safety does not depend on `finally`.
 
-For each confirmed weakness, locate authority and apply the deviation classifier. Conflict/absence becomes `unresolved` plus drafted human decision. Otherwise RED-GREEN-REFACTOR at the narrowest correct seam, rerun probe and affected evidence, then create a successor epoch per remediation **wave**: several ledger rows may close under one successor epoch and one re-review pass over the union of invalidated profiles, so the human re-review radius is batched rather than multiplied per row. Every ledger `open` exits through `closed`, `excluded-from-guardrail`, or `unresolved`; `probe-survived` exits only through remediation plus new confirmation or stays visible/uncounted. Every `unresolved` confirmed weakness — critical or not — routes to the human-decision checkpoint **before** eligibility is evaluated, because baseline condition 5 requires every confirmed weakness to be fixed, replaced, removed, or excluded. Without that pre-eligibility ruling a noncritical unresolved row would fail condition 5 and return to the same remediation stage with no exit. The owner's ruling either supplies the authority that closes the row, or classifies it as excluded from guardrail evidence.
+For each confirmed weakness, locate authority and apply the deviation classifier. A cited ratified authority — spec, architecture record, `knowledge/` record, or prior human ruling — lets the agent correct the expectation autonomously under D-028. Conflict or absence becomes `unresolved` with a drafted packet question, and the run continues. Otherwise RED-GREEN-REFACTOR at the narrowest correct seam, rerun probe and affected evidence, then create a successor epoch per remediation **wave**: several ledger rows may close under one successor epoch and one re-review pass over the union of invalidated profiles, so the human re-review radius is batched rather than multiplied per row. Every ledger `open` exits through `closed`, `excluded-from-guardrail`, or `unresolved`; `probe-survived` exits only through remediation plus new confirmation or stays visible/uncounted. Every `unresolved` confirmed weakness — critical or not — becomes a line item in the single ratification packet (D-021, D-029) and the audit proceeds. Baseline condition 5 is satisfied for such a row by the recorded, batched question rather than by a prior ruling, which is what gives the row a defined exit without stopping the run; `established` still requires the owner to answer it.
 
 The session-field specimen uses exclusion and remains untouched.
 
@@ -555,7 +580,7 @@ Each candidate epoch contains the spec’s ten bundles:
 
 Raw evidence and inventory JSON support these bundles but do not replace them.
 
-The candidate epoch is committed before ratification. Its canonical digest covers every material source/test/authority/runner/config/setup digest, bundles 1–9, and canonical baseline condition rows. It excludes volatile render timestamps, `audit/index.json`’s current pointer, and the future owner block. The project owner reviews `evaluatedRevision`, `candidateEvidenceDigest`, critical portfolios, remediation/probes, and uncertainty, then may append a ratification block in a later commit. Validator recomputation over current evidence must equal the candidate digest; any material change requires a new epoch and makes the old decision stale.
+The candidate epoch is committed before ratification. Its canonical digest covers every material source/test/authority/runner/config/setup digest, bundles 1–9, and canonical baseline condition rows. It excludes volatile render timestamps, `audit/index.json`’s current pointer, and the future owner block. `baseline.md` carries one `## Ratification packet` section — the audit's entire human surface (D-029) — assembled incrementally so it is complete the moment eligibility is reached. It contains `evaluatedRevision` and `candidateEvidenceDigest`, the critical-portfolio summary, remediation and probe outcomes, the residual-uncertainty register, and every `unresolved` contract question with its drafted options and the assessing agent's recommendation. The owner answers the packet in one pass and may append a ratification block in a later commit. Validator recomputation over current evidence must equal the candidate digest; any material change requires a new epoch and makes the old decision stale.
 
 | Conditions 1–7 | Owner block | Candidate evidence | Outcome |
 |---|---|---|---|
@@ -564,16 +589,16 @@ The candidate epoch is committed before ratification. Its canonical digest cover
 | all `met` | present | changed/stale | `not established`; ratification stale |
 | all `met` | exact owner decision | recomputes to evaluated revision/digest | `established` |
 
-The eight rows are the spec’s exact conditions: complete command census; dispositions for skips/todos/conditionals/quarantines/limitations; no counted test-local/misaligned/surviving-defect guardrail; every critical portfolio protected; confirmed weaknesses fixed/replaced/removed/excluded; required probes red for defect and green after exact restoration; remaining uncertainty noncritical/bounded/documented; project-owner ratification. No score participates.
+The eight rows are the spec’s exact conditions: complete command census; dispositions for skips/todos/conditionals/quarantines/limitations; no counted test-local/misaligned/surviving-defect guardrail; every critical portfolio protected; confirmed weaknesses fixed/replaced/removed/excluded, or carried as an answered packet question; required probes red for defect and green after exact restoration; remaining uncertainty noncritical/bounded/documented; project-owner ratification. No score participates.
 
 ### 8. Open questions remain evidence-resolved
 
 | Ratified open question | Mechanism, not an invented answer |
 |---|---|
-| Which current Cosmonauts behaviors and risks meet the criticality definition and therefore require targeted probe evidence? | Restricted independent inventory, consequence rationale, human-reviewed criticality, then generated probe queue. |
+| Which current Cosmonauts behaviors and risks meet the criticality definition and therefore require targeted probe evidence? | Restricted independent inventory, consequence rationale, agent-assessed criticality, then generated probe queue. |
 | Which objective suite-integrity checks prove sufficiently complete and stable to be proposed for immediate gate activation? | Calibration/repeat evidence and `gate-recommendations.md`; this plan activates none. |
 | What noncritical residual uncertainties, if any, will the project owner accept when ratifying the baseline? | `residual-uncertainty.md` IDs referenced exactly by the owner block. |
-| Which contract conflicts or production violations discovered by corrected tests require separate human rulings before remediation can close? | `unresolved` ledger rows with drafted decisions; no code/expectation change until ruling. |
+| Which contract conflicts or production violations discovered by corrected tests lack a ratified authority, and therefore reach the ratification packet rather than closing autonomously? | `unresolved` ledger rows with drafted decisions; no code/expectation change until ruling. |
 
 ### 9. Planning capability evidence
 
@@ -604,7 +629,7 @@ Provider expansion and whole-project fixes belong to later work.
 - `missions/plans/test-health-audit/audit/epochs/<epoch-id>/calibration.md` — calibration controls and trust-gate result.
 - `missions/plans/test-health-audit/audit/epochs/<epoch-id>/probes.jsonl` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/probes.md` — targeted probe records.
 - `missions/plans/test-health-audit/audit/epochs/<epoch-id>/remediation-ledger.md` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/residual-uncertainty.md` — closure and uncertainty evidence.
-- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/gate-recommendations.md` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/baseline.md` — recommendations and the final decision record.
+- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/gate-recommendations.md` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/baseline.md` — recommendations, the final decision record, and the single `## Ratification packet` section (D-029).
 - `biome.json` — add `"!missions/plans/*/audit/**"` to `files.includes`, following the existing `!missions/tasks/config.json` and `!.fallow-baselines` precedent for generated JSON.
 - Evidence-selected current test/production files — only after a ledger row identifies a confirmed in-scope weakness and authority. Add every path before modification. `tests/domains/coding-agents.test.ts` and `AgentDefinition.session` are excluded from remediation here.
 - Read-only unless evidence-authorized remediation names them: `package.json`, `scripts/vitest-runner.mjs`, `vitest.config.ts`, `tests/setup.ts`, current `tests/**/*.test.ts`, governing production/artifacts, `docs/testing.md`, `AGENTS.md`, `missions/architecture/code-structure-map.md`, and `ROADMAP.md`.
@@ -617,12 +642,12 @@ Provider expansion and whole-project fixes belong to later work.
 2. **Reporter phase limits.** Aggregated errors cannot be guessed into hook phases. D-011 preserves payload and unknown phase as blocked; a clean final run has no hidden error to classify.
 3. **Watch collection lifecycle.** A bounded real watch cycle may not terminate cleanly. Require watcher/initial-run evidence, graceful signal, and process cleanup; otherwise mark watch blocked, never substitute normal mode.
 4. **Expensive bounded regimen.** Five full-surface executions still do not prove universal determinism. Record time/seeds and residual uncertainty; do not add suite-wide mutation or unbounded repetition.
-5. **Reviewer drift/large tests.** Workload caps, intra-file subdivision, max-two concurrency, field provenance, calibration resampling, and unit validation limit loss. Disagreement amends method and invalidates affected units.
+5. **Assessor drift, over-claiming, or large tests.** This is the central risk of D-027: an agent can produce a fluent, well-formatted judgment that is wrong, and unlike a weak test it leaves no failing signal. Controls: calibration must pass before any unit is accepted and is re-sampled between waves; every judgment records its consulted authorities so a conclusion can be re-derived and contradicted; workload caps and intra-file subdivision keep each context tractable; unit validation rejects malformed or incomplete records. A calibration miss amends the method and invalidates affected units. Residual exposure is explicit: agent assessment is `reasoned` basis, not `observed`, and the probe queue exists precisely because reasoning is not evidence for the claims that matter most.
 6. **Incomplete independent inventory/map absence.** Restricted authorities, positive coverage statements, cited exclusions, and successor epochs prevent tests from defining completeness or missing map evidence from becoming clean.
 7. **Probe graph escape or work loss.** Realpath containment, copied import route, sandbox cwd/config/setup, source pre/post manifest, explicit confirmation, and no in-place fallback are hard requirements. Any unresolved route stays unassessed.
-8. **Unratified contract drift.** Deviation classifier and `unresolved` stop state apply; tests never move first merely to agree with production.
+8. **Unratified contract drift.** The deviation classifier applies and a correction requires a cited ratified authority (D-028); absent or contradictory authority yields `unresolved` and a packet question rather than an agent ruling. Tests never move first merely to agree with production. This is the one place autonomy is deliberately withheld, because there the audit could otherwise absorb a production defect as intent.
 9. **Cross-revision stale evidence.** Epochs and material-input carry-forward rules fail closed. Omitted input invalidates carry-forward; ratification digest excludes only enumerated nonmaterial/self-referential fields.
-10. **Scope explosion from findings.** Product decisions, providers, project-wide static health, or feature design halt/escalate. Confirmed in-scope weaknesses are split into evidence-derived remediation work within this slug, not deferred as “future cleanup.”
+10. **Scope explosion from findings.** Providers, project-wide static health, or feature design escalate into the ratification packet rather than halting the run; a product decision becomes an `unresolved` packet question. Confirmed in-scope weaknesses are split into evidence-derived remediation work within this slug, not deferred as “future cleanup.”
 11. **Planning analysis gaps.** Duplication failed, boundaries unbound, complexity already red, and map absent. Record uncertainty; do not pull `project-health-audit` forward.
 
 ## Quality Contract
@@ -635,15 +660,16 @@ Provider expansion and whole-project fixes belong to later work.
 
 Plan-specific assertions:
 
-1. Schema rejects any collapsed/missing dimension, invalid vocabulary, score, unsupported SUT kind, machine-defaulted human judgment, or absent field provenance.
+1. Schema rejects any collapsed/missing dimension, invalid vocabulary, score, unsupported SUT kind, collector-defaulted reasoned judgment, absent field provenance, or agent-assessed value missing its model identifier/version and consulted authorities.
 2. Census fixtures prove source/runtime-only cases, parameters, skip/todo/filter/error, unknown hook phase, unsupported syntax, and command mismatch cannot render clean.
 3. Applied census has normal, real initial watch, coverage, repeat, shuffle, and full-versus-isolation evidence for all three known-flaky suites.
 4. Every stable calibration ID exists and actual conclusion/basis/reasons/portfolio effect matches the declared obligation before profiles are accepted.
 5. Weighted unit validation proves exactly one current profile per auditable identity; oversized files subdivide; stale/duplicate/missing/carried-without-input-proof records fail.
 6. Every executed required probe proves sandbox module/config/setup/target identity, one isolated defect, no source mutation/`git checkout`, expected red, and sandbox restored green.
-7. Every confirmed weakness closes, is excluded, or remains unresolved with a human-decision request; no unratified expectation change passes.
+7. Every confirmed weakness closes against a cited ratified authority, is excluded, or remains `unresolved` as a drafted packet question without halting the run; no expectation change passes on agent judgment alone where authority is absent or self-contradicting.
 8. `bun run lint` is clean after a full epoch is written under `missions/plans/test-health-audit/audit/`.
-9. Establishment requires all eight rows plus owner ratification of an already-committed evaluated revision/canonical digest; any material change makes it stale.
+9. The audit reaches `eligible-for-ratification` with no human input at any stage, and `baseline.md` carries exactly one `## Ratification packet` section holding every question the owner must answer.
+10. Establishment requires all eight rows plus owner ratification of an already-committed evaluated revision/canonical digest; any material change makes it stale.
 
 ## Implementation Order
 
@@ -652,11 +678,11 @@ Eleven behaviors remain under the project’s twelve-behavior guidance. The work
 1. **Schema/provenance — B-001, B-005.** RED fixtures for all seven dimensions, exact bases/reasons, every SUT kind, non-ranking, no score, field lanes, collector-forbidden judgments, and contract unresolved. GREEN minimal pure validators; REFACTOR keep IO out. **M1:** schema tests green.
 2. **Census collectors — B-002.** RED fixture project for aliases/nesting/parameters/skips/todos/conditionals/dynamic unsupported syntax, collection/test/hook failures, and no false phase attribution. Implement source collector, reporter, reconciliation, and explicit-root CLI. **C1:** the source census is derived for the current epoch (it is re-derived per epoch, never pinned once); no conclusions yet; `docs/test-health-audit.md` v1 publishes the explicit-root invocation, the reviewer rubric, and the trust/consent rules, because reviewers apply that rubric from stage 4 onward.
 3. **Command census — B-002.** Run normal, bounded real watch initial cycle, coverage, same-order repeat, deterministic shuffle, and suspect-suite isolation. **C2:** all raw errors/mismatches/unknowns visible; incomplete/blocked cannot proceed as clean.
-4. **Independent inventory — B-006.** Give separate reviewers restricted non-test authority units; merge/freeze with positive coverage statements and criticality/boundary/axis fields. **I1:** independent check confirms no test/marker/coverage derivation.
+4. **Independent inventory — B-006.** Give separate assessing agents restricted non-test authority units; merge/freeze with positive coverage statements and criticality/boundary/axis fields. **I1:** an independent agent pass confirms no test/marker/coverage derivation, using each unit's consulted-source log.
 5. **Calibration — B-003.** Execute every N/X/P control against the exact table. On any miss amend the derived method document and schema, open a successor epoch for the amended method digest, record the miss, and rerun all controls. **K1:** every required ID passes; otherwise stop.
-6. **Profile units — B-004.** Generate D-016 work units, max two disjoint reviewer sessions, validate/atomically publish each, and resume from persisted current-epoch units. Re-sample controls between waves. **P-final:** identity set equality, workload caps, complete human provenance, no stale unit.
+6. **Profile units — B-004.** Generate D-016 work units, run disjoint assessing-agent sessions at a machine-bounded concurrency, validate/atomically publish each, and resume from persisted current-epoch units. Re-sample controls between waves. **P-final:** identity set equality, workload caps, complete agent-assessment provenance, no stale unit.
 7. **Portfolio/probes — B-007, B-008.** Join inventory/profiles; enumerate every relevant boundary/path/caller/axis; derive selective probe queue; run only explicitly confirmed copy-only probes. **F1:** no critical `protected` row has a missing required cell/probe; survived/unassessed stays uncounted.
-8. **Remediation epochs — B-009.** Per wave: authority/deviation check, RED-GREEN-REFACTOR or exclusion, narrow/full correctness, probe rerun, one successor epoch per wave, rehash/carry/re-review over the union of invalidated profiles. **R1:** all confirmed rows closed/excluded/unresolved; every unresolved row — critical or not — halts for a human ruling before eligibility is evaluated.
+8. **Remediation epochs — B-009.** Per wave: authority/deviation check, RED-GREEN-REFACTOR or exclusion, narrow/full correctness, probe rerun, one successor epoch per wave, rehash/carry/re-assess over the union of invalidated profiles. **R1:** all confirmed rows closed against a cited authority, excluded, or `unresolved` with a drafted packet question; no row halts the run.
 9. **Candidate evidence — B-010.** At final candidate commit, re-derive the source census over the current tree and run a bounded profiling wave (stage 6 mechanics) over any identity the refreshed census shows without a current-epoch profile — including the `tests/scripts/test-health-audit/**` tests this plan adds — then rerun the complete command regimen, refresh all current objective evidence, validate all ten bundles, uncertainty, objective/heuristic recommendations, roadmap links, scope, and canonical digest. **E1:** stale digest/profile, incomplete census, heuristic CI activation, or scope expansion blocks eligibility.
 10. **Eligibility — B-011.** Populate rows 1–7. Automation emits only `not established` or `eligible-for-ratification`. **B1:** every row met or return to owning stage.
-11. **Human checkpoint.** Present committed evaluated revision/digest, critical portfolios, ledger, probes, and uncertainty. Only the project owner may append accepted uncertainties and `established`. Without it the plan remains active. After ratification, hand off to separate `project-health-audit`; do not begin it here.
+11. **Ratification packet — the single human checkpoint.** Deliver the committed `baseline.md` whose `## Ratification packet` section holds the evaluated revision/digest, critical portfolios, ledger, probes, residual uncertainty, and every batched contract question with its drafted options and recommendation. This is the audit's only request for human input. Only the project owner may append accepted uncertainties, answers, and `established`. Without it the plan remains active. After ratification, hand off to separate `project-health-audit`; do not begin it here.

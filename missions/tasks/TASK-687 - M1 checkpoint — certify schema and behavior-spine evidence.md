@@ -21,6 +21,6 @@ This is a real dependency checkpoint, not an implementation owner. Apply the Qua
 <!-- AC:BEGIN -->
 - [ ] #1 M1 records passing project-native correctness evidence for the schema tests and pure-validator boundary.
 - [ ] #2 M1 records passing artifact-conformance for B-001 and B-005: each planned seam/test reference is root-relative and each exact `@cosmo-behavior plan:test-health-audit#B-00N` marker is present in its referenced executable test file.
-- [ ] #3 Quality Contract assertion 1 is satisfied: fixtures reject collapsed or missing dimensions, invalid vocabulary, scores, unsupported SUT kinds, machine-defaulted human judgment, and absent field provenance.
+- [ ] #3 Quality Contract assertion 1 is satisfied: fixtures reject collapsed or missing dimensions, invalid vocabulary, scores, unsupported SUT kinds, collector-defaulted reasoned judgment, and absent field provenance.
 - [ ] #4 The `mutation` gate is recorded as bindable/unbound rather than passed or enforced generically; later targeted probes remain the plan-specific evidence path.
 <!-- AC:END -->
