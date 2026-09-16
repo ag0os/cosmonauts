@@ -2,7 +2,7 @@
 title: Test Health Audit
 status: active
 createdAt: '2026-09-15T21:15:54.575Z'
-updatedAt: '2026-09-16T00:42:31.863Z'
+updatedAt: '2026-09-16T02:35:00.000Z'
 ---
 
 ## Overview
@@ -45,7 +45,7 @@ Verified execution surfaces:
 
 - `package.json` maps `test` to `node ./scripts/vitest-runner.mjs`; the wrapper translates `--grep` to `--testNamePattern`, spawns `vitest run`, and forwards signal/exit status.
 - `test:watch` invokes `vitest` directly.
-- `test:coverage` invokes `vitest run --coverage` directly.
+- `test:coverage` invokes `vitest run --coverage` directly. **At the planning revision this command exits 1** while every test passes: `Test Files 263 passed | 4 skipped (267)`, `Tests 3133 passed | 21 todo (3154)`, then `ERROR: Coverage for branches (84.96%) does not meet global threshold (85%)` from `coverage.thresholds` in `vitest.config.ts`. The audit records this as a post-run policy exit and a residual-uncertainty entry; it does not remediate it. Raising coverage is a ratified exclusion, `vitest.config.ts` is read-only unless evidence-authorized, and `docs/testing.md` ratchet rule 2 forbids lowering a threshold. It also cannot close incidentally: coverage `include` is `lib/**` while this plan's code lands in `scripts/`.
 - `vitest.config.ts` supplies `tests/setup.ts`, a 15-second default, and V8 coverage configuration. `tests/setup.ts` restores spies/mocks and real timers after every test.
 - Installed Vitest 3.2.4 exposes the planned reporter lifecycle hooks, but its public hook-end event does not carry a hook error/result. The census therefore never fabricates setup/test/teardown phase identity when the public payload cannot establish it.
 
@@ -101,7 +101,7 @@ These ratified assumptions are settled and carried verbatim:
   - Why: source-only and runtime-only inventories each miss failure classes named by `INV-003` and `INV-005`; this bounded collector is not an analysis provider.
   - Decided by: planner-proposed, 2026-09-15.
 
-- **D-007 - Freeze an independently sourced behavior/risk inventory before test joining**
+- **D-007 - Freeze an independently sourced behavior/risk inventory before test joining** *(independence restated as a derivation rule by D-026, 2026-09-16)*
   - Decision: derive inventory entries from current shipped/public surfaces, ratified shipped specifications, architecture records, and incident/risk records without consulting tests, markers, or coverage; freeze its source log before linking profiles.
   - Alternatives: let current tests/markers define the inventory; enumerate every historical AC without a shipped-scope bound; omit portfolio assessment.
   - Why: implements `INV-004` and prevents current guardrails from defining away missing behavior.
@@ -131,14 +131,14 @@ These ratified assumptions are settled and carried verbatim:
   - Why: addresses `review-1.md PR-001` without narrowing AC-003—every error stays visible and unavailable phase evidence cannot become clean (`INV-005`, `INV-006`).
   - Decided by: planner, addressing review-1.md PR-001, 2026-09-15.
 
-- **D-012 - Required probes are copy-only and prove copied resolution**
+- **D-012 - Required probes are copy-only and prove copied resolution** *(sandbox seeding and repository provisioning refined by D-022, 2026-09-16)*
   - Decision: a required probe never mutates the source checkout. Run pre-mutation green, mutation, and post-removal green inside a current-working-tree copy; set subprocess cwd/config/setup to that sandbox; require the reported test module, declared target import route, resolved target/config/setup realpaths, and mutation target to remain beneath the sandbox root. The original checkout’s pre/post path-status and target digests must be identical. If copied execution identity cannot be proved, record `reasoned` or `unassessed`; do not probe in place.
   - Alternatives: the D-008 in-place fallback; trust inherited cwd; infer copied imports from a red result alone.
   - Why: addresses `review-1.md PR-002` and `PR-003`; a crash cannot strand a mutation in user work, and a result cannot count unless it exercised the copied graph (`INV-003`, D-003).
   - Supersedes: D-008’s in-place copy/`finally` fallback and any probe contract lacking copied-module identity.
   - Decided by: planner, addressing review-1.md PR-002 and PR-003, 2026-09-15.
 
-- **D-013 - Audit state advances through immutable evidence epochs**
+- **D-013 - Audit state advances through immutable evidence epochs** *(transition triggers extended by D-020, 2026-09-16)*
   - Decision: `audit/index.json` points to immutable input manifests under `audit/epochs/<epoch-id>/manifest.json`. Every remediation or authority/inventory change creates a new epoch. A profile may be carried into the new epoch only when the validator rehashes unchanged test source, SUT chain, contract authority, method schema, inventory row, runner/config/setup, and relevant command inputs; carried records name their source epoch. Otherwise they are stale and must be reviewed again. Final ratification references an already-committed `evaluatedRevision` and a canonical `candidateEvidenceDigest` covering source/input digests, deliverables 1–9, and baseline conditions while excluding the later owner block, preventing a self-referential commit/digest.
   - Alternatives: rewrite one “immutable” manifest; invalidate everything on every commit; mix old-revision judgments into a candidate without input proof; include ratification in its own digest.
   - Why: addresses `review-1.md PR-004`; persisted epoch transitions make remediation, restart, carry-forward, and ratification converge without in-memory defaults (`INV-005`, the revision-specific assumption).
@@ -176,6 +176,54 @@ These ratified assumptions are settled and carried verbatim:
   - Why: preserves the repeatable maintainer method without widening packaging and names the project-controlled execution trust boundary.
   - Decided by: planner-proposed during review-1 revision, 2026-09-15.
 
+- **D-019 - The probe queue takes the spec's five triggers as an unconditional disjunction** *(Added 2026-09-16 after review)*
+  - Decision: queue membership is the union of the spec's five required-probe triggers; inspection sufficiency adds claims and never removes them. Infeasibility degrades an already-queued claim to `reasoned`/`unassessed` with the limitation visible, and it cannot count as protection for the defect it was queued against.
+  - Alternatives: the prior wording, which subordinated the historical, seam-dependent, and mock-maskable triggers to inspection sufficiency; a validator that adjudicates trigger membership mechanically.
+  - Why: the prior narrowing let a mock-maskable or historically false-confident claim count as protection on `reasoned` basis alone — exactly the class `INV-003` and AC-010 exist to distrust. Membership stays human-reviewed per `INV-006`; only the counting rule is validated.
+  - Decided by: independent review + spec-fidelity verification, 2026-09-16.
+
+- **D-020 - Every material input change opens a successor epoch** *(Added 2026-09-16 after review; extends D-013)*
+  - Decision: remediation, inventory/authority change, a method/schema amendment, and an added or removed test file each open a successor epoch. Epochs advance per remediation *wave*, not per ledger row.
+  - Alternatives: epochs only after remediation or authority change; one epoch per row.
+  - Why: calibration is expected to amend the method on a miss, so without this the audit had to mutate an immutable manifest, write evidence against a stale method digest, or wedge after the first miss. Wave batching bounds the human re-review radius that whole-module staleness would otherwise multiply.
+  - Decided by: chain plan-reviewer (PR-001) + independent review, 2026-09-16.
+
+- **D-021 - Every unresolved confirmed weakness is ruled on before eligibility** *(Added 2026-09-16 after review)*
+  - Decision: an `unresolved` row of any criticality routes to the human-decision checkpoint before baseline eligibility is evaluated; the ruling either supplies closing authority or classifies the row as excluded from guardrail evidence.
+  - Alternatives: halting only on critical unresolved rows; letting a noncritical unresolved row pass as accepted uncertainty.
+  - Why: baseline condition 5 requires every confirmed weakness to be closed, replaced, removed, or excluded, so a noncritical unresolved row previously failed eligibility and returned to the stage that produced it — a state with no exit. The rejected alternative would weaken ratified AC-012 and needs human approval, not a derived amendment.
+  - Decided by: chain plan-reviewer (PR-004), 2026-09-16.
+
+- **D-022 - Probe sandboxes are seeded from tracked files and carry a real repository** *(Added 2026-09-16 after review; refines D-012)*
+  - Decision: seed the sandbox from `git ls-files` plus a recorded untracked allowlist, provision a working repository at the sandbox root, symlink `node_modules`, and direct the Vitest cache away from the shared `node_modules/.vite`.
+  - Alternatives: copying the whole working tree; leaving dependency provisioning unnamed; omitting `.git`.
+  - Why: a whole-tree copy is ~4.9 GB here because `missions/archive/sessions/` is ~4.8 GB, against ~76 MB tracked. Omitting `.git` breaks guardrails that shell out to git at the project root, failing pre-mutation green for a reason unrelated to the mutation and degrading probes to `unassessed` for an avoidable cause.
+  - Decided by: independent review, codebase-feasibility and design-attack lenses, 2026-09-16.
+
+- **D-023 - Probe outcomes are written back into the current epoch's profiles** *(Added 2026-09-16 after review)*
+  - Decision: a probe record updates the current-epoch profile's `dimensions.faultSensitivity` and, where protection changes, its `portfolioContributions`. Unit shards stay revisable within an open epoch — only the manifest is immutable — and are revalidated on rewrite; `probe-survived` opens a ledger row.
+  - Alternatives: freezing profiles at P-final; recording probe evidence only in the matrix.
+  - Why: `probe-confirmed` and `probe-survived` are profile-level fault-sensitivity values that only exist after the probe stage, so without a write-back path every profile's strongest fault-sensitivity evidence was unreachable.
+  - Decided by: independent review, scope/sequencing lens, 2026-09-16.
+
+- **D-024 - Generated audit JSON is excluded from Biome rather than formatted to match it** *(Added 2026-09-16 after review)*
+  - Decision: add `"!missions/plans/*/audit/**"` to `biome.json` `files.includes`.
+  - Alternatives: emitting tab-indented JSON; leaving lint to fail.
+  - Why: `bun run lint` is an `AGENTS.md` gate and currently covers `missions/plans/**`. Tab indentation is insufficient — `JSON.stringify` always expands arrays while Biome collapses short ones — so matching would pin Biome's exact array and line-width behavior. More importantly, epoch evidence is immutable and digest-pinned: a formatter that can rewrite a committed manifest via `lint:fix` would silently invalidate the candidate digest and stale a ratified epoch.
+  - Decided by: independent review, codebase-feasibility lens (verified against `biome.json`), 2026-09-16.
+
+- **D-025 - A post-run policy exit is command evidence, not a census failure** *(Added 2026-09-16 after review)*
+  - Decision: a non-zero exit with no module/suite/case error and no declaration-to-runtime mismatch is recorded as command evidence and, if unresolved, as residual uncertainty; only collection, execution, or hook failures in the reporter payload make the census `incomplete` or `blocked`.
+  - Alternatives: treating every non-zero exit as blocking; dropping the coverage surface from the census.
+  - Why: `bun run test:coverage` exits 1 at the planning revision on a branch-coverage threshold while all 3133 tests pass. Under the prior rule the census could never be clean for a reason unrelated to test execution, and no in-scope repair existed — raising coverage is a ratified exclusion and lowering the threshold is forbidden by `docs/testing.md` ratchet rule 2.
+  - Decided by: independent review, design-attack lens (verified by running the command), 2026-09-16.
+
+- **D-026 - Inventory independence is a derivation rule, not a property of the pack** *(Added 2026-09-16 after review; clarifies D-007)*
+  - Decision: the pack excludes the census identity set, test files, and coverage output; where an authority incidentally cites a test path or marker, the reviewer does not open it and the source log records the authority rather than the citation. The provable claim is that every entry traces to a cited non-test authority and no entry cites a test, marker, or coverage artifact as its authority.
+  - Alternatives: claiming the pack contains no test references (false — `missions/architecture/living-memory.md` cites `tests/memory/interface.test.ts`); adding a redaction step.
+  - Why: independence was stated as a property of the pack that the pack does not have. Stating it as a derivation rule keeps `AC-008` provable without machinery that cannot verify a human's attention.
+  - Decided by: independent review, design-attack lens, 2026-09-16.
+
 ## Behaviors
 
 ### B-001 - Independent dimensions, evidence bases, grounding forms, and authorship lanes
@@ -183,7 +231,7 @@ These ratified assumptions are settled and carried verbatim:
 - Source: AC-001, AC-005, AC-006, AC-014
 - Context: profile fixtures cover production functions, shipped files/prompts, configuration, CLI output, subprocesses, events, persisted state, and composition roots, with objective observations and human judgments
 - Action: the schema validates the records
-- Expected: all seven dimensions use only their ratified vocabularies and each has one common evidence basis; no score/overall-health label is accepted; Grounding and Realism remain independent/non-ranked; every assessed value has enforceable objective or human-reviewed provenance; absent/conflicting authority is `unresolved`; and every legitimate system-under-test form is representable with its concrete expected Grounding/Realism combination
+- Expected: all seven dimensions, the evidence basis, the reason classes, the portfolio conclusions, and the dispositions accept only the spec's ratified vocabularies, and each dimension has one common evidence basis; no score/overall-health label is accepted; Grounding and Realism remain independent/non-ranked; every assessed value has enforceable objective or human-reviewed provenance; absent/conflicting authority is `unresolved`; and every legitimate system-under-test form is representable with its concrete expected Grounding/Realism combination
 - Seam: `scripts/test-health-audit/schema.ts`
 - Test: `tests/scripts/test-health-audit/schema.test.ts` > `preserves seven dimensions all grounding forms and field-level assessment provenance without a score`
 - Marker: `@cosmo-behavior plan:test-health-audit#B-001`
@@ -252,8 +300,8 @@ These ratified assumptions are settled and carried verbatim:
 
 - Source: AC-010
 - Context: a critical/historical/seam-sensitive/double-maskable claim requires empirical evidence and the maintainer explicitly confirms its probe ID
-- Action: the runner copies the current tree, proves sandbox cwd/config/setup/test/target/import-route containment, runs sandbox green, introduces one realistic defect in the sandbox target, runs the narrow guardrail, removes the sandbox mutation, reruns sandbox green, and verifies the source checkout remained identical
-- Expected: the record has one defect/boundary, non-contributing doubles, copied-graph identity, expected red reason, sandbox restored-green evidence, and `probe-confirmed` or `probe-survived`; no source-checkout mutation or `git checkout` is permitted; an unprovable/unsafe copy remains `reasoned` or `unassessed` and cannot count for a required defect
+- Action: the runner seeds a sandbox from the tracked file set plus a recorded untracked allowlist, provisions a repository and dependencies in it, proves sandbox cwd/config/setup/test/target/import-route containment, runs sandbox green, introduces one realistic defect in the sandbox target, runs the narrow guardrail, removes the sandbox mutation, reruns sandbox green, and verifies the source checkout remained identical
+- Expected: the record has one defect/boundary, non-contributing doubles, copied-graph identity, expected red reason, sandbox restored-green evidence, and `probe-confirmed` or `probe-survived`; no source-checkout mutation or `git checkout` is permitted; an unprovable/unsafe copy remains `reasoned` or `unassessed` and cannot count for a required defect; and a queued required claim counted as protection carries either a `probe-confirmed` record or a recorded infeasibility limitation, while a queued claim with neither, and any `probe-survived` claim, is rejected as protection for that defect
 - Seam: `scripts/test-health-audit/probe.ts`, `missions/plans/test-health-audit/audit/epochs/<epoch-id>/probes.jsonl`
 - Test: `tests/scripts/test-health-audit/probe.test.ts` > `rejects probes outside the sandbox or without copied import identity isolated outcome and restored green`
 - Marker: `@cosmo-behavior plan:test-health-audit#B-008`
@@ -302,6 +350,18 @@ Create repo-maintenance tooling, not framework/runtime code:
 - `probe.ts` — copy-sandbox containment, declared import-route resolution, target mutation safety, subprocess cwd/config identity, source-checkout pre/post manifest, and probe record production.
 - `cli.ts` — explicit-root command adapter only; parses options and invokes the focused modules.
 
+`cli.ts` commands and their exit contract, since `docs/test-health-audit.md` is the sole durable interface (D-018 adds no package script):
+
+| Command | Produces | Exit 0 | Non-zero exit |
+|---|---|---|---|
+| `census` | source + runtime reconciliation, raw evidence | census written, state recorded | audit itself failed (unreadable root, invalid manifest, reporter incompatibility) |
+| `prepare-units` | deterministic work units in the current epoch | units written | stale or missing census digest |
+| `validate` | schema, freshness, ten-bundle, and identity-set validation | all objective checks pass | invalid schema, stale digest, missing/duplicate record, omitted material input |
+| `probe --confirm-probe <id>` | one probe record | probe ran and the source checkout is byte-identical | restoration unproven or sandbox containment unproven |
+| `baseline` | condition rows 1-7 and the eligibility verdict | verdict written | missing or stale input evidence |
+
+The distinction the wrapper makes for tests is preserved here: an **observed** failing test run, an `incomplete`/`blocked` census, a calibration miss, and `not established` are all successful observations and exit 0 with the state in the record. A non-zero exit means the audit tooling could not produce trustworthy evidence. No command activates a CI gate.
+
 Dependency direction is `cli/reporter/probe/census/artifacts/source-census -> schema`; `schema` imports none of them. Census and artifact logic do not import product modules. The utility is run explicitly as documented and is not added to the shipped CLI/package.
 
 Core assessed-value contract:
@@ -310,11 +370,41 @@ Core assessed-value contract:
 type EvidenceBasis = "observed" | "probe-confirmed" | "reasoned" | "missing" | "blocked";
 type AssessmentLane = "objective-observation" | "human-reviewed-judgment";
 
+type TestSurface = "normal" | "watch" | "coverage" | "repeat" | "shuffle" | "isolation";
+type RuntimeState = "collected" | "passed" | "failed" | "skipped" | "todo" | "not-collected" | "errored";
+type TestRole = "unit" | "seam/component" | "artifact contract" | "CLI/subprocess" | "persistence" | "recovery" | "concurrency" | "other";
+
+interface EvidenceRef {
+  kind: "source-span" | "command-output" | "artifact" | "authority-document" | "probe-record";
+  path: string;
+  span?: { startLine: number; endLine: number };
+  locator?: string;
+  quote?: string;
+}
+
+interface SystemUnderTestRef extends EvidenceRef {
+  kind: "source-span" | "artifact";
+  sutKind: "production-function" | "shipped-file" | "shipped-prompt" | "configuration" | "cli-output" | "subprocess" | "event" | "persisted-state" | "composition-root";
+}
+
+interface EvidenceDigest {
+  path: string;
+  scope: "declaration-span" | "file";
+  span?: { startLine: number; endLine: number };
+  sha256: string;
+}
+
+interface PortfolioContribution {
+  inventoryId: string;
+  boundary: string;
+  defectAxes: string[];
+}
+
 interface AssessedValue<T> {
   value: T;
   lane: AssessmentLane;
   basis: EvidenceBasis;
-  assessor: { kind: "collector"; id: string; version: string } | { kind: "human"; id: string; reviewedAt: string };
+  assessor: { kind: "collector"; id: string; version: string; observedAt: string } | { kind: "human"; id: string; reviewedAt: string };
   evidence: EvidenceRef[];
   counterevidence: EvidenceRef[];
   uncertainty: string[];
@@ -346,7 +436,7 @@ interface TestEvidenceProfile {
 }
 ```
 
-`SystemUnderTestRef.kind` is one of `production-function`, `shipped-file`, `shipped-prompt`, `configuration`, `cli-output`, `subprocess`, `event`, `persisted-state`, or `composition-root`. Conclusion, basis, reason, portfolio, and disposition unions use the spec’s spelling exactly. There is no score, overall-health field, or universal per-test verdict. Validator rules require human lane for D-009’s judgments; an objective collector may suggest a separate candidate but cannot populate them.
+`SystemUnderTestRef.sutKind` enumerates the spec's legitimate system-under-test forms. Conclusion, basis, reason, portfolio, and disposition unions use the spec’s spelling exactly. There is no score, overall-health field, or universal per-test verdict. Validator rules require human lane for D-009’s judgments; an objective collector may suggest a separate candidate but cannot populate them.
 
 Stable profile ID is a hash of root-relative path, normalized nested declaration title/template, and same-title declaration ordinal. Location and Vitest runtime ID are separate. Parameterized cases share a profile only for one declaration/evidence chain; every case name/count remains visible.
 
@@ -354,7 +444,7 @@ Stable profile ID is a hash of root-relative path, normalized nested declaration
 
 The census precedes every suite/test-health conclusion:
 
-1. Parse all current `tests/**/*.test.ts` declarations and emit unsupported constructs explicitly.
+1. Parse all current `tests/**/*.test.ts` declarations and emit unsupported constructs explicitly. The universe is re-derived per epoch rather than pinned once, so identities introduced after an earlier epoch — including the tests this plan adds under `tests/scripts/test-health-audit/**` and any guardrail added by remediation — are ordinary auditable identities requiring complete fresh profiles in the candidate epoch. They are never carried, exempted, or treated as audit infrastructure.
 2. Invoke normal once with the reporter through `bun run test`.
 3. Invoke the actual watch surface through `bun run test:watch -- --watch` with the reporter, wait for one complete initial cycle plus watcher-start evidence, then request graceful termination and verify process cleanup. The harness-controlled termination is distinct from an unexpected command failure. If a bounded initial cycle cannot be observed, the watch surface is blocked; `--run` is not substituted and called watch evidence.
 4. Invoke coverage once through `bun run test:coverage` with the reporter. Coverage percentages remain context only.
@@ -364,22 +454,26 @@ The census precedes every suite/test-health conclusion:
 
 Error records contain `phase`, `phaseBasis`, original serialized payload, entity/test/module, and command. Public module errors can establish collection/outside-run failure; aggregated case/suite errors do not automatically establish hook versus test-body phase. Unknown phase is visible blocked evidence under D-011.
 
+A non-zero command exit whose reporter payload shows no module/suite/case error and no declaration-to-runtime mismatch is a **post-run policy exit** (the coverage-threshold violation above is the live instance): it is recorded as command evidence and, if unresolved, as residual uncertainty, but it does not by itself make the census `incomplete` or `blocked`. Only collection, execution, or hook failures evidenced in the reporter payload block. This also fixes the scope of the word "error" in B-002.
+
 Census state is `complete`, `incomplete`, or `blocked`. `incomplete` exits only after every mismatch/skip/filter/limitation has a disposition and relevant recollection; `blocked` exits only after execution/collection/assessment repair. Neither can render clean. Raw full-suite collection before calibration is inventory data only; no health/clean conclusion is trusted until calibration passes.
 
 ### 3. Independent behavior/risk inventory
 
-An inventory reviewer receives a restricted evidence pack—not census identities, test files, markers, or coverage—containing:
+An inventory reviewer receives a restricted evidence pack that excludes the census identity set, test files, and coverage output, containing:
 
 - current bin/CLI/domain/public and shipped-artifact surfaces;
 - shipped docs and ratified current/archived contracts describing current behavior;
 - active architecture decisions governing current code; and
 - durability, persistence, recovery, concurrency, security, irreversible-effect, and architectural-dependency incidents.
 
+Some authorities incidentally cite test paths or behavior markers — `missions/architecture/living-memory.md` cites `tests/memory/interface.test.ts`, and `docs/testing.md` names `tests/setup.ts`. Such a citation is never an inventory source: an entry cites the authority's behavioral statement, and the reviewer does not open a cited test file. The source log records the authority, not the citation. The provable form of the independence claim is therefore that every entry traces to a cited non-test authority in the frozen source log, and no entry cites a test, marker, or coverage artifact as its authority.
+
 Partition the authority list into bounded source work units, merge duplicate behavior/risk families only when authority/consequence/boundaries remain explicit, then freeze the source-log and inventory digest. Completion requires a positive coverage statement for every enumerated shipped surface/authority group, not an arbitrary entry cap. Each entry has intended contract/authority, criticality/consequence, applicable producer/consumer/adapter/persisted-state/event/alternate-path/composition-root boundaries, and realistic path/caller/axis defect classes. A later non-test authority discovery creates a successor epoch.
 
 ### 4. Calibration contract
 
-Every row records stable ID, polarity, source, expected conclusions/bases/reasons/portfolio effect, actuals, reviewer, and pass/miss. Required obligations:
+Every row records stable ID, polarity, source, expected conclusions/bases/reasons/portfolio effect, actuals, reviewer, and pass/miss. Every row predeclares all four D-014 fields — expected dimension conclusion(s), evidence basis, reason code(s), and portfolio effect — each written as the ratified vocabulary token in backticks, with any field deliberately left open for that row written as `unconstrained` rather than omitted. Each control also names an exact source identity (a declaration's executable title, not a whole file). The recorded `expected` columns must transcribe this table verbatim; a divergence between the table and the recorded expected is itself a calibration miss. Required obligations:
 
 | ID | Control | Predeclared pass obligation |
 |---|---|---|
@@ -418,25 +512,31 @@ Historical sources are `missions/reviews/improvements/living-memory-implementati
 
 Work units are lexically deterministic after enforcing D-016 caps. Large files split at suite/declaration boundaries and each unit receives shared file-context/import/helper evidence. One reviewer owns one unit; at most two run concurrently; unit paths are disjoint. Each unit writes a temporary sibling and atomically renames after validation. Progress is reconstructed from valid current-epoch unit files. A failed session loses at most its bounded unit.
 
-After remediation or inventory/authority change, create a successor epoch. Recollect required command evidence. For each prior human judgment, recompute all material-input digests. If unchanged, copy the profile into the successor with `carriedFrom`; refresh current runtime observations. If any test/SUT/contract/inventory/method/runner/config/setup input changed or was omitted, re-review it. The final candidate epoch therefore contains a complete current profile set rather than cross-revision references.
+Create a successor epoch on any material change to a frozen input: remediation, an inventory/authority change, a calibration- or disagreement-driven method/schema amendment, or an added or removed test file. A method/schema amendment therefore never writes new evidence against a stale method digest and never mutates an immutable manifest. Recollect required command evidence. For each prior human judgment, recompute all material-input digests. If unchanged, copy the profile into the successor with `carriedFrom`; refresh current runtime observations. If any test/SUT/contract/inventory/method/runner/config/setup input changed or was omitted, re-review it. The final candidate epoch therefore contains a complete current profile set rather than cross-revision references; the complete-current-profile obligation binds at that final candidate epoch, not at each intermediate one.
+
+Digest granularity is pinned so invalidation neither over- nor under-fires: `materialInputs`/`EvidenceDigest` covers the recorded declaration span cited in the profile's evidence chain for `production-function` system-under-test refs, and whole-file content for runner, config, setup, and contract inputs. Without this a hub-module edit would invalidate every profile citing the file — 59 test files reference `lib/tasks` alone.
 
 ### 6. Portfolio join, probes, and remediation
 
-After inventory freeze and calibration pass, join profiles into matrix cells containing profile IDs, probe IDs, evidence basis, gaps, and uncertainty. Missing cells never default to protection. Path parity, caller enumeration, and defect axes are explicit where production presents them.
+After inventory freeze and calibration pass, join profiles into matrix cells containing profile IDs, probe IDs, evidence basis, gaps, and uncertainty. A probe record is written back into the current-epoch profile's `dimensions.faultSensitivity` and, where it changes protection, its `portfolioContributions`: unit shards remain revisable within an open epoch — only the manifest is immutable — and are revalidated on rewrite. A `probe-survived` result additionally opens a remediation-ledger row under B-009. Missing cells never default to protection. Path parity, caller enumeration, and defect axes are explicit where production presents them.
 
-Probe queue contains every critical entry and each historical/seam-sensitive/mock-maskable claim for which causal inspection is insufficient. The explicit probe command prints sandbox root plan, target, declared import route, config/setup, test selection, and mutation description, then requires `--confirm-probe <id>`. It executes project-controlled code with user privileges only after this maintainer act.
+The probe queue contains, unconditionally: every critical behavior/risk entry; every claim in a known historical false-confidence class; every guardrail whose claimed value depends on a consumer, adapter, alternate path, persistence boundary, or composition root; and every claim whose observed outcome could be supplied by a mock or fixture independently of the production path under test. It additionally contains any other claim for which reasoned inspection cannot establish that the intended defect would be detected — inspection sufficiency is a fifth trigger that adds claims to the queue, never a filter that removes them. A queued probe that proves infeasible or unprovable under D-012 degrades to `reasoned` or `unassessed` with the limitation visible, and cannot count for the defect it was queued against. The explicit probe command prints sandbox root plan, target, declared import route, config/setup, test selection, and mutation description, then requires `--confirm-probe <id>`. It executes project-controlled code with user privileges only after this maintainer act.
 
 Sandbox protocol:
 
 1. Capture source-checkout status plus target/test/config/setup path existence, type (file/symlink), mode, realpath, and SHA-256.
-2. Copy the current working tree to a temp root, excluding `.git`, `node_modules`, coverage, and audit temp output; make dependencies available without allowing production/test/config paths to resolve back to source.
-3. Resolve and record test module -> declared import route -> target plus root config/setup beneath sandbox. Any alias/dynamic route that cannot be proven remains unassessed.
-4. Set subprocess cwd to sandbox, set reporter output outside it, and run the narrow guardrail green.
-5. Apply exactly one realistic mutation to the sandbox target; verify only declared sandbox paths changed; run the guardrail and record expected red or survived.
-6. restore/delete only the sandbox mutation from a copy, verify sandbox pre-mutation target digest/mode/realpath, and rerun green.
-7. Delete sandbox and prove source-checkout status/path digests are identical. The source checkout was never mutated, so crash safety does not depend on `finally`.
+2. Seed a temp root from the tracked file set (`git ls-files -z`) plus an explicitly enumerated untracked allowlist the probe target actually requires (for example compiled `bin/cosmo-*` runners); record that allowlist in the probe record so containment stays provable. Never copy gitignored bulk — `missions/archive/sessions/` alone is ~4.8 GB, so a naive whole-tree copy is ~4.9 GB per probe against ~76 MB for the tracked set.
+3. Provision a working repository at the sandbox root (copy `.git`, or `git init` plus one commit inside the sandbox honoring the source `.gitignore`). Guardrails that shell out to git at the project root exist — `tests/config/biome.test.ts` runs `git check-ignore` against `process.cwd()` — and without a repository they fail step 6's pre-mutation green for a reason unrelated to the mutation, silently degrading probes to `unassessed`.
+4. Make dependencies available by an explicitly named mechanism — symlink the source `node_modules` at the sandbox root — while keeping production, test, and config paths resolving inside the sandbox. Because Vitest's cache lives at `node_modules/.vite`, the run must direct its cache elsewhere so a mutated copy never shares or poisons the source transform cache.
+5. Resolve and record test module -> declared import route -> target plus root config/setup beneath sandbox. Any alias/dynamic route that cannot be proven remains unassessed.
+6. Set subprocess cwd to sandbox, set reporter output outside it, and run the narrow guardrail green.
+7. Apply exactly one realistic mutation to the sandbox target; verify only declared sandbox paths changed; run the guardrail and record expected red or survived.
+8. Restore/delete only the sandbox mutation from a copy, verify sandbox pre-mutation target digest/mode/realpath, and rerun green.
+9. Delete sandbox and prove source-checkout status/path digests are identical. The source checkout was never mutated, so crash safety does not depend on `finally`.
 
-For each confirmed weakness, locate authority and apply the deviation classifier. Conflict/absence becomes `unresolved` plus drafted human decision. Otherwise RED-GREEN-REFACTOR at the narrowest correct seam, rerun probe and affected evidence, then create a successor epoch. Every ledger `open` exits through `closed`, `excluded-from-guardrail`, or `unresolved`; `probe-survived` exits only through remediation plus new confirmation or stays visible/uncounted. The session-field specimen uses exclusion and remains untouched.
+For each confirmed weakness, locate authority and apply the deviation classifier. Conflict/absence becomes `unresolved` plus drafted human decision. Otherwise RED-GREEN-REFACTOR at the narrowest correct seam, rerun probe and affected evidence, then create a successor epoch per remediation **wave**: several ledger rows may close under one successor epoch and one re-review pass over the union of invalidated profiles, so the human re-review radius is batched rather than multiplied per row. Every ledger `open` exits through `closed`, `excluded-from-guardrail`, or `unresolved`; `probe-survived` exits only through remediation plus new confirmation or stays visible/uncounted. Every `unresolved` confirmed weakness — critical or not — routes to the human-decision checkpoint **before** eligibility is evaluated, because baseline condition 5 requires every confirmed weakness to be fixed, replaced, removed, or excluded. Without that pre-eligibility ruling a noncritical unresolved row would fail condition 5 and return to the same remediation stage with no exit. The owner's ruling either supplies the authority that closes the row, or classifies it as excluded from guardrail evidence.
+
+The session-field specimen uses exclusion and remains untouched.
 
 ### 7. Deliverables and baseline
 
@@ -497,10 +597,15 @@ Provider expansion and whole-project fixes belong to later work.
 - `docs/test-health-audit.md` — repeatable explicit-root command method, rubric, trust/consent, rerun triggers, cross-links.
 - `missions/plans/test-health-audit/audit/index.json` — persisted current/prior epoch index.
 - `missions/plans/test-health-audit/audit/epochs/<epoch-id>/manifest.json` and `raw/` — immutable inputs and command evidence.
-- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/suite-integrity.json`, `suite-integrity.md`, `profiles/index.json`, and `profiles/unit-*.ndjson` — census/profile evidence.
-- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/behavior-risk-inventory.json`, `behavior-risk-matrix.md`, and `gap-register.md` — inventory/portfolio evidence.
-- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/calibration.md`, `probes.jsonl`, and `probes.md` — calibration/probe evidence.
-- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/remediation-ledger.md`, `residual-uncertainty.md`, `gate-recommendations.md`, and `baseline.md` — closure/decision evidence.
+- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/suite-integrity.json` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/suite-integrity.md` — census evidence.
+- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/profiles/index.json` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/profiles/unit-*.ndjson` — per-test evidence profiles.
+- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/behavior-risk-inventory.json` — frozen independent inventory.
+- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/behavior-risk-matrix.md` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/gap-register.md` — portfolio evidence.
+- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/calibration.md` — calibration controls and trust-gate result.
+- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/probes.jsonl` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/probes.md` — targeted probe records.
+- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/remediation-ledger.md` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/residual-uncertainty.md` — closure and uncertainty evidence.
+- `missions/plans/test-health-audit/audit/epochs/<epoch-id>/gate-recommendations.md` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/baseline.md` — recommendations and the final decision record.
+- `biome.json` — add `"!missions/plans/*/audit/**"` to `files.includes`, following the existing `!missions/tasks/config.json` and `!.fallow-baselines` precedent for generated JSON.
 - Evidence-selected current test/production files — only after a ledger row identifies a confirmed in-scope weakness and authority. Add every path before modification. `tests/domains/coding-agents.test.ts` and `AgentDefinition.session` are excluded from remediation here.
 - Read-only unless evidence-authorized remediation names them: `package.json`, `scripts/vitest-runner.mjs`, `vitest.config.ts`, `tests/setup.ts`, current `tests/**/*.test.ts`, governing production/artifacts, `docs/testing.md`, `AGENTS.md`, `missions/architecture/code-structure-map.md`, and `ROADMAP.md`.
 
@@ -537,20 +642,21 @@ Plan-specific assertions:
 5. Weighted unit validation proves exactly one current profile per auditable identity; oversized files subdivide; stale/duplicate/missing/carried-without-input-proof records fail.
 6. Every executed required probe proves sandbox module/config/setup/target identity, one isolated defect, no source mutation/`git checkout`, expected red, and sandbox restored green.
 7. Every confirmed weakness closes, is excluded, or remains unresolved with a human-decision request; no unratified expectation change passes.
-8. Establishment requires all eight rows plus owner ratification of an already-committed evaluated revision/canonical digest; any material change makes it stale.
+8. `bun run lint` is clean after a full epoch is written under `missions/plans/test-health-audit/audit/`.
+9. Establishment requires all eight rows plus owner ratification of an already-committed evaluated revision/canonical digest; any material change makes it stale.
 
 ## Implementation Order
 
 Eleven behaviors remain under the project’s twelve-behavior guidance. The work is intentionally sliced; task creation may be staged as evidence appears, but this planning pass creates none.
 
 1. **Schema/provenance — B-001, B-005.** RED fixtures for all seven dimensions, exact bases/reasons, every SUT kind, non-ranking, no score, field lanes, collector-forbidden judgments, and contract unresolved. GREEN minimal pure validators; REFACTOR keep IO out. **M1:** schema tests green.
-2. **Census collectors — B-002.** RED fixture project for aliases/nesting/parameters/skips/todos/conditionals/dynamic unsupported syntax, collection/test/hook failures, and no false phase attribution. Implement source collector, reporter, reconciliation, and explicit-root CLI. **C1:** source census freezes the universe; no conclusions yet.
+2. **Census collectors — B-002.** RED fixture project for aliases/nesting/parameters/skips/todos/conditionals/dynamic unsupported syntax, collection/test/hook failures, and no false phase attribution. Implement source collector, reporter, reconciliation, and explicit-root CLI. **C1:** the source census is derived for the current epoch (it is re-derived per epoch, never pinned once); no conclusions yet; `docs/test-health-audit.md` v1 publishes the explicit-root invocation, the reviewer rubric, and the trust/consent rules, because reviewers apply that rubric from stage 4 onward.
 3. **Command census — B-002.** Run normal, bounded real watch initial cycle, coverage, same-order repeat, deterministic shuffle, and suspect-suite isolation. **C2:** all raw errors/mismatches/unknowns visible; incomplete/blocked cannot proceed as clean.
 4. **Independent inventory — B-006.** Give separate reviewers restricted non-test authority units; merge/freeze with positive coverage statements and criticality/boundary/axis fields. **I1:** independent check confirms no test/marker/coverage derivation.
-5. **Calibration — B-003.** Execute every N/X/P control against the exact table. On any miss amend derived method/schema, record the miss, and rerun all controls. **K1:** every required ID passes; otherwise stop.
+5. **Calibration — B-003.** Execute every N/X/P control against the exact table. On any miss amend the derived method document and schema, open a successor epoch for the amended method digest, record the miss, and rerun all controls. **K1:** every required ID passes; otherwise stop.
 6. **Profile units — B-004.** Generate D-016 work units, max two disjoint reviewer sessions, validate/atomically publish each, and resume from persisted current-epoch units. Re-sample controls between waves. **P-final:** identity set equality, workload caps, complete human provenance, no stale unit.
 7. **Portfolio/probes — B-007, B-008.** Join inventory/profiles; enumerate every relevant boundary/path/caller/axis; derive selective probe queue; run only explicitly confirmed copy-only probes. **F1:** no critical `protected` row has a missing required cell/probe; survived/unassessed stays uncounted.
-8. **Remediation epochs — B-009.** Per row: authority/deviation check, RED-GREEN-REFACTOR or exclusion, narrow/full correctness, probe rerun, successor epoch, rehash/carry/re-review. **R1:** all confirmed rows closed/excluded/unresolved; critical unresolved halts for human ruling.
-9. **Candidate evidence — B-010.** At final candidate commit, rerun complete command regimen, refresh all current objective evidence, validate all ten bundles, uncertainty, objective/heuristic recommendations, roadmap links, scope, and canonical digest. **E1:** stale digest/profile, incomplete census, heuristic CI activation, or scope expansion blocks eligibility.
+8. **Remediation epochs — B-009.** Per wave: authority/deviation check, RED-GREEN-REFACTOR or exclusion, narrow/full correctness, probe rerun, one successor epoch per wave, rehash/carry/re-review over the union of invalidated profiles. **R1:** all confirmed rows closed/excluded/unresolved; every unresolved row — critical or not — halts for a human ruling before eligibility is evaluated.
+9. **Candidate evidence — B-010.** At final candidate commit, re-derive the source census over the current tree and run a bounded profiling wave (stage 6 mechanics) over any identity the refreshed census shows without a current-epoch profile — including the `tests/scripts/test-health-audit/**` tests this plan adds — then rerun the complete command regimen, refresh all current objective evidence, validate all ten bundles, uncertainty, objective/heuristic recommendations, roadmap links, scope, and canonical digest. **E1:** stale digest/profile, incomplete census, heuristic CI activation, or scope expansion blocks eligibility.
 10. **Eligibility — B-011.** Populate rows 1–7. Automation emits only `not established` or `eligible-for-ratification`. **B1:** every row met or return to owning stage.
 11. **Human checkpoint.** Present committed evaluated revision/digest, critical portfolios, ledger, probes, and uncertainty. Only the project owner may append accepted uncertainties and `established`. Without it the plan remains active. After ratification, hand off to separate `project-health-audit`; do not begin it here.
