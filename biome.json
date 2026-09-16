@@ -5,7 +5,12 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!missions/tasks/config.json", "!.fallow-baselines"]
+		"includes": [
+			"**",
+			"!missions/tasks/config.json",
+			"!.fallow-baselines",
+			"!missions/plans/*/audit/**"
+		]
 	},
 	"formatter": {
 		"enabled": true
