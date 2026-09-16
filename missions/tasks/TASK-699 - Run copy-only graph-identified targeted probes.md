@@ -19,7 +19,7 @@ Stage 7b — Targeted probes.
 
 Owned behavior: **B-008** (sole owner).
 
-Implement and apply only targeted, explicitly confirmed probes. D-003/D-008/D-012/D-019/D-022/D-023 and AC-010 are settled ground: the queue is the unconditional union of all five spec triggers; probes are copy-only and never suite-wide mutation; `git checkout` is forbidden; mechanical and agent-assessed lanes remain separate. Any unprovable graph/containment degrades to visible `reasoned`/`unassessed` and cannot count for the queued defect. Halt and escalate rather than probing in place or weakening the queue.
+Implement and apply only targeted, explicitly confirmed probes. D-003/D-008/D-012/D-019/D-022/D-023 and AC-010 are settled ground, and per D-030 probes do **not** inherit stage 6's concurrency bound — they run real test suites as CPU-bound subprocesses and stay effectively serial under the explicit `--confirm-probe` gate: the queue is the unconditional union of all five spec triggers; probes are copy-only and never suite-wide mutation; `git checkout` is forbidden; mechanical and agent-assessed lanes remain separate. Any unprovable graph/containment degrades to visible `reasoned`/`unassessed` and cannot count for the queued defect. Halt and escalate rather than probing in place or weakening the queue.
 
 <!-- AC:BEGIN -->
 - [ ] #1 B-008 is proved at `scripts/test-health-audit/probe.ts` and current-epoch `probes.jsonl` by `tests/scripts/test-health-audit/probe.test.ts` > `rejects probes outside the sandbox or without copied import identity isolated outcome and restored green`, carrying exact marker `@cosmo-behavior plan:test-health-audit#B-008` near the executable test.
