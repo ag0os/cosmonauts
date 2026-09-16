@@ -358,7 +358,7 @@ Create repo-maintenance tooling, not framework/runtime code:
 | `prepare-units` | deterministic work units in the current epoch | units written | stale or missing census digest |
 | `validate` | schema, freshness, ten-bundle, and identity-set validation | all objective checks pass | invalid schema, stale digest, missing/duplicate record, omitted material input |
 | `probe --confirm-probe <id>` | one probe record | probe ran and the source checkout is byte-identical | restoration unproven or sandbox containment unproven |
-| `baseline` | condition rows 1-7 and the eligibility verdict | verdict written | missing or stale input evidence |
+| `baseline` | condition rows 1-7 and the eligibility verdict | verdict written, including `not established` on missing or stale input evidence | the verdict itself could not be computed (unreadable epoch, invalid manifest) |
 
 The distinction the wrapper makes for tests is preserved here: an **observed** failing test run, an `incomplete`/`blocked` census, a calibration miss, and `not established` are all successful observations and exit 0 with the state in the record. A non-zero exit means the audit tooling could not produce trustworthy evidence. No command activates a CI gate.
 

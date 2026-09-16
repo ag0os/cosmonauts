@@ -22,6 +22,6 @@ P-final is the real graph gate after the plan’s own resume mechanism has drive
 - [ ] #1 The current-epoch persisted queue reports no pending or invalid profile unit after bounded reviewer sessions, with no more than two concurrent sessions and disjoint shard ownership evidenced throughout.
 - [ ] #2 Identity-set equality proves every current auditable declaration appears exactly once, including parameterized case counts, and no stale, duplicate, missing, malformed, or unsupported-as-absent profile passes.
 - [ ] #3 Every unit respects the 50-identity, 2,500-relevant-line, and eight-file caps except a documented indivisible test, and oversized-file subdivisions retain shared context/import/helper digests.
-- [ ] #4 Every current profile has complete human-reviewed provenance for required judgments, exact seven-dimension/basis data, reasons, uncertainty, portfolio/disposition, and complete material-input digests; carry-forward has rehash proof.
+- [ ] #4 Every current profile has complete human-reviewed provenance for required judgments, exact seven-dimension/basis data, claim status and authority, reasons, uncertainty, portfolio/disposition, and complete material-input digests at the pinned scope; carry-forward has rehash proof.
 - [ ] #5 Control re-sampling between waves remains passing, bound correctness and B-004 artifact-conformance pass, and the generic mutation rung remains explicitly unbound.
 <!-- AC:END -->
