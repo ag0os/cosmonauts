@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-691
 createdAt: '2026-09-16T18:35:08.561Z'
-updatedAt: '2026-09-16T18:35:08.561Z'
+updatedAt: '2026-09-17T16:24:03.979Z'
 ---
 
 ## Description
@@ -19,7 +19,7 @@ Stage 4 — Independent inventory.
 
 Owned behavior: **B-006** (sole owner).
 
-Use bounded, separately reviewed non-test authority work units to derive `behavior-risk-inventory.json` before joining any test profiles. INV-004, AC-008, D-007, and D-026 are settled ground: tests, markers, coverage, and the census identity set cannot define the inventory. Incidental test citations in an authority are not opened or promoted to authority. Missing architecture-map evidence remains unavailable, never clean; collisions with ratified scope or authority halt and escalate.
+Use bounded, separately reviewed non-test authority work units to derive `behavior-risk-inventory.json` before joining any test profiles. INV-004, AC-008, D-007, and D-026 are settled ground: tests, markers, coverage, and the census identity set cannot define the inventory. Incidental test citations in an authority are not opened or promoted to authority. Missing architecture-map evidence remains unavailable, never clean; a collision with **ratified scope** halts and escalates. A **shipped-authority collision** — the authorities an entry cites are absent or contradict each other — is not a halt: per ratified D-028/D-021 and D-034, record the claim `unresolved` with its colliding authorities and a drafted question, and continue; those rows batch into the single D-029 ratification packet.
 
 <!-- AC:BEGIN -->
 - [ ] #1 B-006 is proved at `missions/plans/test-health-audit/audit/epochs/<epoch-id>/behavior-risk-inventory.json` by `tests/scripts/test-health-audit/artifacts.test.ts` > `rejects test-derived inventory and requires authority criticality boundaries and defect axes`, carrying exact marker `@cosmo-behavior plan:test-health-audit#B-006` near the executable test.
@@ -28,4 +28,16 @@ Use bounded, separately reviewed non-test authority work units to derive `behavi
 - [ ] #4 The source log and positive coverage statements account for every enumerated shipped surface/authority group; incidental authority citations to tests are not opened, and neither tests nor markers nor coverage appear as an entry’s authority.
 - [ ] #5 Agent-assessed provenance (agent id, model identifier and version, consulted authorities) is present on criticality and every other judgment, while mechanical source-log facts remain in the objective lane; no heuristic inventory judgment becomes a CI failure.
 - [ ] #6 The frozen inventory/source-log digest belongs to the current epoch, and any later non-test authority or inventory change requires a successor epoch rather than mutation of the manifest.
+- [ ] #7 A shipped-authority collision never stops the run: the entry is frozen with claim status `unresolved`, cites every colliding authority, carries a drafted question with options and the agent's recommendation, and is routed to the D-029 ratification packet; no such collision is silently resolved by agent preference.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Run-5 attempt (2026-09-17) implemented the B-006 validator and its marked executable
+test (both committed, gates green) but halted before deriving the inventory, on a real
+shipped-authority collision: `README.md:216` documents `task list --ready` as "Show
+unblocked tasks" while `cli/tasks/commands/list.ts:36,79-81` implements
+`filter.hasNoDependencies = true`, and the shipped tasks skill records that `--ready`
+is shallow. The halt itself was wrong — see D-034 and AC #7: that collision is an
+`unresolved` inventory row with a drafted question, batched into the D-029 packet, and
+the run continues. Re-run derives the inventory on top of the committed validator.

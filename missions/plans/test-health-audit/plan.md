@@ -273,6 +273,13 @@ These ratified assumptions are settled and carried verbatim:
   - Note: `INV-005` is unchanged. A limitation stays visible in the census and in residual uncertainty; what this decision rules is which side of the repair/limitation boundary it falls on, not whether it is recorded.
   - Decided by: planner, on fourth-live-run evidence, 2026-09-17.
 
+- **D-034 - A shipped-authority collision is an `unresolved` row, not a run stop** *(Added 2026-09-17 on fifth-live-run evidence)*
+  - Decision: halting is reserved for a collision between **ratified plan ground** (an `INV-###`, `AC-###`, ratified `D-###`, or the ratified vocabulary) and reality, where an agent would have to choose which ratified promise to break. A disagreement **among shipped authorities** — README, CLI help, shipped skills, `package.json`, docs — is the case ratified `D-028` already names as "absent or self-contradicting authority": record the claim `unresolved`, cite the colliding authorities, draft the question, and **continue**. Those rows batch into the single `D-029` ratification packet.
+  - Alternatives: halting on any authority collision (what the generated task text said, which stopped run 5 at stage 4 with 16 tasks pending); letting the agent pick the authority it finds most credible, which is exactly the act `D-028` withholds.
+  - Why: run 5's stage-4 worker found `task list --ready` documented as "Show unblocked tasks" in `README.md:216` while `cli/tasks/commands/list.ts:36,79-81` implements `filter.hasNoDependencies = true` and the shipped skill records "--ready is shallow". That is a real, correctly-detected shipped-authority collision — and `D-021` had already ruled that such a row "is recorded `unresolved` with its drafted question and the audit **continues**", with per-item human routing named as the rejected first version of that decision. `TASK-692`/`TASK-696` carried the pre-rewrite "authority collisions halt and escalate" wording, so the first shipped-doc inconsistency in the repository stopped the whole run — the decision-queue behavior the user rejected on 2026-09-16. The inventory schema already carries `status: "identified" | "no-meaningful-claim" | "unresolved"` with `authority: EvidenceRef[]`, so the destination existed; only the task text withheld it.
+  - Note: this narrows no halt that protects ratified ground. `TASK-687`/`688`/`694`/`698`/`699`/`703` halt on ratified vocabulary, critical-protection weakening, or unsafe in-place probing, and are unchanged.
+  - Decided by: planner, on fifth-live-run evidence, 2026-09-17.
+
 ## Behaviors
 
 ### B-001 - Independent dimensions, evidence bases, grounding forms, and authorship lanes
