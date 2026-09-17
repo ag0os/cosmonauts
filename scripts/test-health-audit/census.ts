@@ -31,7 +31,8 @@ export interface CensusFinding {
 		| "outcome-mismatch"
 		| "run-end-limitation"
 		| "runtime-skipped"
-		| "hook-lifecycle-incomplete";
+		| "hook-lifecycle-incomplete"
+		| "bounded-collector-limitation";
 	readonly lane: "objective-observation" | "agent-assessed-judgment";
 	readonly basis: "observed" | "missing" | "blocked" | "reasoned";
 	readonly commandId?: string;
@@ -94,11 +95,12 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 	const residualUncertainty: string[] = [];
 	for (const source of input.sources) {
 		for (const limitation of source.limitations)
-			findingDrafts.push({
-				kind: "unsupported-syntax",
-				basis: "blocked",
-				detail: `${limitation.path}:${limitation.line}: ${limitation.detail}`,
-			});
+			if (limitation.kind === "unsupported-syntax")
+				findingDrafts.push({
+					kind: "unsupported-syntax",
+					basis: "blocked",
+					detail: `${limitation.path}:${limitation.line}: ${limitation.detail}`,
+				});
 		for (const declaration of source.declarations) {
 			if (
 				declaration.mode === "skip" ||
@@ -195,6 +197,21 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 		reconcileRun(input.sources, run, findingDrafts);
 	}
 	reconcileRepeatedOutcomes(input.runs, findingDrafts);
+	for (const source of input.sources)
+		for (const limitation of source.limitations)
+			if (
+				limitation.kind === "external-helper-registration" &&
+				!findingDrafts.some(
+					(finding) =>
+						finding.kind === "bounded-collector-limitation" &&
+						finding.detail.includes(limitation.helperPath),
+				)
+			)
+				findingDrafts.push({
+					kind: "bounded-collector-limitation",
+					basis: "missing",
+					detail: `${limitation.path}:${limitation.line} calls ${limitation.helperPath}; no selected runtime module evidence covered the out-of-file declarations`,
+				});
 	for (const command of input.expectedCommands)
 		if (
 			!input.runs.some(
@@ -515,7 +532,14 @@ function reconcileRun(
 			moduleMatches(candidate.moduleId, source.path, run.root),
 		);
 		const unmatched = new Set(module?.cases ?? []);
-		for (const declaration of source.declarations) {
+		const externalHelpers = source.limitations.filter(
+			(limitation) => limitation.kind === "external-helper-registration",
+		);
+		const declarations = [...source.declarations].sort(
+			(left, right) =>
+				Number(isParameterized(left)) - Number(isParameterized(right)),
+		);
+		for (const declaration of declarations) {
 			if (
 				(run.filters?.length ?? 0) > 0 &&
 				!sourceSelected &&
@@ -529,9 +553,13 @@ function reconcileRun(
 				});
 				continue;
 			}
-			const matches = [...unmatched].filter((testCase) =>
+			const candidates = [...unmatched].filter((testCase) =>
 				titleMatches(declaration, testCase.fullName),
 			);
+			const matches =
+				declaration.parameterCount === null
+					? candidates
+					: candidates.slice(0, declaration.parameterCount);
 			if (matches.length === 0)
 				findings.push({
 					kind: "source-only",
@@ -551,6 +579,16 @@ function reconcileRun(
 					detail: `${declaration.title} expected ${declaration.parameterCount} cases but runtime collected ${matches.length}`,
 				});
 		}
+		if (module && externalHelpers.length > 0 && unmatched.size > 0) {
+			for (const limitation of externalHelpers)
+				findings.push({
+					kind: "bounded-collector-limitation",
+					basis: "missing",
+					commandId: run.command.id,
+					detail: `${source.path}:${limitation.line} calls ${limitation.helperPath}; ${unmatched.size} runtime case${unmatched.size === 1 ? "" : "s"} covered the out-of-file declarations`,
+				});
+			unmatched.clear();
+		}
 		for (const testCase of unmatched)
 			findings.push({
 				kind: "runtime-only",
@@ -559,6 +597,13 @@ function reconcileRun(
 				detail: `${testCase.fullName} has no supported source declaration in ${source.path}`,
 			});
 	}
+}
+
+function isParameterized(declaration: SourceDeclaration): boolean {
+	return (
+		declaration.parameterCount !== 1 ||
+		/%[sdifjo#%]|\$\w+/.test(declaration.titleTemplate)
+	);
 }
 
 function selectionMatches(

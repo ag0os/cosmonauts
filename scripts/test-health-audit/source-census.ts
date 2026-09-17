@@ -20,13 +20,22 @@ export interface SourceDeclaration {
 	readonly parameterCount: number | null;
 	readonly assertionCandidates: readonly AssertionCandidate[];
 }
-export interface SourceLimitation {
-	readonly kind: "unsupported-syntax";
-	readonly path: string;
-	readonly line: number;
-	readonly basis: "blocked";
-	readonly detail: string;
-}
+export type SourceLimitation =
+	| {
+			readonly kind: "unsupported-syntax";
+			readonly path: string;
+			readonly line: number;
+			readonly basis: "blocked";
+			readonly detail: string;
+	  }
+	| {
+			readonly kind: "external-helper-registration";
+			readonly path: string;
+			readonly line: number;
+			readonly basis: "missing";
+			readonly detail: string;
+			readonly helperPath: string;
+	  };
 export interface SourceCensus {
 	readonly path: string;
 	readonly declarations: readonly SourceDeclaration[];
@@ -51,6 +60,8 @@ export function collectSourceText(path: string, source: string): SourceCensus {
 	const tests = new Set<string>();
 	const suites = new Set<string>();
 	const expects = new Set<string>();
+	const externalTestHelpers = new Map<string, string>();
+	const localConstants = collectLocalConstants(file);
 	const declarations: SourceDeclaration[] = [];
 	const limitations: SourceLimitation[] = [];
 	const ordinals = new Map<string, number>();
@@ -68,13 +79,23 @@ export function collectSourceText(path: string, source: string): SourceCensus {
 		});
 	}
 	for (const statement of file.statements) {
-		if (
-			!ts.isImportDeclaration(statement) ||
-			staticText(statement.moduleSpecifier) !== "vitest"
-		)
-			continue;
+		if (!ts.isImportDeclaration(statement)) continue;
+		const modulePath = staticText(statement.moduleSpecifier);
 		const bindings = statement.importClause?.namedBindings;
 		if (!bindings) continue;
+		if (modulePath !== "vitest") {
+			if (
+				modulePath?.startsWith(".") &&
+				ts.isNamedImports(bindings) &&
+				!statement.importClause?.isTypeOnly
+			)
+				for (const element of bindings.elements) {
+					const imported = element.propertyName?.text ?? element.name.text;
+					if (!element.isTypeOnly && isExternalTestHelperName(imported))
+						externalTestHelpers.set(element.name.text, modulePath);
+				}
+			continue;
+		}
 		if (ts.isNamespaceImport(bindings)) {
 			addImportLimitation(
 				statement,
@@ -111,7 +132,27 @@ export function collectSourceText(path: string, source: string): SourceCensus {
 	}
 	function walk(node: ts.Node, parents: readonly string[]): void {
 		if (ts.isCallExpression(node)) {
-			const registration = parseRegistration(node, tests, suites);
+			if (ts.isIdentifier(node.expression)) {
+				const helperPath = externalTestHelpers.get(node.expression.text);
+				if (helperPath) {
+					limitations.push({
+						kind: "external-helper-registration",
+						path,
+						line:
+							file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
+						basis: "missing",
+						detail: `${node.expression.text} registers tests outside the bounded in-file collector`,
+						helperPath,
+					});
+					return;
+				}
+			}
+			const registration = parseRegistration(
+				node,
+				tests,
+				suites,
+				localConstants,
+			);
 			if (registration && suites.has(registration.base)) {
 				if (registration.parameterCount === null)
 					addLimitation(node, "parameter set is not statically countable");
@@ -172,6 +213,10 @@ export function collectSourceText(path: string, source: string): SourceCensus {
 	return { path, declarations, limitations };
 }
 
+function isExternalTestHelperName(name: string): boolean {
+	return /^(?:run|register|define).*(?:tests?|specs?|suites?)$/i.test(name);
+}
+
 export async function collectSourceTree(
 	projectRoot: string,
 ): Promise<SourceCensus[]> {
@@ -203,6 +248,7 @@ function parseRegistration(
 	call: ts.CallExpression,
 	tests: ReadonlySet<string>,
 	suites: ReadonlySet<string>,
+	localConstants: ReadonlyMap<string, ts.Expression>,
 ): Registration | undefined {
 	const expression = call.expression;
 	const args = call.arguments;
@@ -217,7 +263,10 @@ function parseRegistration(
 				mode: "run",
 				title: args[0],
 				callback: args.at(-1),
-				parameterCount: countEachParameters(expression.arguments[0]),
+				parameterCount: countEachParameters(
+					expression.arguments[0],
+					localConstants,
+				),
 			};
 		if (property === "runIf" || property === "skipIf")
 			return {
@@ -301,9 +350,14 @@ function staticText(expression: ts.Expression | undefined): string | undefined {
 }
 function countEachParameters(
 	expression: ts.Expression | undefined,
+	localConstants: ReadonlyMap<string, ts.Expression> = new Map(),
 ): number | null {
 	if (!expression) return null;
 	expression = unwrapExpression(expression);
+	if (ts.isIdentifier(expression)) {
+		const initializer = localConstants.get(expression.text);
+		if (initializer) expression = unwrapExpression(initializer);
+	}
 	if (
 		ts.isArrayLiteralExpression(expression) &&
 		!containsSpreadElement(expression)
@@ -313,6 +367,24 @@ function countEachParameters(
 		return countEachTemplate(expression.template);
 	}
 	return null;
+}
+
+function collectLocalConstants(
+	file: ts.SourceFile,
+): ReadonlyMap<string, ts.Expression> {
+	const constants = new Map<string, ts.Expression>();
+	function visit(node: ts.Node): void {
+		if (
+			ts.isVariableStatement(node) &&
+			(node.declarationList.flags & ts.NodeFlags.Const) !== 0
+		)
+			for (const declaration of node.declarationList.declarations)
+				if (ts.isIdentifier(declaration.name) && declaration.initializer)
+					constants.set(declaration.name.text, declaration.initializer);
+		ts.forEachChild(node, visit);
+	}
+	visit(file);
+	return constants;
 }
 function unwrapExpression(expression: ts.Expression): ts.Expression {
 	let current = expression;

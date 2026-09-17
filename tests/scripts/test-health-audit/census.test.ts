@@ -501,6 +501,134 @@ describe("test health audit census", () => {
 		).toBe(true);
 	});
 
+	test("resolves one-hop local each arrays without consuming ordinary sibling cases", () => {
+		const source = collectSourceText(
+			"tests/local-each.test.ts",
+			`import { test } from "vitest";
+			 const rows = ["success", "failure"] as const;
+			 test.each(rows)("returns %s", () => {});
+			 test("returns success", () => {});`,
+		);
+
+		expect(source.limitations).toEqual([]);
+		expect(
+			source.declarations.map((declaration) => declaration.parameterCount),
+		).toEqual([2, 1]);
+
+		const observed = runtime({
+			modules: [
+				{
+					id: "local-each-module",
+					moduleId: "/repo/tests/local-each.test.ts",
+					state: "passed",
+					errors: [],
+					suites: [],
+					cases: [
+						{
+							id: "parameter-success",
+							name: "returns success",
+							fullName: "returns success",
+							state: "passed",
+							errors: [],
+						},
+						{
+							id: "parameter-failure",
+							name: "returns failure",
+							fullName: "returns failure",
+							state: "passed",
+							errors: [],
+						},
+						{
+							id: "ordinary-success",
+							name: "returns success",
+							fullName: "returns success",
+							state: "passed",
+							errors: [],
+						},
+					],
+				},
+			],
+		});
+		const result = reconcileCensus({
+			sources: [source],
+			runs: [observed],
+			expectedCommands: [{ id: "normal", surface: "normal" }],
+		});
+
+		expect(result).toMatchObject({ state: "complete", clean: true });
+		expect(result.findings).toEqual([]);
+	});
+
+	test("records out-of-file test helpers as bounded limitations covered by runtime evidence", () => {
+		const source = collectSourceText(
+			"tests/cli/plans/commands/delete.test.ts",
+			`import { describe, it } from "vitest";
+			 import { runCommonDeleteCommandTests } from "../../../helpers/delete-command-tests.ts";
+			 describe("plan delete CLI", () => {
+			   it("keeps a local case", () => {});
+			   runCommonDeleteCommandTests({ entityName: "plan" });
+			 });`,
+		);
+
+		expect(source.limitations).toEqual([
+			expect.objectContaining({
+				kind: "external-helper-registration",
+				basis: "missing",
+				helperPath: "../../../helpers/delete-command-tests.ts",
+			}),
+		]);
+
+		const observed = runtime({
+			modules: [
+				{
+					id: "delete-module",
+					moduleId: "/repo/tests/cli/plans/commands/delete.test.ts",
+					state: "passed",
+					errors: [],
+					suites: [],
+					cases: [
+						{
+							id: "local-case",
+							name: "keeps a local case",
+							fullName: "plan delete CLI > keeps a local case",
+							state: "passed",
+							errors: [],
+						},
+						{
+							id: "helper-case",
+							name: "force deletes a plan",
+							fullName: "plan delete CLI > force deletes a plan",
+							state: "passed",
+							errors: [],
+						},
+					],
+				},
+			],
+		});
+		const result = reconcileCensus({
+			sources: [source],
+			runs: [observed],
+			expectedCommands: [{ id: "normal", surface: "normal" }],
+		});
+
+		expect(result).toMatchObject({ state: "incomplete", clean: false });
+		expect(result.findings).toContainEqual(
+			expect.objectContaining({
+				kind: "bounded-collector-limitation",
+				basis: "missing",
+				detail: expect.stringMatching(
+					/delete-command-tests\.ts.*1 runtime case/i,
+				),
+			}),
+		);
+		expect(
+			result.findings.filter(
+				(finding) =>
+					finding.kind === "runtime-only" || finding.basis === "blocked",
+			),
+		).toEqual([]);
+	});
+
 	test("uses recorded dispositions to account for findings without hiding them", () => {
 		const source = collectSourceText(
 			"tests/skipped.test.ts",
