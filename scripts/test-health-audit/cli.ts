@@ -1,8 +1,9 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import {
 	type EpochManifest,
 	prepareProfileWorkQueue,
+	publishProfileUnit,
 	readCurrentEpochManifest,
 } from "./artifacts.ts";
 import {
@@ -13,12 +14,20 @@ import {
 	runAuditCommand,
 	sourceCensusDigest,
 } from "./census.ts";
+import { dispatchProfileUnits } from "./dispatch.ts";
 import type { RuntimeEvidence } from "./runtime-reporter.ts";
+import type { TestEvidenceProfile } from "./schema.ts";
 import { collectSourceTree, type SourceCensus } from "./source-census.ts";
 
 export interface CliDependencies {
 	readonly census?: (root: string) => Promise<unknown>;
 	readonly prepareUnits?: (root: string) => Promise<unknown>;
+	readonly dispatch?: (root: string) => Promise<unknown>;
+	readonly publishUnit?: (
+		root: string,
+		unitId: string,
+		inputPath: string,
+	) => Promise<unknown>;
 	readonly validate?: (root: string) => Promise<unknown>;
 	readonly probe?: (root: string, id: string) => Promise<unknown>;
 	readonly baseline?: (root: string) => Promise<unknown>;
@@ -35,6 +44,20 @@ export async function runCli(
 		}
 		if (parsed.command === "prepare-units") {
 			await (dependencies.prepareUnits ?? defaultPrepareUnits)(parsed.root);
+			return 0;
+		}
+		if (parsed.command === "dispatch") {
+			await (dependencies.dispatch ?? defaultDispatch)(parsed.root);
+			return 0;
+		}
+		if (parsed.command === "publish-unit") {
+			if (!parsed.unitId || !parsed.inputPath)
+				throw new Error("publish-unit requires --unit <id> --input <path>");
+			await (dependencies.publishUnit ?? defaultPublishUnit)(
+				parsed.root,
+				parsed.unitId,
+				parsed.inputPath,
+			);
 			return 0;
 		}
 		if (parsed.command === "validate") {
@@ -60,33 +83,56 @@ export async function runCli(
 }
 function parseArguments(argv: readonly string[]): {
 	root: string;
-	command: "census" | "prepare-units" | "validate" | "probe" | "baseline";
+	command:
+		| "census"
+		| "prepare-units"
+		| "dispatch"
+		| "publish-unit"
+		| "validate"
+		| "probe"
+		| "baseline";
 	confirmProbe?: string;
+	unitId?: string;
+	inputPath?: string;
 } {
 	if (argv[0] !== "--audit-root" || !argv[1])
 		throw new Error(
-			"usage: cli.ts --audit-root <path> <census|prepare-units|validate|probe|baseline>",
+			"usage: cli.ts --audit-root <path> <census|prepare-units|dispatch|publish-unit|validate|probe|baseline>",
 		);
 	const command = argv[2];
 	if (
 		!command ||
-		!["census", "prepare-units", "validate", "probe", "baseline"].includes(
-			command,
-		)
+		![
+			"census",
+			"prepare-units",
+			"dispatch",
+			"publish-unit",
+			"validate",
+			"probe",
+			"baseline",
+		].includes(command)
 	)
 		throw new Error(`unsupported audit command ${command ?? "<missing>"}`);
 	const confirmationIndex = argv.indexOf("--confirm-probe");
 	const confirmProbe =
 		confirmationIndex >= 0 ? argv[confirmationIndex + 1] : undefined;
+	const unitIndex = argv.indexOf("--unit");
+	const unitId = unitIndex >= 0 ? argv[unitIndex + 1] : undefined;
+	const inputIndex = argv.indexOf("--input");
+	const inputPath = inputIndex >= 0 ? argv[inputIndex + 1] : undefined;
 	return {
 		root: argv[1],
 		command: command as
 			| "census"
 			| "prepare-units"
+			| "dispatch"
+			| "publish-unit"
 			| "validate"
 			| "probe"
 			| "baseline",
 		...(confirmProbe ? { confirmProbe } : {}),
+		...(unitId ? { unitId } : {}),
+		...(inputPath ? { inputPath } : {}),
 	};
 }
 async function defaultCensus(root: string): Promise<void> {
@@ -236,6 +282,46 @@ async function defaultPrepareUnits(root: string): Promise<void> {
 		await readFile(censusPath, "utf8"),
 	) as SourceCensus[];
 	await prepareProfileWorkQueue(root, census);
+}
+async function defaultDispatch(root: string): Promise<void> {
+	const manifest = await readCurrentEpochManifest(root);
+	await validateCensusDigests(root, manifest);
+	await dispatchProfileUnits({
+		auditRoot: root,
+		projectRoot: process.cwd(),
+	});
+}
+
+async function defaultPublishUnit(
+	root: string,
+	unitId: string,
+	inputPath: string,
+): Promise<void> {
+	const manifest = await readCurrentEpochManifest(root);
+	await validateCensusDigests(root, manifest);
+	const dispatchRoot = resolve(root, "epochs", manifest.epochId, "dispatch");
+	const resolvedInput = resolve(inputPath);
+	if (
+		resolvedInput !== dispatchRoot &&
+		!resolvedInput.startsWith(`${dispatchRoot}${sep}`)
+	)
+		throw new Error(`${inputPath} must be inside ${dispatchRoot}`);
+	const input = await readJsonInput(resolvedInput);
+	if (typeof input !== "object" || input === null || Array.isArray(input))
+		throw new Error(`${resolvedInput} is malformed`);
+	const record = input as Record<string, unknown>;
+	if (!Array.isArray(record.profiles))
+		throw new Error(`${resolvedInput} profiles must be an array`);
+	await publishProfileUnit({
+		root,
+		projectRoot: process.cwd(),
+		unitId,
+		assessorId: String(record.assessorId ?? ""),
+		processId: Number(record.processId),
+		durationMs: Number(record.durationMs),
+		peakRssBytes: Number(record.peakRssBytes),
+		profiles: record.profiles as TestEvidenceProfile[],
+	});
 }
 async function defaultValidate(root: string): Promise<boolean> {
 	const manifest = await readCurrentEpochManifest(root);

@@ -18,6 +18,7 @@ import {
 	sourceCensusDigest,
 } from "../../../scripts/test-health-audit/census.ts";
 import { runCli } from "../../../scripts/test-health-audit/cli.ts";
+import { dispatchProfileUnits } from "../../../scripts/test-health-audit/dispatch.ts";
 import type { TestEvidenceProfile } from "../../../scripts/test-health-audit/schema.ts";
 import { collectSourceText } from "../../../scripts/test-health-audit/source-census.ts";
 
@@ -327,6 +328,7 @@ describe("test health audit artifacts", () => {
 				inputKind: "contract",
 				scope: "file",
 			});
+			const profilesByUnit = new Map<string, TestEvidenceProfile[]>();
 			for (const unit of queue.units) {
 				const profiles: TestEvidenceProfile[] = [];
 				for (const identity of unit.identities) {
@@ -447,6 +449,7 @@ describe("test health audit artifacts", () => {
 						],
 					} as TestEvidenceProfile);
 				}
+				profilesByUnit.set(unit.id, profiles);
 				await publishProfileUnit({
 					root: auditRoot,
 					projectRoot,
@@ -466,6 +469,111 @@ describe("test health audit artifacts", () => {
 				profiles: expect.arrayContaining([
 					expect.objectContaining({ id: source.declarations[0]?.id }),
 				]),
+			});
+
+			const invokedUnitIds: string[] = [];
+			const promptBodies: string[] = [];
+			let failedUnitId: string | undefined;
+			const failedAttempts = new Set<string>();
+			const backend = {
+				name: "codex",
+				capabilities: { canCommit: false, isolatedFromHostSource: true },
+				async run(invocation: { taskId: string; promptPath: string }) {
+					invokedUnitIds.push(invocation.taskId);
+					promptBodies.push(await readFile(invocation.promptPath, "utf8"));
+					if (
+						invocation.taskId === failedUnitId &&
+						!failedAttempts.has(invocation.taskId)
+					) {
+						failedAttempts.add(invocation.taskId);
+						return { exitCode: 137, stdout: "killed", durationMs: 5 };
+					}
+					await publishProfileUnit({
+						root: auditRoot,
+						projectRoot,
+						unitId: invocation.taskId,
+						assessorId: "profile-assessor",
+						processId: 5000 + invokedUnitIds.length,
+						durationMs: 5,
+						peakRssBytes: 32 * 1024 * 1024,
+						profiles: profilesByUnit.get(invocation.taskId) ?? [],
+					});
+					return { exitCode: 0, stdout: "published", durationMs: 5 };
+				},
+			};
+			const lastUnit = queue.units.at(-1);
+			if (!lastUnit) throw new Error("profile queue is empty");
+			await rm(
+				join(
+					auditRoot,
+					"epochs",
+					"epoch-1",
+					"profiles",
+					`${lastUnit.id}.ndjson`,
+				),
+			);
+			let routedDispatchRoot: string | undefined;
+			expect(
+				await runCli(["--audit-root", auditRoot, "dispatch"], {
+					dispatch: async (root) => {
+						routedDispatchRoot = root;
+						await dispatchProfileUnits({
+							auditRoot: root,
+							projectRoot,
+							backend,
+						});
+					},
+				}),
+			).toBe(0);
+			expect(routedDispatchRoot).toBe(auditRoot);
+			expect(invokedUnitIds).toEqual([lastUnit.id]);
+			expect(promptBodies[0]).toContain(JSON.stringify(lastUnit.identities));
+			expect(promptBodies[0]).toContain(JSON.stringify(lastUnit.fileContexts));
+			let publishArguments: readonly string[] = [];
+			expect(
+				await runCli(
+					[
+						"--audit-root",
+						auditRoot,
+						"publish-unit",
+						"--unit",
+						lastUnit.id,
+						"--input",
+						"candidate.json",
+					],
+					{
+						publishUnit: async (...args) => {
+							publishArguments = args;
+						},
+					},
+				),
+			).toBe(0);
+			expect(publishArguments).toEqual([
+				auditRoot,
+				lastUnit.id,
+				"candidate.json",
+			]);
+
+			for (const unit of queue.units)
+				await rm(
+					join(auditRoot, "epochs", "epoch-1", "profiles", `${unit.id}.ndjson`),
+				);
+			invokedUnitIds.length = 0;
+			failedUnitId = lastUnit.id;
+			await expect(
+				dispatchProfileUnits({ auditRoot, projectRoot, backend }),
+			).rejects.toThrow(lastUnit.id);
+			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
+				completedUnitIds: [queue.units[0]?.id],
+				pendingUnitIds: [lastUnit.id],
+			});
+			invokedUnitIds.length = 0;
+			await dispatchProfileUnits({ auditRoot, projectRoot, backend });
+			expect(invokedUnitIds).toEqual([lastUnit.id]);
+			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
+				valid: true,
+				complete: true,
+				pendingUnitIds: [],
 			});
 
 			const firstShard = join(
@@ -681,7 +789,29 @@ describe("test health audit artifacts", () => {
 				"epoch-1",
 				"source-census.json",
 			);
+			await writeFile(censusPath, "{malformed\n");
+			await expect(
+				dispatchProfileUnits({ auditRoot, projectRoot, backend }),
+			).rejects.toThrow(censusPath);
+			await writeFile(
+				censusPath,
+				JSON.stringify([
+					{
+						...source,
+						declarations: source.declarations.map((identity, index) =>
+							index === 0 ? { ...identity, title: "stale identity" } : identity,
+						),
+					},
+				]),
+			);
+			await expect(
+				dispatchProfileUnits({ auditRoot, projectRoot, backend }),
+			).rejects.toThrow(/work-units\.json.*stale.*source-census\.json/);
+			await writeFile(censusPath, JSON.stringify([source]));
 			await rm(queuePath);
+			await expect(
+				dispatchProfileUnits({ auditRoot, projectRoot, backend }),
+			).rejects.toThrow(queuePath);
 			await rm(censusPath);
 			expect(await runCli(["--audit-root", auditRoot, "prepare-units"])).toBe(
 				1,
