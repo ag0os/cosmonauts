@@ -2,7 +2,7 @@
 title: Test Health Audit
 status: active
 createdAt: '2026-09-15T21:15:54.575Z'
-updatedAt: '2026-09-16T05:05:00.000Z'
+updatedAt: '2026-09-17T00:30:00.000Z'
 ---
 
 ## Overview
@@ -129,8 +129,8 @@ These ratified assumptions are settled and carried verbatim:
   - Decided by: planner-proposed, 2026-09-15.
 
 - **D-011 - Unknown lifecycle phase remains blocked evidence**
-  - Decision: collect every public Vitest error/result, module error, hook name/event, and stack. Label an error `collection`, `import`, `setup`, `test`, or `teardown` as `observed` only when the public payload directly establishes it; otherwise record `phase: unknown`, basis `blocked`, and an assessment limitation. Stack-based attribution may be an agent-assessed heuristic but cannot replace the blocked objective record.
-  - Alternatives: infer hook phase from event adjacency; promise phase fidelity the 3.2.4 reporter API does not expose; omit the error.
+  - Decision: collect every public Vitest error/result, module error, hook name/event, and stack. Label an error `collection`, `import`, `setup`, `test`, or `teardown` as `observed` only when the public payload directly establishes it; otherwise record `phase: unknown`, basis `blocked`, and an assessment limitation. Stack-based attribution may be an agent-assessed heuristic but cannot replace the blocked objective record. **This rule governs errors only.** A passing declaration that simply emitted no hook events has nothing to attribute and is not a blocked record: absence of hook evidence where there is no error is not unknown phase. Recording it as blocked made a clean census unreachable on a fully green suite — the first live run raised `hook-lifecycle-incomplete` at basis `blocked` for ~1,504 passing declarations per command run (7,600 across the regimen), none of them errors.
+  - Alternatives: infer hook phase from event adjacency; promise phase fidelity the 3.2.4 reporter API does not expose; omit the error; treat every declaration lacking hook events as blocked (what the first implementation did, and what the amendment removes).
   - Why: addresses `review-1.md PR-001` without narrowing AC-003—every error stays visible and unavailable phase evidence cannot become clean (`INV-005`, `INV-006`).
   - Decided by: planner, addressing review-1.md PR-001, 2026-09-15.
 
@@ -211,16 +211,17 @@ These ratified assumptions are settled and carried verbatim:
   - Decided by: independent review, scope/sequencing lens, 2026-09-16.
 
 - **D-024 - Generated audit JSON is excluded from Biome rather than formatted to match it** *(Added 2026-09-16 after review)*
-  - Decision: add `"!missions/plans/*/audit/**"` to `biome.json` `files.includes`.
+  - Decision: add `"!missions/plans/*/audit"` to `biome.json` `files.includes`.
   - Alternatives: emitting tab-indented JSON; leaving lint to fail.
   - Why: `bun run lint` is an `AGENTS.md` gate and currently covers `missions/plans/**`. Tab indentation is insufficient — `JSON.stringify` always expands arrays while Biome collapses short ones — so matching would pin Biome's exact array and line-width behavior. More importantly, epoch evidence is immutable and digest-pinned: a formatter that can rewrite a committed manifest via `lint:fix` would silently invalidate the candidate digest and stale a ratified epoch.
   - Decided by: independent review, codebase-feasibility lens (verified against `biome.json`), 2026-09-16.
 
 - **D-025 - A post-run policy exit is command evidence, not a census failure** *(Added 2026-09-16 after review)*
-  - Decision: a non-zero exit with no module/suite/case error and no declaration-to-runtime mismatch is recorded as command evidence and, if unresolved, as residual uncertainty; only collection, execution, or hook failures in the reporter payload make the census `incomplete` or `blocked`.
-  - Alternatives: treating every non-zero exit as blocking; dropping the coverage surface from the census.
+  - Decision: **exit classification and census state are independent axes.** A command's exit is classified from its reporter payload alone: a non-zero exit with no module/suite/case error in that payload is a `post-run-policy-exit`, recorded as command evidence and, if unresolved, as residual uncertainty. Declaration-to-runtime mismatches are census-state input, never exit-classification input. Only collection, execution, or hook *failures* in the reporter payload make the census `incomplete` or `blocked`.
+  - Alternatives: treating every non-zero exit as blocking; dropping the coverage surface from the census; the first version of this decision, which made "no declaration-to-runtime mismatch" a precondition of the policy-exit classification.
   - Why: `bun run test:coverage` exits 1 at the planning revision on a branch-coverage threshold while all 3133 tests pass. Under the prior rule the census could never be clean for a reason unrelated to test execution, and no in-scope repair existed — raising coverage is a ratified exclusion and lowering the threshold is forbidden by `docs/testing.md` ratchet rule 2.
-  - Decided by: independent review, design-attack lens (verified by running the command), 2026-09-16.
+  - Amended 2026-09-17 after the first live run: the original wording conflated the two axes, so any mismatch anywhere reclassified the coverage-threshold exit as `observed-failing-run`. With defect A present that was every run. Exit cause and suite completeness are different questions and are now recorded separately.
+  - Decided by: independent review, design-attack lens (verified by running the command), 2026-09-16; amended on live-run evidence, 2026-09-17.
 
 - **D-026 - Inventory independence is a derivation rule, not a property of the pack** *(Added 2026-09-16 after review; clarifies D-007)*
   - Decision: the pack excludes the census identity set, test files, and coverage output; where an authority incidentally cites a test path or marker, the assessing agent does not open it and the source log records the authority rather than the citation. The provable claim is that every entry traces to a cited non-test authority and no entry cites a test, marker, or coverage artifact as its authority.
@@ -268,9 +269,9 @@ These ratified assumptions are settled and carried verbatim:
 ### B-002 - Complete source/runtime census precedes a suite conclusion
 
 - Source: AC-002, AC-003
-- Context: declarations include ordinary, parameterized, skipped, todo, conditional, unsupported, collection-failing, hook-failing, and test-failing cases across normal, watch, and coverage surfaces
+- Context: declarations include ordinary, parameterized, skipped, todo, conditional, unsupported, collection-failing, hook-failing, and test-failing cases across normal, watch, and coverage surfaces, plus deliberately filtered surfaces such as the isolation runs
 - Action: the audit reconciles source declarations with each command’s reporter evidence
-- Expected: every declaration/runtime case and parameter count is reconciled; command identity, errors, empty selections/filters, skips/todos, conditional assertions, flaky/order-sensitive results, and unsupported syntax remain visible; error lifecycle phase is objective only when public evidence establishes it and otherwise is `unknown`/`blocked`; any missing run, mismatch, error, or blind spot makes the census `incomplete` or `blocked`, never clean
+- Expected: every declaration/runtime case and parameter count is reconciled **within each command's own selection**, so a filtered command reports unselected declarations as `not-selected` rather than `source-only`; command identity, errors, empty selections/filters, skips/todos, conditional assertions, flaky/order-sensitive results, and unsupported syntax remain visible; an **error's** lifecycle phase is objective only when public evidence establishes it and otherwise is `unknown`/`blocked`, while a passing declaration that emitted no hook events is not a blocked record; exit classification reads the reporter payload alone; any missing run, in-selection mismatch, error, or blind spot makes the census `incomplete` or `blocked`, never clean
 - Seam: `scripts/test-health-audit/source-census.ts`, `scripts/test-health-audit/runtime-reporter.ts`, `scripts/test-health-audit/census.ts`, `scripts/test-health-audit/cli.ts`
 - Test: `tests/scripts/test-health-audit/census.test.ts` > `reconciles all command surfaces and keeps unsupported or phase-unknown failures blocking`
 - Marker: `@cosmo-behavior plan:test-health-audit#B-002`
@@ -482,11 +483,11 @@ The census precedes every suite/test-health conclusion:
 4. Invoke coverage once through `bun run test:coverage` with the reporter. Coverage percentages remain context only.
 5. Run two additional normal checks: one same-order repeat and one `--sequence.shuffle --sequence.seed <recorded>` run. This fixed regimen is bounded evidence, not proof of universal determinism.
 6. Preserve full-suite outcomes for `tests/driver/cross-plan-commit-lock.test.ts`, `tests/plans/archive.test.ts`, and `tests/extensions/project-tools.test.ts`; run each twice in isolation after full collection and record full-versus-isolation evidence. Isolation never excuses a full-suite failure.
-7. Reconcile source declarations, collected modules, ready/result cases, suite/module errors, hook events, filters, and surface differences. Individual assertion execution is `unknown` unless unconditional observation/probe establishes it; AST conditional/unreachable candidates are agent-assessed heuristics.
+7. Reconcile source declarations, collected modules, ready/result cases, suite/module errors, hook events, filters, and surface differences. **Reconciliation is scoped to each command's own selection.** A command that deliberately filters — the isolation runs of step 6, or any future `--testNamePattern`/path-filtered surface — is reconciled only against the declarations its filter selects; declarations outside that selection are `not-selected`, never `source-only`. Only unfiltered full-suite surfaces reconcile against the whole declaration universe. Without this the six isolation runs each report every unselected declaration as missing: the first live run produced 37,080 of 45,075 findings this way (~6,150 per isolation run against **1** for the unfiltered `normal` run), which is collector noise, not suite evidence. Individual assertion execution is `unknown` unless unconditional observation/probe establishes it; AST conditional/unreachable candidates are agent-assessed heuristics.
 
 Error records contain `phase`, `phaseBasis`, original serialized payload, entity/test/module, and command. Public module errors can establish collection/outside-run failure; aggregated case/suite errors do not automatically establish hook versus test-body phase. Unknown phase is visible blocked evidence under D-011.
 
-A non-zero command exit whose reporter payload shows no module/suite/case error and no declaration-to-runtime mismatch is a **post-run policy exit** (the coverage-threshold violation above is the live instance): it is recorded as command evidence and, if unresolved, as residual uncertainty, but it does not by itself make the census `incomplete` or `blocked`. Only collection, execution, or hook failures evidenced in the reporter payload block. This also fixes the scope of the word "error" in B-002.
+A non-zero command exit whose reporter payload shows no module/suite/case error is a **post-run policy exit** (the coverage-threshold violation above is the live instance): it is recorded as command evidence and, if unresolved, as residual uncertainty, but it does not by itself make the census `incomplete` or `blocked`. Exit classification reads the reporter payload only; declaration-to-runtime mismatches are census-state input and never change how an exit is classified (D-025). Only collection, execution, or hook failures evidenced in the reporter payload block. This also fixes the scope of the word "error" in B-002.
 
 Census state is `complete`, `incomplete`, or `blocked`. `incomplete` exits only after every mismatch/skip/filter/limitation has a disposition and relevant recollection; `blocked` exits only after execution/collection/assessment repair. Neither can render clean. Raw full-suite collection before calibration is inventory data only; no health/clean conclusion is trusted until calibration passes.
 
@@ -637,7 +638,7 @@ Provider expansion and whole-project fixes belong to later work.
 - `missions/plans/test-health-audit/audit/epochs/<epoch-id>/probes.jsonl` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/probes.md` — targeted probe records.
 - `missions/plans/test-health-audit/audit/epochs/<epoch-id>/remediation-ledger.md` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/residual-uncertainty.md` — closure and uncertainty evidence.
 - `missions/plans/test-health-audit/audit/epochs/<epoch-id>/gate-recommendations.md` and `missions/plans/test-health-audit/audit/epochs/<epoch-id>/baseline.md` — recommendations, the final decision record, and the single `## Ratification packet` section (D-029).
-- `biome.json` — add `"!missions/plans/*/audit/**"` to `files.includes`, following the existing `!missions/tasks/config.json` and `!.fallow-baselines` precedent for generated JSON.
+- `biome.json` — add `"!missions/plans/*/audit"` to `files.includes`, following the existing `!missions/tasks/config.json` and `!.fallow-baselines` precedent for generated JSON.
 - Evidence-selected current test/production files — only after a ledger row identifies a confirmed in-scope weakness and authority. Add every path before modification. `tests/domains/coding-agents.test.ts` and `AgentDefinition.session` are excluded from remediation here.
 - Read-only unless evidence-authorized remediation names them: `package.json`, `scripts/vitest-runner.mjs`, `vitest.config.ts`, `tests/setup.ts`, current `tests/**/*.test.ts`, governing production/artifacts, `docs/testing.md`, `AGENTS.md`, `missions/architecture/code-structure-map.md`, and `ROADMAP.md`.
 

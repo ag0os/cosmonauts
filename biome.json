@@ -9,7 +9,7 @@
 			"**",
 			"!missions/tasks/config.json",
 			"!.fallow-baselines",
-			"!missions/plans/*/audit/**"
+			"!missions/plans/*/audit"
 		]
 	},
 	"formatter": {
