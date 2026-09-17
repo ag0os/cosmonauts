@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { validateBehaviorRiskInventory } from "../../../scripts/test-health-audit/artifacts.ts";
+import {
+	CALIBRATION_CONTROL_OBLIGATIONS,
+	parseCalibrationDocument,
+	validateBehaviorRiskInventory,
+	validateCalibrationRecord,
+} from "../../../scripts/test-health-audit/artifacts.ts";
 
 const assessor = {
 	kind: "agent",
@@ -216,5 +223,144 @@ describe("test health audit artifacts", () => {
 		expect(validateBehaviorRiskInventory(stale, "epoch-1").issues).toContain(
 			"freeze.inventoryDigest does not match entries",
 		);
+	});
+
+	// @cosmo-behavior plan:test-health-audit#B-003
+	it("rejects calibration with a missing control or any actual outcome that differs from its declared obligations", async () => {
+		const auditRoot = join(
+			process.cwd(),
+			"missions/plans/test-health-audit/audit",
+		);
+		const index = JSON.parse(
+			await readFile(join(auditRoot, "index.json"), "utf8"),
+		) as { currentEpochId: string };
+		const document = await readFile(
+			join(auditRoot, "epochs", index.currentEpochId, "calibration.md"),
+			"utf8",
+		);
+		const valid = parseCalibrationDocument(document);
+		expect(validateCalibrationRecord(valid, index.currentEpochId)).toEqual({
+			valid: true,
+			status: "pass",
+			profileAcceptance: "licensed",
+			issues: [],
+		});
+		for (const source of valid.controls.flatMap((control) => control.sources)) {
+			if (!source.path.startsWith("tests/")) continue;
+			const executableTitle = source.identity.split(" > ").at(-1);
+			expect(
+				await readFile(join(process.cwd(), source.path), "utf8"),
+				source.identity,
+			).toContain(executableTitle);
+		}
+
+		const missing = structuredClone(valid);
+		missing.controls.pop();
+		expect(
+			validateCalibrationRecord(missing, index.currentEpochId),
+		).toMatchObject({
+			valid: false,
+			status: "miss",
+			profileAcceptance: "blocked",
+			issues: expect.arrayContaining([
+				"controls must contain every declared control exactly once",
+			]),
+		});
+
+		const mismatched = structuredClone(valid);
+		mismatched.status = "pass";
+		mismatched.profileAcceptance = "licensed";
+		const mismatchedControl = mismatched.controls[0];
+		if (!mismatchedControl) throw new Error("calibration fixture is empty");
+		mismatchedControl.reviewed = true;
+		mismatchedControl.actual.portfolioEffect = "protected";
+		expect(
+			validateCalibrationRecord(mismatched, index.currentEpochId),
+		).toMatchObject({
+			valid: false,
+			status: "miss",
+			profileAcceptance: "blocked",
+			issues: expect.arrayContaining([
+				"controls[N-001].actual must exactly match the declared obligation",
+			]),
+		});
+
+		const counterexample = structuredClone(valid);
+		const counterexampleControl = counterexample.controls[0];
+		if (!counterexampleControl) throw new Error("calibration fixture is empty");
+		counterexampleControl.counterexamples = [
+			"The fixture-only suite was accepted as composition-root coverage.",
+		];
+		expect(
+			validateCalibrationRecord(counterexample, index.currentEpochId),
+		).toMatchObject({
+			valid: false,
+			status: "miss",
+			profileAcceptance: "blocked",
+			issues: expect.arrayContaining([
+				"controls[N-001].counterexamples records a calibration miss",
+			]),
+		});
+
+		const launderedLimitation = structuredClone(valid);
+		const launderingControl = launderedLimitation.controls.find(
+			(control) => control.id === "X-003",
+		);
+		if (!launderingControl)
+			throw new Error("X-003 calibration control is missing");
+		launderingControl.actual.constraints = [
+			"recognized subset cannot certify completeness",
+			"disposition:limitation-accepted",
+		];
+		expect(
+			validateCalibrationRecord(launderedLimitation, index.currentEpochId),
+		).toMatchObject({
+			valid: false,
+			status: "miss",
+			profileAcceptance: "blocked",
+			issues: expect.arrayContaining([
+				"controls[X-003].actual must exactly match the declared obligation",
+			]),
+		});
+
+		const amendedInPlace = structuredClone(valid);
+		amendedInPlace.amendment = {
+			kind: "method",
+			predecessorEpochId: index.currentEpochId,
+			predecessorMethodDigest: "a".repeat(64),
+			affectedEvidenceInvalidated: true,
+			preservedMisses: [
+				{ epochId: index.currentEpochId, controlId: "N-001", issue: "miss" },
+			],
+		};
+		expect(
+			validateCalibrationRecord(amendedInPlace, index.currentEpochId),
+		).toMatchObject({
+			valid: false,
+			issues: expect.arrayContaining([
+				"a method/schema amendment must open a successor epoch",
+			]),
+		});
+
+		const successor = structuredClone(valid);
+		successor.epochId = "epoch-successor";
+		successor.methodDigest = "b".repeat(64);
+		successor.amendment = {
+			kind: "method",
+			predecessorEpochId: index.currentEpochId,
+			predecessorMethodDigest: valid.methodDigest,
+			affectedEvidenceInvalidated: true,
+			preservedMisses: [
+				{ epochId: index.currentEpochId, controlId: "N-001", issue: "miss" },
+			],
+		};
+		expect(validateCalibrationRecord(successor, "epoch-successor")).toEqual({
+			valid: true,
+			status: "pass",
+			profileAcceptance: "licensed",
+			issues: [],
+		});
+
+		expect(Object.keys(CALIBRATION_CONTROL_OBLIGATIONS)).toHaveLength(26);
 	});
 });
