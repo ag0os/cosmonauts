@@ -16,7 +16,7 @@ updatedAt: '2026-09-16T18:36:06.050Z'
 
 Stage 6 gate **P-final**. Owned behaviors: **none**; TASK-696 is the sole B-004 owner.
 
-P-final is the real graph gate after the plan’s own resume mechanism has driven bounded assessing-agent sessions. It is not a request for one worker to profile all 267 files in one session: each session consumes one D-016 unit, at most two sessions run concurrently, and this checkpoint becomes checkable only when persisted queue state reports no remaining unit.
+P-final is the real graph gate after the plan’s own resume mechanism has driven bounded assessing-agent sessions. It is not a request for one worker to profile all 267 files in one session: each session consumes one D-016 unit, up to eight sessions run concurrently at the D-030 bound, and this checkpoint becomes checkable only when persisted queue state reports no remaining unit.
 
 <!-- AC:BEGIN -->
 - [ ] #1 The current-epoch persisted queue reports no pending or invalid profile unit after bounded assessing-agent sessions, with one OS process per unit at the D-030 bound of eight concurrent and disjoint shard ownership evidenced throughout.
