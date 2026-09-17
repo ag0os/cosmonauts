@@ -995,17 +995,64 @@ describe("TaskManager", () => {
 			expect(backendTasks.length).toBe(2); // Case-insensitive match
 		});
 
-		it("should filter by hasNoDependencies", async () => {
+		it("treats a task with no dependencies as ready", async () => {
 			await manager.init();
 			await manager.createTask({ title: "Task 1" });
 			await manager.createTask({ title: "Task 2", dependencies: ["TASK-001"] });
 			await manager.createTask({ title: "Task 3" });
 
-			const independentTasks = await manager.listTasks({
-				hasNoDependencies: true,
+			const readyTasks = await manager.listTasks({ ready: true });
+
+			expect(readyTasks.map((task) => task.id)).toEqual([
+				"TASK-001",
+				"TASK-003",
+			]);
+		});
+
+		it("includes a task once every listed dependency is Done", async () => {
+			await manager.init();
+			await manager.createTask({ title: "Task 1" });
+			await manager.createTask({ title: "Task 2", dependencies: ["TASK-001"] });
+
+			expect(
+				(await manager.listTasks({ ready: true })).map((task) => task.id),
+			).toEqual(["TASK-001"]);
+
+			await manager.updateTask("TASK-001", { status: "Done" });
+
+			expect(
+				(await manager.listTasks({ ready: true })).map((task) => task.id),
+			).toEqual(["TASK-001", "TASK-002"]);
+		});
+
+		it("keeps a task blocked while any dependency is unfinished", async () => {
+			await manager.init();
+			await manager.createTask({ title: "Task 1" });
+			await manager.createTask({ title: "Task 2" });
+			await manager.createTask({
+				title: "Task 3",
+				dependencies: ["TASK-001", "TASK-002"],
+			});
+			await manager.updateTask("TASK-001", { status: "Done" });
+			await manager.updateTask("TASK-002", { status: "In Progress" });
+
+			const readyIds = (await manager.listTasks({ ready: true })).map(
+				(task) => task.id,
+			);
+
+			expect(readyIds).not.toContain("TASK-003");
+		});
+
+		it("treats a dependency outside the active set as satisfied", async () => {
+			await manager.init();
+			await manager.createTask({
+				title: "Task 1",
+				dependencies: ["TASK-999"],
 			});
 
-			expect(independentTasks.length).toBe(2);
+			const readyTasks = await manager.listTasks({ ready: true });
+
+			expect(readyTasks.map((task) => task.id)).toEqual(["TASK-001"]);
 		});
 
 		it("should combine multiple filters", async () => {

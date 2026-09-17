@@ -143,8 +143,13 @@ export interface TaskListFilter {
 	assignee?: string;
 	/** Filter by label (tasks must have this label) */
 	label?: string;
-	/** Filter to tasks with no dependencies (ready to work on) */
-	hasNoDependencies?: boolean;
+	/**
+	 * Filter to unblocked tasks: every listed dependency is `Done`. A task with
+	 * no dependencies is always unblocked. A dependency id that resolves to no
+	 * active task counts as satisfied, because completed tasks are archived out
+	 * of the active set.
+	 */
+	ready?: boolean;
 }
 
 // ============================================================================

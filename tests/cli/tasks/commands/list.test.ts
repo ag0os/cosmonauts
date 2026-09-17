@@ -43,7 +43,7 @@ describe("parseTaskListFilter", () => {
 				priority: "high",
 				assignee: "alice",
 				label: "plan:demo",
-				hasNoDependencies: true,
+				ready: true,
 			},
 		});
 	});
@@ -128,14 +128,14 @@ describe("task list command", () => {
 		expect(exit.calls()).toEqual([1]);
 	});
 
-	it("maps the ready filter to tasks with no dependencies", async () => {
+	it("maps the ready filter to unblocked tasks", async () => {
 		const listTasks = vi
 			.spyOn(TaskManager.prototype, "listTasks")
 			.mockResolvedValue([]);
 
 		await createProgram().parseAsync(["node", "test", "list", "--ready"]);
 
-		expect(listTasks).toHaveBeenCalledWith({ hasNoDependencies: true });
+		expect(listTasks).toHaveBeenCalledWith({ ready: true });
 		expectNoCommandDiagnostics(output, exit);
 	});
 

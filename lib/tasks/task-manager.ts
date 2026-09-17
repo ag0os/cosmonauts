@@ -44,7 +44,6 @@ const TASK_FILTER_PREDICATES: readonly TaskFilterPredicate[] = [
 	matchesPriorityFilter,
 	matchesAssigneeFilter,
 	matchesLabelFilter,
-	matchesDependencyFilter,
 ];
 
 const TASK_STATUS_OUTCOMES = {
@@ -375,7 +374,10 @@ export class TaskManager {
 			return tasks;
 		}
 
-		return tasks.filter((task) => this.matchesFilter(task, filter));
+		const dependencyStatuses = await this.resolveDependencyStatuses(filter);
+		return tasks.filter((task) =>
+			this.matchesFilter(task, filter, dependencyStatuses),
+		);
 	}
 
 	/**
@@ -395,7 +397,10 @@ export class TaskManager {
 			return tasks;
 		}
 
-		return tasks.filter((task) => this.matchesFilter(task, filter));
+		const dependencyStatuses = await this.resolveDependencyStatuses(filter);
+		return tasks.filter((task) =>
+			this.matchesFilter(task, filter, dependencyStatuses),
+		);
 	}
 
 	/**
@@ -430,7 +435,10 @@ export class TaskManager {
 			return matchingTasks;
 		}
 
-		return matchingTasks.filter((task) => this.matchesFilter(task, filter));
+		const dependencyStatuses = await this.resolveDependencyStatuses(filter);
+		return matchingTasks.filter((task) =>
+			this.matchesFilter(task, filter, dependencyStatuses),
+		);
 	}
 
 	/**
@@ -530,8 +538,32 @@ export class TaskManager {
 	 * @param filter - Filter criteria
 	 * @returns True if task matches all filter criteria
 	 */
-	private matchesFilter(task: Task, filter: TaskListFilter): boolean {
-		return TASK_FILTER_PREDICATES.every((predicate) => predicate(task, filter));
+	private matchesFilter(
+		task: Task,
+		filter: TaskListFilter,
+		dependencyStatuses?: ReadonlyMap<string, TaskStatus>,
+	): boolean {
+		if (!TASK_FILTER_PREDICATES.every((predicate) => predicate(task, filter))) {
+			return false;
+		}
+
+		return matchesReadyFilter(task, filter, dependencyStatuses);
+	}
+
+	/**
+	 * Readiness is the one filter that cannot be decided from the task alone, so
+	 * it resolves dependency statuses across the whole active set — a label- or
+	 * query-narrowed view may not contain a task's dependencies.
+	 */
+	private async resolveDependencyStatuses(
+		filter: TaskListFilter,
+	): Promise<ReadonlyMap<string, TaskStatus> | undefined> {
+		if (!filter.ready) {
+			return undefined;
+		}
+
+		const tasks = await this.loadAllTasks();
+		return new Map(tasks.map((task) => [task.id, task.status]));
 	}
 }
 
@@ -596,12 +628,26 @@ function matchesLabelFilter(task: Task, filter: TaskListFilter): boolean {
 	return task.labels.some((label) => label.toLowerCase() === labelLower);
 }
 
-function matchesDependencyFilter(task: Task, filter: TaskListFilter): boolean {
-	if (!filter.hasNoDependencies) {
+/**
+ * Unblocked means every listed dependency is `Done` — not that the task has no
+ * dependencies at all. `dependencyStatuses` is undefined when the caller did not
+ * ask for readiness. A dependency absent from the active set counts as satisfied:
+ * completed tasks are archived out of it, and hiding a task forever because its
+ * dependency was archived is the defect this filter exists to avoid.
+ */
+function matchesReadyFilter(
+	task: Task,
+	filter: TaskListFilter,
+	dependencyStatuses?: ReadonlyMap<string, TaskStatus>,
+): boolean {
+	if (!filter.ready) {
 		return true;
 	}
 
-	return task.dependencies.length === 0;
+	return task.dependencies.every(
+		(dependencyId) =>
+			(dependencyStatuses?.get(dependencyId) ?? "Done") === "Done",
+	);
 }
 
 function sanitizeConfig(config: ForgeTasksConfig): ForgeTasksConfig {

@@ -91,16 +91,10 @@ cosmonauts task list --json
 cosmonauts task list --status todo --json
 cosmonauts task list --status in-progress --priority high --json
 cosmonauts task list --label backend --assignee alice --json
-cosmonauts task list --ready --json   # tasks with an empty dependencies list (see below)
+cosmonauts task list --ready --json   # unblocked tasks (all dependencies Done)
 ```
 
-**`--ready` is shallow:** it matches tasks whose `dependencies:` frontmatter is empty. It does **not** check whether listed dependencies are `Done`. A task with `dependencies: [TASK-001]` will not appear in `--ready` results even after TASK-001 is marked Done — the dependency still exists in the task's frontmatter. To find tasks whose dependencies have all completed, post-filter in `jq`:
-
-```bash
-DONE=$(cosmonauts task list --status done --json | jq -c '[.[].id]')
-cosmonauts task list --status todo --json \
-  | jq --argjson done "$DONE" '[.[] | select((.dependencies // []) - $done | length == 0)]'
-```
+**`--ready` means unblocked:** it matches tasks whose listed dependencies are all `Done`, plus tasks that have no dependencies at all. A task with `dependencies: [TASK-001]` appears in `--ready` results as soon as TASK-001 is marked Done. A dependency id that matches no active task counts as satisfied, since completed tasks are archived out of the active set.
 
 Status values: `todo`, `in-progress`, `done`, `blocked` (the CLI normalizes these to the title-case form on disk).
 
@@ -127,21 +121,11 @@ cosmonauts task search "oauth" --json
 
 ### Find the next thing to work on
 
-For tasks that were intentionally authored as standalone (no `dependencies:` frontmatter):
-
 ```bash
 cosmonauts task list --status todo --ready --priority high --json | jq '.[0]'
 ```
 
-For tasks whose dependencies have all completed (computed manually — see the `--ready is shallow` note above):
-
-```bash
-DONE=$(cosmonauts task list --status done --json | jq -c '[.[].id]')
-cosmonauts task list --status todo --priority high --json \
-  | jq --argjson done "$DONE" '[.[] | select((.dependencies // []) - $done | length == 0)] | .[0]'
-```
-
-Sorting/picking is up to the caller.
+This covers both standalone tasks and tasks whose dependencies have all completed. Sorting/picking is up to the caller.
 
 ### Convert a plan's section into tasks
 
