@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-689
 createdAt: '2026-09-16T18:34:47.392Z'
-updatedAt: '2026-09-17T15:20:30.761Z'
+updatedAt: '2026-09-17T15:46:54.712Z'
 ---
 
 ## Description
@@ -30,4 +30,4 @@ Reopened 2026-09-17 after the first live run aborted here. The failure was upstr
 
 ## Implementation Notes
 
-task failed
+Collected the current-epoch command census with the documented explicit-root invocation on 2026-09-17. The collector completed and digest validation passed. The census is correctly blocked rather than clean: repeat failed tests/driver/drive-on-graph-acceptance.test.ts, and isolation-cross-plan-commit-lock-2 failed tests/driver/cross-plan-commit-lock.test.ts; the initial normal run, bounded watch, seeded shuffle, both archive isolations, both project-tools isolations, and the first cross-plan isolation passed. Coverage exited 1 only for the 84.96% branch threshold and is classified post-run-policy-exit with reporter-clean execution.

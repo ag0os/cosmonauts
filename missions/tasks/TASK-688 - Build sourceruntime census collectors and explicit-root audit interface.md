@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-687
 createdAt: '2026-09-16T18:34:28.459Z'
-updatedAt: '2026-09-17T15:20:29.808Z'
+updatedAt: '2026-09-17T15:46:53.787Z'
 ---
 
 ## Description
@@ -41,4 +41,6 @@ Implement the bounded TypeScript declaration collector, observation-only Vitest 
 - [ ] #16 The collector reads `<epoch>/dispositions.json` when computing census state: a finding carrying a disposition is accounted-for, so `incomplete` and `blocked` have a reachable exit, while a finding with no disposition never becomes clean (D-031, INV-005).
 - [ ] #17 Digest validation compares like with like per D-032: the manifest's frozen source-census digest against the source census, and the command-census digest against its own recorded value. Validation never requires a post-seal runtime digest to equal a digest sealed at C1.
 - [ ] #18 Dispositions carry `repair-required-tooling` and `repair-required-suite` as distinct values, plus the sources the assessing agent opened; validation rejects a `limitation-accepted` entry whose consulted-source list is empty (D-031 as amended).
+- [ ] #19 In-file resolution per D-033: a `.each` argument that is an identifier bound to a local `const` literal array in the same file is resolved one hop and counted (`tests/driver/report-parser.test.ts:33`'s `outcomeReports` is the live instance); `.each` title templates are matched to the concrete titles they generate so a template row and an ordinary sibling test do not register as a parameter-count mismatch. The collector does **not** follow a test-registering helper across a module boundary.
+- [ ] #20 A declaration registered by an out-of-file helper is emitted as a bounded-collector limitation carrying the helper path, not as a census failure, so runtime evidence covers it and `INV-005` keeps it visible. Live instance: 80 declarations registered by `tests/helpers/delete-command-tests.ts`, whose titles interpolate `config.entityName` per call site.
 <!-- AC:END -->

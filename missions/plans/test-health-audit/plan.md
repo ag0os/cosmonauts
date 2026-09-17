@@ -2,7 +2,7 @@
 title: Test Health Audit
 status: active
 createdAt: '2026-09-15T21:15:54.575Z'
-updatedAt: '2026-09-17T03:30:00.000Z'
+updatedAt: '2026-09-17T05:00:00.000Z'
 ---
 
 ## Overview
@@ -265,6 +265,13 @@ These ratified assumptions are settled and carried verbatim:
   - Alternatives: sealing the manifest at C2 instead (loses the freeze the inventory pass depends on); making the manifest mutable (contradicts D-013).
   - Why: the second live run failed AC #5 because the task demanded runtime digests inside an artifact sealed before runtime evidence existed. An immutable manifest cannot contain a digest of evidence collected after it was sealed; the plan's phrase "census/inventory digests" hid the contradiction by not saying *which* census.
   - Decided by: planner, on second-live-run evidence, 2026-09-17.
+
+- **D-033 - Where the bounded collector stops is a ruled line, not a judgment call** *(Added 2026-09-17 on fourth-live-run evidence)*
+  - Decision: the source collector resolves **within a file** — unwrapping type assertions, resolving a local `const` initializer one hop, and matching `.each` title templates to the concrete titles they generate. It does **not** follow a test-registering helper across a module boundary and propagate caller values into template titles. A declaration registered by such a helper is `limitation-accepted`, not `repair-required-tooling`, provided the assessing agent has traced the registration path and complete runtime evidence covers the declaration; the source-parser gap is then a bounded, recorded limitation rather than missing evidence.
+  - Alternatives: extending the collector interprocedurally (what run 4's assessment implied); accepting every source/runtime divergence as a limitation (what run 3 did, which laundered real defects).
+  - Why: run 4's assessing agent — now genuinely opening files — classified 96 findings as `repair-required-tooling`, of which 80 were declarations registered by `tests/helpers/delete-command-tests.ts`, whose titles interpolate `config.entityName` from each call site. Following that requires interprocedural analysis with value propagation, which the spec's Out of scope forbids as "committing to a static analyzer". The other 16 — one local `as const` array behind an identifier, ten `.each` title-template mismatches, five paired source-only records — are in-file work the collector must do. Without this line the collector grows into the analyzer the spec excluded, one honest finding at a time.
+  - Note: `INV-005` is unchanged. A limitation stays visible in the census and in residual uncertainty; what this decision rules is which side of the repair/limitation boundary it falls on, not whether it is recorded.
+  - Decided by: planner, on fourth-live-run evidence, 2026-09-17.
 
 ## Behaviors
 
