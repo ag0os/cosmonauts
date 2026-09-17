@@ -235,7 +235,7 @@ describe("test health audit artifacts", () => {
 			const sourceText =
 				'import { test } from "vitest";\n' +
 				Array.from(
-					{ length: 51 },
+					{ length: 401 },
 					(_, index) =>
 						`test("case ${String(index + 1).padStart(2, "0")}", () => {});`,
 				).join("\n");
@@ -313,7 +313,7 @@ describe("test health audit artifacts", () => {
 				}>;
 			};
 			expect(queue.units?.map((unit) => unit.identities?.length)).toEqual([
-				50, 1,
+				50, 50, 50, 50, 50, 50, 50, 50, 1,
 			]);
 			expect(queue.execution).toMatchObject({
 				backend: "driver-process",
@@ -480,6 +480,7 @@ describe("test health audit artifacts", () => {
 			const promptBodies: string[] = [];
 			const resampledWaves: number[] = [];
 			let failedUnitId: string | undefined;
+			let haltedUnitId: string | undefined;
 			let supplyAgentCost = false;
 			const failedAttempts = new Set<string>();
 			const backend = {
@@ -488,6 +489,46 @@ describe("test health audit artifacts", () => {
 				async run(invocation: { taskId: string; promptPath: string }) {
 					invokedUnitIds.push(invocation.taskId);
 					promptBodies.push(await readFile(invocation.promptPath, "utf8"));
+					if (invocation.taskId === haltedUnitId) {
+						await writeFile(
+							join(
+								auditRoot,
+								"epochs",
+								"epoch-1",
+								"dispatch",
+								`${invocation.taskId}.profiles.json`,
+							),
+							JSON.stringify({
+								assessorId: "profile-assessor",
+								halt: {
+									kind: "ratified-ground-collision",
+									question:
+										"Should the ratified plan or the ratified architecture record govern this contract?",
+									collidingAuthorities: [
+										{
+											kind: "authority-document",
+											path: "missions/plans/test-health-audit/plan.md",
+											locator: "D-034",
+										},
+										{
+											kind: "authority-document",
+											path: "missions/architecture/test-health.md",
+											locator: "Contract",
+										},
+									],
+								},
+							}),
+						);
+						return {
+							exitCode: 0,
+							stdout: "ratified-ground collision recorded",
+							durationMs: 5,
+							processMetrics: {
+								processId: 5000 + invokedUnitIds.length,
+								peakRssBytes: 32 * 1024 * 1024,
+							},
+						};
+					}
 					if (
 						invocation.taskId === failedUnitId &&
 						!failedAttempts.has(invocation.taskId)
@@ -659,7 +700,7 @@ describe("test health audit artifacts", () => {
 				dispatchProfileUnits(dispatchOptions(auditRoot)),
 			).rejects.toThrow(lastUnit.id);
 			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
-				completedUnitIds: [queue.units[0]?.id],
+				completedUnitIds: queue.units.slice(0, -1).map((unit) => unit.id),
 				pendingUnitIds: [lastUnit.id],
 			});
 			invokedUnitIds.length = 0;
@@ -670,6 +711,99 @@ describe("test health audit artifacts", () => {
 				complete: true,
 				pendingUnitIds: [],
 			});
+
+			for (const unit of queue.units)
+				await rm(
+					join(auditRoot, "epochs", "epoch-1", "profiles", `${unit.id}.ndjson`),
+				);
+			invokedUnitIds.length = 0;
+			haltedUnitId = queue.units[0]?.id;
+			if (!haltedUnitId) throw new Error("profile queue is empty");
+			await expect(
+				dispatchProfileUnits(dispatchOptions(auditRoot)),
+			).rejects.toThrow(/drained.*ratified-ground collision/i);
+			expect(invokedUnitIds.slice().sort()).toEqual(
+				queue.units.map((unit) => unit.id).sort(),
+			);
+			const haltedEpoch = await validateProfileEpoch(auditRoot, projectRoot);
+			expect(haltedEpoch).toMatchObject({
+				valid: true,
+				complete: false,
+				pendingUnitIds: [],
+				haltedUnitIds: [haltedUnitId],
+				completedUnitIds: queue.units.slice(1).map((unit) => unit.id),
+			});
+			const haltShard = await readFile(
+				join(
+					auditRoot,
+					"epochs",
+					"epoch-1",
+					"profiles",
+					`${haltedUnitId}.halted.ndjson`,
+				),
+				"utf8",
+			);
+			const haltRecord = JSON.parse(haltShard.trim()) as Record<
+				string,
+				unknown
+			>;
+			expect(haltRecord).toMatchObject({
+				recordType: "profile-unit-halt",
+				unitId: haltedUnitId,
+				halt: {
+					kind: "ratified-ground-collision",
+					question: expect.stringMatching(/ratified plan/),
+					collidingAuthorities: [{}, {}],
+				},
+				measurementSource: "dispatcher",
+			});
+			const callsAfterDrain = invokedUnitIds.length;
+			await expect(
+				dispatchProfileUnits(dispatchOptions(auditRoot)),
+			).rejects.toThrow(/drained.*ratified-ground collision/i);
+			expect(invokedUnitIds).toHaveLength(callsAfterDrain);
+			await writeFile(
+				join(
+					auditRoot,
+					"epochs",
+					"epoch-1",
+					"profiles",
+					`${haltedUnitId}.halted.ndjson`,
+				),
+				`${JSON.stringify({
+					...haltRecord,
+					halt: { ...(haltRecord.halt as object), question: "" },
+				})}\n`,
+			);
+			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
+				valid: false,
+				pendingUnitIds: [haltedUnitId],
+				issues: expect.arrayContaining([
+					expect.stringMatching(/drafted question/),
+				]),
+			});
+			await writeFile(
+				join(
+					auditRoot,
+					"epochs",
+					"epoch-1",
+					"profiles",
+					`${haltedUnitId}.halted.ndjson`,
+				),
+				haltShard,
+			);
+
+			await rm(
+				join(
+					auditRoot,
+					"epochs",
+					"epoch-1",
+					"profiles",
+					`${haltedUnitId}.halted.ndjson`,
+				),
+			);
+			haltedUnitId = undefined;
+			await dispatchProfileUnits(dispatchOptions(auditRoot));
 
 			const firstShard = join(
 				auditRoot,

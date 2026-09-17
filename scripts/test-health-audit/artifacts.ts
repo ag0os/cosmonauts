@@ -13,6 +13,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import {
 	AUDIT_VOCABULARY,
 	type EvidenceDigest,
+	type EvidenceRef,
 	type TestEvidenceProfile,
 	type TestSurface,
 	validateTestEvidenceProfile,
@@ -103,11 +104,31 @@ export interface PublishedProfileUnit {
 	readonly profiles: readonly TestEvidenceProfile[];
 }
 
+export interface PublishedProfileUnitHalt {
+	readonly epochId: string;
+	readonly unitId: string;
+	readonly assessorId: string;
+	readonly processId: number;
+	readonly processBackend: "driver-process";
+	readonly measurementSource: "dispatcher";
+	readonly processStartedAt: string;
+	readonly processEndedAt: string;
+	readonly durationMs: number;
+	readonly peakRssBytes: number;
+	readonly halt: {
+		readonly kind: "ratified-ground-collision";
+		readonly question: string;
+		readonly collidingAuthorities: readonly EvidenceRef[];
+	};
+}
+
 export interface ProfileEpochValidation {
 	readonly valid: boolean;
 	readonly complete: boolean;
 	readonly pendingUnitIds: readonly string[];
 	readonly completedUnitIds: readonly string[];
+	readonly haltedUnitIds: readonly string[];
+	readonly haltedUnits: readonly PublishedProfileUnitHalt[];
 	readonly profiles: readonly TestEvidenceProfile[];
 	readonly issues: readonly string[];
 }
@@ -1139,6 +1160,57 @@ export async function publishProfileUnit(options: {
 		...options.profiles.map((profile) => JSON.stringify(profile)),
 	];
 	await writeTextAtomic(path, `${lines.join("\n")}\n`);
+	await unlink(join(directory, `${options.unitId}.halted.ndjson`)).catch(
+		ignoreMissing,
+	);
+}
+
+export async function publishProfileUnitHalt(options: {
+	readonly root: string;
+	readonly unitId: string;
+	readonly assessorId: string;
+	readonly processId: number;
+	readonly processStartedAt: string;
+	readonly processEndedAt: string;
+	readonly durationMs: number;
+	readonly peakRssBytes: number;
+	readonly halt: PublishedProfileUnitHalt["halt"];
+}): Promise<void> {
+	const manifest = await readCurrentEpochManifest(options.root);
+	const queue = await readProfileWorkQueue(options.root);
+	const unit = queue.units.find((candidate) => candidate.id === options.unitId);
+	if (!unit) throw new Error(`unknown profile work unit ${options.unitId}`);
+	const published: PublishedProfileUnitHalt = {
+		epochId: manifest.epochId,
+		unitId: options.unitId,
+		assessorId: options.assessorId,
+		processId: options.processId,
+		processBackend: "driver-process",
+		measurementSource: "dispatcher",
+		processStartedAt: options.processStartedAt,
+		processEndedAt: options.processEndedAt,
+		durationMs: options.durationMs,
+		peakRssBytes: options.peakRssBytes,
+		halt: options.halt,
+	};
+	const issues = validatePublishedUnitHalt(published, unit, manifest);
+	if (issues.length > 0)
+		throw new Error(
+			`invalid profile unit halt ${options.unitId}: ${issues.join("; ")}`,
+		);
+	const directory = join(options.root, "epochs", manifest.epochId, "profiles");
+	await mkdir(directory, { recursive: true });
+	await writeTextAtomic(
+		join(directory, `${options.unitId}.halted.ndjson`),
+		`${JSON.stringify({
+			recordType: "profile-unit-halt",
+			schemaVersion: 1,
+			...published,
+		})}\n`,
+	);
+	await unlink(join(directory, `${options.unitId}.ndjson`)).catch(
+		ignoreMissing,
+	);
 }
 
 export async function validateProfileEpoch(
@@ -1156,8 +1228,15 @@ export async function validateProfileEpoch(
 	}
 	const issues: string[] = [];
 	const completedUnitIds: string[] = [];
+	const haltedUnitIds: string[] = [];
+	const haltedUnits: PublishedProfileUnitHalt[] = [];
 	const profiles: TestEvidenceProfile[] = [];
-	const expectedNames = new Set(queue.units.map((unit) => `${unit.id}.ndjson`));
+	const expectedNames = new Set(
+		queue.units.flatMap((unit) => [
+			`${unit.id}.ndjson`,
+			`${unit.id}.halted.ndjson`,
+		]),
+	);
 	for (const name of names.sort()) {
 		if (!name.endsWith(".ndjson")) continue;
 		if (!expectedNames.has(name)) {
@@ -1166,10 +1245,28 @@ export async function validateProfileEpoch(
 			);
 			continue;
 		}
-		const unitId = name.slice(0, -".ndjson".length);
+		const halted = name.endsWith(".halted.ndjson");
+		const unitId = name.slice(
+			0,
+			-(halted ? ".halted.ndjson" : ".ndjson").length,
+		);
 		const unit = queue.units.find((candidate) => candidate.id === unitId);
 		if (!unit) continue;
 		try {
+			if (halted) {
+				const published = await readPublishedUnitHalt(
+					join(profileDirectory, name),
+					manifest.epochId,
+				);
+				const unitIssues = validatePublishedUnitHalt(published, unit, manifest);
+				if (unitIssues.length > 0) {
+					issues.push(...unitIssues.map((issue) => `${unitId}: ${issue}`));
+					continue;
+				}
+				haltedUnitIds.push(unitId);
+				haltedUnits.push(published);
+				continue;
+			}
 			const published = await readPublishedUnit(
 				join(profileDirectory, name),
 				manifest.epochId,
@@ -1193,16 +1290,29 @@ export async function validateProfileEpoch(
 			);
 		}
 	}
-	const completed = new Set(completedUnitIds);
+	const duplicateTerminalIds = completedUnitIds.filter((unitId) =>
+		haltedUnitIds.includes(unitId),
+	);
+	for (const unitId of duplicateTerminalIds)
+		issues.push(`${unitId}: unit has both a profile shard and a halt shard`);
+	const completedOnly = completedUnitIds.filter(
+		(unitId) => !duplicateTerminalIds.includes(unitId),
+	);
+	const haltedOnly = haltedUnitIds.filter(
+		(unitId) => !duplicateTerminalIds.includes(unitId),
+	);
+	const completed = new Set(completedOnly);
+	const halted = new Set(haltedOnly);
 	const pendingUnitIds = queue.units
 		.map((unit) => unit.id)
-		.filter((unitId) => !completed.has(unitId));
+		.filter((unitId) => !completed.has(unitId) && !halted.has(unitId));
 	const expectedIdentities = queue.units.flatMap((unit) =>
 		unit.identities.map((identity) => identity.id),
 	);
 	const actualIdentities = profiles.map((profile) => profile.id);
 	if (
 		pendingUnitIds.length === 0 &&
+		haltedOnly.length === 0 &&
 		(JSON.stringify(expectedIdentities.slice().sort()) !==
 			JSON.stringify(actualIdentities.slice().sort()) ||
 			new Set(actualIdentities).size !== actualIdentities.length)
@@ -1212,10 +1322,19 @@ export async function validateProfileEpoch(
 		);
 	return {
 		valid: issues.length === 0,
-		complete: pendingUnitIds.length === 0 && issues.length === 0,
+		complete:
+			pendingUnitIds.length === 0 &&
+			haltedOnly.length === 0 &&
+			issues.length === 0,
 		pendingUnitIds,
-		completedUnitIds,
-		profiles,
+		completedUnitIds: completedOnly,
+		haltedUnitIds: haltedOnly,
+		haltedUnits: haltedUnits.filter(
+			(unit) => !duplicateTerminalIds.includes(unit.unitId),
+		),
+		profiles: profiles.filter(
+			(profile) => !duplicateTerminalIds.includes(profile.source.workUnitId),
+		),
 		issues,
 	};
 }
@@ -1371,6 +1490,99 @@ async function readPublishedUnit(
 		peakRssBytes: Number(header.peakRssBytes),
 		profiles: records as TestEvidenceProfile[],
 	};
+}
+
+async function readPublishedUnitHalt(
+	path: string,
+	epochId: string,
+): Promise<PublishedProfileUnitHalt> {
+	const records = (await readFile(path, "utf8"))
+		.split(/\r?\n/)
+		.filter((line) => line.length > 0)
+		.map((line) => JSON.parse(line) as unknown);
+	if (records.length !== 1 || !isRecord(records[0]))
+		throw new Error("profile unit halt must contain exactly one record");
+	const header = records[0];
+	if (
+		header.recordType !== "profile-unit-halt" ||
+		header.schemaVersion !== 1 ||
+		header.epochId !== epochId ||
+		!nonEmpty(header.unitId)
+	)
+		throw new Error("missing or malformed profile unit halt header");
+	return {
+		epochId,
+		unitId: header.unitId,
+		assessorId: String(header.assessorId ?? ""),
+		processId: Number(header.processId),
+		processBackend: String(header.processBackend) as "driver-process",
+		measurementSource: String(header.measurementSource) as "dispatcher",
+		processStartedAt: String(header.processStartedAt ?? ""),
+		processEndedAt: String(header.processEndedAt ?? ""),
+		durationMs: Number(header.durationMs),
+		peakRssBytes: Number(header.peakRssBytes),
+		halt: header.halt as PublishedProfileUnitHalt["halt"],
+	};
+}
+
+function validatePublishedUnitHalt(
+	published: PublishedProfileUnitHalt,
+	unit: ProfileWorkUnit,
+	manifest: EpochManifest,
+): string[] {
+	const issues: string[] = [];
+	if (published.epochId !== manifest.epochId)
+		issues.push("unit epoch is stale");
+	if (published.unitId !== unit.id)
+		issues.push("unit id does not match shard path");
+	if (!nonEmpty(published.assessorId)) issues.push("assessorId is required");
+	if (!Number.isSafeInteger(published.processId) || published.processId < 1)
+		issues.push("processId must identify the unit OS process");
+	if (published.processBackend !== "driver-process")
+		issues.push("processBackend must be driver-process");
+	if (published.measurementSource !== "dispatcher")
+		issues.push("measurementSource must be dispatcher");
+	const processStartedAt = Date.parse(published.processStartedAt);
+	const processEndedAt = Date.parse(published.processEndedAt);
+	if (
+		!Number.isFinite(processStartedAt) ||
+		!Number.isFinite(processEndedAt) ||
+		processEndedAt < processStartedAt ||
+		published.durationMs !== processEndedAt - processStartedAt
+	)
+		issues.push(
+			"durationMs must equal the dispatcher-observed process lifetime",
+		);
+	if (!Number.isFinite(published.durationMs) || published.durationMs < 0)
+		issues.push("durationMs must be a non-negative wall-clock duration");
+	if (
+		!Number.isSafeInteger(published.peakRssBytes) ||
+		published.peakRssBytes < 1
+	)
+		issues.push("peakRssBytes must be a positive integer");
+	if (
+		!isRecord(published.halt) ||
+		published.halt.kind !== "ratified-ground-collision" ||
+		!nonEmpty(published.halt.question) ||
+		!Array.isArray(published.halt.collidingAuthorities) ||
+		published.halt.collidingAuthorities.length < 2
+	) {
+		issues.push(
+			"halt must record a drafted question and at least two colliding ratified authorities",
+		);
+		return issues;
+	}
+	for (const authority of published.halt.collidingAuthorities)
+		if (
+			!isRecord(authority) ||
+			authority.kind !== "authority-document" ||
+			!nonEmpty(authority.path) ||
+			(!nonEmpty(authority.locator) && !nonEmpty(authority.quote))
+		)
+			issues.push(
+				"each colliding authority must cite an authority-document path and locator or quote",
+			);
+	return issues;
 }
 
 async function validatePublishedUnit(
@@ -1762,4 +1974,8 @@ function nonEmpty(input: unknown): input is string {
 }
 function isMissing(error: unknown): boolean {
 	return isRecord(error) && error.code === "ENOENT";
+}
+
+function ignoreMissing(error: unknown): void {
+	if (!isMissing(error)) throw error;
 }

@@ -21,8 +21,10 @@ import {
 	buildProfileWorkQueue,
 	type ProfileWorkQueue,
 	type ProfileWorkUnit,
+	type PublishedProfileUnitHalt,
 	parseCalibrationDocument,
 	publishProfileUnit,
+	publishProfileUnitHalt,
 	readCurrentEpochManifest,
 	readProfileWorkQueue,
 	validateCalibrationRecord,
@@ -53,6 +55,7 @@ export interface ProfileDispatchResult {
 	readonly epochId: string;
 	readonly dispatchedUnitIds: readonly string[];
 	readonly completedUnitIds: readonly string[];
+	readonly haltedUnitIds: readonly string[];
 }
 
 /**
@@ -111,6 +114,14 @@ export async function dispatchProfileUnits({
 				`current profile shards are invalid: ${blockingIssues.join("; ")}`,
 			);
 		if (beforeWave.pendingUnitIds.length === 0) {
+			if (beforeWave.haltedUnits.length > 0) {
+				const details = beforeWave.haltedUnits
+					.map((unit) => `${unit.unitId}: ${unit.halt.question}`)
+					.join("; ");
+				throw new Error(
+					`profile dispatch drained with ratified-ground collision halts: ${details}`,
+				);
+			}
 			if (!beforeWave.complete)
 				throw new Error(
 					`current profile epoch is incomplete: ${beforeWave.issues.join("; ")}`,
@@ -119,6 +130,7 @@ export async function dispatchProfileUnits({
 				epochId: manifest.epochId,
 				dispatchedUnitIds,
 				completedUnitIds: beforeWave.completedUnitIds,
+				haltedUnitIds: beforeWave.haltedUnitIds,
 			};
 		}
 
@@ -153,7 +165,8 @@ export async function dispatchProfileUnits({
 		for (const result of results) {
 			if (
 				result.exitCode === 0 &&
-				!afterWave.completedUnitIds.includes(result.unitId)
+				!afterWave.completedUnitIds.includes(result.unitId) &&
+				!afterWave.haltedUnitIds.includes(result.unitId)
 			)
 				failed.push({
 					...result,
@@ -294,9 +307,8 @@ async function runUnit(options: {
 			`${options.unit.id} backend omitted dispatcher-owned process metrics`,
 		);
 	const candidate = await readCandidate(candidatePath, options.unit.id);
-	await publishProfileUnit({
+	const measurement = {
 		root: options.auditRoot,
-		projectRoot: options.projectRoot,
 		unitId: options.unit.id,
 		assessorId: candidate.assessorId,
 		processId: result.processMetrics.processId,
@@ -304,8 +316,15 @@ async function runUnit(options: {
 		processEndedAt: new Date(processEndedAt).toISOString(),
 		durationMs,
 		peakRssBytes: result.processMetrics.peakRssBytes,
-		profiles: candidate.profiles,
-	});
+	};
+	if ("halt" in candidate)
+		await publishProfileUnitHalt({ ...measurement, halt: candidate.halt });
+	else
+		await publishProfileUnit({
+			...measurement,
+			projectRoot: options.projectRoot,
+			profiles: candidate.profiles,
+		});
 	return {
 		unitId: options.unit.id,
 		exitCode: result.exitCode,
@@ -316,7 +335,13 @@ async function runUnit(options: {
 async function readCandidate(
 	path: string,
 	unitId: string,
-): Promise<{ assessorId: string; profiles: readonly TestEvidenceProfile[] }> {
+): Promise<
+	| { assessorId: string; profiles: readonly TestEvidenceProfile[] }
+	| {
+			assessorId: string;
+			halt: PublishedProfileUnitHalt["halt"];
+	  }
+> {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
@@ -334,12 +359,15 @@ async function readCandidate(
 		throw new Error(
 			`${unitId} candidate contains agent-supplied cost fields: ${forbidden.join(", ")}`,
 		);
-	if (
-		typeof parsed.assessorId !== "string" ||
-		parsed.assessorId.length === 0 ||
-		!Array.isArray(parsed.profiles)
-	)
-		throw new Error(`${unitId} candidate omits assessorId or profiles`);
+	if (typeof parsed.assessorId !== "string" || parsed.assessorId.length === 0)
+		throw new Error(`${unitId} candidate omits assessorId`);
+	if (isRecord(parsed.halt))
+		return {
+			assessorId: parsed.assessorId,
+			halt: parsed.halt as unknown as PublishedProfileUnitHalt["halt"],
+		};
+	if (!Array.isArray(parsed.profiles))
+		throw new Error(`${unitId} candidate omits profiles or halt`);
 	return {
 		assessorId: parsed.assessorId,
 		profiles: parsed.profiles as TestEvidenceProfile[],
@@ -371,9 +399,11 @@ The shared file-context/import/helper evidence digests are:
 
 ${JSON.stringify(options.unit.fileContexts)}
 
-Open the named test files, their imports/helpers, runtime evidence, frozen behavior-risk inventory, ratified plan ground, shipped authorities, and relevant knowledge. Produce every TestEvidenceProfile field with the exact vocabulary in scripts/test-health-audit/schema.ts. A collision in ratified plan ground halts this unit. An absent or self-contradicting shipped authority is claim status unresolved with cited counterevidence, uncertainty, and a drafted question; it does not halt the unit.
+Open the named test files, their imports/helpers, runtime evidence, frozen behavior-risk inventory, ratified plan ground, shipped authorities, and relevant knowledge. Produce every TestEvidenceProfile field with the exact vocabulary in scripts/test-health-audit/schema.ts. An absent or self-contradicting shipped authority is claim status unresolved with cited counterevidence, uncertainty, and a drafted question; it does not halt the unit.
 
-Write one JSON object to the candidate path containing only assessorId and profiles. It must contain every assigned identity exactly once. Do not supply process identity, duration, or memory cost and do not write the final shard: the dispatcher measures the process it owns, validates the candidate, and atomically publishes the NDJSON shard.
+Normally, write one JSON object to the candidate path containing only assessorId and profiles. It must contain every assigned identity exactly once. If and only if two ratified plan-ground authorities collide, still write a candidate and exit successfully, but replace profiles with halt: { kind: "ratified-ground-collision", question: <drafted question>, collidingAuthorities: <at least two authority-document evidence refs, each with a path and locator or quote> }. The dispatcher records that terminal halt, continues the queue, and reports it after draining all uncontested units.
+
+Do not supply process identity, duration, or memory cost and do not write the final shard: the dispatcher measures the process it owns, validates the candidate, and atomically publishes the NDJSON shard.
 `;
 }
 
