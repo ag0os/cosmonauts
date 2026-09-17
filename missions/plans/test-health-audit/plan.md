@@ -313,6 +313,12 @@ These ratified assumptions are settled and carried verbatim:
   - Note: this is the third instance in one day of the same shape — `repair-required` dispositions that validated but had no exit (D-037), a typecheck gate reported green by substituting a narrower check, and now a cost field that validates its own presence. A check that cannot fail is indistinguishable from a check that passes.
   - Decided by: planner, on tenth-live-run evidence, 2026-09-17.
 
+- **D-040 - `integration-verifier` writes no file when no unique plan slug exists** *(Added 2026-09-17 on user ruling)*
+  - Decision: when zero or multiple distinct `plan:<slug>` labels are present, `integration-verifier` writes **no repository file** and returns a skipped summary, as `bundled/coding/prompts/integration-verifier.md:13-14` states and `tests/prompts/integration-verifier.test.ts` pins. This supersedes, for the no-slug case only, the archived `integration-verifier` plan's requirement that a full `overall: skipped` report still be written (`missions/archive/plans/integration-verifier/plan.md:28,102,116,193,217`). The archive is not edited; this ruling is the cited authority.
+  - Alternatives: implementing the archived AC by inventing a fallback report location, which `tests/prompts/integration-verifier.test.ts` explicitly guards against ("without inventing a report location"); leaving it `unresolved` for the stage-11 packet.
+  - Why: the archived AC is unimplementable as written. The report path is `missions/plans/<slug>/integration-report.md`; with no slug there is no path, so "write the full document" has no destination. The shipped prompt resolved this correctly and nobody amended the archived plan, leaving a real collision between a ratified acceptance criterion and shipped behavior pinned by a test. Unit 0060's assessor found it, correctly refused to pick a side, and halted — which is exactly what `D-034` reserves halting for.
+  - Decided by: user ratified, 2026-09-17.
+
 ## Behaviors
 
 ### B-001 - Independent dimensions, evidence bases, grounding forms, and authorship lanes
