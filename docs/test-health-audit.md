@@ -26,6 +26,8 @@ Assess each declaration independently across Execution, Grounding, Contract alig
 
 Objective collection records only what source syntax and public Vitest payloads establish. Unsupported or dynamic syntax, missing command evidence, source/runtime mismatches, filters, and unknown lifecycle phases remain visible limitations and can never become clean evidence. Assertion and reachability candidates are heuristic inputs for an assessing agent; collectors do not assign role, authority, chain adequacy, criticality, disposition, or portfolio sufficiency.
 
+An assessing agent records answers to census findings in the current epoch's `dispositions.json`, including the finding ID, disposition, reasoning, and assessor provenance. Accounted-for findings remain visible in suite integrity while no longer leaving the census indefinitely `incomplete` or `blocked`. Conditional and unreachable AST candidates stay in the non-blocking heuristic lane at `reasoned`; they are not objective failures.
+
 ## Trust and consent boundary
 
 The census and validators inspect repository content and audit artifacts. Test commands execute project-controlled code, so maintainers invoke them explicitly from a checkout they trust. Probes additionally require the exact `--confirm-probe <id>` token after reviewing the printed target, copied import route, and guardrail. No command enables a CI gate. Only a project owner can ratify an eligible baseline; agent assessment never substitutes for that final decision.
@@ -33,5 +35,7 @@ The census and validators inspect repository content and audit artifacts. Test c
 ## Rerun triggers and epochs
 
 Open a successor epoch and rerun the affected evidence after remediation, an inventory or authority change, a method/schema amendment, or an added or removed test file. Recollect runtime observations whenever runner, configuration, setup, command definitions, or test source changes. The atomic `<audit-root>/index.json` is the sole current-epoch pointer; never infer the current epoch by scanning `epochs/`. Existing epoch manifests are immutable.
+
+The immutable manifest freezes only the source-census digest available when the epoch opens. The post-run command-census digest is recorded separately with suite integrity and validated against the raw command evidence; validation never compares those unlike digests.
 
 A reporter-clean non-zero post-run policy exit (for example, a coverage threshold after all tests complete) is command evidence and residual uncertainty. It is not fabricated into a collection, hook, or test-body failure.

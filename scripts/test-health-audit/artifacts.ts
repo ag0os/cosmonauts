@@ -31,7 +31,7 @@ export interface EpochManifest {
 		readonly configFile?: string;
 		readonly filters?: readonly string[];
 	}[];
-	readonly censusDigest: string;
+	readonly sourceCensusDigest: string;
 }
 export interface AuditIndex {
 	readonly currentEpochId: string;
@@ -118,7 +118,7 @@ function validateManifest(input: unknown): EpochManifest {
 		!SAFE_ID.test(input.epochId) ||
 		!nonEmpty(input.evaluatedRevision) ||
 		!nonEmpty(input.createdAt) ||
-		!SHA256.test(String(input.censusDigest)) ||
+		!SHA256.test(String(input.sourceCensusDigest)) ||
 		!Array.isArray(input.materialInputs) ||
 		!Array.isArray(input.commandDefinitions)
 	)

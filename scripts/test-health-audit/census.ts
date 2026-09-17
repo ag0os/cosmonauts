@@ -10,11 +10,12 @@ import type {
 	RuntimeEvidence,
 	WatcherStartEvidence,
 } from "./runtime-reporter.ts";
-import type { TestSurface } from "./schema.ts";
+import type { Assessor, TestSurface } from "./schema.ts";
 import type { SourceCensus, SourceDeclaration } from "./source-census.ts";
 
 export type CensusState = "complete" | "incomplete" | "blocked";
 export interface CensusFinding {
+	readonly id: string;
 	readonly kind:
 		| "source-only"
 		| "not-selected"
@@ -31,9 +32,25 @@ export interface CensusFinding {
 		| "run-end-limitation"
 		| "runtime-skipped"
 		| "hook-lifecycle-incomplete";
-	readonly basis: "observed" | "missing" | "blocked";
+	readonly lane: "objective-observation" | "agent-assessed-judgment";
+	readonly basis: "observed" | "missing" | "blocked" | "reasoned";
 	readonly commandId?: string;
 	readonly detail: string;
+	readonly accountedFor: boolean;
+	readonly disposition?: FindingDisposition;
+}
+type FindingDraft = Omit<
+	CensusFinding,
+	"id" | "lane" | "accountedFor" | "disposition"
+> & { readonly lane?: CensusFinding["lane"] };
+export interface FindingDisposition {
+	readonly findingId: string;
+	readonly disposition:
+		| "accounted-for"
+		| "limitation-accepted"
+		| "repair-required";
+	readonly reasoning: string;
+	readonly assessor: Extract<Assessor, { kind: "agent" }>;
 }
 export interface CommandEvidence {
 	readonly commandId: string;
@@ -62,6 +79,7 @@ export interface ReconcileCensusInput {
 		readonly surface: TestSurface;
 		readonly argv?: readonly string[];
 	}[];
+	readonly dispositions?: readonly FindingDisposition[];
 }
 
 export interface AuditCommandDefinition extends CommandIdentity {
@@ -71,11 +89,11 @@ export interface AuditCommandDefinition extends CommandIdentity {
 }
 
 export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
-	const findings: CensusFinding[] = [];
+	const findingDrafts: FindingDraft[] = [];
 	const residualUncertainty: string[] = [];
 	for (const source of input.sources) {
 		for (const limitation of source.limitations)
-			findings.push({
+			findingDrafts.push({
 				kind: "unsupported-syntax",
 				basis: "blocked",
 				detail: `${limitation.path}:${limitation.line}: ${limitation.detail}`,
@@ -86,7 +104,7 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 				declaration.mode === "todo" ||
 				declaration.mode === "only"
 			)
-				findings.push({
+				findingDrafts.push({
 					kind:
 						declaration.mode === "only"
 							? "filtered-selection"
@@ -100,9 +118,10 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 					(candidate) => candidate.conditional,
 				)
 			)
-				findings.push({
+				findingDrafts.push({
 					kind: "conditional-observation",
-					basis: "blocked",
+					lane: "agent-assessed-judgment",
+					basis: "reasoned",
 					detail: `${declaration.path}:${declaration.line} has conditional registration or assertion candidates`,
 				});
 		}
@@ -118,21 +137,21 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 			(command.argv !== undefined &&
 				JSON.stringify(command.argv) !== JSON.stringify(run.command.argv))
 		)
-			findings.push({
+			findingDrafts.push({
 				kind: "command-mismatch",
 				basis: "blocked",
 				commandId: run.command.id,
 				detail: `unexpected command identity ${run.command.id}/${run.command.surface}`,
 			});
 		if ((run.filters?.length ?? 0) > 0)
-			findings.push({
+			findingDrafts.push({
 				kind: "filtered-selection",
 				basis: "missing",
 				commandId: run.command.id,
 				detail: `command used filters: ${run.filters?.join(", ")}`,
 			});
 		for (const error of run.errors)
-			findings.push({
+			findingDrafts.push({
 				kind:
 					error.phase === "collection"
 						? "collection-error"
@@ -142,7 +161,7 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 				detail: `${error.entityType} ${error.entityId}: ${error.phase}${error.limitation ? `; ${error.limitation}` : ""}`,
 			});
 		if (run.reason !== "passed" && run.errors.length === 0)
-			findings.push({
+			findingDrafts.push({
 				kind: "run-end-limitation",
 				basis: "blocked",
 				commandId: run.command.id,
@@ -150,7 +169,7 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 			});
 		for (const limitation of run.limitations)
 			if (!run.errors.some((error) => error.limitation === limitation))
-				findings.push({
+				findingDrafts.push({
 					kind: "run-end-limitation",
 					basis: "blocked",
 					commandId: run.command.id,
@@ -159,22 +178,22 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 		for (const module of run.modules)
 			for (const testCase of module.cases)
 				if (testCase.state === "skipped")
-					findings.push({
+					findingDrafts.push({
 						kind: "runtime-skipped",
 						basis: "missing",
 						commandId: run.command.id,
-						detail: `${testCase.fullName} was skipped at runtime`,
+						detail: `${testCase.fullName} from ${module.moduleId} was skipped at runtime`,
 					});
 		for (const hook of unmatchedHookEvents(run))
-			findings.push({
+			findingDrafts.push({
 				kind: "hook-lifecycle-incomplete",
 				basis: "blocked",
 				commandId: run.command.id,
 				detail: `${hook.name} ${hook.entityId} has unmatched ${hook.event} evidence`,
 			});
-		reconcileRun(input.sources, run, findings);
+		reconcileRun(input.sources, run, findingDrafts);
 	}
-	reconcileRepeatedOutcomes(input.runs, findings);
+	reconcileRepeatedOutcomes(input.runs, findingDrafts);
 	for (const command of input.expectedCommands)
 		if (
 			!input.runs.some(
@@ -183,7 +202,7 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 					run.command.surface === command.surface,
 			)
 		)
-			findings.push({
+			findingDrafts.push({
 				kind: "command-mismatch",
 				basis: "blocked",
 				commandId: command.id,
@@ -211,10 +230,14 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 			...(run.watcherStart ? { watcherStart: run.watcherStart } : {}),
 		};
 	});
-	const blocked = findings.some((finding) => finding.basis === "blocked");
+	const findings = applyDispositions(findingDrafts, input.dispositions ?? []);
+	const unresolved = findings.filter(
+		(finding) => finding.basis !== "reasoned" && !finding.accountedFor,
+	);
+	const blocked = unresolved.some((finding) => finding.basis === "blocked");
 	const state: CensusState = blocked
 		? "blocked"
-		: findings.length > 0
+		: unresolved.length > 0
 			? "incomplete"
 			: "complete";
 	return {
@@ -224,6 +247,46 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 		commandEvidence,
 		residualUncertainty,
 	};
+}
+
+function applyDispositions(
+	findings: readonly FindingDraft[],
+	dispositions: readonly FindingDisposition[],
+): CensusFinding[] {
+	const dispositionsByFinding = new Map<string, FindingDisposition>();
+	const findingIdOccurrences = new Map<string, number>();
+	for (const disposition of dispositions) {
+		if (dispositionsByFinding.has(disposition.findingId))
+			throw new Error(`duplicate disposition for ${disposition.findingId}`);
+		dispositionsByFinding.set(disposition.findingId, disposition);
+	}
+	const reconciled = findings.map((finding) => {
+		const identity = JSON.stringify({
+			kind: finding.kind,
+			commandId: finding.commandId ?? null,
+			detail: finding.detail,
+		});
+		const occurrence = (findingIdOccurrences.get(identity) ?? 0) + 1;
+		findingIdOccurrences.set(identity, occurrence);
+		const id = createHash("sha256")
+			.update(JSON.stringify({ identity: JSON.parse(identity), occurrence }))
+			.digest("hex");
+		const disposition = dispositionsByFinding.get(id);
+		return {
+			...finding,
+			id,
+			lane: finding.lane ?? "objective-observation",
+			accountedFor: disposition !== undefined,
+			...(disposition ? { disposition } : {}),
+		};
+	});
+	const findingIds = new Set(reconciled.map((finding) => finding.id));
+	for (const disposition of dispositions)
+		if (!findingIds.has(disposition.findingId))
+			throw new Error(
+				`disposition references unknown finding ${disposition.findingId}`,
+			);
+	return reconciled;
 }
 
 function unmatchedHookEvents(run: RuntimeEvidence) {
@@ -251,7 +314,7 @@ function unmatchedHookEvents(run: RuntimeEvidence) {
 
 function reconcileRepeatedOutcomes(
 	runs: readonly RuntimeEvidence[],
-	findings: CensusFinding[],
+	findings: FindingDraft[],
 ): void {
 	const normal = runs.find((run) => run.command.surface === "normal");
 	if (!normal) return;
@@ -283,13 +346,12 @@ function runtimeStates(run: RuntimeEvidence): Map<string, string> {
 	);
 }
 
-export function censusDigest(
-	sources: readonly SourceCensus[],
-	runs: readonly RuntimeEvidence[],
-): string {
-	return createHash("sha256")
-		.update(JSON.stringify({ sources, runs }))
-		.digest("hex");
+export function sourceCensusDigest(sources: readonly SourceCensus[]): string {
+	return createHash("sha256").update(JSON.stringify(sources)).digest("hex");
+}
+
+export function commandCensusDigest(runs: readonly RuntimeEvidence[]): string {
+	return createHash("sha256").update(JSON.stringify(runs)).digest("hex");
 }
 
 export async function runAuditCommand(options: {
@@ -444,7 +506,7 @@ async function withTimeout<T>(
 function reconcileRun(
 	sources: readonly SourceCensus[],
 	run: RuntimeEvidence,
-	findings: CensusFinding[],
+	findings: FindingDraft[],
 ): void {
 	for (const source of sources) {
 		const sourceSelected = selectionMatches(source.path, run.filters);

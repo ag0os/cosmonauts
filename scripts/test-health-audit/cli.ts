@@ -1,12 +1,15 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { readCurrentEpochManifest } from "./artifacts.ts";
+import { type EpochManifest, readCurrentEpochManifest } from "./artifacts.ts";
 import {
 	type CensusResult,
-	censusDigest,
+	commandCensusDigest,
+	type FindingDisposition,
 	reconcileCensus,
 	runAuditCommand,
+	sourceCensusDigest,
 } from "./census.ts";
+import type { RuntimeEvidence } from "./runtime-reporter.ts";
 import { collectSourceTree, type SourceCensus } from "./source-census.ts";
 
 export interface CliDependencies {
@@ -87,51 +90,86 @@ async function defaultCensus(root: string): Promise<void> {
 	const epochDirectory = join(root, "epochs", manifest.epochId);
 	const projectRoot = process.cwd();
 	const sources = await collectSourceTree(projectRoot);
+	const sourceDigest = sourceCensusDigest(sources);
+	if (sourceDigest !== manifest.sourceCensusDigest)
+		throw new Error("source census does not match the frozen manifest digest");
 	const runs = [];
 	for (const command of manifest.commandDefinitions) {
-		const run = await runAuditCommand({
-			projectRoot,
-			rawDirectory: join(epochDirectory, "raw"),
-			command,
-		});
-		runs.push(run);
-		await writeJsonAtomic(
-			join(epochDirectory, "raw", `${command.id}.json`),
-			run,
+		const rawPath = join(epochDirectory, "raw", `${command.id}.json`);
+		const run = await readRuntimeEvidence(rawPath, command).catch(
+			async (error: unknown) => {
+				if (!isMissingFile(error)) throw error;
+				const observed = await runAuditCommand({
+					projectRoot,
+					rawDirectory: join(epochDirectory, "raw"),
+					command,
+				});
+				await writeJsonAtomic(rawPath, observed);
+				return observed;
+			},
 		);
+		runs.push(run);
 	}
 	const result = reconcileCensus({
 		sources,
 		runs,
 		expectedCommands: manifest.commandDefinitions,
+		dispositions: await readFindingDispositions(epochDirectory),
 	});
-	const digest = censusDigest(sources, runs);
-	await persistCensusArtifacts(epochDirectory, sources, result, digest);
+	await persistCensusArtifacts(
+		epochDirectory,
+		sources,
+		result,
+		sourceDigest,
+		commandCensusDigest(runs),
+	);
+}
+
+async function readRuntimeEvidence(
+	path: string,
+	command: EpochManifest["commandDefinitions"][number],
+): Promise<RuntimeEvidence> {
+	const parsed = JSON.parse(await readFile(path, "utf8")) as RuntimeEvidence;
+	if (
+		parsed.reporterVersion !== 1 ||
+		parsed.command.id !== command.id ||
+		parsed.command.surface !== command.surface ||
+		JSON.stringify(parsed.command.argv) !== JSON.stringify(command.argv)
+	)
+		throw new Error(`reporter incompatibility for command ${command.id}`);
+	return parsed;
 }
 export async function persistCensusArtifacts(
 	epochDirectory: string,
 	sources: readonly SourceCensus[],
 	result: CensusResult,
-	digest: string,
+	sourceDigest: string,
+	commandDigest: string,
 ): Promise<void> {
 	await writeJsonAtomic(join(epochDirectory, "source-census.json"), sources);
 	await writeJsonAtomic(join(epochDirectory, "suite-integrity.json"), {
 		...result,
-		censusDigest: digest,
+		sourceCensusDigest: sourceDigest,
+		commandCensusDigest: commandDigest,
 	});
 	await writeTextAtomic(
 		join(epochDirectory, "suite-integrity.md"),
-		renderSuiteIntegrity(result, digest),
+		renderSuiteIntegrity(result, sourceDigest, commandDigest),
 	);
 }
 
-function renderSuiteIntegrity(result: CensusResult, digest: string): string {
+function renderSuiteIntegrity(
+	result: CensusResult,
+	sourceDigest: string,
+	commandDigest: string,
+): string {
 	const lines = [
 		"# Suite integrity",
 		"",
 		`State: **${result.state}**`,
 		`Clean: **${String(result.clean)}**`,
-		`Census digest: \`${digest}\``,
+		`Source census digest: \`${sourceDigest}\``,
+		`Command census digest: \`${commandDigest}\``,
 		"",
 		"## Command evidence",
 		"",
@@ -163,14 +201,7 @@ function markdownCell(value: string): string {
 }
 async function defaultPrepareUnits(root: string): Promise<void> {
 	const manifest = await readCurrentEpochManifest(root);
-	const census = JSON.parse(
-		await readFile(
-			join(root, "epochs", manifest.epochId, "suite-integrity.json"),
-			"utf8",
-		),
-	) as { censusDigest?: string };
-	if (census.censusDigest !== manifest.censusDigest)
-		throw new Error("stale or missing census digest");
+	await validateCensusDigests(root, manifest);
 	await writeFile(
 		join(root, "epochs", manifest.epochId, "work-units.json"),
 		"[]\n",
@@ -179,15 +210,95 @@ async function defaultPrepareUnits(root: string): Promise<void> {
 }
 async function defaultValidate(root: string): Promise<boolean> {
 	const manifest = await readCurrentEpochManifest(root);
-	const census = JSON.parse(
-		await readFile(
-			join(root, "epochs", manifest.epochId, "suite-integrity.json"),
-			"utf8",
-		),
-	) as { censusDigest?: string };
-	if (census.censusDigest !== manifest.censusDigest)
-		throw new Error("stale or missing census digest");
+	await validateCensusDigests(root, manifest);
 	return true;
+}
+
+async function validateCensusDigests(
+	root: string,
+	manifest: Awaited<ReturnType<typeof readCurrentEpochManifest>>,
+): Promise<void> {
+	const epochDirectory = join(root, "epochs", manifest.epochId);
+	const sources = JSON.parse(
+		await readFile(join(epochDirectory, "source-census.json"), "utf8"),
+	) as SourceCensus[];
+	if (sourceCensusDigest(sources) !== manifest.sourceCensusDigest)
+		throw new Error("stale or missing source census digest");
+	const integrity = JSON.parse(
+		await readFile(join(epochDirectory, "suite-integrity.json"), "utf8"),
+	) as { sourceCensusDigest?: string; commandCensusDigest?: string };
+	if (integrity.sourceCensusDigest !== manifest.sourceCensusDigest)
+		throw new Error("stale or missing source census digest");
+	const runs = await Promise.all(
+		manifest.commandDefinitions.map(async (command) =>
+			JSON.parse(
+				await readFile(
+					join(epochDirectory, "raw", `${command.id}.json`),
+					"utf8",
+				),
+			),
+		),
+	);
+	if (commandCensusDigest(runs) !== integrity.commandCensusDigest)
+		throw new Error("stale or missing command census digest");
+}
+
+export async function readFindingDispositions(
+	epochDirectory: string,
+): Promise<FindingDisposition[]> {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(
+			await readFile(join(epochDirectory, "dispositions.json"), "utf8"),
+		);
+	} catch (error) {
+		if (isMissingFile(error)) return [];
+		throw error;
+	}
+	if (!Array.isArray(parsed) || !parsed.every(isFindingDisposition))
+		throw new Error("invalid dispositions.json");
+	return parsed;
+}
+
+function isFindingDisposition(value: unknown): value is FindingDisposition {
+	if (typeof value !== "object" || value === null || Array.isArray(value))
+		return false;
+	const record = value as Record<string, unknown>;
+	const assessor = record.assessor;
+	const agent =
+		typeof assessor === "object" &&
+		assessor !== null &&
+		!Array.isArray(assessor)
+			? (assessor as Record<string, unknown>)
+			: undefined;
+	return (
+		typeof record.findingId === "string" &&
+		record.findingId.length > 0 &&
+		["accounted-for", "limitation-accepted", "repair-required"].includes(
+			String(record.disposition),
+		) &&
+		typeof record.reasoning === "string" &&
+		record.reasoning.length > 0 &&
+		agent?.kind === "agent" &&
+		nonEmptyString(agent.id) &&
+		nonEmptyString(agent.model) &&
+		nonEmptyString(agent.modelVersion) &&
+		nonEmptyString(agent.assessedAt) &&
+		Array.isArray(agent.consultedAuthorities)
+	);
+}
+
+function nonEmptyString(value: unknown): value is string {
+	return typeof value === "string" && value.length > 0;
+}
+
+function isMissingFile(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		(error as { code?: unknown }).code === "ENOENT"
+	);
 }
 async function defaultProbe(_root: string, id: string): Promise<never> {
 	throw new Error(

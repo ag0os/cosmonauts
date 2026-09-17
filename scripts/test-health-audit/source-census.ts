@@ -303,12 +303,19 @@ function countEachParameters(
 	expression: ts.Expression | undefined,
 ): number | null {
 	if (!expression) return null;
-	if (ts.isArrayLiteralExpression(expression))
+	if (
+		ts.isArrayLiteralExpression(expression) &&
+		!containsSpreadElement(expression)
+	)
 		return expression.elements.length;
 	if (ts.isTaggedTemplateExpression(expression)) {
 		return countEachTemplate(expression.template);
 	}
 	return null;
+}
+function containsSpreadElement(node: ts.Node): boolean {
+	if (ts.isSpreadElement(node) || ts.isSpreadAssignment(node)) return true;
+	return node.getChildren().some(containsSpreadElement);
 }
 function countEachTemplate(template: ts.TemplateLiteral): number {
 	const text = template.getText().slice(1, -1).trim();
