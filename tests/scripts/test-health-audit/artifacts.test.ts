@@ -481,6 +481,7 @@ describe("test health audit artifacts", () => {
 			const resampledWaves: number[] = [];
 			let failedUnitId: string | undefined;
 			let haltedUnitId: string | undefined;
+			let expectDiscardedCandidateForUnit: string | undefined;
 			let supplyAgentCost = false;
 			const failedAttempts = new Set<string>();
 			const backend = {
@@ -489,6 +490,21 @@ describe("test health audit artifacts", () => {
 				async run(invocation: { taskId: string; promptPath: string }) {
 					invokedUnitIds.push(invocation.taskId);
 					promptBodies.push(await readFile(invocation.promptPath, "utf8"));
+					if (invocation.taskId === expectDiscardedCandidateForUnit) {
+						await expect(
+							readFile(
+								join(
+									auditRoot,
+									"epochs",
+									"epoch-1",
+									"dispatch",
+									`${invocation.taskId}.profiles.json`,
+								),
+								"utf8",
+							),
+						).rejects.toMatchObject({ code: "ENOENT" });
+						expectDiscardedCandidateForUnit = undefined;
+					}
 					if (invocation.taskId === haltedUnitId) {
 						await writeFile(
 							join(
@@ -640,7 +656,9 @@ describe("test health audit artifacts", () => {
 				pendingUnitIds: [lastUnit.id],
 			});
 			supplyAgentCost = false;
+			expectDiscardedCandidateForUnit = lastUnit.id;
 			await dispatchProfileUnits(dispatchOptions(auditRoot));
+			expect(expectDiscardedCandidateForUnit).toBeUndefined();
 			const persistedControlPath = join(
 				auditRoot,
 				"epochs",
