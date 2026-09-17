@@ -2,7 +2,7 @@
 title: Test Health Audit
 status: active
 createdAt: '2026-09-15T21:15:54.575Z'
-updatedAt: '2026-09-17T00:30:00.000Z'
+updatedAt: '2026-09-17T02:00:00.000Z'
 ---
 
 ## Overview
@@ -254,6 +254,18 @@ These ratified assumptions are settled and carried verbatim:
   - Note: this bound governs stage 6 assessment only. Stage 7 probes execute real test suites as CPU-bound subprocesses and stay effectively serial under their existing explicit `--confirm-probe` gate; they must not inherit 8.
   - Decided by: user ratified, 2026-09-16.
 
+- **D-031 - Dispositions are an epoch artifact; conditional candidates are heuristics** *(Added 2026-09-17 on second-live-run evidence)*
+  - Decision: `<epoch>/dispositions.json` holds one entry per finding needing an answer — finding id, `accounted-for` | `limitation-accepted` | `repair-required`, reasoning, assessor provenance — written by an assessing agent at C2 and read by the collector when computing census state. Separately, AST conditional/unreachable candidates are heuristic-lane records at basis `reasoned`, never `blocked`.
+  - Alternatives: leaving disposition location unspecified (what the plan did, which left `blocked` with no exit); treating conditional candidates as blocked objective records (what the collector did, producing 96% of the blockers); dropping the completeness requirement so blocked findings simply stop mattering.
+  - Why: the plan already required a disposition for every mismatch, skip, filter, and limitation, but never located them, so the second live run reached `blocked` with no reachable exit — the same state-with-no-exit class two earlier reviews caught in D-020 and D-021. Naming the artifact closes it without weakening `INV-005`: a dispositioned finding is accounted-for, not hidden. The conditional-candidate half restores what Design §2 step 7 already said and the collector contradicted.
+  - Decided by: planner, on second-live-run evidence, 2026-09-17.
+
+- **D-032 - The epoch manifest freezes pre-census inputs only** *(Added 2026-09-17 on second-live-run evidence)*
+  - Decision: `manifest.json` is sealed at C1 and holds `evaluatedRevision`, `materialInputs`, `commandDefinitions`, `methodVersion`, and the **source** census digest. Runtime/command census digests are computed after the seal and live in `suite-integrity.json` and `raw/`. Validation compares the manifest's source-census digest against the source census, and the command-census digest against its own recorded value — never the manifest's digest against a full source+runtime census.
+  - Alternatives: sealing the manifest at C2 instead (loses the freeze the inventory pass depends on); making the manifest mutable (contradicts D-013).
+  - Why: the second live run failed AC #5 because the task demanded runtime digests inside an artifact sealed before runtime evidence existed. An immutable manifest cannot contain a digest of evidence collected after it was sealed; the plan's phrase "census/inventory digests" hid the contradiction by not saying *which* census.
+  - Decided by: planner, on second-live-run evidence, 2026-09-17.
+
 ## Behaviors
 
 ### B-001 - Independent dimensions, evidence bases, grounding forms, and authorship lanes
@@ -483,13 +495,15 @@ The census precedes every suite/test-health conclusion:
 4. Invoke coverage once through `bun run test:coverage` with the reporter. Coverage percentages remain context only.
 5. Run two additional normal checks: one same-order repeat and one `--sequence.shuffle --sequence.seed <recorded>` run. This fixed regimen is bounded evidence, not proof of universal determinism.
 6. Preserve full-suite outcomes for `tests/driver/cross-plan-commit-lock.test.ts`, `tests/plans/archive.test.ts`, and `tests/extensions/project-tools.test.ts`; run each twice in isolation after full collection and record full-versus-isolation evidence. Isolation never excuses a full-suite failure.
-7. Reconcile source declarations, collected modules, ready/result cases, suite/module errors, hook events, filters, and surface differences. **Reconciliation is scoped to each command's own selection.** A command that deliberately filters — the isolation runs of step 6, or any future `--testNamePattern`/path-filtered surface — is reconciled only against the declarations its filter selects; declarations outside that selection are `not-selected`, never `source-only`. Only unfiltered full-suite surfaces reconcile against the whole declaration universe. Without this the six isolation runs each report every unselected declaration as missing: the first live run produced 37,080 of 45,075 findings this way (~6,150 per isolation run against **1** for the unfiltered `normal` run), which is collector noise, not suite evidence. Individual assertion execution is `unknown` unless unconditional observation/probe establishes it; AST conditional/unreachable candidates are agent-assessed heuristics.
+7. Reconcile source declarations, collected modules, ready/result cases, suite/module errors, hook events, filters, and surface differences. **Reconciliation is scoped to each command's own selection.** A command that deliberately filters — the isolation runs of step 6, or any future `--testNamePattern`/path-filtered surface — is reconciled only against the declarations its filter selects; declarations outside that selection are `not-selected`, never `source-only`. Only unfiltered full-suite surfaces reconcile against the whole declaration universe. Without this the six isolation runs each report every unselected declaration as missing: the first live run produced 37,080 of 45,075 findings this way (~6,150 per isolation run against **1** for the unfiltered `normal` run), which is collector noise, not suite evidence. Individual assertion execution is `unknown` unless unconditional observation/probe establishes it; AST conditional/unreachable candidates are agent-assessed heuristics recorded at basis `reasoned` in the heuristic lane — **never at basis `blocked`**, and they never block a census on their own. The first live run recorded 245 `conditional-observation` findings as blocked, which is 96% of everything blocking that census; a conditional candidate is a prompt for assessment, not a collection failure.
 
 Error records contain `phase`, `phaseBasis`, original serialized payload, entity/test/module, and command. Public module errors can establish collection/outside-run failure; aggregated case/suite errors do not automatically establish hook versus test-body phase. Unknown phase is visible blocked evidence under D-011.
 
 A non-zero command exit whose reporter payload shows no module/suite/case error is a **post-run policy exit** (the coverage-threshold violation above is the live instance): it is recorded as command evidence and, if unresolved, as residual uncertainty, but it does not by itself make the census `incomplete` or `blocked`. Exit classification reads the reporter payload only; declaration-to-runtime mismatches are census-state input and never change how an exit is classified (D-025). Only collection, execution, or hook failures evidenced in the reporter payload block. This also fixes the scope of the word "error" in B-002.
 
-Census state is `complete`, `incomplete`, or `blocked`. `incomplete` exits only after every mismatch/skip/filter/limitation has a disposition and relevant recollection; `blocked` exits only after execution/collection/assessment repair. Neither can render clean. Raw full-suite collection before calibration is inventory data only; no health/clean conclusion is trusted until calibration passes.
+Dispositions live in `<epoch>/dispositions.json`, written by an assessing agent at C2 and read by the collector when it computes census state. Each entry names the finding it answers, the disposition (`accounted-for`, `limitation-accepted`, `repair-required`), the agent's reasoning, and its assessor provenance. This is what gives `incomplete` and `blocked` a defined exit: the plan has always required that every mismatch, skip, filter, and limitation carry a disposition, but before this amendment it never said where dispositions live or who writes them, so the first live run had no way to leave `blocked`.
+
+Census state is `complete`, `incomplete`, or `blocked`. `incomplete` exits only after every mismatch/skip/filter/limitation has a recorded disposition and any recollection that disposition calls for; `blocked` exits only after execution/collection/assessment repair, or after a `limitation-accepted` disposition records why the limitation is irreducible — a `test.each(<variable>)` parameter set that is genuinely not statically countable is the live instance. A finding without a disposition never becomes clean, which is `INV-005` unchanged: dispositioning makes evidence accounted-for, not invisible. Neither can render clean. Raw full-suite collection before calibration is inventory data only; no health/clean conclusion is trusted until calibration passes.
 
 ### 3. Independent behavior/risk inventory
 
