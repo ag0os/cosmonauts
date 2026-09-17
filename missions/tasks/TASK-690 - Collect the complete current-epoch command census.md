@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-689
 createdAt: '2026-09-16T18:34:47.392Z'
-updatedAt: '2026-09-17T16:10:39.821Z'
+updatedAt: '2026-09-17T17:19:10.540Z'
 ---
 
 ## Description
@@ -31,3 +31,5 @@ Reopened 2026-09-17 after the first live run aborted here. The failure was upstr
 ## Implementation Notes
 
 Re-collected the current-epoch command census with the documented explicit-root invocation on 2026-09-17. The collector and digest validation completed successfully. Normal, bounded watch, same-order repeat, seeded shuffle (seed 689), and all six isolation runs passed; the three named suites passed on every full-suite surface and in both isolations each. Coverage exited 1 only because branch coverage was 84.94% against the 85% threshold and is classified post-run-policy-exit with reporter-clean execution. The census is correctly incomplete rather than clean because skips/todos, filtered non-selections, and bounded collector limitations remain undisposed; it has no blocked collection, execution, hook, or outcome-difference finding. bun run lint and bun run typecheck passed.
+
+Current-epoch rerun verification (epoch-20260917-2305f8e-c1): branch coverage was 84.96% against the 85% threshold; reporter execution was clean and the exit remained classified post-run-policy-exit. The prior 84.94% figure above belongs to the earlier collection attempt. The explicit-root validator, bun run lint, and bun run typecheck passed.

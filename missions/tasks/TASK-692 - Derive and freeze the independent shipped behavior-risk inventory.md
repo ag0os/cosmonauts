@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-691
 createdAt: '2026-09-16T18:35:08.561Z'
-updatedAt: '2026-09-17T16:41:17.779Z'
+updatedAt: '2026-09-17T17:35:36.326Z'
 ---
 
 ## Description
@@ -33,11 +33,4 @@ Use bounded, separately reviewed non-test authority work units to derive `behavi
 
 ## Implementation Notes
 
-Run-5 attempt (2026-09-17) implemented the B-006 validator and its marked executable
-test (both committed, gates green) but halted before deriving the inventory, on a real
-shipped-authority collision: `README.md:216` documents `task list --ready` as "Show
-unblocked tasks" while `cli/tasks/commands/list.ts:36,79-81` implements
-`filter.hasNoDependencies = true`, and the shipped tasks skill records that `--ready`
-is shallow. The halt itself was wrong — see D-034 and AC #7: that collision is an
-`unresolved` inventory row with a drafted question, batched into the D-029 packet, and
-the run continues. Re-run derives the inventory on top of the committed validator.
+spawn failed with exit code 143
