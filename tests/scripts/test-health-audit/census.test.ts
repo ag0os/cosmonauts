@@ -482,6 +482,11 @@ describe("test health audit census", () => {
 			   ["a", { nested: [1, 2] }],
 			   ["c", { nested: [3, 4] }],
 			 ])("literal %s", () => {});
+			 it.each([["a"], ["b"]] satisfies readonly string[][])("satisfies %s", () => {});
+			 it.each([["a"], ["b"]] as const)("as const %s", () => {});
+			 it.each([["a"], ["b"]] as string[][])("as type %s", () => {});
+			 it.each(<string[][]>[["a"], ["b"]])("angle assertion %s", () => {});
+			 it.each((([["a"], ["b"]] as const) satisfies readonly string[][]))("nested wrappers %s", () => {});
 			 test.each(cases)("identifier %s", () => {});
 			 test.each([...cases])("spread %s", () => {});
 			 test.each(makeCases())("call %s", () => {});`,
@@ -489,7 +494,7 @@ describe("test health audit census", () => {
 
 		expect(
 			source.declarations.map((declaration) => declaration.parameterCount),
-		).toEqual([2, null, null, null]);
+		).toEqual([2, 2, 2, 2, 2, 2, null, null, null]);
 		expect(source.limitations).toHaveLength(3);
 		expect(
 			source.limitations.every((limitation) => limitation.basis === "blocked"),
@@ -557,28 +562,63 @@ describe("test health audit census", () => {
 		);
 	});
 
-	test("reads assessing-agent dispositions from the epoch artifact", async () => {
+	test("validates distinct repair dispositions and sourced accepted limitations", async () => {
 		const root = await mkdtemp(join(tmpdir(), "audit-dispositions-"));
 		roots.push(root);
-		const disposition = {
-			findingId: "finding-1",
-			disposition: "limitation-accepted" as const,
-			reasoning: "The limitation is bounded and remains visible.",
-			assessor: {
-				kind: "agent" as const,
-				id: "test-health-assessor",
-				model: "openai-codex/gpt-5",
-				modelVersion: "2026-09-17",
-				assessedAt: "2026-09-17T15:00:00.000Z",
-				consultedAuthorities: [],
-			},
+		const assessor = {
+			kind: "agent" as const,
+			id: "test-health-assessor",
+			model: "openai-codex/gpt-5",
+			modelVersion: "2026-09-17",
+			assessedAt: "2026-09-17T15:00:00.000Z",
+			consultedAuthorities: [
+				{
+					kind: "source-span",
+					path: "tests/example.test.ts",
+					span: { startLine: 1, endLine: 4 },
+				},
+			],
 		};
+		const dispositions = [
+			{
+				findingId: "finding-1",
+				disposition: "limitation-accepted" as const,
+				reasoning: "The opened source contains a genuinely dynamic data set.",
+				assessor,
+			},
+			{
+				findingId: "finding-2",
+				disposition: "repair-required-tooling" as const,
+				reasoning: "The collector does not recognize supported syntax.",
+				assessor,
+			},
+			{
+				findingId: "finding-3",
+				disposition: "repair-required-suite" as const,
+				reasoning: "The suite has a real defect for later remediation.",
+				assessor,
+			},
+		];
 		await writeFile(
 			join(root, "dispositions.json"),
-			JSON.stringify([disposition]),
+			JSON.stringify(dispositions),
 		);
 
-		expect(await readFindingDispositions(root)).toEqual([disposition]);
+		expect(await readFindingDispositions(root)).toEqual(dispositions);
+
+		await writeFile(
+			join(root, "dispositions.json"),
+			JSON.stringify([
+				{
+					...dispositions[0],
+					assessor: { ...assessor, consultedAuthorities: [] },
+				},
+			]),
+			{ flag: "w" },
+		);
+		await expect(readFindingDispositions(root)).rejects.toThrow(
+			/invalid dispositions\.json/,
+		);
 	});
 
 	test("validates frozen source and post-run command digests independently", async () => {

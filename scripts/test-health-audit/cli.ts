@@ -271,12 +271,17 @@ function isFindingDisposition(value: unknown): value is FindingDisposition {
 		!Array.isArray(assessor)
 			? (assessor as Record<string, unknown>)
 			: undefined;
+	const disposition = String(record.disposition);
+	const consultedAuthorities = agent?.consultedAuthorities;
 	return (
 		typeof record.findingId === "string" &&
 		record.findingId.length > 0 &&
-		["accounted-for", "limitation-accepted", "repair-required"].includes(
-			String(record.disposition),
-		) &&
+		[
+			"accounted-for",
+			"limitation-accepted",
+			"repair-required-tooling",
+			"repair-required-suite",
+		].includes(disposition) &&
 		typeof record.reasoning === "string" &&
 		record.reasoning.length > 0 &&
 		agent?.kind === "agent" &&
@@ -284,7 +289,8 @@ function isFindingDisposition(value: unknown): value is FindingDisposition {
 		nonEmptyString(agent.model) &&
 		nonEmptyString(agent.modelVersion) &&
 		nonEmptyString(agent.assessedAt) &&
-		Array.isArray(agent.consultedAuthorities)
+		Array.isArray(consultedAuthorities) &&
+		(disposition !== "limitation-accepted" || consultedAuthorities.length > 0)
 	);
 }
 

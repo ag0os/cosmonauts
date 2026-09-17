@@ -48,7 +48,8 @@ export interface FindingDisposition {
 	readonly disposition:
 		| "accounted-for"
 		| "limitation-accepted"
-		| "repair-required";
+		| "repair-required-tooling"
+		| "repair-required-suite";
 	readonly reasoning: string;
 	readonly assessor: Extract<Assessor, { kind: "agent" }>;
 }

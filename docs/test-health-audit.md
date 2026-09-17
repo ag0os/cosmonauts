@@ -26,7 +26,7 @@ Assess each declaration independently across Execution, Grounding, Contract alig
 
 Objective collection records only what source syntax and public Vitest payloads establish. Unsupported or dynamic syntax, missing command evidence, source/runtime mismatches, filters, and unknown lifecycle phases remain visible limitations and can never become clean evidence. Assertion and reachability candidates are heuristic inputs for an assessing agent; collectors do not assign role, authority, chain adequacy, criticality, disposition, or portfolio sufficiency.
 
-An assessing agent records answers to census findings in the current epoch's `dispositions.json`, including the finding ID, disposition, reasoning, and assessor provenance. Accounted-for findings remain visible in suite integrity while no longer leaving the census indefinitely `incomplete` or `blocked`. Conditional and unreachable AST candidates stay in the non-blocking heuristic lane at `reasoned`; they are not objective failures.
+An assessing agent records answers to census findings in the current epoch's `dispositions.json`, including the finding ID, disposition, reasoning, assessor provenance, and sources the agent opened. The disposition distinguishes `repair-required-tooling` from `repair-required-suite`; `limitation-accepted` is invalid without at least one consulted source. Accounted-for findings remain visible in suite integrity while no longer leaving the census indefinitely `incomplete` or `blocked`. Conditional and unreachable AST candidates stay in the non-blocking heuristic lane at `reasoned`; they are not objective failures.
 
 ## Trust and consent boundary
 

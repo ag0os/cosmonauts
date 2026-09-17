@@ -303,6 +303,7 @@ function countEachParameters(
 	expression: ts.Expression | undefined,
 ): number | null {
 	if (!expression) return null;
+	expression = unwrapExpression(expression);
 	if (
 		ts.isArrayLiteralExpression(expression) &&
 		!containsSpreadElement(expression)
@@ -312,6 +313,17 @@ function countEachParameters(
 		return countEachTemplate(expression.template);
 	}
 	return null;
+}
+function unwrapExpression(expression: ts.Expression): ts.Expression {
+	let current = expression;
+	while (
+		ts.isParenthesizedExpression(current) ||
+		ts.isAsExpression(current) ||
+		ts.isSatisfiesExpression(current) ||
+		ts.isTypeAssertionExpression(current)
+	)
+		current = current.expression;
+	return current;
 }
 function containsSpreadElement(node: ts.Node): boolean {
 	if (ts.isSpreadElement(node) || ts.isSpreadAssignment(node)) return true;
