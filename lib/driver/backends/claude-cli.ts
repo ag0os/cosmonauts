@@ -27,7 +27,7 @@ export function createClaudeCliBackend(
 		},
 		async run(invocation) {
 			const start = Date.now();
-			const { exitCode, stdout } = await runCliBackendProcess({
+			const { exitCode, stdout, processMetrics } = await runCliBackendProcess({
 				argv: [binary, ...args, "-p"],
 				invocation,
 				backendName: "claude-cli",
@@ -37,6 +37,7 @@ export function createClaudeCliBackend(
 				exitCode,
 				stdout,
 				durationMs: Date.now() - start,
+				...(processMetrics ? { processMetrics } : {}),
 			};
 		},
 	};

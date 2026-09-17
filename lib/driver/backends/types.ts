@@ -21,6 +21,10 @@ export interface BackendRunResult {
 	exitCode: number;
 	stdout: string;
 	durationMs: number;
+	processMetrics?: {
+		processId: number;
+		peakRssBytes: number;
+	};
 }
 
 export interface Backend {

@@ -38,6 +38,7 @@ export type SourceLimitation =
 	  };
 export interface SourceCensus {
 	readonly path: string;
+	readonly fileContextDigest: string;
 	readonly declarations: readonly SourceDeclaration[];
 	readonly limitations: readonly SourceLimitation[];
 }
@@ -210,7 +211,12 @@ export function collectSourceText(path: string, source: string): SourceCensus {
 	file.statements.forEach((statement) => {
 		walk(statement, []);
 	});
-	return { path, declarations, limitations };
+	return {
+		path,
+		fileContextDigest: createHash("sha256").update(source).digest("hex"),
+		declarations,
+		limitations,
+	};
 }
 
 function isExternalTestHelperName(name: string): boolean {

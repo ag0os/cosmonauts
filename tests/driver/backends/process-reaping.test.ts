@@ -18,6 +18,7 @@ const temp = useTempDir("process-reaping-");
 interface HarnessObservation {
 	exitCode: number;
 	stdout: string;
+	processMetrics?: { processId: number; peakRssBytes: number };
 	settledMs: number;
 	descendantPid: number;
 	descendantAliveAtSettle: boolean;
@@ -201,6 +202,7 @@ console.log(
 		JSON.stringify({
 			exitCode: result.exitCode,
 			stdout: result.stdout,
+			processMetrics: result.processMetrics,
 			settledMs,
 			descendantPid,
 			descendantAliveAtSettle,
@@ -323,6 +325,10 @@ describe("backend process reaping", { timeout: 30_000 }, () => {
 			`descendant ${observation.descendantPid} was still alive when ${backendModule}.run() settled`,
 		).toBe(false);
 		expect(observation.exitCode).toBe(0);
+		expect(observation.processMetrics).toMatchObject({
+			processId: expect.any(Number),
+			peakRssBytes: expect.any(Number),
+		});
 	});
 
 	// @cosmo-behavior plan:drive-process-reaping#B-002

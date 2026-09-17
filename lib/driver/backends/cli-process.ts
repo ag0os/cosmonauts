@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { reapProcessGroup } from "../../process/process-group.ts";
 import type { BunRuntime } from "./bun-runtime.ts";
 import type { BackendInvocation } from "./types.ts";
@@ -20,6 +21,10 @@ export interface CliBackendProcessOptions {
 export interface CliBackendProcessResult {
 	readonly exitCode: number;
 	readonly stdout: string;
+	readonly processMetrics?: {
+		readonly processId: number;
+		readonly peakRssBytes: number;
+	};
 }
 
 /**
@@ -77,15 +82,64 @@ export async function runCliBackendProcess({
 
 	const groupPid = CAN_REAP_PROCESS_GROUP ? child.pid : undefined;
 	if (groupPid !== undefined) activeBackendGroups.add(groupPid);
+	let peakRssBytes = 0;
+	let sampleInFlight: Promise<void> | undefined;
+	const sample = () => {
+		if (child.pid === undefined || sampleInFlight) return;
+		sampleInFlight = sampleResidentBytes(child.pid)
+			.then((rss) => {
+				peakRssBytes = Math.max(peakRssBytes, rss ?? 0);
+			})
+			.finally(() => {
+				sampleInFlight = undefined;
+			});
+	};
+	sample();
+	const sampler = setInterval(sample, 50);
 
 	try {
 		const exitCode = await child.exited;
+		clearInterval(sampler);
+		await sampleInFlight;
+		const resourcePeak = child.resourceUsage?.().maxRSS;
+		if (typeof resourcePeak === "number" && resourcePeak > 0)
+			peakRssBytes = Math.max(peakRssBytes, Math.ceil(resourcePeak));
 		await reapBackendGroup({ groupPid, invocation, backendName });
 		const [stdout] = await Promise.all([stdoutPromise, stderrPromise]);
-		return { exitCode, stdout };
+		return {
+			exitCode,
+			stdout,
+			...(child.pid !== undefined && peakRssBytes > 0
+				? {
+						processMetrics: {
+							processId: child.pid,
+							peakRssBytes,
+						},
+					}
+				: {}),
+		};
 	} finally {
+		clearInterval(sampler);
 		if (groupPid !== undefined) activeBackendGroups.delete(groupPid);
 	}
+}
+
+async function sampleResidentBytes(pid: number): Promise<number | undefined> {
+	if (process.platform === "win32") return undefined;
+	return new Promise((resolve) => {
+		execFile("ps", ["-o", "rss=", "-p", String(pid)], (error, stdout) => {
+			if (error) {
+				resolve(undefined);
+				return;
+			}
+			const kibibytes = Number(stdout.trim());
+			resolve(
+				Number.isFinite(kibibytes) && kibibytes > 0
+					? Math.ceil(kibibytes * 1024)
+					: undefined,
+			);
+		});
+	});
 }
 
 /**

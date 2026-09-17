@@ -33,7 +33,7 @@ export function createCodexBackend(deps: CodexBackendDeps = {}): Backend {
 				invocation.workdir,
 				`${invocation.taskId}-summary.txt`,
 			);
-			const { exitCode, stdout } = await runCliBackendProcess({
+			const { exitCode, stdout, processMetrics } = await runCliBackendProcess({
 				argv: codexExecArgv({ binary, globalArgs, extraArgs, summaryPath }),
 				invocation,
 				backendName: "codex",
@@ -44,6 +44,7 @@ export function createCodexBackend(deps: CodexBackendDeps = {}): Backend {
 				exitCode,
 				stdout: summary ?? stdout,
 				durationMs: Date.now() - start,
+				...(processMetrics ? { processMetrics } : {}),
 			};
 		},
 	};

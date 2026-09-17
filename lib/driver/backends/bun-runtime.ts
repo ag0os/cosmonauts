@@ -8,6 +8,7 @@ interface BunSubprocess {
 	 * process-group address.
 	 */
 	readonly pid?: number;
+	resourceUsage?(): { maxRSS?: number };
 }
 
 interface BunSpawnOptions {

@@ -322,6 +322,9 @@ describe("test health audit artifacts", () => {
 			expect(queue.units[0]?.fileContexts).toEqual(
 				queue.units[1]?.fileContexts,
 			);
+			expect(queue.units[0]?.fileContexts).toEqual([
+				{ path: source.path, digest: source.fileContextDigest },
+			]);
 
 			const contractDigest = await digestMaterialInput(projectRoot, {
 				path: "docs/contract.md",
@@ -456,6 +459,8 @@ describe("test health audit artifacts", () => {
 					unitId: unit.id,
 					assessorId: "profile-assessor",
 					processId: 4242,
+					processStartedAt: "2026-09-17T13:00:00.000Z",
+					processEndedAt: "2026-09-17T13:00:00.125Z",
 					durationMs: 125,
 					peakRssBytes: 64 * 1024 * 1024,
 					profiles,
@@ -473,7 +478,9 @@ describe("test health audit artifacts", () => {
 
 			const invokedUnitIds: string[] = [];
 			const promptBodies: string[] = [];
+			const resampledWaves: number[] = [];
 			let failedUnitId: string | undefined;
+			let supplyAgentCost = false;
 			const failedAttempts = new Set<string>();
 			const backend = {
 				name: "codex",
@@ -486,21 +493,54 @@ describe("test health audit artifacts", () => {
 						!failedAttempts.has(invocation.taskId)
 					) {
 						failedAttempts.add(invocation.taskId);
-						return { exitCode: 137, stdout: "killed", durationMs: 5 };
+						return {
+							exitCode: 137,
+							stdout: "killed",
+							durationMs: 5,
+							processMetrics: {
+								processId: 5000 + invokedUnitIds.length,
+								peakRssBytes: 32 * 1024 * 1024,
+							},
+						};
 					}
-					await publishProfileUnit({
-						root: auditRoot,
-						projectRoot,
-						unitId: invocation.taskId,
-						assessorId: "profile-assessor",
-						processId: 5000 + invokedUnitIds.length,
+					await writeFile(
+						join(
+							auditRoot,
+							"epochs",
+							"epoch-1",
+							"dispatch",
+							`${invocation.taskId}.profiles.json`,
+						),
+						JSON.stringify({
+							assessorId: "profile-assessor",
+							...(supplyAgentCost
+								? { durationMs: 5, peakRssBytes: 32 * 1024 * 1024 }
+								: {}),
+							profiles: profilesByUnit.get(invocation.taskId) ?? [],
+						}),
+					);
+					return {
+						exitCode: 0,
+						stdout: "assessed",
 						durationMs: 5,
-						peakRssBytes: 32 * 1024 * 1024,
-						profiles: profilesByUnit.get(invocation.taskId) ?? [],
-					});
-					return { exitCode: 0, stdout: "published", durationMs: 5 };
+						processMetrics: {
+							processId: 5000 + invokedUnitIds.length,
+							peakRssBytes: 32 * 1024 * 1024,
+						},
+					};
 				},
 			};
+			const resampleControls = async (wave: number) => {
+				resampledWaves.push(wave);
+				return { status: "pass" as const, controlIds: ["N-001", "X-001"] };
+			};
+			const dispatchOptions = (root: string) =>
+				({
+					auditRoot: root,
+					projectRoot,
+					backend,
+					resampleControls,
+				}) as Parameters<typeof dispatchProfileUnits>[0];
 			const lastUnit = queue.units.at(-1);
 			if (!lastUnit) throw new Error("profile queue is empty");
 			await rm(
@@ -517,11 +557,7 @@ describe("test health audit artifacts", () => {
 				await runCli(["--audit-root", auditRoot, "dispatch"], {
 					dispatch: async (root) => {
 						routedDispatchRoot = root;
-						await dispatchProfileUnits({
-							auditRoot: root,
-							projectRoot,
-							backend,
-						});
+						await dispatchProfileUnits(dispatchOptions(root));
 					},
 				}),
 			).toBe(0);
@@ -529,6 +565,65 @@ describe("test health audit artifacts", () => {
 			expect(invokedUnitIds).toEqual([lastUnit.id]);
 			expect(promptBodies[0]).toContain(JSON.stringify(lastUnit.identities));
 			expect(promptBodies[0]).toContain(JSON.stringify(lastUnit.fileContexts));
+			expect(promptBodies[0]).not.toMatch(
+				/durationMs|peakRssBytes|publish-unit/,
+			);
+			expect(resampledWaves).toEqual([1]);
+			const controlWave = JSON.parse(
+				await readFile(
+					join(
+						auditRoot,
+						"epochs",
+						"epoch-1",
+						"control-waves",
+						"wave-0001.json",
+					),
+					"utf8",
+				),
+			) as Record<string, unknown>;
+			expect(controlWave).toMatchObject({ wave: 1, status: "pass" });
+			await rm(
+				join(
+					auditRoot,
+					"epochs",
+					"epoch-1",
+					"profiles",
+					`${lastUnit.id}.ndjson`,
+				),
+			);
+			supplyAgentCost = true;
+			await expect(
+				dispatchProfileUnits(dispatchOptions(auditRoot)),
+			).rejects.toThrow(/agent-supplied cost fields/);
+			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
+				pendingUnitIds: [lastUnit.id],
+			});
+			supplyAgentCost = false;
+			await dispatchProfileUnits(dispatchOptions(auditRoot));
+			const persistedControlPath = join(
+				auditRoot,
+				"epochs",
+				"epoch-1",
+				"control-waves",
+				"wave-0002.json",
+			);
+			const passingControl = JSON.parse(
+				await readFile(persistedControlPath, "utf8"),
+			) as Record<string, unknown>;
+			await writeFile(
+				persistedControlPath,
+				JSON.stringify({
+					...passingControl,
+					status: "miss",
+					issues: ["N-001 regressed"],
+				}),
+			);
+			const callsBeforeRegression = invokedUnitIds.length;
+			await expect(
+				dispatchProfileUnits(dispatchOptions(auditRoot)),
+			).rejects.toThrow(/control-wave evidence.*regression/);
+			expect(invokedUnitIds).toHaveLength(callsBeforeRegression);
+			await writeFile(persistedControlPath, JSON.stringify(passingControl));
 			let publishArguments: readonly string[] = [];
 			expect(
 				await runCli(
@@ -561,14 +656,14 @@ describe("test health audit artifacts", () => {
 			invokedUnitIds.length = 0;
 			failedUnitId = lastUnit.id;
 			await expect(
-				dispatchProfileUnits({ auditRoot, projectRoot, backend }),
+				dispatchProfileUnits(dispatchOptions(auditRoot)),
 			).rejects.toThrow(lastUnit.id);
 			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
 				completedUnitIds: [queue.units[0]?.id],
 				pendingUnitIds: [lastUnit.id],
 			});
 			invokedUnitIds.length = 0;
-			await dispatchProfileUnits({ auditRoot, projectRoot, backend });
+			await dispatchProfileUnits(dispatchOptions(auditRoot));
 			expect(invokedUnitIds).toEqual([lastUnit.id]);
 			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
 				valid: true,
@@ -620,6 +715,9 @@ describe("test health audit artifacts", () => {
 			delete headerWithoutMetrics.processId;
 			delete headerWithoutMetrics.processBackend;
 			delete headerWithoutMetrics.assessorId;
+			delete headerWithoutMetrics.measurementSource;
+			delete headerWithoutMetrics.processStartedAt;
+			delete headerWithoutMetrics.processEndedAt;
 			await writeFile(
 				firstShard,
 				`${[headerWithoutMetrics, ...shardRecords.slice(1)].map((record) => JSON.stringify(record)).join("\n")}\n`,
@@ -633,7 +731,26 @@ describe("test health audit artifacts", () => {
 					expect.stringMatching(/processId/),
 					expect.stringMatching(/processBackend/),
 					expect.stringMatching(/assessorId/),
+					expect.stringMatching(/measurementSource/),
+					expect.stringMatching(/process lifetime/),
 				]),
+			);
+			await writeFile(firstShard, validShard);
+
+			const fabricatedDuration = {
+				...shardRecords[0],
+				durationMs: 20,
+				processStartedAt: "2026-09-17T13:00:00.000Z",
+				processEndedAt: "2026-09-17T13:02:00.000Z",
+			};
+			await writeFile(
+				firstShard,
+				`${[fabricatedDuration, ...shardRecords.slice(1)].map((record) => JSON.stringify(record)).join("\n")}\n`,
+			);
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(
+				expect.arrayContaining([expect.stringMatching(/process lifetime/)]),
 			);
 			await writeFile(firstShard, validShard);
 

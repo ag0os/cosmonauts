@@ -1,9 +1,8 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join } from "node:path";
 import {
 	type EpochManifest,
 	prepareProfileWorkQueue,
-	publishProfileUnit,
 	readCurrentEpochManifest,
 } from "./artifacts.ts";
 import {
@@ -16,7 +15,6 @@ import {
 } from "./census.ts";
 import { dispatchProfileUnits } from "./dispatch.ts";
 import type { RuntimeEvidence } from "./runtime-reporter.ts";
-import type { TestEvidenceProfile } from "./schema.ts";
 import { collectSourceTree, type SourceCensus } from "./source-census.ts";
 
 export interface CliDependencies {
@@ -297,31 +295,12 @@ async function defaultPublishUnit(
 	unitId: string,
 	inputPath: string,
 ): Promise<void> {
-	const manifest = await readCurrentEpochManifest(root);
-	await validateCensusDigests(root, manifest);
-	const dispatchRoot = resolve(root, "epochs", manifest.epochId, "dispatch");
-	const resolvedInput = resolve(inputPath);
-	if (
-		resolvedInput !== dispatchRoot &&
-		!resolvedInput.startsWith(`${dispatchRoot}${sep}`)
-	)
-		throw new Error(`${inputPath} must be inside ${dispatchRoot}`);
-	const input = await readJsonInput(resolvedInput);
-	if (typeof input !== "object" || input === null || Array.isArray(input))
-		throw new Error(`${resolvedInput} is malformed`);
-	const record = input as Record<string, unknown>;
-	if (!Array.isArray(record.profiles))
-		throw new Error(`${resolvedInput} profiles must be an array`);
-	await publishProfileUnit({
-		root,
-		projectRoot: process.cwd(),
-		unitId,
-		assessorId: String(record.assessorId ?? ""),
-		processId: Number(record.processId),
-		durationMs: Number(record.durationMs),
-		peakRssBytes: Number(record.peakRssBytes),
-		profiles: record.profiles as TestEvidenceProfile[],
-	});
+	void root;
+	void unitId;
+	void inputPath;
+	throw new Error(
+		"publish-unit is dispatcher-owned; run dispatch so process cost is measured externally",
+	);
 }
 async function defaultValidate(root: string): Promise<boolean> {
 	const manifest = await readCurrentEpochManifest(root);

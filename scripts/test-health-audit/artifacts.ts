@@ -56,6 +56,7 @@ export interface ProfileCensusDeclaration {
 
 export interface ProfileCensusFile {
 	readonly path: string;
+	readonly fileContextDigest?: string;
 	readonly declarations: readonly ProfileCensusDeclaration[];
 }
 
@@ -94,6 +95,9 @@ export interface PublishedProfileUnit {
 	readonly assessorId: string;
 	readonly processId: number;
 	readonly processBackend: "driver-process";
+	readonly measurementSource: "dispatcher";
+	readonly processStartedAt: string;
+	readonly processEndedAt: string;
 	readonly durationMs: number;
 	readonly peakRssBytes: number;
 	readonly profiles: readonly TestEvidenceProfile[];
@@ -981,7 +985,9 @@ export function buildProfileWorkQueue(
 			.sort((left, right) => left.path.localeCompare(right.path))
 			.map((file) => [
 				file.path,
-				digestJson({ path: file.path, declarations: file.declarations }),
+				file.fileContextDigest && SHA256.test(file.fileContextDigest)
+					? file.fileContextDigest
+					: digestJson({ path: file.path, declarations: file.declarations }),
 			]),
 	);
 	const identities = census
@@ -1079,6 +1085,8 @@ export async function publishProfileUnit(options: {
 	readonly unitId: string;
 	readonly assessorId: string;
 	readonly processId: number;
+	readonly processStartedAt: string;
+	readonly processEndedAt: string;
 	readonly durationMs: number;
 	readonly peakRssBytes: number;
 	readonly profiles: readonly TestEvidenceProfile[];
@@ -1094,6 +1102,9 @@ export async function publishProfileUnit(options: {
 			assessorId: options.assessorId,
 			processId: options.processId,
 			processBackend: "driver-process",
+			measurementSource: "dispatcher",
+			processStartedAt: options.processStartedAt,
+			processEndedAt: options.processEndedAt,
 			durationMs: options.durationMs,
 			peakRssBytes: options.peakRssBytes,
 			profiles: options.profiles,
@@ -1119,6 +1130,9 @@ export async function publishProfileUnit(options: {
 			assessorId: options.assessorId,
 			processId: options.processId,
 			processBackend: "driver-process",
+			measurementSource: "dispatcher",
+			processStartedAt: options.processStartedAt,
+			processEndedAt: options.processEndedAt,
 			durationMs: options.durationMs,
 			peakRssBytes: options.peakRssBytes,
 		}),
@@ -1347,6 +1361,12 @@ async function readPublishedUnit(
 			header.processBackend === "driver-process"
 				? "driver-process"
 				: (String(header.processBackend) as "driver-process"),
+		measurementSource:
+			header.measurementSource === "dispatcher"
+				? "dispatcher"
+				: (String(header.measurementSource) as "dispatcher"),
+		processStartedAt: String(header.processStartedAt ?? ""),
+		processEndedAt: String(header.processEndedAt ?? ""),
 		durationMs: Number(header.durationMs),
 		peakRssBytes: Number(header.peakRssBytes),
 		profiles: records as TestEvidenceProfile[],
@@ -1370,6 +1390,19 @@ async function validatePublishedUnit(
 		issues.push("processId must identify the unit OS process");
 	if (published.processBackend !== "driver-process")
 		issues.push("processBackend must be driver-process");
+	if (published.measurementSource !== "dispatcher")
+		issues.push("measurementSource must be dispatcher");
+	const processStartedAt = Date.parse(published.processStartedAt);
+	const processEndedAt = Date.parse(published.processEndedAt);
+	if (
+		!Number.isFinite(processStartedAt) ||
+		!Number.isFinite(processEndedAt) ||
+		processEndedAt < processStartedAt ||
+		published.durationMs !== processEndedAt - processStartedAt
+	)
+		issues.push(
+			"durationMs must equal the dispatcher-observed process lifetime",
+		);
 	if (!Number.isFinite(published.durationMs) || published.durationMs < 0)
 		issues.push("durationMs must be a non-negative wall-clock duration");
 	if (
