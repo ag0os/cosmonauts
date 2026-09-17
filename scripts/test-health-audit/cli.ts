@@ -1,6 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { type EpochManifest, readCurrentEpochManifest } from "./artifacts.ts";
+import {
+	type EpochManifest,
+	prepareProfileWorkQueue,
+	readCurrentEpochManifest,
+} from "./artifacts.ts";
 import {
 	type CensusResult,
 	commandCensusDigest,
@@ -222,11 +226,16 @@ function markdownCell(value: string): string {
 async function defaultPrepareUnits(root: string): Promise<void> {
 	const manifest = await readCurrentEpochManifest(root);
 	await validateCensusDigests(root, manifest);
-	await writeFile(
-		join(root, "epochs", manifest.epochId, "work-units.json"),
-		"[]\n",
-		{ flag: "wx" },
+	const censusPath = join(
+		root,
+		"epochs",
+		manifest.epochId,
+		"source-census.json",
 	);
+	const census = JSON.parse(
+		await readFile(censusPath, "utf8"),
+	) as SourceCensus[];
+	await prepareProfileWorkQueue(root, census);
 }
 async function defaultValidate(root: string): Promise<boolean> {
 	const manifest = await readCurrentEpochManifest(root);
@@ -239,28 +248,60 @@ async function validateCensusDigests(
 	manifest: Awaited<ReturnType<typeof readCurrentEpochManifest>>,
 ): Promise<void> {
 	const epochDirectory = join(root, "epochs", manifest.epochId);
-	const sources = JSON.parse(
-		await readFile(join(epochDirectory, "source-census.json"), "utf8"),
-	) as SourceCensus[];
+	const sourcePath = join(epochDirectory, "source-census.json");
+	const sources = await readJsonInput(sourcePath);
+	if (!isSourceCensus(sources)) throw new Error(`${sourcePath} is malformed`);
 	if (sourceCensusDigest(sources) !== manifest.sourceCensusDigest)
-		throw new Error("stale or missing source census digest");
-	const integrity = JSON.parse(
-		await readFile(join(epochDirectory, "suite-integrity.json"), "utf8"),
-	) as { sourceCensusDigest?: string; commandCensusDigest?: string };
-	if (integrity.sourceCensusDigest !== manifest.sourceCensusDigest)
-		throw new Error("stale or missing source census digest");
+		throw new Error(`${sourcePath} has a stale source census digest`);
+	const integrityPath = join(epochDirectory, "suite-integrity.json");
+	const integrity = await readJsonInput(integrityPath);
+	if (
+		typeof integrity !== "object" ||
+		integrity === null ||
+		Array.isArray(integrity)
+	)
+		throw new Error(`${integrityPath} is malformed`);
+	const integrityRecord = integrity as {
+		sourceCensusDigest?: string;
+		commandCensusDigest?: string;
+	};
+	if (integrityRecord.sourceCensusDigest !== manifest.sourceCensusDigest)
+		throw new Error(`${integrityPath} has a stale source census digest`);
 	const runs = await Promise.all(
 		manifest.commandDefinitions.map(async (command) =>
-			JSON.parse(
-				await readFile(
-					join(epochDirectory, "raw", `${command.id}.json`),
-					"utf8",
-				),
+			readRuntimeEvidence(
+				join(epochDirectory, "raw", `${command.id}.json`),
+				command,
 			),
 		),
 	);
-	if (commandCensusDigest(runs) !== integrity.commandCensusDigest)
-		throw new Error("stale or missing command census digest");
+	if (commandCensusDigest(runs) !== integrityRecord.commandCensusDigest)
+		throw new Error(`${integrityPath} has a stale command census digest`);
+}
+
+async function readJsonInput(path: string): Promise<unknown> {
+	try {
+		return JSON.parse(await readFile(path, "utf8")) as unknown;
+	} catch (error) {
+		throw new Error(
+			`${path} is missing or malformed: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+}
+
+function isSourceCensus(value: unknown): value is SourceCensus[] {
+	return (
+		Array.isArray(value) &&
+		value.every(
+			(file) =>
+				typeof file === "object" &&
+				file !== null &&
+				!Array.isArray(file) &&
+				typeof (file as { path?: unknown }).path === "string" &&
+				Array.isArray((file as { declarations?: unknown }).declarations) &&
+				Array.isArray((file as { limitations?: unknown }).limitations),
+		)
+	);
 }
 
 export async function readFindingDispositions(

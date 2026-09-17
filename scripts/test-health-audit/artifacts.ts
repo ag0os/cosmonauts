@@ -4,12 +4,19 @@ import {
 	access,
 	mkdir,
 	open,
+	readdir,
 	readFile,
 	rename,
 	unlink,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { AUDIT_VOCABULARY, type TestSurface } from "./schema.ts";
+import { dirname, join, resolve, sep } from "node:path";
+import {
+	AUDIT_VOCABULARY,
+	type EvidenceDigest,
+	type TestEvidenceProfile,
+	type TestSurface,
+	validateTestEvidenceProfile,
+} from "./schema.ts";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const SAFE_ID = /^[A-Za-z0-9._-]+$/;
@@ -37,6 +44,73 @@ export interface AuditIndex {
 	readonly currentEpochId: string;
 	readonly epochIds: readonly string[];
 }
+
+export interface ProfileCensusDeclaration {
+	readonly id: string;
+	readonly path: string;
+	readonly title: string;
+	readonly ordinal: number;
+	readonly line: number;
+	readonly endLine: number;
+}
+
+export interface ProfileCensusFile {
+	readonly path: string;
+	readonly declarations: readonly ProfileCensusDeclaration[];
+}
+
+export interface ProfileWorkUnit {
+	readonly id: string;
+	readonly identities: readonly ProfileCensusDeclaration[];
+	readonly relevantSourceLines: number;
+	readonly sourceFiles: readonly string[];
+	readonly fileContexts: readonly {
+		readonly path: string;
+		readonly digest: string;
+	}[];
+}
+
+export interface ProfileWorkQueue {
+	readonly schemaVersion: 1;
+	readonly epochId: string;
+	readonly execution: {
+		readonly backend: "driver-process";
+		readonly maxConcurrent: 8;
+		readonly processIsolation: "one-os-process-per-unit";
+		readonly controlsResampledBetweenWaves: true;
+	};
+	readonly limits: {
+		readonly identities: 50;
+		readonly relevantSourceLines: 2500;
+		readonly sourceFiles: 8;
+		readonly indivisibleTestException: true;
+	};
+	readonly units: readonly ProfileWorkUnit[];
+}
+
+export interface PublishedProfileUnit {
+	readonly epochId: string;
+	readonly unitId: string;
+	readonly assessorId: string;
+	readonly processId: number;
+	readonly processBackend: "driver-process";
+	readonly durationMs: number;
+	readonly peakRssBytes: number;
+	readonly profiles: readonly TestEvidenceProfile[];
+}
+
+export interface ProfileEpochValidation {
+	readonly valid: boolean;
+	readonly complete: boolean;
+	readonly pendingUnitIds: readonly string[];
+	readonly completedUnitIds: readonly string[];
+	readonly profiles: readonly TestEvidenceProfile[];
+	readonly issues: readonly string[];
+}
+
+type MaterialInputDescriptor<T = EvidenceDigest> = T extends EvidenceDigest
+	? Omit<T, "sha256">
+	: never;
 
 interface CalibrationObligation {
 	dimensionConclusions: string[] | "unconstrained";
@@ -894,6 +968,630 @@ function calibrationMiss(issues: readonly string[]): CalibrationValidation {
 		profileAcceptance: "blocked",
 		issues,
 	};
+}
+
+export function buildProfileWorkQueue(
+	epochId: string,
+	census: readonly ProfileCensusFile[],
+): ProfileWorkQueue {
+	if (!nonEmpty(epochId) || !SAFE_ID.test(epochId))
+		throw new Error("invalid profile queue epoch id");
+	const fileContextDigests = new Map(
+		[...census]
+			.sort((left, right) => left.path.localeCompare(right.path))
+			.map((file) => [
+				file.path,
+				digestJson({ path: file.path, declarations: file.declarations }),
+			]),
+	);
+	const identities = census
+		.flatMap((file) => file.declarations)
+		.slice()
+		.sort(
+			(left, right) =>
+				left.path.localeCompare(right.path) ||
+				left.line - right.line ||
+				left.ordinal - right.ordinal ||
+				left.id.localeCompare(right.id),
+		);
+	if (
+		new Set(identities.map((identity) => identity.id)).size !==
+		identities.length
+	)
+		throw new Error("source census contains duplicate profile identities");
+
+	const groups: ProfileCensusDeclaration[][] = [];
+	let current: ProfileCensusDeclaration[] = [];
+	for (const identity of identities) {
+		validateCensusDeclaration(identity);
+		const candidate = [...current, identity];
+		const lines = relevantLineCount(candidate);
+		const files = new Set(candidate.map((item) => item.path)).size;
+		if (
+			current.length > 0 &&
+			(candidate.length > 50 || lines > 2500 || files > 8)
+		) {
+			groups.push(current);
+			current = [identity];
+		} else {
+			current = candidate;
+		}
+	}
+	if (current.length > 0) groups.push(current);
+
+	const units = groups.map((group, index): ProfileWorkUnit => {
+		const sourceFiles = [...new Set(group.map((item) => item.path))].sort();
+		return {
+			id: `profile-unit-${String(index + 1).padStart(4, "0")}-${digestJson(group.map((item) => item.id)).slice(0, 12)}`,
+			identities: group,
+			relevantSourceLines: relevantLineCount(group),
+			sourceFiles,
+			fileContexts: sourceFiles.map((path) => ({
+				path,
+				digest: fileContextDigests.get(path) ?? digestJson(path),
+			})),
+		};
+	});
+	return {
+		schemaVersion: 1,
+		epochId,
+		execution: {
+			backend: "driver-process",
+			maxConcurrent: 8,
+			processIsolation: "one-os-process-per-unit",
+			controlsResampledBetweenWaves: true,
+		},
+		limits: {
+			identities: 50,
+			relevantSourceLines: 2500,
+			sourceFiles: 8,
+			indivisibleTestException: true,
+		},
+		units,
+	};
+}
+
+export async function prepareProfileWorkQueue(
+	root: string,
+	census: readonly ProfileCensusFile[],
+): Promise<ProfileWorkQueue> {
+	const manifest = await readCurrentEpochManifest(root);
+	const queue = buildProfileWorkQueue(manifest.epochId, census);
+	await writeJsonAtomic(
+		join(root, "epochs", manifest.epochId, "work-units.json"),
+		queue,
+	);
+	return queue;
+}
+
+export async function readProfileWorkQueue(
+	root: string,
+): Promise<ProfileWorkQueue> {
+	const manifest = await readCurrentEpochManifest(root);
+	const path = join(root, "epochs", manifest.epochId, "work-units.json");
+	const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+	return validateProfileWorkQueue(parsed, manifest.epochId);
+}
+
+export async function publishProfileUnit(options: {
+	readonly root: string;
+	readonly projectRoot: string;
+	readonly unitId: string;
+	readonly assessorId: string;
+	readonly processId: number;
+	readonly durationMs: number;
+	readonly peakRssBytes: number;
+	readonly profiles: readonly TestEvidenceProfile[];
+}): Promise<void> {
+	const manifest = await readCurrentEpochManifest(options.root);
+	const queue = await readProfileWorkQueue(options.root);
+	const unit = queue.units.find((candidate) => candidate.id === options.unitId);
+	if (!unit) throw new Error(`unknown profile work unit ${options.unitId}`);
+	const issues = await validatePublishedUnit(
+		{
+			epochId: manifest.epochId,
+			unitId: options.unitId,
+			assessorId: options.assessorId,
+			processId: options.processId,
+			processBackend: "driver-process",
+			durationMs: options.durationMs,
+			peakRssBytes: options.peakRssBytes,
+			profiles: options.profiles,
+		},
+		unit,
+		manifest,
+		options.projectRoot,
+		options.root,
+	);
+	if (issues.length > 0)
+		throw new Error(
+			`invalid profile unit ${options.unitId}: ${issues.join("; ")}`,
+		);
+	const directory = join(options.root, "epochs", manifest.epochId, "profiles");
+	await mkdir(directory, { recursive: true });
+	const path = join(directory, `${options.unitId}.ndjson`);
+	const lines = [
+		JSON.stringify({
+			recordType: "profile-unit",
+			schemaVersion: 1,
+			epochId: manifest.epochId,
+			unitId: options.unitId,
+			assessorId: options.assessorId,
+			processId: options.processId,
+			processBackend: "driver-process",
+			durationMs: options.durationMs,
+			peakRssBytes: options.peakRssBytes,
+		}),
+		...options.profiles.map((profile) => JSON.stringify(profile)),
+	];
+	await writeTextAtomic(path, `${lines.join("\n")}\n`);
+}
+
+export async function validateProfileEpoch(
+	root: string,
+	projectRoot: string,
+): Promise<ProfileEpochValidation> {
+	const manifest = await readCurrentEpochManifest(root);
+	const queue = await readProfileWorkQueue(root);
+	const profileDirectory = join(root, "epochs", manifest.epochId, "profiles");
+	let names: string[] = [];
+	try {
+		names = await readdir(profileDirectory);
+	} catch (error) {
+		if (!isMissing(error)) throw error;
+	}
+	const issues: string[] = [];
+	const completedUnitIds: string[] = [];
+	const profiles: TestEvidenceProfile[] = [];
+	const expectedNames = new Set(queue.units.map((unit) => `${unit.id}.ndjson`));
+	for (const name of names.sort()) {
+		if (!name.endsWith(".ndjson")) continue;
+		if (!expectedNames.has(name)) {
+			issues.push(
+				`profiles/${name} does not belong to the current epoch queue`,
+			);
+			continue;
+		}
+		const unitId = name.slice(0, -".ndjson".length);
+		const unit = queue.units.find((candidate) => candidate.id === unitId);
+		if (!unit) continue;
+		try {
+			const published = await readPublishedUnit(
+				join(profileDirectory, name),
+				manifest.epochId,
+			);
+			const unitIssues = await validatePublishedUnit(
+				published,
+				unit,
+				manifest,
+				projectRoot,
+				root,
+			);
+			if (unitIssues.length > 0) {
+				issues.push(...unitIssues.map((issue) => `${unitId}: ${issue}`));
+				continue;
+			}
+			completedUnitIds.push(unitId);
+			profiles.push(...published.profiles);
+		} catch (error) {
+			issues.push(
+				`${unitId}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+	const completed = new Set(completedUnitIds);
+	const pendingUnitIds = queue.units
+		.map((unit) => unit.id)
+		.filter((unitId) => !completed.has(unitId));
+	const expectedIdentities = queue.units.flatMap((unit) =>
+		unit.identities.map((identity) => identity.id),
+	);
+	const actualIdentities = profiles.map((profile) => profile.id);
+	if (
+		pendingUnitIds.length === 0 &&
+		(JSON.stringify(expectedIdentities.slice().sort()) !==
+			JSON.stringify(actualIdentities.slice().sort()) ||
+			new Set(actualIdentities).size !== actualIdentities.length)
+	)
+		issues.push(
+			"current epoch must contain exactly one profile per auditable identity",
+		);
+	return {
+		valid: issues.length === 0,
+		complete: pendingUnitIds.length === 0 && issues.length === 0,
+		pendingUnitIds,
+		completedUnitIds,
+		profiles,
+		issues,
+	};
+}
+
+export async function digestMaterialInput(
+	projectRoot: string,
+	input: MaterialInputDescriptor,
+): Promise<string> {
+	const path = safeProjectPath(projectRoot, input.path);
+	const content = await readFile(path, "utf8");
+	if (input.scope === "file")
+		return createHash("sha256").update(content).digest("hex");
+	const lines = content.split(/\r?\n/);
+	const span = input.span;
+	if (!span)
+		throw new Error(`declaration-span input is missing a span: ${input.path}`);
+	return createHash("sha256")
+		.update(lines.slice(span.startLine - 1, span.endLine).join("\n"))
+		.digest("hex");
+}
+
+function validateCensusDeclaration(identity: ProfileCensusDeclaration): void {
+	if (
+		!nonEmpty(identity.id) ||
+		!nonEmpty(identity.path) ||
+		!nonEmpty(identity.title) ||
+		!Number.isInteger(identity.ordinal) ||
+		identity.ordinal < 1 ||
+		!Number.isInteger(identity.line) ||
+		identity.line < 1 ||
+		!Number.isInteger(identity.endLine) ||
+		identity.endLine < identity.line
+	)
+		throw new Error(`invalid source census declaration ${String(identity.id)}`);
+}
+
+function relevantLineCount(
+	identities: readonly ProfileCensusDeclaration[],
+): number {
+	return identities.reduce(
+		(total, identity) => total + identity.endLine - identity.line + 1,
+		0,
+	);
+}
+
+function validateProfileWorkQueue(
+	input: unknown,
+	epochId: string,
+): ProfileWorkQueue {
+	if (
+		!isRecord(input) ||
+		input.schemaVersion !== 1 ||
+		input.epochId !== epochId
+	)
+		throw new Error("invalid or stale profile work queue");
+	const execution = input.execution;
+	const limits = input.limits;
+	if (
+		!isRecord(execution) ||
+		execution.backend !== "driver-process" ||
+		execution.maxConcurrent !== 8 ||
+		execution.processIsolation !== "one-os-process-per-unit" ||
+		execution.controlsResampledBetweenWaves !== true ||
+		!isRecord(limits) ||
+		limits.identities !== 50 ||
+		limits.relevantSourceLines !== 2500 ||
+		limits.sourceFiles !== 8 ||
+		limits.indivisibleTestException !== true ||
+		!Array.isArray(input.units)
+	)
+		throw new Error("invalid profile work queue contract");
+	for (const unit of input.units) {
+		if (
+			!isRecord(unit) ||
+			!nonEmpty(unit.id) ||
+			!Array.isArray(unit.identities)
+		)
+			throw new Error("invalid profile work unit");
+		const identities = unit.identities as unknown as ProfileCensusDeclaration[];
+		identities.forEach(validateCensusDeclaration);
+		const files = new Set(identities.map((identity) => identity.path));
+		const sortedFiles = [...files].sort();
+		const lines = relevantLineCount(identities);
+		if (
+			identities.length === 0 ||
+			identities.length > 50 ||
+			files.size > 8 ||
+			(lines > 2500 && identities.length !== 1) ||
+			unit.relevantSourceLines !== lines ||
+			!Array.isArray(unit.sourceFiles) ||
+			!Array.isArray(unit.fileContexts)
+		)
+			throw new Error(
+				`profile work unit ${unit.id} exceeds or misstates its bounds`,
+			);
+		if (
+			JSON.stringify(unit.sourceFiles) !== JSON.stringify(sortedFiles) ||
+			unit.fileContexts.length !== sortedFiles.length ||
+			!unit.fileContexts.every(
+				(context, index) =>
+					isRecord(context) &&
+					context.path === sortedFiles[index] &&
+					SHA256.test(String(context.digest)),
+			)
+		)
+			throw new Error(`profile work unit ${unit.id} has invalid file context`);
+	}
+	const allIdentities = input.units.flatMap((unit) =>
+		isRecord(unit) && Array.isArray(unit.identities)
+			? unit.identities.map((identity) =>
+					isRecord(identity) ? identity.id : undefined,
+				)
+			: [],
+	);
+	if (new Set(allIdentities).size !== allIdentities.length)
+		throw new Error("profile work queue assigns an identity more than once");
+	return input as unknown as ProfileWorkQueue;
+}
+
+async function readPublishedUnit(
+	path: string,
+	epochId: string,
+): Promise<PublishedProfileUnit> {
+	const records = (await readFile(path, "utf8"))
+		.split(/\r?\n/)
+		.filter((line) => line.length > 0)
+		.map((line) => JSON.parse(line) as unknown);
+	const header = records.shift();
+	if (
+		!isRecord(header) ||
+		header.recordType !== "profile-unit" ||
+		header.schemaVersion !== 1 ||
+		header.epochId !== epochId ||
+		!nonEmpty(header.unitId)
+	)
+		throw new Error("missing or malformed profile unit header");
+	return {
+		epochId,
+		unitId: header.unitId,
+		assessorId: String(header.assessorId ?? ""),
+		processId: Number(header.processId),
+		processBackend:
+			header.processBackend === "driver-process"
+				? "driver-process"
+				: (String(header.processBackend) as "driver-process"),
+		durationMs: Number(header.durationMs),
+		peakRssBytes: Number(header.peakRssBytes),
+		profiles: records as TestEvidenceProfile[],
+	};
+}
+
+async function validatePublishedUnit(
+	published: PublishedProfileUnit,
+	unit: ProfileWorkUnit,
+	manifest: EpochManifest,
+	projectRoot: string,
+	auditRoot: string,
+): Promise<string[]> {
+	const issues: string[] = [];
+	if (published.epochId !== manifest.epochId)
+		issues.push("unit epoch is stale");
+	if (published.unitId !== unit.id)
+		issues.push("unit id does not match shard path");
+	if (!nonEmpty(published.assessorId)) issues.push("assessorId is required");
+	if (!Number.isSafeInteger(published.processId) || published.processId < 1)
+		issues.push("processId must identify the unit OS process");
+	if (published.processBackend !== "driver-process")
+		issues.push("processBackend must be driver-process");
+	if (!Number.isFinite(published.durationMs) || published.durationMs < 0)
+		issues.push("durationMs must be a non-negative wall-clock duration");
+	if (
+		!Number.isSafeInteger(published.peakRssBytes) ||
+		published.peakRssBytes < 1
+	)
+		issues.push("peakRssBytes must be a positive integer");
+	const expected = new Map(
+		unit.identities.map((identity) => [identity.id, identity]),
+	);
+	if (
+		published.profiles.length !== expected.size ||
+		new Set(published.profiles.map((profile) => profile.id)).size !==
+			published.profiles.length
+	)
+		issues.push("unit must contain each assigned identity exactly once");
+	for (const profile of published.profiles) {
+		const schema = validateTestEvidenceProfile(profile);
+		issues.push(...schema.issues.map((issue) => `${profile.id}: ${issue}`));
+		const identity = expected.get(profile.id);
+		if (!identity) {
+			issues.push(`${profile.id}: identity is not assigned to unit`);
+			continue;
+		}
+		if (
+			profile.source.workUnitId !== unit.id ||
+			profile.source.path !== identity.path ||
+			profile.source.line !== identity.line ||
+			profile.source.title !== identity.title ||
+			profile.source.ordinal !== identity.ordinal
+		)
+			issues.push(`${profile.id}: source identity does not match the queue`);
+		for (const assessedValue of agentAssessedValues(profile))
+			if (
+				assessedValue.assessor.kind !== "agent" ||
+				assessedValue.assessor.id !== published.assessorId
+			)
+				issues.push(
+					`${profile.id}: every agent-assessed field must be owned by unit assessor ${published.assessorId}`,
+				);
+		const declarationInputs = profile.materialInputs.filter(
+			(input) => input.inputKind === "test-declaration",
+		);
+		const declarationInput = declarationInputs[0];
+		if (
+			declarationInputs.length !== 1 ||
+			!declarationInput ||
+			declarationInput.path !== identity.path ||
+			declarationInput.scope !== "declaration-span" ||
+			declarationInput.span.startLine !== identity.line ||
+			declarationInput.span.endLine !== identity.endLine
+		)
+			issues.push(
+				`${profile.id}: missing current test-declaration input proof`,
+			);
+		for (const sut of profile.chain.value.systemsUnderTest) {
+			const expectedScope =
+				sut.sutKind === "production-function" ? "declaration-span" : "file";
+			if (
+				!profile.materialInputs.some(
+					(input) =>
+						input.inputKind === "system-under-test" &&
+						input.sutKind === sut.sutKind &&
+						input.path === sut.path &&
+						input.scope === expectedScope,
+				)
+			)
+				issues.push(
+					`${profile.id}: missing ${expectedScope} input proof for ${sut.sutKind} ${sut.path}`,
+				);
+		}
+		for (const authority of profile.claim.value.authority)
+			if (
+				!profile.materialInputs.some(
+					(input) =>
+						input.inputKind === "contract" &&
+						input.path === authority.path &&
+						input.scope === "file",
+				)
+			)
+				issues.push(
+					`${profile.id}: missing whole-file contract input proof for ${authority.path}`,
+				);
+		for (const input of profile.materialInputs) {
+			try {
+				const current = await digestMaterialInput(projectRoot, input);
+				if (current !== input.sha256)
+					issues.push(`${profile.id}: stale material input ${input.path}`);
+			} catch (error) {
+				issues.push(
+					`${profile.id}: cannot rehash material input ${input.path}: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
+		if (profile.carriedFrom) {
+			for (const kind of [
+				"test-declaration",
+				"method",
+				"schema",
+				"inventory-row",
+				"runner",
+				"config",
+				"setup",
+				"command",
+			] as const)
+				if (!profile.materialInputs.some((input) => input.inputKind === kind))
+					issues.push(
+						`${profile.id}: carried profile omits ${kind} input proof`,
+					);
+			if (profile.carriedFrom.epochId === manifest.epochId)
+				issues.push(`${profile.id}: carriedFrom must name a predecessor epoch`);
+			if (!SHA256.test(profile.carriedFrom.profileDigest))
+				issues.push(`${profile.id}: carriedFrom.profileDigest is invalid`);
+			else {
+				const predecessor = await findProfileInEpoch(
+					auditRoot,
+					profile.carriedFrom.epochId,
+					profile.id,
+				);
+				if (!predecessor)
+					issues.push(`${profile.id}: carried predecessor profile is missing`);
+				else if (digestJson(predecessor) !== profile.carriedFrom.profileDigest)
+					issues.push(
+						`${profile.id}: carried predecessor profile digest does not match`,
+					);
+			}
+			const observedAt =
+				profile.runtime.assessor.kind === "collector"
+					? profile.runtime.assessor.observedAt
+					: undefined;
+			if (
+				typeof observedAt !== "string" ||
+				Date.parse(observedAt) < Date.parse(manifest.createdAt)
+			)
+				issues.push(`${profile.id}: carried profile runtime was not refreshed`);
+		}
+	}
+	return issues;
+}
+
+function agentAssessedValues(profile: TestEvidenceProfile) {
+	return [
+		profile.role,
+		profile.claim,
+		profile.chain,
+		profile.dimensions.execution,
+		profile.dimensions.grounding,
+		profile.dimensions.contractAlignment,
+		profile.dimensions.faultSensitivity,
+		profile.dimensions.realism,
+		profile.dimensions.determinism,
+		profile.dimensions.engineeringQuality,
+		profile.reasonCodes,
+		profile.portfolioContributions,
+		profile.disposition,
+	];
+}
+
+async function findProfileInEpoch(
+	root: string,
+	epochId: string,
+	profileId: string,
+): Promise<TestEvidenceProfile | undefined> {
+	const index = await readAuditIndex(root);
+	if (!index.epochIds.includes(epochId)) return undefined;
+	const directory = join(root, "epochs", epochId, "profiles");
+	let names: string[];
+	try {
+		names = await readdir(directory);
+	} catch (error) {
+		if (isMissing(error)) return undefined;
+		throw error;
+	}
+	for (const name of names.filter((candidate) =>
+		candidate.endsWith(".ndjson"),
+	)) {
+		const lines = (await readFile(join(directory, name), "utf8"))
+			.split(/\r?\n/)
+			.filter(Boolean)
+			.slice(1);
+		for (const line of lines) {
+			const profile = JSON.parse(line) as TestEvidenceProfile;
+			if (profile.id === profileId) return profile;
+		}
+	}
+	return undefined;
+}
+
+function safeProjectPath(projectRoot: string, path: string): string {
+	const absoluteRoot = resolve(projectRoot);
+	const absolutePath = resolve(absoluteRoot, path);
+	if (
+		absolutePath !== absoluteRoot &&
+		!absolutePath.startsWith(`${absoluteRoot}${sep}`)
+	)
+		throw new Error(`material input escapes project root: ${path}`);
+	return absolutePath;
+}
+
+async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+	await writeTextAtomic(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function writeTextAtomic(path: string, value: string): Promise<void> {
+	await mkdir(dirname(path), { recursive: true });
+	const temporary = join(
+		dirname(path),
+		`.${randomUUID()}.${path.split(sep).at(-1)}.tmp`,
+	);
+	try {
+		const handle = await open(temporary, "wx");
+		try {
+			await handle.writeFile(value);
+			await handle.sync();
+		} finally {
+			await handle.close();
+		}
+		await rename(temporary, path);
+	} catch (error) {
+		await unlink(temporary).catch(() => {});
+		throw error;
+	}
 }
 
 export async function openAuditEpoch(

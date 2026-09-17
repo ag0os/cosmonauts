@@ -553,7 +553,16 @@ describe("test health audit schema", () => {
 		};
 		expectInvalid(fileScopedFunction, /materialInputs\[0\].*declaration-span/);
 
-		for (const inputKind of ["runner", "config", "setup", "contract"]) {
+		for (const inputKind of [
+			"runner",
+			"config",
+			"setup",
+			"contract",
+			"method",
+			"schema",
+			"inventory-row",
+			"command",
+		]) {
 			const declarationScopedFile = profile();
 			declarationScopedFile.materialInputs[1] = {
 				path: `${inputKind}.ts`,
@@ -567,6 +576,15 @@ describe("test health audit schema", () => {
 				new RegExp(`materialInputs\\[1\\].*${inputKind}.*file`),
 			);
 		}
+
+		const fileScopedDeclaration = profile();
+		fileScopedDeclaration.materialInputs.push({
+			path: "tests/example.test.ts",
+			inputKind: "test-declaration",
+			scope: "file",
+			sha256: SHA,
+		} as never);
+		expectInvalid(fileScopedDeclaration, /test-declaration.*declaration-span/);
 
 		const missingSpan = profile();
 		delete (missingSpan.materialInputs[0] as { span?: unknown }).span;

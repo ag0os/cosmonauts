@@ -1,13 +1,25 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	buildProfileWorkQueue,
 	CALIBRATION_CONTROL_OBLIGATIONS,
+	digestMaterialInput,
 	parseCalibrationDocument,
+	publishProfileUnit,
 	validateBehaviorRiskInventory,
 	validateCalibrationRecord,
+	validateProfileEpoch,
 } from "../../../scripts/test-health-audit/artifacts.ts";
+import {
+	commandCensusDigest,
+	sourceCensusDigest,
+} from "../../../scripts/test-health-audit/census.ts";
+import { runCli } from "../../../scripts/test-health-audit/cli.ts";
+import type { TestEvidenceProfile } from "../../../scripts/test-health-audit/schema.ts";
+import { collectSourceText } from "../../../scripts/test-health-audit/source-census.ts";
 
 const assessor = {
 	kind: "agent",
@@ -22,6 +34,45 @@ const assessor = {
 
 function sha256(value: unknown): string {
 	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function assessed(
+	value: unknown,
+	lane: "objective-observation" | "agent-assessed-judgment",
+) {
+	return {
+		value,
+		lane,
+		basis: lane === "objective-observation" ? "observed" : "reasoned",
+		assessor:
+			lane === "objective-observation"
+				? {
+						kind: "collector",
+						id: "vitest-reporter",
+						version: "1",
+						observedAt: "2026-09-17T13:00:00.000Z",
+					}
+				: {
+						kind: "agent",
+						id: "profile-assessor",
+						model: "openai-codex",
+						modelVersion: "gpt-5",
+						assessedAt: "2026-09-17T13:00:00.000Z",
+						consultedAuthorities: [
+							{ kind: "authority-document", path: "docs/contract.md" },
+						],
+					},
+		evidence: [
+			{
+				kind: "source-span",
+				path: "tests/profile-units.test.ts",
+				span: { startLine: 1, endLine: 1 },
+			},
+		],
+		counterevidence: [],
+		uncertainty: [],
+		overrides: [],
+	};
 }
 
 function inventoryFixture(): Record<string, unknown> {
@@ -174,6 +225,532 @@ function firstRecord(value: unknown): Record<string, unknown> {
 }
 
 describe("test health audit artifacts", () => {
+	// @cosmo-behavior plan:test-health-audit#B-004
+	it("requires one fresh complete profile per identity and safely subdivides oversized files across resumable units", async () => {
+		const root = await mkdtemp(join(tmpdir(), "audit-profile-units-"));
+		try {
+			const auditRoot = join(root, "audit");
+			const projectRoot = join(root, "project");
+			const sourceText =
+				'import { test } from "vitest";\n' +
+				Array.from(
+					{ length: 51 },
+					(_, index) =>
+						`test("case ${String(index + 1).padStart(2, "0")}", () => {});`,
+				).join("\n");
+			const source = collectSourceText(
+				"tests/profile-units.test.ts",
+				sourceText,
+			);
+			const sourceDigest = sourceCensusDigest([source]);
+			await mkdir(join(auditRoot, "epochs", "epoch-1"), { recursive: true });
+			await mkdir(join(projectRoot, "tests"), { recursive: true });
+			await mkdir(join(projectRoot, "docs"), { recursive: true });
+			await writeFile(
+				join(projectRoot, "tests", "profile-units.test.ts"),
+				sourceText,
+			);
+			await writeFile(join(projectRoot, "docs", "contract.md"), "# Contract\n");
+			for (const [path, content] of [
+				["method.md", "method v1\n"],
+				["schema.json", '{"version":1}\n'],
+				["inventory-row.json", '{"id":"BRI-001"}\n'],
+				["runner.mjs", "export default {};\n"],
+				["vitest.config.ts", "export default {};\n"],
+				["tests/setup.ts", "export {};\n"],
+				["command.json", '{"argv":["bun","run","test"]}\n'],
+			] as const) {
+				await mkdir(join(projectRoot, path, ".."), { recursive: true });
+				await writeFile(join(projectRoot, path), content);
+			}
+			await writeFile(
+				join(auditRoot, "index.json"),
+				JSON.stringify({
+					currentEpochId: "epoch-1",
+					epochIds: ["epoch-0", "epoch-1"],
+				}),
+			);
+			await writeFile(
+				join(auditRoot, "epochs", "epoch-1", "manifest.json"),
+				JSON.stringify({
+					schemaVersion: 1,
+					methodVersion: "1",
+					epochId: "epoch-1",
+					evaluatedRevision: "abc123",
+					createdAt: "2026-09-17T12:00:00.000Z",
+					materialInputs: [],
+					commandDefinitions: [],
+					sourceCensusDigest: sourceDigest,
+				}),
+			);
+			await writeFile(
+				join(auditRoot, "epochs", "epoch-1", "source-census.json"),
+				JSON.stringify([source]),
+			);
+			await writeFile(
+				join(auditRoot, "epochs", "epoch-1", "suite-integrity.json"),
+				JSON.stringify({
+					sourceCensusDigest: sourceDigest,
+					commandCensusDigest: commandCensusDigest([]),
+				}),
+			);
+
+			expect(await runCli(["--audit-root", auditRoot, "prepare-units"])).toBe(
+				0,
+			);
+			const queue = JSON.parse(
+				await readFile(
+					join(auditRoot, "epochs", "epoch-1", "work-units.json"),
+					"utf8",
+				),
+			) as {
+				execution: { backend: string; maxConcurrent: number };
+				units: Array<{
+					id: string;
+					identities: typeof source.declarations;
+					fileContexts: Array<{ path: string; digest: string }>;
+				}>;
+			};
+			expect(queue.units?.map((unit) => unit.identities?.length)).toEqual([
+				50, 1,
+			]);
+			expect(queue.execution).toMatchObject({
+				backend: "driver-process",
+				maxConcurrent: 8,
+			});
+			expect(queue.units[0]?.fileContexts).toEqual(
+				queue.units[1]?.fileContexts,
+			);
+
+			const contractDigest = await digestMaterialInput(projectRoot, {
+				path: "docs/contract.md",
+				inputKind: "contract",
+				scope: "file",
+			});
+			for (const unit of queue.units) {
+				const profiles: TestEvidenceProfile[] = [];
+				for (const identity of unit.identities) {
+					const declarationDigest = await digestMaterialInput(projectRoot, {
+						path: identity.path,
+						inputKind: "test-declaration",
+						scope: "declaration-span",
+						span: { startLine: identity.line, endLine: identity.endLine },
+					});
+					profiles.push({
+						schemaVersion: 1,
+						id: identity.id,
+						source: {
+							path: identity.path,
+							line: identity.line,
+							title: identity.title,
+							ordinal: identity.ordinal,
+							workUnitId: unit.id,
+						},
+						runtime: assessed(
+							{
+								discoveryBySurface: {
+									normal: "passed",
+									watch: "passed",
+									coverage: "passed",
+									repeat: "passed",
+									shuffle: "passed",
+									isolation: "passed",
+								},
+								caseNames: [identity.title],
+								caseCount: 1,
+							},
+							"objective-observation",
+						),
+						role: assessed("unit", "agent-assessed-judgment"),
+						claim: assessed(
+							{
+								status: "identified",
+								text: "the declared contract remains protected",
+								authority: [
+									{ kind: "authority-document", path: "docs/contract.md" },
+								],
+							},
+							"agent-assessed-judgment",
+						),
+						chain: assessed(
+							{
+								assertions: [
+									{
+										kind: "source-span",
+										path: identity.path,
+										span: {
+											startLine: identity.line,
+											endLine: identity.endLine,
+										},
+									},
+								],
+								observations: [],
+								systemsUnderTest: [
+									{
+										kind: "artifact",
+										path: "docs/contract.md",
+										sutKind: "shipped-file",
+									},
+								],
+								limitations: [],
+							},
+							"agent-assessed-judgment",
+						),
+						dimensions: {
+							execution: assessed("executed", "agent-assessed-judgment"),
+							grounding: assessed(
+								"shipped-artifact",
+								"agent-assessed-judgment",
+							),
+							contractAlignment: assessed("aligned", "agent-assessed-judgment"),
+							faultSensitivity: assessed("reasoned", "agent-assessed-judgment"),
+							realism: assessed(
+								"integrated-subsystem",
+								"agent-assessed-judgment",
+							),
+							determinism: assessed("stable", "agent-assessed-judgment"),
+							engineeringQuality: assessed("sound", "agent-assessed-judgment"),
+						},
+						reasonCodes: assessed([], "agent-assessed-judgment"),
+						portfolioContributions: assessed(
+							[
+								{
+									inventoryId: "BRI-001",
+									boundary: "producer",
+									defectAxes: ["path"],
+								},
+							],
+							"agent-assessed-judgment",
+						),
+						disposition: assessed("retain", "agent-assessed-judgment"),
+						materialInputs: [
+							{
+								path: identity.path,
+								inputKind: "test-declaration",
+								scope: "declaration-span",
+								span: { startLine: identity.line, endLine: identity.endLine },
+								sha256: declarationDigest,
+							},
+							{
+								path: "docs/contract.md",
+								inputKind: "system-under-test",
+								sutKind: "shipped-file",
+								scope: "file",
+								sha256: contractDigest,
+							},
+							{
+								path: "docs/contract.md",
+								inputKind: "contract",
+								scope: "file",
+								sha256: contractDigest,
+							},
+						],
+					} as TestEvidenceProfile);
+				}
+				await publishProfileUnit({
+					root: auditRoot,
+					projectRoot,
+					unitId: unit.id,
+					assessorId: "profile-assessor",
+					processId: 4242,
+					durationMs: 125,
+					peakRssBytes: 64 * 1024 * 1024,
+					profiles,
+				});
+			}
+
+			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
+				valid: true,
+				complete: true,
+				pendingUnitIds: [],
+				profiles: expect.arrayContaining([
+					expect.objectContaining({ id: source.declarations[0]?.id }),
+				]),
+			});
+
+			const firstShard = join(
+				auditRoot,
+				"epochs",
+				"epoch-1",
+				"profiles",
+				`${queue.units[0]?.id}.ndjson`,
+			);
+			const validShard = await readFile(firstShard, "utf8");
+			const shardRecords = validShard
+				.trimEnd()
+				.split("\n")
+				.map((line) => JSON.parse(line) as Record<string, unknown>);
+			await writeFile(
+				firstShard,
+				`${[shardRecords[0], ...shardRecords.slice(1, -1)].map((record) => JSON.stringify(record)).join("\n")}\n`,
+			);
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/each assigned identity exactly once/),
+				]),
+			);
+			await writeFile(firstShard, validShard);
+
+			await writeFile(
+				firstShard,
+				`${[...shardRecords, shardRecords[1]].map((record) => JSON.stringify(record)).join("\n")}\n`,
+			);
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/each assigned identity exactly once/),
+				]),
+			);
+			await writeFile(firstShard, validShard);
+
+			const headerWithoutMetrics = { ...shardRecords[0] };
+			delete headerWithoutMetrics.durationMs;
+			delete headerWithoutMetrics.peakRssBytes;
+			delete headerWithoutMetrics.processId;
+			delete headerWithoutMetrics.processBackend;
+			delete headerWithoutMetrics.assessorId;
+			await writeFile(
+				firstShard,
+				`${[headerWithoutMetrics, ...shardRecords.slice(1)].map((record) => JSON.stringify(record)).join("\n")}\n`,
+			);
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/durationMs/),
+					expect.stringMatching(/peakRssBytes/),
+					expect.stringMatching(/processId/),
+					expect.stringMatching(/processBackend/),
+					expect.stringMatching(/assessorId/),
+				]),
+			);
+			await writeFile(firstShard, validShard);
+
+			await writeFile(firstShard, "{malformed\n");
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(expect.arrayContaining([expect.stringMatching(/JSON/)]));
+			await writeFile(firstShard, validShard);
+
+			const carriedRecords = validShard
+				.trimEnd()
+				.split("\n")
+				.map((line) => JSON.parse(line) as Record<string, unknown>);
+			const carried = carriedRecords[1] as unknown as TestEvidenceProfile & {
+				materialInputs: Array<Record<string, unknown>>;
+				carriedFrom?: { epochId: string; profileDigest: string };
+			};
+			const predecessor = structuredClone(carried) as TestEvidenceProfile;
+			for (const [inputKind, path] of [
+				["method", "method.md"],
+				["schema", "schema.json"],
+				["inventory-row", "inventory-row.json"],
+				["runner", "runner.mjs"],
+				["config", "vitest.config.ts"],
+				["setup", "tests/setup.ts"],
+				["command", "command.json"],
+			] as const) {
+				carried.materialInputs.push({
+					path,
+					inputKind,
+					scope: "file",
+					sha256: await digestMaterialInput(projectRoot, {
+						path,
+						inputKind,
+						scope: "file",
+					}),
+				});
+			}
+			carried.carriedFrom = {
+				epochId: "epoch-0",
+				profileDigest: sha256(predecessor),
+			};
+			await mkdir(join(auditRoot, "epochs", "epoch-0", "profiles"), {
+				recursive: true,
+			});
+			await writeFile(
+				join(auditRoot, "epochs", "epoch-0", "profiles", "prior.ndjson"),
+				`${JSON.stringify({ recordType: "profile-unit" })}\n${JSON.stringify(predecessor)}\n`,
+			);
+			await writeFile(
+				firstShard,
+				`${carriedRecords.map((record) => JSON.stringify(record)).join("\n")}\n`,
+			);
+			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
+				valid: true,
+				complete: true,
+			});
+			const completeCarriedShard = await readFile(firstShard, "utf8");
+			const omittedProofRecords = completeCarriedShard
+				.trimEnd()
+				.split("\n")
+				.map((line) => JSON.parse(line) as Record<string, unknown>);
+			const omittedProfile = omittedProofRecords[1] as {
+				materialInputs: Array<{ inputKind?: string }>;
+			};
+			omittedProfile.materialInputs = omittedProfile.materialInputs.filter(
+				(input) => input.inputKind !== "command",
+			);
+			await writeFile(
+				firstShard,
+				`${omittedProofRecords.map((record) => JSON.stringify(record)).join("\n")}\n`,
+			);
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/carried profile omits command input proof/),
+				]),
+			);
+			await writeFile(firstShard, completeCarriedShard);
+
+			await writeFile(
+				join(projectRoot, "tests", "profile-units.test.ts"),
+				`${sourceText}\n// unrelated edit outside every cited declaration\n`,
+			);
+			expect(await validateProfileEpoch(auditRoot, projectRoot)).toMatchObject({
+				valid: true,
+				complete: true,
+			});
+			await writeFile(
+				join(projectRoot, "vitest.config.ts"),
+				"export default { changed: true };\n",
+			);
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/stale material input vitest\.config\.ts/),
+				]),
+			);
+			await writeFile(
+				join(projectRoot, "vitest.config.ts"),
+				"export default {};\n",
+			);
+			await writeFile(
+				join(projectRoot, "tests", "setup.ts"),
+				"export const changed = true;\n",
+			);
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/stale material input tests\/setup\.ts/),
+				]),
+			);
+
+			const nineFiles = Array.from({ length: 9 }, (_, index) => ({
+				path: `tests/file-${index}.test.ts`,
+				declarations: [
+					{
+						id: `identity-${index}`,
+						path: `tests/file-${index}.test.ts`,
+						title: `case ${index}`,
+						ordinal: 1,
+						line: 1,
+						endLine: 1,
+					},
+				],
+			}));
+			expect(buildProfileWorkQueue("epoch-1", nineFiles).units).toHaveLength(2);
+			expect(
+				buildProfileWorkQueue("epoch-1", [
+					{
+						path: "tests/huge.test.ts",
+						declarations: [
+							{
+								id: "huge",
+								path: "tests/huge.test.ts",
+								title: "one indivisible test",
+								ordinal: 1,
+								line: 1,
+								endLine: 3000,
+							},
+						],
+					},
+				]).units[0],
+			).toMatchObject({ relevantSourceLines: 3000 });
+
+			const queuePath = join(auditRoot, "epochs", "epoch-1", "work-units.json");
+			const censusPath = join(
+				auditRoot,
+				"epochs",
+				"epoch-1",
+				"source-census.json",
+			);
+			await rm(queuePath);
+			await rm(censusPath);
+			expect(await runCli(["--audit-root", auditRoot, "prepare-units"])).toBe(
+				1,
+			);
+			await expect(readFile(queuePath)).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+
+			await writeFile(censusPath, "{malformed\n");
+			expect(await runCli(["--audit-root", auditRoot, "prepare-units"])).toBe(
+				1,
+			);
+			await expect(readFile(queuePath)).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+
+			await writeFile(
+				censusPath,
+				JSON.stringify([
+					{
+						...source,
+						declarations: source.declarations.map((identity, index) =>
+							index === 0 ? { ...identity, title: "stale identity" } : identity,
+						),
+					},
+				]),
+			);
+			expect(await runCli(["--audit-root", auditRoot, "prepare-units"])).toBe(
+				1,
+			);
+			await expect(readFile(queuePath)).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+
+			await writeFile(censusPath, JSON.stringify([source]));
+			await rm(join(auditRoot, "index.json"));
+			expect(await runCli(["--audit-root", auditRoot, "prepare-units"])).toBe(
+				1,
+			);
+			await expect(readFile(queuePath)).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+
+			await writeFile(join(auditRoot, "index.json"), "{}\n");
+			expect(await runCli(["--audit-root", auditRoot, "prepare-units"])).toBe(
+				1,
+			);
+			await expect(readFile(queuePath)).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+
+			await writeFile(
+				join(auditRoot, "index.json"),
+				JSON.stringify({
+					currentEpochId: "epoch-0",
+					epochIds: ["epoch-0", "epoch-1"],
+				}),
+			);
+			expect(await runCli(["--audit-root", auditRoot, "prepare-units"])).toBe(
+				1,
+			);
+			await expect(readFile(queuePath)).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+		} finally {
+			await rm(root, { recursive: true });
+		}
+	});
+
 	// @cosmo-behavior plan:test-health-audit#B-006
 	it("rejects test-derived inventory and requires authority criticality boundaries and defect axes", () => {
 		const valid = inventoryFixture();

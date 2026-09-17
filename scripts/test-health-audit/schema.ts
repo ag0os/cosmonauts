@@ -165,6 +165,13 @@ export interface SystemUnderTestRef extends EvidenceRef {
 export type EvidenceDigest =
 	| {
 			readonly path: string;
+			readonly inputKind: "test-declaration";
+			readonly scope: "declaration-span";
+			readonly span: SourceSpan;
+			readonly sha256: string;
+	  }
+	| {
+			readonly path: string;
 			readonly inputKind: "system-under-test";
 			readonly sutKind: SystemUnderTestKind;
 			readonly scope: "declaration-span" | "file";
@@ -173,7 +180,15 @@ export type EvidenceDigest =
 	  }
 	| {
 			readonly path: string;
-			readonly inputKind: "runner" | "config" | "setup" | "contract";
+			readonly inputKind:
+				| "runner"
+				| "config"
+				| "setup"
+				| "contract"
+				| "method"
+				| "schema"
+				| "inventory-row"
+				| "command";
 			readonly scope: "file";
 			readonly sha256: string;
 	  };
@@ -288,11 +303,16 @@ const EVIDENCE_KINDS = [
 	"probe-record",
 ] as const;
 const MATERIAL_INPUT_KINDS = [
+	"test-declaration",
 	"system-under-test",
 	"runner",
 	"config",
 	"setup",
 	"contract",
+	"method",
+	"schema",
+	"inventory-row",
+	"command",
 ] as const;
 const DIMENSION_VALIDATORS = {
 	execution: enumValidator(AUDIT_VOCABULARY.executionConclusions),
@@ -855,9 +875,23 @@ function validateEvidenceDigestAt(
 			issues.push(
 				`${path} production-function inputs require declaration-span scope`,
 			);
+	} else if (value.inputKind === "test-declaration") {
+		if (value.scope !== "declaration-span")
+			issues.push(
+				`${path} test-declaration inputs require declaration-span scope`,
+			);
 	} else if (
 		includes(
-			["runner", "config", "setup", "contract"] as const,
+			[
+				"runner",
+				"config",
+				"setup",
+				"contract",
+				"method",
+				"schema",
+				"inventory-row",
+				"command",
+			] as const,
 			value.inputKind,
 		) &&
 		value.scope !== "file"
