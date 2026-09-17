@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-696
 createdAt: '2026-09-16T18:36:06.050Z'
-updatedAt: '2026-09-16T18:36:06.050Z'
+updatedAt: '2026-09-17T19:09:17.770Z'
 ---
 
 ## Description
@@ -26,3 +26,7 @@ P-final is the real graph gate after the plan’s own resume mechanism has drive
 - [ ] #5 Control re-sampling between waves remains passing, bound correctness and B-004 artifact-conformance pass, and the generic mutation rung remains explicitly unbound.
 - [ ] #6 Every current-epoch unit carries its wall-clock duration and peak RSS, and no unit ran as an in-process `spawn_agent` child.
 <!-- AC:END -->
+
+## Implementation Notes
+
+task failed

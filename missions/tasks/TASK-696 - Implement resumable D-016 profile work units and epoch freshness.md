@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-695
 createdAt: '2026-09-16T18:35:54.817Z'
-updatedAt: '2026-09-16T18:35:54.817Z'
+updatedAt: '2026-09-17T18:55:26.263Z'
 ---
 
 ## Description
@@ -33,4 +33,5 @@ Implement epoch/profile artifact validation and initialize the census-derived as
 - [ ] #9 `scripts/test-health-audit/artifacts.ts` imports only `schema.ts` and Node standard-library IO — no product modules (`lib/`, `cli/`, `domains/`) — so epoch IO, freshness rehashing, and canonical digesting do not depend on the code the audit assesses.
 - [ ] #10 Validation rejects a missing, malformed, or non-advancing `<audit-root>/index.json`, so the current-epoch pointer is mechanically checkable rather than assumed.
 - [ ] #11 Every published unit records its wall-clock duration and peak RSS in the epoch, so the D-030 concurrency bound can be retuned from recorded cost rather than re-argued; a unit published without those fields fails validation.
+- [ ] #12 A shipped, resumable dispatch command at the explicit audit root issues every pending current-epoch work unit to an assessing-agent session and drives them to completion: one OS process per unit through a driver process backend (`lib/driver/backends/cli-process.ts` or `cosmonauts-subagent.ts`), never an in-process `spawn_agent` child, at the D-030 bound of eight concurrent. Each session receives its unit's identities and file-context/import/helper evidence, and publishes exactly one validated NDJSON shard by temporary-sibling write and atomic rename. Pending work is recomputed solely from published shards, so re-invocation after interruption resumes without duplicating, skipping, or re-assessing a published unit, and a killed unit loses at most itself. The command refuses to dispatch against a missing, malformed, or stale queue or census and names the failing input. Preparation primitives alone do not satisfy this criterion: the absence of this command is what blocked P-final in run 9 (D-038).
 <!-- AC:END -->
