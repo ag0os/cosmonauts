@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-695
 createdAt: '2026-09-16T18:35:54.817Z'
-updatedAt: '2026-09-17T20:19:15.109Z'
+updatedAt: '2026-09-17T22:07:36.946Z'
 ---
 
 ## Description
@@ -37,4 +37,5 @@ Implement epoch/profile artifact validation and initialize the census-derived as
 - [ ] #13 Controls are re-sampled between waves as AC #7 requires: the dispatcher runs the predeclared calibration controls between concurrency waves, records the per-wave result in the epoch, and stops issuing further units when a control regresses — so assessor drift across 70 sessions is caught by evidence rather than assumed absent. A dispatch implementation with no control-resampling step does not satisfy AC #7 (D-039).
 - [ ] #14 Units whose published shard carries agent-supplied rather than dispatcher-measured cost are re-dispatched rather than accepted, so every unit in the epoch P-final certifies carries trustworthy cost evidence; the eight shards published by run 10 fall in this class.
 - [ ] #15 A unit that halts on a ratified-ground collision does not stop the queue: the dispatcher records that unit as halted with its drafted question and cited colliding authorities, continues issuing every remaining unit, and exits non-zero only after the rest are drained. P-final then reports halted units as open packet items rather than treating the queue as undrainable. Run 12 halted unit 0060 and left nine uncontested units unassessed, which contradicts ratified AC-016 and the D-021 design that a question batches rather than stops the run.
+- [ ] #16 A candidate that fails validation is not left to be re-submitted later: the dispatcher discards or re-derives a candidate before re-assessing its unit, so a rejected candidate can never be published on a subsequent run carrying digests from an earlier working tree. Run 15 re-submitted 19:50 candidates for units 0042/0044 whose `plan.md` digest was two commits stale, and reported them as fresh.
 <!-- AC:END -->
