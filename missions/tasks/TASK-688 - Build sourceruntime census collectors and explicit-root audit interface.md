@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-687
 createdAt: '2026-09-16T18:34:28.459Z'
-updatedAt: '2026-09-17T14:46:11.963Z'
+updatedAt: '2026-09-17T15:20:29.808Z'
 ---
 
 ## Description
@@ -37,7 +37,8 @@ Implement the bounded TypeScript declaration collector, observation-only Vitest 
 - [ ] #12 Exit classification and census state are independent: a command's exit is classified from its reporter payload alone, so a non-zero exit with no module/suite/case error is `post-run-policy-exit` regardless of any declaration-to-runtime mismatch. A test proves `bun run test:coverage`'s threshold exit stays `post-run-policy-exit` while mismatches exist elsewhere in the same census.
 - [ ] #13 `suite-integrity.md` is written alongside `suite-integrity.json` (bundle 2 is both), and the `census` command persists per-command timing and watcher-start evidence.
 - [ ] #14 AST conditional/unreachable candidates are heuristic-lane records at basis `reasoned`, never `blocked`, and never block a census on their own (D-031). Regression evidence: the second live run recorded 245 `conditional-observation` findings as blocked — 96% of everything blocking that census.
-- [ ] #15 A statically-analysable `.each` parameter set is counted even when the literal array spans multiple lines or contains nested array/object elements; `it.each([["a","b"],["c","d"]])` counts as 2. Only a non-literal set — `test.each(<identifier>)`, a spread, or a call expression — is recorded as `unsupported-syntax`. Regression evidence: `tests/agent-packages/claude-cli.test.ts:100` is a multi-line literal that the first implementation could not count, while `tests/driver/report-parser.test.ts:33` is a genuine variable case that must stay visible.
+- [ ] #15 A statically-analysable `.each` parameter set is counted even when the literal array spans multiple lines, contains nested array/object elements, or is wrapped in a type assertion — `satisfies T`, `as const`, `as T`, or parentheses must be unwrapped before the array-literal check, singly or nested. `it.each([["a","b"],["c","d"]] satisfies readonly [string,string][])` counts as 2. Only a genuinely non-literal set — `test.each(<identifier>)`, a spread, or a call expression — is recorded as `unsupported-syntax`. A fixture covers each wrapper form. Regression evidence: `tests/agent-packages/claude-cli.test.ts:100` is a multi-line literal that the first implementation could not count, while `tests/driver/report-parser.test.ts:33` is a genuine variable case that must stay visible.
 - [ ] #16 The collector reads `<epoch>/dispositions.json` when computing census state: a finding carrying a disposition is accounted-for, so `incomplete` and `blocked` have a reachable exit, while a finding with no disposition never becomes clean (D-031, INV-005).
 - [ ] #17 Digest validation compares like with like per D-032: the manifest's frozen source-census digest against the source census, and the command-census digest against its own recorded value. Validation never requires a post-seal runtime digest to equal a digest sealed at C1.
+- [ ] #18 Dispositions carry `repair-required-tooling` and `repair-required-suite` as distinct values, plus the sources the assessing agent opened; validation rejects a `limitation-accepted` entry whose consulted-source list is empty (D-031 as amended).
 <!-- AC:END -->
