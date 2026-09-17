@@ -8,8 +8,12 @@ import {
 	readCurrentEpochManifest,
 } from "../../../scripts/test-health-audit/artifacts.ts";
 import { reconcileCensus } from "../../../scripts/test-health-audit/census.ts";
-import { runCli } from "../../../scripts/test-health-audit/cli.ts";
 import {
+	persistCensusArtifacts,
+	runCli,
+} from "../../../scripts/test-health-audit/cli.ts";
+import {
+	AuditRuntimeReporter,
 	capturePublicRun,
 	type PublicRunInput,
 } from "../../../scripts/test-health-audit/runtime-reporter.ts";
@@ -317,6 +321,260 @@ describe("test health audit census", () => {
 		await expect(openAuditEpoch(root, first)).rejects.toThrow(
 			/immutable|already exists/i,
 		);
+	});
+
+	test("reports declarations outside a filtered command as not-selected", () => {
+		const selected = collectSourceText(
+			"tests/selected.test.ts",
+			'import { test } from "vitest"; test("selected case", () => {});',
+		);
+		const unselected = collectSourceText(
+			"tests/unselected.test.ts",
+			'import { test } from "vitest"; test("unselected case", () => {});',
+		);
+		const isolation = runtime({
+			command: {
+				id: "isolation",
+				surface: "isolation",
+				argv: ["bun", "run", "test", "tests/selected.test.ts"],
+			},
+			filters: ["tests/selected.test.ts"],
+			modules: [
+				{
+					id: "selected-module",
+					moduleId: "/repo/tests/selected.test.ts",
+					state: "passed",
+					errors: [],
+					suites: [],
+					cases: [
+						{
+							id: "selected-case",
+							name: "selected case",
+							fullName: "selected case",
+							state: "passed",
+							errors: [],
+						},
+					],
+				},
+			],
+		});
+
+		const result = reconcileCensus({
+			sources: [selected, unselected],
+			runs: [isolation],
+			expectedCommands: [{ id: "isolation", surface: "isolation" }],
+		});
+
+		expect(result.findings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "not-selected",
+					commandId: "isolation",
+					detail: expect.stringContaining("unselected case"),
+				}),
+			]),
+		);
+		expect(
+			result.findings.filter((finding) => finding.kind === "source-only"),
+		).toEqual([]);
+	});
+
+	test("allows a fully green suite to be clean without complete hook events", () => {
+		const source = collectSourceText(
+			"tests/green.test.ts",
+			'import { test } from "vitest"; test("green case", () => {});',
+		);
+		const green = runtime({
+			modules: [
+				{
+					id: "green-module",
+					moduleId: "/repo/tests/green.test.ts",
+					state: "passed",
+					errors: [],
+					suites: [],
+					cases: [
+						{
+							id: "green-case",
+							name: "green case",
+							fullName: "green case",
+							state: "passed",
+							errors: [],
+						},
+					],
+				},
+			],
+			hooks: [
+				{
+					name: "beforeEach",
+					entityId: "green-case",
+					entityType: "test",
+					event: "start",
+				},
+			],
+		});
+
+		const result = reconcileCensus({
+			sources: [source],
+			runs: [green],
+			expectedCommands: [{ id: "normal", surface: "normal" }],
+		});
+
+		expect(result).toMatchObject({ state: "complete", clean: true });
+		expect(
+			result.findings.filter(
+				(finding) => finding.kind === "hook-lifecycle-incomplete",
+			),
+		).toEqual([]);
+	});
+
+	test("classifies a coverage threshold exit from reporter evidence alone", () => {
+		const source = collectSourceText(
+			"tests/coverage.test.ts",
+			'import { test } from "vitest"; test("declared case", () => {});',
+		);
+		const coverage = runtime({
+			command: {
+				id: "coverage",
+				surface: "coverage",
+				argv: ["bun", "run", "test:coverage"],
+			},
+			exitCode: 1,
+			stderr: "Coverage for branches does not meet global threshold",
+			modules: [],
+		});
+
+		const result = reconcileCensus({
+			sources: [source],
+			runs: [coverage],
+			expectedCommands: [{ id: "coverage", surface: "coverage" }],
+		});
+
+		expect(result.findings.map((finding) => finding.kind)).toContain(
+			"source-only",
+		);
+		expect(result.commandEvidence).toContainEqual(
+			expect.objectContaining({
+				commandId: "coverage",
+				classification: "post-run-policy-exit",
+			}),
+		);
+	});
+
+	test("persists suite integrity JSON and Markdown with timing and watcher-start evidence", async () => {
+		const root = await mkdtemp(join(tmpdir(), "audit-census-output-"));
+		roots.push(root);
+		const source = collectSourceText(
+			"tests/watch.test.ts",
+			'import { test } from "vitest"; test("watched case", () => {});',
+		);
+		const watch = runtime({
+			command: {
+				id: "watch",
+				surface: "watch",
+				argv: ["bun", "run", "test:watch", "--", "--watch"],
+			},
+			modules: [
+				{
+					id: "watch-module",
+					moduleId: "/repo/tests/watch.test.ts",
+					state: "passed",
+					errors: [],
+					suites: [],
+					cases: [
+						{
+							id: "watch-case",
+							name: "watched case",
+							fullName: "watched case",
+							state: "passed",
+							errors: [],
+						},
+					],
+				},
+			],
+			timing: {
+				startedAt: "2026-09-17T14:00:00.000Z",
+				endedAt: "2026-09-17T14:00:02.500Z",
+				durationMs: 2_500,
+			},
+			watcherStart: {
+				observedAt: "2026-09-17T14:00:00.000Z",
+				scheduledFileCount: 1,
+			},
+		});
+		const result = reconcileCensus({
+			sources: [source],
+			runs: [watch],
+			expectedCommands: [{ id: "watch", surface: "watch" }],
+		});
+
+		await persistCensusArtifacts(root, [source], result, SHA);
+
+		const json = JSON.parse(
+			await readFile(join(root, "suite-integrity.json"), "utf8"),
+		) as {
+			commandEvidence: Array<{
+				timing?: { durationMs: number };
+				watcherStart?: { scheduledFileCount: number };
+			}>;
+		};
+		expect(json.commandEvidence[0]).toMatchObject({
+			timing: { durationMs: 2_500 },
+			watcherStart: { scheduledFileCount: 1 },
+		});
+		const markdown = await readFile(join(root, "suite-integrity.md"), "utf8");
+		expect(markdown).toContain("# Suite integrity");
+		expect(markdown).toContain("watch");
+		expect(markdown).toContain("2500 ms");
+		expect(markdown).toContain("watcher start observed");
+	});
+
+	test("reporter records public run timing and watch-cycle start evidence", async () => {
+		const root = await mkdtemp(join(tmpdir(), "audit-reporter-"));
+		roots.push(root);
+		const reportPath = join(root, "reporter.json");
+		const previous = {
+			reportPath: process.env.COSMONAUTS_AUDIT_REPORT_PATH,
+			command: process.env.COSMONAUTS_AUDIT_COMMAND,
+			projectRoot: process.env.COSMONAUTS_AUDIT_PROJECT_ROOT,
+		};
+		process.env.COSMONAUTS_AUDIT_REPORT_PATH = reportPath;
+		process.env.COSMONAUTS_AUDIT_COMMAND = JSON.stringify({
+			id: "watch",
+			surface: "watch",
+			argv: ["bun", "run", "test:watch", "--", "--watch"],
+		});
+		process.env.COSMONAUTS_AUDIT_PROJECT_ROOT = "/repo";
+		try {
+			const reporter = new AuditRuntimeReporter();
+			reporter.onTestRunStart([]);
+			reporter.onTestRunEnd([], [], "passed");
+			const evidence = JSON.parse(
+				await readFile(reportPath, "utf8"),
+			) as PublicRunInput;
+
+			expect(evidence.timing).toEqual(
+				expect.objectContaining({
+					startedAt: expect.any(String),
+					endedAt: expect.any(String),
+					durationMs: expect.any(Number),
+				}),
+			);
+			expect(evidence.watcherStart).toEqual(
+				expect.objectContaining({
+					observedAt: expect.any(String),
+					scheduledFileCount: 0,
+				}),
+			);
+		} finally {
+			for (const [name, value] of Object.entries({
+				COSMONAUTS_AUDIT_REPORT_PATH: previous.reportPath,
+				COSMONAUTS_AUDIT_COMMAND: previous.command,
+				COSMONAUTS_AUDIT_PROJECT_ROOT: previous.projectRoot,
+			})) {
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+			}
+		}
 	});
 
 	test("returns zero for recorded audit states and non-zero for untrustworthy tooling input", async () => {

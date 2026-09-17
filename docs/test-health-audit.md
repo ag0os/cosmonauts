@@ -12,7 +12,7 @@ bun scripts/test-health-audit/cli.ts --audit-root <path> <command>
 
 | Command | Output |
 |---|---|
-| `census` | Source declarations, reporter observations, command evidence, reconciliation findings, and a recorded `complete`, `incomplete`, or `blocked` state. |
+| `census` | `source-census.json`, raw reporter observations, and bundle 2 as both `suite-integrity.json` and `suite-integrity.md`, including each command's timing plus watcher-start evidence and a recorded `complete`, `incomplete`, or `blocked` state. |
 | `prepare-units` | Deterministic assessment work units tied to the current census digest. |
 | `validate` | Schema, identity, freshness, material-input, and bundle validation evidence. |
 | `probe --confirm-probe <id>` | One explicitly confirmed copied-sandbox probe record, including target, import route, guardrail, containment, and restoration evidence. |

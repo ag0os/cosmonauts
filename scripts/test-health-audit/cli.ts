@@ -1,8 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { readCurrentEpochManifest } from "./artifacts.ts";
-import { censusDigest, reconcileCensus, runAuditCommand } from "./census.ts";
-import { collectSourceTree } from "./source-census.ts";
+import {
+	type CensusResult,
+	censusDigest,
+	reconcileCensus,
+	runAuditCommand,
+} from "./census.ts";
+import { collectSourceTree, type SourceCensus } from "./source-census.ts";
 
 export interface CliDependencies {
 	readonly census?: (root: string) => Promise<unknown>;
@@ -101,11 +106,60 @@ async function defaultCensus(root: string): Promise<void> {
 		expectedCommands: manifest.commandDefinitions,
 	});
 	const digest = censusDigest(sources, runs);
+	await persistCensusArtifacts(epochDirectory, sources, result, digest);
+}
+export async function persistCensusArtifacts(
+	epochDirectory: string,
+	sources: readonly SourceCensus[],
+	result: CensusResult,
+	digest: string,
+): Promise<void> {
 	await writeJsonAtomic(join(epochDirectory, "source-census.json"), sources);
 	await writeJsonAtomic(join(epochDirectory, "suite-integrity.json"), {
 		...result,
 		censusDigest: digest,
 	});
+	await writeTextAtomic(
+		join(epochDirectory, "suite-integrity.md"),
+		renderSuiteIntegrity(result, digest),
+	);
+}
+
+function renderSuiteIntegrity(result: CensusResult, digest: string): string {
+	const lines = [
+		"# Suite integrity",
+		"",
+		`State: **${result.state}**`,
+		`Clean: **${String(result.clean)}**`,
+		`Census digest: \`${digest}\``,
+		"",
+		"## Command evidence",
+		"",
+		"| Command | Surface | Exit | Classification | Timing | Watcher |",
+		"|---|---|---:|---|---|---|",
+	];
+	for (const command of result.commandEvidence) {
+		lines.push(
+			`| ${markdownCell(command.commandId)} | ${command.surface} | ${command.exitCode} | ${command.classification} | ${command.timing ? `${command.timing.durationMs} ms (${command.timing.startedAt} to ${command.timing.endedAt})` : "not recorded"} | ${command.watcherStart ? `watcher start observed at ${command.watcherStart.observedAt}; ${command.watcherStart.scheduledFileCount} files scheduled` : "not applicable"} |`,
+		);
+	}
+	lines.push("", "## Findings", "");
+	if (result.findings.length === 0) lines.push("None.");
+	else
+		for (const finding of result.findings)
+			lines.push(
+				`- \`${finding.kind}\` (${finding.basis})${finding.commandId ? ` [${finding.commandId}]` : ""}: ${finding.detail}`,
+			);
+	if (result.residualUncertainty.length > 0) {
+		lines.push("", "## Residual uncertainty", "");
+		for (const uncertainty of result.residualUncertainty)
+			lines.push(`- ${uncertainty}`);
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+function markdownCell(value: string): string {
+	return value.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 async function defaultPrepareUnits(root: string): Promise<void> {
 	const manifest = await readCurrentEpochManifest(root);
@@ -150,9 +204,12 @@ async function defaultBaseline(root: string): Promise<string> {
 	return "not established";
 }
 async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+	await writeTextAtomic(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+async function writeTextAtomic(path: string, value: string): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const temporary = `${path}.${process.pid}.tmp`;
-	await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+	await writeFile(temporary, value, {
 		flag: "wx",
 	});
 	await rename(temporary, path);

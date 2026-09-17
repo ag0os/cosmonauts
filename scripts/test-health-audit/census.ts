@@ -4,7 +4,12 @@ import { createHash } from "node:crypto";
 import { access, mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CommandIdentity, RuntimeEvidence } from "./runtime-reporter.ts";
+import type {
+	CommandIdentity,
+	RunTimingEvidence,
+	RuntimeEvidence,
+	WatcherStartEvidence,
+} from "./runtime-reporter.ts";
 import type { TestSurface } from "./schema.ts";
 import type { SourceCensus, SourceDeclaration } from "./source-census.ts";
 
@@ -12,6 +17,7 @@ export type CensusState = "complete" | "incomplete" | "blocked";
 export interface CensusFinding {
 	readonly kind:
 		| "source-only"
+		| "not-selected"
 		| "runtime-only"
 		| "parameter-count-mismatch"
 		| "filtered-selection"
@@ -38,6 +44,8 @@ export interface CommandEvidence {
 		| "observed-failing-run"
 		| "post-run-policy-exit";
 	readonly stderr?: string;
+	readonly timing?: RunTimingEvidence;
+	readonly watcherStart?: WatcherStartEvidence;
 }
 export interface CensusResult {
 	readonly state: CensusState;
@@ -183,17 +191,10 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 			});
 	const commandEvidence = input.runs.map((run): CommandEvidence => {
 		const hasReporterError = run.errors.length > 0;
-		const hasDeclarationMismatch = findings.some(
-			(finding) =>
-				finding.commandId === run.command.id &&
-				["source-only", "runtime-only", "parameter-count-mismatch"].includes(
-					finding.kind,
-				),
-		);
 		const classification =
 			run.exitCode === 0
 				? "completed"
-				: hasReporterError || hasDeclarationMismatch || run.reason !== "passed"
+				: hasReporterError
 					? "observed-failing-run"
 					: "post-run-policy-exit";
 		if (classification === "post-run-policy-exit")
@@ -206,6 +207,8 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 			exitCode: run.exitCode,
 			classification,
 			...(run.stderr ? { stderr: run.stderr } : {}),
+			...(run.timing ? { timing: run.timing } : {}),
+			...(run.watcherStart ? { watcherStart: run.watcherStart } : {}),
 		};
 	});
 	const blocked = findings.some((finding) => finding.basis === "blocked");
@@ -224,7 +227,10 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 }
 
 function unmatchedHookEvents(run: RuntimeEvidence) {
-	const unmatched = [...(run.hooks ?? [])];
+	const errorEntityIds = new Set(run.errors.map((error) => error.entityId));
+	const unmatched = (run.hooks ?? []).filter((hook) =>
+		errorEntityIds.has(hook.entityId),
+	);
 	for (let index = unmatched.length - 1; index >= 0; index--) {
 		const event = unmatched[index];
 		if (!event || event.event !== "end") continue;
@@ -441,11 +447,25 @@ function reconcileRun(
 	findings: CensusFinding[],
 ): void {
 	for (const source of sources) {
+		const sourceSelected = selectionMatches(source.path, run.filters);
 		const module = run.modules.find((candidate) =>
 			moduleMatches(candidate.moduleId, source.path, run.root),
 		);
 		const unmatched = new Set(module?.cases ?? []);
 		for (const declaration of source.declarations) {
+			if (
+				(run.filters?.length ?? 0) > 0 &&
+				!sourceSelected &&
+				!selectionMatches(declaration.title, run.filters)
+			) {
+				findings.push({
+					kind: "not-selected",
+					basis: "observed",
+					commandId: run.command.id,
+					detail: `${declaration.title} from ${source.path} was outside the command selection`,
+				});
+				continue;
+			}
 			const matches = [...unmatched].filter((testCase) =>
 				titleMatches(declaration, testCase.fullName),
 			);
@@ -477,6 +497,14 @@ function reconcileRun(
 			});
 	}
 }
+
+function selectionMatches(
+	value: string,
+	filters: readonly string[] | undefined,
+): boolean {
+	return filters?.some((filter) => value.includes(filter)) ?? false;
+}
+
 function moduleMatches(
 	moduleId: string,
 	sourcePath: string,

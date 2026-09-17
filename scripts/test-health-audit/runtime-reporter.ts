@@ -6,6 +6,7 @@ import type {
 	TestCase,
 	TestModule,
 	TestRunEndReason,
+	TestSpecification,
 	TestSuite,
 } from "vitest/node";
 import type { EvidenceBasis, TestSurface } from "./schema.ts";
@@ -52,6 +53,15 @@ export interface PublicHookEvent {
 	readonly entityType: string;
 	readonly event: "start" | "end";
 }
+export interface RunTimingEvidence {
+	readonly startedAt: string;
+	readonly endedAt: string;
+	readonly durationMs: number;
+}
+export interface WatcherStartEvidence {
+	readonly observedAt: string;
+	readonly scheduledFileCount: number;
+}
 export interface PublicRunInput {
 	readonly command: CommandIdentity;
 	readonly root: string;
@@ -64,6 +74,8 @@ export interface PublicRunInput {
 	readonly filters?: readonly string[];
 	readonly stderr?: string;
 	readonly termination?: "natural" | "harness-watch-stop";
+	readonly timing?: RunTimingEvidence;
+	readonly watcherStart?: WatcherStartEvidence;
 }
 export interface RuntimeEvidence extends PublicRunInput {
 	readonly reporterVersion: 1;
@@ -175,6 +187,16 @@ function serializeModule(module: TestModule): PublicModuleInput {
 
 export class AuditRuntimeReporter implements Reporter {
 	private readonly hooks: PublicHookEvent[] = [];
+	private startedAt: { iso: string; milliseconds: number } | undefined;
+	private scheduledFileCount: number | undefined;
+	onTestRunStart(specifications: readonly TestSpecification[]): void {
+		const milliseconds = Date.now();
+		this.startedAt = {
+			iso: new Date(milliseconds).toISOString(),
+			milliseconds,
+		};
+		this.scheduledFileCount = specifications.length;
+	}
 	onHookStart(context: ReportedHookContext): void {
 		this.hooks.push(hookEvent(context, "start"));
 	}
@@ -192,8 +214,12 @@ export class AuditRuntimeReporter implements Reporter {
 			throw new Error(
 				"audit reporter requires COSMONAUTS_AUDIT_REPORT_PATH and COSMONAUTS_AUDIT_COMMAND",
 			);
+		if (!this.startedAt || this.scheduledFileCount === undefined)
+			throw new Error("audit reporter did not observe test run start");
+		const commandIdentity = JSON.parse(command) as CommandIdentity;
+		const endedAt = Date.now();
 		const evidence = capturePublicRun({
-			command: JSON.parse(command) as CommandIdentity,
+			command: commandIdentity,
 			root: process.env.COSMONAUTS_AUDIT_PROJECT_ROOT ?? process.cwd(),
 			configFile: process.env.COSMONAUTS_AUDIT_CONFIG_FILE ?? "",
 			reason,
@@ -204,6 +230,19 @@ export class AuditRuntimeReporter implements Reporter {
 			unhandledErrors,
 			hooks: this.hooks,
 			filters: JSON.parse(process.env.COSMONAUTS_AUDIT_FILTERS ?? "[]"),
+			timing: {
+				startedAt: this.startedAt.iso,
+				endedAt: new Date(endedAt).toISOString(),
+				durationMs: Math.max(0, endedAt - this.startedAt.milliseconds),
+			},
+			...(commandIdentity.surface === "watch"
+				? {
+						watcherStart: {
+							observedAt: this.startedAt.iso,
+							scheduledFileCount: this.scheduledFileCount,
+						},
+					}
+				: {}),
 		});
 		writeFileSync(destination, `${JSON.stringify(evidence, null, 2)}\n`, {
 			flag: "wx",
