@@ -66,11 +66,28 @@ export interface CommandEvidence {
 	readonly timing?: RunTimingEvidence;
 	readonly watcherStart?: WatcherStartEvidence;
 }
+/**
+ * A finding an assessor answered with `repair-required-*`. The census stays
+ * `clean` when every finding has an answer — remediation is stage 8's job, not
+ * the census's — but "needs repair" must not be indistinguishable from
+ * "resolved", so these rows are published as their own structured surface,
+ * rendered in the human-readable census, and restated as residual uncertainty.
+ */
+export interface RepairRequiredRow {
+	readonly findingId: string;
+	readonly kind: CensusFinding["kind"];
+	readonly disposition: "repair-required-tooling" | "repair-required-suite";
+	readonly detail: string;
+	readonly reasoning: string;
+	readonly assessor: Extract<Assessor, { kind: "agent" }>;
+	readonly commandId?: string;
+}
 export interface CensusResult {
 	readonly state: CensusState;
 	readonly clean: boolean;
 	readonly findings: readonly CensusFinding[];
 	readonly commandEvidence: readonly CommandEvidence[];
+	readonly repairRequired: readonly RepairRequiredRow[];
 	readonly residualUncertainty: readonly string[];
 }
 export interface ReconcileCensusInput {
@@ -258,13 +275,46 @@ export function reconcileCensus(input: ReconcileCensusInput): CensusResult {
 		: unresolved.length > 0
 			? "incomplete"
 			: "complete";
+	const repairRequired = collectRepairRequired(findings);
+	for (const row of repairRequired)
+		residualUncertainty.push(
+			`${row.disposition} remains open for ${row.kind}${row.commandId ? ` [${row.commandId}]` : ""}: ${row.detail}`,
+		);
 	return {
 		state,
 		clean: state === "complete",
 		findings,
 		commandEvidence,
+		repairRequired,
 		residualUncertainty,
 	};
+}
+
+function collectRepairRequired(
+	findings: readonly CensusFinding[],
+): RepairRequiredRow[] {
+	const rows: RepairRequiredRow[] = [];
+	for (const finding of findings) {
+		const disposition = finding.disposition?.disposition;
+		if (
+			disposition !== "repair-required-tooling" &&
+			disposition !== "repair-required-suite"
+		)
+			continue;
+		rows.push({
+			findingId: finding.id,
+			kind: finding.kind,
+			disposition,
+			detail: finding.detail,
+			reasoning: finding.disposition?.reasoning ?? "",
+			assessor: finding.disposition?.assessor as Extract<
+				Assessor,
+				{ kind: "agent" }
+			>,
+			...(finding.commandId ? { commandId: finding.commandId } : {}),
+		});
+	}
+	return rows;
 }
 
 function applyDispositions(

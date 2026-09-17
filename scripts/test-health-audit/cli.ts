@@ -188,6 +188,26 @@ function renderSuiteIntegrity(
 			lines.push(
 				`- \`${finding.kind}\` (${finding.basis})${finding.commandId ? ` [${finding.commandId}]` : ""}: ${finding.detail}`,
 			);
+	if (result.repairRequired.length > 0) {
+		lines.push("", "## Repair required", "");
+		lines.push(
+			"These findings were answered `repair-required-*` by an assessor. The census is",
+			"`clean` when every finding has an answer; these still name open work and are",
+			"the stage-8 remediation ledger's input.",
+			"",
+			"| Finding | Kind | Disposition | Command | Detail | Assessor |",
+			"|---|---|---|---|---|---|",
+		);
+		for (const row of result.repairRequired)
+			lines.push(
+				`| \`${row.findingId.slice(0, 12)}\` | ${row.kind} | ${row.disposition} | ${row.commandId ?? "not applicable"} | ${markdownCell(row.detail)} | ${markdownCell(row.assessor?.id ?? "unrecorded")} |`,
+			);
+		for (const row of result.repairRequired)
+			lines.push(
+				"",
+				`\`${row.findingId.slice(0, 12)}\` reasoning: ${row.reasoning}`,
+			);
+	}
 	if (result.residualUncertainty.length > 0) {
 		lines.push("", "## Residual uncertainty", "");
 		for (const uncertainty of result.residualUncertainty)

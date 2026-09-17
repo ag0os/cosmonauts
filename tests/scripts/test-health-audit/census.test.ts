@@ -690,6 +690,141 @@ describe("test health audit census", () => {
 		);
 	});
 
+	test("publishes a repair-required disposition instead of absorbing it into clean", () => {
+		const source = collectSourceText(
+			"tests/skipped.test.ts",
+			'import { test } from "vitest"; test.skip("known skip", () => {});',
+		);
+		const skipped = runtime({
+			modules: [
+				{
+					id: "skipped-module",
+					moduleId: "/repo/tests/skipped.test.ts",
+					state: "skipped",
+					errors: [],
+					suites: [],
+					cases: [
+						{
+							id: "skipped-case",
+							name: "known skip",
+							fullName: "known skip",
+							state: "skipped",
+							errors: [],
+						},
+					],
+				},
+			],
+		});
+		const assessor = {
+			kind: "agent" as const,
+			id: "test-health-assessor",
+			model: "openai-codex/gpt-5",
+			modelVersion: "2026-09-17",
+			assessedAt: "2026-09-17T15:00:00.000Z",
+			consultedAuthorities: [],
+		};
+		const unresolved = reconcileCensus({
+			sources: [source],
+			runs: [skipped],
+			expectedCommands: [{ id: "normal", surface: "normal" }],
+		});
+		const targetId = unresolved.findings.find(
+			(finding) => finding.basis !== "reasoned",
+		)?.id as string;
+
+		const result = reconcileCensus({
+			sources: [source],
+			runs: [skipped],
+			expectedCommands: [{ id: "normal", surface: "normal" }],
+			dispositions: unresolved.findings
+				.filter((finding) => finding.basis !== "reasoned")
+				.map((finding) => ({
+					findingId: finding.id,
+					disposition:
+						finding.id === targetId
+							? ("repair-required-suite" as const)
+							: ("accounted-for" as const),
+					reasoning:
+						finding.id === targetId
+							? "A full-suite run contradicted the isolation runs."
+							: "The assessing agent recorded the known limitation.",
+					assessor,
+				})),
+		});
+
+		expect(result.repairRequired).toHaveLength(1);
+		expect(result.repairRequired[0]).toMatchObject({
+			findingId: targetId,
+			disposition: "repair-required-suite",
+			reasoning: "A full-suite run contradicted the isolation runs.",
+		});
+		expect(
+			result.residualUncertainty.some((entry) =>
+				entry.includes("repair-required-suite remains open"),
+			),
+		).toBe(true);
+	});
+
+	test("reports no repair-required rows when every disposition resolves a finding", () => {
+		const source = collectSourceText(
+			"tests/skipped.test.ts",
+			'import { test } from "vitest"; test.skip("known skip", () => {});',
+		);
+		const skipped = runtime({
+			modules: [
+				{
+					id: "skipped-module",
+					moduleId: "/repo/tests/skipped.test.ts",
+					state: "skipped",
+					errors: [],
+					suites: [],
+					cases: [
+						{
+							id: "skipped-case",
+							name: "known skip",
+							fullName: "known skip",
+							state: "skipped",
+							errors: [],
+						},
+					],
+				},
+			],
+		});
+		const unresolved = reconcileCensus({
+			sources: [source],
+			runs: [skipped],
+			expectedCommands: [{ id: "normal", surface: "normal" }],
+		});
+
+		const result = reconcileCensus({
+			sources: [source],
+			runs: [skipped],
+			expectedCommands: [{ id: "normal", surface: "normal" }],
+			dispositions: unresolved.findings
+				.filter((finding) => finding.basis !== "reasoned")
+				.map((finding) => ({
+					findingId: finding.id,
+					disposition: "accounted-for" as const,
+					reasoning: "The assessing agent recorded the known limitation.",
+					assessor: {
+						kind: "agent" as const,
+						id: "test-health-assessor",
+						model: "openai-codex/gpt-5",
+						modelVersion: "2026-09-17",
+						assessedAt: "2026-09-17T15:00:00.000Z",
+						consultedAuthorities: [],
+					},
+				})),
+		});
+
+		expect(result.repairRequired).toEqual([]);
+		expect(
+			result.residualUncertainty.some((entry) =>
+				entry.includes("remains open"),
+			),
+		).toBe(false);
+	});
+
 	test("validates distinct repair dispositions and sourced accepted limitations", async () => {
 		const root = await mkdtemp(join(tmpdir(), "audit-dispositions-"));
 		roots.push(root);
