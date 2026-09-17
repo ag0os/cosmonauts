@@ -280,6 +280,19 @@ These ratified assumptions are settled and carried verbatim:
   - Note: this narrows no halt that protects ratified ground. `TASK-687`/`688`/`694`/`698`/`699`/`703` halt on ratified vocabulary, critical-protection weakening, or unsafe in-place probing, and are unchanged.
   - Decided by: planner, on fifth-live-run evidence, 2026-09-17.
 
+- **D-035 - Revision-pinning binds at the candidate epoch, not at every checkpoint** *(Added 2026-09-17 on sixth-live-run evidence)*
+  - Decision: intermediate checkpoints verify the artifact they own — I1 verifies inventory provenance and internal digest consistency, scoped exactly as `TASK-692` AC #6 scopes it (a **non-test authority or inventory** change opens a successor epoch). They do **not** require the epoch's `evaluatedRevision` to equal HEAD. The revision-pinning obligation binds where `TASK-703` assembles and `E1` certifies the candidate evidence epoch, which is what the baseline rests on.
+  - Alternatives: minting a successor epoch at every material change (D-020 read literally); resequencing `TASK-696`'s carry-forward machinery ahead of I1.
+  - Why: ratified `spec.md:291` attaches revision-specificity to **the baseline** — "The trustworthy baseline is revision-specific" — not to each intermediate gate. Ratified `AC-016` requires the audit to run "unattended from census to eligibility: no stage requires human input to proceed". Run 6's I1 failed because `plan.md` and `scripts/test-health-audit/artifacts.ts` changed after the epoch was sealed, and no autonomous step exists at stage 5 to mint a successor epoch — the carry-forward machinery is `TASK-696`, sequenced *after* the checkpoint that needed it. Since "an added or removed test file" is a successor-epoch trigger and every remaining behavior task adds one, the literal reading makes a human-assisted abort recur at each stage, which is precisely what `AC-016` forbids. The final guarantee is untouched: `TASK-703` re-derives the census over the current tree and resumes every newly missing identity.
+  - Note: `D-020` is not repealed. A successor epoch is still required for remediation, authority/inventory changes, and method/schema amendments; what this decision rules is *which gate* enforces revision-pinning.
+  - Decided by: user ratified, 2026-09-17.
+
+- **D-036 - `task list --ready` means unblocked** *(Added 2026-09-17 on user ruling)*
+  - Decision: `--ready` matches tasks whose listed dependencies are all `Done`, plus tasks with no dependencies. The prior implementation (`task.dependencies.length === 0`) is a defect, not intended behavior, and `README.md:216`'s "Show unblocked tasks" is the correct contract. The shipped tasks skill's "`--ready` is shallow" note and its `jq` workaround are corrected rather than preserved. This ruling is the cited ratified authority that closes inventory row **BRI-005**; it is not a packet question.
+  - Alternatives: ratifying the shallow filter and correcting README instead; leaving it `unresolved` for the stage-11 packet.
+  - Why: the user ruled directly when shown the collision — "the concept of having a task unblocked is right; there's a dependency that needs to be done before". The shallow filter made `--ready` near-useless on any chained plan: on this plan it returned exactly one task, `TASK-686`, which was already `Done`, while hiding `TASK-692`, whose only dependency was `Done` and which was In Progress at the time.
+  - Decided by: user ratified, 2026-09-17.
+
 ## Behaviors
 
 ### B-001 - Independent dimensions, evidence bases, grounding forms, and authorship lanes
