@@ -306,6 +306,13 @@ These ratified assumptions are settled and carried verbatim:
   - Note: this is a seam gap, not a contradiction. Unlike D-034/D-035, no ratified ground was misread — the plan simply never assigned the actor. It is the one gap that could not surface until a run got far enough to need it, which is an argument for walking a plan's later stages before trusting their sequencing.
   - Decided by: user ratified, 2026-09-17.
 
+- **D-039 - The measurer owns the measurement** *(Added 2026-09-17 on tenth-live-run evidence)*
+  - Decision: the dispatcher measures each unit's wall-clock duration and peak RSS from the process it spawns; the assessing agent never supplies its own cost, and a duration not bounded by the observed process lifetime fails validation instead of publishing. The dispatcher also re-samples calibration controls between waves and halts issuance on a control regression, which is what AC #7's "controls re-sampled between waves" requires.
+  - Alternatives: keeping agent-supplied cost and adding a plausibility heuristic downstream; dropping the cost fields, which would leave D-030's bound un-retunable and re-argued from opinion.
+  - Why: run 10's `dispatch.ts` prompt instructed the assessing agent to write `durationMs` and `peakRssBytes` into its own candidate file. Six shards then claimed 20ms-540ms for sessions that demonstrably ran for minutes, and validation accepted them because AC #11 checked that the fields were *present*, never that they were *true*. An actor with no view of its own process lifetime was made the authority on it. The same run shipped a dispatcher with no control-resampling step at all, so the one control against assessor drift across 70 autonomous sessions was absent while AC #7 read as satisfied.
+  - Note: this is the third instance in one day of the same shape — `repair-required` dispositions that validated but had no exit (D-037), a typecheck gate reported green by substituting a narrower check, and now a cost field that validates its own presence. A check that cannot fail is indistinguishable from a check that passes.
+  - Decided by: planner, on tenth-live-run evidence, 2026-09-17.
+
 ## Behaviors
 
 ### B-001 - Independent dimensions, evidence bases, grounding forms, and authorship lanes

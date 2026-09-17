@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-695
 createdAt: '2026-09-16T18:35:54.817Z'
-updatedAt: '2026-09-17T18:55:26.263Z'
+updatedAt: '2026-09-17T19:49:30.775Z'
 ---
 
 ## Description
@@ -32,6 +32,8 @@ Implement epoch/profile artifact validation and initialize the census-derived as
 - [ ] #8 Work-unit preparation runs only against a current, valid census: the `prepare-units` command blocks queue initialization and unit issuance on a missing, malformed, or stale census digest at the explicit audit root, names the failing input, and never leaves a partially prepared queue.
 - [ ] #9 `scripts/test-health-audit/artifacts.ts` imports only `schema.ts` and Node standard-library IO — no product modules (`lib/`, `cli/`, `domains/`) — so epoch IO, freshness rehashing, and canonical digesting do not depend on the code the audit assesses.
 - [ ] #10 Validation rejects a missing, malformed, or non-advancing `<audit-root>/index.json`, so the current-epoch pointer is mechanically checkable rather than assumed.
-- [ ] #11 Every published unit records its wall-clock duration and peak RSS in the epoch, so the D-030 concurrency bound can be retuned from recorded cost rather than re-argued; a unit published without those fields fails validation.
+- [ ] #11 Every published unit records its wall-clock duration and peak RSS in the epoch, so the D-030 concurrency bound can be retuned from recorded cost rather than re-argued; a unit published without those fields fails validation. **The dispatcher measures both from the process it owns — the assessing agent never self-reports its own cost** — and a recorded duration that is not bounded by the observed process lifetime fails validation rather than being published. Run 10 published shards claiming 20ms-540ms for sessions that ran minutes, because the prompt asked the agent to supply the numbers (D-039).
 - [ ] #12 A shipped, resumable dispatch command at the explicit audit root issues every pending current-epoch work unit to an assessing-agent session and drives them to completion: one OS process per unit through a driver process backend (`lib/driver/backends/cli-process.ts` or `cosmonauts-subagent.ts`), never an in-process `spawn_agent` child, at the D-030 bound of eight concurrent. Each session receives its unit's identities and file-context/import/helper evidence, and publishes exactly one validated NDJSON shard by temporary-sibling write and atomic rename. Pending work is recomputed solely from published shards, so re-invocation after interruption resumes without duplicating, skipping, or re-assessing a published unit, and a killed unit loses at most itself. The command refuses to dispatch against a missing, malformed, or stale queue or census and names the failing input. Preparation primitives alone do not satisfy this criterion: the absence of this command is what blocked P-final in run 9 (D-038).
+- [ ] #13 Controls are re-sampled between waves as AC #7 requires: the dispatcher runs the predeclared calibration controls between concurrency waves, records the per-wave result in the epoch, and stops issuing further units when a control regresses — so assessor drift across 70 sessions is caught by evidence rather than assumed absent. A dispatch implementation with no control-resampling step does not satisfy AC #7 (D-039).
+- [ ] #14 Units whose published shard carries agent-supplied rather than dispatcher-measured cost are re-dispatched rather than accepted, so every unit in the epoch P-final certifies carries trustworthy cost evidence; the eight shards published by run 10 fall in this class.
 <!-- AC:END -->
