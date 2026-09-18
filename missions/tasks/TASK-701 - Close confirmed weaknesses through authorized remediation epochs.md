@@ -177,3 +177,21 @@ why five otherwise-clean units need reassessment.
 Remaining for this task: assess the 21 units, disposition the census findings so
 state leaves `incomplete`, and write the real remediation ledger. No agent
 assessment has run in this session.
+
+### 2026-09-18 — independent review run, and a QM incident
+
+Two `codex exec --sandbox read-only` passes reviewed the branch against local
+`main` (not `origin/main`, which is 7 commits behind). Nine defects were
+reproduced and fixed at `00836ee`; the headline one is that a carried profile
+could claim an observation that never happened when no reporter output was
+readable. REM-001 was reviewed independently and preserves mutual exclusion, so
+the carried `retain` verdicts that depend on it stand.
+
+The quality-manager run is recorded here because `ROADMAP.md`'s `qm-chain-safety`
+cites this task as evidence. Invoked with `--print` and told to report only, it
+produced zero bytes in ~45 minutes and every uncommitted edit made during that
+window was reverted — six files, verified green minutes earlier, with no reflog
+entry because `git checkout -- <path>` leaves none. The work was re-applied and
+committed. Two prior incidents of the same chain destroying work product were
+already on the roadmap, along with a bullet saying it cannot run concurrently
+with a codex review; both were reproduced here.

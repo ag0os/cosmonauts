@@ -382,16 +382,18 @@ Two Drive behaviours that cost real work on the `living-memory-fidelity` run (11
 
 ### `qm-chain-safety`: The Quality Manager Chain Writes Outside Its Plan
 
-The QM chain has now destroyed committed work product on an unrelated plan at least twice, and its findings need triage before any is acted on.
+The QM chain has now destroyed work product three times — twice committed records on an unrelated plan, once an entire session's uncommitted edits — and its findings need triage before any is acted on.
 
 This is independent from `execution-liveness`: bounded attempts prevent silent
 forever-runs but do not make shared review filenames safe or validate findings
 against the current diff.
 
 - **It overwrites review records it did not create.** On the `living-memory-fidelity` run it wrote its findings into `missions/reviews/{performance,security,ux}-review-round-1.md` — the *parent* plan's records — replacing their content (158 insertions, 298 deletions). Recovered by preserving the new content, restoring the tracked files, and relocating the findings to `missions/reviews/qm/`. The same behaviour is recorded independently in the `analysis-capability-runtime` distillation, where it clobbered `planning-system-hardening`'s artifacts. Give the chain an explicit plan-scoped output path, or have it refuse to modify a file it did not create
-- **It cannot run concurrently with a codex review.** Launched together in the background, both were killed by the OS for memory exhaustion — the QM produced zero output and codex produced 1.1 MB then died. Either make the sequential ordering explicit and enforced, or make the panel's footprint bounded
+- **It reverts uncommitted working-tree edits.** On the `test-health-audit` run (2026-09-18) it was invoked with `--print` and an explicit instruction to report only and run no destructive git command. Over ~45 minutes it wrote zero bytes and every uncommitted edit made in that window was gone: a production fix in `lib/tasks/task-manager.ts`, three new tests, two driver fixes, and eight fixes in `scripts/test-health-audit/carry-forward.ts`, all verified green minutes earlier. `git reflog` was empty because `git checkout -- <path>` leaves no entry, so the loss is invisible to the usual forensics; files never touched by the session's own backups were reverted too, which is what rules out self-inflicted restores. The prompt-level instruction did not bind it. Until the chain is constrained, treat an uncommitted worktree as unsafe while it runs
+- **It cannot run concurrently with a codex review.** Launched together in the background, both were killed by the OS for memory exhaustion — the QM produced zero output and codex produced 1.1 MB then died. Reproduced on the `test-health-audit` run: QM launched alongside two `codex exec` passes again produced zero output in 45 minutes, while both codex passes completed normally. Either make the sequential ordering explicit and enforced, or make the panel's footprint bounded
 - **Its findings need triage against the diff base.** Four of eight findings on the last run described pre-existing behaviour, verified byte-identical between the base and HEAD, and one was a residue the plan's own Risks recorded as knowingly open pending a human ruling. Acting on all eight would have been scope creep presented as diligence. Triage each finding against the base before scoping remediation
-- Evidence: `missions/reviews/improvements/living-memory-fidelity.md` rows 9-10, 14 · `missions/reviews/qm/living-memory-fidelity-*.md`
+- Evidence: `missions/reviews/improvements/living-memory-fidelity.md` rows 9-10, 14 · `missions/reviews/qm/living-memory-fidelity-*.md` · `missions/tasks/TASK-701*` (2026-09-18 revert incident)
+- Meanwhile: prefer `codex exec --sandbox read-only` for branch review. Two passes on `test-health-audit` found nine defects that were reproduced and fixed, and could not write by construction
 - Cross-links: `factory-evals` (the "panel-value validation" bullet under `quality-contracts` asks whether the three specialists earn their keep at all)
 
 ### `analysis-debt-paydown`: Pay Down What the Newly-Bound Analysis Gates Revealed
