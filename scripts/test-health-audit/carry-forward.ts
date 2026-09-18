@@ -380,7 +380,15 @@ export async function carryForwardProfileUnits(options: {
 			const rewritten = {
 				...rewriteEpochReferences(prior, predecessorEpochId, manifest.epochId),
 				materialInputs,
-				runtime,
+				// The re-observation is evidence from this epoch's run, so its
+				// citations must name this epoch's reporter output. Carrying the
+				// judgment while pointing at the predecessor's evidence would claim a
+				// fresh observation the cited files cannot support.
+				runtime: rewriteEpochReferences(
+					runtime,
+					predecessorEpochId,
+					manifest.epochId,
+				),
 			};
 			carried.push({
 				...rewritten,

@@ -152,21 +152,30 @@ describe("test health audit carry-forward", () => {
 					ordinal: identity.ordinal,
 					workUnitId: unit.id,
 				},
-				runtime: assessed(
-					{
-						discoveryBySurface: {
-							normal: "passed",
-							watch: "not-collected",
-							coverage: "not-collected",
-							repeat: "not-collected",
-							shuffle: "not-collected",
-							isolation: "not-collected",
+				runtime: {
+					...assessed(
+						{
+							discoveryBySurface: {
+								normal: "passed",
+								watch: "not-collected",
+								coverage: "not-collected",
+								repeat: "not-collected",
+								shuffle: "not-collected",
+								isolation: "not-collected",
+							},
+							caseNames: [identity.title],
+							caseCount: 1,
 						},
-						caseNames: [identity.title],
-						caseCount: 1,
-					},
-					"objective-observation",
-				),
+						"objective-observation",
+					),
+					evidence: [
+						{
+							kind: "command-output",
+							path: "audit/epochs/epoch-1/raw/normal.reporter.json",
+							locator: `normal:${identity.path}:${identity.title}`,
+						},
+					],
+				},
 				role: assessed("unit", "agent-assessed-judgment"),
 				claim: assessed(
 					{
@@ -457,5 +466,17 @@ describe("test health audit carry-forward", () => {
 		expect(report.carriedUnitIds).toEqual([]);
 		expect(report.reassessUnitIds).toEqual([unitId]);
 		expect(report.reasons[unitId]).toMatch(/omits runner input proof/);
+	});
+	it("cites this epoch's reporter output for the re-observed runtime", async () => {
+		const { auditRoot, projectRoot, unitId } = await fixture();
+		await carryForwardProfileUnits({ auditRoot, projectRoot });
+		const [, carried] = (await carriedShard(auditRoot, unitId)) as unknown as [
+			unknown,
+			TestEvidenceProfile,
+		];
+		const paths = (carried.runtime.evidence ?? []).map(
+			(evidence) => evidence.path,
+		);
+		expect(paths).toEqual(["audit/epochs/epoch-2/raw/normal.reporter.json"]);
 	});
 });
