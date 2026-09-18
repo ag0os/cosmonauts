@@ -14,6 +14,7 @@ import {
 	sourceCensusDigest,
 } from "./census.ts";
 import { dispatchProfileUnits } from "./dispatch.ts";
+import { runConfirmedProbe } from "./probe.ts";
 import type { RuntimeEvidence } from "./runtime-reporter.ts";
 import { collectSourceTree, type SourceCensus } from "./source-census.ts";
 
@@ -432,10 +433,12 @@ function isMissingFile(error: unknown): boolean {
 		(error as { code?: unknown }).code === "ENOENT"
 	);
 }
-async function defaultProbe(_root: string, id: string): Promise<never> {
-	throw new Error(
-		`probe ${id} cannot run until copied-sandbox containment is available`,
-	);
+async function defaultProbe(root: string, id: string): Promise<void> {
+	await runConfirmedProbe({
+		auditRoot: root,
+		projectRoot: process.cwd(),
+		confirmation: id,
+	});
 }
 async function defaultBaseline(root: string): Promise<string> {
 	const manifest = await readCurrentEpochManifest(root);

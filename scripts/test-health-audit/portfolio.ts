@@ -429,7 +429,10 @@ export async function publishPortfolioEvidence(
 		readJson(join(epochDirectory, "behavior-risk-inventory.json")),
 		readCertifiedProfiles(epochDirectory, manifest.epochId),
 	]);
-	const record = buildPortfolioEvidence(inventory, profiles, manifest.epochId);
+	const record = applyProbeEvidence(
+		buildPortfolioEvidence(inventory, profiles, manifest.epochId),
+		await readProbeEvidence(epochDirectory),
+	);
 	const documents = renderPortfolioEvidenceDocuments(record);
 	await Promise.all([
 		writeAtomic(
@@ -439,6 +442,93 @@ export async function publishPortfolioEvidence(
 		writeAtomic(join(epochDirectory, "gap-register.md"), documents.gapRegister),
 	]);
 	return record;
+}
+
+interface PublishedProbeEvidence {
+	readonly probeId?: unknown;
+	readonly outcome?: unknown;
+	readonly limitation?: unknown;
+}
+
+export function applyProbeEvidence(
+	record: PortfolioEvidenceRecord,
+	probes: readonly PublishedProbeEvidence[],
+): PortfolioEvidenceRecord {
+	return {
+		...record,
+		entries: record.entries.map((entry) => {
+			const probe = probes.find(
+				(candidate) => candidate.probeId === entry.probe.requirementId,
+			);
+			if (!probe) return entry;
+			const reference = `probes.jsonl#${entry.probe.requirementId}`;
+			if (probe.outcome === "probe-confirmed") {
+				const gaps = entry.gaps.filter(
+					(gap) => !gap.includes(`Required probe ${entry.probe.requirementId}`),
+				);
+				const allProtected = AXIS_KINDS.every((kind) =>
+					entry.axes[kind].every((axis) => axis.state === "protected"),
+				);
+				return {
+					...entry,
+					conclusion:
+						allProtected && gaps.length === 0 && entry.uncertainty.length === 0
+							? "protected"
+							: entry.conclusion,
+					probe: {
+						...entry.probe,
+						status: "confirmed",
+						probeRefs: [reference],
+					},
+					gaps,
+				};
+			}
+			const limitation =
+				typeof probe.limitation === "string"
+					? probe.limitation
+					: "The realistic defect survived the claimed guardrail.";
+			return {
+				...entry,
+				conclusion:
+					entry.conclusion === "protected"
+						? "partially-protected"
+						: entry.conclusion,
+				probe: {
+					...entry.probe,
+					status: "blocked",
+					probeRefs: [reference],
+				},
+				gaps: unique([
+					...entry.gaps.filter(
+						(gap) =>
+							!gap.includes(`Required probe ${entry.probe.requirementId}`),
+					),
+					`Probe ${entry.probe.requirementId} cannot protect this claim: ${limitation}`,
+				]),
+			};
+		}),
+	};
+}
+
+async function readProbeEvidence(
+	epochDirectory: string,
+): Promise<PublishedProbeEvidence[]> {
+	try {
+		return (await readFile(join(epochDirectory, "probes.jsonl"), "utf8"))
+			.trim()
+			.split(/\r?\n/u)
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as PublishedProbeEvidence);
+	} catch (error) {
+		if (
+			typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			(error as { code?: unknown }).code === "ENOENT"
+		)
+			return [];
+		throw error;
+	}
 }
 
 async function readCertifiedProfiles(

@@ -1680,7 +1680,8 @@ async function validatePublishedUnit(
 		for (const assessedValue of agentAssessedValues(profile))
 			if (
 				assessedValue.assessor.kind !== "agent" ||
-				assessedValue.assessor.id !== published.assessorId
+				(assessedValue.assessor.id !== published.assessorId &&
+					!isValidatedProbeOverride(assessedValue))
 			)
 				issues.push(
 					`${profile.id}: every agent-assessed field must be owned by unit assessor ${published.assessorId}`,
@@ -1783,6 +1784,20 @@ async function validatePublishedUnit(
 		}
 	}
 	return issues;
+}
+
+function isValidatedProbeOverride(
+	assessedValue: ReturnType<typeof agentAssessedValues>[number],
+): boolean {
+	return (
+		assessedValue.assessor.kind === "agent" &&
+		assessedValue.evidence.some(
+			(evidence) => evidence.kind === "probe-record",
+		) &&
+		assessedValue.overrides.some(
+			(override) => override.assessor === assessedValue.assessor.id,
+		)
+	);
 }
 
 function isParameterizedTitle(title: string): boolean {
