@@ -50,9 +50,11 @@ export interface ProfileCensusDeclaration {
 	readonly id: string;
 	readonly path: string;
 	readonly title: string;
+	readonly titleTemplate: string;
 	readonly ordinal: number;
 	readonly line: number;
 	readonly endLine: number;
+	readonly parameterCount: number | null;
 }
 
 export interface ProfileCensusFile {
@@ -1131,6 +1133,7 @@ export async function publishProfileUnit(options: {
 			profiles: options.profiles,
 		},
 		unit,
+		queue.units.flatMap((queuedUnit) => queuedUnit.identities),
 		manifest,
 		options.projectRoot,
 		options.root,
@@ -1274,6 +1277,7 @@ export async function validateProfileEpoch(
 			const unitIssues = await validatePublishedUnit(
 				published,
 				unit,
+				queue.units.flatMap((queuedUnit) => queuedUnit.identities),
 				manifest,
 				projectRoot,
 				root,
@@ -1361,12 +1365,16 @@ function validateCensusDeclaration(identity: ProfileCensusDeclaration): void {
 		!nonEmpty(identity.id) ||
 		!nonEmpty(identity.path) ||
 		!nonEmpty(identity.title) ||
+		!nonEmpty(identity.titleTemplate) ||
 		!Number.isInteger(identity.ordinal) ||
 		identity.ordinal < 1 ||
 		!Number.isInteger(identity.line) ||
 		identity.line < 1 ||
 		!Number.isInteger(identity.endLine) ||
-		identity.endLine < identity.line
+		identity.endLine < identity.line ||
+		(identity.parameterCount !== null &&
+			(!Number.isInteger(identity.parameterCount) ||
+				identity.parameterCount < 1))
 	)
 		throw new Error(`invalid source census declaration ${String(identity.id)}`);
 }
@@ -1588,6 +1596,7 @@ function validatePublishedUnitHalt(
 async function validatePublishedUnit(
 	published: PublishedProfileUnit,
 	unit: ProfileWorkUnit,
+	allIdentities: readonly ProfileCensusDeclaration[],
 	manifest: EpochManifest,
 	projectRoot: string,
 	auditRoot: string,
@@ -1647,6 +1656,27 @@ async function validatePublishedUnit(
 			profile.source.ordinal !== identity.ordinal
 		)
 			issues.push(`${profile.id}: source identity does not match the queue`);
+		if (
+			identity.parameterCount !== null &&
+			profile.runtime.value.caseCount > identity.parameterCount
+		)
+			issues.push(
+				`${profile.id}: runtime caseCount ${profile.runtime.value.caseCount} exceeds source parameterCount ${identity.parameterCount}`,
+			);
+		const literalSiblingTitles = allIdentities
+			.filter(
+				(sibling) =>
+					sibling.id !== identity.id &&
+					sibling.path === identity.path &&
+					sibling.parameterCount === 1 &&
+					!isParameterizedTitle(sibling.titleTemplate),
+			)
+			.map((sibling) => sibling.title);
+		for (const caseName of profile.runtime.value.caseNames)
+			if (literalSiblingTitles.includes(caseName))
+				issues.push(
+					`${profile.id}: runtime case ${JSON.stringify(caseName)} belongs to another literal-titled declaration`,
+				);
 		for (const assessedValue of agentAssessedValues(profile))
 			if (
 				assessedValue.assessor.kind !== "agent" ||
@@ -1753,6 +1783,10 @@ async function validatePublishedUnit(
 		}
 	}
 	return issues;
+}
+
+function isParameterizedTitle(title: string): boolean {
+	return /%[sdifjo#%]|\$\w+/.test(title);
 }
 
 function agentAssessedValues(profile: TestEvidenceProfile) {

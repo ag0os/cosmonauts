@@ -401,6 +401,8 @@ ${JSON.stringify(options.unit.fileContexts)}
 
 Open the named test files, their imports/helpers, runtime evidence, frozen behavior-risk inventory, ratified plan ground, shipped authorities, and relevant knowledge. Produce every TestEvidenceProfile field with the exact vocabulary in scripts/test-health-audit/schema.ts. An absent or self-contradicting shipped authority is claim status unresolved with cited counterevidence, uncertainty, and a drafted question; it does not halt the unit.
 
+Each identity includes its source parameterCount. A profile's runtime caseCount must not exceed that count, and the exact literal title of a sibling declaration is never one of a parameterized template's generated cases.
+
 Normally, write one JSON object to the candidate path containing only assessorId and profiles. It must contain every assigned identity exactly once. If and only if two ratified plan-ground authorities collide, still write a candidate and exit successfully, but replace profiles with halt: { kind: "ratified-ground-collision", question: <drafted question>, collidingAuthorities: <at least two authority-document evidence refs, each with a path and locator or quote> }. The dispatcher records that terminal halt, continues the queue, and reports it after draining all uncontested units.
 
 Do not supply process identity, duration, or memory cost and do not write the final shard: the dispatcher measures the process it owns, validates the candidate, and atomically publishes the NDJSON shard.

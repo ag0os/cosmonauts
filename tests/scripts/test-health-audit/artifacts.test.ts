@@ -861,6 +861,50 @@ describe("test health audit artifacts", () => {
 			);
 			await writeFile(firstShard, validShard);
 
+			const excessiveCaseRecords = structuredClone(shardRecords);
+			const excessiveCaseProfile = excessiveCaseRecords[1] as {
+				runtime: { value: { caseCount: number; caseNames: string[] } };
+			};
+			excessiveCaseProfile.runtime.value.caseCount = 2;
+			excessiveCaseProfile.runtime.value.caseNames = [
+				source.declarations[0]?.title ?? "case 01",
+				"generated extra case",
+			];
+			await writeFile(
+				firstShard,
+				`${excessiveCaseRecords.map((record) => JSON.stringify(record)).join("\n")}\n`,
+			);
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/caseCount 2 exceeds source parameterCount 1/),
+				]),
+			);
+			await writeFile(firstShard, validShard);
+
+			const siblingCaseRecords = structuredClone(shardRecords);
+			const siblingCaseProfile = siblingCaseRecords[1] as {
+				runtime: { value: { caseCount: number; caseNames: string[] } };
+			};
+			siblingCaseProfile.runtime.value.caseNames = [
+				source.declarations[50]?.title ?? "case 51",
+			];
+			await writeFile(
+				firstShard,
+				`${siblingCaseRecords.map((record) => JSON.stringify(record)).join("\n")}\n`,
+			);
+			expect(
+				(await validateProfileEpoch(auditRoot, projectRoot)).issues,
+			).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(
+						/runtime case .*case 51.* belongs to another literal-titled declaration/,
+					),
+				]),
+			);
+			await writeFile(firstShard, validShard);
+
 			const headerWithoutMetrics = { ...shardRecords[0] };
 			delete headerWithoutMetrics.durationMs;
 			delete headerWithoutMetrics.peakRssBytes;
@@ -1026,9 +1070,11 @@ describe("test health audit artifacts", () => {
 						id: `identity-${index}`,
 						path: `tests/file-${index}.test.ts`,
 						title: `case ${index}`,
+						titleTemplate: `case ${index}`,
 						ordinal: 1,
 						line: 1,
 						endLine: 1,
+						parameterCount: 1,
 					},
 				],
 			}));
@@ -1042,9 +1088,11 @@ describe("test health audit artifacts", () => {
 								id: "huge",
 								path: "tests/huge.test.ts",
 								title: "one indivisible test",
+								titleTemplate: "one indivisible test",
 								ordinal: 1,
 								line: 1,
 								endLine: 3000,
+								parameterCount: 1,
 							},
 						],
 					},
