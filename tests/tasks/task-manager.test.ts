@@ -1043,7 +1043,36 @@ describe("TaskManager", () => {
 			expect(readyIds).not.toContain("TASK-003");
 		});
 
-		it("treats a dependency outside the active set as satisfied", async () => {
+		it("treats an archived dependency as satisfied", async () => {
+			await manager.init();
+			await mkdir(join(tempDir, "missions", "archive", "tasks"), {
+				recursive: true,
+			});
+			await writeFile(
+				join(tempDir, "missions", "archive", "tasks", "TASK-900 - Shipped.md"),
+				"---\nid: TASK-900\ntitle: Shipped\nstatus: Done\n---\n",
+			);
+			// Ids derive from active and archived tasks alike, so seeding TASK-900
+			// moves allocation to 901.
+			await manager.createTask({
+				title: "Task 1",
+				dependencies: ["TASK-900"],
+			});
+			const blocker = await manager.createTask({ title: "Blocker" });
+			await manager.createTask({
+				title: "Task 3",
+				dependencies: [blocker.id],
+			});
+
+			const readyTasks = await manager.listTasks({ ready: true });
+
+			expect(readyTasks.map((task) => task.id)).toEqual([
+				"TASK-901",
+				"TASK-902",
+			]);
+		});
+
+		it("keeps a task blocked when a dependency exists nowhere", async () => {
 			await manager.init();
 			await manager.createTask({
 				title: "Task 1",
@@ -1052,7 +1081,20 @@ describe("TaskManager", () => {
 
 			const readyTasks = await manager.listTasks({ ready: true });
 
-			expect(readyTasks.map((task) => task.id)).toEqual(["TASK-001"]);
+			expect(readyTasks.map((task) => task.id)).toEqual([]);
+		});
+
+		it("resolves a dependency id regardless of its case", async () => {
+			await manager.init();
+			await manager.createTask({ title: "Task 1" });
+			await manager.createTask({
+				title: "Task 2",
+				dependencies: ["task-001"],
+			});
+
+			expect(
+				(await manager.listTasks({ ready: true })).map((task) => task.id),
+			).toEqual(["TASK-001"]);
 		});
 
 		it("should combine multiple filters", async () => {

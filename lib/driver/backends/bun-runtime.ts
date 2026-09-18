@@ -8,7 +8,8 @@ interface BunSubprocess {
 	 * process-group address.
 	 */
 	readonly pid?: number;
-	resourceUsage?(): { maxRSS?: number };
+	/** Bun returns undefined when usage was not collected for the child. */
+	resourceUsage?(): { maxRSS?: number } | undefined;
 }
 
 interface BunSpawnOptions {

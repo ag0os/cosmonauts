@@ -563,7 +563,18 @@ export class TaskManager {
 		}
 
 		const tasks = await this.loadAllTasks();
-		return new Map(tasks.map((task) => [task.id, task.status]));
+		const statuses = new Map<string, TaskStatus>(
+			tasks.map((task) => [task.id.toUpperCase(), task.status]),
+		);
+		// A plan cannot be archived until every task in it is Done, so an archived
+		// id is satisfied. Reading the archive is what separates that from a
+		// dependency that never existed.
+		for (const file of await listArchivedTaskFiles(this.projectRoot)) {
+			const id = parseTaskIdFromFilename(file);
+			if (id && !statuses.has(id.toUpperCase()))
+				statuses.set(id.toUpperCase(), "Done");
+		}
+		return statuses;
 	}
 }
 
@@ -631,9 +642,10 @@ function matchesLabelFilter(task: Task, filter: TaskListFilter): boolean {
 /**
  * Unblocked means every listed dependency is `Done` — not that the task has no
  * dependencies at all. `dependencyStatuses` is undefined when the caller did not
- * ask for readiness. A dependency absent from the active set counts as satisfied:
- * completed tasks are archived out of it, and hiding a task forever because its
- * dependency was archived is the defect this filter exists to avoid.
+ * ask for readiness, and covers active and archived tasks alike so an archived
+ * dependency reads as satisfied rather than hiding its dependents forever. An id
+ * in neither is a broken reference, and calling that "ready" would let a typo
+ * unblock work.
  */
 function matchesReadyFilter(
 	task: Task,
@@ -646,7 +658,7 @@ function matchesReadyFilter(
 
 	return task.dependencies.every(
 		(dependencyId) =>
-			(dependencyStatuses?.get(dependencyId) ?? "Done") === "Done",
+			dependencyStatuses?.get(dependencyId.toUpperCase()) === "Done",
 	);
 }
 

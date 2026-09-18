@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	digestMaterialInput,
@@ -10,6 +10,7 @@ import {
 	readCurrentEpochManifest,
 	readEpochProfiles,
 	readProfileWorkQueue,
+	writeTextAtomic,
 } from "./artifacts.ts";
 import type {
 	RuntimeState,
@@ -28,6 +29,8 @@ const REFRESHED_INPUT_KIND = "command";
 export interface CarryForwardReport {
 	readonly predecessorEpochId: string;
 	readonly carriedUnitIds: readonly string[];
+	/** Units the successor already held, left untouched by this run. */
+	readonly retainedUnitIds: readonly string[];
 	readonly reassessUnitIds: readonly string[];
 	readonly carriedProfileCount: number;
 	readonly carriedDeliverables: readonly string[];
@@ -94,9 +97,10 @@ async function readSurfaceObservations(
 
 /**
  * Re-observes a carried declaration against the successor epoch's own suite
- * run. A carried profile keeps its reasoning but never its observation: if the
- * declaration's cases are not all present in the new run, the judgment does not
- * transfer and the unit goes back for assessment.
+ * run. A carried profile keeps its reasoning but never its observation, so the
+ * judgment transfers only when this epoch actually saw the declaration: at least
+ * one surface must report it, and any surface that reports it must account for
+ * every case.
  */
 function observeRuntime(
 	observations: ReadonlyMap<TestSurface, SurfaceObservation>,
@@ -107,6 +111,7 @@ function observeRuntime(
 	const moduleId = join(projectRoot, profile.source.path);
 	const caseNames = profile.runtime.value.caseNames;
 	const discoveryBySurface: Record<string, RuntimeState> = {};
+	let observedAnywhere = false;
 	for (const [surface, modules] of observations) {
 		const cases = modules.get(moduleId);
 		if (!cases) {
@@ -115,10 +120,15 @@ function observeRuntime(
 		}
 		const states = caseNames.map((name) => cases.get(name));
 		if (states.some((state) => state === undefined)) return undefined;
+		observedAnywhere = true;
 		discoveryBySurface[surface] = states.some((state) => state === "failed")
 			? "failed"
 			: toRuntimeState(states[0]);
 	}
+	// Every surface reporting `not-collected` is not a re-observation, it is the
+	// absence of one. Carrying then stamps a fresh `observedAt` onto a judgment
+	// nothing in this epoch actually saw.
+	if (!observedAnywhere) return undefined;
 	for (const surface of Object.keys(
 		profile.runtime.value.discoveryBySurface,
 	) as TestSurface[])
@@ -140,7 +150,7 @@ async function readNormalizedDigest(
 	path: string,
 	epochId: string,
 ): Promise<string | undefined> {
-	const key = `${path}\u0000${epochId}`;
+	const key = `${projectRoot}\u0000${path}\u0000${epochId}`;
 	const cached = normalizedDigests.get(key);
 	if (cached !== undefined || normalizedDigests.has(key)) return cached;
 	let digest: string | undefined;
@@ -277,6 +287,22 @@ const CARRIED_DELIVERABLES = [
 	"probes.md",
 ] as const;
 
+async function hasPublishedShard(
+	auditRoot: string,
+	epochId: string,
+	unitId: string,
+): Promise<boolean> {
+	const directory = join(auditRoot, "epochs", epochId, "profiles");
+	for (const name of [`${unitId}.ndjson`, `${unitId}.halted.ndjson`])
+		try {
+			await readFile(join(directory, name), "utf8");
+			return true;
+		} catch {
+			// absent, so this unit still needs a shard
+		}
+	return false;
+}
+
 async function carryDeliverables(
 	auditRoot: string,
 	predecessorEpochId: string,
@@ -301,7 +327,7 @@ async function carryDeliverables(
 		}
 		// The document names the epoch it describes, so restamp that label. Its
 		// substance is unchanged, which is what carried profiles pin.
-		await writeFile(
+		await writeTextAtomic(
 			join(to, name),
 			source.split(predecessorEpochId).join(epochId),
 		);
@@ -343,11 +369,19 @@ export async function carryForwardProfileUnits(options: {
 	const observedAt = new Date().toISOString();
 
 	const carriedUnitIds: string[] = [];
+	const retainedUnitIds: string[] = [];
 	const reassessUnitIds: string[] = [];
 	const reasons: Record<string, string> = {};
 	let carriedProfileCount = 0;
 
 	for (const unit of queue.units) {
+		// A shard already in the successor is either a fresh assessment or an
+		// earlier carry. Either way it is newer evidence than the predecessor's,
+		// so a rerun leaves it alone rather than replacing it with a copy.
+		if (await hasPublishedShard(auditRoot, manifest.epochId, unit.id)) {
+			retainedUnitIds.push(unit.id);
+			continue;
+		}
 		const started = new Date();
 		const carried: TestEvidenceProfile[] = [];
 		let reason: string | undefined;
@@ -426,11 +460,13 @@ export async function carryForwardProfileUnits(options: {
 			});
 		} catch (error) {
 			// Carry-forward partitions work; it does not gate it. A unit the
-			// validator refuses is simply one an agent must assess, so record why
-			// and keep going rather than failing the whole wave.
+			// validator refuses is simply one an agent must assess. An I/O failure
+			// is not a judgment about the unit, so it stops the wave instead of
+			// being recorded as work an agent should redo.
+			const message = error instanceof Error ? error.message : String(error);
+			if (!message.startsWith("invalid profile unit ")) throw error;
 			reassessUnitIds.push(unit.id);
-			reasons[unit.id] =
-				error instanceof Error ? firstIssue(error.message) : String(error);
+			reasons[unit.id] = firstIssue(message);
 			continue;
 		}
 		carriedUnitIds.push(unit.id);
@@ -440,6 +476,7 @@ export async function carryForwardProfileUnits(options: {
 	return {
 		predecessorEpochId,
 		carriedUnitIds,
+		retainedUnitIds,
 		reassessUnitIds,
 		carriedProfileCount,
 		carriedDeliverables,

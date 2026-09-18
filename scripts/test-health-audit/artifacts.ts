@@ -2445,7 +2445,10 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
 	await writeTextAtomic(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function writeTextAtomic(path: string, value: string): Promise<void> {
+export async function writeTextAtomic(
+	path: string,
+	value: string,
+): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const temporary = join(
 		dirname(path),

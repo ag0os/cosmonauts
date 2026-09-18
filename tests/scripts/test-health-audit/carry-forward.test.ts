@@ -286,6 +286,10 @@ describe("test health audit carry-forward", () => {
 			join(auditRoot, "epochs", "epoch-1", "behavior-risk-inventory.json"),
 			JSON.stringify({ epochId: "epoch-1", entries: [] }),
 		);
+		await writeFile(
+			join(auditRoot, "epochs", "epoch-1", "gap-register.md"),
+			"# Gaps for epoch-1\n",
+		);
 		await mkdir(join(auditRoot, "epochs", "epoch-1", "profiles"), {
 			recursive: true,
 		});
@@ -436,6 +440,9 @@ describe("test health audit carry-forward", () => {
 		expect(report.carriedDeliverables).not.toContain(
 			"behavior-risk-inventory.json",
 		);
+		// The run must still carry the deliverable it did not already hold, or this
+		// passes just as well when carrying is removed entirely.
+		expect(report.carriedDeliverables).toContain("gap-register.md");
 		expect(JSON.parse(await readFile(own, "utf8"))).toMatchObject({
 			entries: ["x"],
 		});
@@ -478,5 +485,60 @@ describe("test health audit carry-forward", () => {
 			(evidence) => evidence.path,
 		);
 		expect(paths).toEqual(["audit/epochs/epoch-2/raw/normal.reporter.json"]);
+	});
+	it("refuses to carry when this epoch observed the declaration nowhere", async () => {
+		const { auditRoot, projectRoot, unitId } = await fixture();
+		await rm(
+			join(auditRoot, "epochs", "epoch-2", "raw", "normal.reporter.json"),
+		);
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.carriedUnitIds).toEqual([]);
+		expect(report.reassessUnitIds).toEqual([unitId]);
+		expect(report.reasons[unitId]).toMatch(/not re-observed/);
+	});
+
+	it("refuses to carry a declaration absent from this epoch's run", async () => {
+		const { auditRoot, projectRoot, unitId } = await fixture();
+		await writeFile(
+			join(auditRoot, "epochs", "epoch-2", "raw", "normal.reporter.json"),
+			JSON.stringify({
+				command: "bun run test",
+				modules: [
+					{ moduleId: join(projectRoot, "tests/other.test.ts"), cases: [] },
+				],
+			}),
+		);
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.carriedUnitIds).toEqual([]);
+		expect(report.reasons[unitId]).toMatch(/not re-observed/);
+	});
+
+	it("leaves a shard the successor already holds untouched", async () => {
+		const { auditRoot, projectRoot, unitId } = await fixture();
+		await mkdir(join(auditRoot, "epochs", "epoch-2", "profiles"), {
+			recursive: true,
+		});
+		const shard = join(
+			auditRoot,
+			"epochs",
+			"epoch-2",
+			"profiles",
+			`${unitId}.ndjson`,
+		);
+		await writeFile(shard, '{"recordType":"fresh-assessment"}\n');
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.retainedUnitIds).toEqual([unitId]);
+		expect(report.carriedUnitIds).toEqual([]);
+		expect(await readFile(shard, "utf8")).toBe(
+			'{"recordType":"fresh-assessment"}\n',
+		);
+	});
+
+	it("stops on an I/O failure rather than recording it as work to redo", async () => {
+		const { auditRoot, projectRoot } = await fixture();
+		await rm(join(auditRoot, "epochs", "epoch-2", "work-units.json"));
+		await expect(
+			carryForwardProfileUnits({ auditRoot, projectRoot }),
+		).rejects.toThrow();
 	});
 });

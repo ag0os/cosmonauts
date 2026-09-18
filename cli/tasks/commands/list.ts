@@ -33,7 +33,10 @@ export function registerListCommand(program: Command): void {
 		)
 		.option("-a, --assignee <name>", "Filter by assignee")
 		.option("-l, --label <label>", "Filter by label")
-		.option("--ready", "Show only unblocked tasks (all dependencies Done)")
+		.option(
+			"--ready",
+			"Show only unblocked tasks (every dependency Done or archived)",
+		)
 		.action(async (options: TaskListCliOptions) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();

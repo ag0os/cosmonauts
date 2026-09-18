@@ -145,9 +145,9 @@ export interface TaskListFilter {
 	label?: string;
 	/**
 	 * Filter to unblocked tasks: every listed dependency is `Done`. A task with
-	 * no dependencies is always unblocked. A dependency id that resolves to no
-	 * active task counts as satisfied, because completed tasks are archived out
-	 * of the active set.
+	 * no dependencies is always unblocked. Archived dependencies count as `Done`;
+	 * an id found in neither the active set nor the archive blocks the task,
+	 * since a broken reference is not evidence of completion.
 	 */
 	ready?: boolean;
 }

@@ -101,7 +101,7 @@ export async function runCliBackendProcess({
 		const exitCode = await child.exited;
 		clearInterval(sampler);
 		await sampleInFlight;
-		const resourcePeak = child.resourceUsage?.().maxRSS;
+		const resourcePeak = child.resourceUsage?.()?.maxRSS;
 		if (typeof resourcePeak === "number" && resourcePeak > 0)
 			peakRssBytes = Math.max(peakRssBytes, Math.ceil(resourcePeak));
 		await reapBackendGroup({ groupPid, invocation, backendName });

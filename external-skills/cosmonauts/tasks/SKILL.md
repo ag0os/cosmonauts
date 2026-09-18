@@ -91,10 +91,10 @@ cosmonauts task list --json
 cosmonauts task list --status todo --json
 cosmonauts task list --status in-progress --priority high --json
 cosmonauts task list --label backend --assignee alice --json
-cosmonauts task list --ready --json   # unblocked tasks (all dependencies Done)
+cosmonauts task list --ready --json   # unblocked tasks (deps Done or archived)
 ```
 
-**`--ready` means unblocked:** it matches tasks whose listed dependencies are all `Done`, plus tasks that have no dependencies at all. A task with `dependencies: [TASK-001]` appears in `--ready` results as soon as TASK-001 is marked Done. A dependency id that matches no active task counts as satisfied, since completed tasks are archived out of the active set.
+**`--ready` means unblocked:** it matches tasks whose listed dependencies are all `Done`, plus tasks that have no dependencies at all. A task with `dependencies: [TASK-001]` appears in `--ready` results as soon as TASK-001 is marked Done. A dependency that has been archived counts as satisfied, since a plan cannot be archived until its tasks are Done. A dependency id found in neither the active set nor the archive blocks the task — a broken reference is not evidence of completion.
 
 Status values: `todo`, `in-progress`, `done`, `blocked` (the CLI normalizes these to the title-case form on disk).
 

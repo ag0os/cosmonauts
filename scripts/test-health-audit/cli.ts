@@ -352,12 +352,11 @@ async function readIfPresent(path: string): Promise<string | undefined> {
 }
 
 /**
- * Checks that the live epoch's own deliverables satisfy their contracts. This
- * belongs to the audit's gate rather than the repository's test suite: binding
- * a vitest case to `currentEpochId` made the suite green only while a specific
- * epoch was current, and made a freshly opened epoch collect its own failures
- * as census findings. Absent deliverables are skipped, because an epoch acquires
- * them stage by stage.
+ * Checks the live epoch's deliverables against their contracts. This is the
+ * audit's own gate rather than the repository's test suite, so that suite truth
+ * never depends on which epoch is current. A document absent from a mid-flight
+ * epoch is skipped; the portfolio trio is checked only when all three are
+ * present, so a partial set is not reported either way.
  */
 async function validateEpochDeliverables(
 	root: string,
