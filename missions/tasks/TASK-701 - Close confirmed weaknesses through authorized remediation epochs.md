@@ -81,3 +81,35 @@ whole unit fresh or never touches it.
 Provenance detection landed first at `4059fe6` so the rebuild is checked by a
 gate that can fail: it reports 3,189 issues against the rejected epoch and none
 against the three sound ones.
+
+### 2026-09-18 — the rejected epoch was load-bearing, and the method is circular
+
+Two findings from attempting the rebuild. Both change what "done" costs.
+
+**1. The branch's green suite depended on the falsified epoch.**
+`remediation-ledger.md` exists in exactly one epoch on disk — the rejected
+`epoch-20260918-remediation-wave-001`. The B-009 marker test (AC #1) resolves
+`index.json` → `currentEpochId` → `<epoch>/remediation-ledger.md`, so it passed
+at `abcbea5` only because the forged epoch was current. Pointing the index at the
+last sound epoch turns it red. That redness is correct: stage 8 has not
+legitimately completed, and the suite is now saying so. Restoring green by
+re-pointing at the rejected epoch would make a falsified artifact load-bearing
+again, so it is not an option.
+
+**2. Opening a successor epoch makes the suite red, and the census then records
+its own reflection.** The marker tests for B-004/B-006/B-009 require
+`behavior-risk-matrix.md`, `calibration.md` and `remediation-ledger.md` in the
+*current* epoch. A newly opened epoch has none of them, so those tests fail; the
+census runs the suite in that state and books the failures as findings. The
+collection at `epoch-20260918-6c083d1-c1` shows it exactly: 2 `outcome-mismatch`
+and 18 `unknown-error-phase` rows, all tracing to `artifacts.test.ts` and one
+shuffle-order casualty, none of them defects in the audited code. Census needs
+deliverables; deliverables come after census.
+
+Consequence: the 11-surface collection in `epoch-20260918-6c083d1-c1` is not
+usable as clean evidence. It is retained on disk with its raw outputs, but it
+must be re-collected once the epoch carries its deliverables.
+
+Neither finding is visible from a single epoch — both require moving the index,
+which is why nine calibration waves and seven certified stages never surfaced
+them.
