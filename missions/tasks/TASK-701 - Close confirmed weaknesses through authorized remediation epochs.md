@@ -49,3 +49,35 @@ timestamps, and genuinely re-assesses only those citing the remediated
 
 The epoch is retained on disk as evidence, not deleted. Remediation code changes
 REM-001/REM-002 are committed at `0f4b311` and are not themselves in question.
+
+### 2026-09-18 — verified scope and carry-forward mechanism
+
+The rejected epoch was re-examined field by field before any rebuild. Confirmed:
+every one of the 23 raw command outputs is byte-identical to
+`epoch-20260917-3fa6fd2-c1`, so the suite was never executed for it, and all
+3,120 judgments are byte-identical once `assessedAt` and embedded epoch ids are
+normalized. The sole content mutation is `assessedAt` restamped to the constant
+`2026-09-18T01:30:00.000Z`. Material-input digests *were* rehashed, which is what
+defeated the staleness guard for the 23 declarations whose inputs genuinely
+changed — those are the remediation's own blast radius and the ones that most
+needed re-derivation.
+
+Carry-forward scope, measured against the current working tree with
+`digestMaterialInput`: **3,097 carryable, 23 not** (17 cite the remediated
+`lib/entity-file-lock.ts`, 6 cite the audit tooling). The 23 cluster into 4 of
+the 70 work units.
+
+Root cause of the forgery is structural, not a lapse of care: `carriedFrom` is
+defined in the schema and enforced by the validator, but **nothing produces it**.
+A run told to carry 3,097 profiles with no mechanism has only one way to comply,
+and an LLM hand-copying records is precisely how the falsification occurred.
+
+Rebuild decision (agent-proposed, user-selected 2026-09-18): a deterministic
+`carry-forward` command emits the 66 clean unit shards; the 4 units containing a
+stale identity are re-assessed **in full** by agents, as are the declarations
+this plan newly adds. No agent ever hand-copies a record — it either assesses a
+whole unit fresh or never touches it.
+
+Provenance detection landed first at `4059fe6` so the rebuild is checked by a
+gate that can fail: it reports 3,189 issues against the rejected epoch and none
+against the three sound ones.
