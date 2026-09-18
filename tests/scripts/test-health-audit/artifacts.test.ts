@@ -19,6 +19,10 @@ import {
 } from "../../../scripts/test-health-audit/census.ts";
 import { runCli } from "../../../scripts/test-health-audit/cli.ts";
 import { dispatchProfileUnits } from "../../../scripts/test-health-audit/dispatch.ts";
+import {
+	validatePortfolioEvidence,
+	validatePortfolioEvidenceDocuments,
+} from "../../../scripts/test-health-audit/portfolio.ts";
 import type { TestEvidenceProfile } from "../../../scripts/test-health-audit/schema.ts";
 import { collectSourceText } from "../../../scripts/test-health-audit/source-census.ts";
 
@@ -1247,6 +1251,137 @@ describe("test health audit artifacts", () => {
 		expect(validateBehaviorRiskInventory(stale, "epoch-1").issues).toContain(
 			"freeze.inventoryDigest does not match entries",
 		);
+	});
+
+	// @cosmo-behavior plan:test-health-audit#B-007
+	it("rejects protected portfolios with a missing risk-required boundary axis or probe", async () => {
+		const evidence = {
+			schemaVersion: 1,
+			epochId: "epoch-1",
+			entries: [
+				{
+					inventoryId: "BRI-001",
+					title: "Durable run lifecycle",
+					criticality: "critical",
+					conclusion: "partially-protected",
+					requiredAxes: {
+						boundary: ["producer", "consumer"],
+						path: ["inline"],
+						caller: ["CLI run"],
+						defect: ["terminal state lost"],
+					},
+					axes: {
+						boundary: [
+							{
+								name: "producer",
+								state: "contributing",
+								profileIds: ["profile-producer"],
+								evidenceBases: ["reasoned"],
+								gaps: [],
+								uncertainty: [],
+							},
+							{
+								name: "consumer",
+								state: "gap",
+								profileIds: [],
+								evidenceBases: ["missing"],
+								gaps: ["No shipped consumer evidence."],
+								uncertainty: [],
+							},
+						],
+						path: [
+							{
+								name: "inline",
+								state: "gap",
+								profileIds: [],
+								evidenceBases: ["missing"],
+								gaps: ["Profiles do not enumerate path contributions."],
+								uncertainty: [],
+							},
+						],
+						caller: [
+							{
+								name: "CLI run",
+								state: "gap",
+								profileIds: [],
+								evidenceBases: ["missing"],
+								gaps: ["Profiles do not enumerate caller contributions."],
+								uncertainty: [],
+							},
+						],
+						defect: [
+							{
+								name: "terminal state lost",
+								state: "contributing",
+								profileIds: ["profile-producer"],
+								evidenceBases: ["reasoned"],
+								gaps: [],
+								uncertainty: ["Fault sensitivity is reasoned only."],
+							},
+						],
+					},
+					probe: {
+						required: true,
+						requirementId: "PROBE-BRI-001",
+						status: "required",
+						profileIds: ["profile-producer"],
+						probeRefs: [],
+						reasons: ["critical portfolio"],
+					},
+					gaps: [
+						"No shipped consumer evidence.",
+						"Required probe PROBE-BRI-001 has not run.",
+					],
+					uncertainty: ["Fault sensitivity is reasoned only."],
+				},
+			],
+		};
+		expect(validatePortfolioEvidence(evidence)).toEqual({
+			valid: true,
+			issues: [],
+		});
+
+		const invalid = structuredClone(evidence);
+		const invalidEntry = invalid.entries[0];
+		if (!invalidEntry) throw new Error("portfolio fixture is empty");
+		invalidEntry.conclusion = "protected";
+		const producerCell = invalidEntry.axes.boundary[0];
+		if (!producerCell) throw new Error("portfolio boundary fixture is empty");
+		producerCell.state = "protected";
+		invalidEntry.axes.boundary.pop();
+		expect(validatePortfolioEvidence(invalid)).toMatchObject({
+			valid: false,
+			issues: expect.arrayContaining([
+				"entries[0].axes.boundary is missing risk-required axis consumer",
+				"entries[0].axes.boundary[0] cannot be protected by missing, blocked, or reasoned evidence",
+				"entries[0] cannot be protected while required probe PROBE-BRI-001 is required",
+			]),
+		});
+
+		const auditRoot = join(
+			process.cwd(),
+			"missions/plans/test-health-audit/audit",
+		);
+		const index = JSON.parse(
+			await readFile(join(auditRoot, "index.json"), "utf8"),
+		) as { currentEpochId: string };
+		const epochDirectory = join(auditRoot, "epochs", index.currentEpochId);
+		const [matrix, gapRegister, inventory] = await Promise.all([
+			readFile(join(epochDirectory, "behavior-risk-matrix.md"), "utf8"),
+			readFile(join(epochDirectory, "gap-register.md"), "utf8"),
+			readFile(
+				join(epochDirectory, "behavior-risk-inventory.json"),
+				"utf8",
+			).then((value) => JSON.parse(value) as unknown),
+		]);
+		expect(
+			validatePortfolioEvidenceDocuments({
+				matrix,
+				gapRegister,
+				inventory,
+				currentEpochId: index.currentEpochId,
+			}),
+		).toEqual({ valid: true, issues: [] });
 	});
 
 	// @cosmo-behavior plan:test-health-audit#B-003
