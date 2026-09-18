@@ -518,6 +518,32 @@ describe("entity file lock — residual file placement", () => {
 		}
 		await expectNoResidualFiles(lockPath);
 	});
+
+	test("keeps acquisition temps matched by the single-level *.lock ignore glob while acquisition is in flight", async () => {
+		const lockPath = entityLockPath("acquisition-temp-placement");
+		const linkStarted = deferred<void>();
+		const releaseLink = deferred<void>();
+
+		fsMocks.link.mockImplementation(async (...args) => {
+			const [, to] = args as unknown as [string, string];
+			if (to === lockPath) {
+				linkStarted.resolve();
+				await releaseLink.promise;
+			}
+			return (actualFs.link as unknown as FsOperation)(...args);
+		});
+
+		const acquisition = withEntityFileLock(lockPath, async () => "acquired");
+		await linkStarted.promise;
+
+		const entries = await readdir(join(lockPath, ".."));
+		expect(entries).toHaveLength(1);
+		expect(entries[0]).toMatch(/\.lock$/u);
+
+		releaseLink.resolve();
+		await expect(acquisition).resolves.toBe("acquired");
+		await expectNoResidualFiles(lockPath);
+	});
 });
 
 function entityLockPath(name: string): string {

@@ -406,6 +406,22 @@ export interface CalibrationValidation {
 	readonly issues: readonly string[];
 }
 
+export interface RemediationLedgerValidationOptions {
+	readonly requiredRepairInputIds?: readonly string[];
+	readonly requiredWeaknessInputIds?: readonly string[];
+	readonly requiredMaterialInputs?: readonly {
+		readonly path: string;
+		readonly inputKind: string;
+		readonly sha256: string;
+	}[];
+	readonly baselineDocument?: string;
+}
+
+export interface RemediationLedgerValidation {
+	readonly valid: boolean;
+	readonly issues: readonly string[];
+}
+
 function obligation(
 	dimensionConclusions: string[] | "unconstrained",
 	evidenceBases: string[] | "unconstrained",
@@ -832,6 +848,297 @@ export function parseCalibrationDocument(document: string): CalibrationRecord {
 	if (!isRecord(parsed))
 		throw new Error("calibration record must be an object");
 	return parsed as unknown as CalibrationRecord;
+}
+
+export function parseRemediationLedgerDocument(document: string): unknown {
+	const match = document.match(/```json remediation-ledger\n([\s\S]*?)\n```/u);
+	if (!match?.[1]) throw new Error("remediation ledger JSON block is missing");
+	return JSON.parse(match[1]) as unknown;
+}
+
+const REMEDIATION_OUTCOMES = [
+	"closed",
+	"excluded-from-guardrail",
+	"unresolved",
+] as const;
+const REMEDIATION_REPAIR_ACTIONS = [
+	"repair-production",
+	"repair-test",
+	"replace-test",
+	"remove-test",
+] as const;
+const REMEDIATION_INPUT_KINDS = [
+	"test",
+	"system-under-test",
+	"contract",
+	"inventory",
+	"method",
+	"runner",
+	"config",
+	"setup",
+] as const;
+
+/** Validate the executable closure contract recorded by a remediation wave. */
+export function validateRemediationLedger(
+	input: unknown,
+	currentEpochId: string,
+	options: RemediationLedgerValidationOptions = {},
+): RemediationLedgerValidation {
+	const issues: string[] = [];
+	if (!isRecord(input))
+		return { valid: false, issues: ["remediation ledger must be an object"] };
+	if (input.schemaVersion !== 1) issues.push("schemaVersion must equal 1");
+	if (input.epochId !== currentEpochId)
+		issues.push(`epochId must match current epoch ${currentEpochId}`);
+	if (!nonEmpty(input.predecessorEpochId))
+		issues.push("predecessorEpochId is required");
+	else if (input.predecessorEpochId === currentEpochId)
+		issues.push("a remediation wave must open one successor epoch");
+	if (!nonEmpty(input.waveId)) issues.push("waveId is required");
+	if (input.status !== "complete") issues.push("status must equal complete");
+
+	const rows = Array.isArray(input.rows) ? input.rows : undefined;
+	if (!rows || rows.length === 0) {
+		issues.push("rows must contain every confirmed weakness");
+	} else {
+		for (const [index, row] of rows.entries())
+			validateRemediationRow(row, index, options.baselineDocument, issues);
+	}
+
+	validateRepairInputConsumption(rows ?? [], options, issues);
+	validateRemediationSuccessor(
+		input.successorEpoch,
+		currentEpochId,
+		options,
+		issues,
+	);
+	validateRemediationScope(input, rows ?? [], issues);
+	return { valid: issues.length === 0, issues };
+}
+
+function validateRemediationRow(
+	input: unknown,
+	index: number,
+	baselineDocument: string | undefined,
+	issues: string[],
+): void {
+	const path = `rows[${index}]`;
+	if (!isRecord(input)) {
+		issues.push(`${path} must be an object`);
+		return;
+	}
+	if (!nonEmpty(input.id)) issues.push(`${path}.id is required`);
+	for (const field of [
+		"affectedClaims",
+		"beforeEvidence",
+		"actionEvidence",
+		"closureEvidence",
+		"profileUpdates",
+		"matrixUpdates",
+	] as const) {
+		if (!Array.isArray(input[field]) || input[field].length === 0)
+			issues.push(`${path}.${field} must not be empty`);
+	}
+	if (!Array.isArray(input.probeReruns) || input.probeReruns.length === 0)
+		issues.push(`${path}.probeReruns must not be empty`);
+	if (!isRecord(input.scope)) issues.push(`${path}.scope is required`);
+	else {
+		const sourcePaths = stringArray(input.scope.sourcePaths) ?? [];
+		const testPaths = stringArray(input.scope.testPaths) ?? [];
+		if (sourcePaths.length + testPaths.length === 0)
+			issues.push(`${path}.scope must name a source or test path`);
+	}
+	const outcome = String(input.outcome);
+	if (!REMEDIATION_OUTCOMES.includes(outcome as never))
+		issues.push(
+			`${path}.outcome must be closed, excluded-from-guardrail, or unresolved`,
+		);
+
+	const authority = isRecord(input.authority) ? input.authority : undefined;
+	if (!authority) issues.push(`${path}.authority is required`);
+	const authorityStatus = String(authority?.status);
+	const citations = Array.isArray(authority?.citations)
+		? authority.citations
+		: [];
+	if (!nonEmpty(input.deviationClassification))
+		issues.push(`${path}.deviationClassification is required`);
+	if (authorityStatus === "ratified") {
+		if (citations.length === 0)
+			issues.push(`${path}.authority.citations must cite ratified authority`);
+	} else if (
+		authorityStatus !== "absent" &&
+		authorityStatus !== "self-contradicting"
+	) {
+		issues.push(`${path}.authority.status is invalid`);
+	}
+
+	const action = isRecord(input.action) ? input.action : undefined;
+	const actionKind = String(action?.kind);
+	const changedPaths = stringArray(action?.changedPaths) ?? [];
+	if (!action) issues.push(`${path}.action is required`);
+	if (outcome === "closed") {
+		if (authorityStatus !== "ratified")
+			issues.push(
+				`${path} cannot close a correction without ratified authority`,
+			);
+		if (!REMEDIATION_REPAIR_ACTIONS.includes(actionKind as never))
+			issues.push(`${path}.action.kind must be an authorized repair action`);
+		if (changedPaths.length === 0)
+			issues.push(`${path}.action.changedPaths must name the repaired seam`);
+		if (!nonEmpty(input.failingProof))
+			issues.push(
+				`${path}.failingProof is required before an authorized repair`,
+			);
+		if (
+			!Array.isArray(input.correctnessReruns) ||
+			input.correctnessReruns.length === 0
+		)
+			issues.push(`${path}.correctnessReruns must not be empty`);
+	} else if (outcome === "excluded-from-guardrail") {
+		if (actionKind !== "exclude-guardrail")
+			issues.push(`${path}.action.kind must equal exclude-guardrail`);
+	} else if (outcome === "unresolved") {
+		if (authorityStatus === "ratified")
+			issues.push(`${path} cannot be unresolved when authority is ratified`);
+		if (actionKind !== "none" || changedPaths.length > 0)
+			issues.push(
+				`${path} unresolved authority must not change code or expectations`,
+			);
+		validatePacketQuestion(
+			input.packetQuestion,
+			path,
+			baselineDocument,
+			issues,
+		);
+	}
+}
+
+function validatePacketQuestion(
+	input: unknown,
+	path: string,
+	baselineDocument: string | undefined,
+	issues: string[],
+): void {
+	if (!isRecord(input) || !nonEmpty(input.id)) {
+		issues.push(`${path}.packetQuestion is required for unresolved authority`);
+		return;
+	}
+	if (!Array.isArray(input.options) || input.options.length < 2)
+		issues.push(`${path}.packetQuestion.options must contain drafted options`);
+	if (!nonEmpty(input.recommendation))
+		issues.push(`${path}.packetQuestion.recommendation is required`);
+	if (baselineDocument !== undefined) {
+		const packetSections =
+			baselineDocument.match(/^## Ratification packet$/gmu) ?? [];
+		if (packetSections.length !== 1)
+			issues.push(
+				"baseline must contain exactly one Ratification packet section",
+			);
+		if (!baselineDocument.includes(String(input.id)))
+			issues.push(`${path}.packetQuestion must be appended to baseline`);
+		for (const option of stringArray(input.options) ?? [])
+			if (!baselineDocument.includes(option))
+				issues.push(
+					`${path}.packetQuestion option must be appended to baseline`,
+				);
+		if (!baselineDocument.includes(String(input.recommendation)))
+			issues.push(
+				`${path}.packetQuestion recommendation must be appended to baseline`,
+			);
+	}
+}
+
+function validateRepairInputConsumption(
+	rows: readonly unknown[],
+	options: RemediationLedgerValidationOptions,
+	issues: string[],
+): void {
+	const consumed = rows.flatMap((row) =>
+		isRecord(row) ? (stringArray(row.inputIds) ?? []) : [],
+	);
+	for (const id of options.requiredRepairInputIds ?? []) {
+		const count = consumed.filter((candidate) => candidate === id).length;
+		if (count !== 1)
+			issues.push(`repair-required input ${id} must be consumed exactly once`);
+	}
+	for (const id of options.requiredWeaknessInputIds ?? []) {
+		const count = consumed.filter((candidate) => candidate === id).length;
+		if (count !== 1)
+			issues.push(`confirmed weakness ${id} must be consumed exactly once`);
+	}
+}
+
+function validateRemediationSuccessor(
+	input: unknown,
+	currentEpochId: string,
+	options: RemediationLedgerValidationOptions,
+	issues: string[],
+): void {
+	if (!isRecord(input)) {
+		issues.push("successorEpoch is required");
+		return;
+	}
+	if (input.epochId !== currentEpochId)
+		issues.push("successorEpoch.epochId must match the current epoch");
+	if (input.manifestChanged !== true)
+		issues.push("successorEpoch must use a new immutable manifest");
+	const rehashed = Array.isArray(input.rehashedMaterialInputs)
+		? input.rehashedMaterialInputs
+		: [];
+	for (const expected of options.requiredMaterialInputs ?? []) {
+		const matches = rehashed.filter(
+			(candidate) =>
+				isRecord(candidate) &&
+				candidate.path === expected.path &&
+				candidate.inputKind === expected.inputKind &&
+				candidate.sha256 === expected.sha256,
+		);
+		if (matches.length !== 1)
+			issues.push(
+				`material input ${expected.inputKind}:${expected.path} must be rehashed exactly once`,
+			);
+	}
+	const kinds = new Set(
+		rehashed.flatMap((candidate) =>
+			isRecord(candidate) && nonEmpty(candidate.inputKind)
+				? [String(candidate.inputKind)]
+				: [],
+		),
+	);
+	for (const kind of REMEDIATION_INPUT_KINDS)
+		if (!kinds.has(kind))
+			issues.push(`successorEpoch is missing rehashed ${kind} input evidence`);
+	const invalidated = stringArray(input.invalidatedProfileIds) ?? [];
+	const reassessed = stringArray(input.reassessedProfileIds) ?? [];
+	if (!sameSet(invalidated, reassessed))
+		issues.push("the union of invalidated profiles must be reassessed");
+	const carried = stringArray(input.carriedProfileIds) ?? [];
+	if (carried.some((id) => invalidated.includes(id)))
+		issues.push("an invalidated profile cannot be carried");
+}
+
+function validateRemediationScope(
+	ledger: Record<string, unknown>,
+	rows: readonly unknown[],
+	issues: string[],
+): void {
+	const authorized = new Set(
+		rows.flatMap((row) => {
+			if (!isRecord(row) || !isRecord(row.action)) return [];
+			return stringArray(row.action.changedPaths) ?? [];
+		}),
+	);
+	for (const path of stringArray(ledger.changedPaths) ?? [])
+		if (!authorized.has(path))
+			issues.push(`changed path ${path} is outside the ledger-authorized seam`);
+	for (const forbidden of [
+		"tests/domains/coding-agents.test.ts",
+		"AgentDefinition.session",
+	])
+		if (authorized.has(forbidden))
+			issues.push(
+				`excluded remediation seam ${forbidden} must remain unmodified`,
+			);
 }
 
 export function validateCalibrationRecord(

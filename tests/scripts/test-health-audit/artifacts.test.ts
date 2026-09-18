@@ -8,10 +8,12 @@ import {
 	CALIBRATION_CONTROL_OBLIGATIONS,
 	digestMaterialInput,
 	parseCalibrationDocument,
+	parseRemediationLedgerDocument,
 	publishProfileUnit,
 	validateBehaviorRiskInventory,
 	validateCalibrationRecord,
 	validateProfileEpoch,
+	validateRemediationLedger,
 } from "../../../scripts/test-health-audit/artifacts.ts";
 import {
 	commandCensusDigest,
@@ -1521,5 +1523,166 @@ describe("test health audit artifacts", () => {
 		});
 
 		expect(Object.keys(CALIBRATION_CONTROL_OBLIGATIONS)).toHaveLength(26);
+	});
+
+	// @cosmo-behavior plan:test-health-audit#B-009
+	it("requires authorized closure or guardrail exclusion and blocks unratified contract changes", async () => {
+		const materialInputs = [
+			"test",
+			"system-under-test",
+			"contract",
+			"inventory",
+			"method",
+			"runner",
+			"config",
+			"setup",
+		].map((inputKind, index) => ({
+			path: `${inputKind}.txt`,
+			inputKind,
+			sha256: String(index).padStart(64, "a"),
+		}));
+		const closedRow = {
+			id: "REM-001",
+			inputIds: ["repair-suite-1"],
+			affectedClaims: ["lock artifacts remain invisible to git status"],
+			scope: {
+				sourcePaths: ["lib/entity-file-lock.ts"],
+				testPaths: ["tests/entity-file-lock.test.ts"],
+			},
+			authority: {
+				status: "ratified",
+				citations: [
+					{
+						path: "missions/archive/tasks/TASK-495.md",
+						locator: "AC #4 and #6",
+					},
+				],
+			},
+			deviationClassification: "product-defect",
+			beforeEvidence: ["red test observed the git-visible acquisition temp"],
+			failingProof:
+				"the in-flight acquisition temp ended in .tmp instead of .lock",
+			action: {
+				kind: "repair-production",
+				changedPaths: [
+					"lib/entity-file-lock.ts",
+					"tests/entity-file-lock.test.ts",
+				],
+			},
+			actionEvidence: ["acquisition temp now ends in .lock"],
+			closureEvidence: ["focused test is green"],
+			correctnessReruns: ["bun run test tests/entity-file-lock.test.ts"],
+			probeReruns: ["not-applicable: no survived probe opened this row"],
+			profileUpdates: ["profile-lock-temp was reassessed"],
+			matrixUpdates: ["BRI-004 persisted-state cell refreshed"],
+			outcome: "closed",
+		};
+		const valid = {
+			schemaVersion: 1,
+			epochId: "epoch-successor",
+			predecessorEpochId: "epoch-predecessor",
+			waveId: "wave-001",
+			status: "complete",
+			changedPaths: [
+				"lib/entity-file-lock.ts",
+				"tests/entity-file-lock.test.ts",
+			],
+			rows: [closedRow],
+			successorEpoch: {
+				epochId: "epoch-successor",
+				manifestChanged: true,
+				rehashedMaterialInputs: materialInputs,
+				invalidatedProfileIds: ["profile-lock-temp"],
+				reassessedProfileIds: ["profile-lock-temp"],
+				carriedProfileIds: ["profile-unrelated"],
+			},
+		};
+		const options = {
+			requiredRepairInputIds: ["repair-suite-1"],
+			requiredWeaknessInputIds: ["repair-suite-1"],
+			requiredMaterialInputs: materialInputs,
+		};
+		expect(
+			validateRemediationLedger(valid, "epoch-successor", options),
+		).toEqual({ valid: true, issues: [] });
+
+		const unratified = structuredClone(valid);
+		const unratifiedRow = firstRecord(unratified.rows);
+		unratifiedRow.authority = { status: "absent", citations: [] };
+		expect(
+			validateRemediationLedger(unratified, "epoch-successor", options),
+		).toMatchObject({
+			valid: false,
+			issues: expect.arrayContaining([
+				"rows[0] cannot close a correction without ratified authority",
+			]),
+		});
+
+		const open = structuredClone(valid);
+		firstRecord(open.rows).outcome = "open";
+		expect(
+			validateRemediationLedger(open, "epoch-successor", options),
+		).toMatchObject({ valid: false });
+
+		const missingRepairInput = structuredClone(valid);
+		firstRecord(missingRepairInput.rows).inputIds = [];
+		expect(
+			validateRemediationLedger(missingRepairInput, "epoch-successor", options),
+		).toMatchObject({
+			valid: false,
+			issues: expect.arrayContaining([
+				"repair-required input repair-suite-1 must be consumed exactly once",
+			]),
+		});
+
+		const auditRoot = join(
+			process.cwd(),
+			"missions/plans/test-health-audit/audit",
+		);
+		const index = JSON.parse(
+			await readFile(join(auditRoot, "index.json"), "utf8"),
+		) as { currentEpochId: string };
+		const epochDirectory = join(auditRoot, "epochs", index.currentEpochId);
+		const [ledgerDocument, baselineDocument, suiteIntegrity, manifest] =
+			await Promise.all([
+				readFile(join(epochDirectory, "remediation-ledger.md"), "utf8"),
+				readFile(join(epochDirectory, "baseline.md"), "utf8"),
+				readFile(join(epochDirectory, "suite-integrity.json"), "utf8").then(
+					(value) =>
+						JSON.parse(value) as { repairRequired?: { findingId: string }[] },
+				),
+				readFile(join(epochDirectory, "manifest.json"), "utf8").then(
+					(value) =>
+						JSON.parse(value) as {
+							materialInputs: { path: string; sha256: string }[];
+						},
+				),
+			]);
+		const ledger = parseRemediationLedgerDocument(ledgerDocument);
+		const actual = ledger as {
+			successorEpoch: {
+				rehashedMaterialInputs: {
+					path: string;
+					inputKind: string;
+					sha256: string;
+				}[];
+			};
+		};
+		expect(
+			validateRemediationLedger(ledger, index.currentEpochId, {
+				requiredRepairInputIds: (suiteIntegrity.repairRequired ?? []).map(
+					(row) => row.findingId,
+				),
+				requiredWeaknessInputIds: [
+					...(suiteIntegrity.repairRequired ?? []).map((row) => row.findingId),
+					"portfolio:BRI-010",
+				],
+				requiredMaterialInputs:
+					actual.successorEpoch.rehashedMaterialInputs.filter((input) =>
+						manifest.materialInputs.some((item) => item.path === input.path),
+					),
+				baselineDocument,
+			}),
+		).toEqual({ valid: true, issues: [] });
 	});
 });

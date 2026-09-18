@@ -150,7 +150,11 @@ async function tryCreateLock(
 ): Promise<LockHandle | "exists"> {
 	await mkdir(dirname(lockPath), { recursive: true });
 
-	const tempPath = `${lockPath}.${process.pid}.${content.uuid}.tmp`;
+	// Acquisition is observable between the write and hard-link syscalls. Keep
+	// that temporary sibling inside the same `*.lock` ignore contract as the
+	// owned slot and stale-removal files so concurrent git/archive inspection
+	// never mistakes lock machinery for project state.
+	const tempPath = `${lockPath}.${process.pid}.${content.uuid}.acquiring.lock`;
 	try {
 		await writeFile(tempPath, `${JSON.stringify(content)}\n`, {
 			encoding: "utf-8",
