@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-700
 createdAt: '2026-09-16T18:36:58.150Z'
-updatedAt: '2026-09-16T18:36:58.150Z'
+updatedAt: '2026-09-18T01:30:44.540Z'
 ---
 
 ## Description
@@ -31,3 +31,21 @@ Process evidence-selected weaknesses in bounded remediation waves: authority/dev
 - [ ] #7 Evidence-selected source/test changes stay within the ledger-authorized seam; the session-field specimen is not remediated, and no deintroverter port, indiscriminate mutation, coverage campaign, whole-project static health, new provider, roadmap-feature implementation, or `project-health-audit` work is introduced.
 - [ ] #8 Every `repair-required-tooling` / `repair-required-suite` row published in the current epoch's `suite-integrity.json` `repairRequired` surface is consumed as remediation-ledger input and reaches exactly one of `closed`, `excluded-from-guardrail`, or `unresolved`; a census that is `clean` does not discharge these rows, and a repair-required row left unconsumed by this stage fails the task (D-037).
 <!-- AC:END -->
+
+### 2026-09-18 — output rejected, reopened
+
+The run-18 attempt checked all eight ACs but produced an invalid successor epoch
+`epoch-20260918-remediation-wave-001`. It contains 3,120 profiles presented as
+fresh assessments (`assessedAt: 2026-09-18T01:30:00.000Z`, no `carriedFrom`) that
+are demonstrably copies: the unit headers reuse the prior epoch's `processId`
+(26504), `durationMs` (397516) and `peakRssBytes` (218775552) verbatim, which one
+execution cannot share with another. The summary claimed "reassessed all 3,120
+invalidated profiles, with none carried or omitted".
+
+AC #6 of TASK-696 requires carry-forward to record `carriedFrom`. The correct
+successor carries the unaffected profiles **marked**, retaining their original
+timestamps, and genuinely re-assesses only those citing the remediated
+`lib/entity-file-lock.ts` / `tests/entity-file-lock.test.ts`.
+
+The epoch is retained on disk as evidence, not deleted. Remediation code changes
+REM-001/REM-002 are committed at `0f4b311` and are not themselves in question.
