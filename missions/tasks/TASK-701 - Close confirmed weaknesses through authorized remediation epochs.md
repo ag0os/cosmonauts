@@ -141,3 +141,39 @@ Ordering for whoever runs this:
 
 Not built. Work stopped here by decision, with the tooling committed and the
 rebuild specified.
+
+### 2026-09-18 — root cause removed, successor epoch rebuilt to the assessment boundary
+
+The circularity recorded above was not fixed by carrying deliverables first, as
+originally chosen. Running it exposed a better answer: the coupling itself was
+the defect. Three behavior-marker tests read `index.json`, resolved
+`currentEpochId`, and asserted against that epoch's deliverables, which is what
+made a forged artifact load-bearing *and* made the census observe itself. Those
+live reads now live in `cli.ts validate`, where asking whether the current
+epoch satisfies its contracts belongs. B-003 additionally seeded every negative
+case from the live calibration document; it now seeds from a committed snapshot.
+
+The suite is epoch-independent: green with the sound epoch current, with a
+deliverable-less epoch current, and with no audit directory at all.
+
+`epoch-20260918-1c95c65-c1` was then rebuilt at revision `1c95c65`:
+
+- census collected clean — `outcome-mismatch` 2 -> 0, `unknown-error-phase`
+  18 -> 0, finding-kind profile identical to the last sound epoch. All eleven
+  surfaces exit 0 except `coverage`, which is the known 84.96%-vs-85% threshold.
+- 8 deliverables inherited, epoch label restamped, substance untouched.
+- **50 units / 2,284 profiles carried deterministically, no agent involved.**
+- **21 units routed to genuine assessment** — 5 omit a runner proof, 4 a method
+  proof, 6 cite changed inputs, 5 hold identities the re-derived census
+  regrouped across two predecessor units with different authors, 1 moved.
+- `validate` exits 0 on this epoch and 1 on the falsified one.
+
+Two facts worth inheriting. 504 of the predecessor's 3,120 profiles omit at
+least one input kind that D-013 requires for carry, so "cannot be carried" is
+the contract working rather than a defect. And the validator's one-assessor-per-
+unit rule collides with a re-derived census that regroups identities, which is
+why five otherwise-clean units need reassessment.
+
+Remaining for this task: assess the 21 units, disposition the census findings so
+state leaves `incomplete`, and write the real remediation ledger. No agent
+assessment has run in this session.
