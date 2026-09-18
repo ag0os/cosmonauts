@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-695
 createdAt: '2026-09-16T18:35:54.817Z'
-updatedAt: '2026-09-17T22:07:36.946Z'
+updatedAt: '2026-09-17T23:02:19.437Z'
 ---
 
 ## Description
@@ -38,4 +38,5 @@ Implement epoch/profile artifact validation and initialize the census-derived as
 - [ ] #14 Units whose published shard carries agent-supplied rather than dispatcher-measured cost are re-dispatched rather than accepted, so every unit in the epoch P-final certifies carries trustworthy cost evidence; the eight shards published by run 10 fall in this class.
 - [ ] #15 A unit that halts on a ratified-ground collision does not stop the queue: the dispatcher records that unit as halted with its drafted question and cited colliding authorities, continues issuing every remaining unit, and exits non-zero only after the rest are drained. P-final then reports halted units as open packet items rather than treating the queue as undrainable. Run 12 halted unit 0060 and left nine uncontested units unassessed, which contradicts ratified AC-016 and the D-021 design that a question batches rather than stops the run.
 - [ ] #16 A candidate that fails validation is not left to be re-submitted later: the dispatcher discards or re-derives a candidate before re-assessing its unit, so a rejected candidate can never be published on a subsequent run carrying digests from an earlier working tree. Run 15 re-submitted 19:50 candidates for units 0042/0044 whose `plan.md` digest was two commits stale, and reported them as fresh.
+- [ ] #17 A runtime case belongs to exactly one declaration, and validation enforces it rather than trusting assessor judgment: a parameterized profile whose `runtime.caseCount` exceeds its source `parameterCount`, or whose `caseNames` include a case that is the exact literal title of another declaration in the same file, fails validation and is not published. The dispatch context states each unit declaration's `parameterCount` and that a literal-titled sibling is never one of a template's generated cases. Two independent assessors both attributed `tests/packages/manifest.test.ts:193` (`returns error for missing domains`, a standalone test) as a fourth case of the three-row `.each` template `returns error for missing %s` — a systematic misreading that all nine calibration control waves passed through.
 <!-- AC:END -->
