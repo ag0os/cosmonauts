@@ -2,16 +2,18 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
 	buildProfileWorkQueue,
 	CALIBRATION_CONTROL_OBLIGATIONS,
 	digestMaterialInput,
+	openAuditEpoch,
 	parseCalibrationDocument,
 	parseRemediationLedgerDocument,
 	publishProfileUnit,
 	validateBehaviorRiskInventory,
 	validateCalibrationRecord,
+	validateEpochProvenance,
 	validateProfileEpoch,
 	validateRemediationLedger,
 } from "../../../scripts/test-health-audit/artifacts.ts";
@@ -1684,5 +1686,194 @@ describe("test health audit artifacts", () => {
 				baselineDocument,
 			}),
 		).toEqual({ valid: true, issues: [] });
+	});
+});
+
+describe("test health audit epoch provenance", () => {
+	const roots: string[] = [];
+	afterEach(async () => {
+		for (const root of roots.splice(0)) await rm(root, { recursive: true });
+	});
+
+	const DIGEST = "a".repeat(64);
+
+	function manifest(epochId: string) {
+		return {
+			schemaVersion: 1,
+			methodVersion: "1",
+			epochId,
+			evaluatedRevision: "abc123",
+			createdAt: "2026-09-17T15:00:00.000Z",
+			materialInputs: [{ path: "vitest.config.ts", sha256: DIGEST }],
+			commandDefinitions: [
+				{ id: "normal", surface: "normal", argv: ["bun", "run", "test"] },
+			],
+			sourceCensusDigest: DIGEST,
+		} as const;
+	}
+
+	function header(epochId: string, overrides: Record<string, unknown> = {}) {
+		return {
+			recordType: "profile-unit",
+			epochId,
+			unitId: "unit-1",
+			assessorId: "assessor-1",
+			processId: 4242,
+			processBackend: "driver-process",
+			measurementSource: "dispatcher",
+			processStartedAt: "2026-09-17T15:10:00.000Z",
+			processEndedAt: "2026-09-17T15:12:00.000Z",
+			durationMs: 120000,
+			peakRssBytes: 1024,
+			...overrides,
+		};
+	}
+
+	function profile(epochId: string, overrides: Record<string, unknown> = {}) {
+		return {
+			id: "b".repeat(64),
+			disposition: { value: "retain", assessedAt: "2026-09-17T15:11:00.000Z" },
+			materialInputs: [
+				{
+					path: `missions/x/audit/epochs/${epochId}/manifest.json`,
+					sha256: DIGEST,
+				},
+			],
+			...overrides,
+		};
+	}
+
+	async function seed(
+		root: string,
+		epochId: string,
+		records: readonly unknown[],
+		rawBody: string,
+	) {
+		await openAuditEpoch(root, manifest(epochId));
+		const epoch = join(root, "epochs", epochId);
+		await mkdir(join(epoch, "profiles"), { recursive: true });
+		await mkdir(join(epoch, "raw"), { recursive: true });
+		await writeFile(
+			join(epoch, "profiles", "unit-1.ndjson"),
+			`${records.map((record) => JSON.stringify(record)).join("\n")}\n`,
+		);
+		await writeFile(join(epoch, "raw", "normal.json"), rawBody);
+	}
+
+	async function provenanceOf(
+		build: (root: string) => Promise<void>,
+	): Promise<string[]> {
+		const root = await mkdtemp(join(tmpdir(), "audit-provenance-"));
+		roots.push(root);
+		await build(root);
+		return await validateEpochProvenance(root, manifest("epoch-2"));
+	}
+
+	it("rejects a successor unit that reuses a predecessor's process identity", async () => {
+		const issues = await provenanceOf(async (root) => {
+			await seed(root, "epoch-1", [header("epoch-1")], '{"run":1}');
+			await seed(
+				root,
+				"epoch-2",
+				[header("epoch-2"), profile("epoch-2", { id: "c".repeat(64) })],
+				'{"run":2}',
+			);
+		});
+		expect(issues).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(/unit-1: unit reuses the process identity/),
+			]),
+		);
+	});
+
+	it("rejects a profile identical to a predecessor that omits carriedFrom", async () => {
+		const issues = await provenanceOf(async (root) => {
+			await seed(
+				root,
+				"epoch-1",
+				[header("epoch-1"), profile("epoch-1")],
+				'{"run":1}',
+			);
+			await seed(
+				root,
+				"epoch-2",
+				[
+					header("epoch-2", { processId: 99, peakRssBytes: 2048 }),
+					profile("epoch-2", {
+						disposition: {
+							value: "retain",
+							assessedAt: "2026-09-18T01:30:00.000Z",
+						},
+					}),
+				],
+				'{"run":2}',
+			);
+		});
+		expect(issues).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(/does not declare carriedFrom/),
+			]),
+		);
+	});
+
+	it("accepts the same judgment when it declares carriedFrom", async () => {
+		const issues = await provenanceOf(async (root) => {
+			await seed(
+				root,
+				"epoch-1",
+				[header("epoch-1"), profile("epoch-1")],
+				'{"run":1}',
+			);
+			await seed(
+				root,
+				"epoch-2",
+				[
+					header("epoch-2", { processId: 99, peakRssBytes: 2048 }),
+					profile("epoch-2", {
+						carriedFrom: { epochId: "epoch-1", profileDigest: DIGEST },
+					}),
+				],
+				'{"run":2}',
+			);
+		});
+		expect(issues).toEqual([]);
+	});
+
+	it("rejects raw command output copied from a predecessor epoch", async () => {
+		const issues = await provenanceOf(async (root) => {
+			await seed(root, "epoch-1", [header("epoch-1")], '{"run":"same"}');
+			await seed(
+				root,
+				"epoch-2",
+				[header("epoch-2", { processId: 99, peakRssBytes: 2048 })],
+				'{"run":"same"}',
+			);
+		});
+		expect(issues).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(/raw\/normal\.json is byte-identical to epoch-1/),
+			]),
+		);
+	});
+
+	it("reports no provenance issue for a genuinely distinct successor", async () => {
+		const issues = await provenanceOf(async (root) => {
+			await seed(
+				root,
+				"epoch-1",
+				[header("epoch-1"), profile("epoch-1")],
+				'{"run":1}',
+			);
+			await seed(
+				root,
+				"epoch-2",
+				[
+					header("epoch-2", { processId: 99, peakRssBytes: 2048 }),
+					profile("epoch-2", { disposition: { value: "strengthen" } }),
+				],
+				'{"run":2}',
+			);
+		});
+		expect(issues).toEqual([]);
 	});
 });

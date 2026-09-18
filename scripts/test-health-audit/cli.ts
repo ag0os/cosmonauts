@@ -4,6 +4,7 @@ import {
 	type EpochManifest,
 	prepareProfileWorkQueue,
 	readCurrentEpochManifest,
+	validateEpochProvenance,
 } from "./artifacts.ts";
 import {
 	type CensusResult,
@@ -306,6 +307,11 @@ async function defaultPublishUnit(
 async function defaultValidate(root: string): Promise<boolean> {
 	const manifest = await readCurrentEpochManifest(root);
 	await validateCensusDigests(root, manifest);
+	const provenance = await validateEpochProvenance(root, manifest);
+	if (provenance.length > 0)
+		throw new Error(
+			`epoch provenance is falsified:\n${provenance.map((issue) => `  - ${issue}`).join("\n")}`,
+		);
 	return true;
 }
 

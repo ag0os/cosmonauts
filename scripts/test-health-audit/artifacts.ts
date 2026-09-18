@@ -1631,6 +1631,7 @@ export async function validateProfileEpoch(
 		issues.push(
 			"current epoch must contain exactly one profile per auditable identity",
 		);
+	issues.push(...(await validateEpochProvenance(root, manifest)));
 	return {
 		valid: issues.length === 0,
 		complete:
@@ -2127,6 +2128,175 @@ function agentAssessedValues(profile: TestEvidenceProfile) {
 		profile.portfolioContributions,
 		profile.disposition,
 	];
+}
+
+interface EpochExecutionSnapshot {
+	readonly units: ReadonlyMap<string, string>;
+	readonly profiles: ReadonlyMap<
+		string,
+		{ readonly digest: string; readonly carried: boolean }
+	>;
+	readonly commandOutputs: ReadonlyMap<string, string>;
+}
+
+/**
+ * Collapses the fields a forged epoch can cheaply restamp — `assessedAt` and
+ * every embedded reference to the epoch's own id — so that a profile carried
+ * over from a predecessor digests identically to its source.
+ */
+function executionLineageDigest(profile: unknown, epochId: string): string {
+	const scrub = (node: unknown): unknown => {
+		if (Array.isArray(node)) return node.map(scrub);
+		if (node !== null && typeof node === "object") {
+			const record = node as Record<string, unknown>;
+			// An epoch's own manifest and raw outputs are cited as material inputs,
+			// and their digests differ per epoch by construction. Dropping them lets
+			// a carried judgment match the predecessor it was copied from.
+			const epochScoped =
+				typeof record.path === "string" &&
+				record.path.replaceAll("\\", "/").includes("/audit/epochs/");
+			const out: Record<string, unknown> = {};
+			for (const [key, value] of Object.entries(record)) {
+				if (key === "assessedAt" || key === "carriedFrom") continue;
+				if (epochScoped && key === "sha256") continue;
+				out[key] = scrub(value);
+			}
+			return out;
+		}
+		if (typeof node === "string") return node.split(epochId).join("<epoch>");
+		return node;
+	};
+	return digestJson(scrub(profile));
+}
+
+async function readEpochExecutionSnapshot(
+	root: string,
+	epochId: string,
+	commandIds: readonly string[],
+): Promise<EpochExecutionSnapshot> {
+	const units = new Map<string, string>();
+	const profiles = new Map<string, { digest: string; carried: boolean }>();
+	const commandOutputs = new Map<string, string>();
+	const profileDirectory = join(root, "epochs", epochId, "profiles");
+	let names: string[] = [];
+	try {
+		names = await readdir(profileDirectory);
+	} catch (error) {
+		if (!isMissing(error)) throw error;
+	}
+	for (const name of names.filter((candidate) =>
+		candidate.endsWith(".ndjson"),
+	)) {
+		const lines = (await readFile(join(profileDirectory, name), "utf8"))
+			.split(/\r?\n/)
+			.filter(Boolean);
+		const [headerLine] = lines;
+		if (headerLine === undefined) continue;
+		// A malformed shard is reported by the caller's own parse; provenance
+		// simply has nothing to compare and must not mask that diagnosis.
+		let parsed: readonly unknown[];
+		try {
+			parsed = lines.map((line) => JSON.parse(line) as unknown);
+		} catch {
+			continue;
+		}
+		const header = parsed[0] as {
+			unitId?: string;
+			processId?: number;
+			processStartedAt?: string;
+			processEndedAt?: string;
+			peakRssBytes?: number;
+		};
+		if (typeof header.unitId === "string")
+			units.set(
+				header.unitId,
+				digestJson([
+					header.processId,
+					header.processStartedAt,
+					header.processEndedAt,
+					header.peakRssBytes,
+				]),
+			);
+		for (const entry of parsed.slice(1)) {
+			const profile = entry as {
+				id?: string;
+				carriedFrom?: unknown;
+			};
+			if (typeof profile.id === "string")
+				profiles.set(profile.id, {
+					digest: executionLineageDigest(profile, epochId),
+					carried: profile.carriedFrom !== undefined,
+				});
+		}
+	}
+	const rawDirectory = join(root, "epochs", epochId, "raw");
+	for (const commandId of commandIds)
+		for (const suffix of [".json", ".reporter.json"]) {
+			const file = `${commandId}${suffix}`;
+			try {
+				commandOutputs.set(
+					file,
+					createHash("sha256")
+						.update(await readFile(join(rawDirectory, file)))
+						.digest("hex"),
+				);
+			} catch (error) {
+				if (!isMissing(error)) throw error;
+			}
+		}
+	return { units, profiles, commandOutputs };
+}
+
+/**
+ * Proves the current epoch actually executed rather than restamping a
+ * predecessor. Every rule below is a physical impossibility for two distinct
+ * executions, so a violation is falsified provenance rather than drift.
+ */
+export async function validateEpochProvenance(
+	root: string,
+	manifest: EpochManifest,
+): Promise<string[]> {
+	const index = await readAuditIndex(root);
+	const position = index.epochIds.indexOf(manifest.epochId);
+	const predecessors = index.epochIds.slice(
+		0,
+		position < 0 ? index.epochIds.length : position,
+	);
+	if (predecessors.length === 0) return [];
+	const commandIds = manifest.commandDefinitions.map(
+		(definition) => definition.id,
+	);
+	const current = await readEpochExecutionSnapshot(
+		root,
+		manifest.epochId,
+		commandIds,
+	);
+	const issues: string[] = [];
+	for (const predecessorId of predecessors) {
+		const prior = await readEpochExecutionSnapshot(
+			root,
+			predecessorId,
+			commandIds,
+		);
+		for (const [unitId, digest] of current.units)
+			if (prior.units.get(unitId) === digest)
+				issues.push(
+					`${unitId}: unit reuses the process identity and memory ceiling recorded in ${predecessorId}, which one execution cannot share with another`,
+				);
+		for (const [profileId, entry] of current.profiles) {
+			if (entry.carried) continue;
+			if (prior.profiles.get(profileId)?.digest === entry.digest)
+				issues.push(
+					`${profileId}: profile is identical to ${predecessorId} but does not declare carriedFrom`,
+				);
+		}
+		for (const [file, digest] of current.commandOutputs)
+			if (prior.commandOutputs.get(file) === digest)
+				issues.push(
+					`raw/${file} is byte-identical to ${predecessorId}, so the suite was not re-executed for this epoch`,
+				);
+	}
+	return issues;
 }
 
 async function findProfileInEpoch(
