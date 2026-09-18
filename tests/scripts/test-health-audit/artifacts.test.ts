@@ -9,6 +9,7 @@ import {
 	CALIBRATION_CONTROL_OBLIGATIONS,
 	CANDIDATE_BUNDLES,
 	canonicalCandidateDigest,
+	deriveBaselineConditions,
 	digestMaterialInput,
 	evaluateBaseline,
 	openAuditEpoch,
@@ -2141,6 +2142,74 @@ describe("test health audit epoch provenance", () => {
 				},
 			).issues,
 		).toContain("baseline must not carry a score field");
+		// Conditions are derived from evidence, and a probe counts only with the
+		// whole trace on the record: green, red for the expected declaration,
+		// green again after exact restoration.
+		const criticalPortfolio = {
+			inventoryId: "BRI-001",
+			criticality: "critical",
+			conclusion: "protected",
+			probe: {
+				required: true,
+				requirementId: "PROBE-BRI-001",
+				status: "confirmed",
+			},
+		};
+		const confirmedProbe = {
+			probeId: "PROBE-BRI-001",
+			outcome: "probe-confirmed",
+			runs: {
+				preMutation: { state: "green" },
+				mutated: { state: "red", expectedFailureObserved: true },
+				restored: { state: "green" },
+			},
+		};
+		const probeEvidence = {
+			censusState: "complete",
+			findings: [],
+			profiles: [],
+			countedProfileIds: [],
+			portfolioEntries: [criticalPortfolio],
+			ledgerRows: [],
+			probeRecords: [confirmedProbe],
+			residualUncertainty: [],
+		};
+		const derived = deriveBaselineConditions(probeEvidence);
+		expect(derived.find((row) => row.id === 6)).toMatchObject({
+			status: "met",
+		});
+		for (const broken of [
+			{ preMutation: { state: "red" } },
+			{ mutated: { state: "green", expectedFailureObserved: true } },
+			{ mutated: { state: "red", expectedFailureObserved: false } },
+			{ restored: { state: "red" } },
+		]) {
+			const weakened = deriveBaselineConditions({
+				...probeEvidence,
+				probeRecords: [
+					{ ...confirmedProbe, runs: { ...confirmedProbe.runs, ...broken } },
+				],
+			});
+			expect(weakened.find((row) => row.id === 6)).toMatchObject({
+				status: "not-met",
+			});
+		}
+		// A portfolio that is not protected fails condition 4 on its own.
+		expect(
+			deriveBaselineConditions({
+				...probeEvidence,
+				portfolioEntries: [
+					{ ...criticalPortfolio, conclusion: "partially-protected" },
+				],
+			}).find((row) => row.id === 4),
+		).toMatchObject({ status: "not-met" });
+		expect(
+			deriveBaselineConditions({
+				...probeEvidence,
+				censusState: "incomplete",
+			}).find((row) => row.id === 1),
+		).toMatchObject({ status: "not-met" });
+
 		expect(
 			validateBaselineDocument(
 				document,

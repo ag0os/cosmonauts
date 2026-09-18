@@ -3178,7 +3178,11 @@ export interface BaselineEvidenceInput {
 		readonly inventoryId: string;
 		readonly criticality: string;
 		readonly conclusion: string;
-		readonly probe: { readonly required: boolean; readonly status: string };
+		readonly probe: {
+			readonly required: boolean;
+			readonly requirementId: string;
+			readonly status: string;
+		};
 	}[];
 	readonly ledgerRows: readonly {
 		readonly id: string;
@@ -3186,10 +3190,16 @@ export interface BaselineEvidenceInput {
 		readonly packetQuestion?: { readonly id?: unknown };
 	}[];
 	readonly probeRecords: readonly {
-		readonly requirementId?: string;
+		readonly probeId?: string;
 		readonly outcome?: string;
-		readonly expectedRed?: boolean;
-		readonly restoredGreen?: boolean;
+		readonly runs?: {
+			readonly preMutation?: { readonly state?: string };
+			readonly mutated?: {
+				readonly state?: string;
+				readonly expectedFailureObserved?: boolean;
+			};
+			readonly restored?: { readonly state?: string };
+		};
 	}[];
 	readonly residualUncertainty: readonly {
 		readonly id: string;
@@ -3243,14 +3253,21 @@ export function deriveBaselineConditions(
 
 	const requiredProbeIds = input.portfolioEntries
 		.filter((entry) => entry.probe.required)
-		.map((entry) => entry.inventoryId);
+		.map((entry) => entry.probe.requirementId);
+	// A probe only counts when the whole sequence is on the record: green before
+	// the defect, red for the expected declaration under it, green again after
+	// exact restoration. A confirmed outcome without that trace is a claim.
 	const confirmedProbes = new Set(
 		input.probeRecords
 			.filter(
 				(record) =>
-					record.expectedRed === true && record.restoredGreen === true,
+					record.outcome === "probe-confirmed" &&
+					record.runs?.preMutation?.state === "green" &&
+					record.runs?.mutated?.state === "red" &&
+					record.runs?.mutated?.expectedFailureObserved === true &&
+					record.runs?.restored?.state === "green",
 			)
-			.map((record) => String(record.requirementId)),
+			.map((record) => String(record.probeId)),
 	);
 	const missingProbes = requiredProbeIds.filter(
 		(id) => !confirmedProbes.has(id),

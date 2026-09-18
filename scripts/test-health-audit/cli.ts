@@ -781,16 +781,23 @@ async function readBaselineEvidence(root: string, manifest: EpochManifest) {
 						inventoryId: string;
 						criticality: string;
 						conclusion: string;
-						probe: { required: boolean; status: string };
+						probe: {
+							required: boolean;
+							requirementId: string;
+							status: string;
+						};
 					}[];
 				}
 			).entries ?? [],
 		ledgerRows: ledger.rows ?? [],
 		probeRecords: probeRecords as {
-			requirementId?: string;
+			probeId?: string;
 			outcome?: string;
-			expectedRed?: boolean;
-			restoredGreen?: boolean;
+			runs?: {
+				preMutation?: { state?: string };
+				mutated?: { state?: string; expectedFailureObserved?: boolean };
+				restored?: { state?: string };
+			};
 		}[],
 		residualUncertainty,
 	};
