@@ -113,3 +113,31 @@ must be re-collected once the epoch carries its deliverables.
 Neither finding is visible from a single epoch — both require moving the index,
 which is why nine calibration waves and seven certified stages never surfaced
 them.
+
+### 2026-09-18 — chosen fix for the circularity (user-selected, not yet built)
+
+The successor epoch seeds its deliverables before its census runs. Carry-forward
+is extended to bring `behavior-risk-inventory.json`, `behavior-risk-matrix.md`,
+`calibration.md`, `gap-register.md`, `probe-definitions.json`, `probe-queue.json`
+and the probe records across from the predecessor under the same rehash rule that
+governs profiles. The marker tests then resolve against a populated current
+epoch, and the census observes a suite that is green for real reasons.
+
+Rejected alternatives, both offered and declined: collecting the census while the
+predecessor is still current (avoids the circularity but loosens D-013's rule
+that an epoch freezes the inputs its census was taken against), and relaxing the
+B-004/B-006/B-009 marker tests to resolve against the most recent epoch holding
+each artifact (smallest change, but it retires a guard that currently pins every
+deliverable to the epoch it describes).
+
+Ordering for whoever runs this:
+
+    open epoch
+      -> carry deliverables from predecessor
+      -> census                      (suite green, evidence uncontaminated)
+      -> prepare-units -> carry-forward profiles   (66 of 70 units)
+      -> assess the 4 dirty units + the new declarations
+      -> write the real remediation ledger
+
+Not built. Work stopped here by decision, with the tooling committed and the
+rebuild specified.
