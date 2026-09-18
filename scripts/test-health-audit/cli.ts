@@ -1,13 +1,25 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
+	CANDIDATE_BUNDLES,
+	canonicalCandidateDigest,
+	deriveBaselineConditions,
 	type EpochManifest,
+	evaluateBaseline,
+	parseBaselineDocument,
 	parseCalibrationDocument,
+	parseGateRecommendationsDocument,
 	parseRemediationLedgerDocument,
 	prepareProfileWorkQueue,
+	publishProfileIndex,
 	readCurrentEpochManifest,
+	readEpochProfiles,
+	validateBaselineDocument,
 	validateCalibrationRecord,
+	validateCandidateBundles,
 	validateEpochProvenance,
+	validateGateRecommendations,
 	validateRemediationLedger,
 } from "./artifacts.ts";
 import { carryForwardProfileUnits } from "./carry-forward.ts";
@@ -20,7 +32,10 @@ import {
 	sourceCensusDigest,
 } from "./census.ts";
 import { dispatchProfileUnits } from "./dispatch.ts";
-import { validatePortfolioEvidenceDocuments } from "./portfolio.ts";
+import {
+	parsePortfolioEvidenceDocument,
+	validatePortfolioEvidenceDocuments,
+} from "./portfolio.ts";
 import { runConfirmedProbe } from "./probe.ts";
 import type { RuntimeEvidence } from "./runtime-reporter.ts";
 import { collectSourceTree, type SourceCensus } from "./source-census.ts";
@@ -38,6 +53,7 @@ export interface CliDependencies {
 	readonly validate?: (root: string) => Promise<unknown>;
 	readonly probe?: (root: string, id: string) => Promise<unknown>;
 	readonly baseline?: (root: string) => Promise<unknown>;
+	readonly assemble?: (root: string) => Promise<unknown>;
 }
 export async function runCli(
 	argv: readonly string[],
@@ -79,6 +95,10 @@ export async function runCli(
 			await (dependencies.baseline ?? defaultBaseline)(parsed.root);
 			return 0;
 		}
+		if (parsed.command === "assemble") {
+			await (dependencies.assemble ?? defaultAssemble)(parsed.root);
+			return 0;
+		}
 		if (!parsed.confirmProbe)
 			throw new Error("probe requires --confirm-probe <id>");
 		await (dependencies.probe ?? defaultProbe)(
@@ -102,14 +122,15 @@ function parseArguments(argv: readonly string[]): {
 		| "carry-forward"
 		| "validate"
 		| "probe"
-		| "baseline";
+		| "baseline"
+		| "assemble";
 	confirmProbe?: string;
 	unitId?: string;
 	inputPath?: string;
 } {
 	if (argv[0] !== "--audit-root" || !argv[1])
 		throw new Error(
-			"usage: cli.ts --audit-root <path> <census|prepare-units|dispatch|publish-unit|carry-forward|validate|probe|baseline>",
+			"usage: cli.ts --audit-root <path> <census|prepare-units|dispatch|publish-unit|carry-forward|assemble|validate|probe|baseline>",
 		);
 	const command = argv[2];
 	if (
@@ -123,6 +144,7 @@ function parseArguments(argv: readonly string[]): {
 			"validate",
 			"probe",
 			"baseline",
+			"assemble",
 		].includes(command)
 	)
 		throw new Error(`unsupported audit command ${command ?? "<missing>"}`);
@@ -141,6 +163,7 @@ function parseArguments(argv: readonly string[]): {
 			| "dispatch"
 			| "publish-unit"
 			| "carry-forward"
+			| "assemble"
 			| "validate"
 			| "probe"
 			| "baseline",
@@ -423,6 +446,44 @@ async function validateEpochDeliverables(
 			...result.issues.map((issue) => `remediation-ledger: ${issue}`),
 		);
 	}
+
+	const recommendations = await readIfPresent(
+		join(epoch, "gate-recommendations.md"),
+	);
+	if (recommendations) {
+		const result = validateGateRecommendations(
+			parseGateRecommendationsDocument(recommendations),
+			manifest.epochId,
+		);
+		issues.push(
+			...result.issues.map((issue) => `gate-recommendations: ${issue}`),
+		);
+	}
+
+	// A candidate is an epoch that has reached `baseline.md`. Before that the
+	// bundle set is legitimately partial, so completeness is only demanded here.
+	if (baselineDocument) {
+		const bundles = await readCandidateBundleState(root, manifest);
+		issues.push(...bundles.issues.map((issue) => `bundles: ${issue}`));
+		const evidence = await readBaselineEvidence(root, manifest);
+		const conditions = deriveBaselineConditions(evidence);
+		const digest = await computeCandidateDigest(root, manifest, conditions);
+		const result = validateBaselineDocument(
+			baselineDocument,
+			parseBaselineDocument(baselineDocument),
+			{
+				epochId: manifest.epochId,
+				evaluatedRevision: manifest.evaluatedRevision,
+				candidateEvidenceDigest: digest,
+				packetQuestionIds: evidence.ledgerRows.flatMap((row) =>
+					row.outcome === "unresolved" && row.packetQuestion?.id
+						? [String(row.packetQuestion.id)]
+						: [],
+				),
+			},
+		);
+		issues.push(...result.issues.map((issue) => `baseline: ${issue}`));
+	}
 	return issues;
 }
 
@@ -557,14 +618,432 @@ async function defaultProbe(root: string, id: string): Promise<void> {
 		confirmation: id,
 	});
 }
+
+/**
+ * Bundle 3's index is derived from the shards, so it is regenerated rather than
+ * maintained. Running this after a dispatch or carry keeps the candidate's
+ * profile bundle addressable without any agent writing an index by hand.
+ */
+async function defaultAssemble(root: string): Promise<void> {
+	const manifest = await readCurrentEpochManifest(root);
+	const index = await publishProfileIndex(root, manifest.epochId);
+	const bundles = await readCandidateBundleState(root, manifest);
+	process.stdout.write(
+		`${JSON.stringify(
+			{
+				epochId: manifest.epochId,
+				profileCount: index.profileCount,
+				unitCount: index.units.length,
+				bundles,
+			},
+			null,
+			2,
+		)}\n`,
+	);
+}
+
+async function readCandidateBundleState(
+	root: string,
+	manifest: EpochManifest,
+): Promise<{
+	valid: boolean;
+	issues: readonly string[];
+	missingBundleIds: readonly number[];
+}> {
+	const epoch = join(root, "epochs", manifest.epochId);
+	const present: string[] = [];
+	const profileUnitFiles: string[] = [];
+	for (const bundle of CANDIDATE_BUNDLES)
+		for (const file of bundle.files)
+			if ((await readIfPresent(join(epoch, file))) !== undefined)
+				present.push(file);
+	let shardNames: string[] = [];
+	try {
+		shardNames = await readdir(join(epoch, "profiles"));
+	} catch (error) {
+		if (!isMissingFile(error)) throw error;
+	}
+	for (const name of shardNames.filter((candidate) =>
+		candidate.endsWith(".ndjson"),
+	)) {
+		const file = `profiles/${name}`;
+		present.push(file);
+		profileUnitFiles.push(file);
+	}
+	const method = manifest.materialInputs.find(
+		(input) => input.path === "docs/test-health-audit.md",
+	);
+	return validateCandidateBundles({
+		epochId: manifest.epochId,
+		files: present,
+		profileUnitFiles,
+		...(method ? { method: { path: method.path, sha256: method.sha256 } } : {}),
+	});
+}
+
+/**
+ * Recomputes the value the owner ratifies. It is derived from evidence on every
+ * call rather than read back from `baseline.md`, so a document claiming a
+ * digest its own evidence no longer produces fails instead of confirming
+ * itself.
+ */
+async function computeCandidateDigest(
+	root: string,
+	manifest: EpochManifest,
+	conditions: readonly { id: number; status: string }[],
+): Promise<string> {
+	const epoch = join(root, "epochs", manifest.epochId);
+	const bundleDigests: {
+		bundleId: number;
+		file: string;
+		sha256: string;
+	}[] = [];
+	for (const bundle of CANDIDATE_BUNDLES) {
+		if (bundle.id === 10) continue;
+		for (const file of bundle.files) {
+			const text = await readIfPresent(join(epoch, file));
+			if (text === undefined) continue;
+			bundleDigests.push({
+				bundleId: bundle.id,
+				file,
+				sha256: createHash("sha256").update(text).digest("hex"),
+			});
+		}
+	}
+	return canonicalCandidateDigest({
+		evaluatedRevision: manifest.evaluatedRevision,
+		materialInputs: manifest.materialInputs.map((input) => ({
+			path: input.path,
+			inputKind: "material",
+			sha256: input.sha256,
+		})),
+		bundleDigests,
+		baselineConditions: conditions.map((row) => ({
+			id: row.id,
+			status: row.status,
+		})),
+	});
+}
+
+async function readBaselineEvidence(root: string, manifest: EpochManifest) {
+	const epoch = join(root, "epochs", manifest.epochId);
+	const integrity = JSON.parse(
+		(await readIfPresent(join(epoch, "suite-integrity.json"))) ?? "{}",
+	) as {
+		state?: string;
+		findings?: {
+			id: string;
+			kind: string;
+			basis: string;
+			accountedFor: boolean;
+		}[];
+	};
+	const matrixText = await readIfPresent(
+		join(epoch, "behavior-risk-matrix.md"),
+	);
+	const portfolio = matrixText
+		? parsePortfolioEvidenceDocument(matrixText)
+		: { entries: [] };
+	const ledgerText = await readIfPresent(join(epoch, "remediation-ledger.md"));
+	const ledger = ledgerText
+		? (parseRemediationLedgerDocument(ledgerText) as {
+				rows?: {
+					id: string;
+					outcome: string;
+					packetQuestion?: { id?: unknown };
+				}[];
+			})
+		: { rows: [] };
+	const probesText = await readIfPresent(join(epoch, "probes.jsonl"));
+	const probeRecords = (probesText ?? "")
+		.split(/\r?\n/)
+		.filter(Boolean)
+		.map((line) => JSON.parse(line) as Record<string, unknown>);
+	const uncertaintyText = await readIfPresent(
+		join(epoch, "residual-uncertainty.md"),
+	);
+	const residualUncertainty = uncertaintyText
+		? (parseResidualUncertaintyDocument(uncertaintyText).entries ?? [])
+		: [];
+	const profiles = [
+		...(await readEpochProfiles(root, manifest.epochId)).values(),
+	];
+	const countedProfileIds = countedGuardrailProfileIds(portfolio);
+	return {
+		censusState: integrity.state ?? "incomplete",
+		findings: integrity.findings ?? [],
+		profiles,
+		countedProfileIds,
+		portfolioEntries:
+			(
+				portfolio as {
+					entries?: {
+						inventoryId: string;
+						criticality: string;
+						conclusion: string;
+						probe: { required: boolean; status: string };
+					}[];
+				}
+			).entries ?? [],
+		ledgerRows: ledger.rows ?? [],
+		probeRecords: probeRecords as {
+			requirementId?: string;
+			outcome?: string;
+			expectedRed?: boolean;
+			restoredGreen?: boolean;
+		}[],
+		residualUncertainty,
+	};
+}
+
+/** A profile counts as guardrail evidence where a portfolio cell relies on it. */
+function countedGuardrailProfileIds(portfolio: unknown): string[] {
+	const entries =
+		(portfolio as { entries?: Record<string, unknown>[] }).entries ?? [];
+	const counted = new Set<string>();
+	for (const entry of entries) {
+		const axes = (entry.axes ?? {}) as Record<string, unknown>;
+		for (const cells of Object.values(axes))
+			for (const cell of (cells ?? []) as {
+				state?: string;
+				profileIds?: string[];
+			}[])
+				if (cell.state === "protected" || cell.state === "contributing")
+					for (const id of cell.profileIds ?? []) counted.add(id);
+	}
+	return [...counted];
+}
+
+export function parseResidualUncertaintyDocument(document: string): {
+	entries?: {
+		id: string;
+		criticality: string;
+		bounded: boolean;
+		documented: boolean;
+	}[];
+} {
+	const match = document.match(
+		/```json residual-uncertainty\n([\s\S]*?)\n```/u,
+	);
+	if (!match?.[1])
+		throw new Error("residual uncertainty JSON block is missing");
+	return JSON.parse(match[1]) as {
+		entries?: {
+			id: string;
+			criticality: string;
+			bounded: boolean;
+			documented: boolean;
+		}[];
+	};
+}
+
+const OWNER_SECTION = "## Owner ratification";
+
+/**
+ * The owner appends their decision in a later commit. Automation reads that
+ * block and must never author one, so this only ever parses.
+ */
+function readOwnerBlock(document: string): unknown {
+	const match = document.match(/```json owner-ratification\n([\s\S]*?)\n```/u);
+	if (!match?.[1]) return undefined;
+	try {
+		return JSON.parse(match[1]) as unknown;
+	} catch {
+		return { malformed: true };
+	}
+}
+
+/** Everything from the owner's heading onward, preserved byte for byte. */
+function existingOwnerSection(document: string | undefined): string {
+	if (!document) return "";
+	const index = document.indexOf(`\n${OWNER_SECTION}`);
+	return index < 0 ? "" : document.slice(index);
+}
+
+function renderBaselineDocument(options: {
+	manifest: EpochManifest;
+	candidateEvidenceDigest: string;
+	evaluation: ReturnType<typeof evaluateBaseline>;
+	evidence: Awaited<ReturnType<typeof readBaselineEvidence>>;
+	packetQuestionIds: readonly string[];
+	existing: string | undefined;
+}): string {
+	const { evaluation, evidence, manifest } = options;
+	const record = {
+		schemaVersion: 1,
+		epochId: manifest.epochId,
+		evaluatedRevision: manifest.evaluatedRevision,
+		candidateEvidenceDigest: options.candidateEvidenceDigest,
+		verdict: evaluation.verdict,
+		eligibility: evaluation.eligibility,
+		conditions: evaluation.rows,
+	};
+	const criticalPortfolios = evidence.portfolioEntries.filter(
+		(entry) => entry.criticality === "critical",
+	);
+	const unresolvedRows = evidence.ledgerRows.filter(
+		(row) => row.outcome === "unresolved",
+	);
+	const lines = [
+		"# Test health baseline",
+		"",
+		`Epoch \`${manifest.epochId}\` at revision \`${manifest.evaluatedRevision}\`.`,
+		"",
+		"```json baseline",
+		JSON.stringify(record, null, 2),
+		"```",
+		"",
+		"## Ratification packet",
+		"",
+		`Evaluated revision: \`${manifest.evaluatedRevision}\``,
+		`Candidate evidence digest: \`${options.candidateEvidenceDigest}\``,
+		`Verdict: **${evaluation.verdict}** (${evaluation.eligibility})`,
+		"",
+		"### Baseline conditions",
+		"",
+		"| # | Condition | Status | Reasons |",
+		"|---:|---|---|---|",
+		...evaluation.rows.map(
+			(row) =>
+				`| ${row.id} | ${row.name} | ${row.status} | ${
+					row.reasons.length === 0
+						? "—"
+						: row.reasons.map(markdownCell).join("<br>")
+				} |`,
+		),
+		"",
+		"### Critical portfolios",
+		"",
+		criticalPortfolios.length === 0
+			? "No portfolio is classified critical in this epoch."
+			: [
+					"| Inventory | Conclusion | Probe |",
+					"|---|---|---|",
+					...criticalPortfolios.map(
+						(entry) =>
+							`| ${entry.inventoryId} | ${entry.conclusion} | ${entry.probe.status} |`,
+					),
+				].join("\n"),
+		"",
+		"### Remediation outcomes",
+		"",
+		evidence.ledgerRows.length === 0
+			? "No remediation ledger row is recorded for this epoch."
+			: [
+					"| Row | Outcome |",
+					"|---|---|",
+					...evidence.ledgerRows.map((row) => `| ${row.id} | ${row.outcome} |`),
+				].join("\n"),
+		"",
+		"### Residual uncertainty",
+		"",
+		evidence.residualUncertainty.length === 0
+			? "No residual uncertainty is registered for this epoch."
+			: [
+					"| ID | Criticality | Bounded | Documented |",
+					"|---|---|---|---|",
+					...evidence.residualUncertainty.map(
+						(entry) =>
+							`| ${entry.id} | ${entry.criticality} | ${entry.bounded} | ${entry.documented} |`,
+					),
+				].join("\n"),
+		"",
+		"### Questions for the project owner",
+		"",
+		unresolvedRows.length === 0
+			? "No confirmed weakness lacks a ratified authority, so the packet asks no contract question."
+			: unresolvedRows
+					.map((row) => {
+						const question = row.packetQuestion as
+							| {
+									id?: unknown;
+									question?: unknown;
+									options?: unknown[];
+									recommendation?: unknown;
+							  }
+							| undefined;
+						return [
+							`- **${String(question?.id ?? row.id)}** — ${String(question?.question ?? "")}`,
+							...((question?.options ?? []) as unknown[]).map(
+								(option) => `  - Option: ${String(option)}`,
+							),
+							`  - Recommendation: ${String(question?.recommendation ?? "")}`,
+						].join("\n");
+					})
+					.join("\n"),
+		"",
+		"### The decision asked of the owner",
+		"",
+		"1. Accept or decline the baseline for the evaluated revision and digest above.",
+		"2. Accept, by exact ID, the residual uncertainty listed above.",
+		"3. Answer every contract question listed above.",
+		"",
+		"To ratify, append an `## Owner ratification` section containing a",
+		"`json owner-ratification` block with `decision`, `ratifiedBy`,",
+		"`evaluatedRevision`, `candidateEvidenceDigest`, and `acceptedUncertaintyIds`.",
+		"Automation cannot write that block.",
+	];
+	return `${lines.join("\n")}\n${existingOwnerSection(options.existing)}`;
+}
+
+/**
+ * Stage 10. Derives conditions 1-7 from the epoch's own evidence, recomputes
+ * the candidate digest, and renders the record. Any owner ratification block
+ * already in the document is preserved verbatim and re-read as input — this
+ * command never writes one, which is the whole of the automation boundary.
+ */
 async function defaultBaseline(root: string): Promise<string> {
 	const manifest = await readCurrentEpochManifest(root);
-	await writeFile(
-		join(root, "epochs", manifest.epochId, "baseline.md"),
-		"# Test health baseline\n\nVerdict: not established\n",
-		{ flag: "wx" },
+	const path = join(root, "epochs", manifest.epochId, "baseline.md");
+	const evidence = await readBaselineEvidence(root, manifest);
+	const conditions = deriveBaselineConditions(evidence);
+	const candidateEvidenceDigest = await computeCandidateDigest(
+		root,
+		manifest,
+		conditions,
 	);
-	return "not established";
+	const existing = await readIfPresent(path);
+	const ownerRatification = existing ? readOwnerBlock(existing) : undefined;
+	const evaluation = evaluateBaseline({
+		epochId: manifest.epochId,
+		evaluatedRevision: manifest.evaluatedRevision,
+		candidateEvidenceDigest,
+		conditions,
+		residualUncertaintyIds: evidence.residualUncertainty.map(
+			(entry) => entry.id,
+		),
+		...(ownerRatification ? { ownerRatification } : {}),
+	});
+	const packetQuestionIds = evidence.ledgerRows.flatMap((row) =>
+		row.outcome === "unresolved" && row.packetQuestion?.id
+			? [String(row.packetQuestion.id)]
+			: [],
+	);
+	await writeTextAtomic(
+		path,
+		renderBaselineDocument({
+			manifest,
+			candidateEvidenceDigest,
+			evaluation,
+			evidence,
+			packetQuestionIds,
+			existing,
+		}),
+	);
+	process.stdout.write(
+		`${JSON.stringify(
+			{
+				epochId: manifest.epochId,
+				verdict: evaluation.verdict,
+				eligibility: evaluation.eligibility,
+				failingConditionIds: evaluation.failingConditionIds,
+				candidateEvidenceDigest,
+			},
+			null,
+			2,
+		)}\n`,
+	);
+	return evaluation.verdict;
 }
 async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
 	await writeTextAtomic(path, `${JSON.stringify(value, null, 2)}\n`);

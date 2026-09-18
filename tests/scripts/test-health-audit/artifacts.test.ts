@@ -4,15 +4,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	BASELINE_CONDITIONS,
 	buildProfileWorkQueue,
 	CALIBRATION_CONTROL_OBLIGATIONS,
+	CANDIDATE_BUNDLES,
+	canonicalCandidateDigest,
 	digestMaterialInput,
+	evaluateBaseline,
 	openAuditEpoch,
+	parseBaselineDocument,
 	parseCalibrationDocument,
+	parseGateRecommendationsDocument,
 	publishProfileUnit,
+	validateBaselineDocument,
 	validateBehaviorRiskInventory,
 	validateCalibrationRecord,
+	validateCandidateBundles,
 	validateEpochProvenance,
+	validateGateRecommendations,
 	validateProfileEpoch,
 	validateRemediationLedger,
 } from "../../../scripts/test-health-audit/artifacts.ts";
@@ -1793,5 +1802,356 @@ describe("test health audit epoch provenance", () => {
 			);
 		});
 		expect(issues).toEqual([]);
+	});
+	// @cosmo-behavior plan:test-health-audit#B-010
+	it("validates all ten bundles in one epoch and forbids heuristic CI activation or active-plan coupling", () => {
+		const epochId = "epoch-candidate";
+		const methodDigest = "b".repeat(64);
+		const bundleFiles = CANDIDATE_BUNDLES.flatMap((bundle) => bundle.files);
+		const shard = "profiles/profile-unit-0001-abcdef012345.ndjson";
+		const complete = {
+			epochId,
+			files: [...bundleFiles, shard],
+			method: { path: "docs/test-health-audit.md", sha256: methodDigest },
+			profileUnitFiles: [shard],
+		};
+		expect(validateCandidateBundles(complete)).toMatchObject({
+			valid: true,
+			missingBundleIds: [],
+		});
+
+		// A bundle short of one file is a partial set, not a candidate.
+		const withoutGapRegister = validateCandidateBundles({
+			...complete,
+			files: complete.files.filter((file) => file !== "gap-register.md"),
+		});
+		expect(withoutGapRegister.valid).toBe(false);
+		expect(withoutGapRegister.missingBundleIds).toEqual([4]);
+		expect(
+			validateCandidateBundles({ ...complete, method: undefined }),
+		).toMatchObject({ valid: false, missingBundleIds: [1] });
+		expect(
+			validateCandidateBundles({ ...complete, profileUnitFiles: [] }).issues,
+		).toContain("bundle 3 must contain at least one profile unit shard");
+
+		// The bundles are addressed relative to an epoch directory, so a fixture
+		// root works and the validator outlives this plan's own audit directory.
+		for (const file of bundleFiles) {
+			expect(file.startsWith("/")).toBe(false);
+			expect(file).not.toContain("missions/plans");
+		}
+
+		const recommendations = {
+			schemaVersion: 1,
+			epochId,
+			items: [
+				{
+					id: "GATE-001",
+					check: "source census reconciles against runtime discovery",
+					label: "objective-candidate",
+					calibrationCitations: ["calibration.md control N-001"],
+					limitations: ["watch surface observes only the initial cycle"],
+					activation: "none",
+					enforcedInCi: false,
+				},
+				{
+					id: "GATE-002",
+					check: "assessed grounding conclusions stay stable between waves",
+					label: "agent-assessed-heuristic",
+					calibrationCitations: ["calibration.md control X-004"],
+					limitations: ["agent judgment is reasoned, not observed"],
+					activation: "none",
+					enforcedInCi: false,
+				},
+			],
+			orderedQualityContract: [
+				{ order: 1, gate: "correctness", bindingState: "bound" },
+				{ order: 2, gate: "artifact-conformance", bindingState: "bound" },
+				{
+					order: 3,
+					gate: "mutation",
+					tier: "bindable",
+					bindingState: "unbound",
+				},
+			],
+			roadmapCrossLinks: [
+				{ slug: "behavioral-regression", implemented: false },
+				{ slug: "deliverable-completeness-gates", implemented: false },
+			],
+		};
+		expect(validateGateRecommendations(recommendations, epochId)).toMatchObject(
+			{ valid: true },
+		);
+		expect(
+			parseGateRecommendationsDocument(
+				`# Gate recommendations\n\n\`\`\`json gate-recommendations\n${JSON.stringify(recommendations)}\n\`\`\`\n`,
+			),
+		).toMatchObject({ epochId });
+
+		const activated = validateGateRecommendations(
+			{
+				...recommendations,
+				items: [
+					{ ...recommendations.items[1], activation: "ci", enforcedInCi: true },
+				],
+			},
+			epochId,
+		);
+		expect(activated.valid).toBe(false);
+		expect(activated.issues).toContain(
+			"items[0].activation must equal none; this plan activates no gate",
+		);
+		expect(activated.issues).toContain("items[0].enforcedInCi must be false");
+
+		expect(
+			validateGateRecommendations(
+				{ ...recommendations, roadmapCrossLinks: [] },
+				epochId,
+			).issues,
+		).toEqual([
+			"roadmapCrossLinks must cross-link behavioral-regression",
+			"roadmapCrossLinks must cross-link deliverable-completeness-gates",
+		]);
+		expect(
+			validateGateRecommendations(
+				{
+					...recommendations,
+					items: [
+						{
+							...recommendations.items[0],
+							id: "GATE-003",
+							check: "start the project-health-audit static sweep",
+						},
+					],
+				},
+				epochId,
+			).issues,
+		).toContain("items[0] must not expand into project-health-audit");
+		expect(
+			validateGateRecommendations(
+				{
+					...recommendations,
+					orderedQualityContract: [
+						{ order: 1, gate: "mutation", bindingState: "bound" },
+						{ order: 2, gate: "correctness", bindingState: "bound" },
+						{
+							order: 3,
+							gate: "artifact-conformance",
+							tier: "bindable",
+							bindingState: "unbound",
+						},
+					],
+				},
+				epochId,
+			).valid,
+		).toBe(false);
+
+		// The digest the owner ratifies must not cover the document carrying
+		// their own later decision.
+		const digestInput = {
+			evaluatedRevision: "a".repeat(40),
+			materialInputs: [
+				{
+					path: "tests/one.test.ts",
+					inputKind: "test",
+					sha256: "1".repeat(64),
+				},
+				{
+					path: "lib/one.ts",
+					inputKind: "system-under-test",
+					sha256: "2".repeat(64),
+				},
+			],
+			bundleDigests: [
+				{ bundleId: 2, file: "suite-integrity.json", sha256: "3".repeat(64) },
+				{
+					bundleId: 9,
+					file: "gate-recommendations.md",
+					sha256: "4".repeat(64),
+				},
+			],
+			baselineConditions: [
+				{ id: 1, status: "met" },
+				{ id: 2, status: "met" },
+			],
+		};
+		const digest = canonicalCandidateDigest(digestInput);
+		expect(digest).toMatch(/^[a-f0-9]{64}$/u);
+		expect(
+			canonicalCandidateDigest({
+				...digestInput,
+				materialInputs: [...digestInput.materialInputs].reverse(),
+				bundleDigests: [...digestInput.bundleDigests].reverse(),
+			}),
+		).toBe(digest);
+		expect(
+			canonicalCandidateDigest({
+				...digestInput,
+				baselineConditions: [
+					{ id: 1, status: "met" },
+					{ id: 2, status: "not-met" },
+				],
+			}),
+		).not.toBe(digest);
+		expect(() =>
+			canonicalCandidateDigest({
+				...digestInput,
+				bundleDigests: [
+					...digestInput.bundleDigests,
+					{ bundleId: 10, file: "baseline.md", sha256: "5".repeat(64) },
+				],
+			}),
+		).toThrow(/must exclude bundle 10/u);
+	});
+
+	// @cosmo-behavior plan:test-health-audit#B-011
+	it("accepts established only for eight met conditions and a non-circular exact owner ratification", () => {
+		const evaluatedRevision = "c".repeat(40);
+		const candidateEvidenceDigest = "d".repeat(64);
+		const metConditions = BASELINE_CONDITIONS.filter(
+			(condition) => condition.id !== 8,
+		).map((condition) => ({
+			id: condition.id,
+			status: "met" as const,
+			reasons: [],
+		}));
+		const base = {
+			epochId: "epoch-candidate",
+			evaluatedRevision,
+			candidateEvidenceDigest,
+			conditions: metConditions,
+			residualUncertaintyIds: ["RU-001", "RU-002"],
+		};
+		const ownerBlock = {
+			decision: "established",
+			ratifiedBy: "project owner",
+			evaluatedRevision,
+			candidateEvidenceDigest,
+			acceptedUncertaintyIds: ["RU-001", "RU-002"],
+		};
+
+		// Automation's ceiling: every evidence row met still reads not established.
+		const eligible = evaluateBaseline(base);
+		expect(eligible).toMatchObject({
+			verdict: "not established",
+			eligibility: "eligible-for-ratification",
+			failingConditionIds: [8],
+		});
+		expect(eligible.rows).toHaveLength(8);
+		expect(eligible.rows.at(-1)).toMatchObject({ id: 8, status: "not-met" });
+
+		expect(
+			evaluateBaseline({ ...base, ownerRatification: ownerBlock }),
+		).toMatchObject({
+			verdict: "established",
+			eligibility: "ratified",
+			failingConditionIds: [],
+		});
+
+		// One failed evidence row is never waived by an owner decision.
+		const blocked = evaluateBaseline({
+			...base,
+			conditions: metConditions.map((row) =>
+				row.id === 4 ? { ...row, status: "blocked" as const } : row,
+			),
+			ownerRatification: ownerBlock,
+		});
+		expect(blocked).toMatchObject({
+			verdict: "not established",
+			eligibility: "not-eligible",
+		});
+		expect(blocked.failingConditionIds).toContain(4);
+
+		for (const [label, block] of [
+			["revision", { ...ownerBlock, evaluatedRevision: "e".repeat(40) }],
+			["digest", { ...ownerBlock, candidateEvidenceDigest: "f".repeat(64) }],
+			["uncertainty", { ...ownerBlock, acceptedUncertaintyIds: ["RU-001"] }],
+			["decision", { ...ownerBlock, decision: "accepted" }],
+		] as const) {
+			const stale = evaluateBaseline({ ...base, ownerRatification: block });
+			expect(stale.verdict, label).toBe("not established");
+			expect(stale.eligibility, label).toBe("eligible-for-ratification");
+		}
+
+		// Condition 8 is the owner's act; automation cannot supply it as evidence.
+		expect(
+			evaluateBaseline({
+				...base,
+				conditions: [...metConditions, { id: 8, status: "met", reasons: [] }],
+			}).issues,
+		).toContain(
+			"condition 8 is the owner's act and cannot be supplied as evidence",
+		);
+		expect(evaluateBaseline({ ...base, conditions: [] }).eligibility).toBe(
+			"not-eligible",
+		);
+
+		const record = {
+			schemaVersion: 1,
+			epochId: "epoch-candidate",
+			evaluatedRevision,
+			candidateEvidenceDigest,
+			verdict: "not established",
+			eligibility: "eligible-for-ratification",
+			conditions: eligible.rows,
+		};
+		const document = `# Test health baseline\n\n\`\`\`json baseline\n${JSON.stringify(record)}\n\`\`\`\n\n## Ratification packet\n\nQ-001 remains unresolved.\n`;
+		expect(parseBaselineDocument(document)).toMatchObject({
+			verdict: "not established",
+		});
+		expect(
+			validateBaselineDocument(document, record, {
+				epochId: "epoch-candidate",
+				evaluatedRevision,
+				candidateEvidenceDigest,
+				packetQuestionIds: ["Q-001"],
+			}),
+		).toMatchObject({ valid: true });
+		expect(
+			validateBaselineDocument(document, record, {
+				epochId: "epoch-candidate",
+				evaluatedRevision,
+				candidateEvidenceDigest,
+				packetQuestionIds: ["Q-002"],
+			}).issues,
+		).toContain("unresolved question Q-002 must appear in the packet");
+		expect(
+			validateBaselineDocument(
+				`${document}\n## Ratification packet\n`,
+				record,
+				{
+					epochId: "epoch-candidate",
+					evaluatedRevision,
+					candidateEvidenceDigest,
+					packetQuestionIds: [],
+				},
+			).issues,
+		).toContain(
+			"baseline must contain exactly one Ratification packet section",
+		);
+		expect(
+			validateBaselineDocument(
+				document,
+				{ ...record, score: 92 },
+				{
+					epochId: "epoch-candidate",
+					evaluatedRevision,
+					candidateEvidenceDigest,
+					packetQuestionIds: [],
+				},
+			).issues,
+		).toContain("baseline must not carry a score field");
+		expect(
+			validateBaselineDocument(
+				document,
+				{ ...record, candidateEvidenceDigest: "0".repeat(64) },
+				{
+					epochId: "epoch-candidate",
+					evaluatedRevision,
+					candidateEvidenceDigest,
+					packetQuestionIds: [],
+				},
+			).issues,
+		).toContain("candidateEvidenceDigest must recompute over current evidence");
 	});
 });

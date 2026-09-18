@@ -298,6 +298,8 @@ const CARRIED_DELIVERABLES = [
 	"probe-queue.json",
 	"probes.jsonl",
 	"probes.md",
+	"residual-uncertainty.md",
+	"gate-recommendations.md",
 ] as const;
 
 async function hasPublishedShard(

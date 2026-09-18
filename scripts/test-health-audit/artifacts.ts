@@ -2609,3 +2609,771 @@ function isMissing(error: unknown): boolean {
 function ignoreMissing(error: unknown): void {
 	if (!isMissing(error)) throw error;
 }
+
+/**
+ * The spec's ten deliverable bundles (`plan.md` §7). A candidate epoch holds
+ * every one of them, and bundles 1-9 are what the canonical digest covers —
+ * `baseline.md` is excluded because it carries the owner block the digest must
+ * not become self-referential over.
+ */
+export const CANDIDATE_BUNDLES = [
+	{ id: 1, name: "method", files: [] },
+	{
+		id: 2,
+		name: "suite-integrity",
+		files: ["suite-integrity.json", "suite-integrity.md"],
+	},
+	{ id: 3, name: "profiles", files: ["profiles/index.json"] },
+	{
+		id: 4,
+		name: "portfolio",
+		files: ["behavior-risk-matrix.md", "gap-register.md"],
+	},
+	{ id: 5, name: "calibration", files: ["calibration.md"] },
+	{ id: 6, name: "probes", files: ["probes.jsonl", "probes.md"] },
+	{ id: 7, name: "remediation", files: ["remediation-ledger.md"] },
+	{ id: 8, name: "residual-uncertainty", files: ["residual-uncertainty.md"] },
+	{ id: 9, name: "gate-recommendations", files: ["gate-recommendations.md"] },
+	{ id: 10, name: "baseline", files: ["baseline.md"] },
+] as const;
+
+export interface CandidateBundleInput {
+	readonly epochId: string;
+	/** Epoch-relative paths present on disk. */
+	readonly files: readonly string[];
+	/** Bundle 1 lives outside the epoch, so it is referenced by digest. */
+	readonly method?: { readonly path: string; readonly sha256: string };
+	/** Bundle 3 is only real when the index names at least one unit shard. */
+	readonly profileUnitFiles: readonly string[];
+}
+
+export interface CandidateBundleValidation {
+	readonly valid: boolean;
+	readonly issues: readonly string[];
+	readonly missingBundleIds: readonly number[];
+}
+
+/** Checks that one epoch holds all ten bundles rather than a partial set. */
+export function validateCandidateBundles(
+	input: CandidateBundleInput,
+): CandidateBundleValidation {
+	const issues: string[] = [];
+	const present = new Set(input.files);
+	const missing: number[] = [];
+
+	if (!input.method || !SHA256.test(input.method.sha256 ?? "")) {
+		issues.push("bundle 1 must reference the method document by sha256");
+		missing.push(1);
+	} else if (input.method.path !== METHOD_DOCUMENT_PATH)
+		issues.push(
+			`bundle 1 must reference ${METHOD_DOCUMENT_PATH}, not ${input.method.path}`,
+		);
+
+	for (const bundle of CANDIDATE_BUNDLES) {
+		if (bundle.files.length === 0) continue;
+		const absent = bundle.files.filter((file) => !present.has(file));
+		if (absent.length === 0) continue;
+		missing.push(bundle.id);
+		for (const file of absent)
+			issues.push(`bundle ${bundle.id} (${bundle.name}) is missing ${file}`);
+	}
+
+	if (input.profileUnitFiles.length === 0) {
+		issues.push("bundle 3 must contain at least one profile unit shard");
+		if (!missing.includes(3)) missing.push(3);
+	}
+	for (const file of input.profileUnitFiles)
+		if (!present.has(file))
+			issues.push(`bundle 3 names a missing profile shard ${file}`);
+
+	return {
+		valid: issues.length === 0,
+		issues,
+		missingBundleIds: [...missing].sort((left, right) => left - right),
+	};
+}
+
+export const METHOD_DOCUMENT_PATH = "docs/test-health-audit.md";
+
+export interface CanonicalCandidateDigestInput {
+	readonly evaluatedRevision: string;
+	readonly materialInputs: readonly {
+		readonly path: string;
+		readonly inputKind: string;
+		readonly sha256: string;
+	}[];
+	/** Bundles 1-9 only; `baseline.md` is deliberately absent. */
+	readonly bundleDigests: readonly {
+		readonly bundleId: number;
+		readonly file: string;
+		readonly sha256: string;
+	}[];
+	readonly baselineConditions: readonly {
+		readonly id: number;
+		readonly status: string;
+	}[];
+}
+
+/**
+ * The digest the owner ratifies. It covers the evaluated revision, every
+ * material input digest, bundles 1-9 and the canonical condition rows, and
+ * nothing else — render timestamps, `index.json`'s current pointer and the
+ * owner block that arrives in a later commit are all excluded, which is what
+ * lets the same evidence recompute to the same value after ratification.
+ */
+export function canonicalCandidateDigest(
+	input: CanonicalCandidateDigestInput,
+): string {
+	const forbidden = input.bundleDigests.filter(
+		(entry) => entry.bundleId === 10,
+	);
+	if (forbidden.length > 0)
+		throw new Error(
+			"the canonical digest must exclude bundle 10 (baseline.md)",
+		);
+	return digestJson({
+		evaluatedRevision: input.evaluatedRevision,
+		materialInputs: [...input.materialInputs]
+			.map((entry) => ({
+				path: entry.path,
+				inputKind: entry.inputKind,
+				sha256: entry.sha256,
+			}))
+			.sort((left, right) =>
+				`${left.inputKind}:${left.path}`.localeCompare(
+					`${right.inputKind}:${right.path}`,
+				),
+			),
+		bundleDigests: [...input.bundleDigests]
+			.map((entry) => ({
+				bundleId: entry.bundleId,
+				file: entry.file,
+				sha256: entry.sha256,
+			}))
+			.sort((left, right) => left.file.localeCompare(right.file)),
+		baselineConditions: [...input.baselineConditions]
+			.map((row) => ({ id: row.id, status: row.status }))
+			.sort((left, right) => left.id - right.id),
+	});
+}
+
+const GATE_RECOMMENDATION_LABELS = [
+	"objective-candidate",
+	"agent-assessed-heuristic",
+] as const;
+
+const REQUIRED_ROADMAP_CROSS_LINKS = [
+	"behavioral-regression",
+	"deliverable-completeness-gates",
+] as const;
+
+/**
+ * Scope this plan may not expand into. A recommendation naming one of these is
+ * the plan growing a second subject, which `spec.md` Out of scope forbids.
+ */
+const EXCLUDED_RECOMMENDATION_SUBJECTS = [
+	"project-health-audit",
+	"analysis-provider-expansion",
+	"coverage-threshold",
+] as const;
+
+export function parseGateRecommendationsDocument(document: string): unknown {
+	const match = document.match(
+		/```json gate-recommendations\n([\s\S]*?)\n```/u,
+	);
+	if (!match?.[1])
+		throw new Error("gate recommendations JSON block is missing");
+	return JSON.parse(match[1]) as unknown;
+}
+
+export interface GateRecommendationValidation {
+	readonly valid: boolean;
+	readonly issues: readonly string[];
+}
+
+/**
+ * Gate recommendations propose; they never activate. Every item declares which
+ * lane it belongs to, cites the calibration evidence and limitations behind it,
+ * and leaves enforcement off — the ordered Quality Contract row for mutation
+ * stays bindable but unbound, which is the honest state of this plan.
+ */
+export function validateGateRecommendations(
+	input: unknown,
+	currentEpochId: string,
+): GateRecommendationValidation {
+	const issues: string[] = [];
+	if (!isRecord(input))
+		return { valid: false, issues: ["gate recommendations must be an object"] };
+	if (input.schemaVersion !== 1) issues.push("schemaVersion must equal 1");
+	if (input.epochId !== currentEpochId)
+		issues.push(`epochId must match current epoch ${currentEpochId}`);
+
+	const items = Array.isArray(input.items) ? input.items : undefined;
+	if (!items || items.length === 0)
+		issues.push("items must contain every recommendation");
+	else
+		for (const [index, item] of items.entries())
+			validateGateRecommendationItem(item, index, issues);
+
+	validateQualityContractOrder(input.orderedQualityContract, issues);
+
+	const links = Array.isArray(input.roadmapCrossLinks)
+		? input.roadmapCrossLinks
+		: [];
+	for (const slug of REQUIRED_ROADMAP_CROSS_LINKS) {
+		const link = links.find(
+			(candidate) => isRecord(candidate) && candidate.slug === slug,
+		);
+		if (!isRecord(link)) {
+			issues.push(`roadmapCrossLinks must cross-link ${slug}`);
+			continue;
+		}
+		if (link.implemented !== false)
+			issues.push(`${slug} must be cross-linked without being implemented`);
+	}
+	return { valid: issues.length === 0, issues };
+}
+
+function validateGateRecommendationItem(
+	input: unknown,
+	index: number,
+	issues: string[],
+): void {
+	const path = `items[${index}]`;
+	if (!isRecord(input)) {
+		issues.push(`${path} must be an object`);
+		return;
+	}
+	if (!nonEmpty(input.id)) issues.push(`${path}.id is required`);
+	if (!nonEmpty(input.check)) issues.push(`${path}.check is required`);
+	const label = String(input.label);
+	if (!GATE_RECOMMENDATION_LABELS.includes(label as never))
+		issues.push(
+			`${path}.label must be objective-candidate or agent-assessed-heuristic`,
+		);
+	for (const field of ["calibrationCitations", "limitations"] as const)
+		if (!Array.isArray(input[field]) || input[field].length === 0)
+			issues.push(`${path}.${field} must not be empty`);
+	if (input.activation !== "none")
+		issues.push(
+			`${path}.activation must equal none; this plan activates no gate`,
+		);
+	if (input.enforcedInCi !== false)
+		issues.push(`${path}.enforcedInCi must be false`);
+	const subject = `${String(input.id)} ${String(input.check)}`.toLowerCase();
+	for (const excluded of EXCLUDED_RECOMMENDATION_SUBJECTS)
+		if (subject.includes(excluded))
+			issues.push(`${path} must not expand into ${excluded}`);
+}
+
+const ORDERED_QUALITY_CONTRACT = [
+	{ order: 1, gate: "correctness", bindingState: "bound" },
+	{ order: 2, gate: "artifact-conformance", bindingState: "bound" },
+	{ order: 3, gate: "mutation", bindingState: "unbound" },
+] as const;
+
+function validateQualityContractOrder(input: unknown, issues: string[]): void {
+	const rows = Array.isArray(input) ? input : [];
+	if (rows.length !== ORDERED_QUALITY_CONTRACT.length) {
+		issues.push(
+			"orderedQualityContract must restate the three ordered gate rows",
+		);
+		return;
+	}
+	for (const [index, expected] of ORDERED_QUALITY_CONTRACT.entries()) {
+		const row = rows[index];
+		if (
+			!isRecord(row) ||
+			row.order !== expected.order ||
+			row.gate !== expected.gate ||
+			row.bindingState !== expected.bindingState
+		)
+			issues.push(
+				`orderedQualityContract[${index}] must be ${expected.gate} ${expected.bindingState}`,
+			);
+	}
+	const mutation = rows[2];
+	if (isRecord(mutation) && mutation.tier !== "bindable")
+		issues.push("the mutation row must remain bindable but unbound");
+}
+
+/** The spec's exact eight baseline conditions, in order (`plan.md` §7). */
+export const BASELINE_CONDITIONS = [
+	{ id: 1, name: "complete-command-census" },
+	{ id: 2, name: "explicit-dispositions" },
+	{ id: 3, name: "no-counted-weak-guardrail" },
+	{ id: 4, name: "critical-portfolios-protected" },
+	{ id: 5, name: "confirmed-weaknesses-discharged" },
+	{ id: 6, name: "required-probes-red-then-restored-green" },
+	{ id: 7, name: "bounded-noncritical-uncertainty" },
+	{ id: 8, name: "project-owner-ratification" },
+] as const;
+
+export type BaselineConditionStatus = "met" | "not-met" | "blocked";
+
+export interface BaselineConditionRow {
+	readonly id: number;
+	readonly name: string;
+	readonly status: BaselineConditionStatus;
+	readonly reasons: readonly string[];
+}
+
+export interface OwnerRatificationBlock {
+	readonly decision: string;
+	readonly ratifiedBy: string;
+	readonly evaluatedRevision: string;
+	readonly candidateEvidenceDigest: string;
+	readonly acceptedUncertaintyIds: readonly string[];
+}
+
+export interface BaselineEvaluationInput {
+	readonly epochId: string;
+	readonly evaluatedRevision: string;
+	/** Recomputed from current evidence, never read back from the document. */
+	readonly candidateEvidenceDigest: string;
+	/** Conditions 1-7; condition 8 is derived from the owner block alone. */
+	readonly conditions: readonly Omit<BaselineConditionRow, "name">[];
+	readonly residualUncertaintyIds: readonly string[];
+	readonly ownerRatification?: unknown;
+}
+
+export interface BaselineEvaluation {
+	readonly verdict: "not established" | "established";
+	readonly eligibility:
+		| "not-eligible"
+		| "eligible-for-ratification"
+		| "ratified";
+	readonly rows: readonly BaselineConditionRow[];
+	readonly failingConditionIds: readonly number[];
+	readonly issues: readonly string[];
+}
+
+/**
+ * The automation boundary. Conditions 1-7 are evidence; condition 8 is a human
+ * act this function can only observe. With every evidence row met and no owner
+ * block the answer is `eligible-for-ratification` and the verdict stays `not
+ * established` — automation has no path to `established`, which is the point.
+ */
+export function evaluateBaseline(
+	input: BaselineEvaluationInput,
+): BaselineEvaluation {
+	const issues: string[] = [];
+	const supplied = new Map(input.conditions.map((row) => [row.id, row]));
+	if (supplied.has(8))
+		issues.push(
+			"condition 8 is the owner's act and cannot be supplied as evidence",
+		);
+
+	const rows: BaselineConditionRow[] = [];
+	for (const condition of BASELINE_CONDITIONS) {
+		if (condition.id === 8) continue;
+		const row = supplied.get(condition.id);
+		if (!row) {
+			issues.push(`condition ${condition.id} was not evaluated`);
+			rows.push({
+				id: condition.id,
+				name: condition.name,
+				status: "blocked",
+				reasons: ["no evidence was supplied for this condition"],
+			});
+			continue;
+		}
+		rows.push({
+			id: condition.id,
+			name: condition.name,
+			status: row.status,
+			reasons: row.reasons ?? [],
+		});
+	}
+
+	const evidenceMet = rows.every((row) => row.status === "met");
+	const ratification = readOwnerRatification(
+		input.ownerRatification,
+		input,
+		issues,
+	);
+	const ownerRow: BaselineConditionRow = {
+		id: 8,
+		name: "project-owner-ratification",
+		status: ratification.exact ? "met" : "not-met",
+		reasons: ratification.reasons,
+	};
+	rows.push(ownerRow);
+
+	const failingConditionIds = rows
+		.filter((row) => row.status !== "met")
+		.map((row) => row.id);
+
+	if (!evidenceMet)
+		return {
+			verdict: "not established",
+			eligibility: "not-eligible",
+			rows,
+			failingConditionIds,
+			issues,
+		};
+	if (!ratification.present)
+		return {
+			verdict: "not established",
+			eligibility: "eligible-for-ratification",
+			rows,
+			failingConditionIds,
+			issues,
+		};
+	if (!ratification.exact)
+		return {
+			verdict: "not established",
+			eligibility: "eligible-for-ratification",
+			rows,
+			failingConditionIds,
+			issues,
+		};
+	return {
+		verdict: "established",
+		eligibility: "ratified",
+		rows,
+		failingConditionIds,
+		issues,
+	};
+}
+
+function readOwnerRatification(
+	input: unknown,
+	context: BaselineEvaluationInput,
+	issues: string[],
+): { present: boolean; exact: boolean; reasons: string[] } {
+	if (input === undefined)
+		return {
+			present: false,
+			exact: false,
+			reasons: ["the project owner has not ratified this candidate"],
+		};
+	if (!isRecord(input)) {
+		issues.push("ownerRatification must be an object");
+		return {
+			present: true,
+			exact: false,
+			reasons: ["the owner block is malformed"],
+		};
+	}
+	const reasons: string[] = [];
+	if (input.decision !== "established")
+		reasons.push("the owner block does not record an established decision");
+	if (!nonEmpty(input.ratifiedBy))
+		reasons.push("the owner block does not name who ratified it");
+	if (input.evaluatedRevision !== context.evaluatedRevision)
+		reasons.push(
+			`the owner ratified revision ${String(input.evaluatedRevision)}, not the evaluated ${context.evaluatedRevision}`,
+		);
+	if (input.candidateEvidenceDigest !== context.candidateEvidenceDigest)
+		reasons.push(
+			"the candidate digest recomputes to a different value, so the ratification is stale",
+		);
+	const accepted = Array.isArray(input.acceptedUncertaintyIds)
+		? input.acceptedUncertaintyIds.map(String)
+		: undefined;
+	if (!accepted) reasons.push("the owner block accepts no uncertainty ids");
+	else if (!sameSet(accepted, context.residualUncertaintyIds))
+		reasons.push(
+			"the accepted uncertainty ids differ from the residual-uncertainty register",
+		);
+	return { present: true, exact: reasons.length === 0, reasons };
+}
+
+export function parseBaselineDocument(document: string): unknown {
+	const match = document.match(/```json baseline\n([\s\S]*?)\n```/u);
+	if (!match?.[1]) throw new Error("baseline JSON block is missing");
+	return JSON.parse(match[1]) as unknown;
+}
+
+export interface BaselineDocumentValidation {
+	readonly valid: boolean;
+	readonly issues: readonly string[];
+}
+
+/**
+ * Checks the committed record rather than recomputing the decision. A score or
+ * overall-health field is rejected outright: the spec's baseline is a set of
+ * named reasons, and a single number would invite exactly the summary judgment
+ * the audit exists to avoid.
+ */
+export function validateBaselineDocument(
+	document: string,
+	record: unknown,
+	context: {
+		readonly epochId: string;
+		readonly evaluatedRevision: string;
+		readonly candidateEvidenceDigest: string;
+		readonly packetQuestionIds: readonly string[];
+	},
+): BaselineDocumentValidation {
+	const issues: string[] = [];
+	const packetSections = document.match(/^## Ratification packet$/gmu) ?? [];
+	if (packetSections.length !== 1)
+		issues.push(
+			"baseline must contain exactly one Ratification packet section",
+		);
+	if (!isRecord(record))
+		return { valid: false, issues: [...issues, "baseline must be an object"] };
+	if (record.schemaVersion !== 1) issues.push("schemaVersion must equal 1");
+	if (record.epochId !== context.epochId)
+		issues.push(`epochId must match current epoch ${context.epochId}`);
+	if (record.evaluatedRevision !== context.evaluatedRevision)
+		issues.push("evaluatedRevision must name the committed evaluated revision");
+	if (record.candidateEvidenceDigest !== context.candidateEvidenceDigest)
+		issues.push("candidateEvidenceDigest must recompute over current evidence");
+	for (const forbidden of ["score", "overallHealth", "healthScore"])
+		if (forbidden in record)
+			issues.push(`baseline must not carry a ${forbidden} field`);
+
+	const rows = Array.isArray(record.conditions) ? record.conditions : [];
+	if (rows.length !== BASELINE_CONDITIONS.length)
+		issues.push("baseline must record all eight condition rows");
+	for (const [index, expected] of BASELINE_CONDITIONS.entries()) {
+		const row = rows[index];
+		if (!isRecord(row) || row.id !== expected.id || row.name !== expected.name)
+			issues.push(`conditions[${index}] must be ${expected.name}`);
+	}
+	if (record.verdict !== "not established" && record.verdict !== "established")
+		issues.push("verdict must be not established or established");
+
+	for (const id of context.packetQuestionIds)
+		if (!document.includes(id))
+			issues.push(`unresolved question ${id} must appear in the packet`);
+	return { valid: issues.length === 0, issues };
+}
+
+/** Census finding kinds that condition 2 requires an explicit answer for. */
+const DISPOSITION_REQUIRED_KINDS = [
+	"skipped-or-todo",
+	"conditional-observation",
+	"runtime-skipped",
+	"bounded-collector-limitation",
+	"run-end-limitation",
+	"filtered-selection",
+] as const;
+
+/**
+ * Dimension conclusions that disqualify a test from being counted as guardrail
+ * evidence: the assertion never reached production, it checks the wrong side of
+ * a contract, or a realistic defect walked past it.
+ */
+const DISQUALIFYING_CONCLUSIONS = {
+	grounding: "test-local",
+	contractAlignment: "misaligned",
+	faultSensitivity: "probe-survived",
+} as const;
+
+export interface BaselineEvidenceInput {
+	readonly censusState: string;
+	readonly findings: readonly {
+		readonly id: string;
+		readonly kind: string;
+		readonly basis: string;
+		readonly accountedFor: boolean;
+	}[];
+	readonly profiles: readonly TestEvidenceProfile[];
+	readonly countedProfileIds: readonly string[];
+	readonly portfolioEntries: readonly {
+		readonly inventoryId: string;
+		readonly criticality: string;
+		readonly conclusion: string;
+		readonly probe: { readonly required: boolean; readonly status: string };
+	}[];
+	readonly ledgerRows: readonly {
+		readonly id: string;
+		readonly outcome: string;
+		readonly packetQuestion?: { readonly id?: unknown };
+	}[];
+	readonly probeRecords: readonly {
+		readonly requirementId?: string;
+		readonly outcome?: string;
+		readonly expectedRed?: boolean;
+		readonly restoredGreen?: boolean;
+	}[];
+	readonly residualUncertainty: readonly {
+		readonly id: string;
+		readonly criticality: string;
+		readonly bounded: boolean;
+		readonly documented: boolean;
+	}[];
+}
+
+/**
+ * Turns the epoch's evidence into conditions 1-7. Every row states why it
+ * failed rather than only that it did, because a failing row returns to its
+ * owning stage and the reason is what says which stage that is.
+ */
+export function deriveBaselineConditions(
+	input: BaselineEvidenceInput,
+): Omit<BaselineConditionRow, "name">[] {
+	const counted = new Set(input.countedProfileIds);
+	const weakGuardrails = input.profiles.flatMap((profile) => {
+		if (!counted.has(profile.id)) return [];
+		const dimensions = profile.dimensions as unknown as Record<
+			string,
+			{ value?: unknown }
+		>;
+		return Object.entries(DISQUALIFYING_CONCLUSIONS)
+			.filter(([dimension, value]) => dimensions[dimension]?.value === value)
+			.map(([dimension, value]) => `${profile.id}: ${dimension} is ${value}`);
+	});
+
+	const unanswered = input.findings.filter(
+		(finding) =>
+			DISPOSITION_REQUIRED_KINDS.includes(finding.kind as never) &&
+			finding.basis !== "reasoned" &&
+			!finding.accountedFor,
+	);
+
+	const unprotectedCritical = input.portfolioEntries.filter(
+		(entry) =>
+			entry.criticality === "critical" && entry.conclusion !== "protected",
+	);
+
+	const openRows = input.ledgerRows.filter(
+		(row) =>
+			!["closed", "excluded-from-guardrail", "unresolved"].includes(
+				row.outcome,
+			),
+	);
+	const unbatched = input.ledgerRows.filter(
+		(row) => row.outcome === "unresolved" && !nonEmpty(row.packetQuestion?.id),
+	);
+
+	const requiredProbeIds = input.portfolioEntries
+		.filter((entry) => entry.probe.required)
+		.map((entry) => entry.inventoryId);
+	const confirmedProbes = new Set(
+		input.probeRecords
+			.filter(
+				(record) =>
+					record.expectedRed === true && record.restoredGreen === true,
+			)
+			.map((record) => String(record.requirementId)),
+	);
+	const missingProbes = requiredProbeIds.filter(
+		(id) => !confirmedProbes.has(id),
+	);
+
+	const unboundedUncertainty = input.residualUncertainty.filter(
+		(entry) =>
+			entry.criticality === "critical" || !entry.bounded || !entry.documented,
+	);
+
+	return [
+		row(
+			1,
+			input.censusState === "complete",
+			input.censusState === "complete"
+				? []
+				: [`the command census is ${input.censusState}`],
+		),
+		row(
+			2,
+			unanswered.length === 0,
+			unanswered
+				.slice(0, 20)
+				.map((finding) => `${finding.kind} ${finding.id} has no disposition`),
+		),
+		row(3, weakGuardrails.length === 0, weakGuardrails.slice(0, 20)),
+		row(
+			4,
+			unprotectedCritical.length === 0,
+			unprotectedCritical.map(
+				(entry) => `${entry.inventoryId} is ${entry.conclusion}, not protected`,
+			),
+		),
+		row(5, openRows.length === 0 && unbatched.length === 0, [
+			...openRows.map((r) => `${r.id} is ${r.outcome}`),
+			...unbatched.map(
+				(r) => `${r.id} is unresolved without a packet question`,
+			),
+		]),
+		row(
+			6,
+			missingProbes.length === 0,
+			missingProbes.map(
+				(id) => `${id} requires a probe that was red then restored green`,
+			),
+		),
+		row(
+			7,
+			unboundedUncertainty.length === 0,
+			unboundedUncertainty.map(
+				(entry) => `${entry.id} is not bounded, documented and noncritical`,
+			),
+		),
+	];
+}
+
+function row(
+	id: number,
+	met: boolean,
+	reasons: readonly string[],
+): Omit<BaselineConditionRow, "name"> {
+	return { id, status: met ? "met" : "not-met", reasons };
+}
+
+export interface ProfileIndexUnit {
+	readonly unitId: string;
+	readonly file: string;
+	readonly profileIds: readonly string[];
+	readonly sha256: string;
+}
+
+export interface ProfileIndex {
+	readonly schemaVersion: 1;
+	readonly epochId: string;
+	readonly profileCount: number;
+	readonly units: readonly ProfileIndexUnit[];
+}
+
+/**
+ * Bundle 3's index. It is derived from the shards rather than maintained
+ * alongside them, so it cannot drift into claiming a profile no shard holds;
+ * each entry carries the shard digest that makes a later edit detectable.
+ */
+export async function publishProfileIndex(
+	root: string,
+	epochId: string,
+): Promise<ProfileIndex> {
+	const directory = join(root, "epochs", epochId, "profiles");
+	let names: string[] = [];
+	try {
+		names = await readdir(directory);
+	} catch (error) {
+		if (!isMissing(error)) throw error;
+	}
+	const units: ProfileIndexUnit[] = [];
+	let profileCount = 0;
+	for (const name of names
+		.filter((candidate) => candidate.endsWith(".ndjson"))
+		.sort()) {
+		const text = await readFile(join(directory, name), "utf8");
+		const lines = text.split(/\r?\n/).filter(Boolean);
+		const header = JSON.parse(lines[0] ?? "{}") as { unitId?: string };
+		const profileIds = lines.slice(1).map((line) => {
+			const profile = JSON.parse(line) as { id: string };
+			return profile.id;
+		});
+		profileCount += profileIds.length;
+		units.push({
+			unitId: header.unitId ?? name.replace(/\.ndjson$/u, ""),
+			file: `profiles/${name}`,
+			profileIds,
+			sha256: createHash("sha256").update(text).digest("hex"),
+		});
+	}
+	const index: ProfileIndex = {
+		schemaVersion: 1,
+		epochId,
+		profileCount,
+		units,
+	};
+	await writeTextAtomic(
+		join(directory, "index.json"),
+		`${JSON.stringify(index, null, 2)}\n`,
+	);
+	return index;
+}
