@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	digestMaterialInput,
@@ -29,6 +30,7 @@ export interface CarryForwardReport {
 	readonly carriedUnitIds: readonly string[];
 	readonly reassessUnitIds: readonly string[];
 	readonly carriedProfileCount: number;
+	readonly carriedDeliverables: readonly string[];
 	readonly reasons: Readonly<Record<string, string>>;
 }
 
@@ -129,6 +131,34 @@ function observeRuntime(
 	} as TestEvidenceProfile["runtime"];
 }
 
+// Every profile in a wave cites the same handful of epoch-scoped documents, and
+// some run to megabytes. Digest them once per path instead of per profile.
+const normalizedDigests = new Map<string, string | undefined>();
+
+async function readNormalizedDigest(
+	projectRoot: string,
+	path: string,
+	epochId: string,
+): Promise<string | undefined> {
+	const key = `${path}\u0000${epochId}`;
+	const cached = normalizedDigests.get(key);
+	if (cached !== undefined || normalizedDigests.has(key)) return cached;
+	let digest: string | undefined;
+	try {
+		digest = createHash("sha256")
+			.update(
+				(await readFile(join(projectRoot, path), "utf8"))
+					.split(epochId)
+					.join("<epoch>"),
+			)
+			.digest("hex");
+	} catch {
+		digest = undefined;
+	}
+	normalizedDigests.set(key, digest);
+	return digest;
+}
+
 async function refreshMaterialInputs(
 	profile: TestEvidenceProfile,
 	projectRoot: string,
@@ -137,7 +167,8 @@ async function refreshMaterialInputs(
 ): Promise<TestEvidenceProfile["materialInputs"] | undefined> {
 	const refreshed: TestEvidenceProfile["materialInputs"][number][] = [];
 	for (const input of profile.materialInputs) {
-		if (input.inputKind !== REFRESHED_INPUT_KIND) {
+		const epochScoped = input.path.includes(predecessorEpochId);
+		if (!epochScoped) {
 			const current = await digestMaterialInput(projectRoot, input).catch(
 				() => undefined,
 			);
@@ -151,6 +182,16 @@ async function refreshMaterialInputs(
 			path,
 		}).catch(() => undefined);
 		if (sha256 === undefined) return undefined;
+		// A command input is per-epoch by construction, so its digest legitimately
+		// moves. Every other epoch-scoped input pins substance the judgment was
+		// made against: the epoch label may be restamped, the content may not.
+		if (input.inputKind !== REFRESHED_INPUT_KIND) {
+			const [before, after] = await Promise.all([
+				readNormalizedDigest(projectRoot, input.path, predecessorEpochId),
+				readNormalizedDigest(projectRoot, path, epochId),
+			]);
+			if (before === undefined || before !== after) return undefined;
+		}
 		refreshed.push({ ...input, path, sha256 });
 	}
 	return refreshed;
@@ -219,6 +260,63 @@ function agentAssessedValues(
 	] as unknown as readonly AgentAssessedValue[];
 }
 
+/**
+ * Deliverables a successor epoch inherits when the wave did not change them.
+ * Profiles cite `behavior-risk-inventory.json` as an `inventory-row` input, so a
+ * successor without it can carry nothing. Dispositions are deliberately absent:
+ * they answer findings whose ids are content-derived, so they do not transfer.
+ */
+const CARRIED_DELIVERABLES = [
+	"behavior-risk-inventory.json",
+	"behavior-risk-matrix.md",
+	"gap-register.md",
+	"calibration.md",
+	"probe-definitions.json",
+	"probe-queue.json",
+	"probes.jsonl",
+	"probes.md",
+] as const;
+
+async function carryDeliverables(
+	auditRoot: string,
+	predecessorEpochId: string,
+	epochId: string,
+): Promise<string[]> {
+	const from = join(auditRoot, "epochs", predecessorEpochId);
+	const to = join(auditRoot, "epochs", epochId);
+	await mkdir(to, { recursive: true });
+	const carried: string[] = [];
+	for (const name of CARRIED_DELIVERABLES) {
+		let source: string;
+		try {
+			source = await readFile(join(from, name), "utf8");
+		} catch {
+			continue;
+		}
+		try {
+			await readFile(join(to, name), "utf8");
+			continue;
+		} catch {
+			// not yet present in the successor, so inherit it
+		}
+		// The document names the epoch it describes, so restamp that label. Its
+		// substance is unchanged, which is what carried profiles pin.
+		await writeFile(
+			join(to, name),
+			source.split(predecessorEpochId).join(epochId),
+		);
+		carried.push(name);
+	}
+	return carried;
+}
+
+/** Validator messages concatenate every issue; one is enough to explain a skip. */
+function firstIssue(message: string): string {
+	const body = message.replace(/^invalid profile unit [^:]+: /, "");
+	const [first] = body.split("; ");
+	return (first ?? body).replace(/^[0-9a-f]{64}: /, "");
+}
+
 export async function carryForwardProfileUnits(options: {
 	readonly auditRoot: string;
 	readonly projectRoot: string;
@@ -234,6 +332,11 @@ export async function carryForwardProfileUnits(options: {
 	if (predecessorEpochId === undefined)
 		throw new Error("carry-forward requires a predecessor epoch");
 
+	const carriedDeliverables = await carryDeliverables(
+		auditRoot,
+		predecessorEpochId,
+		manifest.epochId,
+	);
 	const predecessor = await readEpochProfiles(auditRoot, predecessorEpochId);
 	const observations = await readSurfaceObservations(auditRoot, manifest);
 	const queue = await readProfileWorkQueue(auditRoot);
@@ -274,11 +377,11 @@ export async function carryForwardProfileUnits(options: {
 				reason = `identity ${identity.id} was not re-observed in this epoch`;
 				break;
 			}
-			const rewritten = rewriteEpochReferences(
-				{ ...prior, materialInputs, runtime },
-				predecessorEpochId,
-				manifest.epochId,
-			);
+			const rewritten = {
+				...rewriteEpochReferences(prior, predecessorEpochId, manifest.epochId),
+				materialInputs,
+				runtime,
+			};
 			carried.push({
 				...rewritten,
 				carriedFrom: {
@@ -300,18 +403,28 @@ export async function carryForwardProfileUnits(options: {
 			continue;
 		}
 		const ended = new Date();
-		await publishCarriedProfileUnit({
-			root: auditRoot,
-			projectRoot,
-			unitId: unit.id,
-			assessorId,
-			processId: process.pid,
-			processStartedAt: started.toISOString(),
-			processEndedAt: ended.toISOString(),
-			durationMs: ended.getTime() - started.getTime(),
-			peakRssBytes: process.memoryUsage().rss,
-			profiles: carried,
-		});
+		try {
+			await publishCarriedProfileUnit({
+				root: auditRoot,
+				projectRoot,
+				unitId: unit.id,
+				assessorId,
+				processId: process.pid,
+				processStartedAt: started.toISOString(),
+				processEndedAt: ended.toISOString(),
+				durationMs: ended.getTime() - started.getTime(),
+				peakRssBytes: process.memoryUsage().rss,
+				profiles: carried,
+			});
+		} catch (error) {
+			// Carry-forward partitions work; it does not gate it. A unit the
+			// validator refuses is simply one an agent must assess, so record why
+			// and keep going rather than failing the whole wave.
+			reassessUnitIds.push(unit.id);
+			reasons[unit.id] =
+				error instanceof Error ? firstIssue(error.message) : String(error);
+			continue;
+		}
 		carriedUnitIds.push(unit.id);
 		carriedProfileCount += carried.length;
 	}
@@ -321,6 +434,7 @@ export async function carryForwardProfileUnits(options: {
 		carriedUnitIds,
 		reassessUnitIds,
 		carriedProfileCount,
+		carriedDeliverables,
 		reasons,
 	};
 }

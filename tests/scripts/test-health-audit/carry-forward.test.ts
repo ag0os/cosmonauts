@@ -273,6 +273,10 @@ describe("test health audit carry-forward", () => {
 				],
 			} as unknown as TestEvidenceProfile);
 
+		await writeFile(
+			join(auditRoot, "epochs", "epoch-1", "behavior-risk-inventory.json"),
+			JSON.stringify({ epochId: "epoch-1", entries: [] }),
+		);
 		await mkdir(join(auditRoot, "epochs", "epoch-1", "profiles"), {
 			recursive: true,
 		});
@@ -391,5 +395,67 @@ describe("test health audit carry-forward", () => {
 		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
 		expect(report.carriedUnitIds).toEqual([]);
 		expect(report.reasons[unitId]).toMatch(/not re-observed/);
+	});
+	it("inherits the predecessor's deliverables, restamped for this epoch", async () => {
+		const { auditRoot, projectRoot } = await fixture();
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.carriedDeliverables).toContain(
+			"behavior-risk-inventory.json",
+		);
+		const inherited = JSON.parse(
+			await readFile(
+				join(auditRoot, "epochs", "epoch-2", "behavior-risk-inventory.json"),
+				"utf8",
+			),
+		) as { epochId: string };
+		expect(inherited.epochId).toBe("epoch-2");
+	});
+
+	it("does not overwrite a deliverable the successor already has", async () => {
+		const { auditRoot, projectRoot } = await fixture();
+		const own = join(
+			auditRoot,
+			"epochs",
+			"epoch-2",
+			"behavior-risk-inventory.json",
+		);
+		await writeFile(
+			own,
+			JSON.stringify({ epochId: "epoch-2", entries: ["x"] }),
+		);
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.carriedDeliverables).not.toContain(
+			"behavior-risk-inventory.json",
+		);
+		expect(JSON.parse(await readFile(own, "utf8"))).toMatchObject({
+			entries: ["x"],
+		});
+	});
+
+	it("routes a unit the validator refuses to reassessment instead of failing", async () => {
+		const { auditRoot, projectRoot, unitId } = await fixture();
+		const shard = join(
+			auditRoot,
+			"epochs",
+			"epoch-1",
+			"profiles",
+			`${unitId}.ndjson`,
+		);
+		const lines = (await readFile(shard, "utf8")).split("\n").filter(Boolean);
+		const rewritten = lines.map((line, index) => {
+			if (index === 0) return line;
+			const profile = JSON.parse(line) as {
+				materialInputs: { inputKind: string }[];
+			};
+			profile.materialInputs = profile.materialInputs.filter(
+				(input) => input.inputKind !== "runner",
+			);
+			return JSON.stringify(profile);
+		});
+		await writeFile(shard, `${rewritten.join("\n")}\n`);
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.carriedUnitIds).toEqual([]);
+		expect(report.reassessUnitIds).toEqual([unitId]);
+		expect(report.reasons[unitId]).toMatch(/omits runner input proof/);
 	});
 });
