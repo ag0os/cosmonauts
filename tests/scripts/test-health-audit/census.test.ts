@@ -884,6 +884,57 @@ describe("test health audit census", () => {
 		);
 	});
 
+	async function epochWithDeliverables(calibrationEpochId: string) {
+		const root = await mkdtemp(join(tmpdir(), "audit-deliverables-"));
+		roots.push(root);
+		const source = collectSourceText(
+			"tests/digest.test.ts",
+			'import { test } from "vitest"; test("digest case", () => {});',
+		);
+		const sourceDigest = sourceCensusDigest([source]);
+		await openAuditEpoch(root, {
+			schemaVersion: 1,
+			methodVersion: "1",
+			epochId: "epoch-1",
+			evaluatedRevision: "abc123",
+			createdAt: "2026-09-17T15:00:00.000Z",
+			materialInputs: [{ path: "vitest.config.ts", sha256: SHA }],
+			commandDefinitions: [],
+			sourceCensusDigest: sourceDigest,
+		});
+		const epoch = join(root, "epochs", "epoch-1");
+		await writeFile(
+			join(epoch, "source-census.json"),
+			JSON.stringify([source]),
+		);
+		await writeFile(
+			join(epoch, "suite-integrity.json"),
+			JSON.stringify({
+				sourceCensusDigest: sourceDigest,
+				commandCensusDigest: commandCensusDigest([]),
+			}),
+		);
+		const fixture = await readFile(
+			join(process.cwd(), "scripts/test-health-audit/fixtures/calibration.md"),
+			"utf8",
+		);
+		await writeFile(
+			join(epoch, "calibration.md"),
+			fixture.split("epoch-fixture").join(calibrationEpochId),
+		);
+		return root;
+	}
+
+	test("rejects a current epoch whose calibration does not describe it", async () => {
+		const root = await epochWithDeliverables("epoch-0");
+		expect(await runCli(["--audit-root", root, "validate"])).toBe(1);
+	});
+
+	test("accepts a current epoch whose calibration describes it", async () => {
+		const root = await epochWithDeliverables("epoch-1");
+		expect(await runCli(["--audit-root", root, "validate"])).toBe(0);
+	});
+
 	test("validates frozen source and post-run command digests independently", async () => {
 		const root = await mkdtemp(join(tmpdir(), "audit-digests-"));
 		roots.push(root);

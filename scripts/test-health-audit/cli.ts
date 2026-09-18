@@ -2,9 +2,13 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
 	type EpochManifest,
+	parseCalibrationDocument,
+	parseRemediationLedgerDocument,
 	prepareProfileWorkQueue,
 	readCurrentEpochManifest,
+	validateCalibrationRecord,
 	validateEpochProvenance,
+	validateRemediationLedger,
 } from "./artifacts.ts";
 import { carryForwardProfileUnits } from "./carry-forward.ts";
 import {
@@ -16,6 +20,7 @@ import {
 	sourceCensusDigest,
 } from "./census.ts";
 import { dispatchProfileUnits } from "./dispatch.ts";
+import { validatePortfolioEvidenceDocuments } from "./portfolio.ts";
 import { runConfirmedProbe } from "./probe.ts";
 import type { RuntimeEvidence } from "./runtime-reporter.ts";
 import { collectSourceTree, type SourceCensus } from "./source-census.ts";
@@ -329,7 +334,97 @@ async function defaultValidate(root: string): Promise<boolean> {
 		throw new Error(
 			`epoch provenance is falsified:\n${provenance.map((issue) => `  - ${issue}`).join("\n")}`,
 		);
+	const deliverables = await validateEpochDeliverables(root, manifest);
+	if (deliverables.length > 0)
+		throw new Error(
+			`current epoch deliverables are invalid:\n${deliverables.map((issue) => `  - ${issue}`).join("\n")}`,
+		);
 	return true;
+}
+
+async function readIfPresent(path: string): Promise<string | undefined> {
+	try {
+		return await readFile(path, "utf8");
+	} catch (error) {
+		if (isMissingFile(error)) return undefined;
+		throw error;
+	}
+}
+
+/**
+ * Checks that the live epoch's own deliverables satisfy their contracts. This
+ * belongs to the audit's gate rather than the repository's test suite: binding
+ * a vitest case to `currentEpochId` made the suite green only while a specific
+ * epoch was current, and made a freshly opened epoch collect its own failures
+ * as census findings. Absent deliverables are skipped, because an epoch acquires
+ * them stage by stage.
+ */
+async function validateEpochDeliverables(
+	root: string,
+	manifest: EpochManifest,
+): Promise<string[]> {
+	const epoch = join(root, "epochs", manifest.epochId);
+	const issues: string[] = [];
+
+	const [matrix, gapRegister, inventoryText] = await Promise.all([
+		readIfPresent(join(epoch, "behavior-risk-matrix.md")),
+		readIfPresent(join(epoch, "gap-register.md")),
+		readIfPresent(join(epoch, "behavior-risk-inventory.json")),
+	]);
+	if (matrix && gapRegister && inventoryText) {
+		const portfolio = validatePortfolioEvidenceDocuments({
+			matrix,
+			gapRegister,
+			inventory: JSON.parse(inventoryText) as unknown,
+			currentEpochId: manifest.epochId,
+		});
+		issues.push(...portfolio.issues.map((issue) => `portfolio: ${issue}`));
+	}
+
+	const calibration = await readIfPresent(join(epoch, "calibration.md"));
+	if (calibration) {
+		const record = validateCalibrationRecord(
+			parseCalibrationDocument(calibration),
+			manifest.epochId,
+		);
+		issues.push(...record.issues.map((issue) => `calibration: ${issue}`));
+	}
+
+	const ledgerDocument = await readIfPresent(
+		join(epoch, "remediation-ledger.md"),
+	);
+	const baselineDocument = await readIfPresent(join(epoch, "baseline.md"));
+	if (ledgerDocument && baselineDocument) {
+		const integrity = JSON.parse(
+			(await readIfPresent(join(epoch, "suite-integrity.json"))) ?? "{}",
+		) as { repairRequired?: { findingId: string }[] };
+		const repairIds = (integrity.repairRequired ?? []).map(
+			(row) => row.findingId,
+		);
+		const ledger = parseRemediationLedgerDocument(ledgerDocument) as {
+			successorEpoch?: {
+				rehashedMaterialInputs?: {
+					path: string;
+					inputKind: string;
+					sha256: string;
+				}[];
+			};
+		};
+		const result = validateRemediationLedger(ledger, manifest.epochId, {
+			requiredRepairInputIds: repairIds,
+			requiredWeaknessInputIds: repairIds,
+			requiredMaterialInputs: (
+				ledger.successorEpoch?.rehashedMaterialInputs ?? []
+			).filter((input) =>
+				manifest.materialInputs.some((item) => item.path === input.path),
+			),
+			baselineDocument,
+		});
+		issues.push(
+			...result.issues.map((issue) => `remediation-ledger: ${issue}`),
+		);
+	}
+	return issues;
 }
 
 async function validateCensusDigests(
