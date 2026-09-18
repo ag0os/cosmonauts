@@ -97,8 +97,8 @@ export interface PublishedProfileUnit {
 	readonly unitId: string;
 	readonly assessorId: string;
 	readonly processId: number;
-	readonly processBackend: "driver-process";
-	readonly measurementSource: "dispatcher";
+	readonly processBackend: "driver-process" | "carry-forward";
+	readonly measurementSource: "dispatcher" | "carry-forward";
 	readonly processStartedAt: string;
 	readonly processEndedAt: string;
 	readonly durationMs: number;
@@ -1409,6 +1409,49 @@ export async function readProfileWorkQueue(
 	return validateProfileWorkQueue(parsed, manifest.epochId);
 }
 
+export async function publishCarriedProfileUnit(options: {
+	readonly root: string;
+	readonly projectRoot: string;
+	readonly unitId: string;
+	readonly assessorId: string;
+	readonly processId: number;
+	readonly processStartedAt: string;
+	readonly processEndedAt: string;
+	readonly durationMs: number;
+	readonly peakRssBytes: number;
+	readonly profiles: readonly TestEvidenceProfile[];
+}): Promise<void> {
+	await publishUnitShard(options, "carry-forward");
+}
+
+export function digestProfileRecord(profile: TestEvidenceProfile): string {
+	return digestJson(profile);
+}
+
+export async function readEpochProfiles(
+	root: string,
+	epochId: string,
+): Promise<ReadonlyMap<string, TestEvidenceProfile>> {
+	const directory = join(root, "epochs", epochId, "profiles");
+	const profiles = new Map<string, TestEvidenceProfile>();
+	let names: string[] = [];
+	try {
+		names = await readdir(directory);
+	} catch (error) {
+		if (isMissing(error)) return profiles;
+		throw error;
+	}
+	for (const name of names.filter((candidate) => candidate.endsWith(".ndjson")))
+		for (const line of (await readFile(join(directory, name), "utf8"))
+			.split(/\r?\n/)
+			.filter(Boolean)
+			.slice(1)) {
+			const profile = JSON.parse(line) as TestEvidenceProfile;
+			profiles.set(profile.id, profile);
+		}
+	return profiles;
+}
+
 export async function publishProfileUnit(options: {
 	readonly root: string;
 	readonly projectRoot: string;
@@ -1421,6 +1464,27 @@ export async function publishProfileUnit(options: {
 	readonly peakRssBytes: number;
 	readonly profiles: readonly TestEvidenceProfile[];
 }): Promise<void> {
+	await publishUnitShard(options, "driver-process");
+}
+
+async function publishUnitShard(
+	options: {
+		readonly root: string;
+		readonly projectRoot: string;
+		readonly unitId: string;
+		readonly assessorId: string;
+		readonly processId: number;
+		readonly processStartedAt: string;
+		readonly processEndedAt: string;
+		readonly durationMs: number;
+		readonly peakRssBytes: number;
+		readonly profiles: readonly TestEvidenceProfile[];
+	},
+	measurement: "driver-process" | "carry-forward",
+): Promise<void> {
+	const processBackend = measurement;
+	const measurementSource =
+		measurement === "carry-forward" ? "carry-forward" : "dispatcher";
 	const manifest = await readCurrentEpochManifest(options.root);
 	const queue = await readProfileWorkQueue(options.root);
 	const unit = queue.units.find((candidate) => candidate.id === options.unitId);
@@ -1431,8 +1495,8 @@ export async function publishProfileUnit(options: {
 			unitId: options.unitId,
 			assessorId: options.assessorId,
 			processId: options.processId,
-			processBackend: "driver-process",
-			measurementSource: "dispatcher",
+			processBackend,
+			measurementSource,
 			processStartedAt: options.processStartedAt,
 			processEndedAt: options.processEndedAt,
 			durationMs: options.durationMs,
@@ -1460,8 +1524,8 @@ export async function publishProfileUnit(options: {
 			unitId: options.unitId,
 			assessorId: options.assessorId,
 			processId: options.processId,
-			processBackend: "driver-process",
-			measurementSource: "dispatcher",
+			processBackend,
+			measurementSource,
 			processStartedAt: options.processStartedAt,
 			processEndedAt: options.processEndedAt,
 			durationMs: options.durationMs,
@@ -1792,14 +1856,12 @@ async function readPublishedUnit(
 		unitId: header.unitId,
 		assessorId: String(header.assessorId ?? ""),
 		processId: Number(header.processId),
-		processBackend:
-			header.processBackend === "driver-process"
-				? "driver-process"
-				: (String(header.processBackend) as "driver-process"),
-		measurementSource:
-			header.measurementSource === "dispatcher"
-				? "dispatcher"
-				: (String(header.measurementSource) as "dispatcher"),
+		processBackend: String(
+			header.processBackend,
+		) as PublishedProfileUnit["processBackend"],
+		measurementSource: String(
+			header.measurementSource,
+		) as PublishedProfileUnit["measurementSource"],
 		processStartedAt: String(header.processStartedAt ?? ""),
 		processEndedAt: String(header.processEndedAt ?? ""),
 		durationMs: Number(header.durationMs),
@@ -1917,10 +1979,18 @@ async function validatePublishedUnit(
 	if (!nonEmpty(published.assessorId)) issues.push("assessorId is required");
 	if (!Number.isSafeInteger(published.processId) || published.processId < 1)
 		issues.push("processId must identify the unit OS process");
-	if (published.processBackend !== "driver-process")
-		issues.push("processBackend must be driver-process");
-	if (published.measurementSource !== "dispatcher")
-		issues.push("measurementSource must be dispatcher");
+	// A carried unit is measured by the carry process that wrote it, not by a
+	// dispatcher. Saying so keeps the header truthful; the exemption is earned
+	// only when every profile in the unit names the epoch it came from.
+	const carriedUnit =
+		published.profiles.length > 0 &&
+		published.profiles.every((profile) => profile.carriedFrom !== undefined);
+	const expectedBackend = carriedUnit ? "carry-forward" : "driver-process";
+	const expectedSource = carriedUnit ? "carry-forward" : "dispatcher";
+	if (published.processBackend !== expectedBackend)
+		issues.push(`processBackend must be ${expectedBackend}`);
+	if (published.measurementSource !== expectedSource)
+		issues.push(`measurementSource must be ${expectedSource}`);
 	const processStartedAt = Date.parse(published.processStartedAt);
 	const processEndedAt = Date.parse(published.processEndedAt);
 	if (
@@ -2173,6 +2243,12 @@ async function readEpochExecutionSnapshot(
 	root: string,
 	epochId: string,
 	commandIds: readonly string[],
+	// Only records a predecessor also holds can be copies, so digesting anything
+	// else is wasted work on every checkpoint.
+	candidates?: {
+		readonly unitIds: ReadonlySet<string>;
+		readonly profileIds: ReadonlySet<string>;
+	},
 ): Promise<EpochExecutionSnapshot> {
 	const units = new Map<string, string>();
 	const profiles = new Map<string, { digest: string; carried: boolean }>();
@@ -2207,7 +2283,10 @@ async function readEpochExecutionSnapshot(
 			processEndedAt?: string;
 			peakRssBytes?: number;
 		};
-		if (typeof header.unitId === "string")
+		if (
+			typeof header.unitId === "string" &&
+			(candidates?.unitIds.has(header.unitId) ?? true)
+		)
 			units.set(
 				header.unitId,
 				digestJson([
@@ -2222,7 +2301,10 @@ async function readEpochExecutionSnapshot(
 				id?: string;
 				carriedFrom?: unknown;
 			};
-			if (typeof profile.id === "string")
+			if (
+				typeof profile.id === "string" &&
+				(candidates?.profileIds.has(profile.id) ?? true)
+			)
 				profiles.set(profile.id, {
 					digest: executionLineageDigest(profile, epochId),
 					carried: profile.carriedFrom !== undefined,
@@ -2266,18 +2348,37 @@ export async function validateEpochProvenance(
 	const commandIds = manifest.commandDefinitions.map(
 		(definition) => definition.id,
 	);
-	const current = await readEpochExecutionSnapshot(
-		root,
-		manifest.epochId,
-		commandIds,
-	);
-	const issues: string[] = [];
+	const priorSnapshots: [string, EpochExecutionSnapshot][] = [];
 	for (const predecessorId of predecessors) {
 		const prior = await readEpochExecutionSnapshot(
 			root,
 			predecessorId,
 			commandIds,
 		);
+		if (
+			prior.units.size > 0 ||
+			prior.profiles.size > 0 ||
+			prior.commandOutputs.size > 0
+		)
+			priorSnapshots.push([predecessorId, prior]);
+	}
+	// Nothing to have copied from, so the current epoch need not be digested.
+	if (priorSnapshots.length === 0) return [];
+	const current = await readEpochExecutionSnapshot(
+		root,
+		manifest.epochId,
+		commandIds,
+		{
+			unitIds: new Set(
+				priorSnapshots.flatMap(([, prior]) => [...prior.units.keys()]),
+			),
+			profileIds: new Set(
+				priorSnapshots.flatMap(([, prior]) => [...prior.profiles.keys()]),
+			),
+		},
+	);
+	const issues: string[] = [];
+	for (const [predecessorId, prior] of priorSnapshots) {
 		for (const [unitId, digest] of current.units)
 			if (prior.units.get(unitId) === digest)
 				issues.push(

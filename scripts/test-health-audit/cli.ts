@@ -6,6 +6,7 @@ import {
 	readCurrentEpochManifest,
 	validateEpochProvenance,
 } from "./artifacts.ts";
+import { carryForwardProfileUnits } from "./carry-forward.ts";
 import {
 	type CensusResult,
 	commandCensusDigest,
@@ -28,6 +29,7 @@ export interface CliDependencies {
 		unitId: string,
 		inputPath: string,
 	) => Promise<unknown>;
+	readonly carryForward?: (root: string) => Promise<unknown>;
 	readonly validate?: (root: string) => Promise<unknown>;
 	readonly probe?: (root: string, id: string) => Promise<unknown>;
 	readonly baseline?: (root: string) => Promise<unknown>;
@@ -60,6 +62,10 @@ export async function runCli(
 			);
 			return 0;
 		}
+		if (parsed.command === "carry-forward") {
+			await (dependencies.carryForward ?? defaultCarryForward)(parsed.root);
+			return 0;
+		}
 		if (parsed.command === "validate") {
 			await (dependencies.validate ?? defaultValidate)(parsed.root);
 			return 0;
@@ -88,6 +94,7 @@ function parseArguments(argv: readonly string[]): {
 		| "prepare-units"
 		| "dispatch"
 		| "publish-unit"
+		| "carry-forward"
 		| "validate"
 		| "probe"
 		| "baseline";
@@ -97,7 +104,7 @@ function parseArguments(argv: readonly string[]): {
 } {
 	if (argv[0] !== "--audit-root" || !argv[1])
 		throw new Error(
-			"usage: cli.ts --audit-root <path> <census|prepare-units|dispatch|publish-unit|validate|probe|baseline>",
+			"usage: cli.ts --audit-root <path> <census|prepare-units|dispatch|publish-unit|carry-forward|validate|probe|baseline>",
 		);
 	const command = argv[2];
 	if (
@@ -107,6 +114,7 @@ function parseArguments(argv: readonly string[]): {
 			"prepare-units",
 			"dispatch",
 			"publish-unit",
+			"carry-forward",
 			"validate",
 			"probe",
 			"baseline",
@@ -127,6 +135,7 @@ function parseArguments(argv: readonly string[]): {
 			| "prepare-units"
 			| "dispatch"
 			| "publish-unit"
+			| "carry-forward"
 			| "validate"
 			| "probe"
 			| "baseline",
@@ -304,6 +313,14 @@ async function defaultPublishUnit(
 		"publish-unit is dispatcher-owned; run dispatch so process cost is measured externally",
 	);
 }
+async function defaultCarryForward(root: string): Promise<void> {
+	const report = await carryForwardProfileUnits({
+		auditRoot: root,
+		projectRoot: process.cwd(),
+	});
+	process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+}
+
 async function defaultValidate(root: string): Promise<boolean> {
 	const manifest = await readCurrentEpochManifest(root);
 	await validateCensusDigests(root, manifest);
