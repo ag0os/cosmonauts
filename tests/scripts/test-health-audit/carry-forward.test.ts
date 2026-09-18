@@ -541,4 +541,124 @@ describe("test health audit carry-forward", () => {
 			carryForwardProfileUnits({ auditRoot, projectRoot }),
 		).rejects.toThrow();
 	});
+
+	async function withCensus(
+		auditRoot: string,
+		options: {
+			readonly predecessorDisposition?: boolean;
+			readonly successorDetail?: string;
+		} = {},
+	) {
+		const finding = (detail: string) => ({
+			id: "finding-1",
+			kind: "not-selected",
+			lane: "objective-observation",
+			basis: "observed",
+			commandId: "normal",
+			detail,
+			accountedFor: false,
+		});
+		const answer = {
+			findingId: "finding-1",
+			disposition: "accounted-for",
+			reasoning: "the declaration is filtered by the command's own selection",
+			assessor: {
+				kind: "agent",
+				id: "census-assessor",
+				model: "openai-codex",
+				modelVersion: "gpt-5",
+				assessedAt: ASSESSED_AT,
+				consultedAuthorities: [
+					{ kind: "authority-document", path: "docs/contract.md" },
+				],
+			},
+		};
+		await writeFile(
+			join(auditRoot, "epochs", "epoch-1", "suite-integrity.json"),
+			JSON.stringify({
+				findings: [
+					{
+						...finding("second case was not selected"),
+						accountedFor: options.predecessorDisposition !== false,
+						...(options.predecessorDisposition === false
+							? {}
+							: { disposition: answer }),
+					},
+				],
+			}),
+		);
+		await writeFile(
+			join(auditRoot, "epochs", "epoch-2", "suite-integrity.json"),
+			JSON.stringify({
+				findings: [
+					finding(options.successorDetail ?? "second case was not selected"),
+				],
+			}),
+		);
+	}
+
+	async function successorDispositions(auditRoot: string) {
+		return JSON.parse(
+			await readFile(
+				join(auditRoot, "epochs", "epoch-2", "dispositions.json"),
+				"utf8",
+			),
+		) as { findingId: string; carriedFrom?: { epochId: string } }[];
+	}
+
+	it("carries a census answer whose finding restates the same observation", async () => {
+		const { auditRoot, projectRoot } = await fixture();
+		await withCensus(auditRoot);
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.dispositions).toMatchObject({
+			answerableFindingCount: 1,
+			carriedCount: 1,
+			unansweredFindingIds: [],
+			retained: false,
+		});
+		const carried = await successorDispositions(auditRoot);
+		expect(carried).toHaveLength(1);
+		expect(carried[0]).toMatchObject({
+			findingId: "finding-1",
+			disposition: "accounted-for",
+			carriedFrom: { epochId: "epoch-1" },
+		});
+	});
+
+	it("leaves a finding unanswered when the predecessor never answered it", async () => {
+		const { auditRoot, projectRoot } = await fixture();
+		await withCensus(auditRoot, { predecessorDisposition: false });
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.dispositions).toMatchObject({
+			carriedCount: 0,
+			unansweredFindingIds: ["finding-1"],
+		});
+	});
+
+	it("refuses to answer a finding whose observation text changed under a reused id", async () => {
+		const { auditRoot, projectRoot } = await fixture();
+		await withCensus(auditRoot, {
+			successorDetail: "second case failed to collect",
+		});
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.dispositions).toMatchObject({
+			carriedCount: 0,
+			unansweredFindingIds: ["finding-1"],
+		});
+	});
+
+	it("does not overwrite census answers the successor already holds", async () => {
+		const { auditRoot, projectRoot } = await fixture();
+		await withCensus(auditRoot);
+		await writeFile(
+			join(auditRoot, "epochs", "epoch-2", "dispositions.json"),
+			JSON.stringify([]),
+		);
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.dispositions).toMatchObject({
+			carriedCount: 0,
+			retained: true,
+		});
+		expect(await successorDispositions(auditRoot)).toEqual([]);
+	});
 });

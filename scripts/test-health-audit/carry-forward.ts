@@ -12,6 +12,7 @@ import {
 	readProfileWorkQueue,
 	writeTextAtomic,
 } from "./artifacts.ts";
+import type { CensusFinding, FindingDisposition } from "./census.ts";
 import type {
 	RuntimeState,
 	TestEvidenceProfile,
@@ -35,6 +36,18 @@ export interface CarryForwardReport {
 	readonly carriedProfileCount: number;
 	readonly carriedDeliverables: readonly string[];
 	readonly reasons: Readonly<Record<string, string>>;
+	readonly dispositions: DispositionCarryReport;
+}
+
+export interface DispositionCarryReport {
+	/** Findings in this epoch that need an answer before the census is complete. */
+	readonly answerableFindingCount: number;
+	readonly carriedCount: number;
+	/** Finding ids this epoch still has to answer, because no identical
+	 * observation exists in the predecessor. */
+	readonly unansweredFindingIds: readonly string[];
+	/** Set when the successor already held its own dispositions. */
+	readonly retained: boolean;
 }
 
 interface ReporterCase {
@@ -336,6 +349,109 @@ async function carryDeliverables(
 	return carried;
 }
 
+/**
+ * Inherits census answers whose question is byte-identical. A finding id is a
+ * sha256 over the finding's kind, command and detail, so an id shared with the
+ * predecessor is the same observation restated by a fresh run — the same rule
+ * that lets a profile carry when its material inputs rehash unchanged. The
+ * content is compared as well as the id, so the guarantee is checked here
+ * rather than inferred from how ids happen to be built.
+ */
+async function carryDispositions(
+	auditRoot: string,
+	predecessorEpochId: string,
+	epochId: string,
+): Promise<DispositionCarryReport> {
+	const current = await readCensusFindings(auditRoot, epochId);
+	const answerable = current.filter((finding) => finding.basis !== "reasoned");
+	const existing = await readJsonIfPresent(
+		join(auditRoot, "epochs", epochId, "dispositions.json"),
+	);
+	if (existing !== undefined)
+		return {
+			answerableFindingCount: answerable.length,
+			carriedCount: 0,
+			unansweredFindingIds: [],
+			retained: true,
+		};
+
+	const prior = await readCensusFindings(auditRoot, predecessorEpochId);
+	const priorById = new Map(prior.map((finding) => [finding.id, finding]));
+	const carried: FindingDisposition[] = [];
+	const unanswered: string[] = [];
+	for (const finding of answerable) {
+		const source = priorById.get(finding.id);
+		if (!source?.disposition || !sameObservation(source, finding)) {
+			unanswered.push(finding.id);
+			continue;
+		}
+		const { carriedFrom: _discard, ...judgment } = source.disposition;
+		carried.push({
+			...judgment,
+			carriedFrom: {
+				epochId: predecessorEpochId,
+				dispositionDigest: digestDisposition(source.disposition),
+			},
+		});
+	}
+	if (carried.length > 0)
+		await writeTextAtomic(
+			join(auditRoot, "epochs", epochId, "dispositions.json"),
+			`${JSON.stringify(carried, null, 2)}\n`,
+		);
+	return {
+		answerableFindingCount: answerable.length,
+		carriedCount: carried.length,
+		unansweredFindingIds: unanswered,
+		retained: false,
+	};
+}
+
+function sameObservation(left: CensusFinding, right: CensusFinding): boolean {
+	return (
+		left.kind === right.kind &&
+		(left.commandId ?? null) === (right.commandId ?? null) &&
+		left.detail === right.detail
+	);
+}
+
+function digestDisposition(disposition: FindingDisposition): string {
+	const { carriedFrom: _discard, ...judgment } = disposition;
+	return createHash("sha256").update(JSON.stringify(judgment)).digest("hex");
+}
+
+/**
+ * An epoch without a census has no answers to give or to receive. That is a
+ * real state — carry-forward also runs before the profile queue exists — so it
+ * reports an empty set rather than failing. The report's counts are what make
+ * a mis-ordered run visible.
+ */
+async function readCensusFindings(
+	auditRoot: string,
+	epochId: string,
+): Promise<CensusFinding[]> {
+	const path = join(auditRoot, "epochs", epochId, "suite-integrity.json");
+	const parsed = await readJsonIfPresent(path);
+	if (parsed === undefined) return [];
+	const findings = (parsed as { findings?: unknown }).findings;
+	if (!Array.isArray(findings)) throw new Error(`${path} is malformed`);
+	return findings as CensusFinding[];
+}
+
+async function readJsonIfPresent(path: string): Promise<unknown> {
+	try {
+		return JSON.parse(await readFile(path, "utf8")) as unknown;
+	} catch (error) {
+		if (
+			typeof error === "object" &&
+			error !== null &&
+			(error as { code?: unknown }).code === "ENOENT"
+		)
+			return undefined;
+		throw error;
+	}
+}
+
 /** Validator messages concatenate every issue; one is enough to explain a skip. */
 function firstIssue(message: string): string {
 	const body = message.replace(/^invalid profile unit [^:]+: /, "");
@@ -359,6 +475,11 @@ export async function carryForwardProfileUnits(options: {
 		throw new Error("carry-forward requires a predecessor epoch");
 
 	const carriedDeliverables = await carryDeliverables(
+		auditRoot,
+		predecessorEpochId,
+		manifest.epochId,
+	);
+	const dispositions = await carryDispositions(
 		auditRoot,
 		predecessorEpochId,
 		manifest.epochId,
@@ -481,5 +602,6 @@ export async function carryForwardProfileUnits(options: {
 		carriedProfileCount,
 		carriedDeliverables,
 		reasons,
+		dispositions,
 	};
 }

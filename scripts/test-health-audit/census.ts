@@ -53,6 +53,17 @@ export interface FindingDisposition {
 		| "repair-required-suite";
 	readonly reasoning: string;
 	readonly assessor: Extract<Assessor, { kind: "agent" }>;
+	/**
+	 * Set when a successor epoch inherited this answer deterministically. A
+	 * finding id is a content hash over its kind, command and detail, so an
+	 * identical id is the identical observation and the predecessor's answer
+	 * still applies. Carrying it is only sound while it stays distinguishable
+	 * from a fresh judgment, which is what this records.
+	 */
+	readonly carriedFrom?: {
+		readonly epochId: string;
+		readonly dispositionDigest: string;
+	};
 }
 export interface CommandEvidence {
 	readonly commandId: string;
