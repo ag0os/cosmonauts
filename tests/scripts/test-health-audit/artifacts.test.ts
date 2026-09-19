@@ -1383,7 +1383,7 @@ describe("test health audit artifacts", () => {
 			valid: false,
 			issues: expect.arrayContaining([
 				"entries[0].axes.boundary is missing risk-required axis consumer",
-				"entries[0].axes.boundary[0] cannot be protected by missing, blocked, or reasoned evidence",
+				"entries[0].axes.boundary[0] cannot be protected by reasoned evidence alone",
 				"entries[0] cannot be protected while required probe PROBE-BRI-001 is required",
 			]),
 		});

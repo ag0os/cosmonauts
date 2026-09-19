@@ -10,7 +10,10 @@ import {
 import { carryForwardProfileUnits } from "../../../scripts/test-health-audit/carry-forward.ts";
 import { sourceCensusDigest } from "../../../scripts/test-health-audit/census.ts";
 import { derivedPortfolioIssues } from "../../../scripts/test-health-audit/cli.ts";
-import { publishPortfolioEvidence } from "../../../scripts/test-health-audit/portfolio.ts";
+import {
+	buildPortfolioEvidence,
+	publishPortfolioEvidence,
+} from "../../../scripts/test-health-audit/portfolio.ts";
 import type { TestEvidenceProfile } from "../../../scripts/test-health-audit/schema.ts";
 import { collectSourceText } from "../../../scripts/test-health-audit/source-census.ts";
 
@@ -884,5 +887,76 @@ describe("test health audit carry-forward", () => {
 		await expect(publishPortfolioEvidence(auditRoot)).rejects.toThrow(
 			/does not match the unit's driver-process provenance/,
 		);
+	});
+});
+
+describe("portfolio protection", () => {
+	// `protected` was unreachable: buildCell had four return paths and none of
+	// them emitted it, so no entry could ever satisfy baseline condition 4.
+	// Protection is what a probe establishes, so these pin the tie between a
+	// confirmed probe and a protected cell in both directions.
+	function profileWith(
+		id: string,
+		contributionBasis: string,
+		faultBasis: string,
+	) {
+		return {
+			id,
+			portfolioContributions: {
+				value: [
+					{
+						inventoryId: "BRI-001",
+						boundary: "producer",
+						defectAxes: ["path"],
+					},
+				],
+				basis: contributionBasis,
+				uncertainty: [],
+			},
+			dimensions: { faultSensitivity: { basis: faultBasis, uncertainty: [] } },
+			chain: { value: { limitations: [] } },
+			reasonCodes: { value: [] },
+		} as never;
+	}
+
+	const inventory = () => inventoryFixture("epoch-1", "a".repeat(64));
+
+	function cellStates(profiles: readonly unknown[]) {
+		const record = buildPortfolioEvidence(
+			inventory(),
+			profiles as never,
+			"epoch-1",
+		);
+		const entry = record.entries[0];
+		return {
+			producer: entry?.axes.boundary.find((c) => c.name === "producer")?.state,
+			gaps: entry?.gaps.length ?? 0,
+		};
+	}
+
+	it("protects a cell whose guardrail a probe confirmed", () => {
+		expect(
+			cellStates([profileWith("p1", "probe-confirmed", "probe-confirmed")]),
+		).toMatchObject({ producer: "protected" });
+	});
+
+	it("leaves a cell contributing when nothing confirmed it", () => {
+		expect(
+			cellStates([profileWith("p1", "reasoned", "reasoned")]),
+		).toMatchObject({ producer: "contributing" });
+	});
+
+	// Adding a reasoned test beside a confirmed one used to demote the cell and
+	// add a gap, so a portfolio got worse for carrying more evidence.
+	it("does not demote a confirmed cell when a reasoned profile joins it", () => {
+		const confirmedOnly = cellStates([
+			profileWith("p1", "probe-confirmed", "probe-confirmed"),
+		]);
+		const withSibling = cellStates([
+			profileWith("p1", "probe-confirmed", "probe-confirmed"),
+			profileWith("p2", "reasoned", "reasoned"),
+		]);
+		expect(withSibling.producer).toBe(confirmedOnly.producer);
+		expect(withSibling.gaps).toBeLessThanOrEqual(confirmedOnly.gaps);
 	});
 });

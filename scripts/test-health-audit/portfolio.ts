@@ -140,8 +140,8 @@ function validatePortfolioEntry(
 	if (!uncertainty)
 		issues.push(`${path}.uncertainty must be an array of strings`);
 	if (input.conclusion !== "protected") return;
-	if ((gaps?.length ?? 0) > 0 || (uncertainty?.length ?? 0) > 0)
-		issues.push(`${path} cannot be protected while gaps or uncertainty remain`);
+	if ((gaps?.length ?? 0) > 0)
+		issues.push(`${path} cannot be protected while gaps remain`);
 	if (!isRecord(input.axes)) return;
 	for (const kind of AXIS_KINDS)
 		for (const cell of Array.isArray(input.axes[kind]) ? input.axes[kind] : [])
@@ -193,11 +193,17 @@ function validatePortfolioCell(
 		issues.push(`${path} must keep its gap or uncertainty visible`);
 	if (
 		input.state === "protected" &&
-		bases?.some((basis) => ["missing", "blocked", "reasoned"].includes(basis))
+		bases?.some((basis) => ["missing", "blocked"].includes(basis))
 	)
-		issues.push(
-			`${path} cannot be protected by missing, blocked, or reasoned evidence`,
-		);
+		issues.push(`${path} cannot be protected by missing or blocked evidence`);
+	// Reasoning alone never protects. A reasoned basis is tolerated only beside a
+	// probe that confirmed the guardrail under a real defect.
+	if (
+		input.state === "protected" &&
+		bases?.includes("reasoned") &&
+		!bases?.includes("probe-confirmed")
+	)
+		issues.push(`${path} cannot be protected by reasoned evidence alone`);
 }
 
 function validateProbe(
@@ -406,16 +412,29 @@ function buildCell(
 			],
 			uncertainty,
 		};
+	// Protection is what a probe establishes: the guardrail held while a real
+	// defect was introduced. A reasoned sibling alongside a confirmation does not
+	// demote the cell -- counting it as a gap made a cell worse for carrying more
+	// evidence -- but without any confirmation the cell is contributing, not
+	// protected, however many profiles reach it.
+	const confirmed = bases.includes("probe-confirmed");
+	if (confirmed)
+		return {
+			name,
+			state: "protected",
+			profileIds,
+			evidenceBases: bases,
+			gaps: [],
+			uncertainty,
+		};
 	return {
 		name,
 		state: "contributing",
 		profileIds,
 		evidenceBases: bases,
-		gaps: bases.includes("reasoned")
-			? [
-					`Exact ${kind} evidence for ${name} is reasoned and not probe-confirmed.`,
-				]
-			: [],
+		gaps: [
+			`Exact ${kind} evidence for ${name} is reasoned and not probe-confirmed.`,
+		],
 		uncertainty,
 	};
 }
@@ -486,12 +505,14 @@ export function applyProbeEvidence(
 				const allProtected = AXIS_KINDS.every((kind) =>
 					entry.axes[kind].every((axis) => axis.state === "protected"),
 				);
+				// Documented uncertainty is an honest description of what a test does
+				// not reach, and it accumulates with every contributing test. Counting
+				// it against protection penalised an entry for having more evidence;
+				// condition 7 owns whether that uncertainty is bounded and acceptable.
 				return {
 					...entry,
 					conclusion:
-						allProtected && gaps.length === 0 && entry.uncertainty.length === 0
-							? "protected"
-							: entry.conclusion,
+						allProtected && gaps.length === 0 ? "protected" : entry.conclusion,
 					probe: {
 						...entry.probe,
 						status: "confirmed",
