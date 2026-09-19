@@ -308,7 +308,7 @@ Runtime flags:
 - `--claude-binary <path>` runs a specific Claude Code CLI binary instead of `claude`.
 - `--prompt-mode append|replace` overrides the package's Claude system-prompt mode.
 
-Trailing prompt arguments are joined and passed to Claude; if no prompt arguments are provided, the binary reads stdin. If both are empty, it prints usage and exits non-zero.
+Trailing arguments are passed through to Claude unchanged, after the wrapper's own flags are removed. The wrapper does not read stdin itself: it spawns Claude with `stdio: "inherit"`, so a pipe reaches Claude directly. With no trailing arguments the wrapper passes none, and Claude starts as it would when run with no arguments.
 
 By default, exported binaries remove `ANTHROPIC_API_KEY` before launching Claude and print a warning when they do so. This subscription-safety default prevents accidental Anthropic API billing and keeps Claude Code subscription authentication as the default. Pass `--allow-api-billing` only when you intentionally want API-key billing.
 

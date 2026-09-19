@@ -3,7 +3,8 @@
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
 	ResourceDiagnostic,
 	Skill,
@@ -15,16 +16,14 @@ import {
 	resolveHiddenSkillNames,
 	type SkillsOverrideFn,
 } from "../../lib/agents/skills.ts";
+import { loadDomainsFromSources } from "../../lib/domains/loader.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("agent-skills-");
-const plannerDefinition = { skills: ["work-artifacts", "architecture"] };
-const specWriterDefinition = { skills: ["work-artifacts"] };
-const taskManagerDefinition = { skills: ["task", "work-artifacts"] };
-const planReviewerDefinition = { skills: ["work-artifacts", "architecture"] };
+const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
 /** Helper to create a mock skills base for testing the override function. */
 function makeBase(skillNames: string[]) {
@@ -326,18 +325,37 @@ describe("buildSkillsOverride", () => {
 
 describe("artifact skill allowlists", () => {
 	// @cosmo-behavior plan:artifact-format-redesign#B-013
-	test("artifact-producing and plan-review agents can load shared artifact guidance", () => {
+	test("artifact-producing and plan-review agents can load shared artifact guidance", async () => {
 		// @cosmo-behavior plan:coding-agnostic-framework#B-017
-		expect(plannerDefinition.skills).toEqual(
+		// Read the shipped definitions rather than a literal declared here, so
+		// removing a skill from an agent turns this red. The domain is loaded
+		// through the framework's own loader, which is how a lib-level test
+		// reaches bundled content without importing a domain module.
+		const [coding] = await loadDomainsFromSources([
+			{
+				domainsDir: join(REPO_ROOT, "bundled", "coding"),
+				sourceType: "domain-root",
+				origin: "bundled",
+				precedence: 1,
+			},
+		]);
+		if (!coding) throw new Error("the coding domain did not load");
+		const skillsOf = (id: string) => {
+			const definition = coding.agents.get(id);
+			if (!definition) throw new Error(`no ${id} agent in the coding domain`);
+			return definition.skills ?? [];
+		};
+
+		expect(skillsOf("planner")).toEqual(
 			expect.arrayContaining(["work-artifacts", "architecture"]),
 		);
-		expect(specWriterDefinition.skills).toEqual(
+		expect(skillsOf("spec-writer")).toEqual(
 			expect.arrayContaining(["work-artifacts"]),
 		);
-		expect(taskManagerDefinition.skills).toEqual(
+		expect(skillsOf("task-manager")).toEqual(
 			expect.arrayContaining(["task", "work-artifacts"]),
 		);
-		expect(planReviewerDefinition.skills).toEqual(
+		expect(skillsOf("plan-reviewer")).toEqual(
 			expect.arrayContaining(["work-artifacts", "architecture"]),
 		);
 	});
