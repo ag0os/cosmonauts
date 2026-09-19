@@ -356,3 +356,51 @@ Inherit this: a dispatched unit's summary is not evidence of anything. The only
 durable signal is a shard that passes the current-epoch validator *and* the
 provenance gate, and the gate has now paid for itself twice.
 
+
+### 2026-09-19 — the first ratified-ground halt, and it stopped my own repair
+
+Wave 4's dispatch refused to drain. `profile-unit-0004-753abc12db41` returned a
+`ratified-ground-collision` halt rather than a shard, and the collision it names
+is in the Q-005 repair this wave had just committed at `577221e`.
+
+The halt asks which ratified ground governs the artifact skill allowlist guard:
+
+- `missions/archive/plans/artifact-format-redesign/plan.md` B-013 names
+  `tests/agents/skills.test.ts` as the site that proves artifact-producing and
+  plan-review agents can load shared artifact guidance, and
+  `validateReferencedFileMarker` reads that exact path, so the coverage cannot
+  move without amending the archived plan.
+- `missions/archive/plans/coding-agnostic-framework/plan.md` line 398 lists
+  `tests/agents/skills.test.ts` in **Bucket B**, and B-017 (line 209) requires
+  that Bucket B files have **no real `bundled/coding` dependency**. AC-005 says
+  Bucket B tests use a synthetic installable-package fixture instead.
+
+The Q-005 repair bound the declaration to the real shipped definitions through
+`loadDomainsFromSources` against `bundled/coding`. That is precisely the
+dependency B-017 forbids. The repair is reverted.
+
+Two things about how this was found are worth keeping.
+
+**Nothing mechanical caught it.** The suite stayed green at 3,214, lint and
+typecheck were clean, and `check-artifacts` passed for both archived plans,
+because B-017's marker test checks that markers exist at named files and not
+that a file avoids a dependency. An assessing agent reading the ratified plan is
+the only thing that found it.
+
+**The recommendation that produced the repair was mine, and it was built on an
+authority I never opened.** The Q-005 options weighed `missions/architecture/domains.md`
+on framework/domain layering and cited `tests/agents/session-assembly.test.ts:339`
+as precedent for loading the coding domain from that directory. That precedent
+does not hold: `session-assembly.test.ts` is not in the Bucket B list, so it is
+not governed by the rule that governs this file. The owner's Q-005 ruling rests
+on that incomplete premise and has to be reopened.
+
+The synthetic-fixture route AC-005 prescribes does not resolve it either: a
+synthetic domain would make the declaration assert that a fixture written in the
+test contains what the test wrote into it, which is the same vacuity Q-005 set
+out to remove. So the collision is real, both sides are archived plan ground,
+and choosing between them is the act D-028 withholds.
+
+The epoch cannot drain while the halt stands. Nothing further in wave 4 is
+blocked on agent work; it is blocked on the owner.
+
