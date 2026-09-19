@@ -420,9 +420,18 @@ function buildCell(
 	};
 }
 
-export async function publishPortfolioEvidence(
-	auditRoot: string,
-): Promise<PortfolioEvidenceRecord> {
+/**
+ * Joins the current epoch's own inventory, profiles and probe records into the
+ * two portfolio documents, without writing them. Publishing and checking a
+ * published document both go through this, so what `validate` compares against
+ * is the same derivation the publisher performed rather than a second
+ * implementation of it.
+ */
+export async function derivePortfolioEvidence(auditRoot: string): Promise<{
+	readonly record: PortfolioEvidenceRecord;
+	readonly matrix: string;
+	readonly gapRegister: string;
+}> {
 	const manifest = await readCurrentEpochManifest(auditRoot);
 	const epochDirectory = join(auditRoot, "epochs", manifest.epochId);
 	const [inventory, profiles] = await Promise.all([
@@ -433,15 +442,23 @@ export async function publishPortfolioEvidence(
 		buildPortfolioEvidence(inventory, profiles, manifest.epochId),
 		await readProbeEvidence(epochDirectory),
 	);
-	const documents = renderPortfolioEvidenceDocuments(record);
+	return { record, ...renderPortfolioEvidenceDocuments(record) };
+}
+
+export async function publishPortfolioEvidence(
+	auditRoot: string,
+): Promise<PortfolioEvidenceRecord> {
+	const manifest = await readCurrentEpochManifest(auditRoot);
+	const epochDirectory = join(auditRoot, "epochs", manifest.epochId);
+	const derived = await derivePortfolioEvidence(auditRoot);
 	await Promise.all([
 		writeAtomic(
 			join(epochDirectory, "behavior-risk-matrix.md"),
-			documents.matrix,
+			derived.matrix,
 		),
-		writeAtomic(join(epochDirectory, "gap-register.md"), documents.gapRegister),
+		writeAtomic(join(epochDirectory, "gap-register.md"), derived.gapRegister),
 	]);
-	return record;
+	return derived.record;
 }
 
 interface PublishedProbeEvidence {

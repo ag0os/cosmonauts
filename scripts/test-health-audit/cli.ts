@@ -33,6 +33,7 @@ import {
 } from "./census.ts";
 import { dispatchProfileUnits } from "./dispatch.ts";
 import {
+	derivePortfolioEvidence,
 	parsePortfolioEvidenceDocument,
 	validatePortfolioEvidenceDocuments,
 } from "./portfolio.ts";
@@ -388,11 +389,13 @@ async function validateEpochDeliverables(
 	const epoch = join(root, "epochs", manifest.epochId);
 	const issues: string[] = [];
 
-	const [matrix, gapRegister, inventoryText] = await Promise.all([
-		readIfPresent(join(epoch, "behavior-risk-matrix.md")),
-		readIfPresent(join(epoch, "gap-register.md")),
-		readIfPresent(join(epoch, "behavior-risk-inventory.json")),
-	]);
+	const [matrix, gapRegister, inventoryText, baselineDocument] =
+		await Promise.all([
+			readIfPresent(join(epoch, "behavior-risk-matrix.md")),
+			readIfPresent(join(epoch, "gap-register.md")),
+			readIfPresent(join(epoch, "behavior-risk-inventory.json")),
+			readIfPresent(join(epoch, "baseline.md")),
+		]);
 	if (matrix && gapRegister && inventoryText) {
 		const portfolio = validatePortfolioEvidenceDocuments({
 			matrix,
@@ -401,6 +404,16 @@ async function validateEpochDeliverables(
 			currentEpochId: manifest.epochId,
 		});
 		issues.push(...portfolio.issues.map((issue) => `portfolio: ${issue}`));
+		// A successor epoch inherits these two documents from its predecessor as a
+		// seed, restamped with its own epoch id. Every structural check above
+		// passes on that copy, so only re-deriving from this epoch's own profiles
+		// distinguishes a rebuilt matrix from an inherited one. The epoch has to
+		// be a candidate for the derivation to be possible at all, which is what
+		// the baseline document marks.
+		if (baselineDocument)
+			issues.push(
+				...(await derivedPortfolioIssues(root, { matrix, gapRegister })),
+			);
 	}
 
 	const calibration = await readIfPresent(join(epoch, "calibration.md"));
@@ -415,7 +428,6 @@ async function validateEpochDeliverables(
 	const ledgerDocument = await readIfPresent(
 		join(epoch, "remediation-ledger.md"),
 	);
-	const baselineDocument = await readIfPresent(join(epoch, "baseline.md"));
 	if (ledgerDocument && baselineDocument) {
 		const integrity = JSON.parse(
 			(await readIfPresent(join(epoch, "suite-integrity.json"))) ?? "{}",
@@ -446,6 +458,8 @@ async function validateEpochDeliverables(
 			...result.issues.map((issue) => `remediation-ledger: ${issue}`),
 		);
 	}
+
+	issues.push(...(await staleProbeIssues(epoch, process.cwd())));
 
 	const recommendations = await readIfPresent(
 		join(epoch, "gate-recommendations.md"),
@@ -484,6 +498,79 @@ async function validateEpochDeliverables(
 		);
 		issues.push(...result.issues.map((issue) => `baseline: ${issue}`));
 	}
+	return issues;
+}
+
+/**
+ * Re-joins the current epoch's inventory, profiles and probe records and
+ * compares the result with what the epoch published. A document that differs is
+ * describing evidence other than this epoch's -- the shape an inherited,
+ * restamped predecessor document takes.
+ */
+/**
+ * A probe record is a measurement of one file: what happened to the guardrail
+ * while that exact text was mutated. `probes.jsonl` is inherited by every
+ * successor epoch and restamped with its id, so a record can outlive the code
+ * it measured -- going on crediting baseline condition 6 for a mutation that no
+ * longer applies, or opening a remediation row against code that is gone. The
+ * record carries the target's digest at run time, so either claim is checkable
+ * rather than assumed. Outcome does not enter it: a measurement of text this
+ * revision does not have describes this revision either way.
+ */
+export async function staleProbeIssues(
+	epochDirectory: string,
+	projectRoot: string,
+): Promise<string[]> {
+	const text = await readIfPresent(join(epochDirectory, "probes.jsonl"));
+	if (text === undefined) return [];
+	const issues: string[] = [];
+	for (const line of text.split(/\r?\n/u).filter(Boolean)) {
+		const record = JSON.parse(line) as {
+			probeId?: string;
+			paths?: { target?: string };
+			sourceCheckout?: { targetDigestBefore?: string };
+		};
+		const target = record.paths?.target;
+		const recorded = record.sourceCheckout?.targetDigestBefore;
+		if (!target || !recorded) continue;
+		const current = await readIfPresent(join(projectRoot, target)).catch(
+			() => undefined,
+		);
+		if (current === undefined) {
+			issues.push(
+				`probes: ${record.probeId} measured ${target}, which this revision does not have`,
+			);
+			continue;
+		}
+		if (createHash("sha256").update(current).digest("hex") !== recorded)
+			issues.push(
+				`probes: ${record.probeId} measured a version of ${target} that this revision does not have`,
+			);
+	}
+	return issues;
+}
+
+export async function derivedPortfolioIssues(
+	root: string,
+	published: { readonly matrix: string; readonly gapRegister: string },
+): Promise<string[]> {
+	let derived: Awaited<ReturnType<typeof derivePortfolioEvidence>>;
+	try {
+		derived = await derivePortfolioEvidence(root);
+	} catch (error) {
+		return [
+			`portfolio: cannot re-derive this epoch's evidence: ${error instanceof Error ? error.message : String(error)}`,
+		];
+	}
+	const issues: string[] = [];
+	if (derived.matrix !== published.matrix)
+		issues.push(
+			"portfolio: behavior-risk-matrix.md is not what this epoch's profiles produce",
+		);
+	if (derived.gapRegister !== published.gapRegister)
+		issues.push(
+			"portfolio: gap-register.md is not what this epoch's profiles produce",
+		);
 	return issues;
 }
 

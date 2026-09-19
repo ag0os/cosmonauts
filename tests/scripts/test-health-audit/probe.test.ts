@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { staleProbeIssues } from "../../../scripts/test-health-audit/cli.ts";
 import { validateProbeRecord } from "../../../scripts/test-health-audit/probe.ts";
 
 describe("targeted probe evidence", () => {
@@ -112,5 +117,78 @@ describe("targeted probe evidence", () => {
 				},
 			}),
 		).toMatchObject({ valid: false });
+	});
+});
+
+describe("probe evidence staleness", () => {
+	const roots: string[] = [];
+	afterEach(async () => {
+		for (const root of roots.splice(0)) await rm(root, { recursive: true });
+	});
+
+	async function fixture(targetText: string) {
+		const root = await mkdtemp(join(tmpdir(), "audit-probe-stale-"));
+		roots.push(root);
+		const projectRoot = join(root, "project");
+		const epoch = join(root, "epoch");
+		await mkdir(join(projectRoot, "lib"), { recursive: true });
+		await mkdir(epoch, { recursive: true });
+		await writeFile(join(projectRoot, "lib", "guarded.ts"), targetText);
+		await writeFile(
+			join(epoch, "probes.jsonl"),
+			`${JSON.stringify({
+				schemaVersion: 1,
+				epochId: "epoch-2",
+				probeId: "PROBE-BRI-005",
+				outcome: "probe-confirmed",
+				paths: { target: "lib/guarded.ts" },
+				sourceCheckout: {
+					targetDigestBefore: createHash("sha256")
+						.update(targetText)
+						.digest("hex"),
+				},
+			})}\n`,
+		);
+		return { epoch, projectRoot };
+	}
+
+	it("accepts a probe record whose target still has the text it mutated", async () => {
+		const { epoch, projectRoot } = await fixture("export const guard = 1;\n");
+		expect(await staleProbeIssues(epoch, projectRoot)).toEqual([]);
+	});
+
+	it("reports a probe record whose target changed after it ran", async () => {
+		const { epoch, projectRoot } = await fixture("export const guard = 1;\n");
+		await writeFile(
+			join(projectRoot, "lib", "guarded.ts"),
+			"export const guard = 2;\n",
+		);
+		expect(await staleProbeIssues(epoch, projectRoot)).toEqual([
+			"probes: PROBE-BRI-005 measured a version of lib/guarded.ts that this revision does not have",
+		]);
+	});
+
+	it("ignores a limitation record, which measured no file", async () => {
+		const { epoch, projectRoot } = await fixture("export const guard = 1;\n");
+		await writeFile(
+			join(epoch, "probes.jsonl"),
+			`${JSON.stringify({
+				schemaVersion: 1,
+				epochId: "epoch-2",
+				probeId: "PROBE-BRI-006",
+				outcome: "unassessed",
+				basis: "blocked",
+				limitation: "probe definition is unavailable",
+			})}\n`,
+		);
+		expect(await staleProbeIssues(epoch, projectRoot)).toEqual([]);
+	});
+
+	it("reports a probe record whose target this revision no longer has", async () => {
+		const { epoch, projectRoot } = await fixture("export const guard = 1;\n");
+		await rm(join(projectRoot, "lib", "guarded.ts"));
+		expect(await staleProbeIssues(epoch, projectRoot)).toEqual([
+			"probes: PROBE-BRI-005 measured lib/guarded.ts, which this revision does not have",
+		]);
 	});
 });

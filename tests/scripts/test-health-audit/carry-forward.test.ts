@@ -9,6 +9,7 @@ import {
 } from "../../../scripts/test-health-audit/artifacts.ts";
 import { carryForwardProfileUnits } from "../../../scripts/test-health-audit/carry-forward.ts";
 import { sourceCensusDigest } from "../../../scripts/test-health-audit/census.ts";
+import { derivedPortfolioIssues } from "../../../scripts/test-health-audit/cli.ts";
 import { publishPortfolioEvidence } from "../../../scripts/test-health-audit/portfolio.ts";
 import type { TestEvidenceProfile } from "../../../scripts/test-health-audit/schema.ts";
 import { collectSourceText } from "../../../scripts/test-health-audit/source-census.ts";
@@ -821,6 +822,39 @@ describe("test health audit carry-forward", () => {
 			"utf8",
 		);
 		for (const profileId of contributing) expect(matrix).toContain(profileId);
+	});
+
+	// A successor inherits its predecessor's matrix and gap register restamped
+	// with its own epoch id, so every structural check passes on a document that
+	// describes the predecessor's profiles. Only re-deriving from this epoch's
+	// own profiles tells an inherited document from a rebuilt one.
+	it("reports a portfolio document that this epoch's profiles do not produce", async () => {
+		const { auditRoot, projectRoot } = await fixture();
+		await carryForwardProfileUnits({ auditRoot, projectRoot });
+		const record = await publishPortfolioEvidence(auditRoot);
+		const read = async (name: string) =>
+			readFile(join(auditRoot, "epochs", "epoch-2", name), "utf8");
+		const published = {
+			matrix: await read("behavior-risk-matrix.md"),
+			gapRegister: await read("gap-register.md"),
+		};
+		expect(await derivedPortfolioIssues(auditRoot, published)).toEqual([]);
+
+		// What an inherited document looks like: the same shape, naming evidence
+		// that is not this epoch's.
+		const carriedId = record.entries[0]?.axes.defect[0]?.profileIds[0];
+		const foreignId = `${"0".repeat(63)}1`;
+		const inherited = {
+			matrix: published.matrix.split(String(carriedId)).join(foreignId),
+			gapRegister: published.gapRegister
+				.split(String(carriedId))
+				.join(foreignId),
+		};
+		expect(inherited.matrix).not.toBe(published.matrix);
+		expect(await derivedPortfolioIssues(auditRoot, inherited)).toEqual([
+			"portfolio: behavior-risk-matrix.md is not what this epoch's profiles produce",
+			"portfolio: gap-register.md is not what this epoch's profiles produce",
+		]);
 	});
 
 	it("refuses a unit whose header disowns the carry its profiles record", async () => {
