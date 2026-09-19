@@ -251,3 +251,72 @@ method material input cited by 1,001 profiles, so editing it invalidates 31 of
 dispatcher was OOM-killed twice at 8 concurrent agents; it resumes losslessly
 from the published shards, so a kill costs at most the in-flight wave.
 
+
+### 2026-09-19 — project owner rulings, wave 4 authority
+
+Given by the project owner in session, after an independent codex review of the
+wave-3 commits and a 15-agent review of the ratification packet. These are the
+cited ratified authority for wave 4; no agent judgment substitutes for them.
+
+**Q-002 — repair the derivation, then add a signed limitation channel.**
+Condition 4 is unsatisfiable as coded: `buildCell` in `portfolio.ts` has four
+return paths (`unavailable`, `gap`, `gap`, `contributing`) and nothing in the
+tree emits `state: "protected"`, so `applyProbeEvidence`'s `allProtected` can
+never be true and no entry can reach `protected`. The published matrix carries
+0 protected cells of 304. Ruled:
+
+1. Repair the derivation. Let a cell reach `protected` when its contributing
+   profiles carry no missing, blocked or reasoned basis — `validatePortfolioCell`
+   already guards that state while the builder cannot construct it, which is a
+   bug signature rather than a ratified bar. Populate the path and caller cells,
+   which are built as `buildCell(name, [], false, ...)` with a hardcoded empty
+   profile list. Stop counting documented noncritical uncertainty against an
+   entry's conclusion, and fix the same anti-monotonicity in the reasoned-gap
+   rule.
+2. Add an owner-signed limitation channel: an `acceptedConditionLimitations`
+   field checked against the exact failing rows for the evaluated revision, and
+   a distinct `established-with-limitations` verdict. Conditions 4 and 6 keep
+   their definitions and stay recorded as not-met with every reason intact; the
+   exception is named and signed rather than legislated into the formula.
+3. Amend `spec.md` AC-013 to permit the channel.
+
+Rejected on the owner's instruction: restating condition 4 as "at least
+partially-protected with no unavailable cell", because
+`derivePortfolioEvidence` assigns `partially-protected` to any entry with at
+least one contribution, so it would pass today on almost any corpus — a check
+that cannot fail.
+
+**Q-001 — author thirteen probe definitions.** All fourteen unrun probes except
+`PROBE-BRI-010`, whose blocking axis is inventory-marked unavailable and which
+`REM-002` already excluded from guardrail credit; that one takes a signed
+degraded-with-limitation exit under the Q-002 channel. The packet's earlier
+"six critical ones" recommendation is withdrawn as inert: `probe.required` is
+set from `probeReasons.length > 0` and is true for all fifteen entries, so six
+would leave eight unconfirmed and condition 6 unchanged. Authoring does not
+force a new epoch — `probe-definitions.json` is not a manifest material input.
+
+**Q-003 — a tab is the contract for multi-column row listings.** The renderer
+change and the three skill-document corrections are ordinary product work
+scheduled outside this audit: the row blocks no baseline condition, and moving
+those renderers would move the counted-guardrail set.
+
+**Q-004 — archived plans and specs are historical record, not live contract
+authority.** Ruled generally, not per-row: 59% of profiles cite an archived plan
+as a `contract` material input, so this is the first of many identical
+questions. `README.md:311` is fixed as a plain documentation defect independent
+of the authority question, and seven declarations are repaired rather than five,
+so the two `partially-aligned` ones at lines 137 and 277 stop citing the dead
+contract. The runner is not reverted: commit `794be8e` also rewrote the shipped
+`agent-packaging` skill to teach the current behaviour.
+
+**Q-005 — repair `tests/agents/skills.test.ts:329` in place.** Bind it to the
+real shipped definitions by loading the coding domain through
+`loadDomainsFromSources`, as `tests/agents/session-assembly.test.ts:339` already
+does from the same directory. Do not move the declaration: `B-013`'s `Test:`
+field names `tests/agents/skills.test.ts` and `validateReferencedFileMarker`
+reads that exact file, so moving it would turn
+`plan check-artifacts artifact-format-redesign` red. The `plan.md:711`
+exclusion on `tests/domains/coding-agents.test.ts` stays untouched.
+
+**Not pushed.** The owner asked to hold the push; the branch stays local.
+
