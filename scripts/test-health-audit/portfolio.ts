@@ -573,9 +573,10 @@ async function readCertifiedProfiles(
 		const header = lines.shift();
 		// Every successor epoch carries the judgments whose material inputs rehash
 		// unchanged, so most of its units are written by the carry process rather
-		// than by a dispatcher. Both are certified; what the backend has to agree
-		// with is whether the unit's profiles name the epoch they came from, which
-		// is the same coupling `validatePublishedUnit` enforces on publish.
+		// than by a dispatcher. Both are certified. What this reader checks is the
+		// one part of `validatePublishedUnit`'s contract a shard carries on its
+		// face: the backend must agree with whether the unit's profiles name the
+		// epoch they came from. The publisher checks far more at write time.
 		const carried =
 			isRecord(header) && header.processBackend === "carry-forward";
 		if (

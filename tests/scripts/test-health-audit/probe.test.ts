@@ -189,6 +189,38 @@ describe("probe evidence staleness", () => {
 		]);
 	});
 
+	// A limitation record legitimately names no file. An executed record that has
+	// lost those fields still credits or opens a baseline row, so it must not
+	// borrow the limitation record's exemption.
+	it("reports an executed record that has lost the fields naming its target", async () => {
+		const { epoch, projectRoot } = await fixture("export const guard = 1;\n");
+		await writeFile(
+			join(epoch, "probes.jsonl"),
+			`${JSON.stringify({
+				schemaVersion: 1,
+				epochId: "epoch-2",
+				probeId: "PROBE-BRI-005",
+				outcome: "probe-confirmed",
+				runs: { preMutation: { state: "green" } },
+			})}\n`,
+		);
+		expect(await staleProbeIssues(epoch, projectRoot)).toEqual([
+			"probes: PROBE-BRI-005 does not name the file it measured relative to its sandbox",
+		]);
+	});
+
+	it("reports a record whose target resolves outside the project", async () => {
+		const { epoch, projectRoot } = await fixture("export const guard = 1;\n");
+		const line = JSON.parse(
+			(await readFile(join(epoch, "probes.jsonl"), "utf8")).trim(),
+		) as { paths: { target: string } };
+		line.paths.target = `${SANDBOX}/../../etc/passwd`;
+		await writeFile(join(epoch, "probes.jsonl"), `${JSON.stringify(line)}\n`);
+		expect(await staleProbeIssues(epoch, projectRoot)).toEqual([
+			"probes: PROBE-BRI-005 measured ../../etc/passwd, which is outside the project",
+		]);
+	});
+
 	it("ignores a limitation record, which measured no file", async () => {
 		const { epoch, projectRoot } = await fixture("export const guard = 1;\n");
 		await writeFile(
@@ -249,6 +281,18 @@ describe("epoch manifest freshness", () => {
 		await writeFile(join(projectRoot, "docs", "method.md"), "# Method v2\n");
 		expect(await staleMaterialInputIssues(manifest, projectRoot)).toEqual([
 			"material input docs/method.md has changed since this epoch froze it",
+		]);
+	});
+
+	it("reports a material input that resolves outside the project", async () => {
+		const { projectRoot } = await fixture();
+		expect(
+			await staleMaterialInputIssues(
+				{ materialInputs: [{ path: "../outside.md", sha256: "a".repeat(64) }] },
+				projectRoot,
+			),
+		).toEqual([
+			"material input ../outside.md is not readable inside the project: material input escapes project root: ../outside.md",
 		]);
 	});
 

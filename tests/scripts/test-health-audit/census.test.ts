@@ -942,6 +942,17 @@ describe("test health audit census", () => {
 		expect(await runCli(["--audit-root", root, "validate"])).toBe(0);
 	});
 
+	// `readIfPresent` returns "" for an empty file, so a truthiness check reads
+	// an empty document as an absent one. An empty calibration.md would then be
+	// skipped rather than rejected, and an empty baseline.md would make a
+	// candidate look mid-flight and skip completeness and digest validation.
+	test("rejects an empty deliverable rather than reading it as absent", async () => {
+		const root = await epochWithDeliverables("epoch-1");
+		expect(await runCli(["--audit-root", root, "validate"])).toBe(0);
+		await writeFile(join(root, "epochs", "epoch-1", "calibration.md"), "");
+		expect(await runCli(["--audit-root", root, "validate"])).toBe(1);
+	});
+
 	test("validates frozen source and post-run command digests independently", async () => {
 		const root = await mkdtemp(join(tmpdir(), "audit-digests-"));
 		roots.push(root);

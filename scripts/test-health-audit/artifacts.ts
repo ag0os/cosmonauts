@@ -2430,7 +2430,13 @@ async function findProfileInEpoch(
 	return undefined;
 }
 
-function safeProjectPath(projectRoot: string, path: string): string {
+/**
+ * Resolves a recorded path inside the project and refuses one that escapes it.
+ * Every check that rehashes a path an artifact names goes through this, so a
+ * manifest or probe record cannot point the audit at a file outside the tree it
+ * claims to describe.
+ */
+export function safeProjectPath(projectRoot: string, path: string): string {
 	const absoluteRoot = resolve(projectRoot);
 	const absolutePath = resolve(absoluteRoot, path);
 	if (

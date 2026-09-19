@@ -15,6 +15,7 @@ import {
 	publishProfileIndex,
 	readCurrentEpochManifest,
 	readEpochProfiles,
+	safeProjectPath,
 	validateBaselineDocument,
 	validateCalibrationRecord,
 	validateCandidateBundles,
@@ -393,9 +394,14 @@ export async function staleMaterialInputIssues(
 	for (const input of manifest.materialInputs) {
 		let current: Buffer;
 		try {
-			current = await readFile(join(projectRoot, input.path));
+			current = await readFile(safeProjectPath(projectRoot, input.path));
 		} catch (error) {
-			if (!isMissingFile(error)) throw error;
+			if (!isMissingFile(error)) {
+				issues.push(
+					`material input ${input.path} is not readable inside the project: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				continue;
+			}
 			issues.push(`material input ${input.path} is missing from this revision`);
 			continue;
 		}
@@ -437,7 +443,11 @@ async function validateEpochDeliverables(
 			readIfPresent(join(epoch, "behavior-risk-inventory.json")),
 			readIfPresent(join(epoch, "baseline.md")),
 		]);
-	if (matrix && gapRegister && inventoryText) {
+	if (
+		matrix !== undefined &&
+		gapRegister !== undefined &&
+		inventoryText !== undefined
+	) {
 		const portfolio = validatePortfolioEvidenceDocuments({
 			matrix,
 			gapRegister,
@@ -447,18 +457,18 @@ async function validateEpochDeliverables(
 		issues.push(...portfolio.issues.map((issue) => `portfolio: ${issue}`));
 		// A successor epoch inherits these two documents from its predecessor as a
 		// seed, restamped with its own epoch id. Every structural check above
-		// passes on that copy, so only re-deriving from this epoch's own profiles
-		// distinguishes a rebuilt matrix from an inherited one. The epoch has to
-		// be a candidate for the derivation to be possible at all, which is what
-		// the baseline document marks.
-		if (baselineDocument)
+		// passes on that copy, so re-deriving from this epoch's own profiles is
+		// what catches a seed that describes different evidence. Demanded only
+		// once the epoch has reached baseline.md, because a mid-flight epoch has
+		// no complete profile set to derive from.
+		if (baselineDocument !== undefined)
 			issues.push(
 				...(await derivedPortfolioIssues(root, { matrix, gapRegister })),
 			);
 	}
 
 	const calibration = await readIfPresent(join(epoch, "calibration.md"));
-	if (calibration) {
+	if (calibration !== undefined) {
 		const record = validateCalibrationRecord(
 			parseCalibrationDocument(calibration),
 			manifest.epochId,
@@ -469,7 +479,7 @@ async function validateEpochDeliverables(
 	const ledgerDocument = await readIfPresent(
 		join(epoch, "remediation-ledger.md"),
 	);
-	if (ledgerDocument && baselineDocument) {
+	if (ledgerDocument !== undefined && baselineDocument !== undefined) {
 		const integrity = JSON.parse(
 			(await readIfPresent(join(epoch, "suite-integrity.json"))) ?? "{}",
 		) as { repairRequired?: { findingId: string }[] };
@@ -505,7 +515,7 @@ async function validateEpochDeliverables(
 	const recommendations = await readIfPresent(
 		join(epoch, "gate-recommendations.md"),
 	);
-	if (recommendations) {
+	if (recommendations !== undefined) {
 		const result = validateGateRecommendations(
 			parseGateRecommendationsDocument(recommendations),
 			manifest.epochId,
@@ -517,7 +527,7 @@ async function validateEpochDeliverables(
 
 	// A candidate is an epoch that has reached `baseline.md`. Before that the
 	// bundle set is legitimately partial, so completeness is only demanded here.
-	if (baselineDocument) {
+	if (baselineDocument !== undefined) {
 		const bundles = await readCandidateBundleState(root, manifest);
 		issues.push(...bundles.issues.map((issue) => `bundles: ${issue}`));
 		const evidence = await readBaselineEvidence(root, manifest);
@@ -543,12 +553,6 @@ async function validateEpochDeliverables(
 }
 
 /**
- * Re-joins the current epoch's inventory, profiles and probe records and
- * compares the result with what the epoch published. A document that differs is
- * describing evidence other than this epoch's -- the shape an inherited,
- * restamped predecessor document takes.
- */
-/**
  * A probe record is a measurement of one file: what happened to the guardrail
  * while that exact text was mutated. `probes.jsonl` is inherited by every
  * successor epoch and restamped with its id, so a record can outlive the code
@@ -568,14 +572,21 @@ export async function staleProbeIssues(
 	for (const line of text.split(/\r?\n/u).filter(Boolean)) {
 		const record = JSON.parse(line) as {
 			probeId?: string;
+			outcome?: string;
 			sandbox?: { root?: string };
 			paths?: { target?: string };
 			sourceCheckout?: { targetDigestBefore?: string };
 		};
 		const target = record.paths?.target;
 		const recorded = record.sourceCheckout?.targetDigestBefore;
-		// A limitation record measured nothing, so it has neither field.
-		if (!target && !recorded) continue;
+		// A limitation record measured nothing, so it legitimately has neither
+		// field. An executed record that has lost them is a different thing and
+		// must not borrow the limitation record's exemption: it still credits or
+		// opens a baseline row, so it has to name what it measured.
+		const executed =
+			record.outcome === "probe-confirmed" ||
+			record.outcome === "probe-survived";
+		if (!executed && !target && !recorded) continue;
 		// A probe copies the repository into a throwaway sandbox and records
 		// absolute paths inside it, so the file it measured is named relative to
 		// that sandbox root rather than to the project.
@@ -590,7 +601,17 @@ export async function staleProbeIssues(
 			);
 			continue;
 		}
-		const current = await readIfPresent(join(projectRoot, relativeTarget));
+		let current: string | undefined;
+		try {
+			current = await readIfPresent(
+				safeProjectPath(projectRoot, relativeTarget),
+			);
+		} catch {
+			issues.push(
+				`probes: ${record.probeId} measured ${relativeTarget}, which is outside the project`,
+			);
+			continue;
+		}
 		if (current === undefined) {
 			issues.push(
 				`probes: ${record.probeId} measured ${relativeTarget}, which this revision does not have`,
@@ -605,6 +626,14 @@ export async function staleProbeIssues(
 	return issues;
 }
 
+/**
+ * Re-joins the current epoch's inventory, profiles and probe records and
+ * compares the result with what the epoch published. A document that differs is
+ * describing evidence other than this epoch's. It proves equal rendering, not
+ * that a publish happened: where every profile and probe carried unchanged, an
+ * inherited document is byte-identical to the derivation and is then correct
+ * for this epoch anyway.
+ */
 export async function derivedPortfolioIssues(
 	root: string,
 	published: { readonly matrix: string; readonly gapRegister: string },
