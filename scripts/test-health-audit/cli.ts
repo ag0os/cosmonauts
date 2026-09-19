@@ -1160,6 +1160,19 @@ function renderBaselineDocument(options: {
 		"`json owner-ratification` block with `decision`, `ratifiedBy`,",
 		"`evaluatedRevision`, `candidateEvidenceDigest`, and `acceptedUncertaintyIds`.",
 		"Automation cannot write that block.",
+		"",
+		...(evaluation.failingConditionIds.some((id) => id !== 8)
+			? [
+					"Conditions " +
+						evaluation.failingConditionIds.filter((id) => id !== 8).join(", ") +
+						" are not met. To establish the baseline while accepting them, set",
+					"`decision` to `established-with-limitations` and add",
+					"`acceptedConditionLimitations` naming exactly those condition ids. Each",
+					"keeps its definition and stays recorded as not-met with its reasons; the",
+					"list is checked against the conditions that actually fail, so it goes",
+					"stale if they change.",
+				]
+			: []),
 	];
 	return `${lines.join("\n")}\n${existingOwnerSection(options.existing)}`;
 }

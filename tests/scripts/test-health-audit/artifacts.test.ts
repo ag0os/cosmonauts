@@ -2006,6 +2006,96 @@ describe("test health audit epoch provenance", () => {
 	});
 
 	// @cosmo-behavior plan:test-health-audit#B-011
+	// Condition 4 was unsatisfiable by construction, so the method needed a way
+	// for the owner to accept a named shortfall without the formula absorbing it.
+	// The condition keeps its definition and stays recorded as not-met; what the
+	// owner signs is an exact enumeration of which conditions they are accepting,
+	// against this revision and this digest.
+	it("reaches established-with-limitations only on an exact owner-signed list of the conditions that fail", () => {
+		const evaluatedRevision = "c".repeat(40);
+		const candidateEvidenceDigest = "d".repeat(64);
+		const conditions = BASELINE_CONDITIONS.filter(
+			(condition) => condition.id !== 8,
+		).map((condition) => ({
+			id: condition.id,
+			status: condition.id === 4 || condition.id === 6 ? "not-met" : "met",
+			reasons: condition.id === 4 ? ["BRI-002 is partially-protected"] : [],
+		}));
+		const base = {
+			epochId: "epoch-candidate",
+			evaluatedRevision,
+			candidateEvidenceDigest,
+			conditions: conditions as never,
+			residualUncertaintyIds: ["RU-001"],
+		};
+		const owner = {
+			decision: "established-with-limitations",
+			ratifiedBy: "project owner",
+			evaluatedRevision,
+			candidateEvidenceDigest,
+			acceptedUncertaintyIds: ["RU-001"],
+			acceptedConditionLimitations: [4, 6],
+		};
+
+		// Automation alone cannot reach it, however the conditions fall.
+		expect(evaluateBaseline(base)).toMatchObject({
+			verdict: "not established",
+			eligibility: "not-eligible",
+		});
+
+		const ratified = evaluateBaseline({ ...base, ownerRatification: owner });
+		expect(ratified).toMatchObject({
+			verdict: "established-with-limitations",
+			eligibility: "ratified",
+		});
+		// The failing conditions stay on the record with their reasons intact.
+		expect(ratified.rows.find((row) => row.id === 4)).toMatchObject({
+			status: "not-met",
+			reasons: ["BRI-002 is partially-protected"],
+		});
+
+		// Accepting fewer than the evidence shows is not a ratification.
+		expect(
+			evaluateBaseline({
+				...base,
+				ownerRatification: { ...owner, acceptedConditionLimitations: [4] },
+			}),
+		).toMatchObject({ verdict: "not established" });
+
+		// Nor is a list that has gone stale against a candidate whose failures moved.
+		expect(
+			evaluateBaseline({
+				...base,
+				ownerRatification: {
+					...owner,
+					acceptedConditionLimitations: [4, 6, 3],
+				},
+			}),
+		).toMatchObject({ verdict: "not established" });
+
+		// A plain `established` decision cannot carry limitations.
+		expect(
+			evaluateBaseline({
+				...base,
+				ownerRatification: { ...owner, decision: "established" },
+			}),
+		).toMatchObject({ verdict: "not established" });
+
+		// And limitations cannot be accepted when nothing fails.
+		const allMet = BASELINE_CONDITIONS.filter((c) => c.id !== 8).map((c) => ({
+			id: c.id,
+			status: "met" as const,
+			reasons: [],
+		}));
+		expect(
+			evaluateBaseline({
+				...base,
+				conditions: allMet,
+				ownerRatification: owner,
+			}),
+		).toMatchObject({ verdict: "not established" });
+	});
+
 	it("accepts established only for eight met conditions and a non-circular exact owner ratification", () => {
 		const evaluatedRevision = "c".repeat(40);
 		const candidateEvidenceDigest = "d".repeat(64);

@@ -2944,7 +2944,10 @@ export interface BaselineEvaluationInput {
 }
 
 export interface BaselineEvaluation {
-	readonly verdict: "not established" | "established";
+	readonly verdict:
+		| "not established"
+		| "established"
+		| "established-with-limitations";
 	readonly eligibility:
 		| "not-eligible"
 		| "eligible-for-ratification"
@@ -2993,10 +2996,16 @@ export function evaluateBaseline(
 	}
 
 	const evidenceMet = rows.every((row) => row.status === "met");
+	// The conditions the owner would have to sign off on by exact id. Condition 8
+	// is the owner's own act and is never among them.
+	const evidenceFailureIds = rows
+		.filter((row) => row.id !== 8 && row.status !== "met")
+		.map((row) => row.id);
 	const ratification = readOwnerRatification(
 		input.ownerRatification,
 		input,
 		issues,
+		evidenceFailureIds,
 	);
 	const ownerRow: BaselineConditionRow = {
 		id: 8,
@@ -3010,7 +3019,24 @@ export function evaluateBaseline(
 		.filter((row) => row.status !== "met")
 		.map((row) => row.id);
 
-	if (!evidenceMet)
+	// A condition the owner has signed off on, by exact id, against this exact
+	// revision and digest. The condition keeps its definition and stays recorded
+	// as not-met with every reason intact; what changes is that the owner has
+	// named the exception rather than the formula absorbing it. Automation can
+	// never reach this state on its own -- it requires the owner block.
+	if (!evidenceMet) {
+		// `exact` already carries it: every mismatch between the owner's list and
+		// the conditions that actually fail pushes a reason, and a reason makes the
+		// block inexact. A separate flag here would be a branch no test could
+		// distinguish.
+		if (ratification.present && ratification.exact)
+			return {
+				verdict: "established-with-limitations",
+				eligibility: "ratified",
+				rows,
+				failingConditionIds,
+				issues,
+			};
 		return {
 			verdict: "not established",
 			eligibility: "not-eligible",
@@ -3018,6 +3044,7 @@ export function evaluateBaseline(
 			failingConditionIds,
 			issues,
 		};
+	}
 	if (!ratification.present)
 		return {
 			verdict: "not established",
@@ -3047,6 +3074,7 @@ function readOwnerRatification(
 	input: unknown,
 	context: BaselineEvaluationInput,
 	issues: string[],
+	evidenceFailureIds: readonly number[] = [],
 ): { present: boolean; exact: boolean; reasons: string[] } {
 	if (input === undefined)
 		return {
@@ -3063,7 +3091,8 @@ function readOwnerRatification(
 		};
 	}
 	const reasons: string[] = [];
-	if (input.decision !== "established")
+	const decision = String(input.decision);
+	if (decision !== "established" && decision !== "established-with-limitations")
 		reasons.push("the owner block does not record an established decision");
 	if (!nonEmpty(input.ratifiedBy))
 		reasons.push("the owner block does not name who ratified it");
@@ -3083,6 +3112,37 @@ function readOwnerRatification(
 		reasons.push(
 			"the accepted uncertainty ids differ from the residual-uncertainty register",
 		);
+	// The owner must enumerate exactly the conditions that actually fail. A list
+	// that names fewer accepts less than the evidence shows; one that names more
+	// has gone stale against a candidate whose failures moved.
+	const limitations = Array.isArray(input.acceptedConditionLimitations)
+		? input.acceptedConditionLimitations.map(Number)
+		: undefined;
+	const failures = [...evidenceFailureIds];
+	if (failures.length > 0) {
+		if (!limitations) {
+			reasons.push(
+				`conditions ${failures.join(", ")} are not met and the owner block accepts no condition limitations`,
+			);
+		} else if (
+			!sameSet(
+				limitations.map(String),
+				failures.map((id) => String(id)),
+			)
+		) {
+			reasons.push(
+				`the accepted condition limitations do not match the conditions that fail: ${failures.join(", ")}`,
+			);
+		} else if (decision !== "established-with-limitations") {
+			reasons.push(
+				"accepting condition limitations requires the decision established-with-limitations",
+			);
+		}
+	} else if (limitations && limitations.length > 0) {
+		reasons.push(
+			"the owner block accepts condition limitations but every condition is met",
+		);
+	}
 	return { present: true, exact: reasons.length === 0, reasons };
 }
 
@@ -3140,7 +3200,11 @@ export function validateBaselineDocument(
 		if (!isRecord(row) || row.id !== expected.id || row.name !== expected.name)
 			issues.push(`conditions[${index}] must be ${expected.name}`);
 	}
-	if (record.verdict !== "not established" && record.verdict !== "established")
+	if (
+		record.verdict !== "not established" &&
+		record.verdict !== "established" &&
+		record.verdict !== "established-with-limitations"
+	)
 		issues.push("verdict must be not established or established");
 
 	for (const id of context.packetQuestionIds)
