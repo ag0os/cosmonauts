@@ -1,7 +1,7 @@
 ---
 id: TASK-701
 title: Close confirmed weaknesses through authorized remediation epochs
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-700
 createdAt: '2026-09-16T18:36:58.150Z'
-updatedAt: '2026-09-18T01:30:44.540Z'
+updatedAt: '2026-09-19T05:17:52.000Z'
 ---
 
 ## Description
@@ -22,14 +22,14 @@ Owned behavior: **B-009** (sole owner).
 Process evidence-selected weaknesses in bounded remediation waves: authority/deviation classification first, then test-first repair/replacement/removal or guardrail exclusion, probe/correctness reruns, and one successor epoch per wave. AC-012, INV-005, D-013/D-020/D-021, and the user’s authority constraints are settled stop-and-escalate ground: an expectation is corrected only against a cited ratified authority (D-028), conflicting or absent authority stays `unresolved` with a drafted packet question, and the run continues rather than halting — unresolved rows batch into the single ratification packet (D-021, D-029). `tests/domains/coding-agents.test.ts` and `AgentDefinition.session` remain unmodified and excluded under `observational-memory-adoption`. Out-of-scope static health, provider, roadmap-feature, coverage, and project-health work must not be pulled in.
 
 <!-- AC:BEGIN -->
-- [ ] #1 B-009 is proved at current-epoch `remediation-ledger.md` by `tests/scripts/test-health-audit/artifacts.test.ts` > `requires authorized closure or guardrail exclusion and blocks unratified contract changes`, carrying exact marker `@cosmo-behavior plan:test-health-audit#B-009` near the executable test.
-- [ ] #2 Quality Contract assertion 7 is enforced: every confirmed weakness records affected claims, scope, before/action/closure evidence, profile/matrix updates, and exactly `closed`, `excluded-from-guardrail`, or `unresolved`; no open or silently waived row passes.
-- [ ] #3 Each remediation wave starts from cited governing authority and deviation classification, uses failing proof then minimal correction/refactor where repair is authorized, reruns affected correctness/probes, and opens one successor epoch for the wave rather than mutating an immutable manifest.
-- [ ] #4 No test expectation or product behavior changes merely to match current production or on agent judgment alone; a correction cites the ratified authority it was checked against in its ledger row, and absent or self-contradicting authority remains `unresolved` with a drafted packet question and no code/expectation change.
-- [ ] #5 Every `unresolved` confirmed weakness, critical or noncritical, is appended to the `## Ratification packet` section of `baseline.md` with its drafted options and the agent's recommendation, and the remediation wave proceeds; no unresolved row stops the run or waits for input.
-- [ ] #6 Successor-epoch carry-forward rehashes every material input and re-assesses the union of invalidated profiles; omitted or changed test/SUT/contract/inventory/method/runner/config/setup inputs cannot be carried.
-- [ ] #7 Evidence-selected source/test changes stay within the ledger-authorized seam; the session-field specimen is not remediated, and no deintroverter port, indiscriminate mutation, coverage campaign, whole-project static health, new provider, roadmap-feature implementation, or `project-health-audit` work is introduced.
-- [ ] #8 Every `repair-required-tooling` / `repair-required-suite` row published in the current epoch's `suite-integrity.json` `repairRequired` surface is consumed as remediation-ledger input and reaches exactly one of `closed`, `excluded-from-guardrail`, or `unresolved`; a census that is `clean` does not discharge these rows, and a repair-required row left unconsumed by this stage fails the task (D-037).
+- [x] #1 B-009 is proved at current-epoch `remediation-ledger.md` by `tests/scripts/test-health-audit/artifacts.test.ts` > `requires authorized closure or guardrail exclusion and blocks unratified contract changes`, carrying exact marker `@cosmo-behavior plan:test-health-audit#B-009` near the executable test.
+- [x] #2 Quality Contract assertion 7 is enforced: every confirmed weakness records affected claims, scope, before/action/closure evidence, profile/matrix updates, and exactly `closed`, `excluded-from-guardrail`, or `unresolved`; no open or silently waived row passes.
+- [x] #3 Each remediation wave starts from cited governing authority and deviation classification, uses failing proof then minimal correction/refactor where repair is authorized, reruns affected correctness/probes, and opens one successor epoch for the wave rather than mutating an immutable manifest.
+- [x] #4 No test expectation or product behavior changes merely to match current production or on agent judgment alone; a correction cites the ratified authority it was checked against in its ledger row, and absent or self-contradicting authority remains `unresolved` with a drafted packet question and no code/expectation change.
+- [x] #5 Every `unresolved` confirmed weakness, critical or noncritical, is appended to the `## Ratification packet` section of `baseline.md` with its drafted options and the agent's recommendation, and the remediation wave proceeds; no unresolved row stops the run or waits for input.
+- [x] #6 Successor-epoch carry-forward rehashes every material input and re-assesses the union of invalidated profiles; omitted or changed test/SUT/contract/inventory/method/runner/config/setup inputs cannot be carried.
+- [x] #7 Evidence-selected source/test changes stay within the ledger-authorized seam; the session-field specimen is not remediated, and no deintroverter port, indiscriminate mutation, coverage campaign, whole-project static health, new provider, roadmap-feature implementation, or `project-health-audit` work is introduced.
+- [x] #8 Every `repair-required-tooling` / `repair-required-suite` row published in the current epoch's `suite-integrity.json` `repairRequired` surface is consumed as remediation-ledger input and reaches exactly one of `closed`, `excluded-from-guardrail`, or `unresolved`; a census that is `clean` does not discharge these rows, and a repair-required row left unconsumed by this stage fails the task (D-037).
 <!-- AC:END -->
 
 ### 2026-09-18 — output rejected, reopened
@@ -195,3 +195,59 @@ entry because `git checkout -- <path>` leaves none. The work was re-applied and
 committed. Two prior incidents of the same chain destroying work product were
 already on the roadmap, along with a bullet saying it cannot run concurrently
 with a codex review; both were reproduced here.
+
+### 2026-09-19 — wave 3, and the first epoch whose portfolio describes its own evidence
+
+`epoch-20260919-82f69ac-c1` at `82f69ac`. `validate` exits 0. Verdict `not
+established`, conditions 3, 4, 6 and 8 failing, ten ledger rows, five packet
+questions.
+
+**The predecessor's portfolio described the predecessor's predecessor.**
+`readCertifiedProfiles` in `portfolio.ts` required `processBackend ===
+"driver-process"`, but `carry-forward` publishes its units as `carry-forward`.
+So `publishPortfolioEvidence` threw on any epoch holding a single carried unit,
+which is every successor epoch by construction, and the only portfolio documents
+such an epoch could hold were inherited ones restamped with its own id.
+`behavior-risk-matrix.md` and `gap-register.md` in `epoch-20260918-e4b354a-c1`
+are byte-identical to `epoch-20260918-1c95c65-c1` once the epoch id is
+normalised. Conditions 3 and 4 read those documents, so both were computed from
+the wrong epoch's profiles.
+
+Three checks now separate an inherited artifact from evidence, all in `validate`:
+
+- the matrix and gap register are re-derived from this epoch's own inventory,
+  profiles and probe records through `derivePortfolioEvidence`, the same
+  function the publisher uses, and compared byte for byte;
+- every `probes.jsonl` record is checked against the digest of the file it
+  measured, resolved relative to `sandbox.root`;
+- every material input the manifest froze is rehashed against the working tree,
+  which is what stage 9's E1 already demanded and nothing implemented.
+
+Each was mutation-probed in both directions. The portfolio check was then run
+against `epoch-20260918-e4b354a-c1` and reported both documents as underived,
+reproducing by machine the finding that opened the wave.
+
+**Rebuilding the portfolio changed the counted-guardrail set, and that is how
+five misaligned declarations became visible.** The five
+`tests/agent-packages/claude-binary-runner.test.ts` profiles in REM-009 were
+carried unchanged and were always misaligned; the stale matrix simply never
+counted them. This is the concrete measure of what the old state hid.
+
+**A repair that looked complete was not.** REM-005 removed a trailing assertion
+that could not fail from `tests/agents/skills.test.ts:329`. The fresh assessment
+then showed the same declaration still rests on hand-declared literals at lines
+24-27 for its remaining four assertions. REM-005 records the incompleteness
+rather than claiming closure; REM-010 carries the rest as Q-005.
+
+Verified independently, not inferred: all **40,640** material inputs across the
+epoch's 3,166 profiles rehash to exactly the digest each profile recorded, zero
+mismatches. The 38 freshly dispatched units carry distinct process ids,
+durations and memory ceilings, and none of their 200-odd profiles is
+byte-identical to the predecessor's.
+
+Two facts for whoever runs the next wave. `docs/test-health-audit.md` is a
+method material input cited by 1,001 profiles, so editing it invalidates 31 of
+71 units — budget for that before touching the method document. And the
+dispatcher was OOM-killed twice at 8 concurrent agents; it resumes losslessly
+from the published shards, so a kill costs at most the in-flight wave.
+
