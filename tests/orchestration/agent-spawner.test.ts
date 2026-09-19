@@ -451,6 +451,11 @@ describe("resolveExtensionPaths", () => {
 		mkdirSync(join(tmpDomainsDir, "custom", "extensions", "common-ext"), {
 			recursive: true,
 		});
+		// Create shared-only extension: the fallback has nothing to fall back to
+		// without one
+		mkdirSync(join(tmpDomainsDir, "shared", "extensions", "shared-only-ext"), {
+			recursive: true,
+		});
 	});
 
 	afterEach(() => {
@@ -469,15 +474,13 @@ describe("resolveExtensionPaths", () => {
 	});
 
 	test("falls back to shared when domain does not have extension", () => {
-		// custom-ext only exists in custom domain, common-ext in both
-		// Request an extension that only exists in shared
-		const paths = resolveExtensionPaths(["common-ext"], {
-			domain: "shared",
+		const paths = resolveExtensionPaths(["shared-only-ext"], {
+			domain: "custom",
 			domainsDir: tmpDomainsDir,
 		});
 		expect(paths).toHaveLength(1);
 		expect(paths[0]).toBe(
-			join(tmpDomainsDir, "shared", "extensions", "common-ext"),
+			join(tmpDomainsDir, "shared", "extensions", "shared-only-ext"),
 		);
 	});
 

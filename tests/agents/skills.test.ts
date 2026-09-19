@@ -2,7 +2,7 @@
  * Tests for shared skill filter helper.
  */
 
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
 	ResourceDiagnostic,
@@ -326,7 +326,7 @@ describe("buildSkillsOverride", () => {
 
 describe("artifact skill allowlists", () => {
 	// @cosmo-behavior plan:artifact-format-redesign#B-013
-	test("artifact-producing and plan-review agents can load shared artifact guidance", async () => {
+	test("artifact-producing and plan-review agents can load shared artifact guidance", () => {
 		// @cosmo-behavior plan:coding-agnostic-framework#B-017
 		expect(plannerDefinition.skills).toEqual(
 			expect.arrayContaining(["work-artifacts", "architecture"]),
@@ -340,11 +340,5 @@ describe("artifact skill allowlists", () => {
 		expect(planReviewerDefinition.skills).toEqual(
 			expect.arrayContaining(["work-artifacts", "architecture"]),
 		);
-
-		const agentsDir = join(tmp.path, "alpha", "agents");
-		await mkdir(agentsDir, { recursive: true });
-		await writeFile(join(agentsDir, "planner.ts"), "export default {};\n");
-		const agentFiles = await readdir(agentsDir);
-		expect(agentFiles).not.toContain("architect.ts");
 	});
 });
