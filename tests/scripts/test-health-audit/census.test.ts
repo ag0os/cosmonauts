@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +27,12 @@ import { collectSourceText } from "../../../scripts/test-health-audit/source-cen
 
 const roots: string[] = [];
 const SHA = "a".repeat(64);
+// `validate` rehashes every material input a manifest froze, so a fixture
+// manifest has to name a file that really hashes this way.
+const CONFIG_PATH = "vitest.config.ts";
+const CONFIG_SHA = createHash("sha256")
+	.update(await readFile(join(process.cwd(), CONFIG_PATH)))
+	.digest("hex");
 
 afterEach(async () => {
 	const { rm } = await import("node:fs/promises");
@@ -298,7 +305,7 @@ describe("test health audit census", () => {
 			epochId: "epoch-1",
 			evaluatedRevision: "abc123",
 			createdAt: "2026-09-16T20:00:00.000Z",
-			materialInputs: [{ path: "vitest.config.ts", sha256: SHA }],
+			materialInputs: [{ path: CONFIG_PATH, sha256: CONFIG_SHA }],
 			commandDefinitions: [
 				{
 					id: "normal",
@@ -898,7 +905,7 @@ describe("test health audit census", () => {
 			epochId: "epoch-1",
 			evaluatedRevision: "abc123",
 			createdAt: "2026-09-17T15:00:00.000Z",
-			materialInputs: [{ path: "vitest.config.ts", sha256: SHA }],
+			materialInputs: [{ path: CONFIG_PATH, sha256: CONFIG_SHA }],
 			commandDefinitions: [],
 			sourceCensusDigest: sourceDigest,
 		});
@@ -971,7 +978,7 @@ describe("test health audit census", () => {
 			epochId: "epoch-1",
 			evaluatedRevision: "abc123",
 			createdAt: "2026-09-17T15:00:00.000Z",
-			materialInputs: [{ path: "vitest.config.ts", sha256: SHA }],
+			materialInputs: [{ path: CONFIG_PATH, sha256: CONFIG_SHA }],
 			commandDefinitions: [
 				{ id: "normal", surface: "normal", argv: ["bun", "run", "test"] },
 			],

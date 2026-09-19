@@ -358,12 +358,53 @@ async function defaultValidate(root: string): Promise<boolean> {
 		throw new Error(
 			`epoch provenance is falsified:\n${provenance.map((issue) => `  - ${issue}`).join("\n")}`,
 		);
+	const stale = await staleMaterialInputIssues(manifest, process.cwd());
+	if (stale.length > 0)
+		throw new Error(
+			`current epoch manifest is stale:\n${stale.map((issue) => `  - ${issue}`).join("\n")}`,
+		);
 	const deliverables = await validateEpochDeliverables(root, manifest);
 	if (deliverables.length > 0)
 		throw new Error(
 			`current epoch deliverables are invalid:\n${deliverables.map((issue) => `  - ${issue}`).join("\n")}`,
 		);
 	return true;
+}
+
+/**
+ * The manifest freezes the digest of every material input the epoch was opened
+ * against, and nothing else rehashes them: the per-profile digests cover a
+ * profile's own inputs, and the census digests cover declarations and command
+ * output. So the method document, the plan, the schema and the runner config
+ * could all move under an open epoch while every other check stayed green.
+ * `E1` names a stale digest as something that blocks eligibility; this is where
+ * the manifest's own digests are held to that.
+ */
+export async function staleMaterialInputIssues(
+	manifest: {
+		readonly materialInputs: readonly {
+			readonly path: string;
+			readonly sha256: string;
+		}[];
+	},
+	projectRoot: string,
+): Promise<string[]> {
+	const issues: string[] = [];
+	for (const input of manifest.materialInputs) {
+		let current: Buffer;
+		try {
+			current = await readFile(join(projectRoot, input.path));
+		} catch (error) {
+			if (!isMissingFile(error)) throw error;
+			issues.push(`material input ${input.path} is missing from this revision`);
+			continue;
+		}
+		if (createHash("sha256").update(current).digest("hex") !== input.sha256)
+			issues.push(
+				`material input ${input.path} has changed since this epoch froze it`,
+			);
+	}
+	return issues;
 }
 
 async function readIfPresent(path: string): Promise<string | undefined> {

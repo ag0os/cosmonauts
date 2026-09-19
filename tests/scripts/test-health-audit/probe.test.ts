@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { staleProbeIssues } from "../../../scripts/test-health-audit/cli.ts";
+import {
+	staleMaterialInputIssues,
+	staleProbeIssues,
+} from "../../../scripts/test-health-audit/cli.ts";
 import { validateProbeRecord } from "../../../scripts/test-health-audit/probe.ts";
 
 describe("targeted probe evidence", () => {
@@ -189,6 +192,53 @@ describe("probe evidence staleness", () => {
 		await rm(join(projectRoot, "lib", "guarded.ts"));
 		expect(await staleProbeIssues(epoch, projectRoot)).toEqual([
 			"probes: PROBE-BRI-005 measured lib/guarded.ts, which this revision does not have",
+		]);
+	});
+});
+
+describe("epoch manifest freshness", () => {
+	const roots: string[] = [];
+	afterEach(async () => {
+		for (const root of roots.splice(0)) await rm(root, { recursive: true });
+	});
+
+	async function fixture() {
+		const projectRoot = await mkdtemp(join(tmpdir(), "audit-manifest-"));
+		roots.push(projectRoot);
+		await mkdir(join(projectRoot, "docs"), { recursive: true });
+		const text = "# Method v1\n";
+		await writeFile(join(projectRoot, "docs", "method.md"), text);
+		return {
+			projectRoot,
+			manifest: {
+				materialInputs: [
+					{
+						path: "docs/method.md",
+						sha256: createHash("sha256").update(text).digest("hex"),
+					},
+				],
+			},
+		};
+	}
+
+	it("accepts a manifest whose material inputs still hash as it froze them", async () => {
+		const { projectRoot, manifest } = await fixture();
+		expect(await staleMaterialInputIssues(manifest, projectRoot)).toEqual([]);
+	});
+
+	it("reports a material input that moved under the open epoch", async () => {
+		const { projectRoot, manifest } = await fixture();
+		await writeFile(join(projectRoot, "docs", "method.md"), "# Method v2\n");
+		expect(await staleMaterialInputIssues(manifest, projectRoot)).toEqual([
+			"material input docs/method.md has changed since this epoch froze it",
+		]);
+	});
+
+	it("reports a material input this revision no longer has", async () => {
+		const { projectRoot, manifest } = await fixture();
+		await rm(join(projectRoot, "docs", "method.md"));
+		expect(await staleMaterialInputIssues(manifest, projectRoot)).toEqual([
+			"material input docs/method.md is missing from this revision",
 		]);
 	});
 });

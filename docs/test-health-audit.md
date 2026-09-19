@@ -17,7 +17,7 @@ bun scripts/test-health-audit/cli.ts --audit-root <path> <command>
 | `carry-forward` | Judgments inherited from the predecessor epoch — deliverables, whole profile units whose material inputs all rehash unchanged, and census answers whose finding restates the identical observation. Every carried record is stamped `carriedFrom`. |
 | `dispatch` | Drains the epoch's outstanding work units, one OS process per unit, measuring each process's own cost rather than accepting a reported one. |
 | `assemble` | Bundle 3's `profiles/index.json`, derived from the shards, plus the current bundle-completeness report. |
-| `validate` | Schema, identity, freshness, material-input, and bundle validation evidence. |
+| `validate` | Schema, identity, freshness, material-input, provenance, derivation, and bundle validation evidence. |
 | `probe --confirm-probe <id>` | One explicitly confirmed copied-sandbox probe record, including target, import route, guardrail, containment, and restoration evidence. |
 | `baseline` | Baseline condition rows and either `not established` or `eligible-for-ratification`. |
 
@@ -42,6 +42,40 @@ The census and validators inspect repository content and audit artifacts. Test c
 Nothing under assessment may change while an epoch is being collected. A census executes the suite repeatedly over several minutes, so an edit landing mid-run is observed by some commands and not others, and the resulting evidence describes no single tree. Finish and commit every source, test, and tooling change first, then open the epoch.
 
 Open a successor epoch and rerun the affected evidence after remediation, an inventory or authority change, a method/schema amendment, or an added or removed test file. Recollect runtime observations whenever runner, configuration, setup, command definitions, or test source changes. The atomic `<audit-root>/index.json` is the sole current-epoch pointer; never infer the current epoch by scanning `epochs/`. Existing epoch manifests are immutable.
+
+### What a successor epoch inherits, and how an inheritance is told from evidence
+
+`carry-forward` seeds a successor from its predecessor so the epoch is not
+empty before its own evidence exists: whole profile units whose material inputs
+all rehash unchanged, census answers whose finding restates the identical
+observation, and the deliverable documents. Every carried record is stamped
+`carriedFrom`; the documents are not, because a document has no place to carry a
+stamp. They are copied and restamped with the successor's epoch id instead.
+
+That makes an inherited document structurally indistinguishable from a rebuilt
+one, and three baseline conditions read those documents. `validate` therefore
+checks derivation rather than shape:
+
+- `behavior-risk-matrix.md` and `gap-register.md` are re-joined from the current
+  epoch's own inventory, profiles and probe records and compared with what the
+  epoch published. Publisher and checker share one derivation, so the check
+  cannot drift into a second opinion. A successor that never republished its
+  portfolio fails here rather than reporting the predecessor's cells.
+- Every record in `probes.jsonl` names the file it mutated and that file's
+  digest at run time. If this revision's file hashes differently, or is gone,
+  the measurement does not describe this revision and the record is rejected --
+  whatever its outcome. A stale `probe-confirmed` would otherwise credit
+  baseline condition 6 for a mutation that no longer applies, and a stale
+  `probe-survived` would open a remediation row against code that is gone.
+- Every material input the manifest froze is rehashed against the working tree.
+  Nothing else covers them: the per-profile digests cover a profile's own
+  inputs, and the census digests cover declarations and command output. Without
+  this, the method document, plan, schema or runner config could move under an
+  open epoch with every other check still green.
+
+Both the portfolio derivation and the bundle-completeness report are demanded
+only once the epoch has reached `baseline.md`. Before that its documents are
+legitimately partial.
 
 The immutable manifest freezes only the source-census digest available when the epoch opens. The post-run command-census digest is recorded separately with suite integrity and validated against the raw command evidence; validation never compares those unlike digests.
 
