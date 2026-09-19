@@ -404,3 +404,79 @@ and choosing between them is the act D-028 withholds.
 The epoch cannot drain while the halt stands. Nothing further in wave 4 is
 blocked on agent work; it is blocked on the owner.
 
+
+
+### 2026-09-19 — Q-005 ruled a third time: do not amend archives, decouple the test
+
+The owner reopened Q-005 after being shown the declaration itself, and reversed
+both the original ruling ("repair in place by loading the coding domain") and
+the option-4 answer given earlier this session ("amend B-013 in the archive").
+The ruling, in the owner's own framing:
+
+> Plans define behaviors that then become tests in actual logic. Once those
+> plans were executed, they shouldn't have anything to do with actual logic and
+> actual testing. They are just historical documents. We shouldn't be amending
+> archive plans because we need to sanitize our tests or fix our logic. It's the
+> same thing as the test being coupled to particular agent definitions — if the
+> logic remains the same the tests should stay green. The test shouldn't be
+> coupled to artifacts that were used for architecture purposes months ago.
+
+Two constraints follow, and they resolve the collision rather than choosing a
+side in it. Neither `artifact-format-redesign` B-013 nor
+`coding-agnostic-framework` B-017 is live authority over what this test does, so
+there was never a ratified-ground choice to withhold — the premise of the halt
+was that an archived plan governs a live test file, and that premise is the
+thing the owner rejected. A unit test for `lib/agents/skills.ts` must break when
+the filtering logic breaks and must not break when an agent definition is
+edited.
+
+**Done.** Deleted the `artifact skill allowlists` declaration and the four
+object literals it asserted over, and did not replace the marker coupling. No
+archived plan was edited. No replacement test was written, because there is
+nothing to replace: the declaration never called production code, and every
+branch of `buildSkillsOverride` is already covered by tests that exercise the
+real function against synthetic input.
+
+Verified rather than assumed:
+
+- **Mutation probe.** Dropping `allowlist.has(s.name)` from the explicit-allowlist
+  branch of `buildSkillsOverride` turns five tests red, including the two
+  cross-domain visibility ones. The deleted declaration would not have noticed.
+  Restored from a `cp` backup; `git diff` on `lib/agents/skills.ts` is empty.
+- **Suite** 3,213 passing / 21 todo across 268 files — one fewer than 3,214,
+  which is exactly the declaration removed. `tsc --noEmit` and `biome check`
+  clean.
+- **`check-artifacts` deltas are the two predicted ones and nothing else.**
+  `artifact-format-redesign` goes 1 → 2 issues, the new one being B-013's
+  now-dangling `Test:` pointer. `coding-agnostic-framework` stays at 5,
+  confirming that the B-017 marker inside the deleted block was supplementary —
+  B-017's declared `Test:` is `tests/coding-agnostic-fixtures.test.ts`.
+
+Both of those commands were **already failing before this change** — 1 and 5
+issues respectively — and nothing in the suite runs either of them; the only
+archived-plan conformance the suite gates is the three analysis-capabilities
+slices (`tests/artifacts/behavior-conformance.test.ts:1400`). The wave-4 ruling
+that moving this declaration "would turn `check-artifacts` red" rested on a
+premise that was already false when it was written.
+
+**The systemic finding this exposed.** Live test files carry **614**
+`@cosmo-behavior` markers pointing at **28 archived plans**, across **174 test
+files** — against only 32 markers pointing at the 2 active plans. So ~95% of the
+marker coupling in this tree binds tests to documents nobody is executing. This
+declaration is the extreme case of that pattern, not an isolated defect: it was
+shaped to satisfy B-013's `Expected` (which names four agents) rather than to
+exercise any code. Deciding what happens to the other 613 is a policy question
+outside this audit's scope and is not attempted here.
+
+**Also found, not acted on.** `SkillVisibilityFilter.visibleSkillNames` is
+declared in the type and read in `buildSkillsOverride`, but nothing in `lib/`
+ever sets it and no test exercises it — a dead option on a public surface, the
+same family as the condition-4 finding. Left for the owner.
+
+**Consequence for the candidate.** Unchanged by this ruling: both epochs on disk
+remain unusable. `epoch-20260919-82f69ac-c1` fails `validate` at this revision
+because `spec.md`, `scripts/test-health-audit/artifacts.ts` and
+`scripts/test-health-audit/cli.ts` — all manifest material inputs — were changed
+by `078ee10` and `9df4b71` implementing the Q-002 ruling.
+`epoch-20260919-577221e-c1` is stale on its source census. A successor epoch
+must be opened at this revision and wave 4 re-dispatched.

@@ -21,10 +21,6 @@ import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("agent-skills-");
-const plannerDefinition = { skills: ["work-artifacts", "architecture"] };
-const specWriterDefinition = { skills: ["work-artifacts"] };
-const taskManagerDefinition = { skills: ["task", "work-artifacts"] };
-const planReviewerDefinition = { skills: ["work-artifacts", "architecture"] };
 
 /** Helper to create a mock skills base for testing the override function. */
 function makeBase(skillNames: string[]) {
@@ -321,24 +317,5 @@ describe("buildSkillsOverride", () => {
 				makeBase(["project-local", "internal-skill"]),
 			).skills.map((skill) => skill.name),
 		).toEqual(["project-local"]);
-	});
-});
-
-describe("artifact skill allowlists", () => {
-	// @cosmo-behavior plan:artifact-format-redesign#B-013
-	test("artifact-producing and plan-review agents can load shared artifact guidance", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-017
-		expect(plannerDefinition.skills).toEqual(
-			expect.arrayContaining(["work-artifacts", "architecture"]),
-		);
-		expect(specWriterDefinition.skills).toEqual(
-			expect.arrayContaining(["work-artifacts"]),
-		);
-		expect(taskManagerDefinition.skills).toEqual(
-			expect.arrayContaining(["task", "work-artifacts"]),
-		);
-		expect(planReviewerDefinition.skills).toEqual(
-			expect.arrayContaining(["work-artifacts", "architecture"]),
-		);
 	});
 });
