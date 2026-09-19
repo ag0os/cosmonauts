@@ -568,24 +568,38 @@ export async function staleProbeIssues(
 	for (const line of text.split(/\r?\n/u).filter(Boolean)) {
 		const record = JSON.parse(line) as {
 			probeId?: string;
+			sandbox?: { root?: string };
 			paths?: { target?: string };
 			sourceCheckout?: { targetDigestBefore?: string };
 		};
 		const target = record.paths?.target;
 		const recorded = record.sourceCheckout?.targetDigestBefore;
-		if (!target || !recorded) continue;
-		const current = await readIfPresent(join(projectRoot, target)).catch(
-			() => undefined,
-		);
+		// A limitation record measured nothing, so it has neither field.
+		if (!target && !recorded) continue;
+		// A probe copies the repository into a throwaway sandbox and records
+		// absolute paths inside it, so the file it measured is named relative to
+		// that sandbox root rather than to the project.
+		const root = record.sandbox?.root;
+		const relativeTarget =
+			target && root && target.startsWith(`${root}/`)
+				? target.slice(root.length + 1)
+				: undefined;
+		if (!relativeTarget || !recorded) {
+			issues.push(
+				`probes: ${record.probeId} does not name the file it measured relative to its sandbox`,
+			);
+			continue;
+		}
+		const current = await readIfPresent(join(projectRoot, relativeTarget));
 		if (current === undefined) {
 			issues.push(
-				`probes: ${record.probeId} measured ${target}, which this revision does not have`,
+				`probes: ${record.probeId} measured ${relativeTarget}, which this revision does not have`,
 			);
 			continue;
 		}
 		if (createHash("sha256").update(current).digest("hex") !== recorded)
 			issues.push(
-				`probes: ${record.probeId} measured a version of ${target} that this revision does not have`,
+				`probes: ${record.probeId} measured a version of ${relativeTarget} that this revision does not have`,
 			);
 	}
 	return issues;

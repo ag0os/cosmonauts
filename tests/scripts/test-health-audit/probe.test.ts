@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -129,6 +129,11 @@ describe("probe evidence staleness", () => {
 		for (const root of roots.splice(0)) await rm(root, { recursive: true });
 	});
 
+	// A probe runs against a throwaway copy of the repository, so a real record
+	// names its target absolutely inside that sandbox, not relative to the
+	// project. The fixture keeps that shape.
+	const SANDBOX = "/tmp/cosmonauts-PROBE-BRI-005-fixture";
+
 	async function fixture(targetText: string) {
 		const root = await mkdtemp(join(tmpdir(), "audit-probe-stale-"));
 		roots.push(root);
@@ -144,7 +149,8 @@ describe("probe evidence staleness", () => {
 				epochId: "epoch-2",
 				probeId: "PROBE-BRI-005",
 				outcome: "probe-confirmed",
-				paths: { target: "lib/guarded.ts" },
+				sandbox: { root: SANDBOX },
+				paths: { target: `${SANDBOX}/lib/guarded.ts` },
 				sourceCheckout: {
 					targetDigestBefore: createHash("sha256")
 						.update(targetText)
@@ -168,6 +174,18 @@ describe("probe evidence staleness", () => {
 		);
 		expect(await staleProbeIssues(epoch, projectRoot)).toEqual([
 			"probes: PROBE-BRI-005 measured a version of lib/guarded.ts that this revision does not have",
+		]);
+	});
+
+	it("reports a record that does not name its target inside its sandbox", async () => {
+		const { epoch, projectRoot } = await fixture("export const guard = 1;\n");
+		const line = JSON.parse(
+			(await readFile(join(epoch, "probes.jsonl"), "utf8")).trim(),
+		) as { paths: { target: string } };
+		line.paths.target = "lib/guarded.ts";
+		await writeFile(join(epoch, "probes.jsonl"), `${JSON.stringify(line)}\n`);
+		expect(await staleProbeIssues(epoch, projectRoot)).toEqual([
+			"probes: PROBE-BRI-005 does not name the file it measured relative to its sandbox",
 		]);
 	});
 
