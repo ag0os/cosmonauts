@@ -554,12 +554,19 @@ async function readCertifiedProfiles(
 			.split(/\r?\n/u)
 			.map((line) => JSON.parse(line) as unknown);
 		const header = lines.shift();
+		// Every successor epoch carries the judgments whose material inputs rehash
+		// unchanged, so most of its units are written by the carry process rather
+		// than by a dispatcher. Both are certified; what the backend has to agree
+		// with is whether the unit's profiles name the epoch they came from, which
+		// is the same coupling `validatePublishedUnit` enforces on publish.
+		const carried =
+			isRecord(header) && header.processBackend === "carry-forward";
 		if (
 			!isRecord(header) ||
 			header.recordType !== "profile-unit" ||
 			header.epochId !== epochId ||
 			header.unitId !== unit.id ||
-			header.processBackend !== "driver-process"
+			(!carried && header.processBackend !== "driver-process")
 		)
 			throw new Error(`${unit.id} does not have a valid certified unit header`);
 		for (const [index, profile] of lines.entries()) {
@@ -567,6 +574,10 @@ async function readCertifiedProfiles(
 			if (!validation.valid)
 				throw new Error(
 					`${unit.id} profile ${index} is invalid: ${validation.issues.join("; ")}`,
+				);
+			if (isRecord(profile) && (profile.carriedFrom !== undefined) !== carried)
+				throw new Error(
+					`${unit.id} profile ${index} does not match the unit's ${String(header.processBackend)} provenance`,
 				);
 			profiles.push(profile as TestEvidenceProfile);
 		}

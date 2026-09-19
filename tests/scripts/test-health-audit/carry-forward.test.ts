@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import {
 } from "../../../scripts/test-health-audit/artifacts.ts";
 import { carryForwardProfileUnits } from "../../../scripts/test-health-audit/carry-forward.ts";
 import { sourceCensusDigest } from "../../../scripts/test-health-audit/census.ts";
+import { publishPortfolioEvidence } from "../../../scripts/test-health-audit/portfolio.ts";
 import type { TestEvidenceProfile } from "../../../scripts/test-health-audit/schema.ts";
 import { collectSourceText } from "../../../scripts/test-health-audit/source-census.ts";
 
@@ -72,6 +74,142 @@ function reporterPayload(projectRoot: string, caseNames: readonly string[]) {
 			},
 		],
 	});
+}
+
+const inventoryAssessor = {
+	kind: "agent",
+	id: "inventory-assessor",
+	model: "openai-codex",
+	modelVersion: "gpt-5",
+	assessedAt: ASSESSED_AT,
+	consultedAuthorities: [
+		{ kind: "shipped-contract", path: "docs/contract.md" },
+	],
+};
+
+function inventoryJudgment(
+	value: unknown,
+	extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+	return {
+		value,
+		rationale: "Derived from the cited non-test authority.",
+		lane: "agent-assessed-judgment",
+		basis: "reasoned",
+		ciEffect: "evidence-only",
+		assessor: inventoryAssessor,
+		...extra,
+	};
+}
+
+/**
+ * The smallest inventory the portfolio join will accept, carrying one entry the
+ * fixture's profiles actually contribute to, so a published matrix has a cell
+ * that names them.
+ */
+function inventoryFixture(epochId: string, contractDigest: string) {
+	const sourceLog = {
+		lane: "objective-observation",
+		restrictedEvidence: {
+			included: [
+				"package-public-surfaces",
+				"cli-surfaces",
+				"domain-surfaces",
+				"shipped-artifacts",
+				"shipped-contracts",
+				"active-architecture-decisions",
+				"incident-risk-records",
+			],
+			excluded: [
+				"census-identities",
+				"test-files",
+				"behavior-markers",
+				"coverage-output",
+			],
+		},
+		enumeratedGroups: ["contract"],
+		workUnits: [
+			{
+				id: "inventory-unit-1",
+				assignedGroups: ["contract"],
+				sources: [
+					{
+						path: "docs/contract.md",
+						kind: "shipped-contract",
+						sha256: contractDigest,
+					},
+				],
+				consultedAuthorities: ["docs/contract.md"],
+				incidentalCitationsNotOpened: [],
+			},
+		],
+		positiveCoverageStatements: [
+			{
+				group: "contract",
+				statement: "The shipped contract document states one behaviour.",
+				sourcePaths: ["docs/contract.md"],
+			},
+		],
+	};
+	const entries = [
+		{
+			id: "BRI-001",
+			title: "The shipped contract document",
+			contract: inventoryJudgment(
+				"The contract document states its behaviour.",
+			),
+			authorities: [
+				{
+					kind: "shipped-contract",
+					path: "docs/contract.md",
+					locator: "Contract heading",
+				},
+			],
+			criticality: inventoryJudgment("medium", {
+				consequence: "A wrong contract statement misleads a reader.",
+			}),
+			boundaries: Object.fromEntries(
+				[
+					"producer",
+					"consumer",
+					"adapter",
+					"persisted-state",
+					"event",
+					"alternate-path",
+					"composition-root",
+				].map((boundary) => [
+					boundary,
+					inventoryJudgment(
+						boundary === "producer" ? "applicable" : "not-applicable",
+					),
+				]),
+			),
+			axes: {
+				path: inventoryJudgment(["default"]),
+				caller: inventoryJudgment(["reader"]),
+				defect: inventoryJudgment(["path"]),
+			},
+		},
+	];
+	return {
+		schemaVersion: 1,
+		epochId,
+		status: "frozen",
+		heuristicJudgmentsActivateCi: false,
+		sourceLog,
+		entries,
+		freeze: {
+			algorithm: "sha256",
+			sourceLogDigest: createHash("sha256")
+				.update(JSON.stringify(sourceLog))
+				.digest("hex"),
+			inventoryDigest: createHash("sha256")
+				.update(JSON.stringify(entries))
+				.digest("hex"),
+			frozenAt: ASSESSED_AT,
+			successorEpochRequiredForChanges: true,
+		},
+	};
 }
 
 describe("test health audit carry-forward", () => {
@@ -284,7 +422,7 @@ describe("test health audit carry-forward", () => {
 
 		await writeFile(
 			join(auditRoot, "epochs", "epoch-1", "behavior-risk-inventory.json"),
-			JSON.stringify({ epochId: "epoch-1", entries: [] }),
+			JSON.stringify(inventoryFixture("epoch-1", contractDigest)),
 		);
 		await writeFile(
 			join(auditRoot, "epochs", "epoch-1", "gap-register.md"),
@@ -660,5 +798,57 @@ describe("test health audit carry-forward", () => {
 			retained: true,
 		});
 		expect(await successorDispositions(auditRoot)).toEqual([]);
+	});
+
+	// Every successor epoch carries at least one unit, so a portfolio join that
+	// only accepts dispatcher-measured units cannot rebuild the matrix for any
+	// epoch after the first — which leaves the inherited, restamped matrix in
+	// place, describing the predecessor's profiles.
+	it("joins carried units into a matrix published for the successor epoch", async () => {
+		const { auditRoot, projectRoot, unitId } = await fixture();
+		const report = await carryForwardProfileUnits({ auditRoot, projectRoot });
+		expect(report.carriedUnitIds).toEqual([unitId]);
+
+		const record = await publishPortfolioEvidence(auditRoot);
+		expect(record.epochId).toBe("epoch-2");
+		const [entry] = record.entries;
+		const contributing = (entry?.axes.defect ?? []).flatMap(
+			(cell) => cell.profileIds,
+		);
+		expect(contributing).toHaveLength(2);
+		const matrix = await readFile(
+			join(auditRoot, "epochs", "epoch-2", "behavior-risk-matrix.md"),
+			"utf8",
+		);
+		for (const profileId of contributing) expect(matrix).toContain(profileId);
+	});
+
+	it("refuses a unit whose header disowns the carry its profiles record", async () => {
+		const { auditRoot, projectRoot, unitId } = await fixture();
+		await carryForwardProfileUnits({ auditRoot, projectRoot });
+		const shard = join(
+			auditRoot,
+			"epochs",
+			"epoch-2",
+			"profiles",
+			`${unitId}.ndjson`,
+		);
+		const [header, ...profiles] = (await readFile(shard, "utf8"))
+			.split("\n")
+			.filter(Boolean);
+		await writeFile(
+			shard,
+			`${[
+				JSON.stringify({
+					...(JSON.parse(header ?? "{}") as Record<string, unknown>),
+					processBackend: "driver-process",
+					measurementSource: "dispatcher",
+				}),
+				...profiles,
+			].join("\n")}\n`,
+		);
+		await expect(publishPortfolioEvidence(auditRoot)).rejects.toThrow(
+			/does not match the unit's driver-process provenance/,
+		);
 	});
 });
