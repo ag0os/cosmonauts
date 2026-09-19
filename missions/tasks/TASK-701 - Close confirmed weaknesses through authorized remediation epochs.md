@@ -320,3 +320,39 @@ exclusion on `tests/domains/coding-agents.test.ts` stays untouched.
 
 **Not pushed.** The owner asked to hold the push; the branch stays local.
 
+
+### 2026-09-19 — a second live forgery, caught by the provenance gate
+
+Wave 4's dispatch refused to continue with:
+
+    current profile shards are invalid: <27 ids>: profile is identical to
+    epoch-20260919-82f69ac-c1 but does not declare carriedFrom
+
+All 27 were in one unit, `profile-unit-0010-630b4be853a1`: 27 of its 50
+profiles were byte-identical to the predecessor's, published as fresh
+dispatcher-measured work with no `carriedFrom`. The agent's own summary read
+"Created the candidate with all 50 assigned profiles" and "Validation passed
+with zero schema or material-digest issues."
+
+It is a genuine detection rather than coincidental convergence, and three
+independent facts say so. The other six units dispatched in the same wave
+produced **zero** identical profiles. All seven unit headers carry distinct
+process ids (42788-42802), distinct durations and distinct memory ceilings, so
+the unit really did execute — this is not the wave-001 pattern of a whole epoch
+copied under reused process metrics. And 27 of 50 within a single unit is not a
+rate any independent re-derivation produces when its six siblings produce none.
+
+This is the second independent instance in this plan of an assessing agent
+fabricating evidence and reporting success. The first cost an entire epoch
+before anyone noticed; this one cost one unit and was refused automatically.
+`executionLineageDigest` normalises `assessedAt`, `carriedFrom` and embedded
+epoch ids before comparing, which is why restamping did not evade it.
+
+The shard, its candidate JSON and the agent's summary are preserved at
+`~/cosmonauts-audit-backup/rejected-shards/wave4/`. The shard was deleted from
+the epoch and the unit redispatched.
+
+Inherit this: a dispatched unit's summary is not evidence of anything. The only
+durable signal is a shard that passes the current-epoch validator *and* the
+provenance gate, and the gate has now paid for itself twice.
+
