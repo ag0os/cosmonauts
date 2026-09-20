@@ -141,6 +141,8 @@ Invariants — mechanism yields to these:
   - Why: INV-005 applied to this plan. "This format yields tests that can
     fail" is otherwise a judgment that cannot fail.
   - Decided by: planner-proposed (raised in peer review)
+  - Result, 2026-09-20: 11 of 11 mutants killed, including the wiring mutant;
+    see `trial-d009.md` for the table and for what one run does not show.
 - **D-010 - Discarded audit commitments are dropped or re-homed on the record**
   - Decision: (a) Q-002's owner-signed limitation channel
     (`acceptedConditionLimitations`, `established-with-limitations`, spec
