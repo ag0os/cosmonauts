@@ -11,7 +11,9 @@ This is a thinking loop one agent runs, not a handoff between agents. This skill
 
 ## Planned Behaviors And Direct Fixes
 
-If you're implementing a planned behavior-first plan, the plan's `B-###` behaviors are what you are delivering. Work through them one at a time. A planned behavior is usually bigger than one loop: its normal case, each edge case, and each failure it names is a loop of its own, so expect several tests per `B-###`, possibly at different levels. Don't batch the tests at the end; the per-behavior cycle is what keeps the implementation honest.
+This skill governs code — anything a machine parses or executes, including configuration and the frontmatter of a prompt or skill. It does not apply to authored prose, which is delivered by writing it and verified by review; `/skill:work-artifacts` `references/behavior-spine.md` draws the line.
+
+If you're implementing a planned behavior-first plan, the plan's `B-###` behaviors are what you are delivering. Work through the code behaviors one at a time. A planned code behavior is usually bigger than one loop: its normal case, each edge case, and each failure it names is a loop of its own, so expect several tests per `B-###`, possibly at different levels. Don't batch the tests at the end; the per-behavior cycle is what keeps the implementation honest.
 
 - You own test design. The plan says who observes each behavior, through what shipped entry point, and what they see. It does not name tests, and it was written before the code existed. Decide what to test, at what level, and how many tests, once you can see the code.
 - Tests carry no reference to the plan. A plan gets archived; a test must make sense to someone who never saw it.
@@ -20,7 +22,7 @@ If you're implementing a planned behavior-first plan, the plan's `B-###` behavio
 
 ## The Red-Green-Refactor Loop
 
-For each small piece of behavior — one case, one outcome — run three steps in order, then move to the next piece.
+For each small piece of code behavior — one case, one outcome — run three steps in order, then move to the next piece.
 
 ### RED — Write a Failing Test
 

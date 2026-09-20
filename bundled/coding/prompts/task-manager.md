@@ -43,7 +43,7 @@ When the same rule must hold at several entry points, prefer one AC per entry po
 
 Every `B-###` behavior or behavior cluster in the approved plan must be assigned to at least one task. Keep clusters coherent: a task may own several related behaviors, but do not split one behavior across tasks unless one task clearly delivers the observable outcome and the other is a dependency. Do not add scope outside the approved plan just to make a task easier to shape. If a behavior cannot be assigned without inventing missing architecture or scope, stop and report the plan-readiness gap instead of creating speculative work.
 
-**Tactical bugfix tasks are different.** For a tactical bugfix that is not decomposing a behavior-first plan, the regression test is the behavior record. No `B-###` behavior ID is required unless the bugfix belongs to an active plan. Write those task ACs around the observed regression, the fixed expected behavior, and any adjacent behavior that must be preserved.
+**Tactical bugfix tasks are different.** For a tactical bugfix that is not decomposing a behavior-first plan, the regression test is the behavior record (for a bug in code; a fix to authored prose is its own record). No `B-###` behavior ID is required unless the bugfix belongs to an active plan. Write those task ACs around the observed regression, the fixed expected behavior, and any adjacent behavior that must be preserved.
 
 ### Labels
 

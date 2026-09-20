@@ -17,7 +17,7 @@ Use for small bugfixes or patch tasks that need persistence, handoff, or accepta
 
 - `spec.md` is optional and normally unnecessary.
 - A tiny plan or task may name the regression behavior.
-- The regression test carries the durable behavior proof.
+- For a bug in code, the regression test carries the durable behavior proof.
 - No architecture record unless the bug exposes a durable boundary decision.
 
 ## Planned Feature / Refactor

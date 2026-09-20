@@ -23,7 +23,7 @@ Healthy code needs both. A correct-looking patch without a behavioral harness is
 
 ## Operating Rules
 
-- Do not treat syntax generation as completion. Completion means the behavior is specified, implemented, reachable from a shipped entry point, protected by tests that have been seen to fail (for code) or reviewed against its stated outcome (for prose), and structurally coherent.
+- Do not treat syntax generation as completion. Completion means the behavior is specified, implemented, reachable from a shipped entry point, protected by tests that have been seen to fail (for code, which includes configuration and any structure a machine parses) or reviewed against its stated outcome (for authored prose), and structurally coherent.
 - Make structure explicit before parallel work: shared types, public APIs, file ownership, state ownership, and dependency rules must be written down where independent agents will see them.
 - Prefer behaviorally focused acceptance tests. Tests should describe context, action, and expected observable result, including important non-happy paths.
 - Use mutation-style thinking when judging tests: if the implementation were wrong in a realistic way, would the tests fail? For critical behavior, add a targeted negative, edge, or mutation-style check that proves the test would catch the fault.

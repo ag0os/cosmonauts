@@ -128,7 +128,7 @@ Behavior ownership belongs in the ACs as deliverable outcomes, not as loose note
 
 Tactical bugfix tasks need enough persistence for handoff, but they do not need the full planned-work artifact stack.
 
-- The regression test is the behavior record.
+- For a bug in code, the regression test is the behavior record.
 - Do not require a full `spec.md`, `plan.md`, or `architecture.md` stack for a tactical bugfix.
 - No `B-###` behavior ID is required unless the bugfix belongs to an active plan.
 - Write ACs around the observed regression, expected fixed behavior, and preservation of adjacent behavior.

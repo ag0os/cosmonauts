@@ -39,10 +39,10 @@ Internal structure still matters. It belongs in `## Design`, where it is guidanc
 
 The implementer owns test design. A plan does not pre-name tests, and there is no one-test-per-behavior rule: one behavior may need several tests at different levels, and one test may protect several behaviors.
 
-Behaviors whose subject is authored prose — a prompt, a persona, a skill body — are verified by review of the diff, not by asserting that the file contains a sentence. Tests pin only what code parses: frontmatter keys, tool and capability names that code resolves, files a loader requires.
+The line between code and authored prose is drawn by the reader, not the file type. Anything a machine parses or executes is code for this purpose and is tested: source, configuration, frontmatter keys, tool and capability names that code resolves, files a loader requires. Authored prose is natural-language text whose only reader is an agent or a human — the body of a prompt, a persona, a skill. A behavior about authored prose is verified by review of the diff against its stated outcome, never by asserting that the file contains a sentence. One file can hold both: test its frontmatter, review its body. Other documents that say "code" and "authored prose" mean this.
 
 Tests carry no reference back to the plan. A plan is a working document that gets archived; a test protects the system and must make sense to someone who has never seen the plan.
 
 ## Direct Fix Exception
 
-Direct fixes and tiny unplanned patches use a regression test as the behavior record. They do not need `B-###` IDs.
+Direct fixes and tiny unplanned patches to code use a regression test as the behavior record; a fix to authored prose is its own record. They do not need `B-###` IDs.
