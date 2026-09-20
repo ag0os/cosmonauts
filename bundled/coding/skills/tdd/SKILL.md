@@ -5,7 +5,7 @@ description: Test-Driven Development discipline. The Red-Green-Refactor loop one
 
 # Test-Driven Development (TDD)
 
-TDD is a development discipline you apply while implementing a task: write a failing test before writing production code, write the minimum code to pass, then refactor — and repeat for the next behavior. Every line of production code exists because a test demanded it.
+TDD is a development discipline you apply while implementing a task: write a failing test before writing production code, write the minimum code to pass, then refactor — and repeat for the next behavior. Every line of production logic exists because a test demanded it; wording that only a reader judges — a prompt written as a string in source, for instance — is authored prose and is reviewed, not test-driven.
 
 This is a thinking loop one agent runs, not a handoff between agents. This skill is a procedural dispatcher for implementation testing: it owns red/green/refactor and characterization-test discipline.
 
