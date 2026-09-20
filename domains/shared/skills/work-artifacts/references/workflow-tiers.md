@@ -9,7 +9,6 @@ Use for very small, self-contained fixes where the code path and expected behavi
 - No `spec.md`, no `plan.md`, no `architecture.md`.
 - Use implementation TDD or a characterization test first.
 - The regression test is the behavior record.
-- No behavior marker is required unless the fix belongs to an active plan.
 - Do not force direct fixes through the full artifact stack.
 
 ## Tactical Bugfix
@@ -28,7 +27,7 @@ Use for larger changes that need design, tasking, or multi-step verification.
 - Requires `spec.md` for the product/user side.
 - Requires `plan.md` for the technical side.
 - The plan is behavior-first and includes a Quality Contract ladder.
-- Planned behaviors use stable `B-###` IDs and tests carry matching markers.
+- Planned behaviors use stable `B-###` IDs.
 
 ## Architectural / Multi-Plan Work
 

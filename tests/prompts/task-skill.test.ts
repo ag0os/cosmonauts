@@ -56,26 +56,6 @@ describe("task skill", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:artifact-format-redesign#B-006
-	it("preserves planned behavior ownership and marker expectations in task acceptance criteria", async () => {
-		const content = await readSkill();
-
-		expect(content).toContain("## Planned Behavior Ownership");
-		expect(content).toContain(
-			"Every `B-###` behavior or behavior cluster from the plan must be assigned to at least one task.",
-		);
-		expect(content).toContain(
-			"Task ACs that own planned behavior must name the owned `B-###` IDs.",
-		);
-		expect(content).toContain(
-			"Carry the worker's marker expectation into the task context",
-		);
-		expect(content).toContain("@cosmo-behavior plan:<slug>#B-###");
-		expect(content).toContain(
-			"Do not ask workers to invent missing artifact architecture, behavior IDs, seams, tests, or markers.",
-		);
-	});
-
 	// @cosmo-behavior plan:artifact-format-redesign#B-020
 	it("stays a directly linked dispatcher without deep task references", async () => {
 		const content = await readSkill();
@@ -87,19 +67,6 @@ describe("task skill", () => {
 		expect(content).toContain("`references/behavior-spine.md`");
 		expect(content).not.toContain("references/lifecycle.md");
 		expect(content).not.toContain("references/behavior-mapping.md");
-	});
-
-	it("allows tactical bugfix tasks to use regression tests as behavior records", async () => {
-		const content = await readSkill();
-
-		expect(content).toContain("## Tactical Bugfix Tasks");
-		expect(content).toContain("regression test is the behavior record");
-		expect(content).toContain(
-			"Do not require a full `spec.md`, `plan.md`, or `architecture.md` stack",
-		);
-		expect(content).toContain(
-			"No `B-###` behavior ID or marker is required unless the bugfix belongs to an active plan.",
-		);
 	});
 
 	// @cosmo-behavior plan:task-id-system#B-011

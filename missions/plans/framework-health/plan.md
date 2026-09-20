@@ -163,6 +163,16 @@ Invariants — mechanism yields to these:
     plan-reviewer prompts; an error there propagates into every later plan and
     no test run can see it.
   - Decided by: human, 2026-09-20
+- **D-012 - Prose tests that pin rewritten text are deleted in the commit that rewrites it**
+  - Decision: Stage 1's prose rewrite turned 17 `tests/prompts` tests red,
+    every one a `toContain` on a sentence this plan removes (e.g. "rejects
+    plans with behaviors missing named tests or markers"). They are deleted in
+    the same commit rather than waiting for Stage 2's sort, because the
+    alternative is a red suite between stages or rewording the assertions to
+    match the new sentences — which is the defect. Stage 2 still sorts the
+    remainder.
+  - Why: INV-003; D-005.
+  - Decided by: worker-amended, 2026-09-20 (derived)
 
 ## Behaviors
 

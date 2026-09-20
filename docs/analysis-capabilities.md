@@ -21,7 +21,7 @@ Provider identity and version appear only in runtime status and results.
 The four gate-facing names are exactly the corresponding gate kinds in the
 [gate contract vocabulary](../domains/shared/skills/work-artifacts/references/gate-contracts.md).
 The operational names describe requests and do not create aliases for
-`correctness`, `artifact-conformance`, or `mutation`.
+`correctness` or `mutation`.
 
 ## Public runtime surface
 

@@ -16,7 +16,7 @@ For artifact shape, behavior spine, and gate rules, load `/skill:work-artifacts`
 | Artifact | Lifecycle role | Canonical format |
 |---|---|---|
 | `spec.md` | Product intent: what is being built, who benefits, why it matters, and acceptance criteria. | `/skill:work-artifacts` `references/spec-format.md` |
-| `plan.md` | Behavior-first implementation plan: behavior placement, derived design, file ownership, risks, quality gates, and implementation order. | `/skill:work-artifacts` `references/plan-format.md` and `references/behavior-spine.md` |
+| `plan.md` | Behavior-first implementation plan: observable behaviors, design guidance, file ownership, risks, quality gates, and implementation order. | `/skill:work-artifacts` `references/plan-format.md` and `references/behavior-spine.md` |
 | `architecture.md` | Active architecture record for durable boundaries, dependency rules, or multi-plan decisions. | `/skill:work-artifacts` `references/architecture-format.md` |
 
 Do not move architecture-of-record content into `plan.md`. If durable architecture context matters, create or link the active architecture record and keep only the relevant `Architecture Context` in the plan.
@@ -37,14 +37,13 @@ Full planned feature/refactor plans require a `## Behaviors` section before task
 
 - Stable `B-###` ID
 - Source `AC-###`
-- Context
-- Action
-- Expected result
-- Seam
-- Named test
-- Marker using `@cosmo-behavior plan:<slug>#B-###`
+- Observer — who or what notices
+- Entry point — the shipped command, tool, event, or artifact they use
+- Outcome — what they observe, including failure and edge cases
 
-Treat `## Design` as derived from behavior placement. The design should explain how the behavior seams, tests, and constraints fit together; do not author it as an independent section that could drift away from the behavior spine.
+A behavior never names a source file, a function, a test file, or a test title. If nobody could observe it through something that ships, it is a design note, not a behavior. Test design belongs to the implementer, who will have seen the code.
+
+`## Design` explains the structure that will deliver the behaviors. It is guidance written before the code exists; the behaviors and the spec's intent are what must hold.
 
 ## Plan Readiness Check
 
@@ -54,13 +53,13 @@ Before calling `plan_create` or `plan_edit`, run a short visible readiness check
 - **Constraints** - Scope boundaries, dependency direction, existing-feature interactions, non-goals, and invariants are explicit.
 - **Intent** - For planned feature/refactor work, the spec carries `## Intent` (a goal plus `INV-###` invariants; the plan carries it when no spec exists), with rankings stated where invariants can conflict.
 - **Context** - Claims about existing code are backed by files you actually read; no guessed names, paths, signatures, or helpers.
-- **Behaviors** - Full planned feature/refactor plans have `## Behaviors` entries with context, action, expected result, source `AC-###`, seam, named test, and `@cosmo-behavior plan:<slug>#B-###` marker.
-- **Design derivation** - `## Design` follows from behavior placement. If it cannot trace to behavior seams, source criteria, and named tests, revise the behaviors or design before task creation.
+- **Behaviors** - Full planned feature/refactor plans have `## Behaviors` entries with source `AC-###`, observer, entry point, and outcome. Every observer is real and every entry point ships.
+- **Reachability** - Nothing in `## Design` or `## Files to Change` is built without a path from a shipped entry point to it. Code deliberately staged ahead of its wiring is named as staged, with the work that will wire it.
 - **Quality gates** - The `## Quality Contract` follows `/skill:work-artifacts` gate rules and names abstract gate kinds rather than project-specific tool columns.
 - **Iteration policy** - `## Implementation Order` says how stages sequence and how to react if a stage surfaces unexpected complexity.
 - **Pivot / abort conditions** - `## Risks` names the conditions under which scope or approach should be revised rather than silently pressed through.
 
-Reject a full planned feature/refactor plan as not ready if any behavior lacks a named test or marker. In interactive mode, pause for correction or an explicit waiver before writing. In autonomous runs, proceed only as narrowly as the run allows and record the gap in Assumptions, Open Questions, Risks, or the Decision Log.
+Reject a full planned feature/refactor plan as not ready if any behavior lacks a real observer or a shipped entry point, or names a function as the thing that happens. In interactive mode, pause for correction or an explicit waiver before writing. In autonomous runs, proceed only as narrowly as the run allows and record the gap in Assumptions, Open Questions, Risks, or the Decision Log.
 
 One-sentence test: if you collapse the plan into "`<end state>` verified by `<evidence>` while preserving `<constraints>`; proceed via `<implementation order>`; if `<conditions>` hold, pivot or abort", the sentence should read as a coherent contract. If a clause is hollow, revisit that section.
 
@@ -101,7 +100,7 @@ This auto-adds the `plan:<slug>` label. Tasks stay flat in `missions/tasks/`; th
 Before creating tasks:
 
 - Confirm each task owns one coherent slice of the implementation order.
-- Preserve behavior ownership by carrying relevant `B-###` IDs, source acceptance criteria, named tests, seams, and markers into task acceptance criteria.
+- Preserve behavior ownership by carrying relevant `B-###` IDs and their observable outcomes into task acceptance criteria.
 - Keep task count in the normal 3-12 range for a plan. If the plan naturally produces more, split the plan along a real boundary.
 - Load `/skill:task` for task lifecycle, task acceptance criteria, and task tools.
 
@@ -117,10 +116,10 @@ Completion loop:
 ## Common Problems
 
 - **Artifact-rule duplication.** The plan skill copies format sections, examples, or gate tables. Route to `/skill:work-artifacts` instead.
-- **Independent design prose.** `## Design` reads like a standalone architecture essay. Rework it so it is derived from behavior placement.
-- **Missing proof.** Behaviors omit named tests or markers. The plan is not ready for task creation.
+- **Independent design prose.** `## Design` reads like a standalone architecture essay. Rework it so every unit it names serves a stated behavior.
+- **Function-shaped behaviors.** A behavior's actor is "a caller" and its outcome is a return value. Nobody observes that. State what the real observer gains, or move it to Design.
 - **Architecture stuffing.** Durable boundary decisions are embedded in `plan.md`. Move architecture-of-record content to `architecture.md` and link it from `Architecture Context`.
-- **Task drift.** Tasks lose behavior ownership. Carry the behavior IDs, seams, named tests, and markers into task acceptance criteria.
+- **Task drift.** Tasks lose behavior ownership. Carry the behavior IDs and observable outcomes into task acceptance criteria.
 
 ## Related Skills
 

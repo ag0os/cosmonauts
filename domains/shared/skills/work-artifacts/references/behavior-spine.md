@@ -1,61 +1,48 @@
-# Behavior Spine
+# Behaviors
 
-The behavior spine connects user intent to executable proof: user intent, acceptance criterion, behavior, test plus seam, then code.
+A behavior says what must be true, for whom, once the work ships. It connects user intent to the finished system: user intent, acceptance criterion, behavior, then code and tests written by whoever builds it.
 
 ## IDs
 
 - Specs use `AC-###` for planned-work acceptance criteria.
 - Plans use `B-###` for behavior entries.
-- Each behavior maps to one test intent. A task may own several behaviors, but behavior granularity stays close to the test.
 
 ## Behavior Entry
 
-Each `B-###` includes:
+Each `B-###` states:
 
 - Source `AC-###`
-- Context
-- Action
-- Expected result
-- Seam
-- Test
-- Marker
-
-Marker format:
-
-```text
-@cosmo-behavior plan:<slug>#B-###
-```
+- Observer — who or what notices: a human at the CLI, an agent calling a tool, a session receiving an event, a later process reading a file
+- Entry point — the shipped surface the observer uses: a command, a registered tool, a lifecycle event, a persisted artifact
+- Outcome — what the observer sees, including the failure and edge cases that matter
 
 Example:
 
 ```md
-### B-003 - Plans reject behaviors without tests
+### B-003 - Spawned agents report completion to their parent
 
 - Source: AC-004
-- Context: a planner is preparing a plan for task creation
-- Action: a behavior has no named test
-- Expected: the plan is not ready and the missing test is explicit
-- Seam: `/skill:plan` readiness check
-- Test: `tests/prompts/plan-skill.test.ts` > `flags behaviors without test references`
-- Marker: `@cosmo-behavior plan:artifact-format-redesign#B-003`
+- Observer: an agent that called `spawn_agent` from an interactive session
+- Entry point: the `spawn_agent` tool and the follow-up message it promises
+- Outcome: the parent receives exactly one completion message per accepted spawn, carrying the child's final summary; a child that crashes produces a completion message that says so rather than silence
 ```
 
-## Test Marker
+## What a Behavior Does Not Say
 
-The corresponding test carries the marker near the executable `it()` or `test()` block as a plain comment. The marker is language-agnostic and grepable; it is not a framework API.
+A behavior never names a source file, a function, a test file, or a test title. Those are decisions for whoever has seen the code, and a plan is written before that code exists.
 
-## Mechanical Artifact Conformance
+The check: if nobody outside the codebase could observe the behavior through something that ships, it is not a behavior. "A caller invokes `compileFoo` and gets a graph" has no observer — it describes a function, and a plan that asks for it will receive an unwired function and a test of that function. Either state what the real observer gains, or move the sentence to `## Design` as a note about structure.
 
-Current mechanical artifact-conformance checks are intentionally narrow. They validate that the `## Behaviors` section has parseable `### B-###` entries, required behavior fields (`Source`, `Context`, `Action`, `Expected`, `Seam`, `Test`, and `Marker`), a project-root-relative `Test` file path that exists and resolves inside the project root, an exact `Marker` value for the plan slug and behavior ID, and exact marker text anywhere in the referenced test or evidence file.
+Internal structure still matters. It belongs in `## Design`, where it is guidance the implementer may revise, not a contract a test is pinned to.
 
-The v1 mechanical scope preserves these exclusions: checks do not parse test ASTs, do not check marker proximity to the named test, do not create concrete gate bindings, do not run a Quality Contract runner, do not enforce broad workflow-tier rules, and do not migrate legacy plans.
+## Tests
 
-Older plans missing current behavior-spine fields may fail until migrated separately.
+The implementer owns test design. A plan does not pre-name tests, and there is no one-test-per-behavior rule: one behavior may need several tests at different levels, and one test may protect several behaviors.
 
-## Durable Home
+Behaviors whose subject is authored prose — a prompt, a persona, a skill body — are verified by review of the diff, not by asserting that the file contains a sentence. Tests pin only what code parses: frontmatter keys, tool and capability names that code resolves, files a loader requires.
 
-A behavior's durable home is the test layer. The plan's `## Behaviors` section is a working view for active planning. Archiving a plan does not lose the behavior because the marker stays coupled to the test.
+Tests carry no reference back to the plan. A plan is a working document that gets archived; a test protects the system and must make sense to someone who has never seen the plan.
 
 ## Direct Fix Exception
 
-Direct fixes and tiny unplanned patches use a regression test as the behavior record. They do not need `B-###` IDs or markers unless they become part of a plan.
+Direct fixes and tiny unplanned patches use a regression test as the behavior record. They do not need `B-###` IDs.

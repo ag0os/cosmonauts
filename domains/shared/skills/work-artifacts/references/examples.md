@@ -81,21 +81,17 @@ Summarize the implementation direction.
 ### B-001 - Behavior name
 
 - Source: AC-001
-- Context: ...
-- Action: ...
-- Expected: ...
-- Seam: `path/or/skill/section`
-- Test: `tests/path/file.test.ts` > `test name`
-- Marker: `@cosmo-behavior plan:<slug>#B-001`
+- Observer: who or what notices
+- Entry point: the shipped command, tool, event, or artifact they use
+- Outcome: what they observe, including failure and edge cases
 
 ## Design
 
-Derived from behavior placement.
+The structure that will deliver the behaviors. Guidance, not contract.
 
 ## Files to Change
 
-- `tests/path/file.test.ts` - behavior proof.
-- `src/path/file.ts` - implementation seam.
+- `src/path/file.ts` - what changes and why.
 
 ## Risks
 
@@ -109,8 +105,8 @@ Derived from behavior placement.
 
 ## Implementation Order
 
-1. Write the behavior test.
-2. Implement the smallest passing change.
+1. Deliver the first behavior end to end through its real entry point, test-first.
+2. Repeat for the remaining behaviors.
 3. Run the declared checks.
 ```
 

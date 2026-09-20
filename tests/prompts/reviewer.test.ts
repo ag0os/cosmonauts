@@ -24,23 +24,4 @@ describe("reviewer prompt", () => {
 			"Resolve base: `origin/main` → `main` → `master`",
 		);
 	});
-
-	// @cosmo-behavior plan:artifact-format-redesign#B-017
-	it("loads work-artifacts for artifact-conformance scope without inventing extra review claims", async () => {
-		const content = await readPrompt();
-
-		expect(content).toContain(
-			"when the spawn prompt includes plan context, `Quality Contract Criteria`, or explicit artifact-conformance claims",
-		);
-		expect(content).toContain("load `/skill:work-artifacts`");
-		expect(content).toContain("behavior marker");
-		expect(content).toContain("Architecture Context");
-		expect(content).toContain("gate-ladder claims");
-		expect(content).toContain(
-			"Do not invent artifact-conformance requirements for ordinary code review scopes",
-		);
-		expect(content).toContain(
-			"Only report artifact findings for claims or plan contracts that the review prompt actually placed in scope.",
-		);
-	});
 });

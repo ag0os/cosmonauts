@@ -50,47 +50,6 @@ describe("work-artifacts skill", () => {
 		expect(planFormat).toContain("behavior-first `plan.md`");
 	});
 
-	// @cosmo-behavior plan:artifact-format-redesign#B-002
-	it("keeps artifact knowledge in a routed reference set", async () => {
-		const skill = await readSkill();
-		const workflowTiers = await readReference("workflow-tiers.md");
-		const specFormat = await readReference("spec-format.md");
-		const planFormat = await readReference("plan-format.md");
-		const architectureFormat = await readReference("architecture-format.md");
-		const behaviorSpine = await readReference("behavior-spine.md");
-
-		expect(skill).toContain("Canonical artifact rules live in `references/`.");
-		expect(skill).toContain(
-			"Role skills should route to this skill instead of duplicating full artifact rules.",
-		);
-		expect(workflowTiers).toContain("direct fix");
-		expect(specFormat).toContain("`spec.md`");
-		expect(planFormat).toContain("`plan.md`");
-		expect(architectureFormat).toContain("`architecture.md`");
-		expect(behaviorSpine).toContain("@cosmo-behavior plan:<slug>#B-###");
-	});
-
-	// @cosmo-behavior plan:artifact-format-redesign#B-007
-	it("describes quality contracts as abstract gate ladders without concrete tools", async () => {
-		const gateContracts = await readReference("gate-contracts.md");
-		const planFormat = await readReference("plan-format.md");
-		const gateGuidance = `${gateContracts}\n${planFormat}`;
-
-		expect(gateContracts).toContain("ordered abstract gate ladder");
-		expect(gateContracts).toContain("`correctness`");
-		expect(gateContracts).toContain("`artifact-conformance`");
-		expect(gateContracts).toContain("`mutation`");
-		expect(gateContracts).toContain("`duplication`");
-		expect(gateContracts).toContain("`complexity`");
-		expect(gateContracts).toContain("`boundary-conformance`");
-		expect(gateContracts).toContain("`dead-code`");
-		expect(planFormat).toContain("## Quality Contract");
-		expect(planFormat).toContain("| Order | Gate kind | Tier | Binding state");
-		expect(gateGuidance).not.toContain("| Tool |");
-		expect(gateGuidance).not.toContain("| Command |");
-		expect(gateGuidance).not.toMatch(/\b(fallow|biome|vitest|reek)\b/i);
-	});
-
 	// @cosmo-behavior plan:artifact-format-redesign#B-008
 	it("defines binding states tiers protocol slot and explicit degradation", async () => {
 		const gateContracts = await readReference("gate-contracts.md");
@@ -107,37 +66,6 @@ describe("work-artifacts skill", () => {
 		expect(gateContracts).toContain("explicit degraded state");
 		expect(gateContracts).toContain("never a silent pass");
 		expect(gateContracts).toContain("never a hard failure");
-	});
-
-	// @cosmo-behavior plan:artifact-conformance-gate#B-012
-	it("mentions mechanical behavior marker conformance without requiring AST parsing gate bindings or legacy migration", async () => {
-		const behaviorSpine = await readReference("behavior-spine.md");
-		const gateContracts = await readReference("gate-contracts.md");
-		const planFormat = await readReference("plan-format.md");
-		const guidance = `${behaviorSpine}\n${gateContracts}\n${planFormat}`;
-
-		expect(behaviorSpine).toContain("mechanical artifact-conformance checks");
-		expect(behaviorSpine).toContain("required behavior fields");
-		expect(behaviorSpine).toContain("project-root-relative `Test` file");
-		expect(behaviorSpine).toContain("exact marker text");
-		expect(behaviorSpine).toContain(
-			"Older plans missing current behavior-spine fields may fail until migrated separately.",
-		);
-		expect(guidance).toContain("do not parse test ASTs");
-		expect(guidance).toContain("do not check marker proximity");
-		expect(guidance).toContain("do not create concrete gate bindings");
-		expect(guidance).toContain("do not run a Quality Contract runner");
-		expect(guidance).toContain("do not enforce broad workflow-tier rules");
-		expect(guidance).toContain("do not migrate legacy plans");
-		expect(gateContracts).toContain(
-			"| 2 | `artifact-conformance` | universal | bound | behavior-spine mechanical checks pass | artifact evidence | hard fail |",
-		);
-		expect(planFormat).toContain(
-			"| 2 | `artifact-conformance` | universal | bound | behavior-spine mechanical checks pass | artifact evidence | hard fail |",
-		);
-		expect(guidance).not.toContain("hard fail once enforcement exists");
-		expect(guidance).not.toMatch(/\| (Tool|Command) \|/);
-		expect(guidance).not.toMatch(/\b(fallow|biome|vitest|reek)\b/i);
 	});
 
 	// @cosmo-behavior plan:artifact-format-redesign#B-011

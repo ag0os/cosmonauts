@@ -61,4 +61,4 @@ Rules:
 
 ## Hand-Off
 
-When planning begins, the planner turns each relevant `AC-###` into one or more `B-###` behavior entries in `plan.md`. The spec should not design the implementation seam; the plan owns that placement.
+When planning begins, the planner turns each relevant `AC-###` into one or more `B-###` behavior entries in `plan.md`. The spec should not design the implementation; the plan's `## Design` owns structure.

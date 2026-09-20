@@ -119,11 +119,10 @@ When creating tasks from a behavior-first plan, task acceptance criteria preserv
 
 - Every `B-###` behavior or behavior cluster from the plan must be assigned to at least one task.
 - Task ACs that own planned behavior must name the owned `B-###` IDs.
-- Carry the worker's marker expectation into the task context: tests for planned behaviors carry `@cosmo-behavior plan:<slug>#B-###` near the executable test.
-- Keep behavior clusters coherent. A task may own several related behaviors, but do not split one behavior across tasks unless one task clearly owns the executable proof and the other is a dependency.
-- Do not ask workers to invent missing artifact architecture, behavior IDs, seams, tests, or markers. If the source plan lacks those details, route the plan back through readiness instead of burying discovery work in the implementation task.
+- Keep behavior clusters coherent. A task may own several related behaviors, but do not split one behavior across tasks unless one task clearly delivers the observable outcome and the other is a dependency.
+- Do not ask workers to invent missing behaviors or architecture decisions. If the source plan lacks those, route the plan back through readiness instead of burying discovery work in the implementation task. Test design is not missing detail: it is the worker's job, and task ACs do not name test files or test titles.
 
-Behavior ownership belongs in the ACs as deliverable outcomes, not as loose notes. A good planned-work AC reads like: "`B-006` task ACs preserve behavior IDs and marker expectations for worker handoff." The worker can then read the plan for the full context/action/expected-result details and implement test-first against the named behavior.
+Behavior ownership belongs in the ACs as deliverable outcomes, not as loose notes. A good planned-work AC reads like: "`B-006` a parent agent receives exactly one completion message per accepted spawn, including when the child crashes." The worker can then read the plan for the observer, entry point, and outcome, and implement test-first through that entry point.
 
 ## Tactical Bugfix Tasks
 
@@ -131,7 +130,7 @@ Tactical bugfix tasks need enough persistence for handoff, but they do not need 
 
 - The regression test is the behavior record.
 - Do not require a full `spec.md`, `plan.md`, or `architecture.md` stack for a tactical bugfix.
-- No `B-###` behavior ID or marker is required unless the bugfix belongs to an active plan.
+- No `B-###` behavior ID is required unless the bugfix belongs to an active plan.
 - Write ACs around the observed regression, expected fixed behavior, and preservation of adjacent behavior.
 - If the bug reveals a durable boundary decision or multi-plan design issue, route to `/skill:work-artifacts` `references/workflow-tiers.md` before expanding scope.
 

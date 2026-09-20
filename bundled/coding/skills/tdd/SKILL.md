@@ -7,16 +7,15 @@ description: Test-Driven Development discipline. The Red-Green-Refactor loop one
 
 TDD is a development discipline you apply while implementing a task: write a failing test before writing production code, write the minimum code to pass, then refactor — and repeat for the next behavior. Every line of production code exists because a test demanded it.
 
-This is a thinking loop one agent runs, not a handoff between agents. This skill is a procedural dispatcher for implementation testing: it owns red/green/refactor and characterization-test discipline, and it routes artifact marker details to `/skill:work-artifacts` instead of restating the artifact format.
+This is a thinking loop one agent runs, not a handoff between agents. This skill is a procedural dispatcher for implementation testing: it owns red/green/refactor and characterization-test discipline.
 
 ## Planned Behaviors And Direct Fixes
 
 If you're implementing a planned behavior-first plan, the plan's `B-###` behaviors are your test targets. Work through them one at a time, running the full loop for each before moving on. Don't batch the tests at the end; the per-behavior cycle is what keeps the implementation honest.
 
-- When implementing a planned `B-###` behavior, load `/skill:work-artifacts` and `references/behavior-spine.md` for the canonical behavior-spine and marker rules. Do not duplicate the full behavior-spine format here.
-- The RED test for a planned behavior must carry the matching `@cosmo-behavior plan:<slug>#B-###` marker near the executable test as a plain comment.
-- A behavior's durable home is the test layer. The active plan is a working view; archiving a plan does not remove that regression protection because the marker stays coupled to the executable test.
-- Direct fixes still require a regression test first. The regression test is the behavior record; direct fixes do not require behavior IDs or markers unless the fix belongs to a plan.
+- You own test design. The plan says who observes each behavior, through what shipped entry point, and what they see. It does not name tests, and it was written before the code existed. Decide what to test, at what level, and how many tests, once you can see the code.
+- Tests carry no reference to the plan. A plan gets archived; a test must make sense to someone who never saw it.
+- Direct fixes still require a regression test first. The regression test is the behavior record.
 - If optional TDD references are introduced later, keep them directly linked from this dispatcher and avoid deep reference chains.
 
 ## The Red-Green-Refactor Loop
@@ -90,6 +89,22 @@ You are off the loop if:
 // Bad: tests how it does it
 "calls Array.sort with priority comparator"
 ```
+
+### Go through the door the observer uses
+
+Drive the behavior through the narrowest shipped entry point that routes to the logic — the command handler, the registered tool, the event listener — not a helper you exported so a test could reach it. If the only caller of a function is its test, either the function is not wired into anything and the behavior is not delivered, or the test is at the wrong level. Exporting something solely for a test is a signal to stop and look.
+
+### Use synthetic data
+
+Build inputs in the test. Do not read the project's real agent definitions, prompts, plans, or configuration as fixtures: a test coupled to them goes red when someone edits content and nothing is broken. If the logic is unchanged, the test stays green.
+
+### Do not assert on prose
+
+Asserting that a prompt or document contains a sentence fails on a harmless reword and passes on an incoherent rewrite. Prose is verified by review. Test only what code parses: frontmatter keys, tool and capability names that code resolves, files a loader requires.
+
+### Prove the test can fail
+
+Seeing RED once, before the code exists, shows the test runs. It does not show the test discriminates. Before you finish, break the production logic on purpose — invert the condition, return the wrong value, skip the write — and confirm the test goes red for that reason. Restore from a copy, not from version control, so uncommitted work survives. A test you have never seen fail against working-then-broken code is not yet evidence.
 
 ### One assertion of intent per test
 

@@ -26,42 +26,6 @@ describe("plan skill", () => {
 		expect(content).toContain("`references/gate-contracts.md`");
 	});
 
-	// @cosmo-behavior plan:artifact-format-redesign#B-004
-	it("requires behavior entries with source seam test marker and derived design", async () => {
-		const content = await readSkill();
-
-		expect(content).toContain("## Behavior-First Plans");
-		expect(content).toContain("Full planned feature/refactor plans require");
-		expect(content).toContain("Source `AC-###`");
-		expect(content).toContain("Context");
-		expect(content).toContain("Action");
-		expect(content).toContain("Expected result");
-		expect(content).toContain("Seam");
-		expect(content).toContain("Named test");
-		expect(content).toContain("@cosmo-behavior plan:<slug>#B-###");
-		expect(content).toContain(
-			"Treat `## Design` as derived from behavior placement.",
-		);
-	});
-
-	// @cosmo-behavior plan:artifact-format-redesign#B-004
-	it("rejects plans with behaviors missing named tests or markers", async () => {
-		const content = await readSkill();
-
-		expect(content).toContain("## Plan Readiness Check");
-		expect(content).toContain("This is conversational output only");
-		expect(content).toContain("**Behaviors**");
-		expect(content).toContain("named test");
-		expect(content).toContain("@cosmo-behavior plan:<slug>#B-###");
-		expect(content).toContain(
-			"Reject a full planned feature/refactor plan as not ready if any behavior lacks a named test or marker.",
-		);
-		expect(content).toContain("**Design derivation**");
-		expect(content).toContain(
-			"If it cannot trace to behavior seams, source criteria, and named tests",
-		);
-	});
-
 	// @cosmo-behavior plan:spec-plan-intent#B-005
 	it("checks intent presence and routes deviations to the protocol", async () => {
 		const content = await readSkill();

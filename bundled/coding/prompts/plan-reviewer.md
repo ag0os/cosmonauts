@@ -85,14 +85,13 @@ If the plan introduces user-facing changes:
 
 The plan's `## Behaviors` section is what the worker turns into tests. Review it as rigorously as the architecture:
 
-- **Precise and testable.** Each behavior must state concrete inputs and expected outputs — "given an empty cart, `total()` returns `0`", not "handles empty carts gracefully". Vague platitudes ("works correctly", "behaves as expected") are findings: a worker cannot write a test from them.
+- **Precise and observable.** Each behavior must state a concrete outcome for a concrete observer — "a user running `cart total` on an empty cart sees `0` and exit code 0", not "handles empty carts gracefully". Vague platitudes ("works correctly", "behaves as expected") are findings: a worker cannot tell when they are done.
 - **Failure and edge cases, not just the happy path.** Check for behaviors covering invalid input, empty/boundary values, error conditions, concurrent or interrupted operations. A behaviors section that only describes the success path is incomplete.
-- **Maps onto the architecture.** Each behavior cluster should correspond to an implementable unit in the design (a function, a module, a code path). If a behavior has no home in the architecture, or a designed unit has no behaviors, flag the gap.
-- **Authorable directly.** Could a worker write the test cases straight from the spec without inventing inputs or guessing expected results? If they would have to make design decisions to write the test, the behavior is underspecified.
-- **Canonical behavior spine.** For full planned feature/refactor plans, check that every behavior has behavior IDs, source `AC-###` links, seams, named tests, and `@cosmo-behavior plan:<slug>#B-###` markers. The marker must be intended for the executable test, not buried only in prose.
-- **Derived design.** For full plans, verify the design is derived from the behavior spine: every designed unit traces back to behavior seams, source criteria, and named tests, and every behavior has an implementable home.
+- **A real observer and a shipped entry point.** For every behavior ask: who notices, and through what that actually ships — a command, a registered tool, a lifecycle event, a persisted artifact? A behavior whose actor is "a caller" and whose outcome is a return value has no observer; it orders a function, and the plan will receive an unwired function plus a test of it. Make it a finding. Likewise any behavior that names a source file, a function, a test file, or a test title: the plan is written before the code exists, and those choices belong to the worker.
+- **Reachable design.** Every unit the design asks for must be reachable from some behavior's entry point. A designed unit that nothing shipped will call is either staged work — which the plan must name as staged, with what will wire it — or a gap.
+- **Prose behaviors state effect, not wording.** A behavior about a prompt, persona, or skill says what the reading agent does differently, not which sentences the file contains. Those behaviors are verified by review of the diff, never by a test that greps the file.
 
-**Common failures:** behaviors phrased as restated requirements rather than concrete examples, no error/edge cases listed, a behavior that spans three modules with no indication of where the seam is, expected outputs left as "the right value".
+**Common failures:** behaviors phrased as restated requirements rather than concrete examples, no error/edge cases listed, behaviors that describe a function instead of an outcome, a designed module nothing calls, expected outputs left as "the right value".
 
 ### 7. Architecture record usefulness
 

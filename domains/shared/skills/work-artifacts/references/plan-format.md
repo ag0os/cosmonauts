@@ -1,6 +1,6 @@
 # Plan Format
 
-`plan.md` is the technical document for planned feature/refactor work and task-producing work. It is a behavior-first `plan.md`: behaviors are placed and tested before design prose is finalized.
+`plan.md` is the technical document for planned feature/refactor work and task-producing work. It is a behavior-first `plan.md`: what must be observably true is settled before design prose is finalized.
 
 ## Required Sections
 
@@ -12,6 +12,65 @@ Use this order for a full planned feature/refactor plan:
 - `## Behaviors`
 - `## Design`
 - `## Files to Change`
+- `## Risks`
+- `## Quality Contract`
+- `## Implementation Order`
+
+## Decision Log
+
+Every full plan has `## Decision Log`. Entries record meaningful choices —
+planner trade-offs, human directions, and amendments made while implementing.
+
+Use this shape:
+
+```md
+- **D-001 - Decision title**
+  - Decision: the chosen rule or direction
+  - Alternatives: meaningful options rejected, one line each
+  - Why: the reason, naming the spec invariant or goal it serves
+  - Decided by: provenance — for example `human, <date>` or `planner-proposed`
+  - Supersedes: the exact ground replaced (amendments only)
+```
+
+Mutability follows from `Decided by:` provenance: entries decided by the
+human are ratified (stop-and-ask); entries proposed by an agent are derived
+(amend-on-record); entries with no provenance are treated as ratified. An
+explicit `(ratified)` / `(derived)` marker on the title overrides the
+default; write it only when overriding. The full mutability rules, the
+deviation classifier, and amendment mechanics live in
+`deviation-protocol.md`.
+
+Plans cite spec invariants by `INV-###` ID and do not restate intent; the
+spec owns it. A plan with no spec carries the spec-format `## Intent`
+section itself and is then the single source.
+
+## Behaviors
+
+Every full plan has `## Behaviors`. Each behavior uses a stable `B-###` ID and states:
+
+- Source `AC-###`
+- Observer
+- Entry point
+- Outcome
+
+Use this shape:
+
+```md
+### B-001 - Short behavior name
+
+- Source: AC-001
+- Observer: who or what notices
+- Entry point: the shipped command, tool, event, or artifact they use
+- Outcome: what they observe, including failure and edge cases
+```
+
+Behaviors do not name source files, functions, test files, or test titles. See `behavior-spine.md` for the full rule and the reason.
+
+## Design
+
+`## Design` explains the structure that will deliver the behaviors: module boundaries, dependency direction, contracts between independently built parts. It is guidance written before the code exists. The implementer may revise it under the deviation protocol; the behaviors and the spec's intent are what must hold.
+
+## Files to Change`
 - `## Risks`
 - `## Quality Contract`
 - `## Implementation Order`
@@ -85,9 +144,6 @@ Use an ordered abstract gate ladder after risks and before implementation order:
 | Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
 |---:|---|---|---|---|---|---|
 | 1 | `correctness` | universal | bound | Project-native correctness checks pass | project-discovered | hard fail |
-| 2 | `artifact-conformance` | universal | bound | behavior-spine mechanical checks pass | artifact evidence | hard fail |
-| 3 | `mutation` | bindable | bound/unbound | project-specific | pending or project-discovered | explicit degraded state when unbound |
-
-For `artifact-conformance`, "mechanical checks" means required behavior fields, root-relative test files, and exact marker presence as defined in `behavior-spine.md`.
+| 2 | `mutation` | bindable | bound/unbound | project-specific | pending or project-discovered | explicit degraded state when unbound |
 
 Generic plan formats must not add tool-name or command columns. Project-specific bindings and execution protocols are deferred outside this shared artifact contract.
