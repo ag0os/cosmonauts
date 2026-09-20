@@ -191,6 +191,33 @@ Invariants — mechanism yields to these:
   - Why: INV-003, INV-004.
   - Decided by: worker-amended, 2026-09-20 (derived) — relaxes an existing
     guard, so flagged to the human rather than assumed
+- **D-014 - `execution-liveness` is migrated in steps, not at once**
+  - Decision: that plan's backlog was built entirely in the old format: 21
+    `test.todo` stubs in 4 files whose titles were the plan's `Test:` fields
+    verbatim (the suite's whole "21 todo"), and 8 of 9 task ACs reading "No
+    test.todo remains for B-0xx; its named tests execute and pass". Step 1,
+    mechanical: delete the stubs and replace that clause with an outcome
+    (worker-designed tests, seen to fail). Step 2: restate B-011 alone and
+    TASK-683's ACs. Step 3: run the D-009 trial on it. Step 4: decide the other
+    20 behaviors after the trial reports. Supersedes the Risks note that said
+    not to migrate this plan.
+  - Alternatives: restate all 21 first (rejected: rewrites a reviewed plan
+    into the format the trial exists to validate).
+  - Why: INV-005 applied to this plan; D-001 already removes what the stubs
+    and the clause served.
+  - Decided by: step 1 derived from D-001 (human, 2026-09-20); sequencing
+    proposed in peer review, user agreement relayed by the peer session and
+    not directly confirmed, 2026-09-20
+- **D-015 - The Quality Contract table is load-bearing through a prompt, so it is not deleted yet**
+  - Decision: no code reads the table, and its `Binding state` column is
+    provenance only — `lib/analysis/binding-resolver.ts` computes binding from
+    provider detection at run time. But `quality-manager.md` resolves bindable
+    gates "for every bindable row", and with no table every gate list is
+    empty: deleting the table today silently stops duplication, complexity,
+    dead-code and boundary gates from running. The simplification that makes
+    it deletable is to have the quality-manager resolve every gate kind with
+    a runtime capability regardless of the plan. Held for the human.
+  - Decided by: planner-proposed; deletion awaits the human's direct word
 
 ## Behaviors
 
@@ -326,9 +353,9 @@ point the quality pause at this plan.
 - Deleting ~700 assertions drops the coverage number; `test:coverage` already
   fails its 85% branch threshold with a green suite. Prompt tests cover no
   branches, so the effect should be nil — verify, do not assume.
-- In-flight plans (`execution-liveness`, 21 markers, 9 open tasks) are written
-  in the old format. Do not migrate them; strip their markers with the rest
-  and let their remaining tasks run under the new worker policy.
+- In-flight `execution-liveness` (21 behaviors, 9 open tasks) was written in
+  the old format, down to pre-created empty tests. It is migrated in steps
+  under D-014; its behavior text is not restated until the D-009 trial reports.
 - `tests/fixtures/knowledge-seed-inventory.json` lists paths this plan
   deletes and has five readers: `scripts/knowledge-surface-backfill.ts`,
   `tests/domains/coding-agents.test.ts`, `tests/memory/interface.test.ts`,

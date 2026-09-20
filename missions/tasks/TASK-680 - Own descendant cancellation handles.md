@@ -24,5 +24,5 @@ Implement B-010 after live attempt/session identity and waiter repair exist. Reg
 - [ ] #2 Parent cancellation uses the owning attempt signal and a latch checked before every prompt; it does not depend on a Pi tool signal surviving the run in which the child was spawned.
 - [ ] #3 Each descendant handle receives at most one cancellation request and remains owned until terminal settlement evidence is recorded.
 - [ ] #4 Parent confirmation includes descendant result settlement within grace, and an abort-resolved child prompt cannot be recorded as successful without successful completion evidence.
-- [ ] #5 No test.todo remains for B-010; its named cancellation tests execute and pass with relevant correctness, lint, and typecheck gates.
+- [ ] #5 B-010: the code behavior is protected by tests the worker designed after seeing the code, driven through the shipped entry point and each seen to fail against deliberately broken logic; relevant correctness, lint, and typecheck gates pass.
 <!-- AC:END -->

@@ -22,5 +22,5 @@ Implement B-011 independently of deadline policy. Replace bare resolver entries 
 - [ ] #2 Multi-child completion after one abandoned wait is delivered exactly once to an active waiter or buffered for a later caller without duplication or swallowing.
 - [ ] #3 A late complete call is idempotent, does not throw, and cannot misrecord spawn lineage or a successful child as failed.
 - [ ] #4 Existing maximum spawn concurrency/depth rejection remains unchanged and semaphore queueing stays out of scope.
-- [ ] #5 No test.todo remains for B-011; its named race tests execute and pass with relevant correctness, lint, and typecheck gates.
+- [ ] #5 B-011: the code behavior is protected by tests the worker designed after seeing the code, driven through the shipped entry point and each seen to fail against deliberately broken logic; relevant correctness, lint, and typecheck gates pass.
 <!-- AC:END -->

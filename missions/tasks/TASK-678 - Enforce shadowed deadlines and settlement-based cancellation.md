@@ -26,5 +26,5 @@ Implement B-004, B-005, B-006, B-016, B-017, B-018, B-020, and B-021 after sched
 - [ ] #5 B-005 useful activity resets idle time, active work survives the idle window, and no implicit hard timeout is introduced.
 - [ ] #6 B-017 records and rebases idle time after host clock discontinuity, while B-018 terminalizes a run when no pending step can become runnable.
 - [ ] #7 B-021 quarantines an expired lease held by no live owner: after any clock-discontinuity rebase and with no settlement evidence, the step becomes terminal-blocked recording lease_expired and holder identity, the token is revoked, no replacement attempt starts, and the run finalizes. Quarantine is not gated by liveness mode; it must behave identically under shadow and enforce, and AC#1's shadow guarantee covers deadline-driven cancellation only.
-- [ ] #8 No test.todo remains for B-004, B-005, B-006, B-016, B-017, B-018, B-020, or B-021; their named tests execute and pass with relevant correctness, lint, and typecheck gates.
+- [ ] #8 B-004, B-005, B-006, B-016, B-017, B-018, B-020, or B-021: the code behavior is protected by tests the worker designed after seeing the code, driven through the shipped entry point and each seen to fail against deliberately broken logic; relevant correctness, lint, and typecheck gates pass.
 <!-- AC:END -->

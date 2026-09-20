@@ -25,5 +25,5 @@ Complete B-012 in shadow-first Wave A. Prove the synthetic silent Quality Manage
 - [ ] #2 The Quality Manager proof retains session, activity, deadline, cancellation, and rejected-result evidence sufficient to distinguish the three observed tail shapes.
 - [ ] #3 Status, watch, metrics, and documentation distinguish heartbeat, useful activity, suspension, shadow or enforce deadline, cancellation acknowledgement or settlement, and planless session evidence.
 - [ ] #4 The proof leaves Quality Manager topology, the 200-character summary contract, and the separate qm-chain-safety filename defect unchanged; active-long coverage remains owned by B-005.
-- [ ] #5 No test.todo remains for B-012; its named test, plan artifact check, full test suite, lint, and typecheck execute and pass before TASK-685 receives the live evidence.
+- [ ] #5 B-012: the code behavior is protected by tests the worker designed after seeing the code, each seen to fail against deliberately broken logic; plan artifact check, full test suite, lint, and typecheck execute and pass before TASK-685 receives the live evidence.
 <!-- AC:END -->

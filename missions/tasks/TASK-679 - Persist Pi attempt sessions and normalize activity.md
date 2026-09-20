@@ -24,5 +24,5 @@ Implement B-008 and B-009 through pinned Pi's supported session, settings, resul
 - [ ] #3 B-008 supplies deterministic explicit settings through session and DefaultResourceLoader paths, checks a latched cancellation state before every prompt, and stores the full final assistant result opaquely as attempt evidence or an artifact.
 - [ ] #4 B-009 registers the live session with its owning token and conditionally attributes model, tool, child, nested-run, and activity-capable process evidence; post-run replay is diagnostic only.
 - [ ] #5 An aborted Pi prompt cannot be reported as success solely because prompt resolved, and session path/retention behavior remains compatible with existing run storage.
-- [ ] #6 No test.todo remains for B-008 or B-009; their named tests execute and pass with relevant correctness, lint, and typecheck gates.
+- [ ] #6 B-008 or B-009: the code behavior is protected by tests the worker designed after seeing the code, driven through the shipped entry point and each seen to fail against deliberately broken logic; relevant correctness, lint, and typecheck gates pass.
 <!-- AC:END -->
