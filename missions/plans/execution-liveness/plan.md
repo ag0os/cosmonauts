@@ -109,6 +109,13 @@ cancellation.
   replacement. Decided by: human, 2026-09-13 (ratified); amended to
   mode-independent by human, 2026-09-14 (ratified).
 
+- **D-013 — B-011 restated in the observer / entry point / outcome shape, 2026-09-20.**
+  Notation only: the substance is AC-009's, unchanged. The `Seam`, `Test`,
+  and `Marker` fields are dropped under `framework-health` D-001 and D-014;
+  B-011 is the single behavior restated ahead of that plan's format trial.
+  The other behaviors keep the old notation until the trial reports.
+  - Decided by: derived from `framework-health` D-001 (human, 2026-09-20)
+
 ## Behaviors
 
 ### B-001 — Obsolete attempts cannot commit terminal state
@@ -211,15 +218,13 @@ cancellation.
 - Test: `tests/orchestration/agent-spawner.liveness.test.ts` > `propagates parent cancellation through detached descendants`
 - Marker: `@cosmo-behavior plan:execution-liveness#B-010`
 
-### B-011 — Completion waits are removable and do not own child lifetime
+### B-011 — A parent that stops waiting neither loses nor falsifies a child's result
 
 - Source: AC-009
-- Context: one or more callers abandon waits before children complete
-- Action: completions arrive late or concurrently
-- Expected: exact waiters are removed; healthy children are not cancelled by wait expiry; each completion is delivered once or buffered; late completion never throws or misrecords lineage
-- Seam: `lib/orchestration/spawn-tracker.ts`; `lib/orchestration/spawn-completion-loop.ts`
-- Test: `tests/orchestration/agent-spawner.liveness.test.ts` > `removes abandoned waiters without cancelling healthy children`
-- Marker: `@cosmo-behavior plan:execution-liveness#B-011`
+- Observer: an agent that called `spawn_agent` one or more times from an interactive session and whose wait for a completion expired or was cancelled before the child finished
+- Entry point: the `spawn_agent` tool and the completion follow-up messages it promises
+- Outcome: giving up the wait ends only that wait — a healthy child keeps running and is not reported as failed or timed out; when it later finishes, the parent receives its real result exactly once, either on its next wait or buffered for a later one; with several children, one abandoned wait neither swallows nor duplicates another child's completion; a completion arriving after nobody is waiting does not throw and is attributed to the right spawn. A child is cancelled only when the attempt that owns it is cancelled.
+
 
 ### B-012 — A silent Quality Manager durable step is bounded
 
