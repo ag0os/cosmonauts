@@ -1,15 +1,16 @@
 ---
 id: TASK-707
 title: Stage-11 ratification packet — the audit's single human decision
-status: To Do
+status: Blocked
 priority: high
 labels:
   - testing
   - 'plan:test-health-audit'
+  - superseded
 dependencies:
   - TASK-706
 createdAt: '2026-09-16T18:38:11.684Z'
-updatedAt: '2026-09-16T18:38:11.684Z'
+updatedAt: '2026-09-20T05:03:53.512Z'
 ---
 
 ## Description
@@ -26,3 +27,7 @@ This is a real dependency gate reserved to the project owner. Automation and wor
 - [ ] #3 `established` is recorded only when all eight baseline conditions pass with the exact owner decision; absent, declined, mismatched, or stale ratification leaves the baseline `not established` and the plan active.
 - [ ] #4 Feature/active-plan resumption and the separate `project-health-audit` handoff occur only after establishment; this checkpoint does not implement or start `project-health-audit`.
 <!-- AC:END -->
+
+## Implementation Notes
+
+SUPERSEDED 2026-09-20 by plan framework-health (D-002, D-010c; human-decided). The audit method this task belongs to was discarded: its fault-sensitivity axis had no discriminating power (3,134 of 3,166 'reasoned', 1 probe-confirmed). Not completed and will not be. Left Blocked, not Done, so the record does not claim work that did not happen; archives with the test-health-audit plan when Stage 2 re-specifies it.

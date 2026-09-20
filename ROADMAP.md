@@ -29,11 +29,26 @@ and `living-memory-fidelity` shipped and are archived; their knowledge is in
 scheduler attempt/lease/cancellation seam; do not implement the overlapping
 `autonomy-host` lifecycle seam ahead of that contract.
 
-Quality pause, human-prioritized **2026-09-14**: before continuing active-plan
-or new feature development, complete `test-health-audit`, then
-`project-health-audit`. These two items temporarily precede the active-plan and
-portable-harness queues; once both establish trustworthy baselines, resume the
-existing dependency order.
+Quality pause, human-prioritized **2026-09-14**, reshaped **2026-09-20**: before
+continuing active-plan or new feature development, complete `framework-health`
+(`missions/plans/framework-health/plan.md`), then `project-health-audit`.
+`framework-health` supersedes `test-health-audit`: that audit graded tests
+against the plan statements that ordered them and reasoned about
+fault-sensitivity instead of probing it, so it reproduced the defect it was
+built to find. The new plan fixes the planning format first, then the tests,
+then unreachable code. Once both items establish trustworthy baselines, resume
+the existing dependency order.
+
+### `plain-listing-pipe-defect`: `--plain` Rows Corrupt on a Pipe in a Title
+
+Defect, small (~30 min). `cli/plans/commands/list.ts:119` and
+`cli/tasks/commands/shared.ts:96` join fields with an unescaped `" | "`, and
+plan and task titles may legally contain a pipe, so a caller parsing `--plain`
+output gets silently shifted columns. Ruled 2026-09-19 (Q-003, recorded in
+`TASK-701`): a tab is the contract for multi-column row listings. Change both
+renderers and correct the three skill documents that describe the format.
+Nothing blocks it: the original deferral ("moves the counted-guardrail set")
+was an artifact of the discarded audit's counting method.
 
 ### `project-health-audit`: Establish a Clean Static-Health Baseline
 

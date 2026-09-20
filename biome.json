@@ -8,8 +8,7 @@
 		"includes": [
 			"**",
 			"!missions/tasks/config.json",
-			"!.fallow-baselines",
-			"!missions/plans/*/audit"
+			"!.fallow-baselines"
 		]
 	},
 	"formatter": {
