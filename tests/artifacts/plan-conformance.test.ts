@@ -406,6 +406,7 @@ and closes here.\`\`
 			planMarkdown: "## Overview\n\nNothing is cited here.\n",
 		});
 		expect(noCitation.ok).toBe(true);
+		expect(noCitation.behaviorCount).toBe(0);
 		expect(noCitation.issues).toEqual([]);
 
 		const unresolvedCitation = checkPlanConformance({

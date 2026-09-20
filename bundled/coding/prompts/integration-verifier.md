@@ -31,7 +31,7 @@ Do not invent unstated architecture rules. If the plan does not declare auditabl
 
 Check the relevant code, tests, and configuration against the plan's stated interfaces, module boundaries, data shapes, workflow placement, and file ownership constraints.
 
-When a rule is declared to hold at several entry points, seams, or modules, verify each one independently. For every one, confirm both that the shipped entry point actually reaches the implementation — trace the call path; an implementation nothing shipped calls does not satisfy a behavior — and that a test exercises the behavior there. If the rule is implemented, wired, or tested at only a subset, report a partial-seam implementation finding instead of treating the behavior as satisfied.
+When a rule is declared to hold at several entry points, seams, or modules, verify each one independently. For every one, confirm both that the shipped entry point actually reaches the implementation — trace the call path; an implementation nothing shipped calls does not satisfy a behavior — and that a test exercises the behavior there. The exception is a behavior whose subject is authored prose (a prompt, persona, or skill body): those are delivered by the diff itself and verified by reading it against the stated outcome — do not demand a test, and report a test that merely asserts the file contains a sentence as a finding. If the rule is implemented, wired, or tested at only a subset, report a partial-seam implementation finding instead of treating the behavior as satisfied.
 
 #### Blast-radius lens for shared primitives
 

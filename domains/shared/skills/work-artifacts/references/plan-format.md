@@ -48,7 +48,7 @@ section itself and is then the single source.
 
 Every full plan has `## Behaviors`. Each behavior uses a stable `B-###` ID and states:
 
-- Source `AC-###`
+- Source — the `AC-###` it delivers; in a plan with no spec, the `INV-###` it serves
 - Observer
 - Entry point
 - Outcome
@@ -64,74 +64,11 @@ Use this shape:
 - Outcome: what they observe, including failure and edge cases
 ```
 
-Behaviors do not name source files, functions, test files, or test titles. See `behavior-spine.md` for the full rule and the reason.
+"Shipped" means reachable by someone outside the codebase: a registered command or tool, a subscribed event, a file a documented process reads. An exported function is not an entry point. Behaviors do not name source files, functions, test files, or test titles. See `behavior-spine.md` for the full rule and the reason.
 
 ## Design
 
 `## Design` explains the structure that will deliver the behaviors: module boundaries, dependency direction, contracts between independently built parts. It is guidance written before the code exists. The implementer may revise it under the deviation protocol; the behaviors and the spec's intent are what must hold.
-
-## Files to Change`
-- `## Risks`
-- `## Quality Contract`
-- `## Implementation Order`
-
-## Decision Log
-
-Every full plan has `## Decision Log`. Entries record meaningful choices —
-planner trade-offs, human directions, and amendments made while implementing.
-
-Use this shape:
-
-```md
-- **D-001 - Decision title**
-  - Decision: the chosen rule or direction
-  - Alternatives: meaningful options rejected, one line each
-  - Why: the reason, naming the spec invariant or goal it serves
-  - Decided by: provenance — for example `human, <date>` or `planner-proposed`
-  - Supersedes: the exact ground replaced (amendments only)
-```
-
-Mutability follows from `Decided by:` provenance: entries decided by the
-human are ratified (stop-and-ask); entries proposed by an agent are derived
-(amend-on-record); entries with no provenance are treated as ratified. An
-explicit `(ratified)` / `(derived)` marker on the title overrides the
-default; write it only when overriding. The full mutability rules, the
-deviation classifier, and amendment mechanics live in
-`deviation-protocol.md`.
-
-Plans cite spec invariants by `INV-###` ID and do not restate intent; the
-spec owns it. A plan with no spec carries the spec-format `## Intent`
-section itself and is then the single source.
-
-## Behaviors
-
-Every full plan has `## Behaviors`. Each behavior uses a stable `B-###` ID and includes:
-
-- Source `AC-###`
-- Context
-- Action
-- Expected result
-- Seam
-- Test
-- Marker
-
-Use this shape:
-
-```md
-### B-001 - Short behavior name
-
-- Source: AC-001
-- Context: ...
-- Action: ...
-- Expected: ...
-- Seam: `path/or/skill/section`
-- Test: `tests/path/file.test.ts` > `test name`
-- Marker: `@cosmo-behavior plan:<slug>#B-001`
-```
-
-## Design
-
-`## Design` is derived from behavior placement. If the design cannot trace to behavior seams, source criteria, and named tests, rewrite the behaviors or the design until the relationship is explicit.
 
 ## Files to Change
 

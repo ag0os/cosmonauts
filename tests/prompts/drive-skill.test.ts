@@ -39,7 +39,6 @@ describe("drive skill", () => {
 		expect(content).toContain("plan_completion_candidate");
 		expect(content).toContain("live-follow UI");
 		expect(content).toContain("generated final summary artifacts");
-		expect(content).toContain("artifact-conformance enforcement in Drive");
 		expect(content).toContain("automatic plan completion");
 		expect(content).not.toContain("Drive automatically archives");
 		expect(content).not.toContain("Drive automatically pushes");

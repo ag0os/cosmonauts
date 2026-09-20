@@ -11,7 +11,7 @@ A behavior says what must be true, for whom, once the work ships. It connects us
 
 Each `B-###` states:
 
-- Source `AC-###`
+- Source — the `AC-###` it delivers; in a plan with no spec, the `INV-###` it serves
 - Observer — who or what notices: a human at the CLI, an agent calling a tool, a session receiving an event, a later process reading a file
 - Entry point — the shipped surface the observer uses: a command, a registered tool, a lifecycle event, a persisted artifact
 - Outcome — what the observer sees, including the failure and edge cases that matter

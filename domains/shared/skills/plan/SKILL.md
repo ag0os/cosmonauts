@@ -36,7 +36,7 @@ Do not move architecture-of-record content into `plan.md`. If durable architectu
 Full planned feature/refactor plans require a `## Behaviors` section before task creation. Each behavior entry must include:
 
 - Stable `B-###` ID
-- Source `AC-###`
+- Source — `AC-###`, or `INV-###` when the plan has no spec
 - Observer — who or what notices
 - Entry point — the shipped command, tool, event, or artifact they use
 - Outcome — what they observe, including failure and edge cases

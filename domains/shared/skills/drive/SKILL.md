@@ -98,7 +98,7 @@ After a run reaches a terminal state and its verification is settled, the coordi
 
 ## Bounded Non-Goals
 
-Drive does not provide live-follow UI beyond event/status/list summaries, generated final summary artifacts, artifact-conformance enforcement in Drive, or automatic plan completion. It also does not automate archive, memory, push, or PR lifecycle steps.
+Drive does not provide live-follow UI beyond event/status/list summaries, generated final summary artifacts, or automatic plan completion. It also does not automate archive, memory, push, or PR lifecycle steps.
 
 Codex runs as `codex --yolo exec ...` by default so Drive backends can use the network, bind local ports, and modify the worktree. Set `COSMONAUTS_DRIVER_CODEX_YOLO=0` to opt back into Codex's sandboxed `codex exec --full-auto` mode. Advanced pass-through is also available with `COSMONAUTS_DRIVER_CODEX_ARGS` for top-level Codex args before `exec` and `COSMONAUTS_DRIVER_CODEX_EXEC_ARGS` for args after `exec`. Both env vars accept shell-style words or a JSON string array.
 

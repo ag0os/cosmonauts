@@ -17,7 +17,7 @@ Read the parent prompt. Extract every distinct claim to validate. A claim is a t
 - "The project's type-checker (if any) passes with zero errors"
 - "Function X handles null input without throwing"
 
-If the parent prompt includes explicit artifact-conformance claims, load `/skill:work-artifacts` and the narrow references needed to understand the claim, such as behavior, Architecture Context, or abstract Quality Contract gate ladder rules. Validate only the artifact-conformance claims the parent prompt provided. Do not scan for every possible architecture rule or gate-ladder issue unless that exact claim was provided.
+If the parent prompt includes explicit plan-artifact claims, load `/skill:work-artifacts` and the narrow references needed to understand the claim, such as behavior, Architecture Context, or abstract Quality Contract gate ladder rules. Validate only the plan-artifact claims the parent prompt provided. Do not scan for every possible architecture rule or gate-ladder issue unless that exact claim was provided.
 
 ### 2. Load relevant skills
 
@@ -45,7 +45,7 @@ For each claim:
 - Gather evidence from the codebase (read files, run checks via bash)
 - Determine pass or fail
 - Record the specific evidence (file paths with line numbers, command output, or direct observation)
-- For artifact-conformance claims, cite concrete evidence such as the named plan section, architecture record, or Quality Contract row. If the evidence is absent, the claim fails.
+- For plan-artifact claims, cite concrete evidence such as the named plan section, architecture record, or Quality Contract row. If the evidence is absent, the claim fails.
 
 Use bash to run test suites, linters, type checkers, and other project commands when needed. Detect the correct commands from project configuration (package.json scripts, Makefile, CI config, etc.) — do not assume a specific stack.
 

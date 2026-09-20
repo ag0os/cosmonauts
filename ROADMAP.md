@@ -52,7 +52,7 @@ was an artifact of the discarded audit's counting method.
 
 ### `project-health-audit`: Establish a Clean Static-Health Baseline
 
-After `test-health-audit`, use the shipped static-analysis capabilities to assess and remediate the whole repository before feature development resumes.
+After `framework-health`, use the shipped static-analysis capabilities to assess and remediate the whole repository before feature development resumes.
 
 - Run every bound project-scope gate-facing capability—dead code, duplication, complexity, and boundary conformance—and report unbound, unsupported, or failed capabilities explicitly rather than treating missing evidence as clean
 - Trace and confirm findings before remediation, resolve real defects or record narrowly justified baselines, and rerun the supported analyses plus the full test, lint, and typecheck gates
@@ -426,7 +426,6 @@ Per-project `fallow` execution consent was granted 2026-09-10 while preparing `c
 
 - `lib/orchestration/chain-runner.ts` is both the top-priority hotspot (18.1) and `chain-stage-context`'s primary seam. Refactoring it first collides with that implementation; refactoring it before the plan lands means re-touching the new code either way. Wait for the file to settle
 - Named targets from the 2026-09-10 baseline include `parseHumanKnowledgeRecord` (cognitive 33) in `lib/memory/knowledge-records.ts`, and `runHarnessSync` (56) plus `groupCatalogue` (45) in `lib/skills/exporter.ts` — a 1036-LOC file
-- `lib/artifacts/behavior-conformance.ts` (13.7 and **rising**) needs no work here: `chain-stage-context` TASK-670 extracts the markdown masking scanner out of it, which mechanically reduces it. Re-measure after that lands before scoping anything for this file
 - **Completion condition is a judgement, not zero.** Maintainability is already "good"; the goal is retiring the named hotspots and lowering the baseline, not driving 74 to 0
 
 **Not in scope: boundary rules.** `boundary-conformance` stays unbound with reason `provider-not-configured` because `fallow.toml` declares entry points but no boundary zones. Authoring those is already a bullet under `analysis-tools` ("Author repository boundary zones where enforcement is wanted") and has repo-wide consequences; keep it there.

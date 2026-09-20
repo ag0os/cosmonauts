@@ -7,7 +7,7 @@ description: How to create well-structured tasks with acceptance criteria, depen
 
 Tasks are atomic, persistent work items stored as markdown files in `missions/tasks/`. Each task represents a single-PR scope of work that one agent can complete independently.
 
-This skill is a dispatcher for task lifecycle, task file format, task tools, dependency rules, status flow, and acceptance-criteria writing. For artifact-format details, load `/skill:work-artifacts` and the directly linked reference needed for the question. Use `references/workflow-tiers.md` for direct/tactical/planned workflow tiering, `references/plan-format.md` for behavior-first plan shape, and `references/behavior-spine.md` for `B-###` behavior IDs, seams, named tests, and markers. Do not duplicate canonical artifact rules here.
+This skill is a dispatcher for task lifecycle, task file format, task tools, dependency rules, status flow, and acceptance-criteria writing. For artifact-format details, load `/skill:work-artifacts` and the directly linked reference needed for the question. Use `references/workflow-tiers.md` for direct/tactical/planned workflow tiering, `references/plan-format.md` for behavior-first plan shape, and `references/behavior-spine.md` for what a `B-###` behavior states and what it must not name. Do not duplicate canonical artifact rules here.
 
 ## Task File Format
 

@@ -303,8 +303,8 @@ checks only that `sources[].path` and `.identity` are non-empty strings, so a
 calibration control can cite a test that no longer exists and still certify.
 `artifacts.test.ts` and `carry-forward.test.ts` build synthetic `audit/epochs`
 roots in temp dirs; their fate follows whether the epoch/manifest model
-survives the re-spec. No suite test reads the real `audit/` directory. its `audit/` directory (1.4 GB, untracked) is the
-human's to delete.
+survives the re-spec. No suite test reads the real `audit/` directory (since deleted by the
+human's authorisation).
 
 **Stage 3 — code.** Configure `fallow` per D-006, add the staged list per
 D-007, triage every unreachable unit with the human's known gated-off set

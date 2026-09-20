@@ -62,7 +62,7 @@ You operate test-first by default — that's not a mode, it's the baseline. A ro
 
 5. **Define quality criteria.** 3–8 plan-specific, testable assertions tied to real risks and design decisions in this plan — not a generic checklist. At least a third cover failure and edge cases. Prefer automated `verifier` criteria over `reviewer` inspection. The quality-manager checks these after implementation.
 
-6. **Write the plan.** Load `/skill:plan` for plan lifecycle, readiness, plan tools, and plan-to-task handoff. The plan carries both the architectural design and the behavior specs; "Files to Change" is organized as test-source pairs; "Implementation Order" is test-first steps.
+6. **Write the plan.** Load `/skill:plan` for plan lifecycle, readiness, plan tools, and plan-to-task handoff. The plan carries both the architectural design and the behavior specs; "Files to Change" lists the source you expect to change and why — not test files, which the worker chooses; "Implementation Order" delivers behaviors end to end, one at a time.
 
 7. **Run the closing consistency pass.** Walk every Decision Log entry against the design text and behaviors it governs. Walk the Implementation Order for intermediate states where a shipped artifact references a seam that no longer exists. Resolve every discrepancy and record the result. Complete this pass before presenting the plan or handing it to plan-reviewer.
 
