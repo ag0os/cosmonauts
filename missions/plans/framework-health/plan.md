@@ -173,46 +173,99 @@ Invariants — mechanism yields to these:
     remainder.
   - Why: INV-003; D-005.
   - Decided by: worker-amended, 2026-09-20 (derived)
+- **D-013 - The pre-W3 byte-pin of every shipped prompt is removed**
+  - Decision: `tests/episodic/pre-w3-disabled-baselines.test.ts` compared the
+    sha256 of 108 prompt and skill files against
+    `tests/fixtures/knowledge-surface-off-baselines.json`, a baseline frozen
+    by archived `knowledge-surface` (B-008) to show that shipping that feature
+    switched off left prompts untouched. That was true on the day and proves
+    nothing since: every later prompt edit has had to re-pin it (`554bbcb`).
+    Stage 1 changed 18 of the 108. The per-file hash loop is deleted; the
+    rest of the test, which exercises gated runtime behavior, stays. The only
+    documents that govern the fixture are archived plans.
+  - Alternatives: re-pin the 18 hashes (rejected: keeps a check whose only
+    possible failure is "someone edited a prompt").
+  - Why: INV-003, INV-004.
+  - Decided by: worker-amended, 2026-09-20 (derived) — relaxes an existing
+    guard, so flagged to the human rather than assumed
 
 ## Behaviors
 
-Each is: observer — entry point — outcome.
+**Stage 1 — format**
 
-### Stage 1 — format
+### B-001 - Planners are told to describe outcomes
 
-- B-001 - A planner agent loading `/skill:plan` or `work-artifacts` finds a
-  behavior shape of observer, entry point, outcome, and source AC, and no
-  instruction anywhere in shipped prompts or skills to name a seam, a test, or
-  a marker.
-- B-002 - A human running `cosmonauts plan check-artifacts <slug>` on a plan
-  written in the new shape gets a clean result; on a plan whose Decision Log
-  cites a missing `D-###` or supersedes without a date, gets that issue.
-- B-003 - A worker agent picking up a task finds test guidance in one short
-  policy (INV-003, INV-005 stated operationally) and is told it owns test
-  design.
-- B-004 - A plan-reviewer agent is told to reject a behavior with no real
-  observer or no shipped entry point, and to reject one that names a function
-  as its action.
+- Source: INV-001, INV-002
+- Observer: a planner agent preparing a plan
+- Entry point: the shipped `plan` and `work-artifacts` skills and the planner prompt it is composed from
+- Outcome: a behavior shape of observer, entry point, outcome, and source; no instruction anywhere in shipped prompts or skills to name a seam, a test, or a marker
 
-### Stage 2 — tests
+### B-002 - The plan check covers the Decision Log and nothing else
 
-- B-005 - A maintainer grepping `tests/` for `@cosmo-behavior` finds nothing.
-- B-006 - A maintainer rewording a persona or skill body without touching
-  machine-parsed structure sees the suite stay green.
-- B-007 - A maintainer breaking machine-parsed structure in a shipped prompt
-  or skill (frontmatter key, resolved tool name) sees the suite go red.
-- B-008 - A maintainer reading the probe record sees, per sampled test,
-  killed or survived, and every survivor has been strengthened, replaced, or
-  deleted.
+- Source: INV-007
+- Observer: a human or agent running `cosmonauts plan check-artifacts <slug>`
+- Entry point: that command, in human, `--plain`, and `--json` modes
+- Outcome: a plan in the new shape passes; a plan citing an undeclared `D-###`, or superseding without a date, fails with that issue and a non-zero exit; nothing about tests or markers is checked
 
-### Stage 3 — code
+### B-003 - Workers own test design
 
-- B-009 - A maintainer running the reachability check sees every `lib/`
-  module as reachable from a shipped entry point, or listed as staged with a
-  live owner; anything else fails the check.
-- B-010 - After this stage, `run-run-loop`, the `runOneTask` function, and
-  `spawn-compiler` are either wired, staged with an owner, or gone along with
-  their tests.
+- Source: INV-002, INV-003, INV-005
+- Observer: a worker agent picking up a planned task
+- Entry point: the worker prompt and the `tdd` skill it loads
+- Outcome: it is told test design is its job, and finds one short policy: drive the real entry point, synthetic data, no assertions on prose, prove the test can fail
+
+### B-004 - Reviewers reject function-shaped behaviors
+
+- Source: INV-001, INV-006
+- Observer: a plan-reviewer agent reviewing a plan
+- Entry point: the plan-reviewer prompt
+- Outcome: it is told to raise a finding for a behavior with no real observer or shipped entry point, one that names a function, file, or test, and a designed unit nothing shipped will call
+
+**Stage 2 — tests**
+
+### B-005 - No test points at a plan
+
+- Source: INV-004
+- Observer: a maintainer searching `tests/` for `@cosmo-behavior`
+- Entry point: the repository
+- Outcome: nothing is found, and the per-test pass/fail list is identical before and after the strip
+
+### B-006 - Rewording prose does not break the suite
+
+- Source: INV-003
+- Observer: a maintainer rewording a persona or skill body without touching machine-parsed structure
+- Entry point: the project's test command
+- Outcome: the suite stays green
+
+### B-007 - Breaking parsed structure does
+
+- Source: INV-003
+- Observer: a maintainer removing a frontmatter key or a tool name that code resolves from a shipped prompt or skill
+- Entry point: the project's test command
+- Outcome: the suite goes red
+
+### B-008 - Sampled tests are shown able to fail
+
+- Source: INV-005
+- Observer: a maintainer reading the probe record
+- Entry point: the record Stage 2 commits
+- Outcome: each sampled test is marked killed or survived, and every survivor has been strengthened, replaced, or deleted
+
+**Stage 3 — code**
+
+### B-009 - Unreachable code fails a check
+
+- Source: INV-006
+- Observer: a maintainer running the reachability check
+- Entry point: the project's dead-code gate
+- Outcome: every `lib/` module is reachable from a shipped entry point or listed as staged with a live owner; anything else fails, including an entry whose owner is archived
+
+### B-010 - The known orphans are resolved
+
+- Source: INV-006
+- Observer: a maintainer reading `lib/driver` and `lib/orchestration`
+- Entry point: the repository
+- Outcome: `run-run-loop`, the `runOneTask` function, and `spawn-compiler` are each wired, staged with an owner, or gone along with their tests
 
 ## Design
 

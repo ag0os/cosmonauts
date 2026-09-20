@@ -10,7 +10,6 @@ import {
 } from "../../../helpers/cli.ts";
 
 describe("plan check-artifacts command", () => {
-	// @cosmo-behavior plan:artifact-conformance-gate#B-009
 	it("prints successful conformance output in human plain and json modes", async () => {
 		for (const mode of ["human", "plain", "json"] as const) {
 			const result = await runPlanCheckArtifactsCommand(
@@ -19,18 +18,7 @@ describe("plan check-artifacts command", () => {
 					await writePlanWithBody(
 						projectRoot,
 						"passing-plan",
-						behaviorPlanMarkdown({
-							slug: "passing-plan",
-							behaviorId: "B-009",
-							testFile: "tests/passing.test.ts",
-							testName:
-								"prints successful conformance output in human plain and json modes",
-						}),
-					);
-					await writeTestFile(
-						projectRoot,
-						"tests/passing.test.ts",
-						"@cosmo-behavior plan:passing-plan#B-009",
+						planMarkdown({ cites: "D-001" }),
 					);
 				},
 			);
@@ -39,36 +27,26 @@ describe("plan check-artifacts command", () => {
 			expect(result.exitCalls).toEqual([]);
 
 			if (mode === "json") {
-				expect(JSON.parse(result.stdout)).toMatchObject({
+				expect(JSON.parse(result.stdout)).toEqual({
 					ok: true,
 					planSlug: "passing-plan",
 					planPath: "missions/plans/passing-plan/plan.md",
-					withdrawn: 0,
+					behaviorCount: 1,
 					issues: [],
 					advisories: [],
-					behaviors: [
-						{
-							behaviorId: "B-009",
-							withdrawn: false,
-							marker: "@cosmo-behavior plan:passing-plan#B-009",
-							testFile: "tests/passing.test.ts",
-							issues: [],
-						},
-					],
 				});
 			} else if (mode === "plain") {
 				expect(result.stdout).toBe(
-					"ok artifact-conformance passing-plan behaviors=1 withdrawn=0 issues=0 advisories=0\n",
+					"ok plan-conformance passing-plan behaviors=1 issues=0 advisories=0\n",
 				);
 			} else {
 				expect(result.stdout).toBe(
-					"Artifact conformance passed for passing-plan.\nBehaviors: 1\nWithdrawn: 0\nIssues: 0\nAdvisories: 0\n",
+					"Plan conformance passed for passing-plan.\nBehaviors: 1\nIssues: 0\nAdvisories: 0\n",
 				);
 			}
 		}
 	});
 
-	// @cosmo-behavior plan:artifact-conformance-gate#B-010
 	it("prints conformance failures in human plain and json modes and exits non-zero", async () => {
 		for (const mode of ["human", "plain", "json"] as const) {
 			const result = await runPlanCheckArtifactsCommand(
@@ -77,19 +55,7 @@ describe("plan check-artifacts command", () => {
 					await writePlanWithBody(
 						projectRoot,
 						"failing-plan",
-						behaviorPlanMarkdown({
-							slug: "failing-plan",
-							behaviorId: "B-010",
-							marker: "@cosmo-behavior plan:failing-plan#B-099",
-							testFile: "tests/failing.test.ts",
-							testName:
-								"prints conformance failures in human plain and json modes and exits non-zero",
-						}),
-					);
-					await writeTestFile(
-						projectRoot,
-						"tests/failing.test.ts",
-						"@cosmo-behavior plan:failing-plan#B-010",
+						planMarkdown({ cites: "D-099" }),
 					);
 				},
 			);
@@ -101,41 +67,24 @@ describe("plan check-artifacts command", () => {
 				expect(JSON.parse(result.stdout)).toMatchObject({
 					ok: false,
 					planSlug: "failing-plan",
-					withdrawn: 0,
 					advisories: [],
-					issues: [
-						{
-							kind: "invalid-marker",
-							behaviorId: "B-010",
-							field: "marker",
-							expected: "@cosmo-behavior plan:failing-plan#B-010",
-							actual: "@cosmo-behavior plan:failing-plan#B-099",
-						},
-					],
+					issues: [{ kind: "unresolved-decision-citation", actual: "D-099" }],
 				});
 			} else if (mode === "plain") {
 				expect(result.stdout).toContain(
-					"fail artifact-conformance failing-plan behaviors=1 withdrawn=0 issues=1 advisories=0\n",
+					"fail plan-conformance failing-plan behaviors=1 issues=1 advisories=0\n",
 				);
 				expect(result.stdout).toContain(
-					"issue kind=invalid-marker behavior=B-010 field=marker line=",
+					"issue kind=unresolved-decision-citation line=",
 				);
-				expect(result.stdout).toContain(
-					"Behavior B-010 marker must exactly match @cosmo-behavior plan:failing-plan#B-010.",
-				);
+				expect(result.stdout).toContain("actual=D-099");
 			} else {
 				expect(result.stdout).toContain(
-					"Artifact conformance failed for failing-plan.",
+					"Plan conformance failed for failing-plan.",
 				);
-				expect(result.stdout).toContain("Behaviors: 1");
-				expect(result.stdout).toContain("Withdrawn: 0");
 				expect(result.stdout).toContain("Issues: 1");
-				expect(result.stdout).toContain("Advisories: 0");
 				expect(result.stdout).toContain(
-					"- [invalid-marker] B-010 marker line ",
-				);
-				expect(result.stdout).toContain(
-					"Behavior B-010 marker must exactly match @cosmo-behavior plan:failing-plan#B-010.",
+					"- [unresolved-decision-citation] line ",
 				);
 			}
 		}
@@ -149,16 +98,7 @@ describe("plan check-artifacts command", () => {
 					await writePlanWithBody(
 						projectRoot,
 						"advisory-plan",
-						advisoryPlanMarkdown(),
-					);
-					await writeTestFile(
-						projectRoot,
-						"tests/advisory.test.ts",
-						Array.from(
-							{ length: 13 },
-							(_, index) =>
-								`@cosmo-behavior plan:advisory-plan#B-${String(index + 1).padStart(3, "0")}`,
-						).join("\n"),
+						planMarkdown({ cites: "D-001", behaviors: 13 }),
 					);
 				},
 			);
@@ -188,8 +128,7 @@ describe("plan check-artifacts command", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:artifact-conformance-gate#B-011
-	it("reports invalid slug and missing plan diagnostics before scanning artifacts", async () => {
+	it("reports invalid slug and missing plan diagnostics before reading any plan", async () => {
 		const invalidSlug = await runPlanCheckArtifactsCommand([
 			"--json",
 			"check-artifacts",
@@ -221,9 +160,6 @@ describe("plan check-artifacts command", () => {
 		}
 	});
 
-	// A plan is archived on ship, so an active-only lookup left the gate unable
-	// to check exactly the plans whose markers have had the most time to rot.
-	// @cosmo-behavior plan:artifact-conformance-gate#B-011
 	it("resolves an archived plan and reports its archive path", async () => {
 		const result = await runPlanCheckArtifactsCommand(
 			modeArgs("json", "archived-only"),
@@ -231,17 +167,7 @@ describe("plan check-artifacts command", () => {
 				await writeArchivedPlan(
 					projectRoot,
 					"archived-only",
-					behaviorPlanMarkdown({
-						slug: "archived-only",
-						behaviorId: "B-011",
-						testFile: "tests/archived.test.ts",
-						testName: "resolves an archived plan and reports its archive path",
-					}),
-				);
-				await writeTestFile(
-					projectRoot,
-					"tests/archived.test.ts",
-					"@cosmo-behavior plan:archived-only#B-011",
+					planMarkdown({ cites: "D-001" }),
 				);
 			},
 		);
@@ -265,28 +191,12 @@ describe("plan check-artifacts command", () => {
 				await writePlanWithBody(
 					projectRoot,
 					"both-locations",
-					behaviorPlanMarkdown({
-						slug: "both-locations",
-						behaviorId: "B-011",
-						testFile: "tests/active.test.ts",
-						testName: "prefers the active plan when a slug exists in both",
-					}),
-				);
-				await writeTestFile(
-					projectRoot,
-					"tests/active.test.ts",
-					"@cosmo-behavior plan:both-locations#B-011",
+					planMarkdown({ cites: "D-001" }),
 				);
 				await writeArchivedPlan(
 					projectRoot,
 					"both-locations",
-					behaviorPlanMarkdown({
-						slug: "both-locations",
-						behaviorId: "B-011",
-						marker: "@cosmo-behavior plan:both-locations#B-999",
-						testFile: "tests/stale-archived.test.ts",
-						testName: "stale archived copy that must not be read",
-					}),
+					planMarkdown({ cites: "D-999" }),
 				);
 			},
 		);
@@ -377,55 +287,28 @@ async function writeArchivedPlan(
 	await writeFile(archivedPlanPath, body, "utf-8");
 }
 
-async function writeTestFile(
-	projectRoot: string,
-	path: string,
-	content: string,
-): Promise<void> {
-	const filePath = join(projectRoot, path);
-	await mkdir(dirname(filePath), { recursive: true });
-	await writeFile(filePath, `${content}\n`, "utf-8");
-}
-
-function advisoryPlanMarkdown(): string {
-	return `## Behaviors
-
-${Array.from({ length: 13 }, (_, index) => {
-	const number = String(index + 1).padStart(3, "0");
-	return `### B-${number} - Advisory behavior ${number}
-- Source: AC-009
-- Context: A conforming plan has more than twelve behaviors.
-- Action: The command validates the requested plan artifact.
-- Expected: It reports a non-blocking size advisory.
-- Seam: \`cli/plans/commands/check-artifacts.ts\`
-- Test: \`tests/advisory.test.ts\` > \`advisory behavior ${number}\`
-- Marker: \`@cosmo-behavior plan:advisory-plan#B-${number}\``;
-}).join("\n\n")}
-`;
-}
-
-function behaviorPlanMarkdown({
-	slug,
-	behaviorId,
-	marker = `@cosmo-behavior plan:${slug}#${behaviorId}`,
-	testFile,
-	testName,
+function planMarkdown({
+	cites,
+	behaviors = 1,
 }: {
-	slug: string;
-	behaviorId: string;
-	marker?: string;
-	testFile: string;
-	testName: string;
+	cites: string;
+	behaviors?: number;
 }): string {
-	return `## Behaviors
+	return `## Decision Log
 
-### ${behaviorId} - CLI behavior
-- Source: AC-009
-- Context: The plan artifact checker is invoked from the CLI.
-- Action: The command validates the requested plan artifact.
-- Expected: It prints mode-specific conformance diagnostics.
-- Seam: \`cli/plans/commands/check-artifacts.ts\`
-- Test: \`${testFile}\` > \`${testName}\`
-- Marker: \`${marker}\`
+- **D-001 - Only decision**
+  - Decision: keep it
+  - Decided by: planner-proposed, 2026-07-28
+
+## Overview
+
+The implementation relies on ${cites}.
+
+## Behaviors
+
+${Array.from(
+	{ length: behaviors },
+	(_, index) => `### B-${String(index + 1).padStart(3, "0")} - A behavior`,
+).join("\n\n")}
 `;
 }

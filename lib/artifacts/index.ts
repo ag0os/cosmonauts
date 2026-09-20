@@ -1,19 +1,9 @@
 export type {
-	ArtifactConformanceAdvisory,
-	ArtifactConformanceAdvisoryKind,
-	ArtifactConformanceIssue,
-	ArtifactConformanceIssueKind,
-	ArtifactConformanceResult,
-	BehaviorConformanceEvidence,
-	BehaviorFieldName,
-	CheckBehaviorConformanceOptions,
-	ParsedBehavior,
-	ParsedBehaviorField,
-	ParsedBehaviorFields,
-	ParsedBehaviorSection,
-} from "./behavior-conformance.ts";
-export {
-	checkBehaviorConformance,
-	parseBehaviorSection,
-	REQUIRED_BEHAVIOR_FIELD_NAMES,
-} from "./behavior-conformance.ts";
+	CheckPlanConformanceOptions,
+	PlanConformanceAdvisory,
+	PlanConformanceAdvisoryKind,
+	PlanConformanceIssue,
+	PlanConformanceIssueKind,
+	PlanConformanceResult,
+} from "./plan-conformance.ts";
+export { checkPlanConformance } from "./plan-conformance.ts";

@@ -2,10 +2,10 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Command } from "commander";
 import {
-	type ArtifactConformanceAdvisory,
-	type ArtifactConformanceIssue,
-	type ArtifactConformanceResult,
-	checkBehaviorConformance,
+	checkPlanConformance,
+	type PlanConformanceAdvisory,
+	type PlanConformanceIssue,
+	type PlanConformanceResult,
 } from "../../../lib/artifacts/index.ts";
 import { validateSlug } from "../../../lib/plans/plan-manager.ts";
 import { printCliError } from "../../shared/errors.ts";
@@ -21,7 +21,7 @@ interface LoadedPlanArtifact {
 export function registerCheckArtifactsCommand(program: Command): void {
 	program
 		.command("check-artifacts")
-		.description("Check plan behavior artifact conformance")
+		.description("Check a plan's Decision Log citations and supersession dates")
 		.argument("<slug>", "Plan slug to check")
 		.action(async (slug: string) => {
 			const projectRoot = process.cwd();
@@ -36,26 +36,20 @@ export function registerCheckArtifactsCommand(program: Command): void {
 				process.exit(1);
 			}
 
-			const result = checkBehaviorConformance({
+			const result = checkPlanConformance({
 				planMarkdown: loaded.value.markdown,
 				planSlug: loaded.value.slug,
 				planPath: loaded.value.path,
-				projectRoot,
 			});
 
-			printArtifactConformanceResult(result, mode);
+			printPlanConformanceResult(result, mode);
 			if (!result.ok) {
 				process.exit(1);
 			}
 		});
 }
 
-/**
- * Plan lifecycle locations, in resolution order (D-006).
- *
- * A plan is archived on ship, so an active-only lookup left the gate unable to
- * check exactly the plans whose markers have had the most time to rot.
- */
+/** Plan lifecycle locations, in resolution order. */
 const PLAN_LOCATIONS = [
 	["missions", "plans"],
 	["missions", "archive", "plans"],
@@ -101,8 +95,8 @@ async function loadPlanArtifact(
 	};
 }
 
-export function renderArtifactConformanceResult(
-	result: ArtifactConformanceResult,
+export function renderPlanConformanceResult(
+	result: PlanConformanceResult,
 	mode: CliOutputMode,
 ): unknown | string[] {
 	if (mode === "json") {
@@ -110,17 +104,17 @@ export function renderArtifactConformanceResult(
 	}
 
 	if (mode === "plain") {
-		return renderPlainArtifactConformanceResult(result);
+		return renderPlainPlanConformanceResult(result);
 	}
 
-	return renderHumanArtifactConformanceResult(result);
+	return renderHumanPlanConformanceResult(result);
 }
 
-function printArtifactConformanceResult(
-	result: ArtifactConformanceResult,
+function printPlanConformanceResult(
+	result: PlanConformanceResult,
 	mode: CliOutputMode,
 ): void {
-	const rendered = renderArtifactConformanceResult(result, mode);
+	const rendered = renderPlanConformanceResult(result, mode);
 	if (mode === "json") {
 		printJson(rendered);
 		return;
@@ -129,12 +123,12 @@ function printArtifactConformanceResult(
 	printLines(rendered as string[]);
 }
 
-function renderPlainArtifactConformanceResult(
-	result: ArtifactConformanceResult,
+function renderPlainPlanConformanceResult(
+	result: PlanConformanceResult,
 ): string[] {
 	const status = result.ok ? "ok" : "fail";
 	const lines = [
-		`${status} artifact-conformance ${result.planSlug} behaviors=${result.behaviors.length} withdrawn=${result.withdrawn} issues=${result.issues.length} advisories=${result.advisories.length}`,
+		`${status} plan-conformance ${result.planSlug} behaviors=${result.behaviorCount} issues=${result.issues.length} advisories=${result.advisories.length}`,
 	];
 
 	for (const issue of result.issues) {
@@ -147,14 +141,13 @@ function renderPlainArtifactConformanceResult(
 	return lines.map(escapeTerminalControls);
 }
 
-function renderHumanArtifactConformanceResult(
-	result: ArtifactConformanceResult,
+function renderHumanPlanConformanceResult(
+	result: PlanConformanceResult,
 ): string[] {
 	const status = result.ok ? "passed" : "failed";
 	const lines = [
-		`Artifact conformance ${status} for ${result.planSlug}.`,
-		`Behaviors: ${result.behaviors.length}`,
-		`Withdrawn: ${result.withdrawn}`,
+		`Plan conformance ${status} for ${result.planSlug}.`,
+		`Behaviors: ${result.behaviorCount}`,
 		`Issues: ${result.issues.length}`,
 		`Advisories: ${result.advisories.length}`,
 	];
@@ -175,15 +168,10 @@ function renderHumanArtifactConformanceResult(
 	return lines.map(escapeTerminalControls);
 }
 
-function renderPlainIssue(issue: ArtifactConformanceIssue): string {
+function renderPlainIssue(issue: PlanConformanceIssue): string {
 	const parts = [
 		`issue kind=${issue.kind}`,
-		issue.behaviorId ? `behavior=${issue.behaviorId}` : undefined,
-		issue.field ? `field=${issue.field}` : undefined,
 		issue.line ? `line=${issue.line}` : undefined,
-		issue.path ? `path=${issue.path}` : undefined,
-		issue.marker ? `marker=${issue.marker}` : undefined,
-		issue.expected ? `expected=${issue.expected}` : undefined,
 		issue.actual ? `actual=${issue.actual}` : undefined,
 		`message=${issue.message}`,
 	];
@@ -191,7 +179,7 @@ function renderPlainIssue(issue: ArtifactConformanceIssue): string {
 	return parts.filter(isDefined).join(" ");
 }
 
-function renderPlainAdvisory(advisory: ArtifactConformanceAdvisory): string {
+function renderPlainAdvisory(advisory: PlanConformanceAdvisory): string {
 	return [
 		`advisory kind=${advisory.kind}`,
 		`count=${advisory.count}`,
@@ -200,18 +188,9 @@ function renderPlainAdvisory(advisory: ArtifactConformanceAdvisory): string {
 	].join(" ");
 }
 
-function renderHumanIssue(issue: ArtifactConformanceIssue): string {
-	const evidence = [
-		issue.behaviorId,
-		issue.field,
-		issue.line ? `line ${issue.line}` : undefined,
-		issue.path,
-	]
-		.filter(isDefined)
-		.join(" ");
-
-	return evidence
-		? `[${issue.kind}] ${evidence}: ${issue.message}`
+function renderHumanIssue(issue: PlanConformanceIssue): string {
+	return issue.line
+		? `[${issue.kind}] line ${issue.line}: ${issue.message}`
 		: `[${issue.kind}] ${issue.message}`;
 }
 

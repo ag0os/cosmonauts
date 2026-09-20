@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { renderArtifactConformanceResult } from "../../../cli/plans/commands/check-artifacts.ts";
+import { renderPlanConformanceResult } from "../../../cli/plans/commands/check-artifacts.ts";
 import { createPlanProgram } from "../../../cli/plans/index.ts";
-import type { ArtifactConformanceResult } from "../../../lib/artifacts/index.ts";
+import type { PlanConformanceResult } from "../../../lib/artifacts/index.ts";
 
 describe("createPlanProgram", () => {
 	it("returns a Commander program", () => {
@@ -31,29 +31,23 @@ describe("createPlanProgram", () => {
 
 	it("escapes terminal controls in text diagnostics while preserving JSON data", () => {
 		const controlSequence = "\u001b";
-		const result: ArtifactConformanceResult = {
+		const result: PlanConformanceResult = {
 			ok: false,
 			planSlug: `unsafe${controlSequence}[31m\nplan`,
-			behaviors: [],
-			withdrawn: 0,
+			behaviorCount: 0,
 			issues: [
 				{
-					kind: "unpaired-behavior-file",
+					kind: "unresolved-decision-citation",
 					message: `unsafe${controlSequence}[2J\rmessage`,
-					behaviorId: "B-001",
-					field: "seam",
-					path: `lib/${controlSequence}[1mfile.ts`,
+					actual: `D-${controlSequence}[1m099`,
 				},
 			],
 			advisories: [],
 		};
 
-		expect(renderArtifactConformanceResult(result, "json")).toBe(result);
+		expect(renderPlanConformanceResult(result, "json")).toBe(result);
 		for (const mode of ["plain", "human"] as const) {
-			const rendered = renderArtifactConformanceResult(
-				result,
-				mode,
-			) as string[];
+			const rendered = renderPlanConformanceResult(result, mode) as string[];
 			const text = rendered.join("\n");
 			expect(text).not.toContain(controlSequence);
 			expect(text).toContain("\\u001b");
@@ -62,13 +56,11 @@ describe("createPlanProgram", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-012
-	it("renders advisories and withdrawn counts in json plain and human formats", () => {
-		const result: ArtifactConformanceResult = {
+	it("renders advisories in json plain and human formats", () => {
+		const result: PlanConformanceResult = {
 			ok: true,
 			planSlug: "advisory-plan",
-			behaviors: [],
-			withdrawn: 2,
+			behaviorCount: 13,
 			issues: [],
 			advisories: [
 				{
@@ -81,15 +73,14 @@ describe("createPlanProgram", () => {
 			],
 		};
 
-		expect(renderArtifactConformanceResult(result, "json")).toBe(result);
-		expect(renderArtifactConformanceResult(result, "plain")).toEqual([
-			"ok artifact-conformance advisory-plan behaviors=0 withdrawn=2 issues=0 advisories=1",
+		expect(renderPlanConformanceResult(result, "json")).toBe(result);
+		expect(renderPlanConformanceResult(result, "plain")).toEqual([
+			"ok plan-conformance advisory-plan behaviors=13 issues=0 advisories=1",
 			"advisory kind=behavior-count-guidance count=13 guidance=12 message=Plan has 13 behaviors, exceeding the guidance of 12; consider splitting it along a real boundary.",
 		]);
-		expect(renderArtifactConformanceResult(result, "human")).toEqual([
-			"Artifact conformance passed for advisory-plan.",
-			"Behaviors: 0",
-			"Withdrawn: 2",
+		expect(renderPlanConformanceResult(result, "human")).toEqual([
+			"Plan conformance passed for advisory-plan.",
+			"Behaviors: 13",
 			"Issues: 0",
 			"Advisories: 1",
 			"",

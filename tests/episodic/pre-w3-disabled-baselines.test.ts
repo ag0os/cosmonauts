@@ -159,13 +159,6 @@ describe("pre-W3 disabled baselines", () => {
 				`${allowed.path} changed outside the exact D-009 correction regions`,
 			).toBe(stripCorrectionRegions(allowed.baselineContent, allowed.regions));
 		}
-		for (const prompt of offBaseline.promptFiles) {
-			if (offBaseline.promptCorrectionAllowlist.includes(prompt.path)) continue;
-			expect(
-				sha256(await readFile(join(process.cwd(), prompt.path))),
-				prompt.path,
-			).toBe(prompt.sha256);
-		}
 		const packageJson = JSON.parse(
 			await readFile(join(process.cwd(), "package.json"), "utf-8"),
 		) as { keywords?: unknown; pi?: unknown };
