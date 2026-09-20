@@ -16,7 +16,7 @@ Healthy code needs both. A correct-looking patch without a behavioral harness is
 ## Role Contract
 
 - **Spec work** defines behavior from a user's seat: who acts, what they do, what they observe, and what happens on failure, cancellation, invalid input, or edge cases.
-- **Planning work** couples structure to behavior: every module boundary and contract exists to deliver named behaviors, and every behavior has an implementation home and a test boundary.
+- **Planning work** couples structure to behavior: every module boundary and contract exists to deliver named behaviors, and every behavior has an implementation home reachable from a shipped entry point.
 - **Task decomposition** preserves the harness: tasks carry behavior ownership, dependency order, and acceptance criteria that a single worker can finish without inventing missing architecture.
 - **Implementation work** follows the behavior loop: failing test, minimal code, refactor, repeat. Refactoring is not optional cleanup; it is where the program structure catches up with the proven behavior.
 - **Review and verification** test both structures: code must satisfy observable behavior and preserve coherent boundaries, dependency direction, state ownership, and integration contracts.

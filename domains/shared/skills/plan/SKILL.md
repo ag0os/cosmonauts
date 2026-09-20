@@ -53,7 +53,7 @@ Before calling `plan_create` or `plan_edit`, run a short visible readiness check
 - **Constraints** - Scope boundaries, dependency direction, existing-feature interactions, non-goals, and invariants are explicit.
 - **Intent** - For planned feature/refactor work, the spec carries `## Intent` (a goal plus `INV-###` invariants; the plan carries it when no spec exists), with rankings stated where invariants can conflict.
 - **Context** - Claims about existing code are backed by files you actually read; no guessed names, paths, signatures, or helpers.
-- **Behaviors** - Full planned feature/refactor plans have `## Behaviors` entries with source `AC-###`, observer, entry point, and outcome. Every observer is real and every entry point ships.
+- **Behaviors** - Full planned feature/refactor plans have `## Behaviors` entries with a source (`AC-###`, or `INV-###` when the plan has no spec), observer, entry point, and outcome. Every observer is real and every entry point ships.
 - **Reachability** - Nothing in `## Design` or `## Files to Change` is built without a path from a shipped entry point to it. Code deliberately staged ahead of its wiring is named as staged, with the work that will wire it.
 - **Quality gates** - The `## Quality Contract` follows `/skill:work-artifacts` gate rules and names abstract gate kinds rather than project-specific tool columns.
 - **Iteration policy** - `## Implementation Order` says how stages sequence and how to react if a stage surfaces unexpected complexity.

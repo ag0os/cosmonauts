@@ -105,7 +105,7 @@ The structure that will deliver the behaviors. Guidance, not contract.
 
 ## Implementation Order
 
-1. Deliver the first behavior end to end through its real entry point, test-first.
+1. Deliver the first behavior end to end through its real entry point — test-first for code; by reviewed diff for authored prose.
 2. Repeat for the remaining behaviors.
 3. Run the declared checks.
 ```
