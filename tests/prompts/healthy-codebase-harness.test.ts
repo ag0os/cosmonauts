@@ -28,22 +28,6 @@ describe("healthy-codebase-harness capability", () => {
 		expect(content).toContain("specified, planned, decomposed, implemented");
 	});
 
-	it("connects each coding role to the behavior harness", async () => {
-		const content = await readCapability();
-
-		expect(content).toContain("**Spec work** defines behavior");
-		expect(content).toContain(
-			"**Planning work** couples structure to behavior",
-		);
-		expect(content).toContain("**Task decomposition** preserves the harness");
-		expect(content).toContain(
-			"**Implementation work** follows the behavior loop",
-		);
-		expect(content).toContain(
-			"**Review and verification** test both structures",
-		);
-	});
-
 	it("requires mutation-style thinking for critical behavior tests", async () => {
 		const content = await readCapability();
 

@@ -170,7 +170,10 @@ Invariants — mechanism yields to these:
     the same commit rather than waiting for Stage 2's sort, because the
     alternative is a red suite between stages or rewording the assertions to
     match the new sentences — which is the defect. Stage 2 still sorts the
-    remainder.
+    remainder. The review rounds added two more of the same kind: a pinned
+    Drive non-goal phrase, and a test that went red when "on code" was
+    inserted into a sentence it asserted verbatim — the defect demonstrating
+    itself.
   - Why: INV-003; D-005.
   - Decided by: worker-amended, 2026-09-20 (derived)
 - **D-013 - The pre-W3 byte-pin of every shipped prompt is removed**
@@ -263,9 +266,9 @@ Invariants — mechanism yields to these:
 ### B-010 - The known orphans are resolved
 
 - Source: INV-006
-- Observer: a maintainer reading `lib/driver` and `lib/orchestration`
-- Entry point: the repository
-- Outcome: `run-run-loop`, the `runOneTask` function, and `spawn-compiler` are each wired, staged with an owner, or gone along with their tests
+- Observer: a maintainer running the reachability check on the branch Stage 3 delivers
+- Entry point: the project's dead-code gate
+- Outcome: the three orphans measured in the Overview no longer appear as unreachable — each is wired, staged with an owner, or gone along with its tests — and the staged list names no owner that is archived
 
 ## Design
 

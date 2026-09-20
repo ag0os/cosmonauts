@@ -18,12 +18,12 @@ Healthy code needs both. A correct-looking patch without a behavioral harness is
 - **Spec work** defines behavior from a user's seat: who acts, what they do, what they observe, and what happens on failure, cancellation, invalid input, or edge cases.
 - **Planning work** couples structure to behavior: every module boundary and contract exists to deliver named behaviors, and every behavior has an implementation home reachable from a shipped entry point.
 - **Task decomposition** preserves the harness: tasks carry behavior ownership, dependency order, and acceptance criteria that a single worker can finish without inventing missing architecture.
-- **Implementation work** follows the behavior loop: failing test, minimal code, refactor, repeat. Refactoring is not optional cleanup; it is where the program structure catches up with the proven behavior.
+- **Implementation work** on code follows the behavior loop: failing test, minimal code, refactor, repeat. Authored prose — prompts, personas, skill bodies — is delivered by writing it and verified by review, never by asserting on its sentences. Refactoring is not optional cleanup; it is where the program structure catches up with the proven behavior.
 - **Review and verification** test both structures: code must satisfy observable behavior and preserve coherent boundaries, dependency direction, state ownership, and integration contracts.
 
 ## Operating Rules
 
-- Do not treat syntax generation as completion. Completion means the behavior is specified, tested, implemented, integrated, and structurally coherent.
+- Do not treat syntax generation as completion. Completion means the behavior is specified, implemented, reachable from a shipped entry point, protected by tests that have been seen to fail (for code) or reviewed against its stated outcome (for prose), and structurally coherent.
 - Make structure explicit before parallel work: shared types, public APIs, file ownership, state ownership, and dependency rules must be written down where independent agents will see them.
 - Prefer behaviorally focused acceptance tests. Tests should describe context, action, and expected observable result, including important non-happy paths.
 - Use mutation-style thinking when judging tests: if the implementation were wrong in a realistic way, would the tests fail? For critical behavior, add a targeted negative, edge, or mutation-style check that proves the test would catch the fault.

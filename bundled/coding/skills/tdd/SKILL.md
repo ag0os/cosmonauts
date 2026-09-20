@@ -141,7 +141,7 @@ If a test is hard to pass, the solution is better code, not a weaker test. Never
 ## When to Stop a TDD Session
 
 Stop the Red-Green-Refactor loop when:
-- All acceptance criteria for the current task have corresponding passing tests.
+- All acceptance criteria for the current task that concern code have corresponding passing tests, each seen to fail against deliberately broken logic. Criteria about authored prose are met by the prose itself and checked in review.
 - The refactoring step produces no further improvements.
 - The code is clean, well-named, and readable.
 
