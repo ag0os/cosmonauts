@@ -111,10 +111,12 @@ cancellation.
 
 - **D-013 — B-011 restated in the observer / entry point / outcome shape, 2026-09-20.**
   Notation only: the substance is AC-009's, unchanged. The `Seam`, `Test`,
-  and `Marker` fields are dropped under `framework-health` D-001 and D-014;
+  and `Marker` fields are dropped under the `framework-health` plan's format
+  decisions;
   B-011 is the single behavior restated ahead of that plan's format trial.
   The other behaviors keep the old notation until the trial reports.
-  - Decided by: derived from `framework-health` D-001 (human, 2026-09-20)
+  - Decided by: derived from the `framework-health` plan's human-ratified
+    format decision, 2026-09-20
 
 ## Behaviors
 
