@@ -39,7 +39,12 @@ Internal structure still matters. It belongs in `## Design`, where it is guidanc
 
 The implementer owns test design. A plan does not pre-name tests, and there is no one-test-per-behavior rule: one behavior may need several tests at different levels, and one test may protect several behaviors.
 
-The line between code and authored prose is drawn by the reader, not the file type. Anything a machine parses or executes is code for this purpose and is tested: source, configuration, frontmatter keys, tool and capability names that code resolves, files a loader requires. Authored prose is natural-language text whose only reader is an agent or a human — the body of a prompt, a persona, a skill. A behavior about authored prose is verified by review of the diff against its stated outcome, never by asserting that the file contains a sentence. One file can hold both: test its frontmatter, review its body. Other documents that say "code" and "authored prose" mean this.
+What gets tested is decided by one question: does anything depend on this content as a contract?
+
+- **Contract** — content that software, a script, or a documented consumer interprets: program logic, configuration, syntax and identifiers a parser looks for (frontmatter keys, section markers, IDs, tool and capability names that code resolves), and output a program may consume (exit codes, field order and delimiters of machine-readable output, the facts an error must carry). Contracts are tested, wherever they live.
+- **Authored prose** — natural-language content whose meaning only a reader judges: the body of a prompt, persona, or skill; the sentence inside an acceptance criterion; a decision's rationale; a prompt written as a string literal in source. Authored prose is verified by review of the diff against the behavior's stated outcome, never by asserting that it contains a sentence.
+
+Neither file type nor passing through a parser decides it; the same file, and the same string, can hold both. Test that a prompt string is routed and interpolated correctly, review what it says. Test that an acceptance-criteria block is delimited and indexed, review its wording. Test that an error names the right task, not how the sentence is phrased — unless a caller matches on the phrase, which makes it a contract. Other documents that say "code" and "authored prose" mean this split.
 
 Tests carry no reference back to the plan. A plan is a working document that gets archived; a test protects the system and must make sense to someone who has never seen the plan.
 

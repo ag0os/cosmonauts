@@ -7,8 +7,8 @@ Use the lightest workflow that preserves behavior, handoff, and review quality.
 Use for very small, self-contained fixes where the code path and expected behavior are clear.
 
 - No `spec.md`, no `plan.md`, no `architecture.md`.
-- Use implementation TDD or a characterization test first.
-- The regression test is the behavior record.
+- For code, use implementation TDD or a characterization test first; the regression test is the behavior record.
+- A fix to authored prose is its own record and needs no test.
 - Do not force direct fixes through the full artifact stack.
 
 ## Tactical Bugfix
