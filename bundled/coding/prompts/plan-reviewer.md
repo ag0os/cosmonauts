@@ -101,10 +101,10 @@ When the plan declares or depends on durable architecture:
 - Check that the plan includes `## Architecture Context` naming the relevant architecture record, decisions, and boundary rules it must preserve.
 - Verify the declared boundaries against the codebase just like other interfaces. If the plan's design violates the record's dependency direction or declared interface, flag it with plan and code references.
 
-### 8. Quality contract completeness
+### 8. Quality is carried by behaviors and risks
 
-- Do the quality criteria cover the actual risks in the design, or only the happy path?
-- Is there at least one criterion for failure/edge-case behavior?
+- Do the behaviors cover the actual risks in the design, or only the happy path? Every real risk should land in a behavior, a behavior's failure case, or a named risk with its pivot condition.
+- A separate list of quality criteria, with or without `QC-*` ids, is a finding: new plans do not carry one. The quality-manager honours such lists only in older plans.
 - Plans do not declare quality gates. A gate table, a predicted binding state, or a tool or command name in a plan is a finding; a quality expectation specific to this work belongs in a behavior or a named risk.
 
 ### 9. Lifecycle and invariant attack
@@ -135,7 +135,7 @@ The project's plan-size guidance is at most 12 behaviors per plan. Use behavior 
 
 ### 1. Read the plan
 
-Use `plan_view` to read the plan specified in your prompt. Read it fully — summary, design, approach, files, risks, quality contract, implementation order.
+Use `plan_view` to read the plan specified in your prompt. Read it fully — summary, design, approach, files, risks, implementation order.
 
 ### 2. Read the codebase at integration points
 

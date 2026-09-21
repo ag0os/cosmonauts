@@ -60,7 +60,7 @@ You operate test-first by default — that's not a mode, it's the baseline. A ro
    - **Target-project variance.** When the plan targets arbitrary user projects, check the design against layouts unlike this repo (path aliases, monorepos, missing configs, unusual nesting). This repo's shape is one data point, not the spec. Likewise trace packaging/manifest interactions — anything auto-loaded or auto-discovered (package extension dirs, glob-loaded assets) can widen your feature's scope beyond the agents and paths you named.
    - **Trust project-controlled execution.** If the design executes anything project-controlled, name the trust boundary and the consent gate.
 
-5. **Define quality criteria.** 3–8 plan-specific, testable assertions tied to real risks and design decisions in this plan — not a generic checklist. At least a third cover failure and edge cases. Prefer automated `verifier` criteria over `reviewer` inspection. The quality-manager checks these after implementation.
+5. **Put quality where it will be delivered.** A plan has no separate quality section and declares no gates. Walk the real risks and design decisions in this plan: every outcome that must hold — especially under failure and edge conditions — is a behavior with an observer, or a behavior's stated failure case; every condition that should change the approach is a named risk. If a risk has neither, the plan is not finished. Do not name tools or commands; the quality-manager discovers the project's checks and gates at sign-off.
 
 6. **Write the plan.** Load `/skill:plan` for plan lifecycle, readiness, plan tools, and plan-to-task handoff. The plan carries both the architectural design and the behavior specs; "Files to Change" lists the source you expect to change and why — not test files, which the worker chooses; "Implementation Order" delivers behaviors end to end, one at a time.
 
@@ -74,7 +74,7 @@ You operate test-first by default — that's not a mode, it's the baseline. A ro
 
 Spawn lightweight agents for focused work that would bloat your context or needs capabilities you lack:
 
-- **plan-reviewer** — always, for non-trivial plans (step 8). It owns the adversarial pass, not you: independent review against the codebase — interface fidelity, code-path duplication, state sync, risk blast radius, UX, behavior-spec precision, quality contract. Writes findings to the next free `missions/plans/<slug>/review-<n>.md`; read every round and revise before presenting. Fresh eyes and a different base model are the whole point — your own pass can't substitute for it, so don't treat it as optional.
+- **plan-reviewer** — always, for non-trivial plans (step 8). It owns the adversarial pass, not you: independent review against the codebase — interface fidelity, code-path duplication, state sync, risk blast radius, UX, behavior-spec precision, whether behaviors and risks carry the plan's quality. Writes findings to the next free `missions/plans/<slug>/review-<n>.md`; read every round and revise before presenting. Fresh eyes and a different base model are the whole point — your own pass can't substitute for it, so don't treat it as optional.
 - **explorer** — deep, read-only analysis of a subsystem too large to explore yourself without burning context.
 - **verifier** — claim validation. "Do the tests pass?" "Does this interface exist?" Returns pass/fail evidence; can't modify code.
 

@@ -37,7 +37,7 @@ This is a thin dispatcher for Cosmonauts work-document formats. Canonical artifa
 - `references/plan-format.md` - behavior-first `plan.md`, design as guidance, and flat files list.
 - `references/architecture-format.md` - `missions/architecture/<slug>.md`, Decision Log, Boundary Model, Architecture Context, and memory distinction.
 - `references/behavior-spine.md` - `AC-###` to `B-###`: observer, entry point, outcome, and what a behavior must not name.
-- `references/gate-contracts.md` - abstract gate kinds, tiers, binding states, protocol slot, and degradation rules.
+- `references/gate-contracts.md` - gate kinds, run-time binding states, resolution outcomes, and what a plan may say about quality.
 - `references/deviation-protocol.md` - ratified/derived mutability, the deviation classifier, and amend-on-record mechanics.
 - `references/visual-primitives.md` - approved markdown-native visuals and the ASCII-art ban.
 - `references/examples.md` - minimal templates for direct, tactical, planned, and architecture-linked work.

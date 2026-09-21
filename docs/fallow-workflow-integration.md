@@ -170,7 +170,7 @@ Generic artifacts name capabilities and abstract gate kinds. The concrete
 mapping is implemented at the `project-tools` provider edge.
 
 ```text
-plan Quality Contract
+gate kind with a runtime capability (resolved on every run, not declared by a plan)
   └─ abstract gate kind
        └─ stable analysis capability
             └─ lib/analysis binding resolver
@@ -251,7 +251,8 @@ For a non-trivial feature or refactor:
    private.
 5. Record evidence in risks, architecture, integration seams, and expected gate
    deltas.
-6. Express the Quality Contract with abstract gate kinds.
+6. State work-specific quality expectations as behaviors or named risks; plans
+   do not declare gates.
 
 Useful operations:
 
@@ -300,12 +301,13 @@ current wave.
 The Quality Manager should:
 
 1. determine the true local integration merge base;
-2. resolve the plan's abstract gate ladder;
-3. obtain the current project-tool bindings;
+2. obtain the current project-tool bindings;
+3. resolve every gate kind that has a runtime capability, with or without a plan;
 4. mark unavailable bindings explicitly;
 5. run the audit for both feature-branch and dirty-base review scenarios;
-6. pass the exact base SHA, not an unresolved shell variable, to the Verifier;
-7. retain Fallow's complete JSON result in verifier evidence;
+6. pass the exact literal base SHA, not an unresolved shell variable, to the
+   capability it calls itself — never through the Verifier;
+7. retain the complete structured result as its own evidence;
 8. route only blocking configured findings;
 9. constrain the Fixer to the narrowest change that clears the finding;
 10. re-run Fallow after every remediation;
@@ -453,7 +455,7 @@ Before simplifying a complex function:
 
 ### Delivered: `analysis-gate-rewiring`
 
-- Resolve final Quality Contract gates through capability bindings.
+- Resolve final quality gates through capability bindings.
 - Run changed-scope gates for feature-branch and dirty-base reviews.
 - Route complete findings through narrow remediation and re-verification.
 - Use the shared provider-neutral procedure across the seven v1 consumer roles.
@@ -480,7 +482,7 @@ The integration is successful when:
 
 - every TypeScript/JavaScript change gets a deterministic, version-pinned
   changed-scope Fallow result;
-- abstract Quality Contract gates resolve to explicit bound/unbound status;
+- quality gates resolve to explicit bound/unbound status at run time;
 - configured findings reach agents as structured data with locations and
   actions;
 - runtime errors cannot masquerade as passing gates;
