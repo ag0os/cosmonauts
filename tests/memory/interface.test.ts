@@ -626,22 +626,6 @@ describe("memory interface", () => {
 		});
 	});
 
-	test("documents exactly the episode actions the code defines", async () => {
-		const documentation = await readFile(
-			join(process.cwd(), "docs", "memory.md"),
-			"utf-8",
-		);
-		const vocabulary = documentation.slice(
-			documentation.indexOf("### Finite Event Vocabulary"),
-			documentation.indexOf("### Recall, Injection, And W2 Preservation"),
-		);
-		const documentedActions = [
-			...vocabulary.matchAll(/^\| `([^`]+)` \|/gmu),
-		].map((match) => match[1]);
-
-		expect(documentedActions).toEqual(EPISODE_ACTIONS);
-	});
-
 	test("supports note profile and playbook through the unchanged MemoryStore contract", async () => {
 		const projectRoot = join(tmp.path, "authored-types-project");
 		const userRoot = join(tmp.path, "authored-types-user");

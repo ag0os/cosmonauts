@@ -234,8 +234,11 @@ Invariants — mechanism yields to these:
     only the runtime knows); delete it without changing the quality-manager
     (rejected: D-015 — silently stops four gates).
   - Why: INV-007. Supersedes the deletion hold in D-015, 2026-09-21.
-  - Decided by: human, 2026-09-21 — approved with the condition that the
-    runtime path be verified first; that verification is D-015
+  - Decided by: human, 2026-09-21 — approved directly (confirmed by the human
+    again on 2026-09-21 when a successor session could not trace it), with the
+    condition that the runtime path be verified first; that verification is
+    D-015. The gate-kind list in `gate-contracts.md` is no longer parsed by a
+    test: see D-019.
 - **D-017 - The marker strip ran behind its gate, and the gate found one coupled test**
   - Decision: 546 markers removed from 172 test files — 406 comment lines and
     140 appended to test titles, so the before/after comparison normalises
@@ -268,6 +271,14 @@ Invariants — mechanism yields to these:
     about the suite, and it stayed false).
   - Why: INV-003; B-006, B-007, B-008.
   - Decided by: worker-amended, 2026-09-21 (derived from D-005 and D-013)
+- **D-019 - Documentation tables are not compared with code constants**
+  - Decision: the three tests in `tests/analysis/contracts.test.ts` that parsed
+    tables out of `gate-contracts.md` and `docs/analysis-provider-validation.md`,
+    and the episode-action table test in `tests/memory/interface.test.ts`, are
+    deleted. No production code reads those tables. The provider-, toolchain-
+    and framework-name absence guards in
+    `tests/prompts/provider-neutrality.test.ts` are kept.
+  - Decided by: human, 2026-09-21 (direct; both rulings)
 
 ## Behaviors
 

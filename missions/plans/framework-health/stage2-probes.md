@@ -41,10 +41,8 @@ not investigated.
 D-008's sample stratified by directory over the rest of `tests/` has not been
 run. This record covers only tests that read shipped markdown.
 
-## For the human
+## Rulings
 
-- `tests/prompts/provider-neutrality.test.ts` keeps the provider-, toolchain-
-  and framework-name absence guards D-005 calls borderline. Keep or delete.
-- `tests/analysis/contracts.test.ts` and the episode-action test compare a
-  documentation table with code constants. No production code reads the
-  tables. Kept because a reword cannot break them; say if they should go.
+Human, 2026-09-21: the provider-neutrality guards stay; the documentation-table
+tests listed above as kept were deleted (D-019). Three tests remain red under
+blanking, all on the runtime template.
