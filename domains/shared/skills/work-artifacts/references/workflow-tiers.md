@@ -26,7 +26,7 @@ Use for larger changes that need design, tasking, or multi-step verification.
 
 - Requires `spec.md` for the product/user side.
 - Requires `plan.md` for the technical side.
-- The plan is behavior-first and includes a Quality Contract ladder.
+- The plan is behavior-first.
 - Planned behaviors use stable `B-###` IDs.
 
 ## Architectural / Multi-Plan Work

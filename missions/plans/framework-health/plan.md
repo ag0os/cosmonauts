@@ -218,7 +218,24 @@ Invariants — mechanism yields to these:
     dead-code and boundary gates from running. The simplification that makes
     it deletable is to have the quality-manager resolve every gate kind with
     a runtime capability regardless of the plan. Held for the human.
-  - Decided by: planner-proposed; deletion awaits the human's direct word
+  - Decided by: planner-proposed; superseded in part by D-016
+- **D-016 - Plans stop declaring quality gates; the quality-manager resolves them from the runtime on every run**
+  - Decision: the `## Quality Contract` gate table leaves the plan format.
+    The quality-manager now resolves every gate kind with a runtime
+    capability on every invocation, with or without a plan, keeping the
+    resolution rules the analysis-gate work established (exclusive outcome,
+    `failed-to-run` blocks, unbound degrades, unsupported metrics degrade
+    alone, verdicts only from declared coverage). Gone with the table: the
+    declared `Binding state`, `universal_gate_status`, and the
+    protocol-pending state, which existed only to reconcile a declaration
+    with the runtime. Legacy `QC-*` criteria lists in older plans are still
+    honoured. `gate-contracts.md` keeps the gate-kind list a live test parses.
+  - Alternatives: keep the table (rejected: a planner's prediction of a fact
+    only the runtime knows); delete it without changing the quality-manager
+    (rejected: D-015 — silently stops four gates).
+  - Why: INV-007. Supersedes the deletion hold in D-015, 2026-09-21.
+  - Decided by: human, 2026-09-21 — approved with the condition that the
+    runtime path be verified first; that verification is D-015
 
 ## Behaviors
 

@@ -5,7 +5,7 @@ Artifacts use markdown-native primitives so future renderers can parse them cons
 ## Approved
 
 - Mermaid for sequence, flow, state, and architecture diagrams.
-- tables for matrices, comparison grids, and Quality Contract ladders.
+- tables for matrices and comparison grids.
 - structured lists for decision logs, risks, assumptions, and boundary rules.
 - checklists for acceptance criteria and reviewable completion criteria.
 

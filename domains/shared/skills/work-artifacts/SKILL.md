@@ -1,6 +1,6 @@
 ---
 name: work-artifacts
-description: Canonical artifact-format contracts for Cosmonauts work. Use when choosing workflow tiers, writing or reviewing spec.md, plan.md, architecture.md, plan behaviors, Quality Contract ladders, or artifact examples. Do NOT load for task lifecycle tooling or implementation TDD mechanics unless artifact format is in scope.
+description: Canonical artifact-format contracts for Cosmonauts work. Use when choosing workflow tiers, writing or reviewing spec.md, plan.md, architecture.md, plan behaviors, quality gate rules, or artifact examples. Do NOT load for task lifecycle tooling or implementation TDD mechanics unless artifact format is in scope.
 ---
 
 # Work Artifacts
@@ -13,7 +13,7 @@ This is a thin dispatcher for Cosmonauts work-document formats. Canonical artifa
 - Do not hide a needed file behind another file. Every reference is directly linked below.
 - Keep direct fixes lightweight: route them to regression-test guidance, not to the full artifact stack.
 - For planned feature/refactor work, route to `spec.md` plus behavior-first `plan.md`.
-- Rewrite Quality Contracts that name concrete tools as abstract gate kinds.
+- Plans do not declare quality gates; remove gate tables and tool or command names from plans.
 - Create architecture records only when they change implementation or review.
 
 ## Routing
@@ -25,7 +25,7 @@ This is a thin dispatcher for Cosmonauts work-document formats. Canonical artifa
 | Writing or reviewing an implementation plan | `references/plan-format.md`, plus `references/behavior-spine.md` for behavior details |
 | Writing or reviewing architecture context or architecture records | `references/architecture-format.md` |
 | Turning ACs into plan behaviors | `references/behavior-spine.md` |
-| Writing or reviewing Quality Contract gates | `references/gate-contracts.md` |
+| Understanding how quality gates are resolved | `references/gate-contracts.md` |
 | Handling a deviation, amendment, or plan/reality collision | `references/deviation-protocol.md` |
 | Choosing artifact diagrams or matrix primitives | `references/visual-primitives.md` |
 | Needing a small template for the current workflow tier | `references/examples.md` |
@@ -34,7 +34,7 @@ This is a thin dispatcher for Cosmonauts work-document formats. Canonical artifa
 
 - `references/workflow-tiers.md` - direct fix, tactical bugfix, planned feature/refactor, and architecture-linked workflow routing.
 - `references/spec-format.md` - `spec.md` sections and planned-work `AC-###` acceptance criteria.
-- `references/plan-format.md` - behavior-first `plan.md`, design as guidance, flat files list, and Quality Contract placement.
+- `references/plan-format.md` - behavior-first `plan.md`, design as guidance, and flat files list.
 - `references/architecture-format.md` - `missions/architecture/<slug>.md`, Decision Log, Boundary Model, Architecture Context, and memory distinction.
 - `references/behavior-spine.md` - `AC-###` to `B-###`: observer, entry point, outcome, and what a behavior must not name.
 - `references/gate-contracts.md` - abstract gate kinds, tiers, binding states, protocol slot, and degradation rules.

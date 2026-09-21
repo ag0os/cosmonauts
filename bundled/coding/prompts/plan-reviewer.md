@@ -105,9 +105,7 @@ When the plan declares or depends on durable architecture:
 
 - Do the quality criteria cover the actual risks in the design, or only the happy path?
 - Is there at least one criterion for failure/edge-case behavior?
-- For full planned feature/refactor plans, check Quality Contract conformance as an ordered abstract gate ladder: gate kind, tier, binding state, threshold, and degradation/notes.
-- Check that universal gates are bound and that unbound bindable gates record an explicit degraded state instead of a silent pass or hard failure.
-- Review the ladder without concrete tool-name or command columns. Project-specific tool bindings belong to project configuration or follow-up enforcement work, not the generic artifact contract.
+- Plans do not declare quality gates. A gate table, a predicted binding state, or a tool or command name in a plan is a finding; a quality expectation specific to this work belongs in a behavior or a named risk.
 
 ### 9. Lifecycle and invariant attack
 

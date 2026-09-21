@@ -97,12 +97,6 @@ The structure that will deliver the behaviors. Guidance, not contract.
 
 - ...
 
-## Quality Contract
-
-| Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
-|---:|---|---|---|---|---|---|
-| 1 | `correctness` | universal | bound | project-native correctness evidence passes | project-discovered | hard fail |
-
 ## Implementation Order
 
 1. Deliver the first behavior end to end through its real entry point — test-first for code; by reviewed diff for authored prose.

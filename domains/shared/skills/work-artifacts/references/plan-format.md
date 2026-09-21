@@ -13,7 +13,6 @@ Use this order for a full planned feature/refactor plan:
 - `## Design`
 - `## Files to Change`
 - `## Risks`
-- `## Quality Contract`
 - `## Implementation Order`
 
 ## Decision Log
@@ -74,13 +73,6 @@ Use this shape:
 
 Keep `## Files to Change` as a flat list. Do not hide implementation ownership inside nested diagrams or prose.
 
-## Quality Contract
+## Quality
 
-Use an ordered abstract gate ladder after risks and before implementation order:
-
-| Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
-|---:|---|---|---|---|---|---|
-| 1 | `correctness` | universal | bound | Project-native correctness checks pass | project-discovered | hard fail |
-| 2 | `mutation` | bindable | bound/unbound | project-specific | pending or project-discovered | explicit degraded state when unbound |
-
-Generic plan formats must not add tool-name or command columns. Project-specific bindings and execution protocols are deferred outside this shared artifact contract.
+A plan does not declare quality gates. Which gates run is decided by what the project can run, resolved at sign-off; see `gate-contracts.md`. State a quality expectation specific to this work as a behavior, or as a condition in `## Risks`.

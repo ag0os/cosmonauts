@@ -133,43 +133,6 @@ describe("quality-manager prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-gate-rewiring#B-015
-	it("uses runtime unbound status for degraded gate reporting", async () => {
-		const [content, gateContracts] = await Promise.all([
-			readPrompt(),
-			readFile(GATE_CONTRACTS_PATH, "utf-8"),
-		]);
-
-		expect(content).toContain(
-			"Runtime status is authoritative evidence for this invocation; do not rewrite the plan row.",
-		);
-		// "genuinely" unbound: only a real absence of binding degrades. A failed
-		// binding is a different outcome and must not reach degraded reporting.
-		expect(content).toContain(
-			"When its required capability or the changed-scope audit capability is genuinely `unbound`, report the gate as `unbound/not enforced — reviewer judgment required` in `degraded_gates`",
-		);
-		expect(content).toContain("This is neither a pass nor a hard failure.");
-
-		// Resolution is mutually exclusive — a row may not be both completed and
-		// degraded, nor both failed-to-run and protocol-pending.
-		expect(content).toContain(
-			"Each resolved row lands in exactly one of `completed_bound_gates`, `degraded_gates`, or `failed_to_run_gates`.",
-		);
-		expect(content).toContain(
-			"A row must never appear as both completed and degraded, or both failed-to-run and protocol-pending.",
-		);
-
-		// The second declared seam: the generic vocabulary the prompt resolves against.
-		expect(gateContracts).toContain("## Resolution Outcomes");
-		expect(gateContracts).toContain(
-			"**Genuinely unbound.** When the binding is `unbound`, record a degraded state: the gate is not enforced and requires reviewer judgment.",
-		);
-		expect(gateContracts).toContain(
-			"This outcome is blocking, never a pass, and never a silent degradation to the unbound state.",
-		);
-		expect(gateContracts).not.toContain("Fallow");
-	});
-
 	// @cosmo-behavior plan:analysis-gate-rewiring#B-016
 	it("separates failed to run gates and routes findings for direct replay", async () => {
 		const content = await readPrompt();
@@ -197,42 +160,6 @@ describe("quality-manager prompt", () => {
 		);
 		expect(content).toContain(
 			"do NOT enlarge the diff beyond what the finding requires",
-		);
-	});
-
-	// @cosmo-behavior plan:analysis-gate-coverage#B-043
-	it("resolves bound gates only from declared coverage", async () => {
-		const content = await readPrompt();
-
-		expect(content).toContain(
-			"A completed result resolves a bound gate to `pass` only when the result's declared coverage names that gate and no gate-aligned finding contradicts it.",
-		);
-		expect(content).toContain(
-			"Gate-aligned findings resolve their declared-covered gate categories as failed.",
-		);
-		expect(content).toContain(
-			"A category outside the result's declared coverage is degraded or `failed-to-run`; absence of findings for an undeclared category is never a pass.",
-		);
-		expect(content).toContain(
-			"If a bound gate has no classifiable per-gate verdict, report it as `failed-to-run`, never as a pass.",
-		);
-		expect(content).toContain(
-			'`trace` and `fix-preview` results carry `verdict: "not-applicable"` and can never pass or fail a gate.',
-		);
-		expect(content).toContain(
-			"Do not inspect provider-specific native fields to invent a gate verdict.",
-		);
-		expect(content).toContain(
-			"Each resolved row lands in exactly one of `completed_bound_gates`, `degraded_gates`, or `failed_to_run_gates`.",
-		);
-		expect(content).toContain(
-			"A bound `boundary-conformance` row is resolved by calling its own capability, not by the changed-scope audit.",
-		);
-		expect(content).not.toContain(
-			"only when the result explicitly represents complete coverage for those gates",
-		);
-		expect(content).not.toContain(
-			"A category with no matching finding is a pass only when the structured result makes complete coverage for that gate classifiable.",
 		);
 	});
 
@@ -316,83 +243,6 @@ describe("quality-manager prompt", () => {
 		expect(content).toContain(
 			"Remove all review report files from `missions/reviews/`",
 		);
-	});
-
-	it("parses legacy QC criteria into their existing verification tracks", async () => {
-		const content = await readPrompt();
-
-		expect(content).toContain(
-			"The Quality Contract can appear in two formats. Support both in the same invocation:",
-		);
-		expect(content).toContain("1. **Legacy `QC-*` list entries.**");
-		for (const field of [
-			"**id** — the `QC-NNN` identifier",
-			"**category** — one of `correctness`, `architecture`, `integration`, `behavior`",
-			"**criterion** — the testable assertion",
-			"**verification** — `verifier`, `reviewer`, or `manual`",
-			"**command** — present only for `verifier` type",
-		]) {
-			expect(content).toContain(field);
-		}
-		expect(content).toContain(
-			'log a warning (e.g., "Warning: could not parse QC entry — skipping") and continue.',
-		);
-		expect(content).toContain(
-			"Hold the parsed legacy criteria in working state as three lists: `verifier_criteria`",
-		);
-		expect(content).toContain(
-			"append one claim per entry in `verifier_criteria`",
-		);
-		expect(content).toContain(
-			"the full `reviewer_criteria` list from step 2.5",
-		);
-		expect(content).toContain(
-			"confirm all non-manual legacy contract criteria have passed",
-		);
-		expect(content).toContain(
-			"`QC-NNN [manual]: requires human verification — <criterion text>`",
-		);
-	});
-
-	it("reports abstract Quality Contract gate ladders without replacing legacy QC criteria", async () => {
-		// @cosmo-behavior plan:artifact-format-redesign#B-014
-		const content = await readPrompt();
-
-		expect(content).toContain(
-			"detect it as an abstract gate ladder when its header row contains `Gate kind`, `Tier`, and `Binding state`",
-		);
-		expect(content).toContain("`gate_ladder_rows`");
-		expect(content).toContain(
-			"Do not warn that a ladder row is malformed merely because it lacks a `QC-*` id, `verification`, or `command` field.",
-		);
-		expect(content).toContain(
-			"Universal gate rows map to sign-off checks or explicit manual verification when safe",
-		);
-		expect(content).toContain(
-			"`universal_gate_status` — one record per row with `Tier: universal`.",
-		);
-		expect(content).toContain(
-			"`degraded_gates` — every `Tier: bindable` row with `Binding state: unbound`.",
-		);
-		expect(content).toContain(
-			"Report these as unbound/not enforced, with the gate kind, threshold, and degradation notes. They are not silent passes and are not hard failures in this generic prompt contract.",
-		);
-		expect(content).toContain(
-			"`protocol_pending_gates` — every `Tier: bindable` row with `Binding state: bound` but no usable `Protocol` value.",
-		);
-		expect(content).toContain(
-			"Report these as protocol pending unless a legacy criterion (`QC-*`) or a project-native check separately supplies an executable claim for the same gate kind.",
-		);
-		expect(content).toContain(
-			"Legacy `verifier_criteria`, `reviewer_criteria`, and `manual_criteria` behavior is unchanged for old `QC-*` entries.",
-		);
-		expect(content).toContain(
-			"Do not implement a deterministic gate enforcement engine in this prompt.",
-		);
-		expect(content).toContain("Universal gate status:");
-		expect(content).toContain("Degraded bindable gates:");
-		expect(content).toContain("Protocol-pending gates:");
-		expect(content).toContain("Legacy manual criteria:");
 	});
 
 	it("carries stable finding ids through disposition lifecycle and sign-off", async () => {

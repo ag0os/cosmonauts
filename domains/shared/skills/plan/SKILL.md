@@ -16,7 +16,7 @@ For artifact shape, behavior spine, and gate rules, load `/skill:work-artifacts`
 | Artifact | Lifecycle role | Canonical format |
 |---|---|---|
 | `spec.md` | Product intent: what is being built, who benefits, why it matters, and acceptance criteria. | `/skill:work-artifacts` `references/spec-format.md` |
-| `plan.md` | Behavior-first implementation plan: observable behaviors, design guidance, file ownership, risks, quality gates, and implementation order. | `/skill:work-artifacts` `references/plan-format.md` and `references/behavior-spine.md` |
+| `plan.md` | Behavior-first implementation plan: observable behaviors, design guidance, file ownership, risks, and implementation order. | `/skill:work-artifacts` `references/plan-format.md` and `references/behavior-spine.md` |
 | `architecture.md` | Active architecture record for durable boundaries, dependency rules, or multi-plan decisions. | `/skill:work-artifacts` `references/architecture-format.md` |
 
 Do not move architecture-of-record content into `plan.md`. If durable architecture context matters, create or link the active architecture record and keep only the relevant `Architecture Context` in the plan.
@@ -55,7 +55,7 @@ Before calling `plan_create` or `plan_edit`, run a short visible readiness check
 - **Context** - Claims about existing code are backed by files you actually read; no guessed names, paths, signatures, or helpers.
 - **Behaviors** - Full planned feature/refactor plans have `## Behaviors` entries with a source (`AC-###`, or `INV-###` when the plan has no spec), observer, entry point, and outcome. Every observer is real and every entry point ships.
 - **Reachability** - Nothing in `## Design` or `## Files to Change` is built without a path from a shipped entry point to it. Code deliberately staged ahead of its wiring is named as staged, with the work that will wire it.
-- **Quality gates** - The `## Quality Contract` follows `/skill:work-artifacts` gate rules and names abstract gate kinds rather than project-specific tool columns.
+- **Quality** - The plan declares no gate table and names no tools or commands; a quality expectation specific to this work is a behavior or a named risk.
 - **Iteration policy** - `## Implementation Order` says how stages sequence and how to react if a stage surfaces unexpected complexity.
 - **Pivot / abort conditions** - `## Risks` names the conditions under which scope or approach should be revised rather than silently pressed through.
 
@@ -123,7 +123,7 @@ Completion loop:
 
 ## Related Skills
 
-- `/skill:work-artifacts` - canonical artifact format, behavior spine, Quality Contract, and gate rules.
+- `/skill:work-artifacts` - canonical artifact format, behaviors, and gate rules.
 - `/skill:roadmap` - where plan items originate.
 - `/skill:task` - creating and managing tasks from plans.
 - `/skill:architecture` - architecture-record authoring dispatcher.

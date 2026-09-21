@@ -23,7 +23,6 @@ Read the active plan and verify only contracts the plan actually declares. Prior
 - `### Key contracts`
 - `### Integration seams`
 - `## Files to Change`
-- `## Quality Contract`
 
 Do not invent unstated architecture rules. If the plan does not declare auditable contracts, write a skipped report with that rationale in `## Overall Assessment`.
 
@@ -43,9 +42,8 @@ When declared, treat these as auditable contracts:
 - linked `missions/architecture/<slug>.md` records referenced by the plan.
 - `## Boundary Model` rules inside linked architecture records.
 - `B-###` behaviors: the observer, the shipped entry point, and the outcome each one declares.
-- abstract Quality Contract rows with `Gate kind`, `Tier`, and `Binding state`.
 
-Treat only declared architecture context, linked records, boundary rules, behaviors, and gate rows as contracts. Do not infer missing boundaries, unstated architecture decisions, gate order, or tool-specific enforcement from ordinary plan prose.
+Treat only declared architecture context, linked records, boundary rules, and behaviors as contracts. Do not infer missing boundaries, unstated architecture decisions, or tool-specific enforcement from ordinary plan prose.
 
 Report only concrete mismatches between implementation and declared contracts. Every finding must cite evidence with file paths and line numbers. Use the namespace `I-001`, `I-002`, and so on.
 
@@ -112,4 +110,4 @@ Return a concise summary with:
 4. **Do not review unstated intent.** Judge only contracts the plan explicitly declares.
 5. **Use reviewer-compatible routing fields exactly.** Every finding must include `priority`, `severity`, `confidence`, `complexity`, and the nested `task` block.
 6. **Use `I-###` finding IDs only.** Never reuse the reviewer's `F-###` namespace.
-7. **No invented architecture or gate rules.** Architecture Context, Boundary Model, behaviors, and Quality Contract ladders are enforceable only when the plan or linked architecture record declares them.
+7. **No invented architecture rules.** Architecture Context, Boundary Model, and behaviors are enforceable only when the plan or linked architecture record declares them.
