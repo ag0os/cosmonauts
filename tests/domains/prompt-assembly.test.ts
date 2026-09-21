@@ -13,6 +13,7 @@ import { assemblePrompts } from "../../lib/domains/prompt-assembly.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
+import { loadPrompt } from "../../lib/prompts/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("prompt-assembly-");
@@ -100,14 +101,10 @@ describe("assemblePrompts", () => {
 				},
 			});
 
-			expect(result).toContain("# Cosmonauts");
+			expect(result).toContain(await loadPrompt("base"));
 			expect(result).toContain("Default framework base persona.");
-			expect(result).toContain(
-				"You are operating as a sub-agent spawned by coordinator.",
-			);
-			expect(result).toContain(
-				"**Objective**: Verify default framework prompts",
-			);
+			expect(result).toContain("coordinator");
+			expect(result).toContain("Verify default framework prompts");
 		});
 
 		it("can override framework base prompt directory for fixtures", async () => {

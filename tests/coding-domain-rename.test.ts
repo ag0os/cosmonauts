@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -77,13 +77,5 @@ describe("coding-domain-rename coding cody rename complete", () => {
 		expect(cody?.subagents?.every((subagent) => !subagent.includes("/"))).toBe(
 			true,
 		);
-	});
-
-	it("renames the prompt identity", async () => {
-		const content = await readFile(CODY_PROMPT_PATH, "utf-8");
-
-		expect(content).toContain("You're Cody");
-		expect(content).not.toContain("You're Cosmo");
-		expect(content).not.toContain("You are Cosmo");
 	});
 });

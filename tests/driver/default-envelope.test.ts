@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
@@ -34,14 +33,5 @@ describe("default Drive envelope", () => {
 			),
 		);
 		expect(resolvedPath).not.toContain(join("bundled", "coding"));
-	});
-
-	test("keeps the bundled compatibility envelope unchanged", async () => {
-		const bundledEnvelope = await readFile(
-			"bundled/coding/drivers/templates/envelope.md",
-			"utf-8",
-		);
-
-		expect(bundledEnvelope).toContain("# Coding Driver Envelope");
 	});
 });

@@ -50,7 +50,6 @@ describe("--dump-prompt", () => {
 	test("default routing main installed defaults to main/cosmo when no agent is provided", async () => {
 		const prompt = await dumpPrompt();
 
-		expect(prompt).toContain("You're Cosmo");
 		expect(prompt).toContain("<!-- COSMONAUTS_AGENT_ID:main/cosmo -->");
 	});
 

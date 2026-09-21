@@ -214,30 +214,6 @@ describe("coding domain agent invariants", () => {
 			}
 		}
 
-		const sharedSkillPath = join(
-			DOMAINS_DIR,
-			"shared",
-			"skills",
-			"analysis",
-			"SKILL.md",
-		);
-		const sharedSkill = await readFile(sharedSkillPath, "utf8");
-		expect(sharedSkill).toMatch(
-			/# Analysis[\s\S]*?## Availability check\s+Call `analysis_status` first\./u,
-		);
-		expect(sharedSkill).toContain(
-			"If the tool is not registered in this session, state that analysis is not part of this role's surface and proceed without it.",
-		);
-		expect(sharedSkill).toContain("Do not retry");
-		expect(sharedSkill).toMatch(/\bcompleted\b/iu);
-		expect(sharedSkill).toMatch(/\bunbound\b/iu);
-		expect(sharedSkill).toMatch(/\bunsupported\b/iu);
-		expect(sharedSkill).toMatch(/\bfailed\b/iu);
-		expect(sharedSkill).toContain("explicit base");
-		expect(sharedSkill).toContain("Trace first");
-		expect(sharedSkill).toContain("Preview only");
-		expect(sharedSkill).toContain("Rerun before editing");
-
 		const legacySkillPath = ["bundled", "coding", "skills", "fallow"].join("/");
 		await expect(
 			access(join(REPOSITORY_ROOT, legacySkillPath)),

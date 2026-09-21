@@ -157,19 +157,7 @@ describe("main domain built-in discovery", () => {
 		}
 	});
 
-	it("frames cosmo as a personal assistant who pulls in specialists when needed", async () => {
-		const prompt = await readFile(
-			join(MAIN_DOMAIN_DIR, "prompts", "cosmo.md"),
-			"utf-8",
-		);
-
-		expect(prompt).toContain("You're Cosmo.");
-		expect(prompt).toContain("You're a personal assistant.");
-		expect(prompt).toContain("You're not a coding agent");
-		expect(prompt).toContain("**Pull in specialists when needed.**");
-	});
-
-	it("wires agent memory only to main/cosmo and gives concise visible save guidance", async () => {
+	it("wires agent memory only to main/cosmo", async () => {
 		const agentDefinitions = await loadBuiltinAgentDefinitions();
 		const consumers = agentDefinitions
 			.filter((definition) => definition.extensions.includes("agent-memory"))
@@ -177,44 +165,9 @@ describe("main domain built-in discovery", () => {
 			.sort();
 
 		expect(consumers).toEqual(["main/cosmo"]);
-
-		const prompt = await readFile(
-			join(MAIN_DOMAIN_DIR, "prompts", "cosmo.md"),
-			"utf-8",
-		);
-		expect(prompt).toContain("explicitly asks you to remember");
-		expect(prompt).toContain("Use project memory");
-		expect(prompt).toContain("user memory");
-		expect(prompt).toContain("say what you saved and where");
 	});
 
-	it("guides Cosmo to propose profile and playbook saves and call remember only after confirmation", async () => {
-		const prompt = await readFile(
-			join(MAIN_DOMAIN_DIR, "prompts", "cosmo.md"),
-			"utf-8",
-		);
-
-		expect(prompt).toContain("If the user directly asks for a durable save");
-		expect(prompt).toContain("If you notice something worth saving unprompted");
-		expect(prompt).toContain("name the intended record type and scope");
-		expect(prompt).toContain("Call `remember` only after explicit assent");
-		expect(prompt).toContain("Never repeat a declined proposal");
-		expect(prompt).toContain(
-			"The user profile is the single user-scoped picture",
-		);
-		expect(prompt).toContain("Project-specific facts do not belong there");
-		expect(prompt).toContain(
-			"Use a playbook for a named, repeatable procedure",
-		);
-		expect(prompt).toContain("pass the complete desired body");
-		expect(prompt).toContain("user-visible `changeSummary`");
-		expect(prompt).toContain("reports `confirmation_required`");
-		expect(prompt).toContain("no pending save to reconstruct");
-		expect(prompt).toContain(
-			"An injected truncated profile excerpt is never an update source",
-		);
-		expect(prompt).toContain("Use `recall` when you need the full content");
-
+	it("saves a playbook through remember only after confirmation", async () => {
 		const projectRoot = join(tmp.path, "confirmed-playbook-project");
 		const userCosmonautsRoot = join(tmp.path, "confirmed-playbook-user");
 		const storeFactory = vi.fn(

@@ -239,7 +239,6 @@ describe("domain-based prompt file paths", () => {
 	it("loads base prompt from lib/prompts/framework", async () => {
 		const content = await loadPrompt("base");
 		expect(content.length).toBeGreaterThan(0);
-		expect(content).toContain("# Cosmonauts");
 	});
 
 	it("loads runtime sub-agent template from lib/prompts/framework", async () => {

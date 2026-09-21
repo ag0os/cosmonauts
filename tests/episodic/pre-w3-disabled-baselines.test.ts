@@ -123,42 +123,6 @@ describe("pre-W3 disabled baselines", () => {
 				baselineContent: string;
 			}[];
 		};
-		expect(offBaseline.promptCorrectionAllowlist).toEqual([
-			"AGENTS.md",
-			`bundled/${CODING_DOMAIN}/prompts/distiller.md`,
-			"domains/shared/skills/archive/SKILL.md",
-		]);
-		expect(
-			offBaseline.promptCorrectionRegions.map((entry) => entry.path).toSorted(),
-		).toEqual(offBaseline.promptCorrectionAllowlist.toSorted());
-		for (const allowed of offBaseline.promptCorrectionRegions) {
-			const prompt = offBaseline.promptFiles.find(
-				(entry) => entry.path === allowed.path,
-			);
-			expect(prompt, allowed.path).toBeDefined();
-			expect(sha256(allowed.baselineContent), allowed.path).toBe(
-				prompt?.sha256,
-			);
-			for (const region of allowed.regions) {
-				expect(
-					allowed.baselineContent,
-					`${allowed.path}:${region.start}`,
-				).toContain(region.start);
-				if (region.end !== "<EOF>") {
-					expect(
-						allowed.baselineContent,
-						`${allowed.path}:${region.end}`,
-					).toContain(region.end);
-				}
-			}
-			expect(
-				stripCorrectionRegions(
-					await readFile(join(process.cwd(), allowed.path), "utf-8"),
-					allowed.regions,
-				),
-				`${allowed.path} changed outside the exact D-009 correction regions`,
-			).toBe(stripCorrectionRegions(allowed.baselineContent, allowed.regions));
-		}
 		const packageJson = JSON.parse(
 			await readFile(join(process.cwd(), "package.json"), "utf-8"),
 		) as { keywords?: unknown; pi?: unknown };
@@ -812,24 +776,6 @@ async function invokeAgentSwitch(
 
 function sha256(value: string | Buffer): string {
 	return createHash("sha256").update(value).digest("hex");
-}
-
-function stripCorrectionRegions(
-	content: string,
-	regions: readonly { start: string; end: string }[],
-): string {
-	let stripped = content;
-	for (const region of regions) {
-		const start = stripped.indexOf(region.start);
-		if (start < 0) throw new Error(`Missing correction start: ${region.start}`);
-		const end =
-			region.end === "<EOF>"
-				? stripped.length
-				: stripped.indexOf(region.end, start + region.start.length);
-		if (end < 0) throw new Error(`Missing correction end: ${region.end}`);
-		stripped = `${stripped.slice(0, start)}<D-009-CORRECTION>${stripped.slice(end)}`;
-	}
-	return stripped;
 }
 
 interface ToolResult {

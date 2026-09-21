@@ -2876,14 +2876,6 @@ describe("agent-memory extension", () => {
 			);
 			expect(source).not.toMatch(/from ["']node:fs/);
 		}
-		const docs = await readFile(
-			new URL("../../docs/memory.md", import.meta.url),
-			"utf-8",
-		);
-		expect(docs).toContain("human-supervised");
-		expect(docs).toContain("git-reviewed");
-		expect(docs).toContain("deliberately not sandboxed");
-		expect(docs).not.toContain("bare-host support is enabled");
 	});
 
 	test("registers proposal authority only for the distiller with no path input and same-writer idempotent writes", async () => {

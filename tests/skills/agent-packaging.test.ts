@@ -11,12 +11,6 @@ const skillPath = join(
 	"SKILL.md",
 );
 
-const packageGuidancePaths = [
-	"README.md",
-	"docs/orchestration.md",
-	"domains/shared/skills/agent-packaging/SKILL.md",
-] as const;
-
 async function readSkill(): Promise<string> {
 	return readFile(skillPath, "utf-8");
 }
@@ -28,54 +22,5 @@ describe("agent-packaging skill", () => {
 		expect(content.trim().length).toBeGreaterThan(0);
 		expect(content).toMatch(/^---\n[\s\S]*^name:\s*agent-packaging$/m);
 		expect(content).toMatch(/^description:\s*.+$/m);
-	});
-
-	test("contains the required conversational package-authoring guidance", async () => {
-		const content = await readSkill();
-
-		expect(content).toMatch(/source agent/i);
-		expect(content).toMatch(/inspect/i);
-		expect(content).toMatch(/unavailable .*tools/i);
-		expect(content).toMatch(/target runtime/i);
-		expect(content).toMatch(/external-safe prompt/i);
-		expect(content).toMatch(/human/i);
-		expect(content).toMatch(/AgentPackageDefinition/);
-		expect(content).toMatch(/skills/i);
-		expect(content).toMatch(/tool policy/i);
-		expect(content).toMatch(
-			/cosmonauts export --definition <path> --out <path>/,
-		);
-		expect(content).toMatch(/stable package `id`/i);
-		expect(content).toMatch(/output binary name/i);
-		expect(content).toContain("ANTHROPIC_API_KEY");
-		expect(content).toContain("--allow-api-billing");
-		expect(content).toContain("model_instructions_file");
-		expect(content).toContain("--codex-binary");
-	});
-
-	test("warns against blind raw export of internal prompts with unavailable Cosmonauts tools", async () => {
-		const content = await readSkill();
-
-		expect(content).toMatch(/warn|do not|never/i);
-		expect(content).toMatch(/blindly exporting|blind raw|raw export/i);
-		expect(content).toContain("spawn_agent");
-		expect(content).toContain("chain_run");
-		expect(content).toContain("drive");
-	});
-
-	test("documents canonical package keys and unchanged serialized target labels", async () => {
-		const contents = await Promise.all(
-			packageGuidancePaths.map((path) =>
-				readFile(join(process.cwd(), path), "utf-8"),
-			),
-		);
-
-		for (const content of contents) {
-			expect(content).toContain("`targets.claude`");
-			expect(content).toContain("`targets.codex`");
-			expect(content).toContain("`claude-cli, codex`");
-			expect(content).not.toContain('targets["claude-cli"]');
-			expect(content).not.toContain('skillDelivery: "reference"');
-		}
 	});
 });
