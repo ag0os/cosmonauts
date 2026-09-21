@@ -5,7 +5,8 @@ import { join } from "node:path";
  * Returns true when running from inside the Cosmonauts framework repo itself.
  *
  * Detection heuristic: package.json at root has name "cosmonauts", the
- * repo contains a bundled/ directory, and a repo-only marker (.git/) exists.
+ * repo contains a bundled/ directory, and a repo-only marker (.git) exists —
+ * a directory in a normal checkout, a file in a git worktree.
  * This avoids treating published package installs as framework checkouts.
  */
 export async function isCosmonautsFrameworkRepo(
@@ -23,8 +24,8 @@ export async function isCosmonautsFrameworkRepo(
 		const bundled = await stat(join(root, "bundled"));
 		if (!bundled.isDirectory()) return false;
 
-		const gitDir = await stat(join(root, ".git"));
-		return gitDir.isDirectory();
+		const gitMarker = await stat(join(root, ".git"));
+		return gitMarker.isDirectory() || gitMarker.isFile();
 	} catch {
 		return false;
 	}

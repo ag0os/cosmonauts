@@ -903,6 +903,20 @@ describe("isCosmonautsFrameworkRepo", () => {
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(true);
 	});
 
+	test("returns true in a git worktree, where .git is a file rather than a directory", async () => {
+		await writeFile(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
+		);
+		await mkdir(join(tmpDir, "bundled"));
+		await writeFile(
+			join(tmpDir, ".git"),
+			"gitdir: /somewhere/else/.git/worktrees/example\n",
+		);
+
+		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(true);
+	});
+
 	test("returns false when package.json name is not 'cosmonauts'", async () => {
 		await writeFrameworkPackage(tmpDir, "my-project");
 
