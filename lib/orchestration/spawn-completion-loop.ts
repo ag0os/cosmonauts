@@ -74,17 +74,24 @@ export async function awaitNextCompletionMessages(
 	const running = tracker.runningSpawns();
 	if (running.length === 0) return [];
 
-	const messages = running.map(({ spawnId, role }) => {
-		tracker.fail(spawnId, `Timed out after ${timeoutMs}ms`);
-		return formatSpawnCompletionMessage(
-			spawnId,
-			role,
-			"failed",
-			`Timed out after ${timeoutMs}ms`,
+	const timedOut = new Set<string>();
+	const messages: string[] = [];
+	for (const { spawnId, role } of running) {
+		// Failing one child publishes synchronously, and a subscriber may settle
+		// a sibling before its turn; that sibling reports through its own event.
+		if (!tracker.fail(spawnId, `Timed out after ${timeoutMs}ms`)) continue;
+		timedOut.add(spawnId);
+		messages.push(
+			formatSpawnCompletionMessage(
+				spawnId,
+				role,
+				"failed",
+				`Timed out after ${timeoutMs}ms`,
+			),
 		);
-	});
-	// The failures above are reported here; their buffered events must not be
-	// delivered a second time by the caller's loop.
-	tracker.drainCompleted();
+	}
+	// These failures are reported here, so their buffered events must not be
+	// delivered again by the caller's loop. Any other buffered event stays.
+	tracker.discardBufferedFailures(timedOut);
 	return messages;
 }

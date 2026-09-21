@@ -60,6 +60,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 }));
 
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
+import { awaitNextCompletionMessages } from "../../lib/orchestration/spawn-completion-loop.ts";
 
 const DOMAINS_DIR = resolve(
 	fileURLToPath(import.meta.url),
@@ -299,6 +300,29 @@ describe("createPiSpawner — completion loop", () => {
 		expect(prompts.filter((p) => p.includes("spawnId=spawn-2"))).toHaveLength(
 			1,
 		);
+	});
+
+	test("a child that completes while its siblings are being timed out is reported as completed", async () => {
+		const sessionId = nextSessionId();
+		const tracker = getOrCreateTracker(sessionId, bus);
+		tracker.register("slow", "worker", 1);
+		tracker.register("finisher", "worker", 1);
+		bus.subscribe("spawn_failed", () => {
+			tracker.complete("finisher", "really finished");
+		});
+
+		const timedOut = await awaitNextCompletionMessages(tracker, 0);
+		const delivered = [...timedOut];
+		while (tracker.hasUndeliveredWork()) {
+			delivered.push(...(await awaitNextCompletionMessages(tracker, 0)));
+		}
+
+		const aboutFinisher = delivered.filter((m) =>
+			m.includes("spawnId=finisher"),
+		);
+		expect(aboutFinisher).toHaveLength(1);
+		expect(aboutFinisher[0]).toContain("outcome=success");
+		expect(delivered.filter((m) => m.includes("spawnId=slow"))).toHaveLength(1);
 	});
 
 	// AC#5: timeout delivers failure messages and exits loop

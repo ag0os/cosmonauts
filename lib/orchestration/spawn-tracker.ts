@@ -181,16 +181,17 @@ export class SpawnTracker {
 
 	/**
 	 * Marks a spawn failed, releases the semaphore slot, and publishes
-	 * SpawnFailedEvent on the bus.
+	 * SpawnFailedEvent on the bus. Returns false when the spawn had already
+	 * terminated and nothing was done.
 	 */
-	fail(spawnId: string, error: string): void {
+	fail(spawnId: string, error: string): boolean {
 		const spawn = this.spawns.get(spawnId);
 		if (!spawn) {
 			throw new Error(`Unknown spawnId: ${spawnId}`);
 		}
 		// Idempotent: if already terminated (by timeout or prior error), skip.
 		if (spawn.status !== "running") {
-			return;
+			return false;
 		}
 		spawn.status = "failed";
 		this._activeCount--;
@@ -201,6 +202,17 @@ export class SpawnTracker {
 			sessionId: this.sessionId,
 			error,
 		});
+		return true;
+	}
+
+	/** Drops buffered failure events for the given spawns, leaving every other event. */
+	discardBufferedFailures(spawnIds: ReadonlySet<string>): void {
+		for (let index = this.buffer.length - 1; index >= 0; index--) {
+			const event = this.buffer[index];
+			if (event?.type === "spawn_failed" && spawnIds.has(event.spawnId)) {
+				this.buffer.splice(index, 1);
+			}
+		}
 	}
 
 	/** Whether completion delivery is handled by the spawn tool or an external driver. */
