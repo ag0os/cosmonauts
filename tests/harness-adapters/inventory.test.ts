@@ -156,7 +156,6 @@ const STRICT_CANDIDATE_CASES = {
 
 describe("live harness inventory characterization", () => {
 	test("renders the stable-authority external bundle with exact live inventory bytes and fallbacks", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-010
 		const snapshot = {
 			chains: [
 				{
@@ -576,7 +575,6 @@ describe("live harness inventory characterization", () => {
 	});
 
 	test("separates tolerant effective listing from strict healthy collision-aware export candidates", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-011
 		expect(STRICT_CANDIDATE_CASES.nestedOverride).toHaveLength(2);
 		expect(
 			new Set(

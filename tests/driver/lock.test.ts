@@ -82,7 +82,6 @@ describe("driver locks", () => {
 		await expectMissing(lockPath);
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-029
 	test("retries release after a failed unlink and stays idempotent on success", async () => {
 		const lock = requireLockHandle(
 			await acquirePlanLock("plan-a", "run-1", temp.path),

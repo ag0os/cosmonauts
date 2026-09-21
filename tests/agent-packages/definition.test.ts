@@ -280,7 +280,6 @@ describe("loadAgentPackageDefinition", () => {
 	});
 
 	it("parses canonical legacy and future target blocks without selecting support", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-002
 		const validTargets = {
 			claude: {
 				promptMode: "replace",

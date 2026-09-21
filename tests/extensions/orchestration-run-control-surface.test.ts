@@ -90,7 +90,6 @@ describe("orchestration run control surface", () => {
 		backendMocks.run.mockResolvedValue(successResult());
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-007
 	test("observes returned chain and Drive run ids through normalized status and watch", async () => {
 		const projectRoot = join(temp.path, "project");
 		await mkdir(projectRoot, { recursive: true });

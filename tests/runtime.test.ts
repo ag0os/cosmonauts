@@ -387,7 +387,6 @@ describe("CosmonautsRuntime", () => {
 
 	describe("validation", () => {
 		it("filters inactive domains before validation and same-precedence conflict checks", async () => {
-			// @cosmo-behavior plan:domain-authoring#B-017
 			const projectRoot = join(tmp.path, "project");
 			const domainsDir = join(tmp.path, "domains");
 			await mkdir(projectRoot, { recursive: true });
@@ -437,7 +436,6 @@ describe("CosmonautsRuntime", () => {
 				domainBindings: { alpha: "beta" },
 			});
 
-			// @cosmo-behavior plan:domain-authoring#B-009
 			await expect(
 				CosmonautsRuntime.create({
 					builtinDomainsDir: domainsDir,
@@ -597,7 +595,6 @@ describe("CosmonautsRuntime", () => {
 
 	describe("domain bindings", () => {
 		it("applies project domain bindings when resolving qualified agent references", async () => {
-			// @cosmo-behavior plan:domain-authoring#B-008
 			const domainsDir = join(tmp.path, "domains");
 			await mkdir(domainsDir, { recursive: true });
 			await setupSharedDomain(domainsDir, { capabilities: ["core"] });
@@ -682,7 +679,6 @@ describe("CosmonautsRuntime", () => {
 		});
 
 		it("treats default domain config as a bindable role across leads, chains, orchestration, and per-role settings", async () => {
-			// @cosmo-behavior plan:domain-authoring#B-023
 			const domainsDir = join(tmp.path, "domains");
 			await mkdir(domainsDir, { recursive: true });
 			await setupSharedDomain(domainsDir, { capabilities: ["core"] });

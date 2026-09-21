@@ -30,7 +30,7 @@ const AGENT_SWITCH_EXTENSION = join(
 const KNOWLEDGE_SENTINEL = "B008_KNOWLEDGE_STORE_CONSTRUCTED";
 
 describe("pre-W3 disabled baselines", () => {
-	test("keeps gated effects inert off and freezes reload while restart and agent switch adopt both gate transitions @cosmo-behavior plan:knowledge-surface#B-008", async () => {
+	test("keeps gated effects inert off and freezes reload while restart and agent switch adopt both gate transitions", async () => {
 		const inventoryPath = join(
 			process.cwd(),
 			"tests/fixtures/knowledge-seed-inventory.json",
@@ -201,7 +201,7 @@ describe("pre-W3 disabled baselines", () => {
 		});
 	});
 
-	test("drives real Pi reload and plain new-session seams with frozen factories in both directions @cosmo-behavior plan:knowledge-surface#B-008", async () => {
+	test("drives real Pi reload and plain new-session seams with frozen factories in both directions", async () => {
 		const projectRoot = join(tmp.path, "frozen-transition-project");
 		const domainsDir = join(tmp.path, "frozen-transition-domains");
 		const agentDir = join(tmp.path, "frozen-transition-pi-agent");
@@ -249,7 +249,7 @@ describe("pre-W3 disabled baselines", () => {
 		});
 	});
 
-	test("drives restart reassembly and the shipped agent command to adopt both gate edits @cosmo-behavior plan:knowledge-surface#B-008", async () => {
+	test("drives restart reassembly and the shipped agent command to adopt both gate edits", async () => {
 		const projectRoot = join(tmp.path, "reassembled-transition-project");
 		const domainsDir = join(tmp.path, "reassembled-transition-domains");
 		const agentDir = join(tmp.path, "reassembled-transition-pi-agent");

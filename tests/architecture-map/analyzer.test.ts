@@ -11,7 +11,7 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("architecture-map-analyzer-");
 
 describe("typescriptSourceAnalyzer", () => {
-	test("records public interfaces internal dependencies and external imports @cosmo-behavior plan:code-structure-map#B-003", async () => {
+	test("records public interfaces internal dependencies and external imports", async () => {
 		await writeAnalyzerFixture(tmp.path);
 		const config = await resolveArchitectureMapConfig({
 			projectRoot: tmp.path,
@@ -76,7 +76,7 @@ describe("typescriptSourceAnalyzer", () => {
 		]);
 	});
 
-	test("includes the extends chain of a commented tsconfig in freshness config inputs @cosmo-behavior plan:code-structure-map#B-007", async () => {
+	test("includes the extends chain of a commented tsconfig in freshness config inputs", async () => {
 		const projectRoot = join(tmp.path, "jsonc-extends");
 		await mkdir(join(projectRoot, "src"), { recursive: true });
 		await writeFile(

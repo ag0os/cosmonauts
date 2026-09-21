@@ -19,7 +19,6 @@ const temp = useTempDir("drive-run-start-characterization-");
 const PLAN_SLUG = "orchestration-surface-consolidation";
 
 describe("runStart Drive graph characterization", () => {
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-003
 	test("preserves graph-backed Drive files results and detached frozen runner through runStart", async () => {
 		const fixture = await setupFixture("inline");
 
@@ -126,7 +125,6 @@ describe("runStart Drive graph characterization", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-004
 	test("uses driveTaskIds instead of remainingTaskIds across resume and partial-init repair", async () => {
 		const resume = await setupFixture("resume-authoritative", 3);
 		const resumeStore = new FileRunStore({ rootDir: resume.sessionsRoot });

@@ -57,7 +57,7 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("memory-interface-");
 
 describe("memory interface", () => {
-	test("recordEpisode creates and warns nothing when episodicLog is disabled @cosmo-behavior plan:episodic-log#B-002", async () => {
+	test("recordEpisode creates and warns nothing when episodicLog is disabled", async () => {
 		const projectRoot = join(tmp.path, "disabled-project");
 		const userCosmonautsRoot = join(tmp.path, "disabled-user");
 		const loadConfig = vi.fn(async () => ({}));
@@ -91,7 +91,6 @@ describe("memory interface", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:episodic-log#B-003
 	test("retrieves episode actor and envelope through the narrowly extended MemoryStore result", async () => {
 		const projectRoot = join(tmp.path, "episode-envelope-project");
 		const userCosmonautsRoot = join(tmp.path, "episode-envelope-user");
@@ -190,7 +189,7 @@ describe("memory interface", () => {
 		expect(architectureResult.records[0]?.source).toBeUndefined();
 	});
 
-	test("stamps and parses the writer:cosmonauts provenance tag and leaves human episodes untagged @cosmo-behavior plan:episodic-log#B-004", async () => {
+	test("stamps and parses the writer:cosmonauts provenance tag and leaves human episodes untagged", async () => {
 		const machineDraft = createEpisodeRecord(
 			{
 				...episodeEvent(),
@@ -299,7 +298,6 @@ describe("memory interface", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:episodic-log#B-005
 	test("reconstructs latest wake state from stable trigger payload outcome and timestamp fields", async () => {
 		const projectRoot = join(tmp.path, "wake-restart-project");
 		const writer = createMarkdownMemoryStore({ projectRoot });
@@ -454,7 +452,7 @@ describe("memory interface", () => {
 		).toHaveLength(1);
 	});
 
-	test("converts setup write and awaitable warning-reporter failures into one non-fatal result @cosmo-behavior plan:episodic-log#B-011", async () => {
+	test("converts setup write and awaitable warning-reporter failures into one non-fatal result", async () => {
 		const cases = [
 			{
 				name: "config load",
@@ -573,7 +571,7 @@ describe("memory interface", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	test("accepts only the ratified consequential event vocabulary and rejects chatter @cosmo-behavior plan:episodic-log#B-020", () => {
+	test("accepts only the ratified consequential event vocabulary and rejects chatter", () => {
 		expect(EPISODE_ACTIONS).toEqual([
 			"chain.run",
 			"drive.run",
@@ -628,7 +626,7 @@ describe("memory interface", () => {
 		});
 	});
 
-	test("documents the episodic gate vocabulary cost and consumer contracts @cosmo-behavior plan:episodic-log#B-029", async () => {
+	test("documents the episodic gate vocabulary cost and consumer contracts", async () => {
 		const documentation = await readFile(
 			join(process.cwd(), "docs", "memory.md"),
 			"utf-8",
@@ -680,7 +678,6 @@ describe("memory interface", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-013
 	test("documents deterministic off-then-enabled terminal-only resume", async () => {
 		const documentation = await readFile(
 			join(process.cwd(), "docs", "memory.md"),
@@ -706,7 +703,6 @@ describe("memory interface", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-020
 	test("documents living-memory trust outlets invocation durability and recovery", async () => {
 		const [documentation, driveSkill, typesSource, architectureAdapterSource] =
 			await Promise.all([
@@ -795,7 +791,7 @@ describe("memory interface", () => {
 		).toBe("ab64b61e95f6393db8e1edeec56e3d9994cb4e8d3a2fc525962f1b7ff04454d7");
 	});
 
-	test("supports note profile and playbook through the unchanged MemoryStore contract @cosmo-behavior plan:profile-playbooks#B-002", async () => {
+	test("supports note profile and playbook through the unchanged MemoryStore contract", async () => {
 		const projectRoot = join(tmp.path, "authored-types-project");
 		const userRoot = join(tmp.path, "authored-types-user");
 		const store: MemoryStore = createMarkdownMemoryStore({
@@ -899,325 +895,7 @@ describe("memory interface", () => {
 			.toEqual(["profile", "playbook", "note"]);
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-009
-	test("keeps living-memory behavior ownership while fidelity regressions use fidelity markers", async () => {
-		const [
-			interfaceSource,
-			livingMemorySource,
-			architectureMemorySource,
-			consolidationSourcesSource,
-			memorySubcommandSource,
-		] = await Promise.all([
-			readFile(
-				join(process.cwd(), "tests", "memory", "interface.test.ts"),
-				"utf-8",
-			),
-			readFile(
-				join(process.cwd(), "tests", "memory", "living-memory.test.ts"),
-				"utf-8",
-			),
-			readFile(
-				join(
-					process.cwd(),
-					"tests",
-					"extensions",
-					"architecture-memory.test.ts",
-				),
-				"utf-8",
-			),
-			readFile(
-				join(process.cwd(), "tests", "memory", "consolidation-sources.test.ts"),
-				"utf-8",
-			),
-			readFile(
-				join(process.cwd(), "tests", "cli", "memory", "subcommand.test.ts"),
-				"utf-8",
-			),
-		]);
-		const allTestSources = await Promise.all(
-			(await listFiles(join(process.cwd(), "tests"), "tests"))
-				.filter((path) => path.endsWith(".test.ts"))
-				.map((path) =>
-					readFile(join(process.cwd(), ...path.split("/")), "utf-8"),
-				),
-		);
-
-		for (const carrier of [
-			{
-				source: interfaceSource,
-				behavior: "plan:living-memory#B-012",
-				testName:
-					"exposes exact living-memory outcomes through configured knowledge consolidate only",
-			},
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory#B-016",
-				testName:
-					"rehydrates accepted judgment and persisted evidence then converges to noop",
-			},
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory#B-016",
-				testName:
-					"retains a live receipt when a later pass exhausts its record limit",
-			},
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory#B-016",
-				testName:
-					"retains a live receipt when a later pass exhausts its byte allowance",
-			},
-			{
-				source: architectureMemorySource,
-				behavior: "plan:living-memory#B-021",
-				testName:
-					"measures index pressure with the exact injection renderer and budget",
-			},
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory#B-021",
-				testName:
-					"measures oversized corpus metadata exactly as combined-context injection",
-			},
-		] as const) {
-			expectBehaviorCarrier(carrier);
-		}
-
-		const parentCarrierPattern = new RegExp(
-			`^\\t// ${["@cosmo-behavior", "plan:living-memory#B-(?:012|016|021)"].join(" ")}$`,
-			"gmu",
-		);
-		expect(
-			allTestSources.flatMap(
-				(source) => source.match(parentCarrierPattern) ?? [],
-			),
-		).toHaveLength(6);
-
-		const fidelityCarriers = [
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory-fidelity#B-001",
-				testName:
-					"matches pressure to injection for both round-7 divergence directions",
-			},
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory-fidelity#B-002",
-				testName:
-					"marks pressure unusable instead of reporting a false fit without an exact render input",
-			},
-			{
-				source: architectureMemorySource,
-				behavior: "plan:living-memory-fidelity#B-003",
-				testName: "counts injected knowledge warnings in measured index bytes",
-			},
-			{
-				source: consolidationSourcesSource,
-				behavior: "plan:living-memory-fidelity#B-004",
-				testName:
-					"marks corpus inventory incomplete when retrieval omits a warned record",
-			},
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory-fidelity#B-005",
-				testName:
-					"keeps receipts and blocks dependent work when corpus inventory is incomplete",
-			},
-			{
-				source: consolidationSourcesSource,
-				behavior: "plan:living-memory-fidelity#B-006",
-				testName: "counts malformed episodes as omitted incomplete inventory",
-			},
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory-fidelity#B-007",
-				testName:
-					"reports a committed first receipt removal when its directory sync fails",
-			},
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory-fidelity#B-008",
-				testName:
-					"preserves source-recovery episode prunes and committed writes in the final result",
-			},
-			{
-				source: interfaceSource,
-				behavior: "plan:living-memory-fidelity#B-009",
-				testName:
-					"keeps living-memory behavior ownership while fidelity regressions use fidelity markers",
-			},
-			{
-				source: memorySubcommandSource,
-				behavior: "plan:living-memory-fidelity#B-010",
-				testName:
-					"matches real-corpus injection pressure through the CLI composition root on a copy",
-			},
-			{
-				source: interfaceSource,
-				behavior: "plan:living-memory-fidelity#B-011",
-				testName:
-					"re-pins the memory contract without weakening living-memory authority",
-			},
-			{
-				source: livingMemorySource,
-				behavior: "plan:living-memory-fidelity#B-012",
-				testName:
-					"reports committed writes for a materialization-only retry pass",
-			},
-		] as const;
-		for (const carrier of fidelityCarriers) {
-			expectBehaviorCarrier(carrier);
-		}
-
-		const fidelityMarkerPattern = new RegExp(
-			`^\\t// ${[
-				"@cosmo-behavior",
-				"plan:living-memory-fidelity#B-(?:00[1-9]|01[0-2])",
-			].join(" ")}$`,
-			"gmu",
-		);
-		expect(
-			allTestSources
-				.flatMap((source) => source.match(fidelityMarkerPattern) ?? [])
-				.toSorted(),
-		).toEqual(
-			fidelityCarriers
-				.map(
-					(carrier) =>
-						`\t// ${["@cosmo-behavior", carrier.behavior].join(" ")}`,
-				)
-				.toSorted(),
-		);
-	});
-
-	// @cosmo-behavior plan:living-memory-fidelity#B-011
-	test("re-pins the memory contract without weakening living-memory authority", async () => {
-		const [typesSource, indexSource, interfaceSource, livingMemorySource] =
-			await Promise.all([
-				readFile(join(process.cwd(), "lib", "memory", "types.ts"), "utf-8"),
-				readFile(join(process.cwd(), "lib", "memory", "index.ts"), "utf-8"),
-				readFile(
-					join(process.cwd(), "tests", "memory", "interface.test.ts"),
-					"utf-8",
-				),
-				readFile(
-					join(process.cwd(), "tests", "memory", "living-memory.test.ts"),
-					"utf-8",
-				),
-			]);
-		const typesHash =
-			"08593a2c9f4d7311fe3b374872cd54ede2b7e6aeda376b79429797ad45a3c38d";
-
-		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			typesHash,
-		);
-		for (const pinnedTest of [
-			"documents living-memory trust outlets invocation durability and recovery",
-			"supports note profile and playbook through the unchanged MemoryStore contract @cosmo-behavior plan:profile-playbooks#B-002",
-		]) {
-			expect(sourceTestBlock(interfaceSource, pinnedTest)).toContain(typesHash);
-		}
-		expect(
-			sourceTestBlock(
-				interfaceSource,
-				"documents living-memory trust outlets invocation durability and recovery",
-			),
-		).toContain("Profile and explicit-save authority are unchanged");
-		for (const contract of [
-			"readonly indexPressure?: KnowledgeIndexPressureResult;",
-			'readonly kind: "measured";',
-			'readonly kind: "unusable";',
-			"readonly targetSatisfied: false;",
-		]) {
-			expect(typesSource, contract).toContain(contract);
-		}
-		expect(indexSource).toContain("type KnowledgeIndexPressureResult,");
-		const publicResultContract = sourceTestBlock(
-			interfaceSource,
-			"exposes exact living-memory outcomes through configured knowledge consolidate only",
-		);
-		expect(publicResultContract).toContain(
-			"expect(Object.keys(full.details).sort()).toEqual([",
-		);
-		expect(publicResultContract).toContain('"indexPressure",');
-
-		expectBehaviorCarrier({
-			source: interfaceSource,
-			behavior: "plan:living-memory#B-001",
-			testName:
-				"accepts only manifest-backed relocation and ledger-backed hard deletion",
-		});
-		const receiptFloor = sourceTestBlock(
-			interfaceSource,
-			"accepts only manifest-backed relocation and ledger-backed hard deletion",
-		);
-		for (const assertion of [
-			"audit(relocatedFiles, withoutManifest)",
-			"audit(serializationMutation, receipts)",
-			"audit(deletedFiles, withoutLedger)",
-			'kind: "unhealthy"',
-		]) {
-			expect(receiptFloor, assertion).toContain(assertion);
-		}
-
-		expectBehaviorCarrier({
-			source: livingMemorySource,
-			behavior: "plan:living-memory#B-002",
-			testName:
-				"soft-retires an eligible record with a complete durable manifest entry",
-		});
-		const retirementAuthority = sourceTestBlock(
-			livingMemorySource,
-			"revalidates exact baselines citations digests and manifest-state guards under the lock",
-		);
-		for (const assertion of [
-			"retirement-baseline-conflict",
-			"retirement-inbound-citation",
-			"citation-inventory-incomplete",
-			"retirement-digest-conflict",
-			"retirement-evidence-incomplete",
-			"restoration-in-progress",
-			"restoration-suppressed",
-		]) {
-			expect(retirementAuthority, assertion).toContain(assertion);
-		}
-
-		expectBehaviorCarrier({
-			source: livingMemorySource,
-			behavior: "plan:living-memory#B-017",
-			testName:
-				"preserves profile authored memory and curated bytes across a full pass",
-		});
-		const byteAuthority = sourceTestBlock(
-			livingMemorySource,
-			"preserves profile authored memory and curated bytes across a full pass",
-		);
-		expect(byteAuthority).toContain(
-			"await expect(readFile(path)).resolves.toEqual(bytes)",
-		);
-		expect(byteAuthority).toContain(
-			".resolves.toEqual(Buffer.from(fixture.raw))",
-		);
-
-		const modelValidation = sourceTestBlock(
-			livingMemorySource,
-			"rejects source contract violations and enforces bounded lossy passes",
-		);
-		for (const assertion of [
-			'label: "observation cap"',
-			'label: "proposal cap"',
-			'label: "retirement cap"',
-			'label: "model-supplied paths"',
-			'label: "unknown input id"',
-			'label: "unsupported proposal fields"',
-			'label: "incomplete replacement"',
-			'kind: "failed"',
-		]) {
-			expect(modelValidation, assertion).toContain(assertion);
-		}
-	});
-
-	test("consolidate reports an honest W1 no-op for markdown and architecture stores @cosmo-behavior plan:memory-interface#B-011", async () => {
+	test("consolidate reports an honest W1 no-op for markdown and architecture stores", async () => {
 		const userRoot = join(tmp.path, "user-cosmonauts");
 		const markdown = createMarkdownMemoryStore({
 			projectRoot: tmp.path,
@@ -1270,7 +948,6 @@ describe("memory interface", () => {
 		).resolves.toEqual(before);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-012
 	test("exposes exact living-memory outcomes through configured knowledge consolidate only", async () => {
 		const fullRoot = join(tmp.path, "public-consolidate-full");
 		const corpusContents = [
@@ -1818,7 +1495,7 @@ describe("memory interface", () => {
 		expect(finalization.writesCommitted).toBe(false);
 	});
 
-	test("retrieves markdown notes and architecture maps through the shared MemoryStore interface @cosmo-behavior plan:memory-interface#B-002", async () => {
+	test("retrieves markdown notes and architecture maps through the shared MemoryStore interface", async () => {
 		const userRoot = join(tmp.path, "user-cosmonauts");
 		const markdown: MemoryStore = createMarkdownMemoryStore({
 			projectRoot: tmp.path,
@@ -1908,7 +1585,7 @@ describe("memory interface", () => {
 		});
 	});
 
-	test("accounts for real architecture config freshness and map IO across index unknown-module and missing-index retrievals @cosmo-behavior plan:knowledge-surface#B-007", async () => {
+	test("accounts for real architecture config freshness and map IO across index unknown-module and missing-index retrievals", async () => {
 		const projectRoot = join(tmp.path, "architecture-scan-stats");
 		const configRaw = `${JSON.stringify({
 			architectureMap: { sourceRoots: ["src"] },
@@ -2112,7 +1789,7 @@ describe("memory interface", () => {
 });
 
 describe("knowledge proposal interface", () => {
-	test("contains attributable proposal writes and keys writer while deduplicating same-writer retries without path escape @cosmo-behavior plan:knowledge-surface#B-002", async () => {
+	test("contains attributable proposal writes and keys writer while deduplicating same-writer retries without path escape", async () => {
 		const projectRoot = join(tmp.path, "proposal-project");
 		const userRoot = join(tmp.path, "proposal-user");
 		const store: MemoryStore = createKnowledgeMemoryStore({
@@ -2662,7 +2339,7 @@ async function writeArchitectureMap(projectRoot: string): Promise<void> {
 }
 
 describe("frozen knowledge seed migration", () => {
-	test("maps every frozen seed field and body to canonical OKF and leaves no active knowledge JSONL path @cosmo-behavior plan:knowledge-surface#B-003", async () => {
+	test("maps every frozen seed field and body to canonical OKF and leaves no active knowledge JSONL path", async () => {
 		const projectRoot = process.cwd();
 		const inventory = JSON.parse(
 			await readFile(
@@ -2764,7 +2441,6 @@ describe("frozen knowledge seed migration", () => {
 		).toContain(`body:${markdownDestination}`);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-001
 	test("accepts only manifest-backed relocation and ledger-backed hard deletion", async () => {
 		const projectRoot = process.cwd();
 		const inventory = JSON.parse(
@@ -3623,25 +3299,6 @@ function retiredPath(path: string): string {
 
 function sha256(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
-}
-
-function sourceTestBlock(source: string, testName: string): string {
-	const startNeedle = `\ttest(${JSON.stringify(testName)},`;
-	const start = source.indexOf(startNeedle);
-	if (start === -1) throw new Error(`Missing test: ${testName}`);
-	const nextTest = source.indexOf("\n\ttest(", start + startNeedle.length);
-	return source.slice(start, nextTest === -1 ? undefined : nextTest);
-}
-
-function expectBehaviorCarrier(options: {
-	readonly source: string;
-	readonly behavior: string;
-	readonly testName: string;
-}): void {
-	const marker = ["@cosmo-behavior", options.behavior].join(" ");
-	expect(options.source).toContain(
-		`\t// ${marker}\n\ttest(${JSON.stringify(options.testName)},`,
-	);
 }
 
 function mutateFrontmatter(

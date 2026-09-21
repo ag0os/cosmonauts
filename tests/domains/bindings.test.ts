@@ -31,7 +31,6 @@ function makeDomain(id: string): LoadedDomain {
 
 describe("DomainBindingResolver", () => {
 	it("resolves an unbound role to the same-named active domain with requested and resolved references", () => {
-		// @cosmo-behavior plan:domain-authoring#B-007
 		const resolver = new DomainBindingResolver({
 			registry: new DomainRegistry([makeDomain("ruby-coding")]),
 		});

@@ -71,7 +71,6 @@ function validateFindings(rows: readonly FindingRow[]): string[] {
 
 describe("shared/main leakage scan artifact", () => {
 	test("records a disposition for every shared-main leakage finding", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-019
 		const findingsPath = await resolvePlanArtifactPath(
 			LEAKAGE_FINDINGS_FILENAME,
 		);

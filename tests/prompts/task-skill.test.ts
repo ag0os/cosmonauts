@@ -19,7 +19,6 @@ async function readCapabilities() {
 }
 
 describe("task skill deviation routing", () => {
-	// @cosmo-behavior plan:spec-plan-intent#B-006
 	it("routes mid-implementation acceptance criteria changes through the deviation classifier", async () => {
 		const content = await readSkill();
 
@@ -37,7 +36,6 @@ describe("task skill deviation routing", () => {
 });
 
 describe("task skill", () => {
-	// @cosmo-behavior plan:artifact-format-redesign#B-002
 	it("owns task lifecycle guidance while routing artifact format details to work-artifacts", async () => {
 		const content = await readSkill();
 
@@ -56,7 +54,6 @@ describe("task skill", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:artifact-format-redesign#B-020
 	it("stays a directly linked dispatcher without deep task references", async () => {
 		const content = await readSkill();
 
@@ -69,7 +66,6 @@ describe("task skill", () => {
 		expect(content).not.toContain("references/behavior-mapping.md");
 	});
 
-	// @cosmo-behavior plan:task-id-system#B-011
 	it("documents readable sequential task ID caveats across task docs", async () => {
 		const docs = [await readSkill(), await readCapabilities()];
 

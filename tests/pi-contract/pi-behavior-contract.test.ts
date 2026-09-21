@@ -249,7 +249,6 @@ describe("pi contract: transformContext runs before every provider call", () => 
 });
 
 describe("pi contract: thrown analysis provider errors", () => {
-	// @cosmo-behavior plan:analysis-capability-runtime#B-030
 	test("preserves serialized capability failure in Pi error content", async () => {
 		const expectedMessage = [
 			"Analysis failed to run.",

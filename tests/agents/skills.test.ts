@@ -175,7 +175,6 @@ describe("buildSkillsOverride", () => {
 	});
 
 	test("filters internal skills from cross-domain effective catalogs", () => {
-		// @cosmo-behavior plan:domain-authoring#B-019
 		const resolver = new DomainResolver(
 			new DomainRegistry([
 				makeDomain("coding", {
@@ -231,7 +230,6 @@ describe("buildSkillsOverride", () => {
 	});
 
 	test("defaults omitted requester domain to main for direct visibility resolution", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-006
 		const resolver = new DomainResolver(
 			new DomainRegistry([
 				makeDomain("main", {
@@ -260,7 +258,6 @@ describe("buildSkillsOverride", () => {
 	});
 
 	test("wildcard cross-domain agents keep recursive public skills", () => {
-		// @cosmo-behavior plan:domain-authoring#B-019
 		const resolver = new DomainResolver(
 			new DomainRegistry([
 				makeDomain("coding"),
@@ -290,7 +287,6 @@ describe("buildSkillsOverride", () => {
 	});
 
 	test("wildcard cross-domain agents keep extra skill path skills", () => {
-		// @cosmo-behavior plan:domain-authoring#B-019
 		const resolver = new DomainResolver(
 			new DomainRegistry([
 				makeDomain("coding"),

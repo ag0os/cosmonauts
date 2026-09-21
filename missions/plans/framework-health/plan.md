@@ -236,6 +236,21 @@ Invariants — mechanism yields to these:
   - Why: INV-007. Supersedes the deletion hold in D-015, 2026-09-21.
   - Decided by: human, 2026-09-21 — approved with the condition that the
     runtime path be verified first; that verification is D-015
+- **D-017 - The marker strip ran behind its gate, and the gate found one coupled test**
+  - Decision: 546 markers removed from 172 test files — 406 comment lines and
+    140 appended to test titles, so the before/after comparison normalises
+    titles. Per-test outcomes were compared across the whole suite (3,170
+    tests before). One outcome changed:
+    `tests/coding-agnostic-fixtures.test.ts` greps every test file for the
+    substring "coding" and requires the result to equal a ledger that lives
+    in archived `coding-agnostic-framework`. Five files matched only because
+    their marker comment named that plan. The ledger is archived and cannot
+    be edited; the file's three tests validate nothing but that ledger. The
+    file is deleted. Deleted with the strip for the same reason: two tests
+    in `tests/memory/interface.test.ts` that read other tests' source and
+    assert they carry named markers and contain named assertion strings.
+  - Why: INV-004 — no executable coupling to an archived plan survives.
+  - Decided by: derived from INV-004 (human, 2026-09-20), 2026-09-21
 
 ## Behaviors
 

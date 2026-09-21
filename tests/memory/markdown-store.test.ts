@@ -106,7 +106,7 @@ describe("markdown memory store", () => {
 		).resolves.toBe(architectureBefore);
 	});
 
-	test("filters project user and skipped session scopes before retrieval @cosmo-behavior plan:memory-interface#B-008", async () => {
+	test("filters project user and skipped session scopes before retrieval", async () => {
 		const projectOne = join(tmp.path, "project-one");
 		const projectTwo = join(tmp.path, "project-two");
 		const userRoot = join(tmp.path, "user-cosmonauts");
@@ -183,7 +183,7 @@ describe("markdown memory store", () => {
 		).rejects.toThrow("bound to a different projectRoot");
 	});
 
-	test("reflects edited and deleted note files on the next retrieval @cosmo-behavior plan:memory-interface#B-009", async () => {
+	test("reflects edited and deleted note files on the next retrieval", async () => {
 		const projectRoot = join(tmp.path, "project");
 		const userRoot = join(tmp.path, "user-cosmonauts");
 		const store = createMarkdownMemoryStore({
@@ -235,7 +235,7 @@ describe("markdown memory store", () => {
 		);
 	});
 
-	test("returns honest empty results and malformed record warnings without scaffolding @cosmo-behavior plan:memory-interface#B-010", async () => {
+	test("returns honest empty results and malformed record warnings without scaffolding", async () => {
 		const projectRoot = join(tmp.path, "project");
 		const userRoot = join(tmp.path, "user-cosmonauts");
 		const store = createMarkdownMemoryStore({
@@ -326,7 +326,7 @@ describe("markdown memory store", () => {
 		]);
 	});
 
-	test("builds compact indexes most recent first @cosmo-behavior plan:memory-interface#B-014", async () => {
+	test("builds compact indexes most recent first", async () => {
 		const projectRoot = join(tmp.path, "project");
 		const userRoot = join(tmp.path, "user-cosmonauts");
 		const store = createMarkdownMemoryStore({
@@ -444,7 +444,7 @@ describe("markdown memory store", () => {
 		});
 	});
 
-	test("canonicalizes playbook names into stable scoped resources @cosmo-behavior plan:profile-playbooks#B-008", async () => {
+	test("canonicalizes playbook names into stable scoped resources", async () => {
 		const projectRoot = join(tmp.path, "canonical-project");
 		const userRoot = join(tmp.path, "canonical-user");
 		const store = createMarkdownMemoryStore({
@@ -578,7 +578,7 @@ describe("markdown memory store", () => {
 		).resolves.toMatchObject({ kind: "unsupported" });
 	});
 
-	test("keeps profile and playbook scopes isolated across projects @cosmo-behavior plan:profile-playbooks#B-011", async () => {
+	test("keeps profile and playbook scopes isolated across projects", async () => {
 		const projectA = join(tmp.path, "scope-project-a");
 		const projectB = join(tmp.path, "scope-project-b");
 		const userRoot = join(tmp.path, "scope-user");
@@ -673,7 +673,7 @@ describe("markdown memory store", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	test("skips malformed profile and playbook records with file warnings @cosmo-behavior plan:profile-playbooks#B-012", async () => {
+	test("skips malformed profile and playbook records with file warnings", async () => {
 		const emptyProject = join(tmp.path, "malformed-empty-project");
 		const emptyUser = join(tmp.path, "malformed-empty-user");
 		const emptyStore = createMarkdownMemoryStore({
@@ -903,7 +903,7 @@ describe("markdown memory store", () => {
 		expect(usable.records).toHaveLength(3);
 	});
 
-	test("reflects playbook rename edits and deletion without a stale cache @cosmo-behavior plan:profile-playbooks#B-014", async () => {
+	test("reflects playbook rename edits and deletion without a stale cache", async () => {
 		const projectRoot = join(tmp.path, "rename-project");
 		const userRoot = join(tmp.path, "rename-user");
 		const store = createMarkdownMemoryStore({
@@ -1108,7 +1108,7 @@ describe("markdown memory store", () => {
 		});
 	});
 
-	test("rejects profile writes over the 4000 byte body bound @cosmo-behavior plan:profile-playbooks#B-017", async () => {
+	test("rejects profile writes over the 4000 byte body bound", async () => {
 		const projectRoot = join(tmp.path, "profile-bound-project");
 		const userRoot = join(tmp.path, "profile-bound-user");
 		const store = createMarkdownMemoryStore({
@@ -1168,7 +1168,7 @@ describe("markdown memory store", () => {
 		expect(await readFile(original.path, "utf-8")).toBe(humanRaw);
 	});
 
-	test("reports profile and playbook write failures without partial files @cosmo-behavior plan:profile-playbooks#B-018", async () => {
+	test("reports profile and playbook write failures without partial files", async () => {
 		const blockedProfileRoot = join(tmp.path, "blocked-profile-root");
 		await writeFile(blockedProfileRoot, "not a directory\n", "utf-8");
 		const blockedProfileStore = createMarkdownMemoryStore({
@@ -1457,7 +1457,6 @@ describe("markdown memory store", () => {
 		expect(result.stats?.durationMs).toBeGreaterThanOrEqual(0);
 	});
 
-	// @cosmo-behavior plan:episodic-log#B-006
 	test("writes append-only episode files without creating rewriting or entering index.md", async () => {
 		const projectRoot = join(tmp.path, "append-only-episode-project");
 		const userRoot = join(tmp.path, "append-only-episode-user");
@@ -1646,7 +1645,6 @@ describe("markdown memory store", () => {
 		expect(episodeFiles).toHaveLength(1);
 	});
 
-	// @cosmo-behavior plan:episodic-log#B-007
 	test("scans episodes only when recordTypes explicitly includes episode", async () => {
 		const projectRoot = join(tmp.path, "conditional-episode-scan-project");
 		const store = createMarkdownMemoryStore({ projectRoot });
@@ -1796,7 +1794,6 @@ describe("markdown memory store", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:episodic-log#B-008
 	test("binds default and overridden episode thresholds into fresh-store stats and warnings", async () => {
 		const defaultRoot = join(tmp.path, "default-episode-threshold-project");
 		const defaultEpisodesDir = join(defaultRoot, "memory", "agent", "episodes");
@@ -2001,7 +1998,7 @@ describe("markdown memory store", () => {
 });
 
 describe("knowledge memory store", () => {
-	test("reads minimal and annotated project and user OKF knowledge without scaffolding scope leakage or symlink traversal @cosmo-behavior plan:knowledge-surface#B-001", async () => {
+	test("reads minimal and annotated project and user OKF knowledge without scaffolding scope leakage or symlink traversal", async () => {
 		const projectRoot = join(tmp.path, "knowledge-project");
 		const userRoot = join(tmp.path, "knowledge-user");
 		const store = createKnowledgeMemoryStore({
@@ -2190,7 +2187,7 @@ describe("knowledge memory store", () => {
 		);
 	});
 
-	test("filters current knowledge by physical scope and query then applies explicit or mtime recency and limit @cosmo-behavior plan:knowledge-surface#B-004", async () => {
+	test("filters current knowledge by physical scope and query then applies explicit or mtime recency and limit", async () => {
 		const projectRoot = join(tmp.path, "current-knowledge-project");
 		const userRoot = join(tmp.path, "current-knowledge-user");
 		const projectKnowledge = join(projectRoot, "knowledge");

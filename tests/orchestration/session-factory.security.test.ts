@@ -107,7 +107,7 @@ describe("session-factory planSlug validation", () => {
 		});
 	});
 
-	test("keeps unrelated extension tools callable in enabled spawned sessions @cosmo-behavior plan:knowledge-surface#B-005", async () => {
+	test("keeps unrelated extension tools callable in enabled spawned sessions", async () => {
 		const factory = {
 			name: "cosmonauts-knowledge-surface",
 			factory: vi.fn(),

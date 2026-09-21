@@ -10,7 +10,6 @@ import {
 import { validateProbeRecord } from "../../../scripts/test-health-audit/probe.ts";
 
 describe("targeted probe evidence", () => {
-	// @cosmo-behavior plan:test-health-audit#B-008
 	it("rejects probes outside the sandbox or without copied import identity isolated outcome and restored green", () => {
 		const valid = {
 			schemaVersion: 1,

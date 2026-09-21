@@ -206,7 +206,7 @@ describe("chainEventToProgressLine — parallel events", () => {
 });
 
 describe("chainEventToProgressLine — review halt", () => {
-	test("renders an unaddressed review-round halt in chain progress @cosmo-behavior plan:chain-stage-context#B-012", () => {
+	test("renders an unaddressed review-round halt in chain progress", () => {
 		const identifiedEvent: ChainEvent = {
 			type: "unaddressed_review_round",
 			stage: { name: "task-manager", loop: false },

@@ -31,7 +31,7 @@ import { createMockPi } from "../helpers/mocks/index.ts";
 const tmp = useTempDir("agent-memory-");
 
 describe("agent-memory extension", () => {
-	test("keeps the newest injected memory context provider visible through the context transform @cosmo-behavior plan:profile-playbooks#B-020", async () => {
+	test("keeps the newest injected memory context provider visible through the context transform", async () => {
 		const projectRoot = join(tmp.path, "context-pipeline-project");
 		const userRoot = join(tmp.path, "context-pipeline-user");
 		const store = createMarkdownMemoryStore({
@@ -93,7 +93,7 @@ describe("agent-memory extension", () => {
 		expect(nonCosmoContext.messages).toEqual([userMessage]);
 	});
 
-	test("creates a user profile and injects it in a different project session @cosmo-behavior plan:profile-playbooks#B-003", async () => {
+	test("creates a user profile and injects it in a different project session", async () => {
 		const projectA = join(tmp.path, "profile-cross-project-a");
 		const projectB = join(tmp.path, "profile-cross-project-b");
 		const userRoot = join(tmp.path, "profile-cross-project-user");
@@ -160,7 +160,7 @@ describe("agent-memory extension", () => {
 		expect(visible.records[0]?.content).toBe(profileBody);
 	});
 
-	test("indexes playbooks and recalls their full steps in a later session @cosmo-behavior plan:profile-playbooks#B-010", async () => {
+	test("indexes playbooks and recalls their full steps in a later session", async () => {
 		const projectRoot = join(tmp.path, "playbook-later-session-project");
 		const userRoot = join(tmp.path, "playbook-later-session-user");
 		let currentTime = "2026-07-13T08:00:00.000Z";
@@ -265,7 +265,7 @@ describe("agent-memory extension", () => {
 		).toEqual(["query", "limit"]);
 	});
 
-	test("reflects profile edits and deletion on the next injected context and recall @cosmo-behavior plan:profile-playbooks#B-013", async () => {
+	test("reflects profile edits and deletion on the next injected context and recall", async () => {
 		const projectRoot = join(tmp.path, "human-profile-project");
 		const userRoot = join(tmp.path, "human-profile-user");
 		const pi = await cosmoPi({ projectRoot, userRoot });
@@ -321,7 +321,7 @@ describe("agent-memory extension", () => {
 		});
 	});
 
-	test("reflects playbook renames edits and deletion in injected context and recall @cosmo-behavior plan:profile-playbooks#B-023", async () => {
+	test("reflects playbook renames edits and deletion in injected context and recall", async () => {
 		const projectRoot = join(tmp.path, "human-playbook-project");
 		const userRoot = join(tmp.path, "human-playbook-user");
 		const pi = await cosmoPi({ projectRoot, userRoot });
@@ -390,7 +390,7 @@ describe("agent-memory extension", () => {
 		});
 	});
 
-	test("injects profile before the recency ordered note and playbook index within one 12000 byte budget @cosmo-behavior plan:profile-playbooks#B-016", async () => {
+	test("injects profile before the recency ordered note and playbook index within one 12000 byte budget", async () => {
 		const projectRoot = join(tmp.path, "combined-budget-project");
 		const userRoot = join(tmp.path, "combined-budget-user");
 		const profileBody = "PROFILE_BODY_PRECEDES_ALL_INDEX_METADATA";
@@ -576,7 +576,6 @@ describe("agent-memory extension", () => {
 		expect(withIndex).not.toContain("�");
 	});
 
-	// @cosmo-behavior plan:living-memory#B-003
 	test("excludes retired knowledge until recall explicitly opts in", async () => {
 		const projectRoot = join(tmp.path, "retired-retrieval-project");
 		const userRoot = join(tmp.path, "retired-retrieval-user");
@@ -754,7 +753,7 @@ describe("agent-memory extension", () => {
 		expect(await fileSnapshot(userRoot, "knowledge")).toEqual(beforeUser);
 	});
 
-	test("injects recalls and protects oversized human profiles honestly @cosmo-behavior plan:profile-playbooks#B-022", async () => {
+	test("injects recalls and protects oversized human profiles honestly", async () => {
 		const projectRoot = join(tmp.path, "oversized-profile-project");
 		const userRoot = join(tmp.path, "oversized-profile-user");
 		const authorPi = await cosmoPi({ projectRoot, userRoot });
@@ -893,7 +892,7 @@ describe("agent-memory extension", () => {
 		expect(await readFile(profilePath, "utf-8")).toBe(beforeReplacement);
 	});
 
-	test("preserves W1 note save recall allowlisting and Cosmo authorization @cosmo-behavior plan:profile-playbooks#B-015", async () => {
+	test("preserves W1 note save recall allowlisting and Cosmo authorization", async () => {
 		const projectRoot = join(tmp.path, "w1-contract-project");
 		const userRoot = join(tmp.path, "w1-contract-user");
 		const store = createMarkdownMemoryStore({
@@ -1067,7 +1066,7 @@ describe("agent-memory extension", () => {
 		).resolves.toEqual([]);
 	});
 
-	test("updates the same profile file and reports the change summary @cosmo-behavior plan:profile-playbooks#B-004", async () => {
+	test("updates the same profile file and reports the change summary", async () => {
 		const projectRoot = join(tmp.path, "profile-update-project");
 		const userRoot = join(tmp.path, "profile-update-user");
 		let currentTime = "2026-07-13T10:00:00.000Z";
@@ -1184,7 +1183,7 @@ describe("agent-memory extension", () => {
 		expect(validationFactory).not.toHaveBeenCalled();
 	});
 
-	test("saves named playbooks directly in project and user scopes @cosmo-behavior plan:profile-playbooks#B-005", async () => {
+	test("saves named playbooks directly in project and user scopes", async () => {
 		const projectRoot = join(tmp.path, "playbook-save-project");
 		const userRoot = join(tmp.path, "playbook-save-user");
 		const pi = await cosmoPi({ projectRoot, userRoot });
@@ -1292,7 +1291,7 @@ describe("agent-memory extension", () => {
 		expect(validationFactory).not.toHaveBeenCalled();
 	});
 
-	test("declined or unanswered proposals write nothing and persist no pending state @cosmo-behavior plan:profile-playbooks#B-007", async () => {
+	test("declined or unanswered proposals write nothing and persist no pending state", async () => {
 		const projectRoot = join(tmp.path, "proposal-state-project");
 		const userRoot = join(tmp.path, "proposal-state-user");
 		const storeFactory = vi.fn((options) => createMarkdownMemoryStore(options));
@@ -1339,7 +1338,7 @@ describe("agent-memory extension", () => {
 		).toEqual(["current-request-only.md"]);
 	});
 
-	test("requires confirmation before updating a canonical playbook name @cosmo-behavior plan:profile-playbooks#B-009", async () => {
+	test("requires confirmation before updating a canonical playbook name", async () => {
 		const projectRoot = join(tmp.path, "playbook-confirm-project");
 		const userRoot = join(tmp.path, "playbook-confirm-user");
 		let currentTime = "2026-07-13T12:00:00.000Z";
@@ -1426,7 +1425,7 @@ describe("agent-memory extension", () => {
 		expect(pi.entries).toEqual([]);
 	});
 
-	test("registers remember as sequential so same batch saves cannot bypass collision confirmation @cosmo-behavior plan:profile-playbooks#B-021", async () => {
+	test("registers remember as sequential so same batch saves cannot bypass collision confirmation", async () => {
 		const projectRoot = join(tmp.path, "sequential-save-project");
 		const userRoot = join(tmp.path, "sequential-save-user");
 		const pi = await cosmoPi({ projectRoot, userRoot });
@@ -1490,7 +1489,7 @@ describe("agent-memory extension", () => {
 		).toEqual(["batch-deploy.md"]);
 	});
 
-	test("renders profile and playbook write failures visibly while the session continues @cosmo-behavior plan:profile-playbooks#B-024", async () => {
+	test("renders profile and playbook write failures visibly while the session continues", async () => {
 		const projectRoot = join(tmp.path, "visible-failure-project");
 		const userRoot = join(tmp.path, "visible-failure-user");
 		await mkdir(join(projectRoot, "memory", "agent", "index.md"), {
@@ -1553,7 +1552,7 @@ describe("agent-memory extension", () => {
 		expect(laterRecall.details).toMatchObject({ status: "no_match" });
 	});
 
-	test("registers remember and recall at factory load with short host-safe descriptions @cosmo-behavior plan:memory-interface#B-012", () => {
+	test("registers remember and recall at factory load with short host-safe descriptions", () => {
 		const pi = createMockPi({ cwd: tmp.path });
 		agentMemoryExtension(pi as never);
 
@@ -1571,7 +1570,7 @@ describe("agent-memory extension", () => {
 		expect(pi.tools.get("recall")).not.toHaveProperty("promptSnippet");
 	});
 
-	test("guards tool execution by current main/cosmo turn and resets on lifecycle events @cosmo-behavior plan:memory-interface#B-012", async () => {
+	test("guards tool execution by current main/cosmo turn and resets on lifecycle events", async () => {
 		const storeFactory = vi.fn(() => memoryStore({}));
 		const pi = createMockPi({ cwd: tmp.path });
 		createAgentMemoryExtension({
@@ -1622,7 +1621,7 @@ describe("agent-memory extension", () => {
 		expect(storeFactory).toHaveBeenCalledTimes(1);
 	});
 
-	test("remember writes explicit OKF notes to project and user stores @cosmo-behavior plan:memory-interface#B-005", async () => {
+	test("remember writes explicit OKF notes to project and user stores", async () => {
 		const projectRoot = join(tmp.path, "project");
 		const userRoot = join(tmp.path, "user-cosmonauts");
 		const pi = await cosmoPi({ projectRoot, userRoot });
@@ -1688,7 +1687,7 @@ describe("agent-memory extension", () => {
 		});
 	});
 
-	test("remember supports deterministic minimal content saves @cosmo-behavior plan:memory-interface#B-005", async () => {
+	test("remember supports deterministic minimal content saves", async () => {
 		const projectRoot = join(tmp.path, "minimal-project");
 		const pi = await cosmoPi({
 			projectRoot,
@@ -1722,7 +1721,7 @@ describe("agent-memory extension", () => {
 		expect(parsed.content.trim()).toBe(longFirstLine);
 	});
 
-	test("failed remember reports path and reason without leaving a partial note @cosmo-behavior plan:memory-interface#B-005", async () => {
+	test("failed remember reports path and reason without leaving a partial note", async () => {
 		const projectRoot = join(tmp.path, "failed-write-project");
 		const pi = await cosmoPi({
 			projectRoot,
@@ -1752,7 +1751,7 @@ describe("agent-memory extension", () => {
 		).resolves.toEqual([]);
 	});
 
-	test("recall searches notes over project and user scopes with default and capped limits @cosmo-behavior plan:memory-interface#B-007", async () => {
+	test("recall searches notes over project and user scopes with default and capped limits", async () => {
 		const projectRoot = join(tmp.path, "recall-project");
 		const userRoot = join(tmp.path, "recall-user");
 		const pi = await cosmoPi({ projectRoot, userRoot });
@@ -1789,7 +1788,7 @@ describe("agent-memory extension", () => {
 		expect(records(capped.details)).toHaveLength(20);
 	});
 
-	test("recall rejects empty query and returns honest no-match scopes @cosmo-behavior plan:memory-interface#B-007", async () => {
+	test("recall rejects empty query and returns honest no-match scopes", async () => {
 		const pi = await cosmoPi({
 			projectRoot: join(tmp.path, "no-match-project"),
 			userRoot: join(tmp.path, "no-match-user"),
@@ -1819,7 +1818,7 @@ describe("agent-memory extension", () => {
 		expect(resultText(noMatch)).toContain("project, user");
 	});
 
-	test("recall text reports skipped malformed notes for matched and no-match results @cosmo-behavior plan:memory-interface#B-007", async () => {
+	test("recall text reports skipped malformed notes for matched and no-match results", async () => {
 		const projectRoot = join(tmp.path, "warning-recall-project");
 		const userRoot = join(tmp.path, "warning-recall-user");
 		const pi = await cosmoPi({ projectRoot, userRoot });
@@ -1877,7 +1876,7 @@ describe("agent-memory extension", () => {
 		});
 	});
 
-	test("recalls enabled episodes through the existing bounded recall tool @cosmo-behavior plan:episodic-log#B-009", async () => {
+	test("recalls enabled episodes through the existing bounded recall tool", async () => {
 		const projectRoot = join(tmp.path, "episodic-recall-project");
 		const userRoot = join(tmp.path, "episodic-recall-user");
 		await writeEpisodicConfig(projectRoot, {
@@ -2018,7 +2017,7 @@ describe("agent-memory extension", () => {
 		expect(JSON.stringify(rememberTypeSchema)).not.toContain('"episode"');
 	});
 
-	test("surfaces malformed episode warnings only on episode-touching recall and tolerates deletion @cosmo-behavior plan:episodic-log#B-010", async () => {
+	test("surfaces malformed episode warnings only on episode-touching recall and tolerates deletion", async () => {
 		const projectRoot = join(tmp.path, "malformed-episode-project");
 		const userRoot = join(tmp.path, "malformed-episode-user");
 		await writeEpisodicConfig(projectRoot, { enabled: true });
@@ -2084,7 +2083,7 @@ describe("agent-memory extension", () => {
 		expect(await fileSnapshot(projectRoot, "memory")).toEqual(filesBefore);
 	});
 
-	test("records only successful authored saves and keeps remember successful on episode failure @cosmo-behavior plan:episodic-log#B-012", async () => {
+	test("records only successful authored saves and keeps remember successful on episode failure", async () => {
 		const noSaveProject = join(tmp.path, "declined-unanswered-project");
 		const noSaveUser = join(tmp.path, "declined-unanswered-user");
 		await writeEpisodicConfig(noSaveProject, { enabled: true });
@@ -2261,7 +2260,7 @@ describe("agent-memory extension", () => {
 		);
 	});
 
-	test("keeps disabled remember recall injection and files byte-identical to W2 @cosmo-behavior plan:episodic-log#B-021", async () => {
+	test("keeps disabled remember recall injection and files byte-identical to W2", async () => {
 		const absent = await disabledMemoryScenario({
 			projectRoot: join(tmp.path, "disabled-absent-project"),
 			userRoot: join(tmp.path, "disabled-absent-user"),
@@ -2307,7 +2306,7 @@ describe("agent-memory extension", () => {
 		expect(absent.projectFiles[0]?.bytes).not.toContain("episode");
 	});
 
-	test("keeps enabled injected context byte-identical when episodes exist @cosmo-behavior plan:episodic-log#B-022", async () => {
+	test("keeps enabled injected context byte-identical when episodes exist", async () => {
 		const baselineRoot = join(tmp.path, "injection-baseline-project");
 		const episodicRoot = join(tmp.path, "injection-episodic-project");
 		const baselineUser = join(tmp.path, "injection-baseline-user");
@@ -2439,7 +2438,7 @@ describe("agent-memory extension", () => {
 		expect(content).toContain("Use recall(query)");
 	});
 
-	test("injects one hidden current disk note index for main/cosmo and filters stale context @cosmo-behavior plan:memory-interface#B-006", async () => {
+	test("injects one hidden current disk note index for main/cosmo and filters stale context", async () => {
 		const projectRoot = join(tmp.path, "index-project");
 		const userRoot = join(tmp.path, "index-user");
 		const store = createMarkdownMemoryStore({
@@ -2523,7 +2522,7 @@ describe("agent-memory extension", () => {
 		]);
 	});
 
-	test("empty stores inject nothing and create no files @cosmo-behavior plan:memory-interface#B-006", async () => {
+	test("empty stores inject nothing and create no files", async () => {
 		const projectRoot = join(tmp.path, "empty-index-project");
 		const userRoot = join(tmp.path, "empty-index-user");
 		const pi = createMockPi({ cwd: projectRoot });
@@ -2547,7 +2546,7 @@ describe("agent-memory extension", () => {
 		});
 	});
 
-	test("memory index injection uses list mode capped to the 50 most recent records before truncation @cosmo-behavior plan:memory-interface#B-006", async () => {
+	test("memory index injection uses list mode capped to the 50 most recent records before truncation", async () => {
 		const projectRoot = join(tmp.path, "index-cap-project");
 		const userRoot = join(tmp.path, "index-cap-user");
 		const store = createMarkdownMemoryStore({
@@ -2583,7 +2582,7 @@ describe("agent-memory extension", () => {
 		expect(result.message.content).not.toContain("Full note body");
 	});
 
-	test("memory index truncation is UTF-8 safe and stays under the independent 12000 byte budget @cosmo-behavior plan:memory-interface#B-013", async () => {
+	test("memory index truncation is UTF-8 safe and stays under the independent 12000 byte budget", async () => {
 		const projectRoot = join(tmp.path, "utf8-budget-project");
 		const userRoot = join(tmp.path, "utf8-budget-user");
 		const pi = createMockPi({ cwd: projectRoot });
@@ -2629,7 +2628,7 @@ describe("agent-memory extension", () => {
 		);
 	});
 
-	test("truncation footer mutation target never pushes memory index over 12000 bytes @cosmo-behavior plan:memory-interface#B-013", async () => {
+	test("truncation footer mutation target never pushes memory index over 12000 bytes", async () => {
 		const projectRoot = join(tmp.path, "footer-budget-project");
 		const userRoot = join(tmp.path, "footer-budget-user");
 		const pi = createMockPi({ cwd: projectRoot });
@@ -2677,7 +2676,7 @@ describe("agent-memory extension", () => {
 		expect(result.message.content).not.toContain("�");
 	});
 
-	test("routes authorized remember and all knowledge paths through MemoryStore without widening legacy authority @cosmo-behavior plan:knowledge-surface#B-006", async () => {
+	test("routes authorized remember and all knowledge paths through MemoryStore without widening legacy authority", async () => {
 		const projectRoot = join(tmp.path, "knowledge-boundary-project");
 		const userRoot = join(tmp.path, "knowledge-boundary-user");
 		const matchingProfile = record({
@@ -2887,7 +2886,7 @@ describe("agent-memory extension", () => {
 		expect(docs).not.toContain("bare-host support is enabled");
 	});
 
-	test("registers proposal authority only for the distiller with no path input and same-writer idempotent writes @cosmo-behavior plan:knowledge-surface#B-013", async () => {
+	test("registers proposal authority only for the distiller with no path input and same-writer idempotent writes", async () => {
 		const projectRoot = join(tmp.path, "distiller-proposal-project");
 		const userRoot = join(tmp.path, "distiller-proposal-user");
 		const qualifiedDistillerId = `${["cod", "ing"].join("")}/distiller`;

@@ -42,7 +42,7 @@ beforeEach(async () => {
 	pi = await setupExtension(tmp.path);
 });
 
-test("preserves task tool results while supplying episode actor and visible failure warning @cosmo-behavior plan:episodic-log#B-024", async () => {
+test("preserves task tool results while supplying episode actor and visible failure warning", async () => {
 	const disabledRoot = join(tmp.path, "disabled");
 	const actorPrompt = buildAgentIdentityMarker("custom/task-specialist");
 	const disabledPi = await setupExtension(disabledRoot, actorPrompt);

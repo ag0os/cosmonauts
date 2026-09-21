@@ -43,7 +43,6 @@ afterEach(async () => {
 
 describe("repository harness export validation", () => {
 	test("validates evidence-held recovery for four repo exports before the personal bundle", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-012
 		const fixture = await createFixture();
 		const bundleOptions = {
 			projectRoot: fixture.root,
@@ -486,7 +485,6 @@ describe("repository harness export validation", () => {
 		expect(complete.phase).toBe("complete");
 	});
 
-	// @cosmo-behavior plan:harness-adapters#B-012
 	test("resumes project cleanup after a crash immediately after the first backup deletion", async () => {
 		const fixture = await createFixture();
 		const common = {
@@ -543,7 +541,6 @@ describe("repository harness export validation", () => {
 		for (const row of complete.rows) await expectMissing(row.backupPath);
 	});
 
-	// @cosmo-behavior plan:harness-adapters#B-012
 	test("resumes personal bundle cleanup after a crash immediately after its backup deletion", async () => {
 		const fixture = await createFixture();
 		const projectOptions = {
@@ -606,7 +603,6 @@ describe("repository harness export validation", () => {
 		await expectMissing(complete.externalBundle?.backupPath ?? "");
 	});
 
-	// @cosmo-behavior plan:harness-adapters#B-012
 	test("rejects an absent project backup without a matching cleanup intent", async () => {
 		const fixture = await createFixture();
 		const common = {
@@ -637,7 +633,6 @@ describe("repository harness export validation", () => {
 		for (const row of checked.rows.slice(1)) await access(row.backupPath);
 	});
 
-	// @cosmo-behavior plan:harness-adapters#B-012
 	test("preserves a changed project backup and reports it as ambiguous", async () => {
 		const fixture = await createFixture();
 		const common = {
@@ -668,7 +663,6 @@ describe("repository harness export validation", () => {
 		for (const row of checked.rows) await access(row.backupPath);
 	});
 
-	// @cosmo-behavior plan:harness-adapters#B-012
 	test("never removes an evidence-nominated same-user path", async () => {
 		const fixture = await createFixture();
 		const common = {
@@ -721,7 +715,6 @@ describe("repository harness export validation", () => {
 		for (const row of checked.rows.slice(1)) await access(row.backupPath);
 	});
 
-	// @cosmo-behavior plan:harness-adapters#B-012
 	test("never removes a personal path nominated by external-bundle evidence", async () => {
 		const fixture = await createFixture();
 		await runRepositoryExportValidation({

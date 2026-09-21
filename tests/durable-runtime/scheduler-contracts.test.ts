@@ -20,7 +20,6 @@ import type {
 } from "../../lib/durable-runtime/index.ts";
 
 describe("durable runtime scheduler contracts", () => {
-	// @cosmo-behavior plan:durable-graph-scheduler#B-001
 	test("extends scheduler contracts without renaming durable runtime fields or statuses", async () => {
 		const statuses = await statusUnions();
 		expect(statuses.run).toEqual([
@@ -186,7 +185,6 @@ describe("durable runtime scheduler contracts", () => {
 		expect(result.exitReason).toBe("drained");
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-020
 	test("does not accept Drive orchestration adapters without a Plan 4 BackendInvocation builder", async () => {
 		const driveBackend: Backend = {
 			name: "codex",

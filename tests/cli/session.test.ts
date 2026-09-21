@@ -170,7 +170,7 @@ describe("createSession", () => {
 		);
 	});
 
-	test("preserves legacy registration and authorization while enforcing one enabled recall across every session path @cosmo-behavior plan:knowledge-surface#B-005", async () => {
+	test("preserves legacy registration and authorization while enforcing one enabled recall across every session path", async () => {
 		const initialUnrelatedTool = vi.fn(async () => "initial-tool-called");
 		const switchedUnrelatedTool = vi.fn(async () => "switched-tool-called");
 		const createdSessions: CallableTestSession[] = [];

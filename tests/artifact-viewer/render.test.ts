@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { renderArtifactMarkdown } from "../../lib/artifact-viewer/index.ts";
 
 describe("artifact-viewer render", () => {
-	test("escapes markdown before rendering viewer pages @cosmo-behavior plan:code-structure-map#B-016", () => {
+	test("escapes markdown before rendering viewer pages", () => {
 		const html = renderArtifactMarkdown(
 			[
 				"# <script>title()</script>",
@@ -22,7 +22,7 @@ describe("artifact-viewer render", () => {
 		expect(html).toContain("&lt;script&gt;code()&lt;/script&gt;");
 	});
 
-	test("renders inline links in the supported subset with escaped href and label @cosmo-behavior plan:code-structure-map#B-016", () => {
+	test("renders inline links in the supported subset with escaped href and label", () => {
 		const html = renderArtifactMarkdown(
 			"See [the docs](https://example.test/a?b=c) for details.",
 		);

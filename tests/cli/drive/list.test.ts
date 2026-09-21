@@ -70,7 +70,6 @@ describe("cosmonauts run drive compat list", () => {
 		vi.restoreAllMocks();
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-011
 	test("lists finalization_failed runs", async () => {
 		const workdir = await writeRunDir("plan-a", "run-finalization-failed");
 		await writeFinalizationFailedCompletion(workdir, "run-finalization-failed");
@@ -198,7 +197,6 @@ describe("cosmonauts run drive compat list", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-009
 	test("ignores normalized-only runtime directories when listing drive runs", async () => {
 		const completedWorkdir = await writeRunDir("plan-a", "run-completed");
 		await writeCompletion(completedWorkdir, "run-completed", "completed");

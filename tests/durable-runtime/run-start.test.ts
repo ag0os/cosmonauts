@@ -11,7 +11,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("run-start-");
 
 describe("runStart initialization contract", () => {
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-001
 	test("creates or adopts a graph run exactly once across concurrent starters", async () => {
 		const ref: RunRef = { scope: "plan-a", runId: "run-race" };
 		const graph = graphFor(ref, ["build"]);
@@ -74,7 +73,6 @@ describe("runStart initialization contract", () => {
 		expect(persistedGraph.graph).toEqual(graph);
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-001
 	test("adopts an empty existing run and appends run_started only once", async () => {
 		const ref: RunRef = { scope: "plan-a", runId: "run-adopt-empty" };
 		const store = new FileRunStore({ rootDir: temp.path });
@@ -120,7 +118,6 @@ describe("runStart initialization contract", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-001
 	test("keeps scheduler interruptions separate from scheduler results", async () => {
 		const ref: RunRef = { scope: "plan-a", runId: "run-interrupt" };
 		const store = new FileRunStore({ rootDir: temp.path });

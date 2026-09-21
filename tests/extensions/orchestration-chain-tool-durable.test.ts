@@ -43,7 +43,6 @@ const registry = new AgentRegistry([
 ]);
 
 describe("chain_run durable tool routing", () => {
-	// @cosmo-behavior plan:durable-frontend-migration#B-007
 	test("routes loop-free chain_run through the durable graph and loop chains inline", async () => {
 		const durableExpressions = [
 			{

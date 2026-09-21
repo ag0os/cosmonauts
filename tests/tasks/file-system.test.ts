@@ -67,7 +67,7 @@ describe("ensureForgeDirectory", () => {
 		expect(stats.isDirectory()).toBe(true);
 	});
 
-	test("creates project memory and knowledge roots together @cosmo-behavior plan:knowledge-surface#B-001", async () => {
+	test("creates project memory and knowledge roots together", async () => {
 		await ensureForgeDirectory(testDir);
 
 		for (const root of ["memory", "knowledge"]) {
@@ -172,7 +172,7 @@ describe("loadConfig / saveConfig", () => {
 		expect(loaded?.zeroPadding).toBe(5);
 	});
 
-	test("strips legacy lastIdNumber on load and save @cosmo-behavior plan:task-id-system#B-008", async () => {
+	test("strips legacy lastIdNumber on load and save", async () => {
 		await ensureForgeDirectory(testDir);
 		const configPath = join(testDir, "missions", "tasks", "config.json");
 		await writeFile(
@@ -273,7 +273,7 @@ describe("listArchivedTaskFiles", () => {
 		await cleanupTestDir(testDir);
 	});
 
-	test("returns only archived .md task files sorted alphabetically @cosmo-behavior plan:task-id-system#B-008", async () => {
+	test("returns only archived .md task files sorted alphabetically", async () => {
 		const archiveTasksDir = join(testDir, "missions", "archive", "tasks");
 		await writeFile(
 			join(archiveTasksDir, "TASK-003 - Third.md"),

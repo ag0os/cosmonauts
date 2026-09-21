@@ -18,7 +18,7 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("architecture-map-generator-");
 
 describe("generateArchitectureMap", () => {
-	test("writes OKF index and module shards for a TypeScript fixture @cosmo-behavior plan:code-structure-map#B-002", async () => {
+	test("writes OKF index and module shards for a TypeScript fixture", async () => {
 		await writeTypeScriptFixture(tmp.path);
 
 		const result = await generateArchitectureMap({
@@ -84,7 +84,6 @@ describe("generateArchitectureMap", () => {
 		expect(parsedIndex.content).toContain(
 			"- `src/shared` - Narrative pending for `src/shared`.",
 		);
-		// @cosmo-behavior plan:code-structure-map#B-003
 		expect(parsedIndex.content).toContain("- `src/domain` -> `src/shared`");
 		expect(parsedIndex.content).toContain("- `src/shared` -> none");
 		expect(domainShard).toContain("- `src/shared`");
@@ -95,7 +94,7 @@ describe("generateArchitectureMap", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	test("returns unchanged without touching generated files when sources are unchanged @cosmo-behavior plan:code-structure-map#B-004", async () => {
+	test("returns unchanged without touching generated files when sources are unchanged", async () => {
 		await writeTypeScriptFixture(tmp.path);
 		const options = {
 			projectRoot: tmp.path,
@@ -137,7 +136,7 @@ describe("generateArchitectureMap", () => {
 		});
 	});
 
-	test("reuses narrative for body-only edits without provider calls @cosmo-behavior plan:code-structure-map#B-005", async () => {
+	test("reuses narrative for body-only edits without provider calls", async () => {
 		await writeTypeScriptFixture(tmp.path);
 		const provider = fakeNarrativeProvider();
 		const options = {
@@ -200,7 +199,7 @@ describe("generateArchitectureMap", () => {
 		expect(afterDomain.content).toContain("Detailed narrative for src/domain.");
 	});
 
-	test("regenerates only the affected public-interface module narrative @cosmo-behavior plan:code-structure-map#B-006", async () => {
+	test("regenerates only the affected public-interface module narrative", async () => {
 		await writeTypeScriptFixture(tmp.path);
 		const provider = fakeNarrativeProvider();
 		const options = {
@@ -279,7 +278,7 @@ describe("generateArchitectureMap", () => {
 		).toBeLessThan(2);
 	});
 
-	test("writes pending narratives for disabled budget-exhausted and failed generation @cosmo-behavior plan:code-structure-map#B-010", async () => {
+	test("writes pending narratives for disabled budget-exhausted and failed generation", async () => {
 		const disabledRoot = join(tmp.path, "disabled");
 		await writeTypeScriptFixture(disabledRoot);
 		const disabledProvider = fakeNarrativeProvider();
@@ -353,7 +352,7 @@ describe("generateArchitectureMap", () => {
 		);
 	});
 
-	test("completes pending narratives later without touching unaffected module files @cosmo-behavior plan:code-structure-map#B-021", async () => {
+	test("completes pending narratives later without touching unaffected module files", async () => {
 		await writeTypeScriptFixture(tmp.path);
 		const disabledOptions = {
 			projectRoot: tmp.path,
@@ -416,7 +415,7 @@ describe("generateArchitectureMap", () => {
 		).toBeLessThan(2);
 	});
 
-	test("preserves previous content and leaves no partial map on analysis or render failure @cosmo-behavior plan:code-structure-map#B-008", async () => {
+	test("preserves previous content and leaves no partial map on analysis or render failure", async () => {
 		await writeEmptyTypeScriptProject(tmp.path);
 		await mkdir(join(tmp.path, "memory", "architecture"), { recursive: true });
 		await writeFile(
@@ -494,7 +493,7 @@ describe("generateArchitectureMap", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	test("writes a valid empty OKF index for an empty TypeScript project @cosmo-behavior plan:code-structure-map#B-011", async () => {
+	test("writes a valid empty OKF index for an empty TypeScript project", async () => {
 		await writeEmptyTypeScriptProject(tmp.path);
 
 		const result = await generateArchitectureMap({

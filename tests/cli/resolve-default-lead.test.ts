@@ -110,7 +110,6 @@ describe("resolveDefaultLead", () => {
 	});
 
 	test("default routing shared and main only returns main/cosmo", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-023
 		const runtime = makeRuntime([
 			makeDomain("shared", undefined),
 			makeDomain("main", MAIN_LEAD_ID, [MAIN_LEAD_ID]),

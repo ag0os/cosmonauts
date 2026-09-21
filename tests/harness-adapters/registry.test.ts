@@ -91,7 +91,6 @@ describe("harness adapter registry", () => {
 	});
 
 	test("resolves registry and compatibility skill-export targets from one contract", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-001
 		expect(listHarnessTargets().map(({ id }) => id)).toEqual([
 			"claude",
 			"codex",

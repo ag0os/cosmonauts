@@ -7,7 +7,7 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("architecture-map-config-");
 
 describe("resolveArchitectureMapConfig", () => {
-	test("ignores architecture map roots that escape the project root @cosmo-behavior plan:code-structure-map#B-018", async () => {
+	test("ignores architecture map roots that escape the project root", async () => {
 		const projectRoot = join(tmp.path, "project");
 		const outsideRoot = join(tmp.path, "outside");
 		await mkdir(join(projectRoot, "lib", "safe"), { recursive: true });

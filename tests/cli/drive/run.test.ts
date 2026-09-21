@@ -311,7 +311,6 @@ describe("cosmonauts run drive compat run", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-013
 	test("defaults state commit policy from commit policy", async () => {
 		const fixture = await setupFixture(1);
 
@@ -517,7 +516,6 @@ describe("cosmonauts run drive compat run", () => {
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 	});
 
-	// @cosmo-behavior plan:coding-agnostic-framework#B-011
 	test("uses the framework default envelope when --envelope is omitted", async () => {
 		const fixture = await setupFixture(1);
 		const expectedEnvelopePath = resolveDefaultDriveEnvelopePath();
@@ -541,7 +539,6 @@ describe("cosmonauts run drive compat run", () => {
 		expect(spec.promptTemplate.envelopeContent).toBe(expectedContent);
 	});
 
-	// @cosmo-behavior plan:coding-agnostic-framework#B-025
 	test("honors an explicit legacy bundled envelope path", async () => {
 		const fixture = await setupFixture(1);
 		const legacyEnvelopePath = join(
@@ -704,7 +701,6 @@ describe("cosmonauts run drive compat run", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-024
 	test("does not write successful completion after the graph terminal hook", async () => {
 		const fixture = await setupFixture(1);
 		const completedAt = "2026-07-22T18:00:00.000Z";
@@ -893,7 +889,6 @@ describe("cosmonauts run drive compat run", () => {
 		expect(runtimeCreate).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-020
 	test("trusts only frozen worker agent ids for execution and preserves reconcile provenance", async () => {
 		const fixture = await setupFixture(2);
 		const taskIds = fixture.tasks.map((task) => task.id);
@@ -1031,7 +1026,6 @@ describe("cosmonauts run drive compat run", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-005
 	test("resume finalizes pending commit failure before invoking backend work", async () => {
 		const fixture = await setupFixture(2);
 		const taskIds = fixture.tasks.map((task) => task.id);
@@ -1128,7 +1122,6 @@ describe("cosmonauts run drive compat run", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-006
 	test("resume accepts changed HEAD as existing commit for pending finalization", async () => {
 		const fixture = await setupFixture(1);
 		const taskId = fixture.tasks[0]?.id ?? "TASK-001";
@@ -1165,7 +1158,6 @@ describe("cosmonauts run drive compat run", () => {
 		).toContain('"sha":"external-sha"');
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-007
 	test("resume refuses external commit acceptance without changed head evidence", async () => {
 		const fixture = await setupFixture(1);
 		const taskId = fixture.tasks[0]?.id ?? "TASK-001";
@@ -1261,7 +1253,6 @@ describe("cosmonauts run drive compat run", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-008
 	test("resume refuses state commit external acceptance when pending tasks are missing or not done", async () => {
 		const fixture = await setupFixture(2);
 		const taskIds = fixture.tasks.map((task) => task.id);
@@ -1361,7 +1352,6 @@ describe("cosmonauts run drive compat run", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-015
 	test("resume retries pending state commit without invoking backend work", async () => {
 		const fixture = await setupFixture(2);
 		const taskIds = fixture.tasks.map((task) => task.id);
@@ -1449,7 +1439,6 @@ describe("cosmonauts run drive compat run", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-backend-step-model#B-009
 	test("resume records source task-status and state-commit finalizer retry failures as attempts", async () => {
 		const resetResumeCase = async () => {
 			process.exitCode = undefined;
@@ -1828,7 +1817,6 @@ describe("cosmonauts run drive compat run", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-010
 	test("resume uses legacy driver events while dual-writing normalized resume events", async () => {
 		const fixture = await setupFixture(3);
 		const taskIds = fixture.tasks.map((task) => task.id);

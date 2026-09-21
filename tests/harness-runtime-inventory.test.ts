@@ -57,7 +57,6 @@ describe("harness runtime inventory characterization", () => {
 	});
 
 	test("requires one outer composer for chain effective-skill candidate health and path rows", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-011
 		const composerPath = join(
 			process.cwd(),
 			"lib",

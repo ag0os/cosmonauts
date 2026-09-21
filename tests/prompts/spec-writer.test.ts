@@ -7,7 +7,6 @@ const PROMPT_PATH = new URL(
 );
 
 describe("spec-writer prompt", () => {
-	// @cosmo-behavior plan:spec-plan-intent#B-007
 	it("captures goal and invariants in the intent section", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
@@ -24,7 +23,6 @@ describe("spec-writer prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:artifact-format-redesign#B-003
 	it("requires AC identifiers for planned specs without forcing specs for direct fixes", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 

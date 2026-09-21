@@ -28,7 +28,6 @@ type FilesystemSnapshot = Record<
 >;
 
 describe("orchestration run control tools", () => {
-	// @cosmo-behavior plan:durable-run-store-events#B-014
 	test("registers only read-only normalized run observation tools", async () => {
 		const rootDir = join(temp.path, "missions", "sessions");
 		const store = new FileRunStore({ rootDir });

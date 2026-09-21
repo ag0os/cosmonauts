@@ -232,7 +232,6 @@ describe("startDetached", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	}, 30_000);
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-002
 	test("bridges a post-terminal episode capture failure to the detached parent bus", async () => {
 		const fixture = await setupFixture({
 			runId: "run-detached-terminal-capture-failure",
@@ -296,7 +295,6 @@ describe("startDetached", () => {
 		).toEqual(result);
 	}, 30_000);
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-004
 	test("bounds post-terminal bridge drain when the child does not exit", async () => {
 		const fixture = await setupFixture({
 			runId: "run-detached-bounded-drain",
@@ -421,7 +419,6 @@ describe("startDetached", () => {
 		).toEqual([]);
 	}, 10_000);
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-027
 	test("stops a draining bridge when the detached result rejects", async () => {
 		const resolved = await setupFixture({
 			runId: "run-drain-finally-resolved",
@@ -559,7 +556,6 @@ describe("startDetached", () => {
 		bridge.stop();
 	}, 15_000);
 
-	// @cosmo-behavior plan:episodic-log#B-019
 	test("reconciles one terminal episode when the parent aborts after detached start", async () => {
 		const cases = [
 			{
@@ -668,7 +664,6 @@ describe("startDetached", () => {
 		}
 	}, 30_000);
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-009
 	test("keeps pre-spawn abort and resume to one terminal attempt", async () => {
 		const fixture = await setupFixture({
 			runId: "run-pre-spawn-abort-resume",
@@ -847,7 +842,6 @@ describe("startDetached", () => {
 			await handle.abort();
 			const elapsedMs = Date.now() - startedAt;
 
-			// @cosmo-behavior plan:drive-process-reaping#B-004
 			// Addressed to the group (negated pid), not the leader alone: the real
 			// runner execs the step binary, whose backend child a pid-only signal
 			// never reached.

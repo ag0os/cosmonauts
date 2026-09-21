@@ -31,7 +31,6 @@ async function readReference(name: (typeof REQUIRED_REFERENCES)[number]) {
 }
 
 describe("work-artifacts skill", () => {
-	// @cosmo-behavior plan:artifact-format-redesign#B-001
 	it("routes direct fixes to regression tests and planned work to spec plus plan", async () => {
 		const workflowTiers = await readReference("workflow-tiers.md");
 		const planFormat = await readReference("plan-format.md");
@@ -50,7 +49,6 @@ describe("work-artifacts skill", () => {
 		expect(planFormat).toContain("behavior-first `plan.md`");
 	});
 
-	// @cosmo-behavior plan:artifact-format-redesign#B-011
 	it("allows approved visual primitives and forbids ascii art diagrams", async () => {
 		const visualPrimitives = await readReference("visual-primitives.md");
 
@@ -61,7 +59,6 @@ describe("work-artifacts skill", () => {
 		expect(visualPrimitives).toContain("ASCII-art diagrams are forbidden");
 	});
 
-	// @cosmo-behavior plan:spec-plan-intent#B-001
 	it("requires an intent section with ranked invariants in spec format", async () => {
 		const specFormat = await readReference("spec-format.md");
 
@@ -79,7 +76,6 @@ describe("work-artifacts skill", () => {
 		expect(specFormat).toContain("`deviation-protocol.md`");
 	});
 
-	// @cosmo-behavior plan:spec-plan-intent#B-002
 	it("requires a decision log with provenance-derived mutability in plan format", async () => {
 		const planFormat = await readReference("plan-format.md");
 
@@ -100,7 +96,6 @@ describe("work-artifacts skill", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:spec-plan-intent#B-003
 	it("defines the deviation classifier and amend-on-record protocol", async () => {
 		const protocol = await readReference("deviation-protocol.md");
 
@@ -124,7 +119,6 @@ describe("work-artifacts skill", () => {
 		expect(protocol).toContain("never work from memory of the plan");
 	});
 
-	// @cosmo-behavior plan:spec-plan-intent#B-004
 	it("routes deviation handling to the deviation protocol reference", async () => {
 		const skill = await readSkill();
 
@@ -133,7 +127,6 @@ describe("work-artifacts skill", () => {
 		expect(skill).toContain("amend-on-record");
 	});
 
-	// @cosmo-behavior plan:artifact-format-redesign#B-020
 	it("directly links reference files and follows creating-skills dispatcher discipline", async () => {
 		const skill = await readSkill();
 

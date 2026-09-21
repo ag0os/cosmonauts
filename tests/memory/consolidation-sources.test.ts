@@ -131,7 +131,6 @@ describe("project corpus consolidation source", () => {
 		expect(Object.isFrozen(project?.metadata.tags)).toBe(true);
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-004
 	test("marks corpus inventory incomplete when retrieval omits a warned record", async () => {
 		const projectRoot = join(tmp.path, "warned-omission-project");
 		const userCosmonautsRoot = join(tmp.path, "warned-omission-user");
@@ -441,7 +440,6 @@ describe("project corpus consolidation source", () => {
 });
 
 describe("project episode consolidation source", () => {
-	// @cosmo-behavior plan:living-memory-fidelity#B-006
 	test("counts malformed episodes as omitted incomplete inventory", async () => {
 		const projectRoot = join(tmp.path, "malformed-episode-project");
 		const malformed = "not an OKF episode\n";

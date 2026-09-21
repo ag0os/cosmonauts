@@ -44,7 +44,6 @@ describe("chain_run observation surface", () => {
 		chainMocks.runDurableChain.mockReset();
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-005
 	test("returns runId and scope for durable chain_run without changing blocking result semantics", async () => {
 		const durableSteps: ChainStep[] = [{ name: "planner", loop: false }];
 		const durableResult = chainResult({
@@ -77,7 +76,6 @@ describe("chain_run observation surface", () => {
 		expect(chainMocks.runChain).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-005
 	test("leaves loop and completion chain_run results inline and non-durable", async () => {
 		const inlineSteps: ChainStep[] = [{ name: "coordinator", loop: true }];
 		const inlineResult = chainResult();
@@ -99,7 +97,7 @@ describe("chain_run observation surface", () => {
 		expect(chainMocks.runDurableChain).not.toHaveBeenCalled();
 	});
 
-	test("includes fail-soft episode warnings in final chain tool content @cosmo-behavior plan:episodic-log#B-025", async () => {
+	test("includes fail-soft episode warnings in final chain tool content", async () => {
 		const durableSteps: ChainStep[] = [{ name: "planner", loop: false }];
 		const durableResult = chainResult({
 			runId: "chain-warning-run",

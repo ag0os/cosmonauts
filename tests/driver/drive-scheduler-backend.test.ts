@@ -26,7 +26,6 @@ const PLAN_SLUG = "durable-frontend-migration";
 const PARENT_SESSION_ID = "drive-scheduler-parent";
 
 describe("Drive scheduler backend", () => {
-	// @cosmo-behavior plan:durable-frontend-migration#B-011
 	test("builds BackendInvocation from scheduler input and rendered task prompts", async () => {
 		const fixture = await setupFixture("prepare-authoritative");
 		await fixture.taskManager.createTask({ title: "First selected task" });
@@ -86,7 +85,6 @@ describe("Drive scheduler backend", () => {
 		).rejects.toThrow(/not in selected Drive task set/);
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-012
 	test("runs preflight backend postflight and report inference before returning StepResult", async () => {
 		const inferred = await setupFixture("execution-inferred");
 		await inferred.taskManager.createTask({ title: "Infer from postflight" });
@@ -270,7 +268,6 @@ describe("Drive scheduler backend", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-013
 	test("registers only the selected drive backend with production recovery capabilities", async () => {
 		const cases = [
 			{

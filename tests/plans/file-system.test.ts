@@ -390,7 +390,6 @@ describe("plan review rounds", () => {
 		await cleanupTestDir(testDir);
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-005
 	test("derives a safe latest review round and ignores quoted or fenced references", async () => {
 		const plansRoot = join(testDir, "missions", "plans");
 		const validFinding = (options?: {

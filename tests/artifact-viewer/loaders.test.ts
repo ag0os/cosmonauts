@@ -17,7 +17,7 @@ import { createTaskRecordFixture } from "../helpers/tasks.ts";
 const tmp = useTempDir("artifact-viewer-");
 
 describe("artifact-viewer foundation", () => {
-	test("escapes loaded artifact markdown before HTML rendering @cosmo-behavior plan:code-structure-map#B-016", async () => {
+	test("escapes loaded artifact markdown before HTML rendering", async () => {
 		const manager = new PlanManager(tmp.path);
 		await manager.createPlan({
 			slug: "viewer-plan",
@@ -73,7 +73,7 @@ describe("artifact-viewer foundation", () => {
 		expect(documents[0]?.html).toContain("&lt;img src=x onerror=alert(2)&gt;");
 	});
 
-	test("renders only the W1 markdown subset and uses escaped preformatted fallback @cosmo-behavior plan:code-structure-map#B-016", async () => {
+	test("renders only the W1 markdown subset and uses escaped preformatted fallback", async () => {
 		const html = renderArtifactMarkdown(
 			["# Supported", "", "1. <script>unsupported()</script>"].join("\n"),
 		);
@@ -90,7 +90,7 @@ describe("artifact-viewer foundation", () => {
 		expect(rendererSource).not.toMatch(/^import /mu);
 	});
 
-	test("validates slugs and architecture resources before loading artifacts @cosmo-behavior plan:code-structure-map#B-016", async () => {
+	test("validates slugs and architecture resources before loading artifacts", async () => {
 		await expect(
 			loadPlanArtifact({ projectRoot: tmp.path, slug: "../bad" }),
 		).rejects.toThrow("Invalid plan slug");
@@ -107,7 +107,7 @@ describe("artifact-viewer foundation", () => {
 		).rejects.toThrow("Invalid review filename");
 	});
 
-	test("loads task status through read-only listing without task scaffolding @cosmo-behavior plan:code-structure-map#B-016", async () => {
+	test("loads task status through read-only listing without task scaffolding", async () => {
 		const emptyStatus = await loadPlanTaskStatus({
 			projectRoot: tmp.path,
 			slug: "empty-plan",
@@ -159,7 +159,7 @@ describe("artifact-viewer foundation", () => {
 		).rejects.toThrow();
 	});
 
-	test("plan task status does not parse unrelated task files @cosmo-behavior plan:code-structure-map#B-016", async () => {
+	test("plan task status does not parse unrelated task files", async () => {
 		await mkdir(join(tmp.path, "missions", "tasks"), { recursive: true });
 		await writeFile(
 			join(tmp.path, "missions", "tasks", "TASK-001 - Planned.md"),

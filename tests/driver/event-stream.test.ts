@@ -162,7 +162,6 @@ describe("event-stream", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-010
 	test("bridges run_finalization_failed and treats it as terminal", async () => {
 		const published: DriverBusEvent[] = [];
 		const finalizationFailed = runFinalizationFailedEvent();
@@ -247,7 +246,6 @@ describe("event-stream", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-010
 	test("bridges task finalization and plan completion candidate events", () => {
 		expect(toBusEvent(taskFinalizationFailedEvent())).toMatchObject({
 			type: "driver_event",

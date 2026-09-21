@@ -34,7 +34,6 @@ interface ToolResult {
 }
 
 describe("watch_events normalized compatibility", () => {
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-008
 	test("preserves legacy watch_events cursor semantics over graph normalized events with fallback diagnostics", async () => {
 		const graphEvents = [
 			event({
@@ -128,7 +127,6 @@ describe("watch_events normalized compatibility", () => {
 		).toContain("drive_durable_run_setup_failed");
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-009
 	test("reconstructs legacy watch_events details and summaries from normalized Drive compatibility activity", async () => {
 		const legacyEvents = [
 			event({

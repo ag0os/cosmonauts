@@ -27,7 +27,6 @@ async function readPlanFormat() {
 }
 
 describe("architecture skill", () => {
-	// @cosmo-behavior plan:artifact-format-redesign#B-009
 	it("requires missions architecture location decision log boundary model and usefulness rule", async () => {
 		const skill = await readSkill();
 		const architectureFormat = await readArchitectureFormat();
@@ -51,7 +50,6 @@ describe("architecture skill", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:artifact-format-redesign#B-010
 	it("requires Architecture Context and distinguishes architecture from memory", async () => {
 		const architectureFormat = await readArchitectureFormat();
 		const planFormat = await readPlanFormat();

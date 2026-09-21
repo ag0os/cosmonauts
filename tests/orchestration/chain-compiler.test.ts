@@ -19,7 +19,6 @@ const registry = new AgentRegistry([
 ]);
 
 describe("compileChainToGraph", () => {
-	// @cosmo-behavior plan:durable-frontend-migration#B-001
 	test("compiles sequential stages into a dependency chain", () => {
 		const parsed = parseChain("planner -> reviewer", registry);
 
@@ -48,7 +47,6 @@ describe("compileChainToGraph", () => {
 		expectAgentSteps(compiled.graph.steps, ["planner", "reviewer"]);
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-002
 	test("compiles bracket groups as sibling steps and joins the next frontier", () => {
 		const parsed = parseChain(
 			"planner -> [task-manager, reviewer] -> quality-manager",
@@ -88,7 +86,6 @@ describe("compileChainToGraph", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-003
 	test("compiles fan-out as same-role sibling steps", () => {
 		const parsed = parseChain(
 			"planner -> reviewer[3] -> quality-manager",
@@ -146,7 +143,6 @@ describe("compileChainToGraph", () => {
 		expect(resolvedQualifiedId(options, "spawn")).toBe("coding/worker");
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-004
 	test("persists chain stage options for prompt injection model and thinking", () => {
 		const parsed = parseChain(
 			"[planner, reviewer] -> quality-manager",
@@ -235,7 +231,6 @@ describe("compileChainToGraph", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-003
 	test("compiles inline-equivalent purposes before converting to persisted step indexes", () => {
 		const steps = parseChain("planner -> plan-reviewer -> planner", registry);
 		injectUserPrompt(steps, "strengthen the active plan");

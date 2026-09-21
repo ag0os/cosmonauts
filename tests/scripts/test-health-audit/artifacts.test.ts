@@ -260,7 +260,6 @@ function firstRecord(value: unknown): Record<string, unknown> {
 }
 
 describe("test health audit artifacts", () => {
-	// @cosmo-behavior plan:test-health-audit#B-004
 	it("requires one fresh complete profile per identity and safely subdivides oversized files across resumable units", async () => {
 		const root = await mkdtemp(join(tmpdir(), "audit-profile-units-"));
 		try {
@@ -1232,7 +1231,6 @@ describe("test health audit artifacts", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:test-health-audit#B-006
 	it("rejects test-derived inventory and requires authority criticality boundaries and defect axes", () => {
 		const valid = inventoryFixture();
 		expect(validateBehaviorRiskInventory(valid, "epoch-1")).toEqual({
@@ -1283,7 +1281,6 @@ describe("test health audit artifacts", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:test-health-audit#B-007
 	it("rejects protected portfolios with a missing risk-required boundary axis or probe", async () => {
 		const evidence = {
 			schemaVersion: 1,
@@ -1389,7 +1386,6 @@ describe("test health audit artifacts", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:test-health-audit#B-003
 	it("rejects calibration with a missing control or any actual outcome that differs from its declared obligations", async () => {
 		const valid = await calibrationFixture();
 		expect(validateCalibrationRecord(valid, FIXTURE_EPOCH)).toEqual({
@@ -1505,7 +1501,6 @@ describe("test health audit artifacts", () => {
 		expect(Object.keys(CALIBRATION_CONTROL_OBLIGATIONS)).toHaveLength(26);
 	});
 
-	// @cosmo-behavior plan:test-health-audit#B-009
 	it("requires authorized closure or guardrail exclusion and blocks unratified contract changes", async () => {
 		const materialInputs = [
 			"test",
@@ -1804,7 +1799,6 @@ describe("test health audit epoch provenance", () => {
 		});
 		expect(issues).toEqual([]);
 	});
-	// @cosmo-behavior plan:test-health-audit#B-010
 	it("validates all ten bundles in one epoch and forbids heuristic CI activation or active-plan coupling", () => {
 		const epochId = "epoch-candidate";
 		const methodDigest = "b".repeat(64);
@@ -2005,7 +1999,6 @@ describe("test health audit epoch provenance", () => {
 		).toThrow(/must exclude bundle 10/u);
 	});
 
-	// @cosmo-behavior plan:test-health-audit#B-011
 	// Condition 4 was unsatisfiable by construction, so the method needed a way
 	// for the owner to accept a named shortfall without the formula absorbing it.
 	// The condition keeps its definition and stays recorded as not-met; what the

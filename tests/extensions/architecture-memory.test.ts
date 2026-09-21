@@ -52,7 +52,6 @@ const BASE_CONFIG: ArchitectureMapConfig = {
 };
 
 describe("architecture-memory extension", () => {
-	// @cosmo-behavior plan:living-memory#B-021
 	test("measures index pressure with the exact injection renderer and budget", async () => {
 		const projectRoot = join(tmp.path, "index-pressure-project");
 		const userRoot = join(tmp.path, "index-pressure-user");
@@ -251,7 +250,6 @@ describe("architecture-memory extension", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-003
 	test("counts injected knowledge warnings in measured index bytes", async () => {
 		const projectRoot = join(tmp.path, "warning-index-pressure-project");
 		const userRoot = join(tmp.path, "warning-index-pressure-user");
@@ -305,7 +303,7 @@ describe("architecture-memory extension", () => {
 		expect(Buffer.byteLength(rendered, "utf-8")).toBeLessThan(400);
 		expect(pressure.renderedBytes).toBe(Buffer.byteLength(rendered, "utf-8"));
 	});
-	test("delegates mapped index injection and tool reads through an injectable MemoryStore @cosmo-behavior plan:memory-interface#B-003", async () => {
+	test("delegates mapped index injection and tool reads through an injectable MemoryStore", async () => {
 		await mkdir(join(tmp.path, "memory", "architecture"), { recursive: true });
 		const retrieve = vi.fn(
 			async (
@@ -386,7 +384,7 @@ describe("architecture-memory extension", () => {
 		expect(createStore).toHaveBeenCalledTimes(2);
 	});
 
-	test("skips absent-directory injection while registered tool returns honest missing-map details @cosmo-behavior plan:memory-interface#B-003", async () => {
+	test("skips absent-directory injection while registered tool returns honest missing-map details", async () => {
 		const retrieve = vi.fn(
 			async (): Promise<MemoryRetrieveResult> => ({
 				records: [],
@@ -437,7 +435,7 @@ describe("architecture-memory extension", () => {
 		expect(retrieve).toHaveBeenCalledTimes(1);
 	});
 
-	test("injects one non-accumulating architecture index context with current stale and missing freshness banners @cosmo-behavior plan:code-structure-map#B-012 @cosmo-behavior plan:memory-interface#B-003", async () => {
+	test("injects one non-accumulating architecture index context with current stale and missing freshness banners", async () => {
 		await writeArchitectureMap(tmp.path);
 
 		for (const freshness of [
@@ -470,7 +468,7 @@ describe("architecture-memory extension", () => {
 		}
 	});
 
-	test("architecture_map_read returns the full index by default and reads module shards by module without parsing unrelated shards @cosmo-behavior plan:memory-interface#B-004", async () => {
+	test("architecture_map_read returns the full index by default and reads module shards by module without parsing unrelated shards", async () => {
 		await writeArchitectureMap(tmp.path);
 		await writeFile(
 			join(tmp.path, "memory", "architecture", "modules", "lib", "broken.md"),
@@ -530,7 +528,7 @@ describe("architecture-memory extension", () => {
 		});
 	});
 
-	test("architecture_map_read lists modules from shard frontmatter and rejects unsafe modules @cosmo-behavior plan:memory-interface#B-004", async () => {
+	test("architecture_map_read lists modules from shard frontmatter and rejects unsafe modules", async () => {
 		await writeArchitectureMap(
 			tmp.path,
 			"- `lib/from-index-only` - stale row.",
@@ -583,7 +581,7 @@ describe("architecture-memory extension", () => {
 		});
 	});
 
-	test("oversized index injection respects injectionMaxBytes and tells agents to use architecture_map_read @cosmo-behavior plan:code-structure-map#B-019 @cosmo-behavior plan:memory-interface#B-003", async () => {
+	test("oversized index injection respects injectionMaxBytes and tells agents to use architecture_map_read", async () => {
 		await writeArchitectureMap(
 			tmp.path,
 			Array.from(
@@ -635,7 +633,7 @@ describe("architecture-memory extension", () => {
 		]);
 	});
 
-	test("auto-loaded extension stays inert for non-consuming agents @cosmo-behavior plan:code-structure-map#B-012", async () => {
+	test("auto-loaded extension stays inert for non-consuming agents", async () => {
 		await writeArchitectureMap(tmp.path);
 		const retrieve = vi.fn();
 		const createStore = vi.fn(() => memoryStore({ retrieve }));
@@ -668,7 +666,7 @@ describe("architecture-memory extension", () => {
 		expect(retrieve).not.toHaveBeenCalled();
 	});
 
-	test("turn-time injection does not invoke content-hash freshness @cosmo-behavior plan:code-structure-map#B-012", async () => {
+	test("turn-time injection does not invoke content-hash freshness", async () => {
 		await writeArchitectureMap(tmp.path);
 		await mkdir(join(tmp.path, "lib"), { recursive: true });
 		await writeFile(
@@ -692,7 +690,7 @@ describe("architecture-memory extension", () => {
 		contentHashFreshness.mockRestore();
 	});
 
-	test("bounds the authorized single-factory three-surface context exposes scan stats and emits nothing when empty @cosmo-behavior plan:knowledge-surface#B-007", async () => {
+	test("bounds the authorized single-factory three-surface context exposes scan stats and emits nothing when empty", async () => {
 		const projectRoot = join(tmp.path, "combined-context-project");
 		const userRoot = join(tmp.path, "combined-context-user");
 		const memoryRecords = [
@@ -880,7 +878,7 @@ describe("architecture-memory extension", () => {
 		expect(emptyArchitectureRetrieve).toHaveBeenCalledOnce();
 	});
 
-	test("aggregates real knowledge and multi-file architecture IO without counting the rendered freshness banner @cosmo-behavior plan:knowledge-surface#B-007", async () => {
+	test("aggregates real knowledge and multi-file architecture IO without counting the rendered freshness banner", async () => {
 		const projectRoot = join(tmp.path, "combined-real-store-project");
 		const userRoot = join(tmp.path, "combined-real-store-user");
 		const configRaw = `${JSON.stringify({

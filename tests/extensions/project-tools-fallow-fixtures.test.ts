@@ -515,7 +515,6 @@ describe("pinned Fallow capture fixtures", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:analysis-gate-coverage#B-041
 	it("derives declared gate coverage from real provider envelopes", async () => {
 		const configuredRuntime = await replayRuntime(
 			"configured",

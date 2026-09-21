@@ -178,7 +178,6 @@ describe("run-step binary", { timeout: 30_000 }, () => {
 		});
 	});
 
-	// @cosmo-behavior plan:episodic-log#B-018
 	test("uses frozen episode actor and attempt identity in the detached runner", async () => {
 		const cases = [
 			{
@@ -312,7 +311,6 @@ describe("run-step binary", { timeout: 30_000 }, () => {
 		expect(runStepSource).not.toContain("episode-identity.ts");
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-017
 	test("releases the detached plan lock after completion and before episode capture", async () => {
 		const fixture = await setupFixture("run-terminal-persisted-hook", {
 			episodeSource: "coding/worker",
@@ -427,7 +425,6 @@ describe("run-step binary", { timeout: 30_000 }, () => {
 		}
 	});
 
-	// @cosmo-behavior plan:drive-process-reaping#B-006
 	test("reaps its backend process group when the runner is signalled", async () => {
 		const fixture = await setupFixture("run-signalled-teardown");
 		const backendPidPath = join(fixture.workdir, "backend.pid");

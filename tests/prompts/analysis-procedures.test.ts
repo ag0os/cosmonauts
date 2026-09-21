@@ -47,7 +47,6 @@ function procedureBlock(content: string, opening: string): string {
 }
 
 describe("analysis role procedures", () => {
-	// @cosmo-behavior plan:analysis-gate-rewiring#B-017
 	it("gives verifier a provider agnostic capability claim protocol", async () => {
 		const content = await readFile(VERIFIER_PROMPT_PATH, "utf-8");
 
@@ -91,7 +90,6 @@ describe("analysis role procedures", () => {
 		expect(content).not.toContain(["analysis", "apply"].join("_"));
 	});
 
-	// @cosmo-behavior plan:analysis-gate-rewiring#B-018
 	it("keeps fixer remediation replayed trace first preview only and agent edited", async () => {
 		const content = await readFile(FIXER_PROMPT_PATH, "utf-8");
 
@@ -133,7 +131,6 @@ describe("analysis role procedures", () => {
 		expect(content).not.toContain(["analysis", "apply"].join("_"));
 	});
 
-	// @cosmo-behavior plan:analysis-investigation-procedures#B-019
 	it("expresses planner investigation in capability terms", async () => {
 		const content = await readFile(PLANNER_PROMPT_PATH, "utf-8");
 
@@ -154,7 +151,6 @@ describe("analysis role procedures", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-investigation-procedures#B-021
 	it("expresses plan review challenges in capability terms", async () => {
 		const content = await readFile(PLAN_REVIEWER_PROMPT_PATH, "utf-8");
 
@@ -178,7 +174,6 @@ describe("analysis role procedures", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-investigation-procedures#B-022
 	it("requires worker trace before delete and audit at task close", async () => {
 		const content = await readFile(WORKER_PROMPT_PATH, "utf-8");
 
@@ -214,7 +209,6 @@ describe("analysis role procedures", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-investigation-procedures#B-023
 	it("requires refactorer trace and changed scope evidence without metric chasing", async () => {
 		const content = await readFile(REFACTORER_PROMPT_PATH, "utf-8");
 

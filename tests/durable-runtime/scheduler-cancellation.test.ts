@@ -15,7 +15,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("durable-scheduler-cancellation-");
 
 describe("durable scheduler cancellation", () => {
-	// @cosmo-behavior plan:durable-graph-scheduler#B-019
 	test("cancels active backend on signal and preserves running evidence when cancellation is unsupported", async () => {
 		const cancellableStore = new FileRunStore({ rootDir: temp.path });
 		const cancellableRun = await cancellationRunFixture(cancellableStore, {

@@ -78,8 +78,6 @@ describe("runStart durable chain characterization", () => {
 		vi.useRealTimers();
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-002
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-005
 	test("preserves durable chain run files and ChainResult through runStart", async () => {
 		spawnerMocks.spawn.mockImplementation(async (config: SpawnConfig) => {
 			config.onEvent?.({
@@ -233,7 +231,6 @@ describe("runStart durable chain characterization", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-010
 	test("gates durable task decomposition on earlier reviewer-bound addressed activity", async () => {
 		const successfulRoot = join(temp.path, "durable-review-gate-success");
 		await writePlanReviewFixture(successfulRoot, "durable-review-gate-success");
@@ -706,7 +703,7 @@ describe("runStart durable chain characterization", () => {
 		}
 	});
 
-	test("records durable chain episodes with the persisted run id and unchanged reconstruction @cosmo-behavior plan:episodic-log#B-016", async () => {
+	test("records durable chain episodes with the persisted run id and unchanged reconstruction", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-07-21T12:00:00.000Z"));
 		const successRoot = join(temp.path, "episode-success");
@@ -850,7 +847,7 @@ describe("runStart durable chain characterization", () => {
 		expect(captureEvents.events.at(-1)?.event.type).toBe("run_completed");
 	});
 
-	test("keeps disabled inline and durable chain outputs events and files unchanged @cosmo-behavior plan:episodic-log#B-027", async () => {
+	test("keeps disabled inline and durable chain outputs events and files unchanged", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-07-21T12:00:00.000Z"));
 		const projectRoot = join(temp.path, "disabled-parity");

@@ -257,7 +257,6 @@ describe("installPackage — invalid source", () => {
 		["absolute", "/tmp/outside"],
 		["traversal", "../outside"],
 	])("rejects %s domain paths before writing to the store", async (_label, path) => {
-		// @cosmo-behavior plan:domain-authoring#B-020
 		const pkgDir = join(tmpRoot, `bad-path-${_label}`);
 		await mkdir(pkgDir, { recursive: true });
 		await writeFile(
@@ -284,7 +283,6 @@ describe("installPackage — invalid source", () => {
 	});
 
 	test("rejects a root-domain package missing root domain.ts before writing to the store", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-021
 		const pkgDir = join(tmpRoot, "root-missing-domain");
 		await mkdir(pkgDir, { recursive: true });
 		await writeFile(
@@ -309,7 +307,6 @@ describe("installPackage — invalid source", () => {
 	});
 
 	test("rejects path dot when another domain is declared before creating the package store", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-022
 		const pkgDir = join(tmpRoot, "mixed-root");
 		await mkdir(join(pkgDir, "domains", "extra"), { recursive: true });
 		await writeFile(

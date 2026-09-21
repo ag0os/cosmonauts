@@ -12,7 +12,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("durable-file-store-");
 
 describe("FileRunStore", () => {
-	// @cosmo-behavior plan:durable-run-store-events#B-001
 	test("creates an inspectable run layout and reloads run metadata", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const older = await store.createRun({
@@ -118,7 +117,6 @@ describe("FileRunStore", () => {
 		await expect(access(outsideStepsDir)).rejects.toThrow();
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-002
 	test("continues event sequences after reopening the file store", async () => {
 		const firstStore = new FileRunStore({ rootDir: temp.path });
 		const record = await firstStore.createRun({
@@ -196,7 +194,6 @@ describe("FileRunStore", () => {
 		expect(third.seq).toBe(3);
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-003
 	test("persists step records and rejects path traversal identifiers", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({
@@ -229,7 +226,6 @@ describe("FileRunStore", () => {
 		await expect(access(join(temp.path, "escape"))).rejects.toThrow();
 	});
 
-	// @cosmo-behavior plan:durable-backend-step-model#B-003
 	test("persists step attempts and results without erasing previous attempts", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({

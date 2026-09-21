@@ -110,7 +110,6 @@ describe("cosmonauts run drive compat graph runs", () => {
 		vi.restoreAllMocks();
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-019
 	test("preserves drive run status list and completion files for graph runs", async () => {
 		const fixture = await setupFixture();
 

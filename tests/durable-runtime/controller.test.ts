@@ -13,7 +13,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("durable-controller-");
 
 describe("durable runtime controller", () => {
-	// @cosmo-behavior plan:durable-run-store-events#B-012
 	test("pages normalized events by sequence cursor and reports malformed lines", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({
@@ -92,7 +91,6 @@ describe("durable runtime controller", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-013
 	test("derives status from terminal events when run records disagree", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({

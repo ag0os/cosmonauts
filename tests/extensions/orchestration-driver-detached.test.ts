@@ -235,7 +235,6 @@ describe("run_driver detached mode", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-006
 	test("returns scope alongside runId and rejects the reserved chain plan slug", async () => {
 		const fixture = await setupFixture("reserved-scope");
 		const pi = createMockPi(fixture.projectRoot, {

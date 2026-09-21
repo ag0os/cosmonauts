@@ -2,8 +2,6 @@ import { describe, expect, test } from "vitest";
 import { compileSpawnToGraph } from "../../lib/orchestration/spawn-compiler.ts";
 
 describe("compileSpawnToGraph", () => {
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-016
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-019
 	test("compiles spawn input into a single cosmonauts-subagent graph step without nested-run fields", () => {
 		const compiled = compileSpawnToGraph({
 			runId: "spawn-run-1",

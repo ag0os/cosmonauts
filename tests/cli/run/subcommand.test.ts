@@ -98,7 +98,6 @@ describe("cosmonauts run", () => {
 		vi.restoreAllMocks();
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-010
 	test("parses runtime flags before run and passes them to run chain execution", async () => {
 		const parsed = parseCliRuntimeOptions([
 			"--theme",
@@ -220,7 +219,6 @@ describe("cosmonauts run", () => {
 		expect(parsed.warnings).toEqual([]);
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-012
 	test("starts Drive through run drive and rejects the reserved chain plan slug", async () => {
 		const fixture = await setupDriveFixture(2);
 
@@ -310,8 +308,6 @@ describe("cosmonauts run", () => {
 		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-014
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-019
 	test("rejects run spawn", async () => {
 		await expect(parseRun(["spawn", "coding/worker", "do it"])).rejects.toThrow(
 			"unknown command 'spawn'",
@@ -319,7 +315,6 @@ describe("cosmonauts run", () => {
 		expect(output.stdout()).toBe("");
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-013
 	test("status watch and list use normalized store observations with inferred scope", async () => {
 		const store = new FileRunStore({
 			rootDir: join(temp.path, "missions", "sessions"),
@@ -499,7 +494,6 @@ describe("cosmonauts run", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-011
 	test("reports internal named chain access instead of falling back to DSL", async () => {
 		const runtime = runtimeFixture(
 			[],

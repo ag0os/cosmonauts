@@ -18,7 +18,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("durable-scheduler-recovery-");
 
 describe("durable scheduler recovery", () => {
-	// @cosmo-behavior plan:durable-graph-scheduler#B-009
 	test("does not rerun completed steps when restarted with empty in-memory state", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({
@@ -106,7 +105,6 @@ describe("durable scheduler recovery", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-010
 	test("reconstructs ready queue leases and heartbeats from persisted records after restart", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({
@@ -185,7 +183,6 @@ describe("durable scheduler recovery", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-011
 	test("promotes terminal attempt results on restart without starting a duplicate backend", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({
@@ -296,7 +293,6 @@ describe("durable scheduler recovery", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-014
 	test("blocks potentially committed running work without terminal attempt evidence after restart", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({
@@ -397,7 +393,6 @@ describe("durable scheduler recovery", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-015
 	test("leaves fresh nonresumable running work externally owned without starting a duplicate after restart", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({
@@ -484,7 +479,6 @@ describe("durable scheduler recovery", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-017
 	test("uses step records as mutable authority when graph step fields conflict", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({
@@ -570,7 +564,6 @@ describe("durable scheduler recovery", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-018
 	test("blocks graph steps with missing or corrupt step records before execution", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({
@@ -654,7 +647,6 @@ describe("durable scheduler recovery", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-006
 	test("marks a running leased step stale from persisted heartbeat age after restart", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({

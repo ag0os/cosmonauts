@@ -19,7 +19,6 @@ const RUN_ID = "run-durable-step-retry";
 const TASK_ID = "TASK-1";
 
 describe("Drive durable step projector", () => {
-	// @cosmo-behavior plan:durable-backend-step-model#B-005
 	test("appends a new attempt when Drive retries a task", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({
@@ -112,7 +111,6 @@ describe("Drive durable step projector", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:durable-backend-step-model#B-006
 	test("resume task_done preserves a persisted unknown result instead of fabricating success", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({

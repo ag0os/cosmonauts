@@ -254,7 +254,6 @@ describe("local packages only", () => {
 	});
 
 	test("loads a package-root domain as an exact domain-root source", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-002
 		const installPath = "/project/.cosmonauts/packages/root-domain";
 		mockListInstalledPackages.mockImplementation(async (scope) => {
 			if (scope === "project") {
@@ -285,7 +284,6 @@ describe("local packages only", () => {
 	});
 
 	test("refuses to emit any sources for a mixed root-domain package", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-022
 		const installPath = "/project/.cosmonauts/packages/mixed-root";
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		mockListInstalledPackages.mockImplementation(async (scope) => {
@@ -606,8 +604,6 @@ describe("bundled dirs", () => {
 	});
 
 	test("routes bundled root domains through manifest-aware domain-root sources", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-016
-		// @cosmo-behavior plan:coding-agnostic-framework#B-017
 		mockListInstalledPackages.mockResolvedValue([]);
 		const actualFs =
 			await vi.importActual<typeof import("node:fs/promises")>(

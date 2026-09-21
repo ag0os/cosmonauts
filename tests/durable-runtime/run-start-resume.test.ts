@@ -12,7 +12,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("run-start-resume-");
 
 describe("runStart resume and rehydration", () => {
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-004
 	test("repairs partial initial step seeding before scheduling a resumed run", async () => {
 		const ref: RunRef = { scope: "plan-a", runId: "run-partial-repair" };
 		const store = new FileRunStore({ rootDir: temp.path });
@@ -104,7 +103,6 @@ describe("runStart resume and rehydration", () => {
 		expect((await store.readEvents(ref)).events).toHaveLength(1);
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-004
 	test("repairs zero initial step records when the persisted graph matches", async () => {
 		const ref: RunRef = { scope: "plan-a", runId: "run-zero-repair" };
 		const store = new FileRunStore({ rootDir: temp.path });
@@ -139,7 +137,6 @@ describe("runStart resume and rehydration", () => {
 		).toBe(true);
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-004
 	test("interrupts and blocks instead of overwriting a conflicting persisted graph", async () => {
 		const ref: RunRef = { scope: "plan-a", runId: "run-graph-mismatch" };
 		const store = new FileRunStore({ rootDir: temp.path });
@@ -180,7 +177,6 @@ describe("runStart resume and rehydration", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-001
 	test("uses canonical store initialization and reconciliation reads with a scheduler append wrapper", async () => {
 		const ref: RunRef = { scope: "plan-a", runId: "run-safe-wrapper" };
 		const store = new FileRunStore({ rootDir: temp.path });

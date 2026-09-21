@@ -85,7 +85,6 @@ function detected(
 }
 
 describe("analysis binding resolver", () => {
-	// @cosmo-behavior plan:analysis-capability-runtime#B-003
 	test("honors project provider preference without changing capability names", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "analysis-preference-"));
 		const detections = [detected(FALLOW_PROVIDER), detected(FAKE_PROVIDER)];
@@ -152,7 +151,6 @@ describe("analysis binding resolver", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-011
 	test("degrades only an unavailable complexity metric", async () => {
 		const bindings = resolveAnalysisBindings({
 			detections: [detected(FALLOW_PROVIDER)],
@@ -205,7 +203,6 @@ describe("analysis binding resolver", () => {
 		expect(providerExecutor).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-033
 	test("degrades an unadvertised scope kind without widening", async () => {
 		const bindings = resolveAnalysisBindings({
 			detections: [detected(FALLOW_PROVIDER)],

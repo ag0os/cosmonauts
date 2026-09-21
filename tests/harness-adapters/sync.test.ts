@@ -144,7 +144,6 @@ describe("harness sync planning", () => {
 	});
 
 	test("bootstraps and migrates both commands as one nonhistorical recoverable transaction", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-009
 		const mismatch = await createCommandBootstrapFixture("mismatch");
 		await seedNativeCommandSources(mismatch);
 		await writeFile(
@@ -379,7 +378,6 @@ describe("harness sync planning", () => {
 	});
 
 	test("recovers every phase vector through one sibling lock while retaining evidence holds", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-007
 		const applyFixture = await createTransactionFixture("apply", 2);
 		let lockAcquisitions = 0;
 		let observedWaitTimeout: number | undefined;
@@ -1135,7 +1133,6 @@ describe("harness sync planning", () => {
 	});
 
 	test("fresh recovery restores prepared creation transactions with absent old targets", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-007
 		const fixture = await createTransactionFixture("prepared-creation", 1);
 		const journal: OwnerRootTransactionJournal = {
 			...fixture.journal,
@@ -1163,7 +1160,6 @@ describe("harness sync planning", () => {
 	});
 
 	test("fresh recovery converges removal transactions with absent new targets across phases", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-007
 		const cases = [
 			{
 				phase: "prepared",
@@ -1251,7 +1247,6 @@ describe("harness sync planning", () => {
 	});
 
 	test("fresh recovery restores manifest-only forget transfer and absent-target removal intent", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-007
 		const operations = [
 			"forget",
 			"owner-transfer",
@@ -1302,7 +1297,6 @@ describe("harness sync planning", () => {
 	});
 
 	test("fresh recovery preserves equal old and new target relations for cross-project regeneration", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-007
 		const cases = [
 			{ phase: "installing", manifest: "old", expectedIntent: "old" },
 			{ phase: "commit-ready", manifest: "old", expectedIntent: "new" },
@@ -1351,7 +1345,6 @@ describe("harness sync planning", () => {
 	});
 
 	test("reconciles healthy complete partial transfer and source-removed inventories without destructive inference", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-004
 		const fixture = await createFixture();
 		const currentOwner = await resolveAssetOwnerIdentity(
 			projectAsset("skill:current", "current"),

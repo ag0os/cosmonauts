@@ -242,7 +242,6 @@ describe("project-tools extension", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-035
 	test("injects the seven-row capability status into the system prompt", async () => {
 		const bound = await createProjectFixture("status-bound");
 		const unbound = await createProjectFixture("status-unbound");
@@ -369,7 +368,6 @@ describe("project-tools extension", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-034
 	test("withholds all provider execution until consent is recorded", async () => {
 		const fixture = await createProjectFixture("consent");
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
@@ -930,7 +928,6 @@ describe("project-tools extension", () => {
 		expect(invocations).toHaveLength(2);
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-005
 	test("reports and returns every capability unbound for a Python fixture", async () => {
 		const fixture = await createProjectFixture("python");
 		await writeFile(join(fixture.projectRoot, "pyproject.toml"), "[project]\n");
@@ -964,7 +961,6 @@ describe("project-tools extension", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-027
 	test("rejects empty scopes and trace targets instead of widening", async () => {
 		const fixture = await createProjectFixture("invalid-input");
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
@@ -1060,7 +1056,6 @@ describe("project-tools extension", () => {
 		expect(capabilityInvocations).toBe(0);
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-036
 	test("aborting a capability tool terminates the provider child", async () => {
 		const fixture = await createProjectFixture("cancellation");
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
@@ -1477,7 +1472,6 @@ describe("project-tools extension", () => {
 	});
 
 	describe("fallow detection", () => {
-		// @cosmo-behavior plan:analysis-capability-runtime#B-004
 		test("detects every canonical provider config and reports version scopes and metrics without commands", async () => {
 			const userStateRoot = join(tmpDir, "..", "user-state");
 			const executable = join(tmpDir, "..", "fixture-fallow");

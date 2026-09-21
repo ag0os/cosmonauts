@@ -29,7 +29,6 @@ const PLAN_SLUG = "durable-frontend-migration";
 const savedCodexBinary = process.env.COSMONAUTS_DRIVER_CODEX_BINARY;
 
 describe("Drive-on-graph routing", () => {
-	// @cosmo-behavior plan:durable-frontend-migration#B-016
 	test("runs inline Drive through runDriveOnGraph in the host process", async () => {
 		const fixture = await setupFixture("inline");
 
@@ -89,7 +88,6 @@ describe("Drive-on-graph routing", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-017
 	test("runs detached Drive by executing runDriveOnGraph inside the frozen runner", async () => {
 		const fixture = await setupFixture("detached");
 		const fakeCodex = await writeFakeCodex(join(temp.path, "detached-bin"));
@@ -150,8 +148,6 @@ describe("Drive-on-graph routing", () => {
 		}
 	}, 30_000);
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-001
-	// @cosmo-behavior plan:episodic-log#B-028
 	test("keeps OFF-state Drive files events layout and output byte-identical across hardened paths", async () => {
 		const absent = await setupFixture("disabled-absent");
 		const expectedResult = {
@@ -264,7 +260,6 @@ describe("Drive-on-graph routing", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-021
 	test("integrates detached hardening without regressing the Drive baseline", async () => {
 		const fixture = await setupFixture("integrated-enabled");
 		const episodeAttemptId = "attempt-integrated-enabled";

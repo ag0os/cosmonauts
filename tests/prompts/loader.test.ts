@@ -257,7 +257,6 @@ describe("domain-based prompt file paths", () => {
 	});
 
 	it("loads synthetic domain capability files from a domain capabilities directory", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-017
 		const capabilities = ["alpha-readwrite", "alpha-readonly"];
 		for (const ref of capabilities) {
 			const content = await loadPrompt(ref, alphaCapabilitiesDir());

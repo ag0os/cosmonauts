@@ -149,7 +149,6 @@ describe("run-run-loop", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-019
 	test("skips final state commit and completion candidate for partial continue runs", async () => {
 		const events: DriverEvent[] = [];
 		const spec = createSpec({
@@ -202,7 +201,6 @@ describe("run-run-loop", () => {
 		expect(result).not.toHaveProperty("planCompletionCandidate");
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-018
 	test("emits plan completion candidate without editing the plan when all plan tasks are done", async () => {
 		const projectRoot = temp.path;
 		const planSlug = "completion-plan";
@@ -264,7 +262,6 @@ describe("run-run-loop", () => {
 		expect(await readFile(planPath, "utf-8")).toBe(planBody);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-004
 	test("reports finalization_failed outcome with exact finalization details", async () => {
 		const events: DriverEvent[] = [];
 		const spec = createSpec({ taskIds: ["TASK-1", "TASK-2"] });
@@ -316,7 +313,6 @@ describe("run-run-loop", () => {
 		).toEqual(result);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-014
 	test("creates a final state commit only for run task status updates when state policy is final-state-commit", async () => {
 		const projectRoot = temp.path;
 		await initGit(projectRoot);
@@ -428,7 +424,6 @@ describe("run-run-loop", () => {
 		).toContain("src.ts");
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-015
 	test("records retryable state commit finalization failure", async () => {
 		const projectRoot = temp.path;
 		await initGit(projectRoot);

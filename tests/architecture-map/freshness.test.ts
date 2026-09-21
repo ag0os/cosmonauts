@@ -18,7 +18,7 @@ const analyzer = {
 };
 
 describe("architecture map freshness", () => {
-	test("reports missing current and stale from persisted frontmatter and disk state @cosmo-behavior plan:code-structure-map#B-007", async () => {
+	test("reports missing current and stale from persisted frontmatter and disk state", async () => {
 		await writeFixtureProject(tmp.path);
 		const config = await resolveArchitectureMapConfig({
 			projectRoot: tmp.path,
@@ -75,7 +75,7 @@ describe("architecture map freshness", () => {
 		}
 	});
 
-	test("reports stale when analyzer configuration changes but unrelated project config changes stay current @cosmo-behavior plan:code-structure-map#B-007", async () => {
+	test("reports stale when analyzer configuration changes but unrelated project config changes stay current", async () => {
 		await writeFixtureProject(tmp.path);
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(

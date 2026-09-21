@@ -49,8 +49,6 @@ describe("spawn_agent inline compiler boundary", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-017
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-019
 	test("keeps spawn_agent inline spawnId behavior without creating a durable run record", async () => {
 		const cwd = join(process.cwd(), "tmp-spawn-inline-test");
 		const parentSessionId = "parent-session-inline";

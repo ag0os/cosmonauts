@@ -26,7 +26,6 @@ async function readActiveGuidance(): Promise<string> {
 }
 
 describe("orchestration surface guidance", () => {
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-018
 	test("documents cosmonauts run named chains and normalized observation without removed orchestration flags", async () => {
 		const content = await readActiveGuidance();
 

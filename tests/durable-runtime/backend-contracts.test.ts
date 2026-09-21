@@ -16,7 +16,6 @@ import {
 } from "../../lib/durable-runtime/index.ts";
 
 describe("durable runtime backend contracts", () => {
-	// @cosmo-behavior plan:durable-backend-step-model#B-001
 	test("defines generic backend and attempt contracts without Drive dependencies", async () => {
 		const knownBackendNames: KnownBackendName[] = [...KNOWN_BACKEND_NAMES];
 		expect(knownBackendNames).toEqual([

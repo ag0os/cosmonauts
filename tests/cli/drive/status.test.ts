@@ -87,7 +87,6 @@ describe("cosmonauts run drive compat status", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-011
 	test("reports finalization_failed completion details", async () => {
 		const workdir = await writeRunDir(PLAN, RUN_ID);
 		await writeFinalizationFailedCompletion(workdir);
@@ -230,7 +229,6 @@ describe("cosmonauts run drive compat status", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-008
 	test("ignores normalized runtime files when classifying drive status", async () => {
 		const completedWorkdir = await writeRunDir(PLAN, "run-completed");
 		await writeCompletion(completedWorkdir, "completed", "run-completed");

@@ -192,7 +192,6 @@ describe("project-tools provider process runner", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-029
 	test("distinguishes signal abort timeout and spawn failure from clean exit", async () => {
 		expect(Number.isFinite(DEFAULT_PROVIDER_TIMEOUT_MS)).toBe(true);
 		expect(DEFAULT_PROVIDER_TIMEOUT_MS).toBeGreaterThan(0);

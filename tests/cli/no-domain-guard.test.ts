@@ -33,7 +33,6 @@ function runModeForDomains(...ids: string[]): ReturnType<typeof selectRunMode> {
 
 describe("no-domain guard", () => {
 	test("shared and main built-ins are runnable without an additional domain", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-022
 		expect(hasRunnableDefaultDomain(runtimeWithDomains("shared", "main"))).toBe(
 			true,
 		);

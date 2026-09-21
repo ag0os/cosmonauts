@@ -36,7 +36,6 @@ const PLAN_SLUG = "durable-drive-plan";
 const PARENT_SESSION_ID = "durable-parent-session";
 
 describe("driver durable dual-write", () => {
-	// @cosmo-behavior plan:durable-run-store-events#B-006
 	test("writes normalized events alongside unchanged legacy driver events", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 
@@ -110,7 +109,6 @@ describe("driver durable dual-write", () => {
 		expect(watched.content[0]?.text).toContain(`cursor ${legacyEvents.length}`);
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-007
 	test("continues the drive run when normalized event append fails", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const diagnostics = captureDurableDiagnostics();
@@ -163,7 +161,6 @@ describe("driver durable dual-write", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-016
 	test("reports normalized status and events from a drive-produced run record events path", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 
@@ -233,7 +230,6 @@ describe("driver durable dual-write", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-017
 	test("continues the drive run when run record creation fails before the first event", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		await mkdir(join(fixture.spec.workdir, "run.json"), { recursive: true });

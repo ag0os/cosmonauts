@@ -179,7 +179,6 @@ describe("memory owner CLI", () => {
 		expect(await readdir(join(home, ".cosmonauts"))).toEqual(["knowledge"]);
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-010
 	test("matches real-corpus injection pressure through the CLI composition root on a copy", async () => {
 		const repositoryRoot = process.cwd();
 		const sourceKnowledgeRoot = join(repositoryRoot, "knowledge");
@@ -264,7 +263,6 @@ describe("memory owner CLI", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-007
 	test("actions or rejects improve proposals through a reachable closed lifecycle", async () => {
 		const projectRoot = join(tmp.path, "improve-project");
 		await mkdir(join(projectRoot, "missions", "tasks"), { recursive: true });
@@ -485,7 +483,6 @@ describe("memory owner CLI", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-013
 	test("runs renders validates and cancels manual consolidation without autonomy", async () => {
 		const signal = new AbortController().signal;
 		const calls: Array<{

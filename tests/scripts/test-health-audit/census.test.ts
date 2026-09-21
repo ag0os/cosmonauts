@@ -55,7 +55,6 @@ function runtime(overrides: Partial<PublicRunInput> = {}) {
 }
 
 describe("test health audit census", () => {
-	// @cosmo-behavior plan:test-health-audit#B-002
 	test("reconciles all command surfaces and keeps unsupported or phase-unknown failures blocking", () => {
 		const source = collectSourceText(
 			"tests/fixture.test.ts",

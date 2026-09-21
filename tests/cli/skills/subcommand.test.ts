@@ -193,7 +193,6 @@ describe("createSkillsProgram list — runtime discovery", () => {
 	});
 
 	it("bootstraps a runtime that includes bundled package dirs", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-024
 		await createSkillsProgram().parseAsync(["--json", "list"], {
 			from: "user",
 		});

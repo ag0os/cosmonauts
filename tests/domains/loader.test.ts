@@ -47,7 +47,6 @@ export default definition;
 
 describe("loadDomains", () => {
 	it("loads conventional domains without registration and assembles persona by agent id", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-001
 		const frameworkPromptsDir = join(tmp.path, "framework");
 		await mkdir(frameworkPromptsDir, { recursive: true });
 		const sharedDir = join(tmp.path, "shared");
@@ -290,7 +289,6 @@ describe("loadDomainsFromSources", () => {
 	});
 
 	it("reports same-precedence domain id conflicts instead of silently merging", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-013
 		const alphaA = join(tmpA.path, "alpha-a");
 		await mkdir(alphaA, { recursive: true });
 		await writeDomainManifest(alphaA, "alpha");

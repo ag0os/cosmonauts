@@ -41,7 +41,6 @@ const PLAN_SLUG = "durable-drive-steps";
 const PARENT_SESSION_ID = "durable-steps-parent-session";
 
 describe("driver durable step projection", () => {
-	// @cosmo-behavior plan:durable-backend-step-model#B-004
 	test("writes Drive task step records with configured backend identity and resume-safe dependencies", async () => {
 		const fixture = await setupFixture({ taskCount: 3 });
 		const resumedTaskId = fixture.taskIds[2] ?? fail("missing resumed task");
@@ -207,7 +206,6 @@ describe("driver durable step projection", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-backend-step-model#B-006
 	test("records malformed reports inferred by postflight as completed success in step records and normalized events", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const taskId = fixture.taskIds[0] ?? fail("missing task");
@@ -287,7 +285,6 @@ describe("driver durable step projection", () => {
 		).toBe("continue");
 	});
 
-	// @cosmo-behavior plan:durable-backend-step-model#B-011
 	test("keeps legacy observation outputs unchanged when step records exist", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const taskId = fixture.taskIds[0] ?? fail("missing task");
@@ -467,7 +464,6 @@ describe("driver durable step projection", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:durable-backend-step-model#B-010
 	test("continues Drive run when durable step persistence fails", async () => {
 		const clean = await setupFixture({ taskCount: 1 });
 		await runDrive(clean);

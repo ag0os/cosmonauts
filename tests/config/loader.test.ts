@@ -284,7 +284,6 @@ describe("loadProjectConfig", () => {
 	});
 
 	test("warns on a malformed domainBindings entry instead of dropping it silently", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-024
 		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
@@ -376,7 +375,7 @@ describe("loadProjectConfig", () => {
 		warn.mockRestore();
 	});
 
-	test("parses episodicLog as an off-by-default project gate with a positive threshold @cosmo-behavior plan:episodic-log#B-001", async () => {
+	test("parses episodicLog as an off-by-default project gate with a positive threshold", async () => {
 		await expect(loadProjectConfig(tmp.path)).resolves.toEqual({});
 		expect(resolveEpisodicLogConfig({})).toEqual({
 			enabled: false,
@@ -470,7 +469,6 @@ describe("loadProjectConfig", () => {
 		warn.mockRestore();
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-028
 	test("isolates malformed analysis provider config from unrelated settings", async () => {
 		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });

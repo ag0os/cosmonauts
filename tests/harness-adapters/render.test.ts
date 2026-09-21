@@ -39,7 +39,6 @@ afterEach(async () => {
 
 describe("harness asset rendering", () => {
 	test("materializes sticky copy direct-link flat and generated-wrapper shapes safely", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-005
 		const root = await mkdtemp(join(tmpdir(), "cosmonauts-render-"));
 		tempRoots.push(root);
 		const projectRoot = join(root, "project");

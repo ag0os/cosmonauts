@@ -57,8 +57,6 @@ const WORKER_SOURCE = "cod" + "ing/worker";
 // fixture, so each pays real subprocess cost that scales with suite-wide load.
 // Declare the same 30s budget the sibling drive-on-graph suites use.
 describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
-	// @cosmo-behavior plan:episodic-log#B-017
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-005
 	test("emits the terminal legacy event before completion and captures afterward", async () => {
 		const outcomes: DriverResult["outcome"][] = [];
 		const cases = [
@@ -288,7 +286,6 @@ describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
 		);
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-016
 	test("invokes terminal-persisted hook after completion and before capture on every completion-backed outcome", async () => {
 		const cases = [
 			{
@@ -392,7 +389,6 @@ describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
 		}
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-023
 	test("preserves the persisted terminal when onTerminalPersisted rejects", async () => {
 		const fixture = await setupFixture("terminal-hook-rejection", 1);
 		await writeEpisodicConfig(fixture.projectRoot, true);
@@ -495,7 +491,6 @@ describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
 		await rm(lockPath, { recursive: true, force: true });
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-006
 	test("keeps a thrown attempt at one failed terminal when settle writes fallback completion", async () => {
 		const fixture = await setupFixture("thrown-settle-fallback", 1);
 		await writeEpisodicConfig(fixture.projectRoot, true);
@@ -563,7 +558,6 @@ describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-021
 	test("survives scheduler host death and resumes a large sequential drive graph", async () => {
 		const fixture = await setupFixture("large-resume", 12);
 		const firstController = new AbortController();

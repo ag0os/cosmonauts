@@ -7,7 +7,6 @@ import {
 } from "../../lib/driver/default-envelope.ts";
 
 describe("default Drive envelope", () => {
-	// @cosmo-behavior plan:coding-agnostic-framework#B-013
 	test("missing framework default names the path and tells callers to pass an explicit envelope", () => {
 		const missingRoot = "/tmp/cosmonauts-missing-framework-root";
 		const missingPath = join(missingRoot, DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH);
@@ -19,7 +18,6 @@ describe("default Drive envelope", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:coding-agnostic-framework#B-010
 	test("resolves the framework default envelope outside bundled coding", () => {
 		const resolvedPath = resolveDefaultDriveEnvelopePath({
 			frameworkRoot: process.cwd(),

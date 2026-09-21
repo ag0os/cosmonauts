@@ -11,7 +11,6 @@ async function readSkill() {
 }
 
 describe("tdd skill", () => {
-	// @cosmo-behavior plan:artifact-format-redesign#B-020
 	it("keeps optional TDD references directly linked when they exist", async () => {
 		const content = await readSkill();
 

@@ -15,7 +15,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("durable-scheduler-store-");
 
 describe("durable scheduler store primitives", () => {
-	// @cosmo-behavior plan:durable-graph-scheduler#B-002
 	test("persists graph scheduler state leases heartbeats and diagnostics through the store", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({

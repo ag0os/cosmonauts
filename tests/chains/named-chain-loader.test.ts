@@ -113,7 +113,6 @@ describe("loadNamedChains", () => {
 	});
 
 	test("loads a project chain named list as registry data", async () => {
-		// @cosmo-behavior plan:orchestration-surface-consolidation#B-011
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
@@ -273,7 +272,6 @@ describe("domain chain merging", () => {
 	});
 
 	test("project config overrides domain chain on name collision", async () => {
-		// @cosmo-behavior plan:orchestration-surface-consolidation#B-015
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
@@ -345,7 +343,6 @@ describe("domain chain merging", () => {
 	});
 
 	test("hides chains named in the internal deny-list from outside the owning domain", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-018
 		const domain = makeDomain({
 			manifest: {
 				id: "ruby-coding",

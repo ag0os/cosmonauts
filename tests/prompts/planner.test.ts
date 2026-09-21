@@ -7,7 +7,6 @@ const PROMPT_PATH = new URL(
 );
 
 describe("planner prompt", () => {
-	// @cosmo-behavior plan:spec-plan-intent#B-008
 	it("records decision provenance and checks mechanism against intent", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
@@ -55,7 +54,6 @@ describe("planner prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-010
 	it("reads all review rounds and cites findings round-qualified", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
@@ -68,7 +66,6 @@ describe("planner prompt", () => {
 		expect(content).toContain("`review-2.md PR-003`");
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-001
 	it("requires a closing consistency pass over decisions and stage ordering", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
@@ -84,7 +81,6 @@ describe("planner prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-002
 	it("requires state-space enumeration with no implementer-decided cells", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
@@ -95,7 +91,6 @@ describe("planner prompt", () => {
 		expect(content).toContain("no implementer-decided cells");
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-003
 	it("enforces the size checkpoint with slice boundaries or justification", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
@@ -112,7 +107,6 @@ describe("planner prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-005
 	it("requires naming trust boundary and consent gate for project-controlled execution", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 

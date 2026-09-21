@@ -20,7 +20,6 @@ async function readDriveGuidance() {
 }
 
 describe("drive skill", () => {
-	// @cosmo-behavior plan:drive-resilience-state-model#B-021
 	it("documents finalization recovery state commits no-change tasks and deferred UX followups", async () => {
 		const content = await readDriveGuidance();
 

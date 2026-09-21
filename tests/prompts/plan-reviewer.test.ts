@@ -11,7 +11,6 @@ async function readPrompt() {
 }
 
 describe("plan-reviewer prompt", () => {
-	// @cosmo-behavior plan:spec-plan-intent#B-011
 	it("verifies intent presence and names ratified ground in findings", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
@@ -24,7 +23,6 @@ describe("plan-reviewer prompt", () => {
 		expect(content).toContain("`references/deviation-protocol.md`");
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-009
 	it("writes findings to the next free round file and never overwrites", async () => {
 		const content = await readPrompt();
 
@@ -35,7 +33,6 @@ describe("plan-reviewer prompt", () => {
 		expect(content).toContain("Never overwrite an existing review round");
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-006
 	it("requires a per-dimension coverage ledger with explicit none", async () => {
 		const content = await readPrompt();
 
@@ -46,7 +43,6 @@ describe("plan-reviewer prompt", () => {
 		expect(content).toContain("status: unchecked");
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-007
 	it("requires live read-only probing of wrapped external tools", async () => {
 		const content = await readPrompt();
 
@@ -66,7 +62,6 @@ describe("plan-reviewer prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:planning-system-hardening#B-008
 	it("defines a scope and size dimension applying the plan guidance", async () => {
 		const content = await readPrompt();
 

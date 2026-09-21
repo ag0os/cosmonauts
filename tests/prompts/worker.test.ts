@@ -11,7 +11,6 @@ async function readPrompt() {
 }
 
 describe("worker prompt", () => {
-	// @cosmo-behavior plan:spec-plan-intent#B-009
 	it("routes plan deviations through the classifier with drafted escalations", async () => {
 		const content = await readPrompt();
 

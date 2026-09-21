@@ -309,7 +309,6 @@ async function readPidFile(
 // backend child and descendant, so it pays genuine startup cost under parallel
 // suite load. The 15s global is a floor, not a budget for this.
 describe("backend process reaping", { timeout: 30_000 }, () => {
-	// @cosmo-behavior plan:drive-process-reaping#B-001
 	test.each([
 		"codex",
 		"claude-cli",
@@ -331,7 +330,6 @@ describe("backend process reaping", { timeout: 30_000 }, () => {
 		});
 	});
 
-	// @cosmo-behavior plan:drive-process-reaping#B-002
 	test.each([
 		"codex",
 		"claude-cli",
@@ -348,7 +346,6 @@ describe("backend process reaping", { timeout: 30_000 }, () => {
 		expect(outcome.observation.stdout).toContain("backend-stdout");
 	});
 
-	// @cosmo-behavior plan:drive-process-reaping#B-003
 	test("escalates an ignored SIGTERM to SIGKILL on a bounded deadline", async () => {
 		const outcome = await runHarness({
 			backendModule: "codex",
@@ -373,7 +370,6 @@ describe("backend process reaping", { timeout: 30_000 }, () => {
 		expect(observation.settledMs).toBeLessThan(10_000);
 	});
 
-	// @cosmo-behavior plan:drive-process-reaping#B-005
 	test("reports a tree it could not reap", async () => {
 		// SIGKILL cannot be ignored, so a group that outlives the kill deadline is
 		// not constructible on a healthy host. The reachable equivalent is a group

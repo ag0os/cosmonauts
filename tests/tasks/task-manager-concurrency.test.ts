@@ -72,7 +72,7 @@ describe("TaskManager concurrency", () => {
 		expect(files).toHaveLength(CONCURRENCY);
 	});
 
-	it("serializes enabled same-task updates and records only actual status transitions @cosmo-behavior plan:episodic-log-detached-hardening#B-015", async () => {
+	it("serializes enabled same-task updates and records only actual status transitions", async () => {
 		const sameTargetRoot = join(tempDir, "same-target");
 		await writeEpisodicConfig(sameTargetRoot);
 		const sameTargetLockPath = join(

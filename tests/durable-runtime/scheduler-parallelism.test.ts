@@ -14,7 +14,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("durable-scheduler-parallelism-");
 
 describe("durable scheduler parallelism", () => {
-	// @cosmo-behavior plan:durable-graph-scheduler#B-012
 	test("defaults to one running step and never exceeds explicit maxParallelSteps", async () => {
 		const defaultStore = new FileRunStore({ rootDir: temp.path });
 		const defaultRun = await parallelRunFixture(defaultStore, {
@@ -83,7 +82,6 @@ describe("durable scheduler parallelism", () => {
 		).resolves.toEqual(expect.objectContaining({ status: "ready" }));
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-016
 	test("caps shared-worktree committing backends to sequential while isolated non-committing backends run in parallel", async () => {
 		const sharedStore = new FileRunStore({ rootDir: temp.path });
 		const sharedRun = await parallelRunFixture(sharedStore, {

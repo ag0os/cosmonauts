@@ -19,7 +19,6 @@ const registry = new AgentRegistry([
 ]);
 
 describe("chain durable routing", () => {
-	// @cosmo-behavior plan:durable-frontend-migration#B-005
 	test("keeps loop and completion-check chains on the legacy inline runner", async () => {
 		const durableGraphWriter = vi.fn();
 		const runChain = vi.fn();

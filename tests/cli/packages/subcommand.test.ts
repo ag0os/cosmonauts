@@ -145,7 +145,6 @@ describe("resolveSource", () => {
 	});
 
 	it("resolves catalog short names to an absolute path", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-024
 		mockResolveCatalogEntry.mockReturnValue({
 			name: "alpha",
 			description: "Alpha domain",

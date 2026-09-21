@@ -17,7 +17,7 @@ interface BiomeConfig {
 }
 
 describe("biome.json", () => {
-	test("does not blanket-exclude missions while git still ignores transcripts @cosmo-behavior plan:task-id-system#B-012", async () => {
+	test("does not blanket-exclude missions while git still ignores transcripts", async () => {
 		const config = JSON.parse(
 			await readFile(join(projectRoot, "biome.json"), "utf-8"),
 		) as BiomeConfig;

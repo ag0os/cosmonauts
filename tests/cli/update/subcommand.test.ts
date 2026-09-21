@@ -122,7 +122,6 @@ afterEach(() => {
 
 describe("catalog source", () => {
 	it("uninstalls and re-installs from the catalog source path", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-024
 		mockLoadInstallMeta.mockResolvedValue(
 			createInstallMetaFixture("catalog", { catalogName: "alpha" }),
 		);

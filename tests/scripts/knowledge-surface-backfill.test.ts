@@ -61,7 +61,7 @@ afterEach(async () => {
 });
 
 describe("knowledge surface recoverable backfill", () => {
-	test("derives the frozen current 19-slug batch and verifies every source input @cosmo-behavior plan:knowledge-surface#B-010", async () => {
+	test("derives the frozen current 19-slug batch and verifies every source input", async () => {
 		const inspected = await inspectKnowledgeSurfaceBackfill({
 			projectRoot: REPO_ROOT,
 		});

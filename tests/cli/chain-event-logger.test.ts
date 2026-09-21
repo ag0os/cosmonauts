@@ -341,7 +341,7 @@ describe("formatChainEvent", () => {
 });
 
 describe("createChainEventLogger", () => {
-	test("renders an unaddressed review-round event with available identity @cosmo-behavior plan:chain-stage-context#B-011", () => {
+	test("renders an unaddressed review-round event with available identity", () => {
 		const output = captureCliOutput();
 		try {
 			const logger = createChainEventLogger();

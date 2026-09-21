@@ -89,7 +89,7 @@ describe("plans extension", () => {
 		expect(pi.tools.has("plan_archive")).toBe(true);
 	});
 
-	test("preserves plan tool results while supplying episode actor and visible failure warning @cosmo-behavior plan:episodic-log#B-023", async () => {
+	test("preserves plan tool results while supplying episode actor and visible failure warning", async () => {
 		const enabledRoot = join(tempDir, "enabled");
 		await writeEpisodicConfig(enabledRoot);
 		const actorPrompt = buildAgentIdentityMarker("custom/plan-specialist");

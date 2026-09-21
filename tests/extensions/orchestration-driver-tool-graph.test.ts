@@ -73,7 +73,6 @@ describe("run_driver graph compatibility", () => {
 		backendMocks.createCosmonautsSubagentBackend.mockClear();
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-018
 	test("preserves run_driver watch_events and avoids duplicate graph lifecycle events", async () => {
 		const fixture = await setupFixture();
 		const pi = createMockPi(fixture.projectRoot, {

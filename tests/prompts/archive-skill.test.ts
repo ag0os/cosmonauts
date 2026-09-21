@@ -28,7 +28,6 @@ const SCAN_EVIDENCE_PATH = new URL(
 );
 
 describe("archive skill", () => {
-	// @cosmo-behavior plan:spec-plan-intent#B-014
 	it("distills supersessions and amend-on-record decisions into key decisions", async () => {
 		const content = await readFile(SKILL_PATH, "utf-8");
 
@@ -36,7 +35,7 @@ describe("archive skill", () => {
 		expect(content).toContain("what it replaced");
 	});
 
-	it("requires active and archived Tier-2 discovery and attributable distilled OKF proposals @cosmo-behavior plan:knowledge-surface#B-009", async () => {
+	it("requires active and archived Tier-2 discovery and attributable distilled OKF proposals", async () => {
 		const [skill, prompt, definition] = await Promise.all([
 			readFile(SKILL_PATH, "utf-8"),
 			readFile(DISTILLER_PROMPT_PATH, "utf-8"),
@@ -92,7 +91,7 @@ describe("archive skill", () => {
 		expect(definition).not.toMatch(/JSONL|SQLite|embedding/i);
 	});
 
-	it("documents the stack-agnostic knowledge surface budget gate authority host scope and exclusions @cosmo-behavior plan:knowledge-surface#B-011", async () => {
+	it("documents the stack-agnostic knowledge surface budget gate authority host scope and exclusions", async () => {
 		const [
 			memoryDoc,
 			readme,

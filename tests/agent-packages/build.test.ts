@@ -170,7 +170,6 @@ describe("buildAgentPackage", () => {
 	});
 
 	it("uses main as the final source-agent prompt fallback while preserving source identity", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-007
 		await writeDomainPromptFiles("main", "Main explorer persona.");
 		const sourceAgent = makeAgent({
 			domain: undefined,

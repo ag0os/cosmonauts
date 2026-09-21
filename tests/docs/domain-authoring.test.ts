@@ -30,7 +30,6 @@ function retiredNestedBundledPath(): string {
 
 describe("domain authoring documentation", () => {
 	test("documents every domain authoring asset and config split", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-015
 		const content = await readRepoFile(DOMAIN_DOC_PATH);
 
 		for (const required of [

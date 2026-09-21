@@ -303,7 +303,6 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.run).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:coding-agnostic-framework#B-012
 	test("run_driver uses the framework default envelope when envelopePath is omitted", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const frameworkRoot = process.cwd();
@@ -484,7 +483,6 @@ describe("driver e2e run_driver integration", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:coding-agnostic-framework#B-025
 	test("run_driver honors an explicit legacy bundled envelopePath", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const frameworkRoot = process.cwd();
@@ -517,7 +515,6 @@ describe("driver e2e run_driver integration", () => {
 		).resolves.toBe(await readFile(legacyEnvelopePath, "utf-8"));
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-012
 	test("run_driver uses the project root for repository commit locking", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const frameworkRoot = join(temp.path, "framework-root");
@@ -554,7 +551,6 @@ describe("driver e2e run_driver integration", () => {
 		).toBe("project-lock-present\nframework-lock-absent\n");
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-013
 	test("run_driver propagates state commit policy defaults and overrides", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		await initGit(fixture.projectRoot);

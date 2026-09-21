@@ -64,7 +64,6 @@ export async function loadOrchestrationDomainFixtures(
 	const domains = await loadDomainsFromSources([
 		{ domainsDir: testDomainsDir, origin: "framework", precedence: 1 },
 		{
-			// @cosmo-behavior plan:coding-agnostic-framework#B-017
 			domainsDir: packageRoot,
 			sourceType: "domain-root",
 			origin: "synthetic",

@@ -49,7 +49,7 @@ describe("TaskManager", () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
-	it("adds gated fail-soft episodes only for task creation and real status transitions @cosmo-behavior plan:episodic-log#B-014", async () => {
+	it("adds gated fail-soft episodes only for task creation and real status transitions", async () => {
 		vi.useFakeTimers();
 		const baselineRoot = join(tempDir, "disabled-baseline");
 		const contextualRoot = join(tempDir, "disabled-contextual");
@@ -525,7 +525,7 @@ describe("TaskManager", () => {
 			expect(task.id).toBe("TASK-011");
 		});
 
-		it("allocates above archived filename IDs without parsing archived content @cosmo-behavior plan:task-id-system#B-003", async () => {
+		it("allocates above archived filename IDs without parsing archived content", async () => {
 			await mkdir(join(tempDir, "missions", "archive", "tasks"), {
 				recursive: true,
 			});
@@ -546,7 +546,7 @@ describe("TaskManager", () => {
 			expect(task.id).toBe("TASK-011");
 		});
 
-		it("allocates active IDs from task frontmatter, not non-standard filenames @cosmo-behavior plan:task-id-system#B-003", async () => {
+		it("allocates active IDs from task frontmatter, not non-standard filenames", async () => {
 			await manager.init();
 			await writeFile(
 				join(
@@ -569,7 +569,7 @@ describe("TaskManager", () => {
 			expect(task.id).toBe("TASK-011");
 		});
 
-		it("treats a missing archive directory as empty @cosmo-behavior plan:task-id-system#B-004", async () => {
+		it("treats a missing archive directory as empty", async () => {
 			const config: ForgeTasksConfig = {
 				prefix: "BUG",
 				zeroPadding: 4,
@@ -586,7 +586,7 @@ describe("TaskManager", () => {
 			expect(task.id).toBe("BUG-0001");
 		});
 
-		it("does not rewrite config and ignores legacy lastIdNumber @cosmo-behavior plan:task-id-system#B-005", async () => {
+		it("does not rewrite config and ignores legacy lastIdNumber", async () => {
 			await mkdir(join(tempDir, "missions", "tasks"), { recursive: true });
 			const configPath = join(tempDir, "missions", "tasks", "config.json");
 			const originalConfig =
@@ -600,7 +600,7 @@ describe("TaskManager", () => {
 			expect(afterCreateConfig).toBe(originalConfig);
 		});
 
-		it("does not create config when creating with defaults @cosmo-behavior plan:task-id-system#B-006", async () => {
+		it("does not create config when creating with defaults", async () => {
 			const task = await manager.createTask({ title: "Default Task" });
 			const configExists = await access(
 				join(tempDir, "missions", "tasks", "config.json"),
@@ -612,7 +612,7 @@ describe("TaskManager", () => {
 			expect(configExists).toBe(false);
 		});
 
-		it("uses archived tasks for allocation only @cosmo-behavior plan:task-id-system#B-007", async () => {
+		it("uses archived tasks for allocation only", async () => {
 			await mkdir(join(tempDir, "missions", "archive", "tasks"), {
 				recursive: true,
 			});
@@ -1114,7 +1114,7 @@ describe("TaskManager", () => {
 			expect(tasks[0]?.id).toBe("TASK-001");
 		});
 
-		it("listTasksReadOnly mirrors list filters without initializing scaffolding @cosmo-behavior plan:code-structure-map#B-016", async () => {
+		it("listTasksReadOnly mirrors list filters without initializing scaffolding", async () => {
 			await expect(manager.listTasksReadOnly()).resolves.toEqual([]);
 			await expect(
 				access(join(tempDir, "missions", "tasks")),
@@ -1144,7 +1144,7 @@ describe("TaskManager", () => {
 			expect(readOnlyTasks).toEqual(normalTasks);
 		});
 
-		it("listTasksReadOnly skips parsing files outside the label filter @cosmo-behavior plan:code-structure-map#B-016", async () => {
+		it("listTasksReadOnly skips parsing files outside the label filter", async () => {
 			await mkdir(join(tempDir, "missions", "tasks"), { recursive: true });
 			await writeFile(
 				join(tempDir, "missions", "tasks", "TASK-001 - Plan Task.md"),
@@ -1317,7 +1317,7 @@ describe("TaskManager", () => {
 	});
 
 	describe("config sanitization", () => {
-		it("returns and caches init config without lastIdNumber @cosmo-behavior plan:task-id-system#B-009", async () => {
+		it("returns and caches init config without lastIdNumber", async () => {
 			const legacyConfig = { prefix: "TASK", lastIdNumber: 50 };
 			const config = await manager.init(legacyConfig);
 

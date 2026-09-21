@@ -11,7 +11,6 @@ async function readPrompt() {
 }
 
 describe("task-manager prompt", () => {
-	// @cosmo-behavior plan:spec-plan-intent#B-012
 	it("carries ratified-ground constraints into task acceptance criteria", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 

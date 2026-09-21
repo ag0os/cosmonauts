@@ -474,7 +474,6 @@ describe("createRegistryFromDomains", () => {
 	});
 
 	it("hides only named internal agents outside their owning domain", () => {
-		// @cosmo-behavior plan:domain-authoring#B-006
 		const publicAgent: AgentDefinition = {
 			...DOMAIN_ALPHA,
 			id: "public-agent",

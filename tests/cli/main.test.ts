@@ -493,7 +493,6 @@ describe("parseCliArgs", () => {
 		expect(opts.dumpPromptFile).toBeUndefined();
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-014
 	test("rejects removed workflow flags while preserving print mode", () => {
 		expect(() => parseCliArgs(["--workflow", "plan-and-build"])).toThrow(
 			"unknown option '--workflow'",
@@ -602,7 +601,6 @@ describe("buildInitSessionConfig", () => {
 	});
 
 	test("init guard copy is domain-neutral", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-023
 		const message = buildInitNoRunnableDefaultDomainLines().join("\n");
 
 		expect(message).toContain("main");
@@ -625,7 +623,6 @@ describe("resolveInteractiveExtensionPaths", () => {
 
 describe("resolveDumpPromptDomain", () => {
 	test("uses injectable default-domain semantics for domainless prompt dumps", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-008
 		expect(
 			resolveDumpPromptDomain({
 				definition: { id: "cosmo" },

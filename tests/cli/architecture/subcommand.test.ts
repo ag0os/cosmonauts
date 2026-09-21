@@ -194,7 +194,7 @@ describe("architecture generate command", () => {
 		expect(createNarrativeProvider).not.toHaveBeenCalled();
 	});
 
-	test("reports unsupported non TypeScript projects without writing a map @cosmo-behavior plan:code-structure-map#B-009", async () => {
+	test("reports unsupported non TypeScript projects without writing a map", async () => {
 		await writeFile(join(tmp.path, "package.json"), '{"type":"module"}\n');
 		const createNarrativeProvider = vi.fn(fakeProvider);
 

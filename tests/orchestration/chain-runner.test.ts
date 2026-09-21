@@ -1356,7 +1356,7 @@ describe("runChain", () => {
 		}
 	});
 
-	test("records exactly one fail-soft inline chain start and terminal episode across exit paths @cosmo-behavior plan:episodic-log#B-015", async () => {
+	test("records exactly one fail-soft inline chain start and terminal episode across exit paths", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-07-21T12:00:00.000Z"));
 		const subjects = new Set<string>();
@@ -1578,7 +1578,6 @@ describe("runChain", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-005
 	test("keeps inline chain results explicitly non-durable", async () => {
 		const result = await runChain(makeConfig([makeStage("planner", false)]));
 
@@ -1600,7 +1599,6 @@ describe("runChain", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-001
 	test("gives a plan-review cycle distinct jobs while preserving the first planner prompt", async () => {
 		const steps = parseChain(
 			"planner -> plan-reviewer -> planner",
@@ -1671,7 +1669,6 @@ describe("runChain", () => {
 		await rm(projectRoot, { recursive: true, force: true });
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-006
 	test("binds plan review to the expected or reviewer-established active target", async () => {
 		const terminal = planReviewReport("review-target", 1);
 		const cases = [
@@ -1900,7 +1897,6 @@ describe("runChain", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-007
 	test("records a typed review block as an unsuccessful inline chain result", async () => {
 		const terminal = reviewRevisionReport("review-target", 1);
 		const cases = [
@@ -2137,7 +2133,6 @@ Review incomplete.
 		}
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-008
 	test("blocks sequential and parallel task decomposition until earlier plan review is addressed", async () => {
 		const codingDefinitions = [
 			"planner",
@@ -2484,7 +2479,6 @@ Review incomplete.
 		}
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-009
 	test("starts task decomposition only for earlier reviewer-bound addressed evidence", async () => {
 		for (const findings of ["none", "referenced"] as const) {
 			const projectRoot = await mkdtemp(
@@ -2616,7 +2610,6 @@ Review complete.
 		}
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-013
 	test("gates a looping revision stage once after its final iteration", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "chain-loop-revision-"));
 		try {

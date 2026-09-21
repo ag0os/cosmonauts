@@ -37,7 +37,6 @@ const TASK_ID = "TASK-1";
 const SECOND_TASK_ID = "TASK-2";
 
 describe("Drive durable finalizer projection", () => {
-	// @cosmo-behavior plan:durable-backend-step-model#B-007
 	test("projects Drive finalization phases into generic finalizer step records", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({
@@ -187,7 +186,6 @@ describe("Drive durable finalizer projection", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:durable-backend-step-model#B-008
 	test("records finalization_failed as a retryable finalizer step without failing the task step", async () => {
 		const fixture = await setupInlineFixture();
 		await initGit(fixture.projectRoot);

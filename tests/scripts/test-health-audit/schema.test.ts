@@ -175,7 +175,6 @@ function expectInvalid(input: unknown, issue: RegExp) {
 }
 
 describe("test health audit schema", () => {
-	// @cosmo-behavior plan:test-health-audit#B-001
 	test("preserves seven dimensions all grounding forms and field-level assessment provenance without a score", () => {
 		const legitimateForms = [
 			["production-function", "direct-production", "isolated-real-unit"],
@@ -233,7 +232,6 @@ describe("test health audit schema", () => {
 		expectInvalid(unsupportedSut, /sutKind/);
 	});
 
-	// @cosmo-behavior plan:test-health-audit#B-005
 	test("classifies false-confidence chains without automatically demoting mocks mediation or focused units", () => {
 		const mockMasked = profile({
 			sutKind: "event",

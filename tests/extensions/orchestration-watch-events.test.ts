@@ -136,7 +136,6 @@ describe("watch_events tool", () => {
 		expect(text).toContain("cursor 3");
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-009
 	test("summarizes finalization phase failures and no-change commits distinctly from task blocks", async () => {
 		await writeEventLog([
 			makeEvent({
@@ -233,7 +232,6 @@ describe("watch_events tool", () => {
 		expect(text).toContain("cursor 35");
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-011
 	test("reads legacy driver events when normalized events also exist", async () => {
 		await writeEventLog([
 			makeEvent({ type: "task_started", taskId: "TASK-1" }),

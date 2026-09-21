@@ -26,7 +26,6 @@ function migrationParagraph(content: string, marker: string) {
 }
 
 describe("quality-manager prompt", () => {
-	// @cosmo-behavior plan:spec-plan-intent#B-010
 	it("classifies remediations against ratified ground before routing", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
@@ -94,7 +93,6 @@ describe("quality-manager prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-gate-rewiring#B-013
 	it("runs bound feature branch gates directly through the changed scope capability", async () => {
 		const content = await readPrompt();
 
@@ -114,7 +112,6 @@ describe("quality-manager prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-gate-rewiring#B-014
 	it("runs bound dirty base gates from an explicit HEAD base", async () => {
 		const content = await readPrompt();
 
@@ -129,7 +126,6 @@ describe("quality-manager prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-gate-rewiring#B-016
 	it("separates failed to run gates and routes findings for direct replay", async () => {
 		const content = await readPrompt();
 
@@ -284,7 +280,6 @@ describe("quality-manager prompt", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-gate-rewiring#B-031
 	it("preserves explicit migration reference searches even when dead code is bound", async () => {
 		const [qualityManagerContent, workerContent] = await Promise.all([
 			readPrompt(),

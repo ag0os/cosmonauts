@@ -15,7 +15,6 @@ async function readRepoFile(path: string): Promise<string> {
 }
 
 describe("orchestration surface non-goals", () => {
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-019
 	test("keeps nested-run parent fields run spawn and new mutable-parallel surfaces out of wave two", async () => {
 		const durableTypes = await readRepoFile("lib/durable-runtime/types.ts");
 		const runRecordBlock = durableTypes.match(

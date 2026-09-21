@@ -42,7 +42,7 @@ describe("PlanManager", () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
-	it("adds gated fail-soft episodes only for plan creation and real status transitions @cosmo-behavior plan:episodic-log#B-013", async () => {
+	it("adds gated fail-soft episodes only for plan creation and real status transitions", async () => {
 		vi.useFakeTimers();
 		const baselineRoot = join(tempDir, "disabled-baseline");
 		const contextualRoot = join(tempDir, "disabled-contextual");
@@ -314,7 +314,7 @@ describe("PlanManager", () => {
 		expect(new Set(specBytes).size).toBe(1);
 	});
 
-	it("serializes enabled same-plan status transition decisions across manager instances @cosmo-behavior plan:episodic-log-detached-hardening#B-014", async () => {
+	it("serializes enabled same-plan status transition decisions across manager instances", async () => {
 		const sameTargetRoot = join(tempDir, "same-target");
 		await writeEpisodicConfig(sameTargetRoot);
 		const sameTargetLockPath = join(

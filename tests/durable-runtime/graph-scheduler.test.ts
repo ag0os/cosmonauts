@@ -15,7 +15,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("durable-graph-scheduler-");
 
 describe("durable graph scheduler", () => {
-	// @cosmo-behavior plan:durable-graph-scheduler#B-003
 	test("marks dependency-satisfied steps ready and leaves blocked dependencies pending", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({
@@ -136,7 +135,6 @@ describe("durable graph scheduler", () => {
 		expect(schedulerStateSource).not.toMatch(/from\s+["'][^"']*orchestration/);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-004
 	test("acquires renews and releases step leases only for the matching holder", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await store.createRun({
@@ -358,7 +356,6 @@ describe("durable graph scheduler", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-013
 	test("finalizes run from terminal step outcomes without nonterminal demotion", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 

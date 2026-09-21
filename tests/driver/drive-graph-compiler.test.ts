@@ -9,7 +9,6 @@ const PLAN_SLUG = "durable-frontend-migration";
 const PARENT_SESSION_ID = "drive-graph-parent-session";
 
 describe("Drive graph compiler", () => {
-	// @cosmo-behavior plan:durable-frontend-migration#B-009
 	test("compiles selected task ids into sequential drive task steps", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const spec = createSpec({
@@ -87,7 +86,6 @@ describe("Drive graph compiler", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-010
 	test("adds only policy-enabled drive finalizer steps in executable order", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const driverCommitsSpec = createSpec({

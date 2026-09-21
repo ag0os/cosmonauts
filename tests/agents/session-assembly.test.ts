@@ -146,7 +146,6 @@ function makeOptions(
 describe("buildSessionParams", () => {
 	describe("prompt assembly and identity marker", () => {
 		it("loads main prompt resources for domainless definitions without a coding directory", async () => {
-			// @cosmo-behavior plan:coding-agnostic-framework#B-003
 			await setupMinimalDomains(tmp.path);
 			const params = await buildSessionParams(makeOptions());
 
@@ -411,7 +410,6 @@ describe("buildSessionParams", () => {
 		});
 
 		it("prefers main extension paths for domainless definitions", async () => {
-			// @cosmo-behavior plan:coding-agnostic-framework#B-004
 			await setupMinimalDomains(tmp.path);
 			await mkdir(join(tmp.path, "main", "extensions", "test-ext"), {
 				recursive: true,
@@ -524,7 +522,6 @@ describe("buildSessionParams", () => {
 		});
 
 		it("uses main as the requester domain for domainless skill visibility", async () => {
-			// @cosmo-behavior plan:coding-agnostic-framework#B-005
 			await setupMinimalDomains(tmp.path);
 			const resolver = new DomainResolver(
 				new DomainRegistry([

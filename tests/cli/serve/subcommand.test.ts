@@ -50,7 +50,7 @@ describe("cosmonauts serve command", () => {
 		}
 	});
 
-	test("keeps the server running when opening the browser fails @cosmo-behavior plan:code-structure-map#B-020", async () => {
+	test("keeps the server running when opening the browser fails", async () => {
 		const output: string[] = [];
 		const warnings: string[] = [];
 		const openBrowser = vi.fn(async () => {

@@ -258,7 +258,6 @@ describe("driver", () => {
 		expect(firstLock.release).toHaveBeenCalledTimes(1);
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-008
 	test("terminates a detached child published during the pre-spawn abort window", async () => {
 		const fixture = await createDetachedFixture("run-pre-spawn-abort");
 		const spawned = deferred<void>();
@@ -318,7 +317,6 @@ describe("driver", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-028
 	test("stops a bridge published during the abort window", async () => {
 		const fixture = await createDetachedFixture("run-bridge-publication-abort");
 		const mockChild = createMockChild(41028, true);

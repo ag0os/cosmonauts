@@ -206,7 +206,6 @@ describe("createExportProgram", () => {
 	});
 
 	it("exports an agent-id shorthand through a generated package definition", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-024
 		const outPath = join(tmp.path, "explorer");
 		packageMocks.buildAgentPackage.mockResolvedValue(
 			makePackage({ packageId: "alpha-explorer-claude-cli" }),
@@ -323,7 +322,6 @@ describe("createExportProgram", () => {
 	});
 
 	it("maps registry selection to the unchanged serialized package contract", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-003
 		packageMocks.buildAgentPackage.mockResolvedValueOnce(
 			makePackage({ packageId: "alpha-explorer-claude-cli" }),
 		);

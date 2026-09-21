@@ -18,7 +18,6 @@ const base = {
 };
 
 describe("durable driver events", () => {
-	// @cosmo-behavior plan:durable-run-store-events#B-004
 	test("maps driver lifecycle events without fabricating backend or step data", () => {
 		const events = [
 			normalize(runStarted()),
@@ -210,7 +209,6 @@ describe("durable driver events", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-005
 	test("preserves reports activity commits and finalization details without extending terminal events", () => {
 		const report: ParsedReport = {
 			outcome: "partial",
@@ -342,7 +340,6 @@ describe("durable driver events", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:durable-backend-step-model#B-011
 	test("uses enriched task completion results only for unknown report corrections", () => {
 		const reportResult: StepResult = {
 			outcome: "success",
@@ -373,7 +370,6 @@ describe("durable driver events", () => {
 		expect(normalizedTaskDoneResult(unknownResult)).toEqual(unknownResult);
 	});
 
-	// @cosmo-behavior plan:durable-run-store-events#B-015
 	test("maps failed preflight to activity detail followed by canonical step blocked", () => {
 		const started = normalize(preflight("started"));
 		const passed = normalize(preflight("passed"));

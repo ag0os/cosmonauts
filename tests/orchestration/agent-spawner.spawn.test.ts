@@ -89,7 +89,6 @@ beforeAll(async () => {
 	const domains = await loadDomainsFromSources([
 		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
 		{
-			// @cosmo-behavior plan:coding-agnostic-framework#B-017
 			domainsDir: syntheticPackageRoot,
 			sourceType: "domain-root",
 			origin: "synthetic",

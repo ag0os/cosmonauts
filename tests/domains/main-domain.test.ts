@@ -107,7 +107,6 @@ describe("main domain built-in discovery", () => {
 	});
 
 	it("validates main/cosmo and resolves the drive capability", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-015
 		const diagnostics = validateDomains(domains).filter(
 			(diagnostic) =>
 				diagnostic.domain === "main" &&
@@ -170,7 +169,7 @@ describe("main domain built-in discovery", () => {
 		expect(prompt).toContain("**Pull in specialists when needed.**");
 	});
 
-	it("wires agent memory only to main/cosmo and gives concise visible save guidance @cosmo-behavior plan:memory-interface#B-013", async () => {
+	it("wires agent memory only to main/cosmo and gives concise visible save guidance", async () => {
 		const agentDefinitions = await loadBuiltinAgentDefinitions();
 		const consumers = agentDefinitions
 			.filter((definition) => definition.extensions.includes("agent-memory"))
@@ -189,7 +188,7 @@ describe("main domain built-in discovery", () => {
 		expect(prompt).toContain("say what you saved and where");
 	});
 
-	it("guides Cosmo to propose profile and playbook saves and call remember only after confirmation @cosmo-behavior plan:profile-playbooks#B-006", async () => {
+	it("guides Cosmo to propose profile and playbook saves and call remember only after confirmation", async () => {
 		const prompt = await readFile(
 			join(MAIN_DOMAIN_DIR, "prompts", "cosmo.md"),
 			"utf-8",
@@ -258,7 +257,7 @@ describe("main domain built-in discovery", () => {
 		);
 	});
 
-	it("keeps W2 memory Cosmo only without broadening the tool allowlist @cosmo-behavior plan:profile-playbooks#B-019", async () => {
+	it("keeps W2 memory Cosmo only without broadening the tool allowlist", async () => {
 		const extensionPaths = resolveExtensionPaths(cosmo.extensions, {
 			domain: "main",
 			resolver,
@@ -329,7 +328,7 @@ describe("main domain built-in discovery", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	it("keeps gate-selected inline knowledge adapters outside package auto-discovery @cosmo-behavior plan:knowledge-surface#B-012", async () => {
+	it("keeps gate-selected inline knowledge adapters outside package auto-discovery", async () => {
 		const packageJson = JSON.parse(
 			await readFile(join(REPO_ROOT, "package.json"), "utf-8"),
 		) as { pi?: { extensions?: string[] } };

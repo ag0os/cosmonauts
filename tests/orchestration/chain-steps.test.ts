@@ -76,7 +76,6 @@ function fanout(role: string, count: number): ParallelGroupStep {
 // ============================================================================
 
 describe("deriveStagePromptPurpose", () => {
-	// @cosmo-behavior plan:chain-stage-context#B-002
 	test("derives review purpose from resolved identity and zero-based strict topology order", () => {
 		const planner = stage("planner");
 		const planReviewer = stage("plan-reviewer");
@@ -242,7 +241,6 @@ describe("deriveStagePromptPurpose", () => {
 		).toEqual({ kind: "default" });
 	});
 
-	// @cosmo-behavior plan:chain-stage-context#B-004
 	test("keeps non-cycle prompts and step-zero injection byte-identical", async () => {
 		const expectedDefaults = new Map([
 			["planner", "Analyze the project and design an implementation plan."],

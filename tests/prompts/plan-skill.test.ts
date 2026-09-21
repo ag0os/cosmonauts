@@ -11,7 +11,6 @@ async function readSkill() {
 }
 
 describe("plan skill", () => {
-	// @cosmo-behavior plan:artifact-format-redesign#B-002
 	it("routes artifact shape behavior spine and gate rules to work-artifacts", async () => {
 		const content = await readSkill();
 
@@ -26,7 +25,6 @@ describe("plan skill", () => {
 		expect(content).toContain("`references/gate-contracts.md`");
 	});
 
-	// @cosmo-behavior plan:spec-plan-intent#B-005
 	it("checks intent presence and routes deviations to the protocol", async () => {
 		const content = await readSkill();
 
@@ -73,7 +71,6 @@ describe("plan skill", () => {
 		expect(content).toContain("keep only the relevant `Architecture Context`");
 	});
 
-	// @cosmo-behavior plan:artifact-format-redesign#B-020
 	it("stays a dispatcher with directly linked optional references", async () => {
 		const content = await readSkill();
 

@@ -62,7 +62,6 @@ function makeDomain(overrides: Partial<LoadedDomain> = {}): LoadedDomain {
 
 describe("domain public surface rules", () => {
 	it("exposes every discovered asset type when manifest.internal is omitted", () => {
-		// @cosmo-behavior plan:domain-authoring#B-005
 		const domain = makeDomain();
 
 		expect(selectPublicAgentIds(domain)).toEqual(["editor", "reviewer"]);

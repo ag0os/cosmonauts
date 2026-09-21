@@ -95,7 +95,7 @@ describe("formatId", () => {
 
 describe("generateNextId", () => {
 	describe("sequential ID generation", () => {
-		test("generates TASK-1 for an empty ID set @cosmo-behavior plan:task-id-system#B-001", () => {
+		test("generates TASK-1 for an empty ID set", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
 			const result = generateNextId(config, []);
 			expect(result).toBe("TASK-1");
@@ -204,13 +204,13 @@ describe("generateNextId", () => {
 	});
 
 	describe("supplied ID set allocation", () => {
-		test("returns first configured padded ID for an empty ID set @cosmo-behavior plan:task-id-system#B-001", () => {
+		test("returns first configured padded ID for an empty ID set", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK", zeroPadding: 3 };
 			const result = generateNextId(config, []);
 			expect(result).toBe("TASK-001");
 		});
 
-		test("allocates highest+1 across supplied IDs @cosmo-behavior plan:task-id-system#B-002", () => {
+		test("allocates highest+1 across supplied IDs", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
 			const ids = ["TASK-5", "task-10", "FEAT-99", "TASK-7"];
 
@@ -218,7 +218,7 @@ describe("generateNextId", () => {
 			expect(result).toBe("TASK-11");
 		});
 
-		test("does not fill gaps across supplied IDs @cosmo-behavior plan:task-id-system#B-002", () => {
+		test("does not fill gaps across supplied IDs", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
 			const ids = ["TASK-1", "TASK-4"];
 
@@ -246,14 +246,14 @@ describe("generateNextId", () => {
 });
 
 describe("extractIdNumbers", () => {
-	test("extracts numbers from matching IDs @cosmo-behavior plan:task-id-system#B-002", () => {
+	test("extracts numbers from matching IDs", () => {
 		const ids = ["TASK-1", "TASK-5", "TASK-10"];
 
 		const numbers = extractIdNumbers(ids, "TASK");
 		expect(numbers).toEqual([1, 5, 10]);
 	});
 
-	test("ignores IDs with different prefixes @cosmo-behavior plan:task-id-system#B-002", () => {
+	test("ignores IDs with different prefixes", () => {
 		const ids = ["TASK-1", "FEAT-2", "TASK-3", "BUG-4"];
 
 		const numbers = extractIdNumbers(ids, "TASK");
@@ -267,7 +267,7 @@ describe("extractIdNumbers", () => {
 		expect(numbers).toEqual([]);
 	});
 
-	test("returns empty array for empty input @cosmo-behavior plan:task-id-system#B-001", () => {
+	test("returns empty array for empty input", () => {
 		const numbers = extractIdNumbers([], "TASK");
 		expect(numbers).toEqual([]);
 	});

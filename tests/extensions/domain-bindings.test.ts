@@ -246,7 +246,6 @@ describe("domain-bindings extension", () => {
 	});
 
 	test("/domain-bind records a live switch and future resolutions use the bound target", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-010
 		const runtime = await setupRuntime();
 		const pi = createMockPi();
 		domainBindingsExtension(pi as never);
@@ -367,7 +366,6 @@ describe("domain-bindings extension", () => {
 	});
 
 	test("/domain-bind reports unavailable targets without changing the effective binding", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-011
 		const runtime = await setupRuntime();
 		const pi = createMockPi();
 		domainBindingsExtension(pi as never);
@@ -409,7 +407,6 @@ describe("domain-bindings extension", () => {
 	});
 
 	test("session_start rehydrates latest valid live bindings and warns on stale invalid entries", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-012
 		const runtime = await setupRuntime();
 		const pi = createMockPi();
 		domainBindingsExtension(pi as never);
@@ -480,7 +477,6 @@ describe("domain-bindings extension", () => {
 	});
 
 	test("cached orchestration runtimes observe later domain-bind changes through the shared live store", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-020
 		const interactiveRuntime = await setupRuntime();
 		const cachedOrchestrationRuntime = await CosmonautsRuntime.create({
 			builtinDomainsDir: join(tmp.path, "domains"),

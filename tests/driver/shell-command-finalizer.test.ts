@@ -26,7 +26,6 @@ const PARENT_SESSION_ID = "shell-finalizer-parent";
 const TASK_ID = "TASK-1";
 
 describe("Drive shell-command finalizer", () => {
-	// @cosmo-behavior plan:durable-frontend-migration#B-014
 	test("commits source changes and marks task status through shell finalizer steps", async () => {
 		const fixture = await setupFixture("success");
 		await writeProjectFile(fixture.projectRoot, "src/changed.txt", "commit\n");
@@ -144,7 +143,6 @@ describe("Drive shell-command finalizer", () => {
 		expect(ignoredStatus).toContain(".cosmonauts/");
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-015
 	test("records retryable finalizer failures from persisted attempt evidence as finalization_failed", async () => {
 		const fixture = await setupFixture("retryable-failure");
 		await installFailingCommitHook(fixture.projectRoot);

@@ -55,7 +55,6 @@ describe("--dump-prompt", () => {
 	});
 
 	test("default routing coding domain uses coding/cody when no agent is provided", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-016
 		const prompt = await dumpPrompt(["-d", "coding"]);
 
 		expect(prompt).toContain("You're Cody from a synthetic coding package.");
@@ -64,7 +63,6 @@ describe("--dump-prompt", () => {
 	});
 
 	test("uses the explicit cody agent when provided", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-016
 		const prompt = await dumpPrompt(["-a", "cody"]);
 
 		expect(prompt).toContain("You're Cody from a synthetic coding package.");

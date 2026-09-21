@@ -14,7 +14,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("durable-scheduler-retry-");
 
 describe("durable scheduler retries", () => {
-	// @cosmo-behavior plan:durable-graph-scheduler#B-007
 	test("retries with a new attempt record and preserves prior failed attempt evidence", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const run = await retryRunFixture(store, {
@@ -179,7 +178,6 @@ describe("durable scheduler retries", () => {
 		).resolves.toHaveLength(1);
 	});
 
-	// @cosmo-behavior plan:durable-graph-scheduler#B-008
 	test("blocks unknown results and exhausted retries instead of advancing dependents", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 

@@ -37,7 +37,6 @@ function makeResolver(domainIds: readonly string[]): DomainResolver {
 
 describe("resolveDefaultDomain", () => {
 	it("returns main for missing explicit domain when main is installed", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-001
 		const resolver = makeResolver(["shared", "main"]);
 
 		expect(resolveDefaultDomain({ resolver })).toBe("main");
@@ -55,7 +54,6 @@ describe("resolveDefaultDomain", () => {
 	});
 
 	it("throws a no default domain error when main is unavailable", () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-002
 		const resolver = makeResolver(["shared"]);
 
 		expect(() =>

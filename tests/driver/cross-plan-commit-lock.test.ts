@@ -49,7 +49,6 @@ afterEach(() => {
 });
 
 describe("cross-plan detached commit serialization", () => {
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-018
 	test("serializes driver-owned commits across detached runs in one repo", async () => {
 		const projectRoot = join(temp.path, "project");
 		await setupGitProject(projectRoot);

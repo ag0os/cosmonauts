@@ -10,7 +10,6 @@ import {
 import type { ChainEvent, SpawnEvent } from "../../lib/orchestration/types.ts";
 
 describe("chain-event-adapter", () => {
-	// @cosmo-behavior plan:durable-frontend-migration#B-006
 	test("maps durable chain spawn evidence to ChainEvents and refuses to fabricate missing session ids", () => {
 		const adapted = adaptDurableChainEvents({
 			runId: "run-durable-chain",

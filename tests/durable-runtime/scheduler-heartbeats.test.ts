@@ -14,7 +14,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("durable-scheduler-heartbeats-");
 
 describe("durable scheduler heartbeats", () => {
-	// @cosmo-behavior plan:durable-graph-scheduler#B-005
 	test("keeps long idle running steps alive while heartbeats remain fresh and no hard timeout is configured", async () => {
 		let scheduler: Promise<unknown> | undefined;
 		let result: Deferred<StepResult> | undefined;

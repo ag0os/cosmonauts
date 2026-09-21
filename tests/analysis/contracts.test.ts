@@ -55,7 +55,6 @@ function unquoteCode(value: string): string {
 }
 
 describe("analysis core contracts", () => {
-	// @cosmo-behavior plan:analysis-capability-runtime#B-001
 	test("documents one capability vocabulary aligned with gate kinds", async () => {
 		const [capabilityDocument, gateContracts] = await Promise.all([
 			readRepositoryFile("docs/analysis-capabilities.md"),
@@ -95,7 +94,6 @@ describe("analysis core contracts", () => {
 		).toEqual([...ANALYSIS_GATE_CAPABILITIES].sort());
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-002
 	test("documents two-tool evidence and provider-tags single-provider data", async () => {
 		const validation = await readRepositoryFile(
 			"docs/analysis-provider-validation.md",
@@ -172,7 +170,6 @@ describe("analysis core contracts", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:analysis-gate-coverage#B-040
 	test("declares evaluated gate coverage on every verdict bearing result", () => {
 		expectTypeOf<Extract<AnalysisResult, { capability: "dead-code" }>>()
 			.toHaveProperty("coverage")
@@ -203,7 +200,6 @@ describe("analysis core contracts", () => {
 		>().not.toHaveProperty("coverage");
 	});
 
-	// @cosmo-behavior plan:analysis-gate-coverage#B-044
 	test("records two tool validation for declared gate coverage", async () => {
 		const validation = await readRepositoryFile(
 			"docs/analysis-provider-validation.md",

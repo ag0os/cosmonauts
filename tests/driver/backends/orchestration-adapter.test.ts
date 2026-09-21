@@ -14,7 +14,6 @@ import type {
 import type { BackendContext } from "../../../lib/durable-runtime/index.ts";
 
 describe("Drive backend orchestration adapter", () => {
-	// @cosmo-behavior plan:durable-backend-step-model#B-002
 	test("starts wrapped Drive backends with unchanged invocations and pinned capabilities", async () => {
 		const signal = new AbortController().signal;
 		const eventSink = vi.fn(async () => {});

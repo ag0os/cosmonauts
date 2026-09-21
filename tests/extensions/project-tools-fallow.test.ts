@@ -560,7 +560,6 @@ async function snapshotWholeTree(
 }
 
 describe("Fallow provider discovery", () => {
-	// @cosmo-behavior plan:analysis-capability-runtime#B-025
 	test("uses the exact pinned project local provider engine", async () => {
 		const repositoryRoot = process.cwd();
 		const packageJson = JSON.parse(
@@ -1313,7 +1312,6 @@ describe("Fallow provider discovery", () => {
 		).toBe(true);
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-006
 	test("leaves boundary conformance unbound when rules are not configured", async () => {
 		await writeFile(
 			join(projectRoot, "package.json"),
@@ -1626,7 +1624,6 @@ describe("Fallow provider discovery", () => {
 		expect(run.invocations).toHaveLength(invocationCountAfterStatus);
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-037
 	test("surfaces version drift and fails out-of-contract envelopes", async () => {
 		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 		await recordConsent();
@@ -1928,7 +1925,6 @@ describe("Fallow capability execution", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-007
 	test("normalizes every supported capability and preserves its native envelope", async () => {
 		const runtime = await discoveredRuntimeWithFixtures();
 
@@ -1975,7 +1971,6 @@ describe("Fallow capability execution", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-008
 	test("treats exit one as completed failing analysis with findings", async () => {
 		const runtime = await discoveredRuntimeWithFixtures();
 		const fixture = await loadCapabilityFixture("dead-code");
@@ -2026,7 +2021,6 @@ describe("Fallow capability execution", () => {
 		expect(result.native.payload).toEqual(payload);
 	});
 
-	// @cosmo-behavior plan:analysis-gate-coverage#B-042
 	test("rejects findings outside the declared gate coverage", async () => {
 		const deadCodeFixture = await loadCapabilityFixture("dead-code");
 		const auditFixture = await loadCapabilityFixture("changed-scope-audit");
@@ -2295,7 +2289,6 @@ describe("Fallow capability execution", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-009
 	test("throws serialized failures for every unclassifiable provider outcome", async () => {
 		const invalidOutcomes = [
 			{
@@ -2404,7 +2397,6 @@ describe("Fallow capability execution", () => {
 		expect(preview.native.payload).not.toHaveProperty("verdict");
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-010
 	test("requires and preserves a nonempty explicit audit base", async () => {
 		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 		await recordConsent();
@@ -2492,7 +2484,6 @@ describe("Fallow capability execution", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-026
 	test("audits tracked staged and untracked dirty base changes from HEAD", async () => {
 		await createLiveProviderProject(projectRoot);
 		await recordConsent();
@@ -2601,7 +2592,6 @@ describe("Fallow capability execution", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:analysis-capability-runtime#B-012
 	test("leaves the entire worktree unchanged across status and every capability", async () => {
 		await createLiveProviderProject(projectRoot);
 		await recordConsent();

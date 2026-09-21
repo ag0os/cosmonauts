@@ -247,7 +247,6 @@ describe("task create command", () => {
 	});
 
 	it("leaves an existing task config byte-unchanged when creating a single task", async () => {
-		// @cosmo-behavior plan:task-id-system#B-010
 		const configPath = await writeTaskConfig(
 			tempDir,
 			'{\n  "prefix": "BUG",\n  "zeroPadding": 2,\n  "defaultLabels": ["from-config"]\n}\n',
@@ -272,7 +271,6 @@ describe("task create command", () => {
 	});
 
 	it("creates only a task file and no task config when creating a single task without config", async () => {
-		// @cosmo-behavior plan:task-id-system#B-010
 		await createProgram().parseAsync([
 			"node",
 			"test",
@@ -598,7 +596,6 @@ describe("task create --from-file", () => {
 	});
 
 	it("leaves an existing task config byte-unchanged when batch creating tasks", async () => {
-		// @cosmo-behavior plan:task-id-system#B-010
 		const configPath = await writeTaskConfig(
 			tempDir,
 			'{\n  "prefix": "BATCH",\n  "zeroPadding": 2,\n  "defaultPriority": "low"\n}\n',
@@ -631,7 +628,6 @@ describe("task create --from-file", () => {
 	});
 
 	it("creates only task files and no task config when batch creating without config", async () => {
-		// @cosmo-behavior plan:task-id-system#B-010
 		const path = await writeBatch(
 			"tasks.yaml",
 			"- title: First no config\n- title: Second no config\n",
@@ -834,7 +830,6 @@ describe("task create (no batch)", () => {
 
 describe("task create adapter internals", () => {
 	it("delegates ID allocation to TaskManager without allocation helpers", async () => {
-		// @cosmo-behavior plan:task-id-system#B-010
 		const source = await readFile(
 			new URL("../../../../cli/tasks/commands/create.ts", import.meta.url),
 			"utf-8",

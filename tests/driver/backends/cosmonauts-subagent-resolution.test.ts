@@ -102,7 +102,6 @@ afterEach(async () => {
 });
 
 describe("cosmonauts-subagent dogfood worker resolution", () => {
-	// @cosmo-behavior plan:coding-agnostic-framework#B-020
 	test("resolves default unqualified Drive worker with no domain context to coding/worker", async () => {
 		const domains = await loadDomainsFromSources([
 			{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },

@@ -14,7 +14,7 @@ import { createTaskRecordFixture } from "../helpers/tasks.ts";
 const tmp = useTempDir("artifact-viewer-server-");
 
 describe("artifact-viewer server", () => {
-	test("serves architecture map pages and missing map empty state @cosmo-behavior plan:code-structure-map#B-014", async () => {
+	test("serves architecture map pages and missing map empty state", async () => {
 		const home = await request("/");
 		expect(home.statusCode).toBe(200);
 		expect(home.body).toContain("/architecture/");
@@ -68,7 +68,7 @@ describe("artifact-viewer server", () => {
 		expect(missing.body).toContain("cosmonauts architecture generate");
 	});
 
-	test("serves plan pages with read only task status and empty states @cosmo-behavior plan:code-structure-map#B-015", async () => {
+	test("serves plan pages with read only task status and empty states", async () => {
 		const emptyList = await request("/plans/");
 		expect(emptyList.statusCode).toBe(200);
 		expect(emptyList.body).toContain("No plans found");
@@ -128,7 +128,7 @@ describe("artifact-viewer server", () => {
 		).rejects.toThrow();
 	});
 
-	test("rejects traversal routes before artifact reads @cosmo-behavior plan:code-structure-map#B-017", async () => {
+	test("rejects traversal routes before artifact reads", async () => {
 		const dependencies = {
 			loadArchitectureIndex: vi.fn(),
 			loadArchitectureModule: vi.fn(),

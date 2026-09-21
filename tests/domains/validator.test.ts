@@ -139,7 +139,6 @@ describe("validateDomains", () => {
 
 	describe("Rule 1: Persona prompt exists", () => {
 		it("reports error when non-shared agent lacks persona prompt", () => {
-			// @cosmo-behavior plan:domain-authoring#B-014
 			const shared = makeShared();
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
@@ -523,7 +522,6 @@ describe("validateDomains", () => {
 		});
 
 		it("warns (does not throw) for a qualified subagent whose domain role is not active, even with a binding resolver", () => {
-			// @cosmo-behavior plan:domain-authoring#B-006
 			// Regression: a stale/optional qualified reference (legacy/worker) whose
 			// role is not an installed domain must stay a warning, not abort runtime
 			// creation via DomainBindingTargetError.

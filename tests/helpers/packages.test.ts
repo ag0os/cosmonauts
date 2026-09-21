@@ -8,7 +8,6 @@ const tmp = useTempDir("package-helper-test-");
 
 describe("synthetic installable domain package helper", () => {
 	it("writes and loads a project-installed package through scanner and loader seams", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-014
 		const projectRoot = join(tmp.path, "project");
 		const builtinDomainsDir = join(tmp.path, "domains");
 		await mkdir(projectRoot, { recursive: true });

@@ -47,7 +47,6 @@ afterEach(async () => {
 
 describe("harness provenance", () => {
 	test("classifies the complete owner source target mode and concurrent-read grid without writing", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-006
 		const root = await mkdtemp(join(tmpdir(), "harness-provenance-"));
 		tempRoots.push(root);
 		const projectA = join(root, "project-a");
@@ -579,7 +578,6 @@ describe("harness provenance", () => {
 	});
 
 	test("preserves edited foreign and untraceable targets and permits only safe lineage or owner transfer", async () => {
-		// @cosmo-behavior plan:harness-adapters#B-008
 		const root = await mkdtemp(join(tmpdir(), "harness-conflicts-"));
 		tempRoots.push(root);
 		const projectA = join(root, "project-a");

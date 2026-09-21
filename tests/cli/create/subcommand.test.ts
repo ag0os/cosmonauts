@@ -41,7 +41,6 @@ describe("scaffoldDomain", () => {
 	});
 
 	it("generates cosmonauts.json with correct name, version, and domains", async () => {
-		// @cosmo-behavior plan:domain-authoring#B-003
 		await scaffoldDomain("mypkg", tempDir);
 		const raw = await readFile(
 			join(tempDir, "mypkg", "cosmonauts.json"),

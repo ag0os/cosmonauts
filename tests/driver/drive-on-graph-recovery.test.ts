@@ -56,7 +56,6 @@ const selectedBackends = [
 ] as const satisfies readonly BackendName[];
 
 describe("Drive-on-graph recovery", () => {
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-026
 	test("replays an intended terminal record instead of writing a second outcome", async () => {
 		const projectRoot = join(temp.path, "intended-terminal-replay", "project");
 		const workdir = join(projectRoot, "run");
@@ -142,7 +141,6 @@ describe("Drive-on-graph recovery", () => {
 		expect(await readFile(firstCapture.path, "utf-8")).toBe(originalBytes);
 	});
 
-	// @cosmo-behavior plan:episodic-log#B-026
 	test("persists episode capture failure as a non-fatal Drive diagnostic", async () => {
 		const persisted = await seedCaptureFailureRun("persisted-diagnostic");
 		const persistedBus = new MessageBus();
@@ -277,7 +275,6 @@ describe("Drive-on-graph recovery", () => {
 		).toEqual([]);
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-022
 	test("applies committed-work block and leave-running recovery paths to selected drive backends", async () => {
 		for (const backendName of selectedBackends.filter(
 			(name) => DRIVE_BACKEND_ORCHESTRATION_CAPABILITIES[name].canCommit,

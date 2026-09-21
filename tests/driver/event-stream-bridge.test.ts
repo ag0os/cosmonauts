@@ -170,7 +170,6 @@ describe("bridgeJsonlToActivityBus", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-003
 	test("drains only episode capture diagnostics after a terminal event", async () => {
 		const published: DriverBusEvent[] = [];
 		const terminal = runCompletedEvent();

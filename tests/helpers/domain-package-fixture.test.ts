@@ -10,7 +10,6 @@ const tmp = useTempDir("domain-package-fixture-test-");
 
 describe("synthetic domain package fixture", () => {
 	it("loads a synthetic installable domain package through the package scanner", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-014
 		const projectRoot = join(tmp.path, "project");
 		const builtinDomainsDir = join(tmp.path, "domains");
 		await mkdir(projectRoot, { recursive: true });

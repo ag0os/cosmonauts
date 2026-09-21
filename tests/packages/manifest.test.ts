@@ -310,7 +310,6 @@ describe("validateManifest — empty domains array", () => {
 		["parent traversal", "../outside"],
 		["escaping traversal", "domains/../../outside"],
 	])("returns invalid-path error for %s", (_label, path) => {
-		// @cosmo-behavior plan:domain-authoring#B-020
 		const raw = {
 			name: "my-pkg",
 			version: "1.0.0",
@@ -335,7 +334,6 @@ describe("validateManifest — empty domains array", () => {
 	});
 
 	test("rejects a root domain (path '.') declared alongside other domains", () => {
-		// @cosmo-behavior plan:domain-authoring#B-022
 		const raw = {
 			name: "mixed-root",
 			version: "1.0.0",
@@ -357,7 +355,6 @@ describe("validateManifest — empty domains array", () => {
 	});
 
 	test("accepts a root domain (path '.') as the sole domain entry", () => {
-		// @cosmo-behavior plan:domain-authoring#B-022
 		const raw = {
 			name: "root-domain",
 			version: "1.0.0",

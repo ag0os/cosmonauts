@@ -94,7 +94,6 @@ describe("cosmonauts run drive compat graph resume", () => {
 		vi.restoreAllMocks();
 	});
 
-	// @cosmo-behavior plan:durable-frontend-migration#B-020
 	test("resumes graph runs without rewriting original selected task ids", async () => {
 		const fixture = await setupCompletedTaskWithPendingStateCommit();
 
@@ -178,7 +177,6 @@ describe("cosmonauts run drive compat graph resume", () => {
 		).toBe("completed");
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-019
 	test("drops an unavailable frozen worker before execution and never attributes the fallback to it", async () => {
 		const fixture = await setupPendingExecutionGraphResume();
 		await enableEpisodeCapture(fixture.spec.projectRoot);
@@ -405,7 +403,6 @@ describe("cosmonauts run drive compat graph resume", () => {
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-007
 	test("rehydrates the attempt ledger and skips a second terminal after thrown-exit resume", async () => {
 		const fixture = await setupFullyCompletedGraphRun();
 		await enableFrozenEpisodeIdentity(fixture.spec);
@@ -475,7 +472,6 @@ describe("cosmonauts run drive compat graph resume", () => {
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-011
 	test("records one run-id-derived terminal for an off-then-enabled completed resume", async () => {
 		const fixture = await setupTerminalOnlyCompletedRun();
 		await enableEpisodeCapture(fixture.spec.projectRoot);
@@ -577,7 +573,6 @@ describe("cosmonauts run drive compat graph resume", () => {
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-012
 	test("repeats deterministic terminal-only resume without changing bytes or episode count", async () => {
 		const fixture = await setupTerminalOnlyCompletedRun();
 		await enableEpisodeCapture(fixture.spec.projectRoot);
@@ -630,7 +625,6 @@ describe("cosmonauts run drive compat graph resume", () => {
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-025
 	test("warns and skips terminal capture when off-era resume source cannot resolve", async () => {
 		const fixture = await setupTerminalOnlyCompletedRun();
 		await enableEpisodeCapture(fixture.spec.projectRoot);

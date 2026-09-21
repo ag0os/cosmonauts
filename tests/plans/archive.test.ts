@@ -301,7 +301,7 @@ describe("archivePlan", () => {
 		expect(archiveTasksStats.isDirectory()).toBe(true);
 	});
 
-	it("creates memory/ and knowledge/ directories at project root @cosmo-behavior plan:knowledge-surface#B-001", async () => {
+	it("creates memory/ and knowledge/ directories at project root", async () => {
 		await planManager.createPlan({
 			slug: "memory-test",
 			title: "Memory Test",

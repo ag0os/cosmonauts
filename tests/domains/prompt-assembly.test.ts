@@ -79,7 +79,6 @@ function assembleTestPrompts(options: AssemblePromptsOptions): Promise<string> {
 describe("assemblePrompts", () => {
 	describe("Layer 0: Base prompt", () => {
 		it("loads framework base/runtime by default and persona from the domain", async () => {
-			// @cosmo-behavior plan:domain-authoring#B-004
 			await setupFiles(tmp.path, {
 				"coding/prompts/worker.md": "Default framework base persona.",
 			});

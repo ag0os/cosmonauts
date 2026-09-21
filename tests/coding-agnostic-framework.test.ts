@@ -39,7 +39,6 @@ async function listTypeScriptFiles(dir: string): Promise<string[]> {
 
 describe("coding-agnostic framework source defaults", () => {
 	test("rejects framework coding domain defaults while preserving explicit carve-outs", async () => {
-		// @cosmo-behavior plan:coding-agnostic-framework#B-009
 		const sourceFiles = (
 			await Promise.all(
 				SOURCE_ROOTS.map((root) => listTypeScriptFiles(join(REPO_ROOT, root))),

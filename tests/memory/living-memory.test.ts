@@ -57,7 +57,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("living-memory-");
 
 describe("living memory", () => {
-	// @cosmo-behavior plan:living-memory#B-002
 	test("soft-retires an eligible record with a complete durable manifest entry", async () => {
 		const { projectRoot, livePath, raw, digest, input } =
 			await createRetirementFixture("authorized-retirement-project");
@@ -521,7 +520,6 @@ describe("living memory", () => {
 		await expect(fileExists(tombstonePath)).resolves.toBe(false);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-004
 	test("annotates a human restoration and reserves hard deletion for the ledger", async () => {
 		const fixture = await createRetirementFixture("restoration-project");
 		await expect(applyRetirementFixture(fixture)).resolves.toMatchObject({
@@ -830,7 +828,6 @@ describe("living memory", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:living-memory#B-011
 	test("previews only a stable snapshot and observes pending recovery without mutating it", async () => {
 		const stable = await createRetirementFixture("stable-dry-run-project");
 		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
@@ -1097,7 +1094,6 @@ describe("living memory", () => {
 		expect(inspectCitations).toHaveBeenCalledOnce();
 	});
 
-	// @cosmo-behavior plan:living-memory#B-015
 	test("recovers hard-stopped retirement at every durable commit boundary", async () => {
 		const cases = [
 			["after-journal-sync", "rolled-back", true, false],
@@ -1331,7 +1327,6 @@ describe("living memory", () => {
 		).resolves.toBe(release.raw);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-017
 	test("preserves profile authored memory and curated bytes across a full pass", async () => {
 		const fixture = await createRetirementFixture("preservation-pass-project");
 		const userRoot = join(tmp.path, "preservation-pass-user");
@@ -1712,7 +1707,6 @@ describe("living memory", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:living-memory#B-008
 	test("evaluates supported gotcha retire-when checks without adding a knowledge type", async () => {
 		const projectRoot = join(tmp.path, "retire-when-project");
 		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
@@ -1840,7 +1834,6 @@ describe("living memory", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:living-memory#B-009
 	test("turns stale citations into deterministic N=1 edits without a model call", async () => {
 		const rejectedBacktickCitations = [
 			{
@@ -2338,7 +2331,6 @@ describe("living memory", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-007
 	test("reports a committed first receipt removal when its directory sync fails", async () => {
 		const projectRoot = join(tmp.path, "first-receipt-discharge-sync-failure");
 		const baseDurableFiles = createDurableMachineFiles();
@@ -2675,7 +2667,6 @@ describe("living memory", () => {
 		]);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-005
 	test("keeps cited 9608b54 live and emits the ruled edit-narrow proposal", async () => {
 		const projectRoot = join(tmp.path, "cited-gotcha-project");
 		const relativePath = "knowledge/cited-gotcha.md";
@@ -2859,7 +2850,6 @@ describe("living memory", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-006
 	test("writes evidence-bound merge and parent-edit proposals without changing knowledge", async () => {
 		const projectRoot = join(tmp.path, "reflector-project");
 		const fixtures = [
@@ -3017,7 +3007,6 @@ describe("living memory", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-012
 	test("reports committed writes for a materialization-only retry pass", async () => {
 		const projectRoot = join(tmp.path, "materialization-only-retry");
 		const inputs = [
@@ -3188,7 +3177,6 @@ describe("living memory", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:living-memory#B-016
 	test("rehydrates accepted judgment and persisted evidence then converges to noop", async () => {
 		const projectRoot = join(tmp.path, "convergence-project");
 		const proposalRaw = knowledgeFixture({ resource: "proposal.md" });
@@ -3554,7 +3542,6 @@ describe("living memory", () => {
 		await expect(fileExists(episodePath)).resolves.toBe(true);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-016
 	test("retains a live receipt when a later pass exhausts its record limit", async () => {
 		const projectRoot = join(tmp.path, "cap-deferred-episode-convergence");
 		const [laterPath] = await writeEpisodeFixtures(projectRoot, [
@@ -3607,7 +3594,6 @@ describe("living memory", () => {
 		await expect(fileExists(earlierPath)).resolves.toBe(true);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-016
 	test("retains a live receipt when a later pass exhausts its byte allowance", async () => {
 		const projectRoot = join(tmp.path, "byte-deferred-episode-convergence");
 		const [laterPath] = await writeEpisodeFixtures(projectRoot, [
@@ -3667,7 +3653,6 @@ describe("living memory", () => {
 		await expect(fileExists(earlierPath)).resolves.toBe(true);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-019
 	test("syncs accepted folded note proposals before pruning unchanged episodes", async () => {
 		const projectRoot = join(tmp.path, "episode-fold-project");
 		const episodePaths = await writeEpisodeFixtures(projectRoot, [
@@ -4950,7 +4935,6 @@ describe("living memory", () => {
 		await expect(fileExists(episodePath)).resolves.toBe(false);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-014
 	test("executes the versioned project payload through the shared factory and store seam", async () => {
 		type JobContext = {
 			readonly projectRoot: string;
@@ -5079,7 +5063,6 @@ describe("living memory", () => {
 		expect(JSON.stringify(payload)).not.toContain(projectRoot);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-018
 	test("accepts valid fake source snapshots and rejects contract violations", async () => {
 		const content =
 			"# Future reflection\n\nA source adapter owns only snapshots.\n";
@@ -5246,7 +5229,6 @@ describe("living memory", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:living-memory#B-010
 	test("rejects an oversized source record before model judgment", async () => {
 		const oversized = record({
 			id: "oversized-corpus",
@@ -5467,7 +5449,6 @@ describe("living memory", () => {
 		expect(judge).not.toHaveBeenCalled();
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-005
 	test("keeps receipts and blocks dependent work when corpus inventory is incomplete", async () => {
 		const projectRoot = join(tmp.path, "incomplete-corpus-barrier");
 		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
@@ -5796,7 +5777,6 @@ describe("living memory", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-008
 	test("preserves source-recovery episode prunes and committed writes in the final result", async () => {
 		const recoveredEpisode = "memory/agent/episodes/recovered-only.md";
 		const recoveryOnlySource: ConsolidationSource = {
@@ -5941,7 +5921,6 @@ describe("living memory", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-001
 	test("matches pressure to injection for both round-7 divergence directions", async () => {
 		const smallIndex = [
 			indexRecord({
@@ -6055,7 +6034,6 @@ describe("living memory", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:living-memory-fidelity#B-002
 	test("marks pressure unusable instead of reporting a false fit without an exact render input", async () => {
 		const projectRoot = join(tmp.path, "unusable-index-pressure");
 		await mkdir(projectRoot, { recursive: true });
@@ -6287,7 +6265,6 @@ describe("living memory", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:living-memory#B-021
 	test("measures oversized corpus metadata exactly as combined-context injection", async () => {
 		const projectRoot = join(tmp.path, "oversized-index-pressure-corpus");
 		const userRoot = join(tmp.path, "oversized-index-pressure-user");

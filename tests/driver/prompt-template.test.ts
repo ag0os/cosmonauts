@@ -170,7 +170,6 @@ describe("prompt-template renderPromptForTask", () => {
 		expect(rendered).not.toContain("--check-ac");
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-013
 	test("renders state commit policy expectations without changing the report contract", async () => {
 		const { taskManager, taskId, envelopePath, workdir } =
 			await setupPromptTest({

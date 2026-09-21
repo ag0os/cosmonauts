@@ -161,7 +161,6 @@ describe("coding domain agent invariants", () => {
 	});
 
 	it("gives analysis consumers generic tools and shared skill under project filtering", async () => {
-		// @cosmo-behavior plan:analysis-gate-rewiring#B-024
 		const expectedConsumers = [
 			"fixer",
 			"plan-reviewer",
@@ -271,7 +270,7 @@ describe("coding domain agent invariants", () => {
 		expect(genericSurfaceMatches).toEqual([]);
 	});
 
-	it("registers architecture_map_read at extension factory load for architecture-consuming agents @cosmo-behavior plan:memory-interface#B-015", async () => {
+	it("registers architecture_map_read at extension factory load for architecture-consuming agents", async () => {
 		const consumers = allDefinitions
 			.filter((definition) =>
 				definition.extensions.includes("architecture-memory"),

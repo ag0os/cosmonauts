@@ -32,7 +32,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("run-state-test-");
 
 describe("run-state", () => {
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-022
 	test("marks an attempt only after successful terminal capture and permits retry after failure", async () => {
 		const projectRoot = join(temp.path, "project");
 		const workdir = join(projectRoot, "run");
@@ -254,7 +253,6 @@ describe("run-state", () => {
 		).toHaveLength(1);
 	});
 
-	// @cosmo-behavior plan:episodic-log-detached-hardening#B-010
 	test("preserves stamped completion bytes against fallback writers", async () => {
 		const stamped = {
 			runId: "run-stamped",
@@ -387,7 +385,6 @@ describe("run-state", () => {
 		expect(await readRunCompletion(workdir)).toEqual(fallback);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-004
 	test("persists phase-specific pending finalization state", async () => {
 		const states = [
 			{

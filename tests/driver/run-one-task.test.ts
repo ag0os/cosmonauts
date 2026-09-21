@@ -164,7 +164,6 @@ describe("run-one-task", () => {
 		}
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-012
 	test("driver commit exclusion uses repo lock excludes missions and memory and emits sha", async () => {
 		const fixture = await setupGitFixture();
 		await writeFile(
@@ -227,7 +226,6 @@ describe("run-one-task", () => {
 		expect(ignoredStatus).toContain("memory/");
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-001
 	test("emits commit and task-status finalization phase events on successful driver commit", async () => {
 		const fixture = await setupGitFixture();
 		const backend = createBackend(async () => {
@@ -290,7 +288,6 @@ describe("run-one-task", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-016
 	test("uses task title as driver commit subject when report summary is generic", async () => {
 		const fixture = await setupGitFixture();
 		const backend = createBackend(async () => {
@@ -321,7 +318,6 @@ describe("run-one-task", () => {
 		).toContain(`${fixture.taskId}: Run One Task Fixture`);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-017
 	test("emits explicit no-change commit finalization evidence for verification-only tasks", async () => {
 		const fixture = await setupGitFixture();
 		const backend = createBackend(async () => successfulResult());
@@ -404,7 +400,6 @@ describe("run-one-task", () => {
 		);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-002
 	test("records finalization_failed instead of blocked when driver commit fails after passing postflight", async () => {
 		const fixture = await setupGitFixture();
 		await installFailingCommitHook(fixture.projectRoot);
@@ -466,7 +461,6 @@ describe("run-one-task", () => {
 		expect(task?.implementationNotes).toContain("commit finalization failed");
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-003
 	test("records finalization_failed with commit sha when task status update fails after commit", async () => {
 		const fixture = await setupRecordingGitFixture();
 		fixture.taskManager.failFinalUpdate = true;
@@ -529,7 +523,6 @@ describe("run-one-task", () => {
 		).toContain(`${fixture.taskId}: Recording Fixture`);
 	});
 
-	// @cosmo-behavior plan:drive-resilience-state-model#B-020
 	test("does not write pending finalization for backend or postflight failures", async () => {
 		const fixture = await setupGitFixture();
 
