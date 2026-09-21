@@ -251,6 +251,23 @@ Invariants — mechanism yields to these:
     assert they carry named markers and contain named assertion strings.
   - Why: INV-004 — no executable coupling to an archived plan survives.
   - Decided by: derived from INV-004 (human, 2026-09-20), 2026-09-21
+- **D-018 - The prose sort follows the pins, not the directory**
+  - Decision: Stage 2's design named `tests/prompts/`. A probe that blanks
+    every shipped markdown body found the same defect in 14 other test files
+    (`tests/docs/`, sentence lists over `docs/memory.md` and `README.md`,
+    persona sentences in domain tests, source-text greps). They are sorted by
+    the same D-005 rule. The correction-region byte-pin of three prompts in
+    `tests/episodic/pre-w3-disabled-baselines.test.ts` goes with them: it is
+    the check D-013 removed for the other 108 files, against the same fixture.
+    Where a test used a persona sentence to prove routing, the sentence is
+    replaced by the agent-id marker or the loaded file, not deleted. One test
+    is added: shipped skills are discovered under their directory name with a
+    description, because both B-007 frontmatter mutants survived without it.
+    Record: `stage2-probes.md`.
+  - Alternatives: stop at `tests/prompts/` as written (rejected: B-006 is
+    about the suite, and it stayed false).
+  - Why: INV-003; B-006, B-007, B-008.
+  - Decided by: worker-amended, 2026-09-21 (derived from D-005 and D-013)
 
 ## Behaviors
 
