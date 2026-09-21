@@ -1,8 +1,3 @@
-> **DRAFT — awaiting human ratification.** Revised 2026-09-21 by the doer
-> session after the human ruled on three collisions in the previous text
-> (`ruling-packet.md`). The previous spec is in git at `8ab44d4`. Until the
-> human ratifies this draft, nothing in `## Intent` is ratified ground.
-
 ## Purpose
 
 Cosmonauts can leave an executing agent step in `running` forever. The sampled
@@ -72,7 +67,9 @@ Provenance. INV-002's always-enforced ceiling, the config-only policy surface
 in the User Experience, and INV-004 come from direct human rulings on
 2026-09-21 (`ruling-packet.md` Q1, Q2, Q3). INV-001 and INV-005 carry forward
 substance the human ratified on 2026-09-13 and 2026-09-14. The wording of all
-seven is the doer's and is unratified until the human accepts this draft.
+seven was drafted by an agent session and ratified by the human on 2026-09-21;
+these invariants are ratified ground and change only by human decision. The
+previous spec is in git at `8ab44d4`.
 
 ## Users
 
