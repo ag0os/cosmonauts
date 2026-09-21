@@ -126,6 +126,10 @@ cancellation.
   Mechanism that was in their text is kept under Design, "Mechanism the
   behaviors no longer name". B-003, B-007, and B-016 are untouched pending a
   human ruling on whether they are behaviors or design invariants.
+  Corrected the same day after plan review round 1: B-012 had drifted from
+  AC-012's synthetic step to a claim about production runs (PR-007); B-011 and
+  B-012 now also cite AC-013; Implementation Order follows the TASK-683
+  dependency (PR-003); a carried-over test checklist is removed (PR-009).
   - Decided by: human, 2026-09-21
 
 ## Behaviors
@@ -208,18 +212,18 @@ cancellation.
 
 ### B-011 — A parent that stops waiting neither loses nor falsifies a child's result
 
-- Source: AC-009
+- Source: AC-009, AC-013
 - Observer: an agent that called `spawn_agent` one or more times from an interactive session and whose wait for a completion expired or was cancelled before the child finished
 - Entry point: the `spawn_agent` tool and the completion follow-up messages it promises
-- Outcome: giving up the wait ends only that wait — a healthy child keeps running and is not reported as failed or timed out; when it later finishes, the parent receives its real result exactly once, either on its next wait or buffered for a later one; with several children, one abandoned wait neither swallows nor duplicates another child's completion; a completion arriving after nobody is waiting does not throw and is attributed to the right spawn. A child is cancelled only when the attempt that owns it is cancelled.
+- Outcome: giving up the wait ends only that wait — a healthy child keeps running and is not reported as failed or timed out; when it later finishes, the parent receives its real result exactly once, either on its next wait or buffered for a later one; with several children, one abandoned wait neither swallows nor duplicates another child's completion; a completion arriving after nobody is waiting does not throw and is attributed to the right spawn. A child is cancelled only when the attempt that owns it is cancelled. Existing spawn depth and concurrency rejection is unchanged.
 
 
 ### B-012 — A silent Quality Manager durable step is bounded
 
-- Source: AC-012
-- Observer: a human running the Quality Manager workflow when something it depends on goes silent
-- Entry point: the Quality Manager chain run on the durable chain runner, observed through `cosmonauts run status` and `cosmonauts run watch`, and the persisted run record they read
-- Outcome: under enforced policy the outer step reaches a terminal or blocked state, with session, activity, deadline, and cancellation evidence in the run record, instead of hanging; the workflow's stage topology and its summaries are unchanged
+- Source: AC-012, AC-013
+- Observer: the maintainer who will decide whether to enable idle enforcement, reading the evidence this step produces
+- Entry point: a synthetic silent Quality Manager step run through the durable chain runner under an enforced test policy, observed through `cosmonauts run status` and `cosmonauts run watch`, and the persisted run record they read
+- Outcome: that step reaches a bounded terminal or blocked state with session, activity, deadline, and cancellation evidence in the run record; the Quality Manager's stage topology is not decomposed and its 200-character summaries are unchanged. This proves the synthetic path only — whether production Quality Manager runs are bounded depends on the enforcement decision
 
 ### B-013 — Attempt claims are atomic and crash-safe
 
@@ -368,7 +372,7 @@ Quality Manager decomposition remains deferred until artifact handoff and
 declared graph control exist. Its separate unnamespaced-review-file defect stays
 owned by `qm-chain-safety`.
 
-### Boundaries, non-goals, and failure cases that must be covered
+### Boundaries and non-goals
 
 Carried over from the plan's former gate table, which the plan format no
 longer has; gates are resolved from the runtime at sign-off.
@@ -379,10 +383,6 @@ longer has; gates are resolved from the runtime at sign-off.
 - Non-goals: reuse Pi and entity-lock primitives; no provider parser, no
   Quality-Manager-only runtime, no public RunControl API, no graph router, no
   spawn queue, and no automatic unsafe takeover.
-- Failure cases the delivered tests must cover, whatever shape the worker
-  gives them: stale tokens, killed lock holders, claim/finalize races,
-  terminal absorption, cancellation acknowledged without settlement, host
-  suspension, multi-waiter completion delivery, and late Drive writes.
 
 ### Mechanism the behaviors no longer name
 
@@ -463,20 +463,22 @@ are recorded in the review disposition but are not silently absorbed here.
 
 1. `TASK-677`: implement atomic store ownership, status lattice, projector guard,
    and event sequencing (B-001, B-013, B-014, B-015).
-2. In parallel, `TASK-683`: repair completion waiter ownership and delivery
-   without changing child lifetime (B-011).
-3. `TASK-684`: migrate scheduler writers to conditional operations and wire
+2. `TASK-684`: migrate scheduler writers to conditional operations and wire
    renewal, activity, and expiry/reacquisition semantics (B-002, B-003).
-4. `TASK-678`: implement shadow/enforce watchdog, suspension handling,
+3. `TASK-678`: implement shadow/enforce watchdog, suspension handling,
    settlement-based cancellation, expiry quarantine, safe blocked recovery, and
    impossible-graph finalization (B-004, B-005, B-006, B-016, B-017, B-018,
    B-020, B-021).
+4. `TASK-683`, after `TASK-678`: repair completion waiter ownership and
+   delivery without changing child lifetime (B-011). It follows the watchdog
+   because, once wait expiry stops failing children, a hung child keeps its
+   parent waiting until a hard deadline exists (human decision, 2026-09-21).
 5. `TASK-682`: conform all backends and move Drive's cap into scheduler policy
    with guarded/settled side effects (B-007, B-019).
 6. `TASK-679`: persist Pi attempt sessions/results and feed live activity through
    a session-to-attempt registry (B-008, B-009).
 7. `TASK-680`: own spawned/nested descendant handles and latched cancellation
-   (B-010), building on the independent waiter repair.
+   (B-010), building on the waiter repair.
 8. `TASK-681`: prove the synthetic silent Quality Manager durable-step path,
    metrics, status/watch, and documentation in shadow mode (B-012).
 9. `TASK-685`: human review of live evidence and explicit enable/revise/defer

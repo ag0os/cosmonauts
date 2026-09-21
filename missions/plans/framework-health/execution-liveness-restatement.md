@@ -72,7 +72,7 @@ Seventeen behaviors restated 2026-09-21 (that plan's D-014). Sources (`AC-###`) 
 
 **Was — Seam:** `bundled/coding/agents/quality-manager`; `lib/orchestration/durable-chain-runner.ts`; `docs/orchestration.md`
 
-**Now — Outcome:** under enforced policy the outer step reaches a terminal or blocked state, with session, activity, deadline, and cancellation evidence in the run record, instead of hanging; the workflow's stage topology and its summaries are unchanged
+**Now — Outcome (corrected after plan review PR-007; my first restatement drifted to a claim about production runs):** a synthetic silent Quality Manager step, run through the durable chain runner under an enforced test policy, reaches a bounded terminal or blocked state with session, activity, deadline, and cancellation evidence in the run record; topology not decomposed, summaries unchanged. This proves the synthetic path only.
 
 ## B-013
 
