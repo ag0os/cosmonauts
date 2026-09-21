@@ -1,6 +1,6 @@
 # `execution-liveness` — ruling packet before the re-plan
 
-Drafted by the doer session, 2026-09-21. Nothing here is decided. Each question
+Drafted by the doer session, 2026-09-21. The three rulings below were given by the human the same day; everything else is the doer's. Each question
 is a collision inside the spec's ratified ground, found by the plan-reviewer
 (`review-1.md` PR-001, PR-002, PR-004). Options are the doer's; recommendations
 are marked and are opinions. The human's choice is recorded at the end of each
@@ -29,7 +29,7 @@ slice could ship complete and still leave the state its Purpose names.
 | B. Enforce idle by default | Shadow becomes opt-in. | Idle cancellation goes live before there is any activity evidence to tune it; false cancellations of quiet-but-healthy work are the likely failure. This is why shadow was chosen. |
 | C. Narrow the Intent | Bounded termination is promised only under enforce; the slice ships observation-only by default. | Honest, but the forever-`running` state survives by default until a later decision. |
 
-Ruling: _pending_
+Ruling: **A — hard ceiling always enforced; only the idle deadline is shadowable.** Human, 2026-09-21, direct.
 
 ## Q2 — How does anyone select the mode, and what happens to Drive's cap? (PR-002)
 
@@ -54,7 +54,7 @@ cap would silently stop being enforced.
 Under every option, if Q1 is answered A, Drive's cap needs no special case: it
 is a hard deadline and hard deadlines are always enforced.
 
-Ruling: _pending_
+Ruling: **A — project config only.** Human, 2026-09-21, direct.
 
 ## Q3 — A suspended live owner meets another scheduler. Who wins? (PR-004)
 
@@ -80,7 +80,7 @@ leaves the step `running` forever.
 | B. Safety wins, stated plainly | Quarantine stands as written. "Reacquire after expiry" is amended to "unless another scheduler quarantined first". The woken owner's work is kept as rejected evidence and an operator starts a replacement. | A sleep longer than the lease while anything else touches the run loses that step's work. Simple and already matches the spec's stated ranking (INV-001 and INV-003 over availability). |
 | C. Report, do not quarantine | Foreign expired leases only surface in `run status`; an operator decides. | Reopens the crashed-holder gap the quarantine rule was ratified to close. |
 
-Ruling: _pending_
+Ruling: **A — check the holder before quarantining.** Human, 2026-09-21, direct.
 
 ## After the rulings
 
