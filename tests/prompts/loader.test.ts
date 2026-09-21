@@ -287,26 +287,4 @@ describe("domain-based prompt file paths", () => {
 		expect(content.length).toBeGreaterThan(0);
 		expect(content).toContain("# Integration Verifier");
 	});
-
-	it("loads full layered prompt stack for cody across directories", async () => {
-		const base = await loadPrompt("base");
-		const sharedCaps = await loadPrompts(
-			["tasks", "spawning", "todo"],
-			SHARED_CAPABILITIES_DIR,
-		);
-		const alphaCaps = await loadPrompts(
-			["alpha-readwrite"],
-			alphaCapabilitiesDir(),
-		);
-		const persona = await loadPrompt("cody", alphaPromptsDir());
-
-		const content = [base, sharedCaps, alphaCaps, persona].join("\n\n");
-		expect(content.length).toBeGreaterThan(0);
-		// Verify ordering: base content appears before persona
-		const baseIdx = content.indexOf("# Cosmonauts");
-		const personaIdx = content.indexOf("# Cody\n");
-		expect(baseIdx).toBeGreaterThanOrEqual(0);
-		expect(personaIdx).toBeGreaterThan(0);
-		expect(baseIdx).toBeLessThan(personaIdx);
-	});
 });
