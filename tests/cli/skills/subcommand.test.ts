@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createSkillsProgram,
@@ -7,6 +8,10 @@ import {
 import type { LoadedDomain } from "../../../lib/domains/types.ts";
 import type { DiscoveredSkill } from "../../../lib/skills/index.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
+
+const FRAMEWORK_ROOT = fileURLToPath(
+	new URL("../../../", import.meta.url),
+).replace(/\/$/, "");
 
 const runtimeMocks = vi.hoisted(() => ({
 	create: vi.fn(),
@@ -199,7 +204,7 @@ describe("createSkillsProgram list — runtime discovery", () => {
 
 		expect(
 			runtimeMocks.discoverFrameworkBundledPackageDirs,
-		).toHaveBeenCalledWith(expect.stringMatching(/cosmonauts$/));
+		).toHaveBeenCalledWith(FRAMEWORK_ROOT);
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
 				bundledDirs: ["/framework/bundled/alpha"],

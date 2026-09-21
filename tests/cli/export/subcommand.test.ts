@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExportProgram } from "../../../cli/export/subcommand.ts";
 import type { BuildAgentPackageOptions } from "../../../lib/agent-packages/build.ts";
@@ -11,6 +12,10 @@ import { AgentRegistry } from "../../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
 import { useTempDir } from "../../helpers/fs.ts";
+
+const FRAMEWORK_ROOT = fileURLToPath(
+	new URL("../../../", import.meta.url),
+).replace(/\/$/, "");
 
 const packageMocks = vi.hoisted(() => ({
 	buildAgentPackage: vi.fn(),
@@ -221,7 +226,7 @@ describe("createExportProgram", () => {
 
 		expect(
 			runtimeMocks.discoverFrameworkBundledPackageDirs,
-		).toHaveBeenCalledWith(expect.stringMatching(/cosmonauts$/));
+		).toHaveBeenCalledWith(FRAMEWORK_ROOT);
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
 				bundledDirs: ["/framework/bundled/alpha"],

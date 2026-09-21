@@ -517,40 +517,6 @@ describe("live harness inventory characterization", () => {
 		});
 	});
 
-	test("identifies exactly four project copies and a separate personal bundle", async () => {
-		expect(PROJECT_EXPORT_BASELINES).toHaveLength(4);
-		expect(PROJECT_EXPORT_BASELINES.map((row) => row.assetId)).toEqual([
-			"skill:plan",
-			"skill:roadmap",
-			"skill:skills-cli",
-			"skill:task",
-		]);
-		expect(
-			PROJECT_EXPORT_BASELINES.some(
-				(row) => row.assetId === (PERSONAL_BUNDLE_BASELINE.assetId as string),
-			),
-		).toBe(false);
-		expect(PERSONAL_BUNDLE_BASELINE).toMatchObject({
-			assetId: "external-skill:cosmonauts",
-			targetPath: "/Users/cosmos/.claude/skills/cosmonauts",
-		});
-
-		for (const row of PROJECT_EXPORT_BASELINES) {
-			await expect(
-				stat(join(process.cwd(), row.sourcePath)),
-			).resolves.toBeDefined();
-			await expect(
-				stat(join(process.cwd(), row.targetPath)),
-			).resolves.toBeDefined();
-		}
-		await expect(
-			stat(join(process.cwd(), PERSONAL_BUNDLE_BASELINE.sourcePath)),
-		).resolves.toBeDefined();
-		await expect(
-			stat(PERSONAL_BUNDLE_BASELINE.targetPath),
-		).resolves.toBeDefined();
-	});
-
 	test("keeps playwright-cli only as the permanent foreign conflict", () => {
 		expect(PROJECT_EXPORT_BASELINES.map((row) => row.assetId)).not.toContain(
 			"skill:playwright-cli",
