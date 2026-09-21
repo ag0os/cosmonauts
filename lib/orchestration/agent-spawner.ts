@@ -226,7 +226,7 @@ async function runSpawnSession(
 		const startMs = Date.now();
 		await cancellation.waitFor(session.prompt(config.prompt));
 
-		while (tracker.activeCount() > 0) {
+		while (tracker.hasUndeliveredWork()) {
 			const messages = await cancellation.waitFor(
 				awaitNextCompletionMessages(tracker, spawnTimeoutMs),
 			);

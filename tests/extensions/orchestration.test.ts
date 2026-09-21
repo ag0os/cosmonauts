@@ -667,6 +667,56 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		expectFollowUpContaining(pi, finalReport);
 	});
 
+	test("spawn_agent delivers every nested completion when two children settle in the same tick", async () => {
+		const { pi } = createExtensionPi("/tmp/project", {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
+		});
+
+		mockRuntime({ domainContext: "alpha" });
+
+		const childSessionId = "child-session-same-tick";
+		const prompts: string[] = [];
+		const mockSession = {
+			sessionId: childSessionId,
+			messages: [] as Array<{
+				role: string;
+				content: Array<{ type: string; text: string }>;
+			}>,
+			prompt: vi.fn(async (message: string) => {
+				prompts.push(message);
+				if (prompts.length === 1) {
+					const tracker = getOrCreateTracker(childSessionId);
+					tracker.register("nested-1", "verifier", 2);
+					tracker.register("nested-2", "verifier", 2);
+					setTimeout(() => {
+						tracker.complete("nested-1", "first done");
+						tracker.complete("nested-2", "second done");
+					}, 0);
+				}
+				mockSession.messages.push({
+					role: "assistant",
+					content: [{ type: "text", text: `turn ${prompts.length}` }],
+				});
+			}),
+			subscribe: vi.fn(() => vi.fn()),
+			dispose: vi.fn(),
+		};
+		mockChildSession(mockSession);
+
+		await expectAcceptedSpawn(
+			pi,
+			{ role: "quality-manager", prompt: "run quality checks" },
+			20,
+		);
+
+		expect(prompts.filter((p) => p.includes("spawnId=nested-1"))).toHaveLength(
+			1,
+		);
+		expect(prompts.filter((p) => p.includes("spawnId=nested-2"))).toHaveLength(
+			1,
+		);
+	});
+
 	test("chain_run passes the caller domain as requester while preserving default resolution context", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:main/cosmo -->",

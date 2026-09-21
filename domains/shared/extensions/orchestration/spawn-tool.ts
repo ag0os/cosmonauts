@@ -272,7 +272,7 @@ async function executeChildPromptLoop(
 ): Promise<ChildPromptResult> {
 	const startedAt = new Date().toISOString();
 	await session.prompt(prompt.text);
-	while (childTracker.activeCount() > 0) {
+	while (childTracker.hasUndeliveredWork()) {
 		const messages = await awaitNextCompletionMessages(childTracker);
 		for (const message of messages) {
 			await session.prompt(message);

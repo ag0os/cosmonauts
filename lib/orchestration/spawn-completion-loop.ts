@@ -74,7 +74,7 @@ export async function awaitNextCompletionMessages(
 	const running = tracker.runningSpawns();
 	if (running.length === 0) return [];
 
-	return running.map(({ spawnId, role }) => {
+	const messages = running.map(({ spawnId, role }) => {
 		tracker.fail(spawnId, `Timed out after ${timeoutMs}ms`);
 		return formatSpawnCompletionMessage(
 			spawnId,
@@ -83,4 +83,8 @@ export async function awaitNextCompletionMessages(
 			`Timed out after ${timeoutMs}ms`,
 		);
 	});
+	// The failures above are reported here; their buffered events must not be
+	// delivered a second time by the caller's loop.
+	tracker.drainCompleted();
+	return messages;
 }

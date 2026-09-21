@@ -213,6 +213,14 @@ export class SpawnTracker {
 		return this._activeCount;
 	}
 
+	/**
+	 * True while a child is still running or a completion has not been consumed.
+	 * Children that settle in one tick reach zero active with events still buffered.
+	 */
+	hasUndeliveredWork(): boolean {
+		return this._activeCount > 0 || this.buffer.length > 0;
+	}
+
 	/** Returns the role for a given spawnId, or undefined if unknown. */
 	spawnRole(spawnId: string): string | undefined {
 		return this.spawns.get(spawnId)?.role;

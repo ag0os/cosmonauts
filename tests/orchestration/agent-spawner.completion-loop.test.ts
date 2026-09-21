@@ -268,6 +268,39 @@ describe("createPiSpawner — completion loop", () => {
 		expect(session.prompt).toHaveBeenCalledTimes(3);
 	});
 
+	test("delivers every completion when two children settle in the same tick", async () => {
+		const sessionId = nextSessionId();
+		const session = createMockSession(sessionId);
+		const prompts: string[] = [];
+
+		session.prompt = vi.fn(async (message: string) => {
+			prompts.push(message);
+			if (prompts.length === 1) {
+				const tracker = getOrCreateTracker(sessionId, bus);
+				tracker.register("spawn-1", "worker", 1);
+				tracker.register("spawn-2", "worker", 1);
+				setTimeout(() => {
+					tracker.complete("spawn-1", "first done");
+					tracker.complete("spawn-2", "second done");
+				}, 0);
+			}
+		});
+		mocks.createAgentSession.mockResolvedValue({ session });
+
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			bus,
+			resolver: realResolver,
+		});
+		await spawner.spawn({ role: "planner", cwd: "/tmp", prompt: "go" });
+
+		expect(prompts.filter((p) => p.includes("spawnId=spawn-1"))).toHaveLength(
+			1,
+		);
+		expect(prompts.filter((p) => p.includes("spawnId=spawn-2"))).toHaveLength(
+			1,
+		);
+	});
+
 	// AC#5: timeout delivers failure messages and exits loop
 	test("timeout delivers failed completion message and exits the loop", async () => {
 		const sessionId = nextSessionId();
