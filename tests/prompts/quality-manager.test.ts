@@ -10,10 +10,6 @@ const WORKER_PROMPT_PATH = new URL(
 	"../../bundled/coding/prompts/worker.md",
 	import.meta.url,
 );
-const GATE_CONTRACTS_PATH = new URL(
-	"../../domains/shared/skills/work-artifacts/references/gate-contracts.md",
-	import.meta.url,
-);
 
 async function readPrompt() {
 	return readFile(PROMPT_PATH, "utf-8");
