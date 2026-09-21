@@ -1,6 +1,6 @@
 # Spec & Plan Quality Gates for Human-Agent Conversations
 
-**Status:** Plan A shipped (plan `spec-plan-quality-gates-a`, completed 2026-04-17). Plan B deferred pending evidence from Plan A in production.
+**Status:** Plan A shipped (plan `spec-plan-quality-gates-a`, completed 2026-04-17). Plan B deferred pending evidence from Plan A in production. This is a design record, not current format: the plan `Quality Contract` it describes was removed on 2026-09-21 (plan `framework-health`, decision D-016 there); quality gates are now resolved by the quality-manager from the runtime.
 
 ## Problem
 

@@ -33,7 +33,9 @@ not investigated.
 | Mutant | File | Before | After `tests/skills/shipped-frontmatter.test.ts` |
 |---|---|---|---|
 | delete `description:` | `domains/shared/skills/plan/SKILL.md` | survived | killed |
-| rename `name:` | `bundled/coding/skills/tdd/SKILL.md` | survived | killed |
+| change the `name:` value | `bundled/coding/skills/tdd/SKILL.md` | survived | killed |
+| delete the `name:` key | `bundled/coding/skills/tdd/SKILL.md` | not run | survived the first version of the test (discovery falls back to the directory name; found by review), killed after the test read the key itself |
+| delete the `name:` key | `external-skills/cosmonauts/chains/SKILL.md` | not run | killed (first version did not cover `external-skills/`) |
 | replace `{{objective}}` with text | `lib/prompts/framework/runtime/sub-agent.md` | killed (2 tests) | — |
 
 ## Not yet probed

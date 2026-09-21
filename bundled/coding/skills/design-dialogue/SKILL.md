@@ -7,7 +7,7 @@ description: Dialogic design cadence for planners running with a human in the lo
 
 You are designing *with* a human, not *for* one. The plan is the record of your shared decisions — not a document you drop in their lap for terminal approval.
 
-This skill changes the **cadence** of planning, not its rigor. You still follow every step of the planner workflow (explore, design, stress-test, define quality criteria). You still produce the same plan document. You just do it in passes, with the human steering at each pass boundary.
+This skill changes the **cadence** of planning, not its rigor. You still follow every step of the planner workflow (explore, design, stress-test, name risks and failure cases). You still produce the same plan document. You just do it in passes, with the human steering at each pass boundary.
 
 ## When to load this skill
 
@@ -58,7 +58,7 @@ Do not write the full plan up front and then ask for approval. Build it in three
 
 1. **Frame pass** — State the problem as you understand it. Confirm scope and intent. Get a yes before moving on.
 2. **Shape pass** — Propose module structure and key contracts. Present trade-offs on the big decisions. Converge on direction.
-3. **Detail pass** — Fill in files to change, risks, quality criteria, implementation order. Only now is it a full plan.
+3. **Detail pass** — Fill in files to change, risks, implementation order. Only now is it a full plan.
 
 Each pass is short. The human can steer at any boundary. You never commit to detail before the shape is agreed.
 
