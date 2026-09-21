@@ -70,7 +70,7 @@ Runtime resolution is exclusive. Each gate kind lands in exactly one of `complet
 
 Resolve each gate as follows:
 
-- When its required capability or the changed-scope audit capability is genuinely `unbound`, report the gate as `unbound/not enforced — reviewer judgment required` in `degraded_gates`. This is neither a pass nor a hard failure.
+- When its required capability is genuinely `unbound` — or, for `duplication`, `complexity`, and `dead-code` only, the changed-scope audit capability that resolves them — report the gate as `unbound/not enforced — reviewer judgment required` in `degraded_gates`. This is neither a pass nor a hard failure.
 - When status reports `failed`, status itself errors, or a bound capability invocation errors, report the affected gate as `failed-to-run` and blocking, distinct from degraded/unbound. Put it in `failed_to_run_gates`; never convert it to a pass or an unbound state.
 - When a requested metric or scope is unsupported, degrade only that metric or scope. Never treat an unsupported metric as zero and never silently widen the request. If a gate's only supported scope is wider than the review scope, record that gate as degraded for this invocation rather than widening it.
 - When the required capabilities are bound, execute the capability yourself. The runtime binding supplies the direct capability path; nothing in a plan is needed.

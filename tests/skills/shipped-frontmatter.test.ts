@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test } from "vitest";
 import { discoverSkills } from "../../lib/skills/discovery.ts";
@@ -38,6 +38,16 @@ describe("shipped skill frontmatter", () => {
 			const { data } = matter(await readFile(file, "utf-8"));
 			expect(String(data.name ?? "").trim(), file).not.toBe("");
 			expect(String(data.description ?? "").trim(), file).not.toBe("");
+		}
+	});
+
+	test("exported skills are named after their path under external-skills", async () => {
+		for (const file of await skillFiles(EXPORTED_ROOT)) {
+			const { data } = matter(await readFile(file, "utf-8"));
+			const flattened = relative(EXPORTED_ROOT, dirname(file))
+				.split(sep)
+				.join("-");
+			expect(data.name, file).toBe(flattened);
 		}
 	});
 
