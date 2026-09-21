@@ -31,17 +31,15 @@ describe("plan check-artifacts command", () => {
 					ok: true,
 					planSlug: "passing-plan",
 					planPath: "missions/plans/passing-plan/plan.md",
-					behaviorCount: 1,
 					issues: [],
-					advisories: [],
 				});
 			} else if (mode === "plain") {
 				expect(result.stdout).toBe(
-					"ok plan-conformance passing-plan behaviors=1 issues=0 advisories=0\n",
+					"ok plan-conformance passing-plan issues=0\n",
 				);
 			} else {
 				expect(result.stdout).toBe(
-					"Plan conformance passed for passing-plan.\nBehaviors: 1\nIssues: 0\nAdvisories: 0\n",
+					"Plan conformance passed for passing-plan.\nIssues: 0\n",
 				);
 			}
 		}
@@ -67,12 +65,11 @@ describe("plan check-artifacts command", () => {
 				expect(JSON.parse(result.stdout)).toMatchObject({
 					ok: false,
 					planSlug: "failing-plan",
-					advisories: [],
 					issues: [{ kind: "unresolved-decision-citation", actual: "D-099" }],
 				});
 			} else if (mode === "plain") {
 				expect(result.stdout).toContain(
-					"fail plan-conformance failing-plan behaviors=1 issues=1 advisories=0\n",
+					"fail plan-conformance failing-plan issues=1\n",
 				);
 				expect(result.stdout).toContain(
 					"issue kind=unresolved-decision-citation line=",
@@ -86,44 +83,6 @@ describe("plan check-artifacts command", () => {
 				expect(result.stdout).toContain(
 					"- [unresolved-decision-citation] line ",
 				);
-			}
-		}
-	});
-
-	it("keeps 13-behavior advisories non-blocking in human plain and json command flows", async () => {
-		for (const mode of ["human", "plain", "json"] as const) {
-			const result = await runPlanCheckArtifactsCommand(
-				modeArgs(mode, "advisory-plan"),
-				async (projectRoot) => {
-					await writePlanWithBody(
-						projectRoot,
-						"advisory-plan",
-						planMarkdown({ cites: "D-001", behaviors: 13 }),
-					);
-				},
-			);
-
-			expect(result.stderr).toBe("");
-			expect(result.exitCalls).toEqual([]);
-			if (mode === "json") {
-				expect(JSON.parse(result.stdout)).toMatchObject({
-					ok: true,
-					issues: [],
-					advisories: [
-						{
-							kind: "behavior-count-guidance",
-							count: 13,
-							guidance: 12,
-						},
-					],
-				});
-			} else {
-				expect(result.stdout).toContain(
-					mode === "human" ? "Advisories: 1" : "advisories=1",
-				);
-				expect(result.stdout).toContain("behavior-count-guidance");
-				expect(result.stdout).toContain("13 behaviors");
-				expect(result.stdout).toContain("guidance of 12");
 			}
 		}
 	});
@@ -287,13 +246,7 @@ async function writeArchivedPlan(
 	await writeFile(archivedPlanPath, body, "utf-8");
 }
 
-function planMarkdown({
-	cites,
-	behaviors = 1,
-}: {
-	cites: string;
-	behaviors?: number;
-}): string {
+function planMarkdown({ cites }: { cites: string }): string {
 	return `## Decision Log
 
 - **D-001 - Only decision**
@@ -306,9 +259,6 @@ The implementation relies on ${cites}.
 
 ## Behaviors
 
-${Array.from(
-	{ length: behaviors },
-	(_, index) => `### B-${String(index + 1).padStart(3, "0")} - A behavior`,
-).join("\n\n")}
+### B-001 - A behavior
 `;
 }

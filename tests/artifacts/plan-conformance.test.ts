@@ -406,7 +406,6 @@ and closes here.\`\`
 			planMarkdown: "## Overview\n\nNothing is cited here.\n",
 		});
 		expect(noCitation.ok).toBe(true);
-		expect(noCitation.behaviorCount).toBe(0);
 		expect(noCitation.issues).toEqual([]);
 
 		const unresolvedCitation = checkPlanConformance({
@@ -418,59 +417,6 @@ and closes here.\`\`
 			expect.objectContaining({
 				kind: "unresolved-decision-citation",
 				actual: "D-404",
-			}),
-		]);
-	});
-
-	test("counts behavior headings only inside the real Behaviors section", () => {
-		const result = checkPlanConformance({
-			planSlug: "section-scan",
-			planMarkdown: `\`\`\`md
-## Behaviors
-### B-999 - Fenced fake behavior
-\`\`\`
-
-## Behaviors
-### B-001 - Real behavior
-
-\`\`\`md
-## Files to Change
-\`\`\`
-
-### B-002 - Still in the real behavior section
-
-## Files to Change
-### B-003 - Not a behavior
-`,
-		});
-
-		expect(result.behaviorCount).toBe(2);
-		expect(result.advisories).toEqual([]);
-	});
-
-	test("advises splitting only when the behavior count exceeds the guidance", () => {
-		const planWith = (count: number) =>
-			`## Behaviors\n\n${Array.from(
-				{ length: count },
-				(_, index) => `### B-${String(index + 1).padStart(3, "0")} - Behavior`,
-			).join("\n\n")}\n`;
-
-		const atGuidance = checkPlanConformance({
-			planSlug: "sized",
-			planMarkdown: planWith(12),
-		});
-		expect(atGuidance.advisories).toEqual([]);
-
-		const overGuidance = checkPlanConformance({
-			planSlug: "sized",
-			planMarkdown: planWith(13),
-		});
-		expect(overGuidance.ok).toBe(true);
-		expect(overGuidance.advisories).toEqual([
-			expect.objectContaining({
-				kind: "behavior-count-guidance",
-				count: 13,
-				guidance: 12,
 			}),
 		]);
 	});

@@ -191,8 +191,7 @@ Invariants — mechanism yields to these:
   - Alternatives: re-pin the 18 hashes (rejected: keeps a check whose only
     possible failure is "someone edited a prompt").
   - Why: INV-003, INV-004.
-  - Decided by: worker-amended, 2026-09-20 (derived) — relaxes an existing
-    guard, so flagged to the human rather than assumed
+  - Decided by: human, 2026-09-21 (kept; proposed by the worker 2026-09-20)
 - **D-014 - `execution-liveness` is migrated in steps, not at once**
   - Decision: that plan's backlog was built entirely in the old format: 21
     `test.todo` stubs in 4 files whose titles were the plan's `Test:` fields
@@ -207,9 +206,9 @@ Invariants — mechanism yields to these:
     into the format the trial exists to validate).
   - Why: INV-005 applied to this plan; D-001 already removes what the stubs
     and the clause served.
-  - Decided by: step 1 derived from D-001 (human, 2026-09-20); sequencing
-    proposed in peer review, user agreement relayed by the peer session and
-    not directly confirmed, 2026-09-20
+  - Decided by: human, 2026-09-20 — sequencing proposed in peer review,
+    approved by the human through the peer session and confirmed directly on
+    2026-09-21
 - **D-015 - The Quality Contract table is load-bearing through a prompt, so it is not deleted yet**
   - Decision: no code reads the table, and its `Binding state` column is
     provenance only — `lib/analysis/binding-resolver.ts` computes binding from

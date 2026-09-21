@@ -3,7 +3,6 @@ import { join } from "node:path";
 import type { Command } from "commander";
 import {
 	checkPlanConformance,
-	type PlanConformanceAdvisory,
 	type PlanConformanceIssue,
 	type PlanConformanceResult,
 } from "../../../lib/artifacts/index.ts";
@@ -128,14 +127,11 @@ function renderPlainPlanConformanceResult(
 ): string[] {
 	const status = result.ok ? "ok" : "fail";
 	const lines = [
-		`${status} plan-conformance ${result.planSlug} behaviors=${result.behaviorCount} issues=${result.issues.length} advisories=${result.advisories.length}`,
+		`${status} plan-conformance ${result.planSlug} issues=${result.issues.length}`,
 	];
 
 	for (const issue of result.issues) {
 		lines.push(renderPlainIssue(issue));
-	}
-	for (const advisory of result.advisories) {
-		lines.push(renderPlainAdvisory(advisory));
 	}
 
 	return lines.map(escapeTerminalControls);
@@ -147,21 +143,13 @@ function renderHumanPlanConformanceResult(
 	const status = result.ok ? "passed" : "failed";
 	const lines = [
 		`Plan conformance ${status} for ${result.planSlug}.`,
-		`Behaviors: ${result.behaviorCount}`,
 		`Issues: ${result.issues.length}`,
-		`Advisories: ${result.advisories.length}`,
 	];
 
 	if (!result.ok) {
 		lines.push("");
 		for (const issue of result.issues) {
 			lines.push(`- ${renderHumanIssue(issue)}`);
-		}
-	}
-	if (result.advisories.length > 0) {
-		lines.push("", "Advisories:");
-		for (const advisory of result.advisories) {
-			lines.push(`- [${advisory.kind}] ${advisory.message}`);
 		}
 	}
 
@@ -177,15 +165,6 @@ function renderPlainIssue(issue: PlanConformanceIssue): string {
 	];
 
 	return parts.filter(isDefined).join(" ");
-}
-
-function renderPlainAdvisory(advisory: PlanConformanceAdvisory): string {
-	return [
-		`advisory kind=${advisory.kind}`,
-		`count=${advisory.count}`,
-		`guidance=${advisory.guidance}`,
-		`message=${advisory.message}`,
-	].join(" ");
 }
 
 function renderHumanIssue(issue: PlanConformanceIssue): string {

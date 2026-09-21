@@ -1,7 +1,5 @@
 export type {
 	CheckPlanConformanceOptions,
-	PlanConformanceAdvisory,
-	PlanConformanceAdvisoryKind,
 	PlanConformanceIssue,
 	PlanConformanceIssueKind,
 	PlanConformanceResult,

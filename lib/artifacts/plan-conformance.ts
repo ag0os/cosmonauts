@@ -4,15 +4,6 @@ export type PlanConformanceIssueKind =
 	| "unresolved-decision-citation"
 	| "undated-supersession";
 
-export type PlanConformanceAdvisoryKind = "behavior-count-guidance";
-
-export interface PlanConformanceAdvisory {
-	kind: PlanConformanceAdvisoryKind;
-	message: string;
-	count: number;
-	guidance: number;
-}
-
 export interface PlanConformanceIssue {
 	kind: PlanConformanceIssueKind;
 	message: string;
@@ -30,9 +21,7 @@ export interface PlanConformanceResult {
 	ok: boolean;
 	planSlug: string;
 	planPath?: string;
-	behaviorCount: number;
 	issues: PlanConformanceIssue[];
-	advisories: PlanConformanceAdvisory[];
 }
 
 interface MarkdownSection extends MarkdownScan {
@@ -40,10 +29,7 @@ interface MarkdownSection extends MarkdownScan {
 	endLine: number;
 }
 
-const BEHAVIOR_SECTION_HEADING = "## Behaviors";
 const DECISION_LOG_SECTION_HEADING = "## Decision Log";
-const BEHAVIOR_COUNT_GUIDANCE = 12;
-const BEHAVIOR_HEADING_REGEX = /^###\s+B-\d{3}\b/;
 const DECISION_ENTRY_REGEX = /^-\s+\*\*(D-\d{3})\s+(?:-|–|—)\s+.+?\*\*/;
 const DECISION_CITATION_REGEX = /\bD-\d{3}\b/g;
 const ISO_DATE_REGEX = /\b\d{4}-\d{2}-\d{2}\b/;
@@ -57,24 +43,13 @@ export function checkPlanConformance(
 ): PlanConformanceResult {
 	const scan = scanMarkdown(options.planMarkdown);
 	const issues = validateDecisionReferences(scan);
-	const behaviorCount = countBehaviors(scan);
 
 	return {
 		ok: issues.length === 0,
 		planSlug: options.planSlug,
 		planPath: options.planPath,
-		behaviorCount,
 		issues,
-		advisories: buildBehaviorCountAdvisories(behaviorCount),
 	};
-}
-
-function countBehaviors(scan: MarkdownScan): number {
-	const section = extractMarkdownSection(scan, BEHAVIOR_SECTION_HEADING);
-	if (!section) return 0;
-	return section.fenceMaskedLines.filter((line) =>
-		BEHAVIOR_HEADING_REGEX.test(line),
-	).length;
 }
 
 function validateDecisionReferences(
@@ -225,23 +200,6 @@ function validateSupersessionAnnotations(
 		});
 	}
 	return issues;
-}
-
-function buildBehaviorCountAdvisories(
-	count: number,
-): PlanConformanceAdvisory[] {
-	if (count <= BEHAVIOR_COUNT_GUIDANCE) {
-		return [];
-	}
-
-	return [
-		{
-			kind: "behavior-count-guidance",
-			message: `Plan has ${count} behaviors, exceeding the guidance of ${BEHAVIOR_COUNT_GUIDANCE}; consider splitting it along a real boundary.`,
-			count,
-			guidance: BEHAVIOR_COUNT_GUIDANCE,
-		},
-	];
 }
 
 function extractMarkdownSection(
