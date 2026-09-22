@@ -182,6 +182,7 @@ Invariants — mechanism yields to these:
     itself.
   - Why: INV-003; D-005.
   - Decided by: worker-proposed, 2026-09-20 (derived)
+  - Supersedes: the Stage 2 sequencing in Design that deleted prose tests only in the sort step (2026-09-20)
 - **D-013 - The pre-W3 byte-pin of every shipped prompt is removed**
   - Decision: `tests/episodic/pre-w3-disabled-baselines.test.ts` compared the
     sha256 of 108 prompt and skill files against
@@ -275,6 +276,7 @@ Invariants — mechanism yields to these:
     about the suite, and it stayed false).
   - Why: INV-003; B-006, B-007, B-008.
   - Decided by: worker-proposed, 2026-09-21 (derived from D-005 and D-013)
+  - Supersedes: the `tests/prompts/`-only scope of the Stage 2 sort in Design (2026-09-21)
 - **D-019 - Documentation tables are not compared with code constants**
   - Decision: the three tests in `tests/analysis/contracts.test.ts` that parsed
     tables out of `gate-contracts.md` and `docs/analysis-provider-validation.md`,
@@ -289,7 +291,7 @@ Invariants — mechanism yields to these:
   - Decision: `fallow` is rooted at `bin/`, `cli/`, `package.json#pi.extensions`, domain manifests, and the modules `fallow.toml` already declares as `entry` — the 23 `lib/` modules the package publishes as deep-importable public API. Deliberately unwired modules are listed as further `entry` items, each annotated with the active plan or roadmap item that will wire it, so both the direct run and the quality-manager's capability treat them as reached with no adapter. One project command runs the tool and then a check that fails on an annotation whose owner is archived or absent; that command is B-009's entry point. The quality-manager's `dead-code` capability is a separate consumer of the same tool and depends on per-user analysis consent held outside the repository; no repository change can bind it, and this plan does not try.
   - Alternatives: roots without the public API (rejected: deletes modules consumers import); a separate staged list (rejected: nothing on the gate path read it); relying on the quality-manager's gate (rejected: unbindable from the repo).
   - Why: `review-1.md PR-003, PR-004, PR-005`; `review-2.md PR-008`.
-  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-024, 2026-09-22)*
+  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-024 and D-027, 2026-09-22)*
   - Supersedes: D-006 and D-007 in part (2026-09-22)
 - **D-021 - Mutation probes have a reproducible sample and run in a throwaway worktree**
   - Decision: the population is every test file under `tests/` that imports from `lib/`, `cli/`, `domains/` or `scripts/`; strata are the first directory level under `tests/`; each stratum contributes the larger of three files and ten percent of its files; within a stratum files are sorted by path and taken at an even stride from the first. Probes run in a throwaway git worktree of the committed tree, never in the working checkout, so an interruption leaves nothing broken behind; within it, mutated files are restored from `cp` backups. The record names the commit, the population count, each stratum's size, and the stride.
@@ -315,8 +317,21 @@ Invariants — mechanism yields to these:
   - Decision: the task system gains a terminal status `Cancelled`, which archive accepts alongside `Done` and which no scheduler treats as satisfied. `TASK-706` and `TASK-707` become `Cancelled` with their records — unchecked criteria and "will not be completed" notes — left exactly as written; the audit plan is then marked `completed` and archived. Flipping them to `Done` would have made their status contradict their own text.
   - Alternatives: `Done` with a note (rejected: `review-3.md PR-004`); a label-based archive exception (rejected: an exception hidden in a label is the shape INV-007 objects to).
   - Why: `review-3.md PR-004`; INV-007.
-  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-026, 2026-09-22)*
   - Supersedes: D-022 (2026-09-22)
+
+- **D-026 - `Cancelled` is a terminal status the whole task system knows**
+  - Decision: `Cancelled` joins `TaskStatus` and every shipped consumer of it in one change: the `task_edit` tool schema and the CLI status parser accept it; the artifact viewer counts it; Drive and coordinator selection exclude it exactly as they exclude `Done`; a `Cancelled` dependency is never satisfied, whether the task is active or archived — dependents stay blocked, because the work will not happen — and archived-dependency resolution reads the persisted status instead of assuming `Done`; archive accepts `Done` and `Cancelled`; the shipped task and plan guidance say so. A coordinator over a set that is all `Done` or `Cancelled` ends. Owner: TASK-710, which also marks `test-health-audit` `completed` and archives it after `TASK-706` and `TASK-707` are `Cancelled`.
+  - Alternatives: extend `TaskStatus` alone (rejected: `review-4.md PR-001, PR-002` — the viewer fails typecheck and Drive would run cancelled work); `Done` with a note (rejected: D-025).
+  - Why: `review-4.md PR-001, PR-002, PR-003`.
+  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Supersedes: D-025 in part (2026-09-22)
+- **D-027 - Staged entries have a parseable owner contract**
+  - Decision: `fallow.toml`'s `entry` array stays a plain list the tool reads. Staged modules are declared in a separate tracked file, `missions/architecture/staged-code.toml`, as `[[staged]]` rows with `path` and `owner`, where `owner` is `plan:<slug>` (live when `missions/plans/<slug>/plan.md` exists with `status: active`) or `roadmap:<exact heading text>` (live when `ROADMAP.md` has that heading). The reachability command checks, in order: every staged `path` is present in `fallow.toml` `entry`; every `entry` that is not staged is one of the declared public-API modules; every owner is live. A roadmap owner whose item becomes a plan is updated to `plan:<slug>` in the same change. The pre-listed set for Stage 3 is `plan:episodic-log-detached-hardening` is archived, so the gated-off modules are owned by the roadmap headings that carry them until their plans exist; the worker records each owner it resolves.
+  - Alternatives: annotate `entry` strings with comments (rejected: `review-4.md PR-005` — nothing can parse a comment); a single combined table (rejected: the tool may reject unknown keys).
+  - Why: `review-4.md PR-005`.
+  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Supersedes: D-020 in part (2026-09-22)
 
 ## Behaviors
 
@@ -400,8 +415,8 @@ Invariants — mechanism yields to these:
 
 - Source: INV-006
 - Observer: a maintainer running the reachability check on the branch Stage 3 delivers
-- Entry point: the project's dead-code gate
-- Outcome: the three orphans measured in the Overview no longer appear as unreachable — each is wired, staged with an owner, or gone along with its tests — and the staged list names no owner that is archived
+- Entry point: the project's reachability command
+- Outcome: the orphans the Overview measures — the spawn graph compiler with no production importer, and the run loop reached by production only for a type — no longer appear as unreachable — each is wired, staged with an owner, or gone along with its tests — and the staged list names no owner that is archived
 
 ## Design
 
@@ -471,9 +486,16 @@ Stage 2 (in progress): `tests/**` (deletions and the sort),
 `missions/plans/test-health-audit/spec.md`, `scripts/test-health-audit/`,
 `tests/scripts/test-health-audit/`, `ROADMAP.md`.
 
-Stage 3: `fallow.toml` (roots and annotated staged entries), `package.json`
-(`check:reachability`), one check script for staged-entry owners,
-`lib/tasks/` and `lib/plans/archive.ts` (the `Cancelled` status, D-025), and the modules and tests the reachability run
+Stage 3: `fallow.toml` (roots), `missions/architecture/staged-code.toml`
+(new, D-027), `package.json` (`check:reachability`), one check script for
+staged-entry owners; for D-026: `lib/tasks/task-types.ts`,
+`lib/tasks/task-manager.ts`, `lib/driver/task-selection.ts`,
+`lib/orchestration/chain-runner.ts`, `lib/plans/archive.ts`,
+`domains/shared/extensions/tasks/index.ts`,
+`domains/shared/extensions/plans/index.ts`, `cli/tasks/commands/shared.ts`,
+`lib/artifact-viewer/loaders.ts`, `domains/shared/skills/task/SKILL.md`,
+`external-skills/cosmonauts/{tasks,plans}/SKILL.md`,
+`missions/plans/test-health-audit/plan.md`, `TASK-706`, `TASK-707`, and the modules and tests the reachability run
 removes — enumerated in the Stage 3 commit, not here.
 
 ## Risks
