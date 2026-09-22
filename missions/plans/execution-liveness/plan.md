@@ -238,7 +238,8 @@ claim; this absence remains R-012.
     impossible local availability.
   - Decided by: human, 2026-09-22
   - Supersedes: D-008's planner-proposed unresolved-authority premise, the former
-    deliberately incomplete Design §5, and the former H-002 gate around D-002.
+    deliberately incomplete Design §5, and the former H-002 gate around D-002 (2026-09-22).
+
 
 - **D-014 — Backend execution starts with durable stop identity**
   - Decision: Replace the result-only Driver `Backend.run()` boundary with a
@@ -257,7 +258,8 @@ claim; this absence remains R-012.
     (`review-4.md PR-001`).
   - Decided by: planner-proposed
   - Supersedes: the former Design §§5–6 assumption that `BackendHandle` alone
-    exposed a live or reconstructible control after start.
+    exposed a live or reconstructible control after start (2026-09-22).
+
 
 - **D-015 — Host continuity and observer identity are separate**
   - Decision: A clock sample carries a host/boot continuity epoch, a host-active
@@ -273,7 +275,8 @@ claim; this absence remains R-012.
     (`review-4.md PR-002`).
   - Decided by: planner-proposed
   - Supersedes: the per-process-epoch and every-mismatch-is-suspension portions
-    of D-007 and former Design §4.
+    of D-007 and former Design §4 (2026-09-22).
+
 
 - **D-016 — Stop provenance survives dispatch and terminalization**
   - Decision: Store immutable stop intent (`requestId`, reason, request time,
@@ -288,7 +291,7 @@ claim; this absence remains R-012.
     (`review-4.md PR-003`).
   - Decided by: planner-proposed
   - Supersedes: the former `AttemptStopState` variants in Design §2 and the
-    dispatch-without-transition wording in former Design §7.
+    dispatch-without-transition wording in former Design §7 (2026-09-22).
 
 - **D-017 — Drive effect commit points are attempt transactions**
   - Decision: Source-ref commits, task-file status publication, and final-state
