@@ -309,7 +309,7 @@ claim; this absence remains R-012.
     rather than consume a reusable permit (`review-4.md PR-004`).
   - Decided by: planner-proposed
   - Supersedes: the former generic claim that a conditional result consumed by
-    `shell-command-finalizer.ts` fenced the external mutation.
+    `shell-command-finalizer.ts` fenced the external mutation (2026-09-22).
 
 - **D-018 — Unconfirmed lock release forbids same-process follow-up**
   - Decision: Runtime lock operations return both the committed action result and
