@@ -119,45 +119,23 @@ Invariants — mechanism yields to these:
   - Decided by: planner-proposed
 - **D-006 - Reachability comes from a tool rooted at real entry points**
   - Decision: use `fallow` (already a devDependency) rooted at `bin/`, `cli/`,
-    `package.json#pi.extensions`, domain manifests, and the modules
-    `fallow.toml` already declares as `entry` — the 23 `lib/` modules the
-    package publishes as deep-importable public API. Tests are not roots.
-    Stage 3 runs `fallow` directly as a script; the quality-manager's
-    `dead-code` capability is a separate consumer of the same tool and is
-    `unbound` here (`execution-not-consented`) because analysis consent is
-    per-user state held outside the repository. No Stage 3 change can bind it;
-    B-009's gate is the direct run.
+    `package.json#pi.extensions`, and domain manifests. Tests are not roots.
   - Alternatives: per-export grep (rejected: blind to transitive orphans,
-    `export {}` lists, and comment mentions — measured); roots without the
-    public API (rejected: would delete modules consumers import).
-  - Decided by: planner-proposed; amended by the worker 2026-09-22 from
-    `review-1.md PR-003, PR-005` (derived)
+    `export {}` lists, and comment mentions — measured).
+  - Decided by: planner-proposed *(superseded in part by D-020, 2026-09-22)*
 - **D-007 - One staged-code list, not a marker scheme**
-  - Decision: deliberately unwired modules are listed where the tool already
-    looks — as `entry` items in `fallow.toml`, each annotated with the active
-    plan or roadmap item that will wire it. Because they are entries, both
-    the direct run and the quality-manager's capability treat them as reached
-    without any adapter. A small check reads the annotations and fails on an
-    owner that is archived or absent. A separate list nothing reads was the
-    original shape; `review-1.md PR-004` showed the gate path never consulted
-    it.
+  - Decision: a single tracked file lists deliberately unwired modules, each
+    with the active plan or roadmap item that will wire it. The reachability
+    check reads it. An entry whose owner is archived or absent is an orphan.
   - Why: INV-006 with the least mechanism INV-007 allows.
-  - Decided by: planner-proposed; amended by the worker 2026-09-22 from
-    `review-1.md PR-004` (derived)
+  - Decided by: planner-proposed *(superseded in part by D-020, 2026-09-22)*
 - **D-008 - Mutation probes are sampled and mechanical**
-  - Decision: mutate the production unit a test claims to cover and record
-    whether the test goes red. Restore from `cp` backups, never
-    `git checkout`. Results are recorded as killed/survived, nothing else. No
-    per-test agent essay. Sample rule (added 2026-09-22 from `review-1.md
-    PR-008`): the population is every test file under `tests/` that imports
-    from `lib/`, `cli/` or `domains/`; strata are the first directory level
-    under `tests/`; each stratum contributes the larger of three files and
-    ten percent of its files; within a stratum files are sorted by path and
-    taken at an even stride from the first. The record names the population
-    count, each stratum's size, and the stride, so the sample is reproducible.
+  - Decision: for a sample stratified by directory, mutate the production
+    unit a test claims to cover and record whether the test goes red. Restore
+    from `cp` backups, never `git checkout`. Results are recorded as
+    killed/survived, nothing else. No per-test agent essay.
   - Why: INV-005.
-  - Decided by: planner-proposed; sample rule worker-amended 2026-09-22
-    (derived)
+  - Decided by: planner-proposed *(superseded in part by D-021, 2026-09-22)*
 - **D-009 - The new format gets one real trial before Stage 3**
   - Decision: after Stage 1, take one small open behavior from
     `execution-liveness`, restate it in the new shape, have a worker implement
@@ -183,14 +161,8 @@ Invariants — mechanism yields to these:
     `cli/tasks/commands/shared.ts:96` join fields with an unescaped `" | "`,
     and titles may contain a pipe. Its deferral reason ("moves the
     counted-guardrail set") was an artifact of the old counting method and is
-    void. (c) `TASK-706` and `TASK-707` are superseded by this plan. Lifecycle exit
-    (worker-amended 2026-09-22 from `review-1.md PR-006`, derived): the
-    runtime has no `superseded` plan status and archive refuses while a linked
-    task is open; of the audit plan's 22 tasks, 20 are Done and only these two
-    are open. When Stage 2's re-spec lands they close `Done` keeping the
-    `superseded` label and a note naming this plan, the audit plan is marked
-    `completed`, and it is archived in the ordinary way.
-  - Decided by: human, 2026-09-20
+    void. (c) `TASK-706` and `TASK-707` are superseded by this plan.
+  - Decided by: human, 2026-09-20 *(part (c) extended by D-022, 2026-09-22)*
 - **D-011 - Independent review of Stage 1 runs at the end of Stage 1**
   - Decision: a read-only codex correctness review of the Stage 1 diff, not
     deferred to the end-of-plan sweep. Stage 1 rewrites the planner and
@@ -313,6 +285,23 @@ Invariants — mechanism yields to these:
   - Decided by: human, 2026-09-21 (direct; both rulings). The kept guards
     are the INV-003 exception the human ratified 2026-09-22.
 
+- **D-020 - Reachability roots include the declared public API, and staged modules are tool entries**
+  - Decision: `fallow` is rooted at `bin/`, `cli/`, `package.json#pi.extensions`, domain manifests, and the modules `fallow.toml` already declares as `entry` — the 23 `lib/` modules the package publishes as deep-importable public API. Deliberately unwired modules are listed as further `entry` items, each annotated with the active plan or roadmap item that will wire it, so both the direct run and the quality-manager's capability treat them as reached with no adapter. One project command runs the tool and then a check that fails on an annotation whose owner is archived or absent; that command is B-009's entry point. The quality-manager's `dead-code` capability is a separate consumer of the same tool and depends on per-user analysis consent held outside the repository; no repository change can bind it, and this plan does not try.
+  - Alternatives: roots without the public API (rejected: deletes modules consumers import); a separate staged list (rejected: nothing on the gate path read it); relying on the quality-manager's gate (rejected: unbindable from the repo).
+  - Why: `review-1.md PR-003, PR-004, PR-005`; `review-2.md PR-008`.
+  - Decided by: worker-amended, 2026-09-22 (derived)
+  - Supersedes: D-006 and D-007 in part (2026-09-22)
+- **D-021 - Mutation probes have a reproducible sample and run in a throwaway worktree**
+  - Decision: the population is every test file under `tests/` that imports from `lib/`, `cli/`, `domains/` or `scripts/`; strata are the first directory level under `tests/`; each stratum contributes the larger of three files and ten percent of its files; within a stratum files are sorted by path and taken at an even stride from the first. Probes run in a throwaway git worktree of the committed tree, never in the working checkout, so an interruption leaves nothing broken behind; within it, mutated files are restored from `cp` backups. The record names the commit, the population count, each stratum's size, and the stride.
+  - Why: `review-1.md PR-008`; `review-2.md PR-006, PR-007`. The audit tooling's own suites import only from `scripts/`, and Stage 2 keeps them in scope.
+  - Decided by: worker-amended, 2026-09-22 (derived)
+  - Supersedes: D-008 in part (2026-09-22)
+- **D-022 - The superseded audit plan has a lifecycle exit**
+  - Decision: the runtime has no `superseded` plan status and archive refuses while a linked task is open; of the audit plan's 22 tasks, 20 are Done and only `TASK-706` and `TASK-707` are open. When Stage 2's re-spec lands they close `Done` keeping the `superseded` label and a note naming this plan, the audit plan is marked `completed`, and it is archived in the ordinary way.
+  - Why: `review-1.md PR-006`.
+  - Decided by: worker-amended, 2026-09-22 (derived)
+  - Supersedes: D-010 part (c) in part (2026-09-22)
+
 ## Behaviors
 
 **Stage 1 — format**
@@ -329,7 +318,7 @@ Invariants — mechanism yields to these:
 - Source: INV-007
 - Observer: a human or agent running `cosmonauts plan check-artifacts <slug>`
 - Entry point: that command, in human, `--plain`, and `--json` modes
-- Outcome: a plan in the new shape passes; a plan citing an undeclared `D-###`, or superseding without a date, fails with that issue and a non-zero exit; nothing about tests or markers is checked
+- Outcome: a plan in the new shape passes; a plan citing an undeclared `D-###`, or carrying a `Supersedes:` pointer or supersession annotation without a date, fails with that issue and a non-zero exit; nothing about tests or markers is checked
 
 ### B-003 - Workers own test design
 
@@ -359,12 +348,12 @@ Invariants — mechanism yields to these:
 - Source: INV-004
 - Observer: a maintainer searching test declarations and their comments for `@cosmo-behavior`
 - Entry point: every test file under `tests/`
-- Outcome: no test declaration or comment carries a marker — frozen history fixtures under `tests/fixtures/` are records INV-004 leaves alone — and the per-test pass/fail list is identical before and after the strip
+- Outcome: no test declaration or comment carries a marker — frozen history fixtures under `tests/fixtures/` are records INV-004 leaves alone — and the per-test pass/fail list is identical before and after the strip except for tests deleted on the record in the same change
 
 ### B-006 - Rewording prose does not break the suite
 
 - Source: INV-003
-- Observer: a maintainer rewording a persona or skill body without touching machine-parsed structure
+- Observer: a maintainer rewording a persona or skill body without touching machine-parsed structure and without naming a provider, toolchain, language or framework (the INV-003 exception)
 - Entry point: the project's test command
 - Outcome: the suite stays green
 
@@ -388,7 +377,7 @@ Invariants — mechanism yields to these:
 
 - Source: INV-006
 - Observer: a maintainer running the reachability check
-- Entry point: the project's dead-code gate
+- Entry point: the project's reachability command, which runs the tool and the staged-owner check as one step
 - Outcome: every `lib/` module is reachable from a shipped entry point or listed as staged with a live owner; anything else fails, including an entry whose owner is archived
 
 ### B-010 - The known orphans are resolved

@@ -45,6 +45,14 @@ Use when the work needs `spec.md` plus behavior-first `plan.md`.
 
 State the user-visible outcome.
 
+## Intent
+
+Goal: <one sentence that must stay true whatever the implementation>
+
+Invariants — mechanism yields to these:
+
+- INV-001 - An invariant a mechanism could plausibly collide with.
+
 ## Users
 
 Name who benefits.
@@ -76,6 +84,13 @@ Describe the expected flow in user terms.
 
 Summarize the implementation direction.
 
+## Decision Log
+
+- **D-001 - A choice the design rests on**
+  - Decision: what was chosen.
+  - Alternatives: what was rejected and why.
+  - Decided by: human | planner-proposed
+
 ## Behaviors
 
 ### B-001 - Behavior name
@@ -101,7 +116,7 @@ The structure that will deliver the behaviors. Guidance, not contract.
 
 1. Deliver the first behavior end to end through its real entry point — test-first for code; by reviewed diff for authored prose.
 2. Repeat for the remaining behaviors.
-3. Run the declared checks.
+3. Run the project's checks.
 ```
 
 ## Architecture-Linked Multi-Plan Template

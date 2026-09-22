@@ -26,8 +26,8 @@ You are coordinating the implementation of an **existing** cosmonauts plan and d
 ## Phase 0 — Orient & confirm
 
 1. `git status` — worktree should be clean; note the current branch and where `BASE` points.
-2. Read `missions/plans/$1/plan.md` and `missions/plans/$1/spec.md`. Note behaviors (e.g. `B-001…`), acceptance criteria, the quality contract, and any explicit **out-of-scope** items and risks — you will hold workers to these.
-3. `cosmonauts task list --label plan:$1 --json` — confirm every task the plan implies is present, all **To Do**, dependencies form the expected DAG, and the behavior markers (`@cosmo-behavior plan:$1#B-…`) are all accounted for.
+2. Read `missions/plans/$1/plan.md` and `missions/plans/$1/spec.md`. Note behaviors (e.g. `B-001…`), acceptance criteria, and any explicit **out-of-scope** items and risks — you will hold workers to these.
+3. `cosmonauts task list --label plan:$1 --json` — confirm every task the plan implies is present, all **To Do**, dependencies form the expected DAG.
 4. Capture a **baseline** of the gates (at least type-check) so later regressions are attributable. If the base is already red, note it — you may need to fix pre-existing breakage to reach "green," and you must call that out (it is not scope creep).
 5. Create/checkout the feature branch: `feature/$1` off `BASE`.
 
@@ -44,7 +44,7 @@ You are coordinating the implementation of an **existing** cosmonauts plan and d
 ## Phase 2 — Ground-truth gates + Quality Manager
 
 1. Run the gates yourself for ground truth: type-check, lint, full test suite — all green. Read the final result line; don't trust captured fixture output that merely *looks* like a failure.
-2. Run the plan's completeness checks: behavior markers present in the referenced tests; greps for symbols the plan said to remove; any byte-identical / no-churn / no-new-file guarantees the spec makes (verify with `git status` + `git hash-object` before/after a representative action). Clean up any throwaway artifacts you create.
+2. Run the plan's completeness checks: greps for symbols the plan said to remove; any byte-identical / no-churn / no-new-file guarantees the spec makes (verify with `git status` + `git hash-object` before/after a representative action). Clean up any throwaway artifacts you create.
 3. Run the Quality Manager:
    `cosmonauts run chain "coding/quality-manager" "<scope prompt>"`
    In the prompt: name the plan and its behaviors; **tell it to reconcile against LOCAL `BASE`** (origin may lag — otherwise it flags already-merged commits as out-of-scope); restate the out-of-scope items; and disclose any known-accepted deviations (e.g. fixing a test that was already broken on `BASE`).
