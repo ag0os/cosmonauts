@@ -1,7 +1,21 @@
 # Stage 2 probe record
 
-Restores were from `cp` backups. Four environmental failures and the known
-flakes are excluded from every count.
+Restores were from `cp` backups. Excluded from every count, each with its
+evidence:
+
+- `tests/cli/export/subcommand.test.ts` and `tests/cli/skills/subcommand.test.ts`
+  asserted a framework root matching `/cosmonauts$/`, the checkout's directory
+  name; red in any worktree not so named, green in one that is (measured at
+  `f4b0789` and at branch HEAD in a scratch worktree named `cosmonauts`).
+  Fixed in `fb345ad`.
+- `tests/harness-adapters/inventory.test.ts` and `tests/skills/skills-cli.test.ts`
+  read the gitignored `.claude/skills/`; green only with it copied in
+  (measured the same way). Deleted in `fb345ad` on the human's ruling.
+- `tests/driver/cross-plan-commit-lock.test.ts`: red once in the full run
+  before any change on this branch, `npx vitest run` on the file alone → 1
+  passed. One of the three flakes the project already records.
+
+After `fb345ad` the unmutated suite is 3,073 of 3,073 in this worktree.
 
 ## Prose-blanking probe (B-006)
 
@@ -25,8 +39,10 @@ Kept red under blanking — structure a body legitimately carries:
 | `tests/memory/interface.test.ts` — documents exactly the episode actions | documented action table compared with `EPISODE_ACTIONS` |
 
 Round 1 also turned `tests/extensions/orchestration-driver-tool.test.ts`
-(a driver end-to-end run) red by timeout; it did not recur in round 2 and was
-not investigated.
+(a driver end-to-end run) red by timeout. It did not recur in round 2, and
+`npx vitest run` on the file alone after the sort → 15 passed. It is treated
+as a timing flake of a real subprocess run under the load of a full suite;
+it is not a survivor of the blanking, which touches no code that test runs.
 
 ## Structure-breaking probes (B-007)
 

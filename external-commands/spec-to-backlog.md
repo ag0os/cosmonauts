@@ -28,7 +28,7 @@ You are coordinating the design-and-decomposition half of a cosmonauts plan: fro
 
 1. `cosmonauts run chain "planner -> plan-reviewer" "<prompt>" 2> <scratchpad>/chain-plan.log` in the background (expect 30–60 min).
 2. Prompt must state: design the EXISTING plan slug `$1`; update `missions/plans/$1/plan.md` in place (preserve `createdAt`, do NOT create a new slug); the spec at `missions/plans/$1/spec.md` is authoritative; honor every ratified decision in the spec's Assumptions verbatim; name the relevant `missions/architecture/*.md` source-of-truth docs; design only, no implementation; plan-reviewer writes its findings to the next free `missions/plans/$1/review-<n>.md`, per the shipped convention (`planning-system-hardening` D-002: lowest unused number, legacy `review.md` counts as round 1). Do not tell it to write `review.md` — that name is reserved for pre-convention rounds, and pinning it can collide with an existing round 1.
-3. On completion confirm `plan.md` gained the design (behaviors `B-###`, Design, Files to Change, Quality Contract, Implementation Order) and at least one review round exists. **Expect more than one.** The planner's own persona (step 8) may spawn a `plan-reviewer` sidecar and then revise against it, so a two-stage chain can legitimately produce `review.md` *and* `review-2.md` and rewrite `plan.md` afterwards. Read every round, not just the first.
+3. On completion confirm `plan.md` gained the design (behaviors `B-###`, Design, Files to Change, Implementation Order) and at least one review round exists. **Expect more than one.** The planner's own persona (step 8) may spawn a `plan-reviewer` sidecar and then revise against it, so a two-stage chain can legitimately produce `review.md` *and* `review-2.md` and rewrite `plan.md` afterwards. Read every round, not just the first.
 
 ## Phase 2 — Independent adversarial review (your channel)
 
@@ -48,7 +48,7 @@ Observed fact this command exists for: the chain's plan-reviewer and this review
 ## Phase 4 — Task creation (cosmonauts chain)
 
 1. `cosmonauts run chain "task-manager" "<prompt>" 2> <scratchpad>/chain-tasks.log` (fast; minutes).
-2. Prompt must state: decompose `missions/plans/$1/plan.md` (read fully, plus spec.md); every behavior owned by exactly one task; dependencies mirror the Implementation Order including any gate/checkpoint steps; ACs traceable to behaviors and the Quality Contract; restate the plan's ratified constraints; create tasks only.
+2. Prompt must state: decompose `missions/plans/$1/plan.md` (read fully, plus spec.md); every behavior owned by exactly one task; dependencies mirror the Implementation Order including any gate/checkpoint steps; restate the plan's ratified constraints; create tasks only.
 
 ## Phase 5 — Mechanical coverage matrix (cheap, before judgment)
 

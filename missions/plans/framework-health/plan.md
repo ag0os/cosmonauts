@@ -181,7 +181,7 @@ Invariants — mechanism yields to these:
     inserted into a sentence it asserted verbatim — the defect demonstrating
     itself.
   - Why: INV-003; D-005.
-  - Decided by: worker-amended, 2026-09-20 (derived)
+  - Decided by: worker-proposed, 2026-09-20 (derived)
 - **D-013 - The pre-W3 byte-pin of every shipped prompt is removed**
   - Decision: `tests/episodic/pre-w3-disabled-baselines.test.ts` compared the
     sha256 of 108 prompt and skill files against
@@ -274,7 +274,7 @@ Invariants — mechanism yields to these:
   - Alternatives: stop at `tests/prompts/` as written (rejected: B-006 is
     about the suite, and it stayed false).
   - Why: INV-003; B-006, B-007, B-008.
-  - Decided by: worker-amended, 2026-09-21 (derived from D-005 and D-013)
+  - Decided by: worker-proposed, 2026-09-21 (derived from D-005 and D-013)
 - **D-019 - Documentation tables are not compared with code constants**
   - Decision: the three tests in `tests/analysis/contracts.test.ts` that parsed
     tables out of `gate-contracts.md` and `docs/analysis-provider-validation.md`,
@@ -289,18 +289,34 @@ Invariants — mechanism yields to these:
   - Decision: `fallow` is rooted at `bin/`, `cli/`, `package.json#pi.extensions`, domain manifests, and the modules `fallow.toml` already declares as `entry` — the 23 `lib/` modules the package publishes as deep-importable public API. Deliberately unwired modules are listed as further `entry` items, each annotated with the active plan or roadmap item that will wire it, so both the direct run and the quality-manager's capability treat them as reached with no adapter. One project command runs the tool and then a check that fails on an annotation whose owner is archived or absent; that command is B-009's entry point. The quality-manager's `dead-code` capability is a separate consumer of the same tool and depends on per-user analysis consent held outside the repository; no repository change can bind it, and this plan does not try.
   - Alternatives: roots without the public API (rejected: deletes modules consumers import); a separate staged list (rejected: nothing on the gate path read it); relying on the quality-manager's gate (rejected: unbindable from the repo).
   - Why: `review-1.md PR-003, PR-004, PR-005`; `review-2.md PR-008`.
-  - Decided by: worker-amended, 2026-09-22 (derived)
+  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-024, 2026-09-22)*
   - Supersedes: D-006 and D-007 in part (2026-09-22)
 - **D-021 - Mutation probes have a reproducible sample and run in a throwaway worktree**
   - Decision: the population is every test file under `tests/` that imports from `lib/`, `cli/`, `domains/` or `scripts/`; strata are the first directory level under `tests/`; each stratum contributes the larger of three files and ten percent of its files; within a stratum files are sorted by path and taken at an even stride from the first. Probes run in a throwaway git worktree of the committed tree, never in the working checkout, so an interruption leaves nothing broken behind; within it, mutated files are restored from `cp` backups. The record names the commit, the population count, each stratum's size, and the stride.
   - Why: `review-1.md PR-008`; `review-2.md PR-006, PR-007`. The audit tooling's own suites import only from `scripts/`, and Stage 2 keeps them in scope.
-  - Decided by: worker-amended, 2026-09-22 (derived)
+  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-024, 2026-09-22)*
   - Supersedes: D-008 in part (2026-09-22)
 - **D-022 - The superseded audit plan has a lifecycle exit**
   - Decision: the runtime has no `superseded` plan status and archive refuses while a linked task is open; of the audit plan's 22 tasks, 20 are Done and only `TASK-706` and `TASK-707` are open. When Stage 2's re-spec lands they close `Done` keeping the `superseded` label and a note naming this plan, the audit plan is marked `completed`, and it is archived in the ordinary way.
   - Why: `review-1.md PR-006`.
-  - Decided by: worker-amended, 2026-09-22 (derived)
+  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded by D-025, 2026-09-22)*
   - Supersedes: D-010 part (c) in part (2026-09-22)
+
+- **D-023 - How this plan is verified**
+  - Decision: Stages 1 and 2 are executed by paired sessions and verified by independent codex rounds and direct plan-reviewer rounds, not through Drive tasks; the shipped quality-manager and integration-verifier find no `plan:framework-health` tasks and skip it, and that is accepted for those stages. Stage 3, which deletes code, is executed through `plan:framework-health` tasks (TASK-708, TASK-709) so the shipped verification paths run over it.
+  - Why: `review-2.md PR-001`; `review-3.md` prior-findings ledger.
+  - Decided by: human, 2026-09-22
+- **D-024 - The reachability command is named, and the sample rule is capped**
+  - Decision: the one command of D-020 is the project script `check:reachability` in `package.json`, which runs the tool and then the staged-owner check; `package.json` joins Stage 3's files. D-021's per-stratum sample is the larger of three files and ten percent, capped at the stratum's size, so a one-file stratum contributes its one file.
+  - Why: `review-3.md PR-002`; `review-2.md PR-008` (carried in `review-3.md`).
+  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Supersedes: D-020 and D-021 in part (2026-09-22)
+- **D-025 - Superseded tasks are cancelled, not marked Done**
+  - Decision: the task system gains a terminal status `Cancelled`, which archive accepts alongside `Done` and which no scheduler treats as satisfied. `TASK-706` and `TASK-707` become `Cancelled` with their records — unchecked criteria and "will not be completed" notes — left exactly as written; the audit plan is then marked `completed` and archived. Flipping them to `Done` would have made their status contradict their own text.
+  - Alternatives: `Done` with a note (rejected: `review-3.md PR-004`); a label-based archive exception (rejected: an exception hidden in a label is the shape INV-007 objects to).
+  - Why: `review-3.md PR-004`; INV-007.
+  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Supersedes: D-022 (2026-09-22)
 
 ## Behaviors
 
@@ -445,7 +461,9 @@ Stage 1 (done): `domains/shared/skills/work-artifacts/references/*.md`,
 `bundled/coding/skills/{tdd,design-dialogue}/SKILL.md`,
 `lib/artifacts/plan-conformance.ts` (from `behavior-conformance.ts`),
 `tests/artifacts/plan-conformance.test.ts`, `cli/plans/`,
-`docs/designs/spec-plan-quality-gates.md`.
+`docs/designs/spec-plan-quality-gates.md`, and the shipped external assets
+`external-commands/{implement-plan,spec-to-backlog}.md` and
+`external-skills/cosmonauts/plans/SKILL.md` (added 2026-09-22, `review-3.md PR-001`).
 
 Stage 2 (in progress): `tests/**` (deletions and the sort),
 `tests/skills/shipped-frontmatter.test.ts` (new),
@@ -453,8 +471,9 @@ Stage 2 (in progress): `tests/**` (deletions and the sort),
 `missions/plans/test-health-audit/spec.md`, `scripts/test-health-audit/`,
 `tests/scripts/test-health-audit/`, `ROADMAP.md`.
 
-Stage 3: `fallow.toml` (roots and annotated staged entries), one check script
-for staged-entry owners, and the modules and tests the reachability run
+Stage 3: `fallow.toml` (roots and annotated staged entries), `package.json`
+(`check:reachability`), one check script for staged-entry owners,
+`lib/tasks/` and `lib/plans/archive.ts` (the `Cancelled` status, D-025), and the modules and tests the reachability run
 removes — enumerated in the Stage 3 commit, not here.
 
 ## Risks
