@@ -31,11 +31,17 @@ Invariants — mechanism yields to these:
   never permission for a second execution of that step to start in the same
   run. A result from anything other than the current owner is kept in full as
   evidence and never becomes the step's result.
-- INV-002 - Every attempt ends, and stays ended. Every in-scope attempt reaches
-  a durable terminal or blocked state within a hard ceiling that is enforced
-  in every mode. No mode, default, or deferred decision leaves an attempt
-  `running` without bound. Once a step has left `running` its outcome does not
-  change, and a run ends when nothing remaining can become runnable.
+- INV-002 - Every attempt ends, and stays ended. Every in-scope attempt has an
+  absolute hard ceiling, enforced in every mode. Past its ceiling an attempt
+  can no longer have work or a result accepted, and it is ended at the first
+  opportunity any framework process has to act on that run; the time until
+  that opportunity is never counted as idle. No mode, default, or deferred
+  decision leaves an attempt `running` without bound while a framework process
+  is able to act. Once a step has left `running` its outcome does not change,
+  and a run ends when nothing remaining can become runnable. (Amended by the
+  human on 2026-09-22, plan H-001 option 1: the previous text required the
+  ceiling to be enforced while no framework process could run, which nothing
+  local can prove; the previous wording is in git at `9948787`.)
 - INV-003 - Silence is judged by useful work, not by proof of life. Keeping
   ownership alive never counts as progress, and time during which the host was
   suspended never counts as silence.
@@ -86,8 +92,11 @@ previous spec is in git at `8ab44d4`.
 Two deadlines apply to every in-scope attempt.
 
 The **hard ceiling** is always enforced. A frontend may set it — Drive's
-existing task cap becomes the ceiling for Drive tasks — and a default applies
-when none is set. An attempt that reaches its ceiling is asked to stop once and
+existing task cap becomes the ceiling for Drive tasks — and a default of four
+hours applies when none is set (human, 2026-09-22, plan H-002). If no
+framework process is running when the ceiling passes, nothing happens until
+one next acts on the run; that process then ends the attempt, and no work or
+result from past the ceiling is accepted in the meantime. An attempt that reaches its ceiling is asked to stop once and
 ends terminal or blocked within a bounded grace.
 
 The **idle deadline** measures time since useful work. It runs in one of two
@@ -246,9 +255,6 @@ Excluded:
 
 ## Open Questions
 
-- What is the default hard ceiling when a frontend sets none? It must be
-  generous enough to be a backstop rather than a tuning knob. The plan
-  proposes a value from existing run-duration evidence; a human decides.
 - Does live evidence gathered in `shadow` justify a fifteen-minute idle
   window, or do backend populations need different declared policies? A human
   decides this after the Quality Manager proof.

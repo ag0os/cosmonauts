@@ -19,16 +19,9 @@ every current production backend can honour the first-slice contract; discovery
 of a backend that cannot do so stops the slice rather than shrinking its
 population.
 
-**Implementation is halted pending two human decisions:**
-
-1. H-001 must decide the enforcement authority for periods in which no local
-   framework process can run. The current local-process design cannot honestly
-   prove INV-002 across owner crash, event-loop stall, or host suspension.
-2. H-002 must accept or replace the proposed four-hour framework default.
-
-No task creation or implementation should begin until both are decided. This is
-an intentional application of the deviation protocol, not an implementation
-choice.
+Both human decisions the planner halted on were taken on 2026-09-22: H-001
+option 1 (INV-002 amended in the spec) and H-002 four hours. See
+`## Human Decisions Required` for the record.
 
 ## Architecture Context
 
@@ -94,9 +87,8 @@ claim; this absence remains R-012.
   - Decided by: planner-proposed
 
 - **D-002 — Four-hour framework default, awaiting human decision H-002**
-  - Decision: Propose `14_400_000 ms` when neither project policy nor an
-    applicable frontend ceiling supplies a smaller bound. Do not implement the
-    value until the human accepts or replaces it.
+  - Decision: `14_400_000 ms` (four hours) when neither project policy nor an
+    applicable frontend ceiling supplies a smaller bound.
   - Alternatives: thirty minutes; two hours; another finite value selected by
     the human.
   - Why: Repository evidence shows a successful 3m29s Drive task, a coherent
@@ -108,7 +100,7 @@ claim; this absence remains R-012.
     hours. Four hours is an explicit risk-tolerance proposal with unknown
     false-stop and diagnosis-delay rates, not a measured optimum
     (`review-2.md PR-009`; `review-3.md PR-010`).
-  - Decided by: planner-proposed, awaiting human
+  - Decided by: human, 2026-09-22 (H-002; proposed by the planner)
 
 - **D-003 — Freeze a baseline and preserve independent frontend ceilings**
   - Decision: Resolve and persist the project liveness baseline once. Existing
@@ -176,7 +168,10 @@ claim; this absence remains R-012.
     enforces the ceiling; an approved continuously available authority.
   - Why: Repair gives operators a reachable convergent view but does not answer
     `review-2.md PR-002` or `review-3.md PR-002` by itself.
-  - Decided by: planner-proposed; enforcement portion unresolved by H-001
+  - Decided by: planner-proposed; enforcement portion resolved by H-001
+    (human, 2026-09-22): enforcement happens at the first opportunity any
+    framework process has to act on the run, and results past the absolute
+    deadline are fenced unconditionally
 
 - **D-009 — Thirty-second settlement grace, pending H-001 compatibility**
   - Decision: Once an available authority durably wins a stop request, allow 30
@@ -246,16 +241,18 @@ The human must select one direction:
    can resume work. This narrows supported environments and still needs an
    explicit host-outage contract.
 
-No option is selected by this plan. A human ruling must state the accepted
-availability assumption and whether spec/architecture text changes. The chosen
-answer then replaces this section with a ratified decision and determines the
-composition seam in Design §5.
+**Ruling: option 1** (human, 2026-09-22). INV-002 in `spec.md` is amended
+accordingly, with the previous text kept in git. Accepted availability
+assumption: enforcement is owed at the first opportunity any framework process
+has to act on the run; while none can, the absolute deadline fences every
+store promotion, and the gap is never counted as idle. Design §5's seam is the
+in-process scheduler plus reconcile-on-regain; no external enforcement
+service is in scope.
 
 ### H-002 — Framework default
 
-Accept `14_400_000 ms` or provide another finite default. The evidence and
-uncertainty are recorded in D-002. This is independent of H-001: choosing a
-number does not create an enforcement authority.
+**Ruling: four hours, `14_400_000 ms`** (human, 2026-09-22). The evidence and
+uncertainty stay recorded in D-002.
 
 ## Behaviors
 
