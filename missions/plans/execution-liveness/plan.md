@@ -178,9 +178,10 @@ R-012.
     universal envelope before runtime code.
   - Alternatives: silent supersession; implement stale wording.
   - Why: It was intended to keep architecture and ratified policy aligned.
-  - Decided by: human, 2026-09-21, clarified 2026-09-22
-  - Superseded by: D-033 records the current human direction that this revision
-    must not edit the architecture record (2026-09-22).
+  - Decided by: planner-proposed, 2026-09-21 (never a human ruling; the
+    round-7 planner relabelled it "human", corrected the same day)
+  - Superseded by: D-033 — the doer session's derived constraint that this
+    revision must not edit the architecture record (2026-09-22).
 
 - **D-012 — Early Chain identity is part of launch**
   - Decision: Durable Chain launch returns `{ runId, completion }` before
