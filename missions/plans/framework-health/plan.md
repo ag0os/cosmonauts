@@ -312,7 +312,7 @@ contract; nothing in Stage 3 depends on which side computes it. Added
 - **D-021 - Mutation probes have a reproducible sample and run in a throwaway worktree**
   - Decision: the population is every test file under `tests/` that imports from `lib/`, `cli/`, `domains/` or `scripts/`; strata are the first directory level under `tests/`; each stratum contributes the larger of three files and ten percent of its files; within a stratum files are sorted by path and taken at an even stride from the first. Probes run in a throwaway git worktree of the committed tree, never in the working checkout, so an interruption leaves nothing broken behind; within it, mutated files are restored from `cp` backups. The record names the commit, the population count, each stratum's size, and the stride.
   - Why: `review-1.md PR-008`; `review-2.md PR-006, PR-007`. The audit tooling's own suites import only from `scripts/`, and Stage 2 keeps them in scope.
-  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-024, D-030 and D-032, 2026-09-22)*
+  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-024, D-030, D-032 and D-034, 2026-09-22)*
   - Supersedes: D-008 in part (2026-09-22)
 - **D-022 - The superseded audit plan has a lifecycle exit**
   - Decision: the runtime has no `superseded` plan status and archive refuses while a linked task is open; of the audit plan's 22 tasks, 20 are Done and only `TASK-706` and `TASK-707` are open. When Stage 2's re-spec lands they close `Done` keeping the `superseded` label and a note naming this plan, the audit plan is marked `completed`, and it is archived in the ordinary way.
@@ -368,13 +368,28 @@ contract; nothing in Stage 3 depends on which side computes it. Added
 - **D-031 - The prose contracts that say "all Done" change with the status**
   - Decision: D-028's search covers authored prose as well as code. The shipped guidance that today makes completion conditional on every task being `Done` — `bundled/coding/prompts/coordinator.md` (exit on all `Done`; completion on all `Done`/`Blocked`), `bundled/coding/prompts/quality-manager.md` (plan completed when all `Done`), `domains/shared/skills/drive/SKILL.md` and `domains/shared/capabilities/drive.md` (default selection is all non-`Done`), `external-skills/cosmonauts/SKILL.md` and `external-skills/cosmonauts/plans/SKILL.md` — is rewritten so that `Cancelled` counts as closed wherever `Done` does and is never selected for work. Authored prose: verified by reviewed diff (D-005), owned by TASK-710.
   - Why: `review-6.md PR-001`; `review-4.md PR-001` carried.
-  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-035, 2026-09-22)*
   - Supersedes: D-028 in part (2026-09-22)
 - **D-032 - The probe population is defined by reach, not by direct import**
   - Decision: a test file is in D-021's population when its module graph — following relative imports, including through `tests/helpers/` and dynamic imports those helpers perform — reaches `lib/`, `cli/`, `domains/` or `scripts/`, or when it runs a shipped executable under `bin/` as a subprocess. A file that only exercises other test code is out. The census records, per file, which rule admitted it.
   - Why: `review-6.md PR-004` — a direct-import census excluded `tests/cli/dump-prompt.test.ts` (drives `bin/cosmonauts`) and `tests/helpers/packages.test.ts` (reaches production through a helper), exactly the entry-point tests INV-005 most wants probed.
   - Decided by: worker-proposed, 2026-09-22 (derived)
   - Supersedes: D-021 in part (2026-09-22)
+
+- **D-033 - Survivors are re-probed, and Stage 3 waits for Stage 2's evidence**
+  - Decision: B-008 now requires that a survivor, once strengthened or replaced, is probed again and recorded killed before it closes; an edit is never evidence (INV-005). Stage 2's remaining work — the D-021/D-030/D-032/D-034 sample probed and recorded, `missions/plans/test-health-audit/spec.md` rewritten to the new method and the old plan marked superseded — is recorded as TASK-711, executed by the paired sessions per D-023, and TASK-708 and TASK-710 depend on it so no Stage 3 task can delete code or archive the audit plan before that evidence lands.
+  - Why: `review-7.md PR-001, PR-002`.
+  - Decided by: worker-proposed, 2026-09-22 (derived; D-023 unchanged — a session still executes Stage 2)
+- **D-034 - Root-level tests form their own stratum**
+  - Decision: files directly under `tests/` that D-032 admits form a stratum named `(root)`, sampled by the same rule; the census lists it with its size and stride.
+  - Why: `review-7.md PR-005`; `review-1.md PR-008` carried.
+  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Supersedes: D-021 in part (2026-09-22)
+- **D-035 - Two more Done-only guides, and the Cancelled behavior**
+  - Decision: `domains/shared/skills/plan/SKILL.md` ("when all tasks are done, mark the plan completed") and `external-commands/implement-plan.md` (final report "all tasks Done") join D-031's list. The observable `Cancelled` state is B-012, owned by TASK-710.
+  - Why: `review-7.md PR-003, PR-004`.
+  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Supersedes: D-031 in part (2026-09-22)
 
 ## Behaviors
 
@@ -443,9 +458,16 @@ contract; nothing in Stage 3 depends on which side computes it. Added
 - Source: INV-005
 - Observer: a maintainer reading the probe record
 - Entry point: the record Stage 2 commits
-- Outcome: each sampled test declaration is marked killed or survived, and every survivor has been strengthened, replaced, or deleted
+- Outcome: each sampled test declaration is marked killed or survived; every survivor was then strengthened or replaced and probed again until the record shows it killed, or it was deleted — no survivor closes on an edit alone
 
 **Stage 3 — code**
+
+### B-012 - A task that will never be done can be closed honestly
+
+- Source: INV-007, D-026
+- Observer: a maintainer closing a superseded task, and any agent or command that later reads it
+- Entry point: the task tool and the task CLI, then plan archive, Drive, and the coordinator
+- Outcome: the task shows `Cancelled` and is read back as `Cancelled` by a fresh process; Drive and the coordinator never select it; a task depending on it stays blocked before and after archive; a plan whose remaining tasks are `Done` or `Cancelled` can be archived and is a completion candidate; its criteria and notes are untouched
 
 ### B-009 - Unreachable code fails a check
 
@@ -529,6 +551,8 @@ Stage 1 (done): `domains/shared/skills/work-artifacts/references/*.md`,
 `docs/designs/spec-plan-quality-gates.md`, and the shipped external assets
 `external-commands/{implement-plan,spec-to-backlog}.md` and
 `external-skills/cosmonauts/plans/SKILL.md` (added 2026-09-22, `review-3.md PR-001`).
+The user's generated `~/.claude/commands/implement-plan.md` was refreshed by
+`cosmonauts harness sync` on 2026-09-22 (human), closing `review-2.md PR-002`.
 
 Stage 2 (in progress): `tests/**` (deletions and the sort),
 `tests/skills/shipped-frontmatter.test.ts` (new),
@@ -547,7 +571,8 @@ D-026/D-028: `lib/tasks/task-types.ts`, `lib/tasks/task-parser.ts`,
 `domains/shared/extensions/plans/index.ts`, `cli/tasks/commands/shared.ts`,
 `bundled/coding/prompts/{coordinator,quality-manager}.md`,
 `domains/shared/skills/drive/SKILL.md`, `domains/shared/capabilities/drive.md`,
-`external-skills/cosmonauts/SKILL.md` (D-031),
+`external-skills/cosmonauts/SKILL.md`, `domains/shared/skills/plan/SKILL.md`,
+`external-commands/implement-plan.md` (D-031, D-035),
 `lib/artifact-viewer/loaders.ts`, `domains/shared/skills/task/SKILL.md`,
 `external-skills/cosmonauts/{tasks,plans}/SKILL.md`,
 `missions/plans/test-health-audit/plan.md`, `TASK-706`, `TASK-707`, and the modules and tests the reachability run

@@ -6,7 +6,8 @@ priority: high
 labels:
   - 'plan:framework-health'
   - backend
-dependencies: []
+dependencies:
+  - TASK-711
 createdAt: '2026-09-22T19:16:28.862Z'
 updatedAt: '2026-09-22T19:16:28.862Z'
 ---
