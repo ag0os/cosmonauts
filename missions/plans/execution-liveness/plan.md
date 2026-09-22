@@ -441,8 +441,8 @@ of an in-scope durable attempt.
     need for persistence to execute Driver code or another boundary amendment
     halts for a human decision.
   - Alternatives: update D-007/envelope; amend the storage boundary.
-  - Why: This is the human's explicit constraint for the Review 5 revision.
-  - Decided by: human, 2026-09-22
+  - Why: the architecture record is ratified ground and changes only by human decision (deviation protocol); the constraint was set by the doer session's prompt, not by the human.
+  - Decided by: doer session, 2026-09-22 (derived; recorded by the planner as human and corrected the same day)
   - Supersedes: D-011's architecture-edit implementation step (2026-09-22).
 
 ## Human Decisions Required
@@ -460,8 +460,12 @@ amended accordingly. No external enforcement service is in scope.
 
 ### H-003 — Architecture record during Review 5 remediation
 
-**Ruling: do not change `missions/architecture/orchestration-future.md`**
-(human, 2026-09-22). Review 5 PR-004 is resolved by D-025 inside the recorded
+**Constraint from the doer session, not a human ruling** (2026-09-22): do
+not change `missions/architecture/orchestration-future.md` in this
+revision. It is derived from the deviation protocol — the architecture
+record is ratified ground and changes only by human decision — and was
+stated in the prompt that drove the revision; the planner recorded it as a
+human ruling, which is corrected here. Review 5 PR-004 is resolved by D-025 inside the recorded
 storage-only boundary. If implementation instead requires a boundary change,
 stop and draft that decision here rather than choosing it.
 
