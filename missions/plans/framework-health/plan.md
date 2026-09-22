@@ -115,23 +115,45 @@ Invariants — mechanism yields to these:
   - Decided by: planner-proposed
 - **D-006 - Reachability comes from a tool rooted at real entry points**
   - Decision: use `fallow` (already a devDependency) rooted at `bin/`, `cli/`,
-    `package.json#pi.extensions`, and domain manifests. Tests are not roots.
+    `package.json#pi.extensions`, domain manifests, and the modules
+    `fallow.toml` already declares as `entry` — the 23 `lib/` modules the
+    package publishes as deep-importable public API. Tests are not roots.
+    Stage 3 runs `fallow` directly as a script; the quality-manager's
+    `dead-code` capability is a separate consumer of the same tool and is
+    `unbound` here (`execution-not-consented`) because analysis consent is
+    per-user state held outside the repository. No Stage 3 change can bind it;
+    B-009's gate is the direct run.
   - Alternatives: per-export grep (rejected: blind to transitive orphans,
-    `export {}` lists, and comment mentions — measured).
-  - Decided by: planner-proposed
+    `export {}` lists, and comment mentions — measured); roots without the
+    public API (rejected: would delete modules consumers import).
+  - Decided by: planner-proposed; amended by the worker 2026-09-22 from
+    `review-1.md PR-003, PR-005` (derived)
 - **D-007 - One staged-code list, not a marker scheme**
-  - Decision: a single tracked file lists deliberately unwired modules, each
-    with the active plan or roadmap item that will wire it. The reachability
-    check reads it. An entry whose owner is archived or absent is an orphan.
+  - Decision: deliberately unwired modules are listed where the tool already
+    looks — as `entry` items in `fallow.toml`, each annotated with the active
+    plan or roadmap item that will wire it. Because they are entries, both
+    the direct run and the quality-manager's capability treat them as reached
+    without any adapter. A small check reads the annotations and fails on an
+    owner that is archived or absent. A separate list nothing reads was the
+    original shape; `review-1.md PR-004` showed the gate path never consulted
+    it.
   - Why: INV-006 with the least mechanism INV-007 allows.
-  - Decided by: planner-proposed
+  - Decided by: planner-proposed; amended by the worker 2026-09-22 from
+    `review-1.md PR-004` (derived)
 - **D-008 - Mutation probes are sampled and mechanical**
-  - Decision: for a sample stratified by directory, mutate the production
-    unit a test claims to cover and record whether the test goes red. Restore
-    from `cp` backups, never `git checkout`. Results are recorded as
-    killed/survived, nothing else. No per-test agent essay.
+  - Decision: mutate the production unit a test claims to cover and record
+    whether the test goes red. Restore from `cp` backups, never
+    `git checkout`. Results are recorded as killed/survived, nothing else. No
+    per-test agent essay. Sample rule (added 2026-09-22 from `review-1.md
+    PR-008`): the population is every test file under `tests/` that imports
+    from `lib/`, `cli/` or `domains/`; strata are the first directory level
+    under `tests/`; each stratum contributes the larger of three files and
+    ten percent of its files; within a stratum files are sorted by path and
+    taken at an even stride from the first. The record names the population
+    count, each stratum's size, and the stride, so the sample is reproducible.
   - Why: INV-005.
-  - Decided by: planner-proposed
+  - Decided by: planner-proposed; sample rule worker-amended 2026-09-22
+    (derived)
 - **D-009 - The new format gets one real trial before Stage 3**
   - Decision: after Stage 1, take one small open behavior from
     `execution-liveness`, restate it in the new shape, have a worker implement
@@ -157,7 +179,13 @@ Invariants — mechanism yields to these:
     `cli/tasks/commands/shared.ts:96` join fields with an unescaped `" | "`,
     and titles may contain a pipe. Its deferral reason ("moves the
     counted-guardrail set") was an artifact of the old counting method and is
-    void. (c) `TASK-706` and `TASK-707` are superseded by this plan.
+    void. (c) `TASK-706` and `TASK-707` are superseded by this plan. Lifecycle exit
+    (worker-amended 2026-09-22 from `review-1.md PR-006`, derived): the
+    runtime has no `superseded` plan status and archive refuses while a linked
+    task is open; of the audit plan's 22 tasks, 20 are Done and only these two
+    are open. When Stage 2's re-spec lands they close `Done` keeping the
+    `superseded` label and a note naming this plan, the audit plan is marked
+    `completed`, and it is archived in the ordinary way.
   - Decided by: human, 2026-09-20
 - **D-011 - Independent review of Stage 1 runs at the end of Stage 1**
   - Decision: a read-only codex correctness review of the Stage 1 diff, not
@@ -218,7 +246,7 @@ Invariants — mechanism yields to these:
     dead-code and boundary gates from running. The simplification that makes
     it deletable is to have the quality-manager resolve every gate kind with
     a runtime capability regardless of the plan. Held for the human.
-  - Decided by: planner-proposed; superseded in part by D-016
+  - Decided by: planner-proposed; superseded in part by D-016, 2026-09-21
 - **D-016 - Plans stop declaring quality gates; the quality-manager resolves them from the runtime on every run**
   - Decision: the `## Quality Contract` gate table leaves the plan format.
     The quality-manager now resolves every gate kind with a runtime
@@ -312,6 +340,13 @@ Invariants — mechanism yields to these:
 - Entry point: the plan-reviewer prompt
 - Outcome: it is told to raise a finding for a behavior with no real observer or shipped entry point, one that names a function, file, or test, and a designed unit nothing shipped will call
 
+### B-011 - Quality gates come from the runtime, not the plan
+
+- Source: INV-007, D-016
+- Observer: the quality-manager reviewing a branch
+- Entry point: any quality-manager invocation that has a review scope, with or without an active plan
+- Outcome: every gate kind with a runtime capability is resolved exactly once, from the runtime's status, and nothing in the plan is needed to decide which gates run
+
 **Stage 2 — tests**
 
 ### B-005 - No test points at a plan
@@ -366,7 +401,9 @@ one-to-three-line mentions in `plan`/`task`/`tdd` skills and the planner,
 plan-reviewer, task-manager, worker, reviewer, verifier, quality-manager
 prompts and `architectural-design.md` (17 shipped files, 36 mentions). Reduce
 `lib/artifacts/behavior-conformance.ts` (1,103 lines) to the two Decision Log
-checks; shrink `tests/artifacts/behavior-conformance.test.ts` (1,545 lines) to
+checks — done as `lib/artifacts/plan-conformance.ts` (renamed with the
+reduction, 2026-09-20); shrink `tests/artifacts/behavior-conformance.test.ts`
+(1,545 lines; now `tests/artifacts/plan-conformance.test.ts`) to
 match, using synthetic plan text only — the test at `:1400` that reads three
 real plans from `missions/` goes. Update `~/.claude/commands/implement-plan.md`
 (one mention; outside the repo — hand the user the diff). Add the test policy
@@ -406,6 +443,26 @@ Delete the rest with their tests.
 repo; its dead-code input is Stage 3's check. Update `ROADMAP.md:32-44` to
 point the quality pause at this plan.
 
+## Files to Change
+
+Stage 1 (done): `domains/shared/skills/work-artifacts/references/*.md`,
+`domains/shared/skills/{plan,task,work-artifacts,architecture,archive}/SKILL.md`,
+`bundled/coding/prompts/{planner,plan-reviewer,task-manager,worker,reviewer,verifier,quality-manager,integration-verifier}.md`,
+`bundled/coding/skills/{tdd,design-dialogue}/SKILL.md`,
+`lib/artifacts/plan-conformance.ts` (from `behavior-conformance.ts`),
+`tests/artifacts/plan-conformance.test.ts`, `cli/plans/`,
+`docs/designs/spec-plan-quality-gates.md`.
+
+Stage 2 (in progress): `tests/**` (deletions and the sort),
+`tests/skills/shipped-frontmatter.test.ts` (new),
+`missions/plans/framework-health/stage2-probes.md`,
+`missions/plans/test-health-audit/spec.md`, `scripts/test-health-audit/`,
+`tests/scripts/test-health-audit/`, `ROADMAP.md`.
+
+Stage 3: `fallow.toml` (roots and annotated staged entries), one check script
+for staged-entry owners, and the modules and tests the reachability run
+removes — enumerated in the Stage 3 commit, not here.
+
 ## Risks
 
 - Stage 1 removes a gate three suite-gated analysis plans rely on. They are
@@ -431,7 +488,7 @@ point the quality pause at this plan.
 ## Implementation Order
 
 1. Stage 1 prose (skills, prompts) — one commit per concept.
-2. Stage 1 code (`lib/artifacts`, CLI, tests). Gates: test, lint, typecheck.
+2. Stage 1 code (`lib/artifacts`, CLI, tests).
 3. Constraint re-audit packet → human.
 4. D-009 format trial on one `execution-liveness` behavior.
 5. Stage 2 marker strip; then `tests/prompts` sort; then probes.
