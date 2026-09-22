@@ -57,7 +57,11 @@ Invariants — mechanism yields to these:
   pre-name tests; there is no one-behavior-one-test rule.
 - INV-003 - Tests exercise logic with synthetic data and are not coupled to
   particular agent definitions or authored prose: if the logic is unchanged,
-  the test stays green. (human ruling, recorded in TASK-701)
+  the test stays green. One exception, ratified with D-019: a test may assert
+  that shipped guidance does *not* name a provider, toolchain, language or
+  framework, because that absence is a project rule rather than wording.
+  (human ruling, recorded in TASK-701; exception human, 2026-09-22, from
+  `review-1.md PR-002`)
 - INV-004 - Archived plans are historical documents with no authority over
   live tests or code. No *executable* coupling to one survives: no marker, no
   test assertion, no gate check. Citations in `knowledge/` (97 files,
@@ -306,7 +310,8 @@ Invariants — mechanism yields to these:
     deleted. No production code reads those tables. The provider-, toolchain-
     and framework-name absence guards in
     `tests/prompts/provider-neutrality.test.ts` are kept.
-  - Decided by: human, 2026-09-21 (direct; both rulings)
+  - Decided by: human, 2026-09-21 (direct; both rulings). The kept guards
+    are the INV-003 exception the human ratified 2026-09-22.
 
 ## Behaviors
 
@@ -352,9 +357,9 @@ Invariants — mechanism yields to these:
 ### B-005 - No test points at a plan
 
 - Source: INV-004
-- Observer: a maintainer searching `tests/` for `@cosmo-behavior`
-- Entry point: the repository
-- Outcome: nothing is found, and the per-test pass/fail list is identical before and after the strip
+- Observer: a maintainer searching test declarations and their comments for `@cosmo-behavior`
+- Entry point: every test file under `tests/`
+- Outcome: no test declaration or comment carries a marker — frozen history fixtures under `tests/fixtures/` are records INV-004 leaves alone — and the per-test pass/fail list is identical before and after the strip
 
 ### B-006 - Rewording prose does not break the suite
 

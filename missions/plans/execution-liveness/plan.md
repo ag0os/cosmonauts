@@ -2,7 +2,7 @@
 title: 'Execution Liveness: bounded, fenced, diagnosable node attempts'
 status: active
 createdAt: '2026-09-11T13:24:20.117Z'
-updatedAt: '2026-09-22T17:34:24.206Z'
+updatedAt: '2026-09-22T18:19:30.075Z'
 ---
 
 ## Overview
@@ -16,8 +16,8 @@ changed (`review-3.md PR-008`). AC-014 through AC-017 remain later slices.
 The ownership, deadline, settlement, terminal-absorption, and concurrent-write
 rules are one state machine and cannot ship separately. The cut is safe only if
 every current production backend can honour the first-slice contract; discovery
-of a backend that cannot do so stops the slice rather than shrinking its
-population.
+of a backend or host adapter that cannot do so stops the slice rather than
+shrinking its population or weakening a policy meaning.
 
 The two formerly required human decisions are final: on 2026-09-22 the human
 selected H-001 option 1, with INV-002 amended in `spec.md`, and accepted H-002's
@@ -49,19 +49,24 @@ Boundary rules:
   not claim steps, accept results, allocate event sequence numbers, or write
   lifecycle state directly.
 - The durable scheduler depends only on durable-runtime contracts, backend
-  contracts, an injected clock, an injected owner probe, the in-process
-  watchdog/reconciler, and `RunStore`.
-- Backends execute one attempt, emit useful-activity/evidence signals, and
-  settle owned processes or sessions. They never decide whether a result is
-  current or which graph work becomes runnable.
-- The store owns conditional authority/deadline checks and cross-process
-  critical sections. `scheduler.json` is reconstructible cache, never
-  authority.
-- Process-local maps, timers, coordinator context, and backend handles are
-  caches over persisted attempt records. Missing cache state is reconstructed
-  or produces a conservative blocked/uncheckable outcome.
-- A backend or host adapter that cannot support the resolved contract refuses
-  launch visibly; it never substitutes a backend or weakens policy meanings.
+  contracts, an injected host clock, an injected owner probe, an injected
+  backend-control port, the in-process watchdog/reconciler, and `RunStore`.
+- Backends execute one attempt, publish a start-time control identity before
+  project-mutating work, emit useful-activity/evidence signals, and settle owned
+  processes or sessions. They never decide whether a result is current or which
+  graph work becomes runnable.
+- The store owns conditional authority/deadline checks, external-effect intent
+  and receipts, and cross-process critical sections. `scheduler.json` is
+  reconstructible cache, never authority.
+- Drive supplies an injected compatibility projector and attempt-effect adapter;
+  durable-runtime does not import Driver, task, Git, CLI, or Pi infrastructure.
+- Process-local maps, timers, coordinator context, and live backend handles are
+  caches over persisted attempt/control records. Missing cache state is handled
+  through the persisted control port or produces a conservative
+  unavailable/unconfirmed outcome, never a fabricated success.
+- A backend, clock, process-control, or filesystem-lock adapter that cannot
+  support the resolved contract refuses launch visibly; it never substitutes a
+  backend or weakens policy meanings.
 
 Current exceptions remain explicit: coordinator-bearing chains still use the
 inline runner; standalone interactive `spawn_agent` is out of scope; the spawn
@@ -71,7 +76,7 @@ descendant of an in-scope durable attempt.
 
 Structural analysis for `lib/durable-runtime`, `lib/driver`,
 `lib/orchestration`, `lib/config`, and `cli/run` was requested. Complexity,
-duplication, boundary-conformance, and trace were unbound with
+duplication, boundary-conformance, and trace remain unbound with
 `execution-not-consented`. The plan therefore makes no mechanical clean-baseline
 claim; this absence remains R-012.
 
@@ -93,21 +98,16 @@ claim; this absence remains R-012.
     applicable frontend ceiling supplies a smaller bound.
   - Alternatives: thirty minutes; two hours; another finite value selected by
     the human.
-  - Why: Repository evidence shows a successful 3m29s Drive task, a coherent
-    task falsely stopped by the 30-minute cap, 60- and 120-minute configured
-    intervals dominated by host sleep before roughly ten minutes of resumed
-    work, and a silent Quality Manager observed for about 45 minutes. This
-    evidence rejects treating thirty minutes as universally safe and requires
-    suspension-aware accounting; it does **not** statistically select four
-    hours. Four hours is the human's explicit risk-tolerance choice with unknown
-    false-stop and diagnosis-delay rates, not a measured optimum
-    (`review-2.md PR-009`; `review-3.md PR-010`).
+  - Why: Repository evidence rejects treating thirty minutes as universally
+    safe but does not statistically select four hours. Four hours is the human's
+    explicit risk-tolerance choice with unknown false-stop and diagnosis-delay
+    rates (`review-2.md PR-009`; `review-3.md PR-010`).
   - Decided by: human, 2026-09-22 (H-002; proposed by the planner)
 
 - **D-003 — Freeze a baseline and preserve independent frontend ceilings**
   - Decision: Resolve and persist the project liveness baseline once. Existing
     Chain `timeoutMs` remains a whole-chain wall-clock budget. Each Chain step
-    also has the project/default per-attempt ceiling, and stops at the earlier
+    also has the project/default per-attempt ceiling and stops at the earlier
     applicable deadline. Each Drive task keeps its explicit or default task cap
     as an upper bound and also receives the project/default baseline; its
     effective deadline is the earlier bound. Drive finalizers use the baseline.
@@ -140,26 +140,30 @@ claim; this absence remains R-012.
 - **D-006 — Harden and reuse entity-file locks**
   - Decision: Reuse `lib/entity-file-lock.ts` for initialization, per-step
     transitions, and event/run transitions after adding exact owner checks,
-    bounded acquisition, and explicit release uncertainty. Raw lifecycle writes
-    are removed from the scheduler-facing store interface and retained only as
-    private initialization/recovery primitives inside the file store.
-  - Alternatives: unlocked compatibility writers; a second lock; a database.
+    bounded acquisition, explicit release uncertainty, and safe completed-owner
+    reclamation. Raw lifecycle writes are removed from the scheduler-facing
+    store interface and retained only as private initialization/recovery
+    primitives inside the file store.
+  - Alternatives: unlocked compatibility writers; a second unrelated lock; a
+    database.
   - Why: This is the smallest shared critical-section boundary, while the raw
     writer restriction closes the bypass identified by `review-2.md PR-005` and
     `review-3.md PR-005`.
   - Decided by: planner-proposed
 
-- **D-007 — Epoch-aware conservative clock reconstruction**
+- **D-007 — Epoch-aware conservative clock reconstruction (superseded in part)**
   - Decision: Persist wall, monotonic, and monotonic-epoch samples. Compare
-    monotonic values only within the same declared epoch. On epoch mismatch,
-    advance hard elapsed by non-negative wall delta, never decrease prior
-    elapsed, and classify the positive gap as host-unavailable for idle
-    accounting until better durable evidence exists.
+    monotonic values only within the same declared epoch. The former design
+    permitted a per-process epoch and classified every positive wall gap on an
+    epoch mismatch as host-unavailable.
   - Alternatives: compare process-relative values across restart; reset
     elapsed; count every wall gap as idle.
-  - Why: The contract gives fresh processes a deterministic conservative rule
-    instead of inventing a baseline (`review-2.md PR-006`; `review-3.md PR-006`).
+  - Why: The former rule gave fresh processes a deterministic fallback but
+    conflated observer replacement with host suspension (`review-2.md PR-006`;
+    `review-3.md PR-006`).
   - Decided by: planner-proposed
+  - Superseded by: D-015 replaces process epochs with a host-active continuity
+    epoch plus separate observer identity; D-020 defines hard-ceiling ordering.
 
 - **D-008 — Observation-only repair premise (superseded in part)**
   - Decision: Normalized status/watch may conditionally reconcile overdue
@@ -184,8 +188,8 @@ claim; this absence remains R-012.
     evidence. Caller cancellation uses the same settlement protocol.
   - Alternatives: acknowledgement; five-minute grace; unbounded waiting.
   - Why: Thirty seconds exceeds current process-group TERM/KILL grace while
-    remaining bounded. Existing Drive launcher exits must be changed not to
-    pre-empt this state machine (`review-2.md PR-004`; `review-3.md PR-004`).
+    remaining bounded. Existing Drive launcher exits must not pre-empt this state
+    machine (`review-2.md PR-004`; `review-3.md PR-004`).
   - Decided by: planner-proposed
 
 - **D-010 — Separate execution settlement from message delivery**
@@ -236,6 +240,139 @@ claim; this absence remains R-012.
   - Supersedes: D-008's planner-proposed unresolved-authority premise, the former
     deliberately incomplete Design §5, and the former H-002 gate around D-002.
 
+- **D-014 — Backend execution starts with durable stop identity**
+  - Decision: Replace the result-only Driver `Backend.run()` boundary with a
+    start boundary that exposes completion, settlement, local stop, and a
+    persistable control descriptor. Durable backend start receives a
+    registration callback and must persist its exact control before releasing
+    prompts or other project-mutating work. CLI children publish exact
+    host/boot/process-start/process-group identity immediately; Pi publishes its
+    session and owning-process identity. A fresh reconciler uses an injected
+    `BackendControlPort`, never a reconstructed live object or stored argv.
+  - Alternatives: keep `Backend.run()` and infer PIDs on completion; rely only on
+    `AbortSignal`; record every fresh-process dispatch unavailable.
+  - Why: The current result promises and private PID make B-001/B-009
+    unreachable for CLI work; a two-phase start and persisted descriptor fit the
+    repository's scheduler/backend layers without inventing remote Pi APIs
+    (`review-4.md PR-001`).
+  - Decided by: planner-proposed
+  - Supersedes: the former Design §§5–6 assumption that `BackendHandle` alone
+    exposed a live or reconstructible control after start.
+
+- **D-015 — Host continuity and observer identity are separate**
+  - Decision: A clock sample carries a host/boot continuity epoch, a host-active
+    monotonic value comparable across processes in that epoch, and a separate
+    observer invocation identity. Changing CLI processes never implies
+    suspension. One real epoch change records one continuity-unknown interval,
+    seeds the new epoch, and cannot be repeated to erase later active silence. A
+    host adapter unable to provide that contract refuses a managed launch.
+  - Alternatives: per-process epochs; count every cross-process gap as suspended;
+    count every gap as idle.
+  - Why: Current detached Drive and every status call use different processes;
+    the former rule could postpone enforced idle until the hard ceiling
+    (`review-4.md PR-002`).
+  - Decided by: planner-proposed
+  - Supersedes: the per-process-epoch and every-mismatch-is-suspension portions
+    of D-007 and former Design §4.
+
+- **D-016 — Stop provenance survives dispatch and terminalization**
+  - Decision: Store immutable stop intent (`requestId`, reason, request time,
+    grace end) separately from an append-only dispatch record. Requested,
+    settled, and unconfirmed states all retain both. Add an authority- and
+    request-checked dispatch-result transition. A retry uses the same request ID;
+    terminal records never discard why, where, or when stopping was attempted.
+  - Alternatives: replace requested with terse terminal variants; infer dispatch
+    from settlement; write dispatch outcome outside the store.
+  - Why: The former variants and store API could neither close `pending`
+    dispatch nor satisfy terminal diagnostics and INV-007
+    (`review-4.md PR-003`).
+  - Decided by: planner-proposed
+  - Supersedes: the former `AttemptStopState` variants in Design §2 and the
+    dispatch-without-transition wording in former Design §7.
+
+- **D-017 — Drive effect commit points are attempt transactions**
+  - Decision: Source-ref commits, task-file status publication, and final-state
+    ref commits receive attempt authority plus an `AttemptEffectFence`, not only
+    an `AbortSignal`. Expensive preparation is non-authoritative and staged.
+    Under the repository/task lock and the same per-step store lock used by
+    deadline reconciliation, the store rechecks authority and both hard-ceiling
+    proofs immediately before the adapter's single publication point, records an
+    exact effect intent, executes that bounded publication, and records an
+    idempotent receipt before release. Git uses a temporary index plus
+    `commit-tree` and a compare-and-swap `update-ref`; task status uses a prepared
+    atomic file replacement. A fresh process resolves an intent from exact
+    expected/candidate evidence and never reruns it after the deadline.
+  - Alternatives: another pre-check; trust `AbortSignal`; hold only the repository
+    lock; weaken B-006/AC-007.
+  - Why: The concrete effect owners currently have no authority or store port,
+    leaving a check-to-write race. The commit point must share the deadline lock
+    rather than consume a reusable permit (`review-4.md PR-004`).
+  - Decided by: planner-proposed
+  - Supersedes: the former generic claim that a conditional result consumed by
+    `shell-command-finalizer.ts` fenced the external mutation.
+
+- **D-018 — Unconfirmed lock release forbids same-process follow-up**
+  - Decision: Runtime lock operations return both the committed action result and
+    release certainty. After the action settles, the exact lock owner is marked
+    release-ready before unlink; a fresh process may reclaim only that completed
+    owner even if its PID remains alive. `release-unconfirmed` preserves the
+    primary write, clears local timers/handles, performs no projector, dispatch,
+    readiness, or finalization follow-up in that process, and requires a fresh
+    reconciliation that re-reads authority and any effect receipt.
+  - Alternatives: treat release failure as action failure and retry; continue in
+    the same process; leave a live-PID lock unreclaimable.
+  - Why: Continuing can duplicate a committed transition, while waiting for the
+    originating process to die can strand a tool-hosted run
+    (`review-4.md PR-004`; `review-4.md Missing Coverage — lock-release
+    uncertainty`).
+  - Decided by: planner-proposed
+
+- **D-019 — Normalized terminal state drives Drive compatibility**
+  - Decision: For liveness-managed Drive runs, normalized first-terminal state is
+    authoritative. An injected Drive compatibility projector materializes
+    `run.completion.json` and legacy status fields idempotently from that state.
+    Projection has persisted pending/applied/failed evidence and is retried by
+    later observation or resume without changing the terminal outcome. Legacy
+    Drive status consults normalized state first, and resume never clears a
+    completion or retries a finalizer after foreign reconciliation made the run
+    terminal.
+  - Alternatives: require the detached owner to write completion; let normalized
+    and compatibility surfaces diverge; make durable-runtime import Driver.
+  - Why: A fresh status process can terminalize while the detached owner is gone;
+    compatibility must converge from persisted authority rather than an
+    owner-local finally block (`review-4.md Missing Coverage — Drive
+    compatibility after foreign reconciliation`).
+  - Decided by: planner-proposed
+
+- **D-020 — Either trusted hard-ceiling proof fences promotion**
+  - Decision: Persist non-decreasing observed-wall high water and hard elapsed.
+    Within one host epoch, hard elapsed advances by the greater non-negative wall
+    or host-active delta, so suspension and backward wall movement cannot extend
+    the ceiling. A promotion is due when either wall high water reaches the
+    absolute deadline or hard elapsed reaches the selected duration. A backward
+    wall move across an incomparable host epoch stops conservatively as
+    clock-continuity-uncertain rather than fabricating remaining time. Hard
+    fencing is evaluated before idle or owner-lapse outcomes.
+  - Alternatives: wall deadline only; monotonic elapsed only; let wall rollback
+    postpone enforcement.
+  - Why: The former design named both values but did not say which won when they
+    disagreed (`review-4.md PR-002`; `review-4.md Missing Coverage —
+    monotonic-versus-wall ceiling ordering`).
+  - Decided by: planner-proposed
+
+- **D-021 — Cancelling an observer does not cancel reconciliation intent**
+  - Decision: CLI/tool cancellation stops only that status/watch caller's
+    remaining grace wait. Any stop intent, dispatch evidence, or terminal write
+    already committed remains authoritative; no hidden background task is
+    promised, and the next trigger resumes from persisted state and the original
+    grace.
+  - Alternatives: ignore the observer signal; undo the stop; continue an
+    untracked background wait.
+  - Why: Registered run-control tools already receive an `AbortSignal`; using it
+    for caller latency without rolling back durable state gives cancellation an
+    exact outcome (`review-4.md Missing Coverage — grace-waiting observation`).
+  - Decided by: planner-proposed
+
 ## Human Decisions Required
 
 This section is retained as the decision record. Both decisions are resolved;
@@ -245,26 +382,16 @@ neither is an implementation gate.
 
 `review-2.md PR-002` and `review-3.md PR-002` established that the repository's
 foreground Chain owner and detached Drive step process do not survive every
-owner crash, event-loop stall, or host suspension. A local timer cannot make a
-transition while no process can execute. The human considered these directions:
+owner crash, event-loop stall, or host suspension. The human considered three
+directions: amend to first-opportunity enforcement, add an independently
+available service, or restrict launches to a proved supervisor.
 
-1. **Amend the ratified temporal boundary.** Permit a persisted deadline to
-   become enforceable at the first framework execution opportunity after local
-   unavailability. Fence every store promotion by the absolute deadline,
-   reconcile immediately on regain, and never treat the gap as idle.
-2. **Require an independently available enforcement service.** Add a supervised
-   authority outside the owner process with durable access to run records and
-   exact process/descendant controls.
-3. **Restrict supported launches to a proved supervisor contract.** Refuse
-   liveness-managed execution unless a platform supervisor can persist and
-   enforce the deadline independently.
-
-**Ruling: option 1** (human, 2026-09-22). INV-002 in `spec.md` is amended
-accordingly, with the previous text kept in git. Enforcement is owed at the
-first opportunity any framework process has to act on the run; while none can,
-the absolute deadline fences every later store promotion and the gap is never
-counted as idle. The implementation seam is the in-process scheduler watchdog
-plus reconcile-on-regain. No external enforcement service is in scope.
+**Ruling: first-opportunity enforcement** (human, 2026-09-22). INV-002 in
+`spec.md` is amended accordingly. Enforcement is owed at the first opportunity
+any framework process has to act on the run; while none can, the absolute
+deadline fences every later promotion and the gap is never counted as idle. The
+implementation seam is the in-process scheduler watchdog plus
+reconcile-on-regain. No external enforcement service is in scope.
 
 ### H-002 — Framework default
 
@@ -461,9 +588,9 @@ interface EffectiveAttemptDeadline {
 ```
 
 `idleMode` defaults to shadow; the provisional idle window is fifteen minutes;
-the hard default is `14_400_000 ms` (four hours). Durations are positive safe
-integers. Wrong shape, unknown mode, non-integer, zero, negative, or unsafe
-values refuse launch and name the exact config key. Partial config is valid.
+the hard default is `14_400_000 ms`. Durations are positive safe integers.
+Wrong shape, unknown mode, non-integer, zero, negative, or unsafe values refuse
+launch and name the exact config key. Partial config is valid.
 
 Composition is fixed:
 
@@ -473,13 +600,14 @@ Composition is fixed:
 | Drive task | project config → four-hour framework default | explicit `taskTimeoutMs` → existing 30-minute default | earlier absolute deadline |
 | Drive finalizer | project config → four-hour framework default | none | baseline deadline |
 
-The existing Chain input remains global. Compilation persists the chain start,
-global deadline, attempt baseline, and effective per-step deadline. Drive
-persists baseline and task-cap candidates in `spec.json`; both policy writers
-consume that snapshot. Resumes never re-resolve. Legacy runs without a snapshot
-are observable as `legacy-liveness-unmanaged` but mutating resume is refused.
+The existing Chain input remains global. Compilation persists chain start, the
+global deadline, the attempt baseline, and each effective step deadline. Drive
+persists baseline and task-cap candidates in `spec.json`; both CLI/tool policy
+writers consume that snapshot. Resumes never re-resolve. Legacy runs without a
+snapshot remain observable as `legacy-liveness-unmanaged`, but mutating resume
+is refused rather than fabricating authority.
 
-### 2. Attempt authority and persisted state
+### 2. Attempt, stop, control, and effect state
 
 ```ts
 interface AttemptAuthority {
@@ -489,137 +617,230 @@ interface AttemptAuthority {
 
 interface AttemptOwnerIdentity {
   readonly hostId: string;
+  readonly bootId: string;
   readonly processId: number;
   readonly processStartedAt: string;
   readonly invocationId: string;
 }
 
+interface StopIntent {
+  readonly requestId: string;
+  readonly reason: "hard-ceiling" | "idle-deadline" | "caller";
+  readonly trigger?: "wall-deadline" | "hard-elapsed" | "clock-continuity-uncertain";
+  readonly requestedAt: string;
+  readonly graceEndsAt: string;
+}
+
+interface StopDispatchAttempt {
+  readonly attemptedAt: string;
+  readonly targetId: string;
+  readonly outcome: "delivered" | "already-delivered" | "unavailable" | "failed";
+  readonly detail?: string;
+}
+
+interface StopDispatchRecord {
+  readonly status: "pending" | "delivered" | "unavailable";
+  readonly attempts: readonly StopDispatchAttempt[];
+}
+
 type AttemptStopState =
   | { readonly kind: "none" }
-  | {
-      readonly kind: "requested";
-      readonly requestId: string;
-      readonly reason: "hard-ceiling" | "idle-deadline" | "caller";
-      readonly requestedAt: string;
-      readonly graceEndsAt: string;
-      readonly dispatch: "pending" | "dispatched" | "unavailable";
-    }
-  | { readonly kind: "settled"; readonly settledAt: string; readonly via: "result" | "backend-equivalent" }
-  | { readonly kind: "unconfirmed"; readonly blockedAt: string };
+  | { readonly kind: "requested"; readonly intent: StopIntent; readonly dispatch: StopDispatchRecord }
+  | { readonly kind: "settled"; readonly intent: StopIntent; readonly dispatch: StopDispatchRecord; readonly settledAt: string; readonly via: "result" | "backend-equivalent" }
+  | { readonly kind: "unconfirmed"; readonly intent: StopIntent; readonly dispatch: StopDispatchRecord; readonly blockedAt: string; readonly reason: string };
 
-type OwnerLapseState =
-  | { readonly kind: "none" }
-  | { readonly kind: "expired-held"; readonly observedAt: string }
-  | { readonly kind: "uncheckable"; readonly firstObservedAt: string; readonly graceEndsAt: string; readonly reason: string };
+type BackendControlDescriptor =
+  | { readonly kind: "posix-process-group"; readonly targetId: string; readonly hostId: string; readonly bootId: string; readonly groupId: number; readonly leader: ProcessIdentity }
+  | { readonly kind: "direct-process"; readonly targetId: string; readonly identity: ProcessIdentity }
+  | { readonly kind: "pi-session"; readonly targetId: string; readonly sessionId: string; readonly owner: AttemptOwnerIdentity };
+
+interface ProcessIdentity {
+  readonly hostId: string;
+  readonly bootId: string;
+  readonly processId: number;
+  readonly startedAt: string;
+}
+
+type AttemptEffectKind = "drive-source-commit" | "drive-task-status" | "drive-state-commit";
+
+interface AttemptEffectIntent {
+  readonly effectId: string;
+  readonly kind: AttemptEffectKind;
+  readonly authority: AttemptAuthority;
+  readonly intendedAt: string;
+  readonly expectedExternalState: unknown;
+  readonly candidateExternalState: unknown;
+}
 ```
 
-The attempt also persists effective policy/deadline candidates, a permanent
-`deadlineReachedAt`/trigger when first fenced, proof of life, last useful
-activity, non-decreasing hard elapsed and last-observed wall time,
-host-unavailable intervals, clock samples, lease, stop/lapse state, session
-reference, descendants, shadow episode, and immutable result evidence. The step
-claim atomically increments a persisted counter and installs current authority
-before backend preparation. A second conditional authorization immediately
-before backend start refuses launch if the deadline became due after claim.
-Recovery may reconstruct a missing evidence projection from the authoritative
-step but never allocate another attempt.
+An attempt persists policy/deadline candidates, a permanent deadline fence,
+proof of life, useful activity, non-decreasing hard/idle elapsed, wall high
+water, clock samples, host-unavailable/continuity-unknown intervals, lease,
+stop state, backend controls, descendants, shadow episode, effect
+intents/receipts, session reference, and immutable result evidence. Secrets such
+as `ownerToken` never enter status output.
 
-A deadline fence closes promotion authority permanently. The attempt identity
-remains current only for stop delivery, evidence, descendant settlement, and
-terminalization; it can no longer renew, record useful activity, launch a new
-descendant, or promote output. Normal result mapping is explicit: completion
-accepted before a stop request uses the backend result; prepare/start failure
-becomes failed. If a caller stop wins first, confirmed settlement becomes
-cancelled. If a deadline stop wins first, confirmed settlement becomes failed
-with the deadline cause. Any unconfirmed stop becomes blocked. First terminal
+A claim atomically increments a persisted attempt counter and installs current
+authority before preparation. A second authorization immediately before backend
+start refuses if the deadline became due. A deadline fence permanently closes
+work promotion, renewal, activity, descendant launch, new effect intent, result,
+readiness, and finalization. Stop/dispatch/settlement, descendant settlement,
+exact effect-intent recovery, rejected evidence, diagnostics, compatibility
+projection, and terminalization remain legal because they close or explain work.
+
+Normal result mapping remains: pre-stop accepted completion uses the backend
+result; preparation/start failure becomes failed; caller stop plus confirmed
+settlement becomes cancelled; deadline/clock stop plus confirmed settlement
+becomes failed with its cause; unconfirmed stop becomes blocked. First terminal
 state is absorbing.
 
-### 3. Store-owned transitions and writer disposition
+### 3. Two-phase backend start and reconstructible stop control
+
+The durable backend contract is:
+
+```ts
+interface BackendStartContext {
+  registerControl(control: BackendControlDescriptor): Promise<ConditionalAttemptResult<BackendControlDescriptor>>;
+  registerDescendant(control: BackendControlDescriptor): Promise<ConditionalAttemptResult<AttemptDescendantRecord>>;
+}
+
+interface BackendHandle<Result = unknown> {
+  readonly control: BackendControlDescriptor;
+  readonly completion: Promise<BackendCompletion<Result>>;
+  readonly settlement: Promise<BackendSettlement>;
+  requestStop(request: StopIntent): Promise<StopDispatchOutcome>;
+}
+
+interface BackendControlPort {
+  requestStop(control: BackendControlDescriptor, request: StopIntent): Promise<StopDispatchOutcome>;
+  inspectSettlement(control: BackendControlDescriptor): Promise<BackendSettlementProbe>;
+}
+```
+
+`OrchestrationBackend.start(prepared, startContext)` may not release the prompt,
+start a finalizer effect, or return a usable handle until `registerControl`
+applies. A rejected registration reaps/disposes the newly created process or
+session and returns start failure. Drive's lower `Backend.run()` becomes
+`Backend.start(invocation, startContext): Promise<BackendExecution>`; the
+execution exposes the same four facts instead of only a result promise.
+
+CLI adapters split `runCliBackendProcess` into start and completion. They spawn a
+framework-created detached group with prompt input held, read exact leader start
+identity, persist the group descriptor, and only then release input. Direct
+child completion and whole-group settlement are separate promises. Preflight,
+postflight, and other spawned commands use the same controlled-process primitive
+and register as descendants before receiving project-controlled command input.
+
+Pi already exposes `session.sessionId` and `session.abort()`/idle settlement. The
+spawner gains a start form while existing `spawn()` remains a compatibility
+wrapper over its completion: create session, persist session/owner identity,
+then prompt. A same-process stop invokes `session.abort()` and waits for idle. A
+fresh process does not invent a remote Pi attach API: it observes the durable
+request, probes exact owner identity, dispatches any persisted process controls,
+and records Pi dispatch unavailable while a live inaccessible session remains;
+settlement then either arrives or grace ends blocked.
+
+The fresh-process `BackendControlPort` validates host, boot, PID start identity,
+and framework-created group ownership before signaling. It never executes
+persisted argv, scripts, hooks, or project-controlled paths. Repeating transport
+after a crash uses the same `requestId`; an already-gone exact target is settled,
+not an error. A target mismatch is unavailable/uncheckable, never permission to
+signal a reused PID.
+
+### 4. Store-owned transitions, effect commit points, and lock outcomes
 
 The scheduler-facing `RunStore` exposes reads plus conditional lifecycle
-operations only:
+operations. In addition to claim, authorization, renewal, activity, clock,
+shadow, owner, descendant, settlement, block, and run-finalization operations,
+it includes these previously missing transitions:
 
 ```ts
 interface RunStore {
-  claimStepAttempt(input: ClaimStepAttemptInput): Promise<ClaimAttemptResult>;
-  authorizeStepAttemptStart(input: AuthorizeStepAttemptStartInput): Promise<ConditionalAttemptResult<StepAttemptRecord>>;
-  renewStepAttempt(input: RenewStepAttemptInput): Promise<ConditionalAttemptResult<StepAttemptRecord>>;
-  recordStepActivity(input: RecordStepActivityInput): Promise<ConditionalAttemptResult<StepAttemptRecord>>;
-  recordClockProgress(input: RecordClockProgressInput): Promise<ConditionalAttemptResult<StepAttemptRecord>>;
-  markShadowCrossing(input: ShadowCrossingInput): Promise<ConditionalAttemptResult<StepAttemptRecord>>;
-  requestStepStop(input: RequestStepStopInput): Promise<ConditionalAttemptResult<StepAttemptRecord>>;
-  recordOwnerObservation(input: OwnerObservationInput): Promise<ConditionalAttemptResult<StepAttemptRecord>>;
-  registerAttemptDescendant(input: RegisterDescendantInput): Promise<ConditionalAttemptResult<AttemptDescendantRecord>>;
-  settleAttemptDescendant(input: SettleDescendantInput): Promise<ConditionalAttemptResult<AttemptDescendantRecord>>;
+  registerStepBackendControl(input: RegisterBackendControlInput): Promise<ConditionalAttemptResult<BackendControlDescriptor>>;
+  requestStepStop(input: RequestStepStopInput): Promise<ConditionalAttemptResult<AttemptStopRecord>>;
+  recordStepStopDispatch(input: RecordStopDispatchInput): Promise<ConditionalAttemptResult<AttemptStopRecord>>;
+  commitStepEffect<T>(input: CommitStepEffectInput, publish: () => Promise<ExternalEffectReceipt<T>>): Promise<CommitStepEffectResult<T>>;
+  resolveStepEffect(input: ResolveStepEffectInput): Promise<ConditionalAttemptResult<AttemptEffectRecord>>;
   settleStepAttempt(input: SettleStepAttemptInput): Promise<SettleAttemptResult>;
-  blockStepAttempt(input: BlockStepAttemptInput): Promise<ConditionalAttemptResult<StepRecord>>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult>;
+  recordCompatibilityProjection(input: CompatibilityProjectionInput): Promise<ConditionalRunResult>;
 }
 
-type AttemptMutationRejection =
-  | { readonly kind: "obsolete-authority" }
-  | { readonly kind: "already-terminal" }
-  | { readonly kind: "stop-already-requested" }
-  | { readonly kind: "deadline-past"; readonly deadlineAt: string; readonly requestId: string };
+type LockReleaseState =
+  | { readonly kind: "confirmed" }
+  | { readonly kind: "unconfirmed"; readonly lockOwnerId: string; readonly recoveryMarker: string };
+
+type StoreMutationResult<T> =
+  | { readonly kind: "applied"; readonly value: T; readonly lockRelease: LockReleaseState }
+  | { readonly kind: "rejected"; readonly reason: AttemptMutationRejection; readonly lockRelease: LockReleaseState };
 ```
 
-The file store receives the trusted `LivenessClock`; backend timestamps are
-only evidence. Under the per-step lock, every attempted promotion first re-reads
-the authoritative step/attempt, rejects an obsolete or terminal authority, and
-then compares the non-decreasing observed wall time with the persisted effective
-absolute deadline. At `observedAt >= deadlineAt`, it atomically records or
-reuses the permanent deadline fence and one logical stop request before
-returning `deadline-past`. The caller enters reconciliation rather than
-continuing its intended write. If completion caused the check, its full payload
-may be appended as rejected evidence and may prove settlement, but it cannot
-become the canonical result.
+Every lock-backed result carries release certainty, including rejections. The
+caller may perform follow-up only for `confirmed`. For `unconfirmed`, the action
+result stands and is never retried in that process. The exact lock owner writes a
+release-ready marker only after the awaited critical-section action has ended;
+a later process may reclaim only a matching release-ready owner, re-read the
+primary record, and continue. Status reports the uncertainty until recovery
+consumes it. No state transition assumes an unlink succeeded merely because the
+action returned.
 
-“Promotion” includes claim/start authorization, renewal, useful activity,
-descendant launch registration, canonical completion/result/output/artifact
-projection, retry/readiness, task-state or commit projection, finalizer
-readiness, and successful run finalization. Stop dispatch/settlement,
-descendant settlement, rejected evidence, clock/owner observations, diagnostics,
-and deadline terminalization remain legal after the fence because they close or
-explain the attempt rather than advance its work. Every framework-owned sink
-must use one of these conditional operations; no caller may treat a prior check
-as a reusable permit.
+The file store receives the trusted clock. Under the per-step lock, every
+promotion re-reads authority and terminal state, folds the new clock sample,
+and applies D-020 before writing. A due attempt atomically records/reuses its
+permanent fence and one stop intent. A completion may be retained as full
+rejected evidence and prove settlement, but never becomes canonical.
 
-Activity clears the current shadow marker atomically when useful work advances.
-Clock progress never accepts a lower hard-elapsed or observed-wall value.
-Descendant operations key on authority plus descendant ID. `finalizeRun` takes
-the expected current run state and first terminal cause and returns
-applied/already-terminal/still-runnable.
+`commitStepEffect` is not a pre-check. The Drive adapter first stages all
+non-authoritative work. It then acquires the repository lock where applicable,
+passes an exact intent and one bounded publication callback, and the store:
+
+1. acquires the step lock in repository-lock → step-lock → event-lock order;
+2. re-reads authority, terminal, existing effect, stop, and deadline state;
+3. returns an existing receipt idempotently or rejects before publication;
+4. persists the intent containing expected and candidate external state;
+5. samples the clock again and invokes the one publication point only if still
+   authorized; and
+6. records the receipt or exact unconfirmed evidence before releasing the step
+   lock.
+
+Git preparation uses a temporary index, `write-tree`, and `commit-tree`; only a
+compare-and-swap `update-ref` publishes the candidate commit. No real index
+mutation or project hook is the commit point. Task status prepares serialized
+bytes and a temp file; only the atomic replacement runs inside the fence, and
+episode capture follows an accepted receipt. If a process disappears after
+intent, recovery compares exact old/candidate ref or content digests: candidate
+means record the receipt once, old means absent (and it may be retried only if
+still before the deadline), any third state blocks as effect-outcome-unconfirmed.
+An unresolved effect prevents step settlement.
+
+Activity clears the shadow marker atomically. Clock progress never accepts lower
+elapsed/high-water values. Descendant operations key on authority and target ID.
+`finalizeRun` takes expected run state and first terminal cause and returns
+applied/already-terminal/still-runnable. Event allocation re-reads the persisted
+tail under its lock, assigns one sequence, appends a complete envelope, then
+updates caches; malformed tails block writes.
 
 `updateRun`, `writeStepRecord`, `writeStepAttemptRecord`, and direct event append
-are no longer available to scheduler, scheduler-state, Drive projectors, or
-backend adapters. File-store initialization/recovery may use private equivalents
-under the same locks. `lib/driver/durable-steps.ts` routes compatibility
-projections through accepted conditional results. `run-start.ts` forwards the
-full interface without fail-soft omission.
+are removed from scheduler, scheduler-state, Drive projectors, backend adapters,
+and finalizers. File-store initialization/recovery retains private equivalents.
+`lib/driver/durable-steps.ts` becomes a compatibility consumer of accepted
+conditional transitions. `run-start.ts` forwards the complete interface without
+fail-soft omission.
 
-Lock slots are initialization, one per step, and one run event/finalization
-lock. Order is step then event; reverse order is forbidden. Event allocation
-re-reads the persisted tail under lock, allocates one unique sequence, appends a
-complete envelope, then updates caches. Malformed tails block lifecycle writes
-rather than guessing.
-
-### 4. Owner probing and epoch-aware clock
+### 5. Host clock, observer identity, and hard/idle accounting
 
 ```ts
-type OwnerProbeResult =
-  | { readonly kind: "alive" }
-  | { readonly kind: "dead"; readonly reason: string }
-  | { readonly kind: "uncheckable"; readonly reason: string };
-
-interface OwnerProbe {
-  current(): Promise<AttemptOwnerIdentity>;
-  check(owner: AttemptOwnerIdentity): Promise<OwnerProbeResult>;
+interface ClockObserverIdentity {
+  readonly invocationId: string;
+  readonly processId: number;
+  readonly processStartedAt: string;
 }
 
 interface ClockSample {
   readonly wallTimeMs: number;
-  readonly monotonicTimeMs: number;
-  readonly monotonicEpoch: string;
+  readonly hostActiveTimeMs: number;
+  readonly hostEpoch: string;
+  readonly observer: ClockObserverIdentity;
 }
 
 interface LivenessClock {
@@ -627,220 +848,248 @@ interface LivenessClock {
 }
 ```
 
-The process adapter uses stable host identity and process start time; PID reuse
-is dead, another host or unsupported probe is uncheckable, and no
-project-controlled code executes. A monotonic epoch identifies the adapter's
-actual comparability domain, such as host plus boot identity. Process-relative
-clocks use a per-process epoch and are never compared across restart.
+`hostEpoch` names the host/boot comparability domain; `observer` says who took a
+sample and never controls comparability. The platform adapter must provide a
+host-active monotonic source that excludes suspension and is comparable across
+processes in one epoch. Process-relative clocks are not accepted for managed
+launch. This makes a detached `run-step` sample and any fresh status process
+comparable without calling the process change suspension.
 
-Within one epoch, wall-minus-monotonic excess records host-unavailable time. On
-epoch mismatch, non-negative wall delta advances hard elapsed and is
-conservatively excluded from idle elapsed. Negative wall movement cannot reduce
-persisted elapsed or undo a recorded deadline fence. The effective absolute
-deadline remains authoritative across epochs: a gap past it is not idle, but the
-next framework opportunity fences the attempt before accepting any promotion.
-Renewal presents the same authority and owner identity, changes proof of life
-only, and may clear a lapse state while authority remains current and unfenced.
+For samples in one epoch, `activeDelta` contributes to idle elapsed and the
+positive excess of wall delta over active delta is host-unavailable. Hard
+elapsed advances by `max(nonNegativeWallDelta, nonNegativeActiveDelta)`, so it
+includes suspension and survives backward wall movement. Wall high water never
+decreases. Useful activity resets accumulated idle only through an
+accepted-authority transition; observer polling does not.
 
-Useful activity includes Pi output/tool/turn/compaction progress, Drive
-verification/backend output, and finalizer progress. Renewal, owner probing,
-status polling, replay, and synthetic heartbeat are not useful. Every producer
-presents attempt authority.
+At a real epoch change, one continuity-unknown interval is recorded. A
+non-negative wall delta advances hard elapsed but contributes no idle; the new
+sample then becomes the baseline. Later fresh observers in that same epoch
+advance from it, so repeatedly invoking status cannot repeatedly exclude the
+same active silence. A negative wall delta across incomparable epochs cannot
+prove remaining hard time and conservatively wins a stop with
+`clock-continuity-uncertain`. An existing deadline fence is never undone.
 
-### 5. Deadline authority, reconciliation triggers, races, and settlement
+A hard ceiling is due if either wall high water reaches `deadlineAt` or hard
+elapsed reaches the selected duration. The check happens before enforced idle,
+caller stop, owner lapse, renewal, activity, result, or effect publication. Hard
+reason wins when already due under the lock.
 
-H-001 option 1 is implemented by one persisted rule with two local drivers:
+Useful activity includes Pi output/tool/turn/compaction progress, Drive backend
+output/verification, and finalizer preparation progress. Renewal, owner probing,
+status polling, replay, compatibility projection, and synthetic heartbeat are
+not useful. Every producer presents attempt authority.
 
-- While a scheduler process is alive, an in-process watchdog is armed to the
-  next effective hard deadline, enforced-idle deadline, stop-grace end, or lease
-  check. Its callback is only a wake-up; it re-reads persisted state and uses
-  conditional store operations. An event-loop stall or host suspension cannot
-  make an old timer decision authoritative.
-- Whenever a framework process regains an opportunity to act on a run, it calls
-  the same reconciler before any other lifecycle work. No daemon or external
-  enforcement service is introduced.
+### 6. Deadline reconciliation, dispatch, and settlement
 
-The trigger contract is exact:
+D-013 uses one reconciler with local drivers:
 
-| Trigger | Reconciliation point | Outcome for a current attempt found at or past its hard ceiling |
+- A live scheduler watchdog wakes for the next hard deadline, enforced-idle
+  deadline, grace end, or lease check. A wake-up only causes a persisted re-read.
+- Scheduler tick, status, watch, resume, and a new invocation acting on the same
+  run invoke the same reconciler before other lifecycle work.
+- Every conditional promotion remains a last-line deadline gate.
+
+The trigger outcomes remain:
+
+| Trigger | Before | Due current-attempt outcome |
 |---|---|---|
-| Scheduler tick/watchdog wake-up | Before renewal, activity acceptance, readiness, or another claim | Atomically fence promotion and create/reuse one stop request; dispatch through the live handle, then drive settlement to deadline failure or `stop-unconfirmed` block by the fixed grace |
-| `run status` / `run_status` | After resolving/loading the run and before building the snapshot | Perform the same transition, never start work, and return the reconciled cancelling/terminal/blocked snapshot; the exceptional call may wait through the remaining grace |
-| `run watch` / `run_watch` | After resolving/loading the run and before reading the requested event page | Perform the same transition; resulting events use normal sequence allocation and appear once after the caller's cursor; the exceptional call may wait through the remaining grace |
-| Resume | After loading the frozen run/spec and before task/workdir repair, claim, backend start, or finalizer action | Reconcile the old attempt; do not create a replacement in the same run. Continue resume only when no overdue active attempt remains |
-| New Chain/Drive invocation acting on that run | After create/load and policy freeze, before the first claim or backend/finalizer action | A genuinely new run has no old attempt, so this seeds its watchdog. If an existing run ID/state is opened, reconcile it exactly as resume before any new work |
+| Watchdog/scheduler tick | renewal, activity, readiness, claim | fence, create/reuse stop intent, dispatch through local handle/persisted controls, settle or block by original grace |
+| `run status` / `run_status` | snapshot | same reconciliation; never starts work; may wait through remaining grace |
+| `run watch` / `run_watch` | event page | same reconciliation; new sequenced events appear once after cursor |
+| Resume | task/workdir repair, claim, backend/finalizer action | reconcile old attempt; never create a same-run replacement |
+| New invocation acting on that run | first claim/backend/finalizer action | seed a new run's watchdog or reconcile an opened existing run |
 
-A new unrelated run does not scan or mutate other runs. In addition to these
-five entry points, every conditional store promotion is a last-line deadline
-gate. A `deadline-past` rejection requires its caller to enter the reconciler
-before returning; therefore a late activity, completion, or projector write
-cannot exploit a gap between scheduled ticks.
+A new unrelated run does not scan other runs. `deadline-past` or
+`lock-release-unconfirmed` never lets a caller continue its intended write.
 
-The reconciler uses a stable `requestId`. The store creates one logical stop
-request; dispatch may be retried idempotently with that ID after a crash between
-intent and delivery. A process with the current in-memory backend handle uses
-it. A fresh process may use only exact persisted framework-owned process
-controls; it never guesses a PID or executes project-controlled code. If no
-safe control exists, it records dispatch as unavailable. That is not settlement:
-the process waits/polls persisted backend and descendant evidence until the
-original `graceEndsAt`, then blocks. If the reconciling process itself exits,
-the next trigger reuses the original request/grace and blocks immediately when
-that grace is already past.
+The store creates immutable stop intent once. The current owner first uses its
+live handle. A fresh process calls `BackendControlPort` for each persisted
+control and records every dispatch outcome with `recordStepStopDispatch`. A
+crash between external delivery and the record may repeat transport with the
+same request ID; it cannot create a second logical stop. Unavailable delivery is
+not settlement. Reconciliation polls completion/settlement and descendants until
+the original grace end, then blocks. A later trigger never restarts grace.
 
-Once reconciliation is available, the race is exact:
+Race order is exact:
 
-1. A backend result or prepare/start failure whose conditional store operation
-   wins before any stop and before the absolute deadline terminalizes normally.
-2. Under the step lock, an already-due hard deadline is evaluated before a new
-   caller or idle stop. Otherwise the first caller, hard, or enforced-idle stop
-   that changes `none` to `requested` fixes the reason, request ID, and grace.
-3. Losing stop requests are no-ops. A completion after the request, or first
-   observed at/after the hard deadline, is full rejected evidence and may prove
-   settlement; it cannot restore normal success.
-4. Settlement requires backend result/equivalent evidence and every registered
-   descendant. Acknowledgement or successful signal delivery is insufficient.
-5. Grace expiry writes blocked `stop-unconfirmed`, closes authority, and leaves
-   later completion as rejected evidence.
-6. Drive launcher TERM/KILL and hard-exit wrappers defer to this persisted
-   sequence; they may assist reaping but cannot erase or pre-empt settlement.
+1. A normal result or start failure whose conditional transition wins before
+   stop and before either hard proof terminalizes normally.
+2. Under the step lock, a due hard ceiling wins before caller or idle stop;
+   otherwise the first stop fixes intent permanently.
+3. A post-intent completion is rejected evidence and may prove settlement.
+4. Settlement requires backend result/equivalent plus every registered
+   descendant and every effect intent resolved.
+5. Grace expiry writes blocked `stop-unconfirmed`, preserving complete intent
+   and dispatch history.
+6. Drive launcher reaping may assist exact registered controls but cannot erase,
+   pre-empt, or replace the persisted protocol.
 
-```ts
-interface BackendCompletion {
-  readonly result: StepResult;
-  readonly fullEvidence: unknown;
-  readonly sessionRef?: string;
-}
+Cancelling a grace-waiting status/watch caller stops its wait promptly. It does
+not undo any committed transition and does not create an untracked background
+reconciler; the next trigger continues from the same request and grace.
 
-interface BackendHandle {
-  readonly completion: Promise<BackendCompletion>;
-  readonly settlement: Promise<{ readonly kind: "result" | "backend-equivalent"; readonly settledAt: string }>;
-}
-```
+### 7. Descendant ownership and backend adapters
 
-Pi settlement means idle plus empty descendant registry; CLI settlement means
-direct child and process group gone; finalizer settlement means operation and
-descendants returned.
+An attempt-context registry binds Pi session IDs, nested run IDs, controlled
+processes, and finalizer commands to attempt authority. Parent registration
+occurs before prompt. Spawned children and nested chains are persisted before
+launch. Parent stop propagates one logical request ID. `SpawnTracker` remains
+completion-message delivery state; it does not establish execution settlement.
 
-### 6. Descendant ownership
+Drive's orchestration handle owns an attempt-local controller immediately, so a
+local stop covers preflight, backend, postflight, and finalizer preparation. The
+lower CLI backend publishes its process-group control when it actually starts.
+All command helpers publish descendant controls and report whole-tree
+settlement. `cosmonauts-subagent` publishes Pi session identity and exposes Pi's
+actual abort/idle contract. Unsupported platform process controls are reported
+at launch rather than falling back to PID-only signaling.
 
-An attempt-context registry binds Pi session IDs to attempt authority. Durable
-Chain and Drive Pi adapters register the parent before prompt. Spawned children
-are persisted before launch through the store deadline gate and expose
-abort/settlement handles. Nested Chain launches persist child run identity and
-settlement. Parent stop propagates once logically using the stable stop request
-ID. Missing in-memory handles after resume or a fresh status/watch process are
-reconstructed only from exact persisted framework-owned process controls;
-otherwise dispatch and settlement are unconfirmed, never fabricated, and the
-attempt blocks no later than reconciliation of the fixed grace end.
+A fresh process reconstructs only from persisted framework-owned controls. It
+never guesses a PID, trusts `run.pid` without start identity, calls private Pi
+state, or executes project-controlled command text. Missing safe control records
+unavailable dispatch and eventually blocks unless independent exact settlement
+evidence arrives.
 
-`SpawnTracker` retains rejection and completion-message delivery. Its waiter
-status is not execution truth. This implements AC-011 without implementing
-AC-015 ahead of its ordered slice.
+### 8. Reconciliation state space and exits
 
-### 7. Reconciliation state space
-
-Deadline and grace reconciliation is evaluated before owner-lapse probing. A
-past-ceiling owner does not remain expired-held merely because it is alive.
-When no framework process can run, persisted state may remain unchanged; the
-absolute deadline still closes every later promotion, the gap contributes to
-hard elapsed, and it contributes zero idle elapsed.
+Deadline/effect/grace reconciliation runs before owner-lapse probing. Every cell
+below has one outcome:
 
 | Rechecked state/input | Conditional outcome |
 |---|---|
-| current promotion before deadline, stop `none` | apply only if authority remains current under the lock |
-| current promotion at/after hard deadline, stop `none` | reject promotion; persist permanent deadline fence and one stop request; enter settlement reconciliation |
-| current promotion at/after hard deadline, stop already requested | reject promotion; retain first reason/request/grace; continue settlement reconciliation |
-| completion first arrives at/after hard deadline | retain full rejected result; use it only as settlement evidence; terminalize failed for deadline when descendants are settled |
-| hard/enforced-idle deadline due and stop is `none` | one requested stop with fixed grace; hard reason wins when already due under the lock |
-| requested stop settles with all descendants in grace | failed for deadline, cancelled for caller |
-| requested stop has no safe dispatch control | retain one request, report unavailable, then block at fixed grace unless independent settlement evidence arrives |
-| requested stop reaches grace first | blocked `stop-unconfirmed` |
-| owner renewed or attempt ended before a stale probe applies | no-op; render current state |
-| lapsed lease, exact owner alive, deadline not due | running expired-but-held; same authority may renew |
-| lapsed lease, owner dead | blocked owner-dead |
-| lapsed lease, first uncheckable observation | running with one-lease grace |
-| lapsed lease, uncheckable before grace | unchanged with remaining grace |
-| lapsed lease, uncheckable after grace | blocked owner-uncheckable |
-| normal completion wins before any stop/deadline | backend terminal result |
-| prepare/start failure wins before any stop/deadline | failed |
-| any terminal step receives lifecycle input | unchanged; result retained only as rejected evidence where applicable |
-| no step is running/ready or can become ready | first run terminal cause: blocked, failed, cancelled, then legacy stale |
-| terminal run receives later input | status, canonical result, and terminal timestamp unchanged; diagnostic evidence only |
+| promotion before deadline, current authority, stop `none` | apply under lock |
+| promotion at/after either hard proof | reject; persist fence and one stop intent |
+| same-host/boot fresh observer | compare host-active sample regardless of observer ID |
+| first real epoch change with non-negative wall delta | record one unknown interval, advance hard only, seed new epoch |
+| later sample in seeded epoch | advance active idle normally |
+| epoch change plus backward wall | fence and stop as clock-continuity-uncertain |
+| completion first observed due | rejected evidence; settlement evidence only |
+| caller/idle stop while hard already due | hard intent wins |
+| requested stop; dispatch delivered/unavailable/failed | append outcome under same request; keep original grace |
+| requested stop settles with descendants/effects resolved | failed for deadline/clock, cancelled for caller |
+| requested stop reaches grace first | blocked `stop-unconfirmed`, full stop provenance retained |
+| effect prepared, deadline wins before intent/publication | discard staging; no external publication |
+| exact existing effect receipt | return receipt; never repeat publication |
+| recovered intent; candidate external state exists | record one receipt, then continue settlement |
+| recovered intent; expected old state exists and deadline not due | retry the same effect ID once through the fence |
+| recovered intent; expected old state exists and deadline due | mark absent, fence, stop |
+| recovered intent; external state is neither expected nor candidate | block effect-outcome-unconfirmed |
+| lock release unconfirmed after committed action | no same-process follow-up; fresh reclaim/re-read required |
+| lease lapsed, exact owner alive, deadline not due | running expired-but-held; same authority may renew |
+| lease lapsed, owner dead | blocked owner-dead |
+| lease lapsed, first uncheckable observation | running with one-lease grace |
+| lease lapsed, uncheckable after grace | blocked owner-uncheckable |
+| normal completion/start failure wins first | backend result/failed |
+| terminal step receives lifecycle input | canonical fields unchanged; diagnostic evidence only |
+| no step can run | blocked, else failed, else cancelled, else legacy stale |
+| terminal run has Drive projection pending/failed | retry projection only; terminal bytes unchanged |
+| terminal run receives late owner completion | normalized and compatibility terminal stay unchanged; evidence only |
 
 Shadow crossing is one record per episode and clears on useful activity or
-terminal outcome. Lapse clears on valid renewal or terminal outcome. A pending
-stop dispatch becomes dispatched/unavailable and every requested stop settles
-or blocks. A deadline fence is permanent and exits only through terminalization.
-Every temporary state therefore has an exit.
+terminal outcome. Lapse clears on valid renewal or terminal outcome. Pending
+stop dispatch becomes delivered/unavailable and then settled/unconfirmed.
+Effect intent becomes receipt/absent/unconfirmed. Release uncertainty exits only
+through fresh exact-owner recovery. Compatibility projection becomes applied or
+remains visibly retryable. A deadline fence exits only through terminalization.
+No temporary state depends on an in-memory default after restart.
 
-### 8. Drive integration and result fencing
+### 9. Drive effect fencing and compatibility convergence
 
-Drive compilation persists baseline and task-cap candidates; finalizers carry
-the baseline only. Both current policy writers consume the same frozen spec.
-The scheduler watchdog and all five reconcile-on-regain triggers must work for
-every Drive backend before the backend-local abandoning timer is removed; old
-and new abandoning races never ship together.
+Drive compilation persists liveness candidates and finalizer policy. Both launch
+surfaces use the same frozen spec. The old backend-local abandoning timer remains
+until every adapter uses the new start/control/settlement contract, then is
+removed in the same cutover so two timeout authorities never ship together.
 
-Every sink and completion carries attempt authority and reaches the store's
-deadline gate. Obsolete or post-deadline activity/result may append evidence but
-cannot enter the compatibility projector. Finalizers become runnable only from
-an accepted task completion. Project-owned task status, source commit,
-final-state commit, and Drive event projection each consume an accepted
-conditional transition rather than a backend return alone. `BackendCapabilities`
-declares useful-activity and stop-settlement support for every current adapter;
-a contradiction refuses launch. AC-014 later generalizes capability policy.
+`finalizeDriveSourceCommit`, `transitionDriveTaskStatus`, and
+`commitDriveFinalState` receive `{ ref, authority, effectFence, signal }`. Their
+current `AbortSignal` remains cancellation assistance, not write authority.
+Source/state commit preparation uses framework-controlled Git plumbing and a
+temporary index; the branch update is the fenced CAS publication. Task status
+preparation occurs through `TaskManager`, while its task-file replacement is the
+fenced publication and status episode capture follows the receipt. Finalizer
+results/readiness and Driver events derive from receipts. No event, task update,
+or commit is accepted merely because a backend promise returned.
 
-### 9. Chain launch and global-budget preservation
+New managed pending-finalization evidence includes step/attempt/effect identity.
+Resume reconciles normalized state first and can retry only the same unresolved
+effect before its deadline. Legacy pending evidence follows the legacy-unmanaged
+rule rather than being assigned a new authority.
 
-Durable Chain compilation carries the frozen attempt baseline and an absolute
-global deadline from the existing `timeoutMs`. Each step computes the earlier
-applicable deadline without resetting the global budget. Inline coordinator
-paths retain the same global semantics.
+The normalized run record owns first terminal state and a Drive compatibility
+projection state:
+
+```ts
+type CompatibilityProjectionState =
+  | { readonly kind: "none" }
+  | { readonly kind: "pending"; readonly terminalVersion: number }
+  | { readonly kind: "applied"; readonly terminalVersion: number; readonly projectedAt: string }
+  | { readonly kind: "failed"; readonly terminalVersion: number; readonly reason: string };
+
+interface RunCompatibilityProjector {
+  projectTerminal(input: TerminalRunProjectionInput): Promise<CompatibilityProjectionReceipt>;
+}
+```
+
+`finalizeRun` marks Drive projection pending without changing terminal fields.
+The injected Driver projector maps the persisted normalized cause, task counts,
+and finalizer receipt to the existing `DriverResult` schema and writes
+`run.completion.json` idempotently. Completed maps to completed; blocked to
+blocked; cancelled to aborted; failed/stale map to aborted with the normalized
+cause unless a persisted finalizer receipt requires `finalization_failed`.
+Existing authoritative compatible bytes are retained. A failure is visible and
+retryable; it never reopens work.
+
+Normalized status/watch and legacy Drive status consult normalized authority.
+Resume invokes reconciliation/projection before dirty-worktree checks,
+pending-finalization retry, completion clearing, queue repair, or execution. A
+foreign terminal therefore becomes visible even when the detached owner cannot
+write its old completion path. A late owner uses the same projector and cannot
+overwrite the first result.
+
+### 10. Chain launch, Pi lifecycle, and global-budget preservation
+
+Durable Chain compilation carries the frozen attempt baseline and one absolute
+global deadline from existing `timeoutMs`; each step uses the earlier applicable
+deadline without resetting that global budget. Inline coordinator paths retain
+their existing global semantics.
 
 Durable launch returns `{ runId, completion }` after run creation and before
-scheduler wait. CLI emits the ID immediately. The registered tool emits it via
-its progress callback, allowing exact status/watch correlation while the tool
-is still running. Completion and final details reuse the ID.
+scheduler wait. CLI emits the ID immediately; `chain_run` emits it through a
+progress update. Final output reuses it. The chain backend uses the Pi spawner's
+start handle, persists session/owner control before prompt, and feeds Pi activity
+and settlement through authority-checked transitions. The existing 200-character
+summary transformation remains untouched.
 
-### 10. Operator observation contract
+### 11. Operator observation contract
 
 Status/watch rows contain step/attempt identity, owner identity without token,
-proof of life, useful activity, baseline and competing deadline candidates with
-sources, selected effective deadline, host-unavailable duration, permanent
-fence, stop request/dispatch/grace, session reference, lapse/probe reason,
-descendants, and rejected-result reference. Watch emits sequenced liveness
-transitions. CLI JSON and tool details share the typed summaries; concise text
-is orientation only. Documentation states that observation is a conditional,
-possibly grace-waiting reconciliation trigger under amended INV-002, never
-starts work, and makes no promise that anything runs while no framework process
-can act.
+proof of life, useful activity, policy candidates/sources, selected deadline,
+host-unavailable and continuity-unknown intervals, both hard proofs, permanent
+fence, complete stop intent/dispatch/grace even after terminalization, backend
+controls without secrets, session, descendants, effect state/receipt,
+lock-release uncertainty, compatibility projection, and rejected-result
+reference. Watch emits sequenced transitions. CLI JSON and tool details share
+typed summaries; concise text is orientation only.
 
-### 11. Review disposition
+Documentation states that observation is a conditional, possibly grace-waiting
+reconciliation trigger under amended INV-002, never starts work, honours caller
+cancellation as D-021 defines, and makes no promise that anything runs while no
+framework process can act.
 
-`review-1.md` is answered as follows: PR-001, PR-002, and PR-004 by the revised
-human-ratified spec; PR-003 by D-010 and the slice order; PR-005 by the
-provenanced Decision Log; PR-006 by B-001–B-012's behavior shape; PR-007 by the
-acceptance mapping and explicit deferrals; PR-008 by §§1–10, especially the
-writer disposition in §3; PR-009 by behavior/risk outcomes rather than a Quality
-Contract; PR-010 by Architecture Context and D-011; PR-011 by treating the spec
-as authoritative; and PR-012 by D-001.
+### 12. Review disposition
 
-The later reviews are dispositioned as follows:
+Rounds 2–3 remain answered by D-003/D-006/D-007/D-009/D-012/D-013,
+B-001–B-012, and the corresponding design sections. Round 4 is answered as
+follows:
 
 | Finding | Answer |
 |---|---|
-| `review-2.md PR-001`; `review-3.md PR-001` | D-003, B-005/B-006, Design §1 |
-| `review-2.md PR-002`; `review-3.md PR-002` | Human amendment H-001, D-013, B-001/B-004/B-008, Design §§3–7 |
-| `review-2.md PR-003`; `review-3.md PR-003` | D-003, Design §§1 and 9 |
-| `review-2.md PR-004`; `review-3.md PR-004` | D-009, Design §§2, 5, 7; added Drive owners |
-| `review-2.md PR-005`; `review-3.md PR-005` | D-006, Design §3; added compatibility writer |
-| `review-2.md PR-006`; `review-3.md PR-006` | D-007, Design §4 |
-| `review-2.md PR-007`; `review-3.md PR-007` | D-012, B-001, Design §9 |
-| `review-2.md PR-008` | Added durable Chain compiler owner |
-| `review-3.md PR-008` | AC-018 moved into this slice as B-012 |
-| `review-2.md PR-009`; `review-3.md PR-010` | Human H-002, D-002/D-013 distinguish evidence from the accepted risk choice |
-| `review-3.md PR-009` | Added durable Chain compiler owner |
-| `review-2.md PR-010`; `review-3.md PR-011` | B-010 names concrete run outcomes |
+| `review-4.md PR-001` | D-014; Design §§2–3, 6–7; concrete lower Driver start and fresh-process control port |
+| `review-4.md PR-002` | D-015/D-020; Design §§5 and 8; observer identity no longer defines clock continuity |
+| `review-4.md PR-003` | D-016; Design §§2, 4, 6, 8, 11; dispatch transition and terminal provenance |
+| `review-4.md PR-004` | D-017; Design §§4 and 9; concrete effect owners receive authority and commit inside the step deadline lock |
+| `review-4.md` residual concerns | D-018–D-021; Design §§4–6, 8–9, 11 |
 
 ## Files to Change
 
@@ -850,146 +1099,183 @@ The later reviews are dispositioned as follows:
   `lib/config/liveness.ts` — strict config and sourced baseline resolution.
 - `cli/chain-execution.ts` — announce durable run identity early and pass the
   frozen baseline/global budget.
-- `cli/run/subcommand.ts` — invoke deadline/owner reconciliation before status or
-  watch and render enriched output.
-- `cli/drive/subcommand.ts` — persist baseline plus task-cap candidates and
-  reconcile before resume mutations.
-- `domains/shared/extensions/orchestration/chain-tool.ts` — preserve the global
+- `cli/run/subcommand.ts` — compose clock/control/projector ports, reconcile
+  before status/watch, pass cancellation, and render enriched output.
+- `cli/drive/subcommand.ts` — freeze Drive policy, reconcile/project compatibility
+  before status or resume mutation, and route managed finalization retries
+  through attempt effects.
+- `domains/shared/extensions/orchestration/chain-tool.ts` — preserve global
   timeout and publish early run identity.
-- `domains/shared/extensions/orchestration/driver-tool.ts` — freeze Drive
-  baseline/task cap.
-- `domains/shared/extensions/orchestration/run-control-tools.ts` — shared
-  reconciliation and summary contract.
+- `domains/shared/extensions/orchestration/driver-tool.ts` — freeze Drive policy
+  and start the new backend contract.
+- `domains/shared/extensions/orchestration/run-control-tools.ts` — pass tool
+  cancellation and compose conditional reconciliation/control/projection.
 - `domains/shared/extensions/orchestration/spawn-tool.ts` — inherit attempt
   context and register actual descendant settlement.
 - `lib/durable-runtime/types.ts`, `lib/durable-runtime/backends.ts`, and
-  `lib/durable-runtime/index.ts` — policy, authority, clock, descendant,
-  completion, summary, stop-dispatch, and conditional-store contracts.
-- New `lib/durable-runtime/liveness.ts` — pure deadline, clock, lapse,
-  race-mapping, trigger, and terminal-absorption decisions.
-- `lib/durable-runtime/file-store.ts` — locked deadline/authority gates,
-  conditional operations, evidence, sequence allocation, and absorbing run
-  finalization.
+  `lib/durable-runtime/index.ts` — policy, authority, host-clock, backend-control,
+  stop provenance, effect, compatibility, summary, and conditional-result
+  contracts.
+- New `lib/durable-runtime/liveness.ts` — pure hard/idle clock folding, deadline,
+  lapse, stop/effect race, and terminal-absorption decisions.
+- `lib/durable-runtime/file-store.ts` — step/event locks, conditional operations,
+  control/dispatch/effect evidence, lock-release outcomes, sequence allocation,
+  compatibility state, and absorbing finalization.
 - `lib/durable-runtime/scheduler.ts` and `lib/durable-runtime/scheduler-state.ts`
-  — compose the watchdog, reconciliation, activity, stop races, settlement, and
-  readiness without raw lifecycle writes.
+  — watchdog, two-phase backend start, local/fresh stop dispatch, effect/settlement
+  drain, readiness, and no raw lifecycle writes.
 - `lib/durable-runtime/run-start.ts` — reconcile new/resumed invocations and
-  forward the complete store plus injected clock/probe/stop-control ports.
+  forward the complete store, clock, owner, control, and compatibility ports.
 - `lib/durable-runtime/controller.ts` and `lib/durable-runtime/status.ts` —
-  idempotent status/watch reconciliation and normalized terminal snapshots.
-- `lib/entity-file-lock.ts` and new `lib/process/process-identity.ts` — bounded
-  exact-owner locking and process probing.
+  cancellable status/watch reconciliation, fresh-process control, compatibility
+  projection, and normalized terminal snapshots.
+- `lib/entity-file-lock.ts` — outcome-returning release, release-ready exact-owner
+  marker, bounded acquisition, and conservative recovery.
+- `lib/process/process-group.ts` and new `lib/process/process-identity.ts`,
+  `lib/process/host-clock.ts`, and `lib/process/controlled-process.ts` — exact
+  process/group identity, cross-process host-active samples, safe fresh-process
+  signaling/probing, and start-before-input control registration.
 - `lib/orchestration/types.ts`, `lib/orchestration/durable-chain-compiler.ts`,
   `lib/orchestration/durable-chain-runner.ts`, and
-  `lib/orchestration/chain-runner.ts` — frozen attempt baseline, preserved
-  global budget, start handle, activity, and settlement.
+  `lib/orchestration/chain-runner.ts` — frozen policy, preserved global budget,
+  early start handle, activity, control, and settlement.
 - `lib/orchestration/activity-bus.ts`, `lib/orchestration/agent-spawner.ts`,
   `lib/orchestration/session-factory.ts`, new
   `lib/orchestration/attempt-context.ts`, and
-  `lib/orchestration/spawn-tracker.ts` — useful activity, session settlement,
-  descendant truth, and delivery separation.
+  `lib/orchestration/spawn-tracker.ts` — Pi start handle, session control,
+  useful activity, descendant truth, and delivery separation.
 - `lib/driver/types.ts`, `lib/driver/drive-graph-compiler.ts`,
-  `lib/driver/event-stream.ts`, `lib/driver/durable-events.ts`,
-  `lib/driver/drive-scheduler-backend.ts`, and
-  `lib/driver/drive-graph-runner.ts` — policy composition, authority/deadline-
-  bound projection, completion, and settlement.
-- `lib/driver/run-one-task.ts`, `lib/driver/driver.ts`, and
-  `lib/driver/run-step.ts` — preserve the existing cap while routing caller
-  cancellation and launcher reaping through persisted settlement.
-- `lib/driver/durable-steps.ts` — replace raw compatibility lifecycle writes
-  with accepted conditional transitions.
-- `lib/driver/shell-command-finalizer.ts` — authority/deadline-bound completion
-  and descendant settlement.
-- `lib/driver/backends/types.ts`, `lib/driver/backends/orchestration-adapter.ts`,
+  `lib/driver/drive-graph-runner.ts`, `lib/driver/run-state.ts`,
+  `lib/driver/event-stream.ts`, and `lib/driver/durable-events.ts` — frozen
+  policy, attempt/effect identity, normalized-terminal compatibility projection,
+  and authority-bound events/completion.
+- `lib/driver/drive-scheduler-backend.ts`, `lib/driver/run-one-task.ts`,
+  `lib/driver/driver.ts`, and `lib/driver/run-step.ts` — immediate attempt
+  controller, controlled descendants, removal of the old timeout race, and
+  launcher settlement aligned to the persisted grace.
+- `lib/driver/durable-steps.ts` — replace raw compatibility writes with accepted
+  conditional transitions and effect receipts.
+- `lib/driver/drive-finalization.ts`, `lib/driver/state-commit.ts`,
+  `lib/driver/shell-command-finalizer.ts`, and `lib/driver/lock.ts` — thread
+  authority/effect fence, stage Git/task mutations, enforce lock order, and
+  publish only through fenced commit points.
+- `lib/driver/backends/types.ts`, `lib/driver/backends/bun-runtime.ts`,
+  `lib/driver/backends/orchestration-adapter.ts`,
   `lib/driver/backends/cli-process.ts`, `lib/driver/backends/codex.ts`,
   `lib/driver/backends/claude-cli.ts`, and
-  `lib/driver/backends/cosmonauts-subagent.ts` — honest capability,
-  full-evidence, useful-activity, stop control, and process/session settlement
-  envelopes.
-- `docs/orchestration.md` — policy composition, early run identity, the five
-  first-opportunity triggers, status/watch mutation and possible grace wait,
-  replacement-run recovery, no-external-service availability boundary, and
-  follow-up slices.
+  `lib/driver/backends/cosmonauts-subagent.ts` — replace result-only run with
+  start/control/completion/settlement and publish exact control before work.
+- `lib/tasks/task-manager.ts` and `lib/tasks/file-system.ts` — prepare Drive task
+  status bytes and expose one atomic, effect-fenced publication point while
+  retaining normal task-update behavior elsewhere.
+- `docs/orchestration.md` — policy composition, early identity, control and
+  effect semantics, first-opportunity triggers, mutating observation/cancellation,
+  compatibility convergence, replacement-run recovery, availability boundary,
+  and follow-up slices.
 
 ## Risks
 
 - **R-003 — Architecture ground is stale until synchronized.** Stage 0 updates
-  D-007 and the universal envelope to amended INV-002 and the accepted default.
-  If that synchronization is disputed, stop for human architecture review.
-- **R-004 — A backend may not settle honestly.** Repair or refuse that
-  population; if generalized capability behavior is needed, pull the relevant
-  AC-014 work forward rather than ship mixed semantics.
-- **R-005 — Direct host-source mutation is not rollback-safe.** Store fencing
-  protects scheduler-owned promotion, not arbitrary bytes from an unconfirmed
-  process during an availability gap or settlement grace. Any backend that
-  reports settlement while it can still mutate must be repaired or refused.
-- **R-006 — Process identity is platform-sensitive.** Unsupported checks are
-  uncheckable, never PID-only alive/dead. Refuse launch where even the current
-  process cannot be identified honestly.
-- **R-007 — Filesystem locking assumptions may fail on target filesystems.** A
-  failed capability probe blocks launch; never continue unlocked.
-- **R-008 — Write-on-observation is a compatibility and latency change.** Limit
-  it to §5/§7 conditional reconciliation, make every mutation visible, and
-  document that an overdue `status`/`watch` may wait up to the remaining
-  30-second cancellation grace. Strictly read-only demand requires a separately
-  approved observation surface, not a silent bypass.
-- **R-009 — Clock providers differ across sleep/reboot.** Epoch mismatch uses
-  §4's conservative rule. A provider unable to expose honest comparability
-  cannot silently claim idle-enforcement support; the absolute wall deadline
-  and permanent fence still apply.
-- **R-010 — Multi-file crash points can expose partial evidence.** Step state is
-  authority and repair is one-way from it. Any crash point that permits two
-  owners, duplicate logical stop requests, or obsolete promotion requires a
-  storage-boundary revision.
-- **R-011 — Legacy runs lack policy snapshots.** They remain observable but not
-  resumable; retroactive migration requires separate ratification.
-- **R-012 — Structural analysis is unavailable.** Newly discovered lifecycle
-  writers must be added here and routed through conditional store operations; a
-  parallel authority or promotion path blocks completion.
+  D-007 and the universal envelope. If synchronization is disputed, stop for
+  human architecture review.
+- **R-004 — A backend may not expose honest control or settlement.** Repair or
+  refuse that population. Do not retain `Backend.run()` behind an adapter that
+  fabricates a handle; if generalized capability behavior is required, pull the
+  relevant AC-014 work forward.
+- **R-005 — Direct host-source mutation is not rollback-safe.** Effect fencing
+  covers Driver-owned commits/task publication, not arbitrary bytes from an
+  unconfirmed backend. A backend that can keep mutating after reported
+  settlement must be contained, repaired, or refused.
+- **R-006 — Host/process identity and active clocks are platform-sensitive.** PID
+  alone, process-relative monotonic time, or an uptime source that counts sleep
+  is insufficient. Refuse managed launch where exact identity and a truthful
+  host-active clock cannot be established.
+- **R-007 — Filesystem locking assumptions may fail.** A failed hard-link/atomic-
+  replace capability blocks launch. A release-unconfirmed result may not be
+  treated as success-plus-follow-up; inability to create or recover the exact
+  release-ready marker stops the slice.
+- **R-008 — Write-on-observation changes latency.** Limit mutation to the
+  reconciler/projector, expose every transition, and honour caller cancellation
+  without rolling back intent. A strictly read-only observer requires separate
+  approval, not a silent bypass.
+- **R-009 — Clock discontinuity can stop useful work conservatively.** That loss
+  is preferable to extending a hard ceiling without evidence. If the platform
+  cannot produce D-015 samples, revise the adapter or refuse launch rather than
+  count suspension as idle.
+- **R-010 — External effect recovery has crash points.** Exact expected/candidate
+  evidence and idempotent IDs are mandatory. If Git/task publication cannot be
+  reduced to one recoverable point, stop Stage 6; do not substitute a pre-check.
+- **R-011 — Legacy runs lack policy/authority snapshots.** They remain observable
+  but are not assigned fabricated managed-resume authority; migration requires
+  separate ratification.
+- **R-012 — Structural analysis is unavailable.** Newly discovered lifecycle,
+  task, Git, completion, event, process, or compatibility writers must be routed
+  through the named contracts. A parallel authority path blocks completion.
 - **R-013 — AC-018 spans changed paths.** Any summary, spawn rejection, unrelated
   Drive policy, or coordinator/harness regression blocks this slice rather than
-  being deferred to AC-017.
+  being deferred.
+- **R-014 — Compatibility projection can fail after normalized terminalization.**
+  Keep terminal state absorbing, expose projection failure, and retry only the
+  projection. If a legacy surface can still start work or overwrite completion,
+  stop the cutover.
+- **R-015 — Lock ordering can deadlock effects.** Repository lock → step lock →
+  event lock is the only allowed order; task publication must not call back into
+  a path that acquires them in reverse. Discovery of a reverse path stops the
+  stage for redesign.
+- **R-016 — Fresh-process control is a trust boundary.** Only framework-minted,
+  exact descriptors may be signaled. Persisted command lines and project files
+  are evidence, never execution authority.
 
 ## Implementation Order
 
 0. **Ratified-ground synchronization.** Update the architecture record to amended
-   INV-002 and the four-hour default; carry D-013 into the shared contracts.
-   H-001 and H-002 are closed and must not be reopened by implementation.
-1. **Architecture and shared contracts.** Freeze policy composition, clock
-   epochs, authority, deadline-fenced store operations, the five reconciliation
-   triggers, race mapping, early Chain start handle, and backend stop/settlement
-   contracts.
-2. **Atomic ownership/evidence foundation (B-007, B-011).** Establish observable
-   failing cases for losing claims, allocation/order collisions, raw-writer
-   bypass, post-deadline/obsolete result, duplicate logical stop, and terminal
-   rewrite; then harden locks and implement conditional operations before
-   refactoring callers.
+   INV-002 and the four-hour default; carry D-013 into shared contracts. H-001
+   and H-002 remain closed.
+1. **Contracts and platform proofs.** Freeze policy composition, D-015/D-020
+   clock samples, authority, complete stop provenance, lock outcomes, two-phase
+   backend start/control, effect intent/receipt, compatibility projection, and
+   early Chain start handle. Prove each current platform/backend can provide its
+   declared identity before implementation fans out.
+2. **Atomic authority/evidence foundation (B-007, B-011).** Begin with observable
+   losing-claim, event-order, raw-writer, obsolete-result, duplicate-stop,
+   terminal-rewrite, and release-unconfirmed failures. Harden entity locks and
+   implement conditional store transitions, including dispatch and effect state,
+   before refactoring callers.
 3. **Policy and launch composition (B-001, B-005, B-006).** Establish absent,
    partial, explicit, invalid, four-hour default, Chain-global, Drive-minimum,
-   resume, and early-ID outcomes; wire both CLI/tool frontends while retaining
-   the old Drive timer.
-4. **Activity, epochs, renewal, and reconcile-on-regain (B-002, B-003, B-004,
-   B-008).** Implement useful activity, fresh-process epoch mismatch,
-   suspension, renewal, store deadline fencing, and every §5 trigger/§7 row
-   through scheduler tick, status, watch, resume, and new invocation.
-5. **In-process watchdog and settlement (B-001, B-009).** Implement timer wake-up,
-   stable one-shot stop intent/idempotent dispatch, caller/deadline races,
-   descendants, Pi/CLI/finalizer settlement, fixed-grace blocking, and rejected
-   late completion. Do not alter spawn waiter delivery.
-6. **Drive cutover (B-006, B-007).** Make all current adapters/finalizers satisfy
-   settlement and fence every Drive-owned projector/side effect; only then
-   remove the old abandoning timer and align launcher reaping.
+   resume, and early-ID outcomes. Wire both CLI/tool frontends while retaining
+   the old Drive timer until the backend cutover.
+4. **Host clock, activity, renewal, and regain (B-002, B-003, B-004, B-008).**
+   Establish same-host fresh-observer, real suspension, reboot/epoch change,
+   backward wall, repeated polling, and both-hard-proof outcomes. Implement all
+   five reconciliation triggers before owner-lapse handling.
+5. **Backend control and settlement (B-001, B-009).** Replace lower Driver
+   `Backend.run()`, split CLI process start/completion, add Pi start handles,
+   register every process/session before work, implement local and fresh control,
+   persist dispatch outcomes, drain descendants/effects, and block on fixed
+   grace. Do not alter spawn waiter delivery.
+6. **Drive fenced effects and compatibility cutover (B-006, B-007).** Give the
+   concrete source commit, task transition, state commit, resume retry, event,
+   and completion owners attempt authority. Stage and publish each effect through
+   the store lock, add exact crash recovery, make normalized terminal state drive
+   legacy completion/status/resume, then remove the old abandoning timer and
+   align launcher reaping.
 7. **Finalization and operator contract (B-010 plus observation behaviors).**
-   Implement concrete no-runnable-work outcomes, uniform rows/events, possible
-   observation grace wait, and replacement-run guidance.
+   Implement concrete no-runnable-work outcomes, complete terminal stop/effect
+   rows, lock/projection diagnostics, cancellable grace waits, uniform JSON/tool
+   summaries, and replacement-run guidance.
 8. **Preservation and slice closure (B-012).** Walk AC-001 through AC-013 and
-   AC-018 through every currently supported Chain/Drive mode and backend,
-   including no-process gaps, fresh-process reconstruction, every first-
-   opportunity trigger, and concurrent observation. Confirm AC-014 through
-   AC-017 remain explicit follow-ups and no AC-015 trial landed early.
+   AC-018 through every supported Chain/Drive mode and backend, including fresh
+   process control, no-process gaps, host suspension versus observer replacement,
+   backward clocks, effect crashes, unconfirmed lock release, foreign Drive
+   terminalization, cancelled observers, and concurrent watch paging. Confirm
+   AC-014 through AC-017 remain explicit follow-ups and no AC-015 delivery change
+   landed early.
 
-For code work, each stage begins from an observable failing behavior, adds the
-minimum implementation, then refactors toward these boundaries. Discovery of an
-unsettleable backend, raw lifecycle writer, unfenced promotion, non-atomic
-operation, unsupported owner probe, or collision with INV-001 through INV-007
-stops the stage and uses the deviation protocol.
+For code work, every stage begins from an observable failing behavior, adds the
+minimum implementation, and then refactors toward these boundaries. Discovery
+of a result-only backend, private unpersisted process/session, per-process-only
+clock, unfenced external publication, raw lifecycle writer, unrecoverable effect
+intent, unsafe lock follow-up, compatibility overwrite, non-atomic transition,
+or collision with INV-001 through INV-007 stops the stage and invokes the
+deviation protocol.
