@@ -75,6 +75,22 @@ Invariants — mechanism yields to these:
   name what it replaces. (human: agents need "good personas, context and
   coordination", not constraints in excess)
 
+## Architecture Context
+
+Source of truth for the derived code-structure map:
+`missions/architecture/code-structure-map.md`. That record reserves the
+"orphan files" health metric for the map's forward work. Stage 3's
+reachability command is that metric's first delivery, built on `fallow`
+rather than on the map's TypeScript-compiler substrate, because it must gate
+today: it is a check, not a map. The two coexist: the map stays derived and
+regenerated; `missions/architecture/staged-code.toml` is curated intent (the
+declared public entries and the deliberately unwired modules with their
+owners), the same class of input as the intended-architecture record the map
+compares itself against. If the map later computes orphan health itself, it
+consumes `staged-code.toml` and the command's rules move behind the map
+contract; nothing in Stage 3 depends on which side computes it. Added
+2026-09-22 (`review-6.md PR-005`).
+
 ## Decision Log
 
 - **D-001 - Drop `Seam`, `Test`, `Marker`, and the artifact-conformance gate outright**
@@ -296,7 +312,7 @@ Invariants — mechanism yields to these:
 - **D-021 - Mutation probes have a reproducible sample and run in a throwaway worktree**
   - Decision: the population is every test file under `tests/` that imports from `lib/`, `cli/`, `domains/` or `scripts/`; strata are the first directory level under `tests/`; each stratum contributes the larger of three files and ten percent of its files; within a stratum files are sorted by path and taken at an even stride from the first. Probes run in a throwaway git worktree of the committed tree, never in the working checkout, so an interruption leaves nothing broken behind; within it, mutated files are restored from `cp` backups. The record names the commit, the population count, each stratum's size, and the stride.
   - Why: `review-1.md PR-008`; `review-2.md PR-006, PR-007`. The audit tooling's own suites import only from `scripts/`, and Stage 2 keeps them in scope.
-  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-024 and D-030, 2026-09-22)*
+  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-024, D-030 and D-032, 2026-09-22)*
   - Supersedes: D-008 in part (2026-09-22)
 - **D-022 - The superseded audit plan has a lifecycle exit**
   - Decision: the runtime has no `superseded` plan status and archive refuses while a linked task is open; of the audit plan's 22 tasks, 20 are Done and only `TASK-706` and `TASK-707` are open. When Stage 2's re-spec lands they close `Done` keeping the `superseded` label and a note naming this plan, the audit plan is marked `completed`, and it is archived in the ordinary way.
@@ -336,7 +352,7 @@ Invariants — mechanism yields to these:
 - **D-028 - The consumers of a task status are found by search, and the parser is one of them**
   - Decision: D-026's "every shipped consumer" is not a list the plan remembers but the result of searching production code for the status literals; TASK-710 records the list it found. Known today and owned by Stage 3: the persisted-task parser `lib/tasks/task-parser.ts` (its own `VALID_STATUSES`, unknown values mapped to `To Do` — a `Cancelled` task would round-trip as `To Do`), Drive's plan-completion candidate in `lib/driver/drive-graph-runner.ts` (all `Done`), the status list in `domains/shared/capabilities/tasks.md`, and the `Blocked`-writing sites in the driver, which do not change. The AC: a task saved as `Cancelled` is read back as `Cancelled` by a fresh process, and a plan whose tasks are all `Done` or `Cancelled` is a completion candidate.
   - Why: `review-5.md PR-001`; `review-4.md PR-001` carried.
-  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Decided by: worker-proposed, 2026-09-22 (derived) *(superseded in part by D-031, 2026-09-22)*
   - Supersedes: D-026 in part (2026-09-22)
 - **D-029 - The public-entry list is declared once, machine-readably**
   - Decision: `missions/architecture/staged-code.toml` also carries `public = [...]`, the deep-importable modules, moved there from prose; `docs/fallow-exceptions.md` points at it. The reachability check asserts that `fallow.toml` `entry` equals `public` ∪ `staged[].path` exactly — an `entry` in neither fails, and a `public` or staged path absent from `entry` fails — so nothing can be made reachable by adding it to `entry` alone.
@@ -346,6 +362,17 @@ Invariants — mechanism yields to these:
 - **D-030 - The probe unit is a test declaration**
   - Decision: D-021 selects files; within each sampled file the unit probed is one declaration — the median `it`/`test` declaration by line order, ties to the earlier — so the record's killed/survived row and B-008's "sampled test declaration" name the same thing, and the surviving probe tool's one-declaration contract fits.
   - Why: `review-5.md PR-003`.
+  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Supersedes: D-021 in part (2026-09-22)
+
+- **D-031 - The prose contracts that say "all Done" change with the status**
+  - Decision: D-028's search covers authored prose as well as code. The shipped guidance that today makes completion conditional on every task being `Done` — `bundled/coding/prompts/coordinator.md` (exit on all `Done`; completion on all `Done`/`Blocked`), `bundled/coding/prompts/quality-manager.md` (plan completed when all `Done`), `domains/shared/skills/drive/SKILL.md` and `domains/shared/capabilities/drive.md` (default selection is all non-`Done`), `external-skills/cosmonauts/SKILL.md` and `external-skills/cosmonauts/plans/SKILL.md` — is rewritten so that `Cancelled` counts as closed wherever `Done` does and is never selected for work. Authored prose: verified by reviewed diff (D-005), owned by TASK-710.
+  - Why: `review-6.md PR-001`; `review-4.md PR-001` carried.
+  - Decided by: worker-proposed, 2026-09-22 (derived)
+  - Supersedes: D-028 in part (2026-09-22)
+- **D-032 - The probe population is defined by reach, not by direct import**
+  - Decision: a test file is in D-021's population when its module graph — following relative imports, including through `tests/helpers/` and dynamic imports those helpers perform — reaches `lib/`, `cli/`, `domains/` or `scripts/`, or when it runs a shipped executable under `bin/` as a subprocess. A file that only exercises other test code is out. The census records, per file, which rule admitted it.
+  - Why: `review-6.md PR-004` — a direct-import census excluded `tests/cli/dump-prompt.test.ts` (drives `bin/cosmonauts`) and `tests/helpers/packages.test.ts` (reaches production through a helper), exactly the entry-point tests INV-005 most wants probed.
   - Decided by: worker-proposed, 2026-09-22 (derived)
   - Supersedes: D-021 in part (2026-09-22)
 
@@ -518,6 +545,9 @@ D-026/D-028: `lib/tasks/task-types.ts`, `lib/tasks/task-parser.ts`,
 `lib/orchestration/chain-runner.ts`, `lib/plans/archive.ts`,
 `domains/shared/extensions/tasks/index.ts`,
 `domains/shared/extensions/plans/index.ts`, `cli/tasks/commands/shared.ts`,
+`bundled/coding/prompts/{coordinator,quality-manager}.md`,
+`domains/shared/skills/drive/SKILL.md`, `domains/shared/capabilities/drive.md`,
+`external-skills/cosmonauts/SKILL.md` (D-031),
 `lib/artifact-viewer/loaders.ts`, `domains/shared/skills/task/SKILL.md`,
 `external-skills/cosmonauts/{tasks,plans}/SKILL.md`,
 `missions/plans/test-health-audit/plan.md`, `TASK-706`, `TASK-707`, and the modules and tests the reachability run
