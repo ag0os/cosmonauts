@@ -178,8 +178,10 @@ R-012.
     universal envelope before runtime code.
   - Alternatives: silent supersession; implement stale wording.
   - Why: It was intended to keep architecture and ratified policy aligned.
-  - Decided by: planner-proposed, 2026-09-21 (never a human ruling; the
-    round-7 planner relabelled it "human", corrected the same day)
+  - Decided by: planner-proposed, 2026-09-21 (the first planner run labelled
+    it "human", citing `ruling-packet.md` Q1 and the spec ratification; neither
+    says anything about the architecture record — it was the planner's
+    inference. Corrected 2026-09-22.)
   - Superseded by: D-033 — the doer session's derived constraint that this
     revision must not edit the architecture record (2026-09-22).
 
