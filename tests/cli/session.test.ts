@@ -38,15 +38,15 @@ vi.mock("../../lib/agents/session-assembly.ts", () => ({
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
-	AuthStorage: {
-		create: () => ({ reload: vi.fn(), hasAuth: vi.fn(() => false) }),
-	},
 	createAgentSessionFromServices: mocks.createAgentSessionFromServices,
 	createAgentSessionRuntime: mocks.createAgentSessionRuntime,
 	createAgentSessionServices: mocks.createAgentSessionServices,
 	getAgentDir: () => "/tmp/pi-agent",
-	ModelRegistry: {
-		create: () => ({ find: vi.fn(() => undefined) }),
+	ModelRegistry: class {
+		find = vi.fn(() => undefined);
+	},
+	ModelRuntime: {
+		create: vi.fn(async () => ({ kind: "model-runtime" })),
 	},
 	SessionManager: {
 		continueRecent: mocks.continueRecent,

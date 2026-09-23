@@ -1,11 +1,11 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import {
-	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
 	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type {
@@ -65,8 +65,8 @@ class PiArchitectureNarrativeProvider implements NarrativeProvider {
 async function createNarrativeSession(
 	options: PiArchitectureNarrativeProviderOptions,
 ): Promise<PiSession> {
-	const authStorage = AuthStorage.create();
-	const modelRegistry = ModelRegistry.create(authStorage);
+	const modelRuntime = await ModelRuntime.create();
+	const modelRegistry = new ModelRegistry(modelRuntime);
 	const agentDir = getAgentDir();
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: options.projectRoot,
@@ -83,8 +83,7 @@ async function createNarrativeSession(
 	const { session } = await createAgentSession({
 		cwd: options.projectRoot,
 		agentDir,
-		authStorage,
-		modelRegistry,
+		modelRuntime,
 		model: resolveModel(options.model ?? FALLBACK_MODEL, modelRegistry),
 		noTools: "all",
 		resourceLoader,

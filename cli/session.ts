@@ -36,13 +36,13 @@ export class GracefulExitError extends Error {
 
 import {
 	type AgentSessionRuntime,
-	AuthStorage,
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 	getAgentDir,
 	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../lib/agents/resolver.ts";
@@ -534,11 +534,11 @@ export async function createSession(
 		extraExtensionPaths,
 	} = options;
 
-	// Share a single AuthStorage and ModelRegistry across session switches
+	// Share a single ModelRuntime and ModelRegistry across session switches
 	// (handoff, /agent, /new) so custom models from models.json resolve
 	// through the same registry Pi uses for request auth.
-	const sharedAuthStorage = AuthStorage.create();
-	const sharedModelRegistry = ModelRegistry.create(sharedAuthStorage);
+	const sharedModelRuntime = await ModelRuntime.create();
+	const sharedModelRegistry = new ModelRegistry(sharedModelRuntime);
 
 	const params = await buildSessionParams({
 		def,
@@ -607,8 +607,7 @@ export async function createSession(
 					// SessionManager would reopen old history and drop the link.
 					const services = await createAgentSessionServices({
 						cwd: effectiveCwd,
-						authStorage: sharedAuthStorage,
-						modelRegistry: sharedModelRegistry,
+						modelRuntime: sharedModelRuntime,
 						resourceLoaderOptions: newResourceLoaderOptions,
 					});
 					if (newParams.knowledgeSurfaceEnabled) {
@@ -640,8 +639,7 @@ export async function createSession(
 
 		const services = await createAgentSessionServices({
 			cwd: effectiveCwd,
-			authStorage: sharedAuthStorage,
-			modelRegistry: sharedModelRegistry,
+			modelRuntime: sharedModelRuntime,
 			resourceLoaderOptions,
 		});
 		if (params.knowledgeSurfaceEnabled) {

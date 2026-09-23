@@ -7,7 +7,7 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 Pi (`@earendil-works/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
-> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.80.6 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
+> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.87.1 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
 
 ## Source Of Truth
 
@@ -74,8 +74,7 @@ const { session } = await createAgentSession({
 |--------|------|---------|-------------|
 | `cwd` | `string` | `process.cwd()` | Working directory |
 | `agentDir` | `string` | `~/.pi/agent` | Global config directory |
-| `authStorage` | `AuthStorage` | From `agentDir/auth.json` | API key storage |
-| `modelRegistry` | `ModelRegistry` | Auto-created | Available models |
+| `modelRuntime` | `ModelRuntime` | From `agentDir/auth.json` and `models.json` | Canonical model catalog, provider, and authentication runtime |
 | `model` | `Model` | From settings | LLM model |
 | `thinkingLevel` | `ThinkingLevel` | `"medium"` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` |
 | `scopedModels` | `Array<{model, thinkingLevel?}>` | — | Models for cycling |
@@ -729,22 +728,25 @@ await runtime.switchSession("/path/to/other.jsonl");
 const messages = runtime.session.getUserMessagesForForking();
 ```
 
-## Auth Storage
+## Model Runtime and Registry
 
 ```typescript
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import {
+  ModelRegistry,
+  ModelRuntime,
+} from "@earendil-works/pi-coding-agent";
 
-const auth = AuthStorage.create("/path/to/auth.json");  // File-backed
-const auth = AuthStorage.inMemory();                     // Ephemeral
+const modelRuntime = await ModelRuntime.create({
+  authPath: "/path/to/auth.json",
+  modelsPath: "/path/to/models.json",
+});
+const registry = new ModelRegistry(modelRuntime);
 ```
 
-## Model Registry
-
-```typescript
-import { ModelRegistry } from "@earendil-works/pi-coding-agent";
-
-const registry = ModelRegistry.create(authStorage, "/path/to/models.json");
-```
+`ModelRuntime` is the canonical async SDK facade for models, providers, and
+authentication. `ModelRegistry` remains the synchronous compatibility facade
+exposed to extensions. Pass `modelRuntime` to `createAgentSession()`; the old
+`authStorage` and `modelRegistry` session options were removed in v0.80.8.
 
 Models are identified by `"provider/model-id"` strings. Use the new `Models` API for built-in catalog lookup:
 
@@ -756,10 +758,10 @@ const model = models.getModel("anthropic", "claude-sonnet-4-5");
 if (!model) throw new Error("Model not found");
 ```
 
-For Pi v0.80.6, GPT-5.6 Codex models are provider-specific entries:
-`openai-codex/gpt-5.6-sol`, `openai-codex/gpt-5.6-terra`, and
-`openai-codex/gpt-5.6-luna`. There is no bare `openai-codex/gpt-5.6`
-alias; use one of the named variants.
+Pi v0.87.1 includes `openai-codex/gpt-6-sol` and
+`openai-codex/gpt-6-luna`, plus `anthropic/claude-opus-5-5`. Model IDs remain
+provider-specific; resolve the exact `provider/model-id` from the runtime
+catalog rather than assuming a bare family alias.
 
 ## Lightweight LLM Calls (`pi-ai`)
 

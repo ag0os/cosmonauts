@@ -1,9 +1,9 @@
 import {
-	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
 	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type {
@@ -128,8 +128,8 @@ export function createPiCorpusJudgmentProvider(
 async function createJudgmentSession(
 	options: PiCorpusJudgmentProviderOptions,
 ): Promise<PiJudgmentSession> {
-	const authStorage = AuthStorage.create();
-	const modelRegistry = ModelRegistry.create(authStorage);
+	const modelRuntime = await ModelRuntime.create();
+	const modelRegistry = new ModelRegistry(modelRuntime);
 	const agentDir = getAgentDir();
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: options.projectRoot,
@@ -145,8 +145,7 @@ async function createJudgmentSession(
 	const { session } = await createAgentSession({
 		cwd: options.projectRoot,
 		agentDir,
-		authStorage,
-		modelRegistry,
+		modelRuntime,
 		model: resolveModel(options.model ?? FALLBACK_MODEL, modelRegistry),
 		noTools: "all",
 		resourceLoader,

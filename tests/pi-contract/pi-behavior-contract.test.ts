@@ -9,6 +9,7 @@ import {
 	createFauxCore,
 	fauxAssistantMessage,
 	fauxToolCall,
+	normalizeContext,
 } from "@earendil-works/pi-ai";
 import { stream as anthropicStream } from "@earendil-works/pi-ai/api/anthropic-messages";
 import { Type } from "typebox";
@@ -61,10 +62,12 @@ describe("pi contract: anthropic tool schema serialization", () => {
 			}[];
 		} = {};
 		const client = {
-			messages: {
-				create: (params: typeof captured) => {
-					captured = params;
-					throw new Error(CAPTURE_ONLY);
+			beta: {
+				messages: {
+					create: (params: typeof captured) => {
+						captured = params;
+						throw new Error(CAPTURE_ONLY);
+					},
 				},
 			},
 		};
@@ -89,9 +92,13 @@ describe("pi contract: anthropic tool schema serialization", () => {
 			],
 		};
 
-		const result = await anthropicStream(contractModel(), context, {
-			client: client as never,
-		}).result();
+		const result = await anthropicStream(
+			contractModel(),
+			normalizeContext(context),
+			{
+				client: client as never,
+			},
+		).result();
 
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toContain(CAPTURE_ONLY);
@@ -154,8 +161,7 @@ async function runToolBatch(probe: DispatchProbe): Promise<void> {
 		fauxAssistantMessage("done"),
 	]);
 	const context: AgentContext = {
-		systemPrompt: "contract",
-		messages: [],
+		messages: [{ role: "system", content: "contract", timestamp: 0 }],
 		tools: [probe.toolA, probe.toolB],
 	};
 	await runAgentLoop(
@@ -212,8 +218,7 @@ describe("pi contract: transformContext runs before every provider call", () => 
 		const probe = createDispatchProbe({ sequentialToolA: false });
 		const seenCallTexts: string[][] = [];
 		const context: AgentContext = {
-			systemPrompt: "contract",
-			messages: [],
+			messages: [{ role: "system", content: "contract", timestamp: 0 }],
 			tools: [probe.toolA],
 		};
 		await runAgentLoop(
@@ -283,8 +288,7 @@ describe("pi contract: thrown analysis provider errors", () => {
 			fauxAssistantMessage("done"),
 		]);
 		const context: AgentContext = {
-			systemPrompt: "contract",
-			messages: [],
+			messages: [{ role: "system", content: "contract", timestamp: 0 }],
 			tools: [tool],
 		};
 		const toolEndEvents: Array<{

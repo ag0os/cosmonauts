@@ -23,9 +23,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
-	AuthStorage: {
-		create: () => ({ kind: "auth-storage" }),
-	},
 	createAgentSession: mocks.createAgentSession,
 	DefaultResourceLoader: class {
 		private readonly options: {
@@ -79,8 +76,11 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 		}
 	},
 	getAgentDir: () => "/tmp/test-agent-dir",
-	ModelRegistry: {
-		create: () => ({ find: vi.fn(() => undefined) }),
+	ModelRegistry: class {
+		find = vi.fn(() => undefined);
+	},
+	ModelRuntime: {
+		create: vi.fn(async () => ({ kind: "model-runtime" })),
 	},
 	SessionManager: {
 		open: mocks.sessionOpen,

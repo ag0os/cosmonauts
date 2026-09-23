@@ -13,11 +13,11 @@ const piMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@earendil-works/pi-co" + "ding-agent", () => ({
-	AuthStorage: { create: vi.fn(() => ({ kind: "auth" })) },
-	ModelRegistry: {
-		create: vi.fn(() => ({
-			find: vi.fn((provider: string, id: string) => ({ provider, id })),
-		})),
+	ModelRegistry: class {
+		find = vi.fn((provider: string, id: string) => ({ provider, id }));
+	},
+	ModelRuntime: {
+		create: vi.fn(async () => ({ kind: "model-runtime" })),
 	},
 	DefaultResourceLoader: class {
 		constructor(options: unknown) {
