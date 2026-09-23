@@ -1,20 +1,17 @@
 # qm-chain-safety — coordinator status
 
-Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. HEAD `ac0c37b`. Not pushed.
+Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. HEAD `1930dda`. Not pushed.
 
 ## State (2026-09-23)
 
-- **Done:**
-  - branch created;
-  - plan created, with `spec.md` (Intent drafted, AC-001..AC-016, named non-goals) and a seed `plan.md` holding Decision Log D-001 (the eight decisions, human, relayed) and D-002 (no QM for this plan's verification);
-  - ROADMAP item `qm-chain-safety` removed.
-- **Running:** nothing.
-- **Blocked on:** human ratification of the spec `## Intent` (below). No backlog work starts until the Intent is ratified.
-- **Next after ratification:** `/spec-to-backlog qm-chain-safety`, then `/implement-plan qm-chain-safety`, with the QM step replaced per D-002.
+- **Done:** spec + seed plan (D-001, D-002); roadmap item removed; **Intent INV-001..005 ratified by the human as drafted** (`1930dda`); both consequences acknowledged; decisions 6/7 stay ACs.
+- **Running:** `/spec-to-backlog` Phase 1 — `planner -> plan-reviewer` chain (background; log in the coordinator scratchpad `chain-plan.log`). Do not edit `plan.md` while it runs.
+- **Blocked on:** nothing.
+- **Next:** Phase 2 independent review workflow → Phase 3 revision → task-manager → coverage + compliance review → `/implement-plan` (QM replaced per D-002).
 
 ## Needs the user
 
-### 1. Ratify the Intent (spec `## Intent`, verbatim)
+### 1. ~~Ratify the Intent~~ — RATIFIED 2026-09-23 (relayed). Text kept for reference.
 
 Goal: a Quality Manager run can only produce findings. It cannot damage the work it reviews, it cannot mistake another run's record for its own, and its gates cannot be passed by hiding a finding.
 
@@ -28,7 +25,7 @@ Ranking: INV-001 wins over availability (a review that cannot be isolated does n
 
 Decisions 6 (performance P1 needs measured cost; a lens never closes its own finding alone) and 7 (model diversity) appear as AC-013 and AC-014, not as invariants. They are reviewer policy, not properties a mechanism could collide with. Say so if you want them promoted.
 
-### 2. Consequences to acknowledge (they follow from decision 1; no new choice)
+### 2. Consequences — ACKNOWLEDGED 2026-09-23 (relayed)
 
 - The named chains that end in `quality-manager` (`bundled/coding/chains.ts`, five chains) will end at a findings report, not a remediated tree. Remediation becomes a separate invocation.
 - `execution-liveness` (TASK-712..719, all To Do) lands after this plan and rebases onto it. Its ratified AC-015 (a timed-out wait never cancels the child) is why aborting orphaned children is a non-goal here. Worktree isolation makes orphans harmless to your checkout instead.
