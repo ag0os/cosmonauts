@@ -86,7 +86,7 @@ For the next coordinator. The brief is `.shepherd/work/in-progress/framework-hea
 questions under `## Needs the user` and stop.
 
 **State.** Brief steps 1–2 are done. On framework-health, Stage 2 is closed and Stage 3 (TASK-708..710)
-is implemented and reviewed; only its final verification remains. All four framework-health tasks
+is implemented, verified (QM plus codex rounds ending SHIP), and closed. All four framework-health tasks
 are Done in the task files. Execution-liveness has a backlog (TASK-712..719, all To Do). H-004 is
 resolved (architecture D-007 amended, D-042). Nothing else is open with the user.
 
