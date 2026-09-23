@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `8e00c00` on `feature/framework-health` (not pushed), clean.
+HEAD: `05b021e` on `feature/framework-health` (not pushed), clean.
 
 ## Done
 
@@ -39,13 +39,13 @@ HEAD: `8e00c00` on `feature/framework-health` (not pushed), clean.
   first (`6d6e9db`). The re-review says SHIP (`1ec9f99` corrects one comment). Suite 3,017/3,017.
   Known low-severity limitation: a malformed archived dependency file fails closed with a
   misleading "scheduler drained" diagnosis. This is a pre-existing gray-matter quirk, not fixed.
-- **Waiting for 15:29 local** (the openai-codex account's 5h window). Then the QM (D-023's
-  shipped verification path) and an independent codex review of Stage 3, then TASK-708..710
-  close-out.
-- Codex model switched to `gpt-5.6-sol` (user, relayed 2026-09-23). Reviews use
-  `-c model_reasoning_effort=high`. Drive runs get `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-5.6-sol -c
-  model_reasoning_effort=medium"`; `~/.codex/config.toml` is left as it is. The QM agents already
-  run on `gpt-5.6-sol`. The usage limit is account-wide, so `gpt-5.6-sol` is also blocked until 15:29.
+- Codex model: back to `gpt-6-sol` after the user's subscription upgrade (relayed 2026-09-23). Medium
+  effort by default (the `~/.codex/config.toml` default, so Drive needs no override); reviews use
+  high. The usage limit is lifted. The QM chain and its Pi-side reviewers stay on
+  `openai-codex/gpt-5.6-sol`: Pi 0.80.6's model catalog has no `gpt-6-sol`, so their shipped
+  definitions can't move until the Pi upgrade branch lands.
+- Codex Stage 3 review (`gpt-6-sol`, high) is running; the QM runs after it. They are never run
+  together, because both were OOM-killed when run concurrently before.
 
 ## Noticed (no action needed now)
 
