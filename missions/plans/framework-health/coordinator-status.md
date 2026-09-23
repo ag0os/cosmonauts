@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `e445a8e` on `feature/framework-health` (not pushed). The TASK-710 work is uncommitted, in progress.
+HEAD: `82e4a80` on `feature/framework-health` (not pushed), clean.
 
 ## Done
 
@@ -27,10 +27,15 @@ HEAD: `e445a8e` on `feature/framework-health` (not pushed). The TASK-710 work is
 - **TASK-709 done** (Drive/codex). Deleted `run-run-loop.ts`, `spawn-compiler.ts` and
   `harness-adapters/index.ts` with their tests. `check:reachability` reports 199/199 and exits 0.
   Suite 2,994/2,994.
-- **TASK-710 in progress.** The codex worker hit its usage limit (the 5h window resets at
-  15:29 local). A Claude worker is finishing it from the partial diff (backup in the scratchpad).
-- Still to do: gates, then an independent review of Stage 3. Codex is unavailable until 15:29,
-  so either wait for it or use another reviewer. QM (D-023) runs on a committed tree only.
+- **TASK-710 done** (`82e4a80`). A codex worker started it and hit the account usage limit; a
+  Claude worker finished it from the partial diff, with red evidence per AC. `Cancelled` is wired
+  through all consumers. TASK-706/707 are Cancelled with byte-identical ACs and notes, and
+  test-health-audit is archived. It also fixed a pre-existing coordinator bug: the `task_list`
+  filter had been renamed, so the "ready" listing ignored dependencies. Suite 3,004/3,004; lint,
+  typecheck, check-artifacts and reachability are clean.
+- **Stage 3 verification:** an independent Claude correctness review is running now. The QM
+  (D-023) and the codex review both run on the openai-codex account, which is at its 5h limit
+  until **15:29 local**. They run after the reset.
 
 ## Noticed (no action needed now)
 
