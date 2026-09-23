@@ -4,113 +4,133 @@ title: >-
   reviews
 status: active
 createdAt: '2026-09-23T20:56:11.879Z'
-updatedAt: '2026-09-23T22:18:01.261Z'
+updatedAt: '2026-09-23T22:53:12.000Z'
 ---
 
 ## Overview
 
-This planned feature delivers the authoritative `spec.md` as twelve behavior
-clusters, covering AC-001 through AC-016 without reopening any excluded
-non-goal. The spec's `## Intent`, `## Scope`, excluded items, and `##
-Assumptions` remain authoritative verbatim; this plan does not restate or amend
-them.
+This plan delivers the authoritative `spec.md` as twelve behaviors covering
+AC-001 through AC-016 without reopening any excluded non-goal. The spec's
+`## Intent`, `## Scope`, excluded items and `## Assumptions` stay authoritative;
+this plan cites them and does not restate them.
 
-The Quality Manager (QM) remains one outer assessment agent. It does not migrate
-the panel to a declared graph, add a general mutable-worktree layer, cancel
-timed-out children, change the 200-character summary, generalize persisted
-attempt evidence, or introduce remediation. A QM-specific launch boundary takes
-an independent detached snapshot, applies a host-owned restricted review
-profile, captures reviewer output from correlated child completions, persists
-QM-only evidence, and returns findings. Remediation remains a separate caller
-action through tasks, Drive, and independent review.
+The Quality Manager (QM) remains one outer assessment agent. At its launch
+boundary, host code:
 
-This plan lands before `execution-liveness` (TASK-712..719, all To Do). It
-preserves that spec's AC-015, AC-016, and AC-018: giving up a child wait does not
-cancel the child; this slice persists only QM evidence; and `StepResult.summary`
-remains the existing 200-character orientation value.
+- takes a private snapshot of the reviewed state;
+- prepares the review materials;
+- runs the configured project checks there;
+- gives the QM and its panel a restricted, shell-free session profile;
+- captures each reviewer's final text as run-owned evidence;
+- finalizes a complete report before the step returns.
 
-Implementation is blocked by D-010. Ratified AC-003 requires every tracked and
-untracked checkout file to remain byte-identical, while AC-007 requires a new
-tracked summary under that checkout on every exit. The design below keeps all
-review-agent writes in a private snapshot and restricts the unavoidable source
-writes to host-owned run evidence plus the exact plan summary, but a human must
-amend one criterion before task creation or code.
+The QM makes one assessment pass and returns findings. Remediation stays a
+separate caller action through tasks, Drive and independent review.
+
+It does not:
+
+- migrate the panel to a declared graph;
+- implement the runtime's generic `WorktreeSpec.isolated`;
+- cancel timed-out children;
+- change the 200-character stage summary;
+- generalize persisted attempt evidence.
+
+This plan lands before `execution-liveness` (TASK-712..719, all To Do) and does
+not contradict that spec's ratified AC-015, AC-016 or AC-018.
+
+**Revision 2026-09-23.** Revised after two review channels:
+
+- the chain's `review-1.md` and `review-2.md`;
+- the coordinator's independent four-lens adversarial review. Its 24 findings
+  were each verified by a refuting reviewer: 17 confirmed, 7 partial, 0 refuted.
+
+Both channels agreed on the high-severity gaps:
+
+- the private checkout had no dependencies, no analysis consent and no view of
+  the diff;
+- the duplication baseline treated as missing already exists;
+- the QM-ending chains run inline and cannot use the durable runner;
+- the ordering removed QM authority before its replacements existed.
+
+Behaviors now use the current `plan-format.md` shape: Source, Observer, Entry
+point, Outcome. Five questions on ratified ground are drafted as H-001..H-005 in
+the Decision Log. Stages that depend on them are marked; the other stages do
+not wait.
 
 ## Architecture Context
 
 This plan is subordinate to:
 
-- `missions/architecture/orchestration-future.md` D-001, D-008, D-012 and its
-  Boundary Model. It keeps one durable run/evidence substrate and treats bounded
-  summaries as orientation, not the data plane.
-- `missions/architecture/orchestration-future.md` Waves B and E. Wave B defers
-  converting the QM panel into a declared graph. Wave E defers worktree
-  isolation and merge finalizers for **parallel mutable execution**. This plan
-  does neither: one terminal QM stage gets one disposable read-only-review
-  snapshot, no snapshot content can merge back, and no mutable stages execute
-  in parallel there.
+- `missions/architecture/orchestration-future.md`: D-001, D-008, D-012 and its
+  Boundary Model. There is one durable run and evidence substrate, and bounded
+  summaries are orientation, not the data plane.
+- `missions/architecture/orchestration-future.md` Waves B and E.
+  - Wave B defers converting the QM panel into a declared graph; this plan keeps
+    the panel as agent-driven `spawn_agent` fan-out.
+  - Wave E defers worktree isolation, merge finalizers and parallel mutable
+    execution. This plan adds none of those. One terminal, read-only review
+    stage gets one disposable private checkout. Nothing in it can merge back, no
+    mutable stage runs there, and nothing runs in parallel with a mutating
+    stage.
+  - The record's read/opinion-swarm bullet says the QM panel "does not yet
+    provide" an enforced read-only guarantee. This plan supplies that guarantee
+    for the QM only. It is not the general read-swarm slice of Wave D.
 - `missions/architecture/durable-orchestration-runtime.md` D-016 and its
-  post-production worktree/merge-finalizer boundary. Existing
-  `WorktreeSpec.mode: "isolated"` remains vocabulary only. QM isolation is a
-  precondition of the volatile review edge, not a general scheduler policy.
-- `missions/plans/execution-liveness/spec.md` and `plan.md`. No child is
-  cancelled because a wait timed out (AC-015). Reviewer and final-report
-  artifacts are scoped to QM and do not implement the later general
-  attempt-evidence contract (AC-016). The stage summary stays byte-for-byte
-  within the existing 200-character contract (AC-018).
+  post-production worktree/merge-finalizer boundary. `WorktreeSpec.mode:
+  "isolated"` stays vocabulary only.
+- `missions/plans/execution-liveness/spec.md` and `plan.md`:
+  - a timed-out wait never cancels the child (AC-015);
+  - only QM evidence is persisted here, and the general attempt-evidence
+    contract stays with execution-liveness (AC-016);
+  - `StepResult.summary` keeps the existing 200-character contract (AC-018);
+  - this plan adds no owner-liveness or process-death protocol (see D-013).
 
 Dependency direction:
 
-- CLI and registered orchestration tools depend on a framework-owned QM launch
-  policy and orchestration composition.
-- Snapshot, check execution, report persistence, and model attestation depend on
-  injected Git/filesystem/process/Pi ports; they do not import coding prompts.
-- The durable runtime remains unaware of QM personas and Git snapshot mechanics.
-  It carries existing `ArtifactRef` values returned by the QM stage.
-- Coding-domain definitions and prompts consume a restricted execution profile
-  and final-text contract; they do not choose host paths, storage roots, run
-  identity, or producer attribution.
+- The CLI and the registered orchestration tools depend on a framework-owned QM
+  launch module. That module lives in `lib/orchestration/`, never in
+  `bundled/coding/`, which the `coding-extraction` plan will externalize.
+- Snapshot, materials, checks, report persistence and model attestation depend
+  on injected Git, filesystem and process ports, and do not import coding
+  prompts.
+- The durable runtime stays unaware of QM personas and Git mechanics. It carries
+  the existing `ArtifactRef` values the QM stage returns.
+- Coding-domain definitions and prompts consume the restricted profile and the
+  final-text contract. They never choose host paths, storage roots, run identity
+  or producer attribution.
 
 Pi-First findings:
 
-- Pinned Pi 0.80.6 already accepts a per-session `cwd`, tool allowlist, extension
-  set, and model override through `createAgentSession`; the design composes
-  those capabilities rather than adding a session runtime or provider.
-- Pi's `ModelRegistry` supplies the resolved provider/model object. The session
-  factory must return that host-observed identity with the session so a reviewer
-  cannot self-report which model ran.
-- Pi completion tracking already retains a child's full assistant text together
-  with its `spawnId` and session lifecycle. The host persists that correlated
-  text; reviewers receive no host artifact path.
-- Pi does not create a stable Git snapshot, enforce Cosmonauts authority across
-  all launch surfaces, maintain run-owned QM lifecycle state, or define a model
-  family. Those remain narrow Cosmonauts responsibilities.
-- OS sandboxing and a generic `tool_call` write guard remain excluded. Instead,
-  the QM and its panel receive no arbitrary shell/edit/write tools at all; exact
-  project checks execute through a host-owned configured check list in the
-  private snapshot.
+- Pinned Pi 0.80.6 `createAgentSession` accepts a per-session `cwd`, a tool
+  allowlist, an extension set and a model. The design composes these rather
+  than adding a session runtime or provider.
+- Pi's `ModelRegistry` resolves the provider and model object. The session
+  factory returns that host-observed identity so a reviewer cannot self-report
+  its model.
+- Full-text completion retention is Cosmonauts code, not Pi:
+  `SpawnTracker.complete(spawnId, summary, fullText)` in
+  `lib/orchestration/spawn-tracker.ts`, populated by detached `spawn_agent`. The
+  durable chain path returns only messages plus the 200-character summary, which
+  is why D-011 limits the QM's panel to `spawn_agent`.
+- Pi does not create Git snapshots, enforce Cosmonauts authority, keep QM
+  lifecycle state, or define model families. Those are the narrow Cosmonauts
+  responsibilities here.
+- An OS sandbox and a generic `tool_call` write guard stay excluded by the spec.
+  The QM and its panel instead receive no shell, edit or write tool at all (see
+  D-012).
 
 Investigation evidence gathered before design:
 
-- Complexity analysis found pre-existing debt at the touched seams:
-  `executeChainStep` in `lib/orchestration/durable-chain-runner.ts` is a
-  high-severity CRAP finding, `capabilityArgs` in the Fallow provider is a
-  moderate finding, and the durable controller's event summarizer is critical.
-  QM policy therefore lives in focused modules and is called from those seams;
-  it does not add another policy tree inline.
-- Duplication analysis produced no usable evidence: the provider exited 0 while
-  its normalized envelope contained 92 findings. This is uncertainty, not a
-  clean baseline.
-- Boundary conformance is unbound (`provider-not-configured`). Dependency
-  direction therefore requires independent review.
-- Trace evidence confirms the chain tool, spawn tool, agent spawner, durable
-  chain runner, Fallow provider, and durable runtime contracts are reachable.
-  `WorktreeSpec` has no implementation consumer, supporting D-003.
-- The architecture map is unavailable because `memory/architecture/index.md`
-  is absent. The two architecture records above remain the source of truth.
-- The investigation was moved from its stale `work/todo` citation to
-  `.shepherd/work/in-progress/qm-chain-safety/investigation.md`; D-001 remains
-  verbatim, while current readers use the moved path.
+- Complexity hotspots at the touched seams: `executeChainStep` in
+  `durable-chain-runner.ts`, `capabilityArgs` in the Fallow provider, and the
+  durable controller's event summarizer. QM policy therefore lives in focused
+  new modules called from those seams.
+- Boundary conformance is unbound (`provider-not-configured`), so dependency
+  direction needs independent review.
+- The architecture map is unavailable (`memory/architecture/index.md` is
+  absent). The two architecture records above are the source of truth.
+- The investigation now lives at
+  `.shepherd/work/in-progress/qm-chain-safety/investigation.md` (D-015).
 
 ## Decision Log
 
@@ -134,896 +154,915 @@ Investigation evidence gathered before design:
   - Why: INV-001. A verifier that can damage the work cannot certify the fix for that damage.
   - Decided by: human, 2026-09-23 (relayed by Shepherd, coordinator brief)
 
-- **D-003 - Keep QM isolation at a trusted review launch surface**
-  - Decision: leave `WorktreeSpec.mode: "isolated"` unimplemented. A
-    framework-owned, data-only launch policy identifies the canonical built-in
-    QM and QM-ending built-in chains before executable project/domain modules are
-    loaded for a standalone review. A terminal QM reached after ordinary prefix
-    stages is isolated at that stage boundary. Unclassified aliases that resolve
-    to the canonical QM only after executable loading are refused rather than
-    launched unsafely. If delivery requires scheduler-owned general worktrees, a
-    merge finalizer, panel graph migration, or mutable parallel execution, halt
-    and escalate.
-  - Alternatives: activate the runtime's generic `WorktreeSpec` slot (rejected
-    because it crosses Wave E and execution-liveness store/launch work); trust an
-    `AgentDefinition` loaded from the reviewed checkout to select isolation
-    (rejected by `review-1.md PR-002`); instructions only (rejected by INV-001).
-  - Why: INV-001 outranks availability. This is distinct from Wave E because the
-    snapshot has no merge path and runs only a review stage.
-  - Decided by: planner-proposed, 2026-09-23 (revised for `review-1.md PR-002`)
+- **D-003 - Isolate the QM at its launch boundary, keyed on the resolved role**
+  - Decision:
+    - Leave `WorktreeSpec.mode: "isolated"` unimplemented.
+    - A framework-owned module in `lib/orchestration/` isolates every launch
+      whose resolved qualified role is the canonical `coding/quality-manager`.
+      The role is resolved from domain and file identity, never from a field
+      the definition declares about itself.
+    - A standalone QM (CLI agent, `spawn_agent`, or a single-stage chain) is
+      snapshotted at launch, after the runtime has bootstrapped and before the
+      QM session exists.
+    - A terminal QM stage after other stages is snapshotted at its stage
+      boundary.
+    - A QM anywhere other than the terminal position, or inside a parallel
+      group, is refused.
+    - Refusals come before any QM session exists and never fall back to the
+      shared checkout.
+    - If delivery turns out to need scheduler-owned general worktrees, a merge
+      finalizer, panel graph migration or mutable parallel execution, halt and
+      escalate.
+  - Alternatives:
+    - Activate `WorktreeSpec.isolated`: rejected, it crosses Wave E and
+      execution-liveness's store and launch work.
+    - A pre-bootstrap, data-only launch policy under `bundled/coding/`:
+      rejected by review-2 PR-004 and PR-007. Aliases are still imported
+      before they are refused, and the owner package is being externalized.
+    - Instructions only: rejected by INV-001.
+  - Why: INV-001 outranks availability. The bootstrap boundary is H-004.
+  - Decided by: planner-proposed, 2026-09-23; revised by coordinator after review, 2026-09-23
+  - Supersedes: the data-only `bundled/coding/review-launch-policy.json` preflight in the 2026-09-23 D-003
 
-- **D-004 - Snapshot into an independent detached checkout**
-  - Decision: create a no-hardlink private local clone in an OS temporary
-    directory, detach at the captured HEAD, remove its origin, and overlay a
-    byte-for-byte manifest of tracked and non-ignored untracked state. Sample
-    HEAD, refs, index, paths, modes, symlink targets, and bytes twice; retry a
-    bounded number of times and otherwise refuse. Absolute or root-escaping
-    symlinks, sparse layouts, and unreproducible gitlinks/submodules fail closed.
-    The private checkout has no symlink, mount, alternate object store, or
-    exposed path back to the operator checkout or host run store.
-  - Alternatives: linked `git worktree` (rejected because common Git metadata is
-    shared); source-repository snapshot commit (rejected because it writes the
-    source object database); plain directory copy (rejected because review Git
-    history/diffs would disappear).
-  - Why: AC-003/AC-004 require uncommitted content without sharing source state.
-  - Decided by: planner-proposed, 2026-09-23 (revised for `review-1.md PR-001`)
+- **D-004 - The snapshot is a private local clone plus prepared review materials**
+  - Decision:
+    - **Capture.** Host code reads the operator checkout with
+      `GIT_OPTIONAL_LOCKS=0` and plumbing-only reads: HEAD, refs, the index
+      identity, tracked paths, non-ignored untracked paths, lstat metadata,
+      file and symlink bytes, and deletions. No source write happens,
+      including no opportunistic index refresh.
+    - **Materialize.** Make a private local clone in an OS temp directory.
+      Write the resolved base as a local ref (local `main`, then `master`,
+      then `origin/main`, the same order as today's QM prompt). Remove
+      `origin`, detach at the captured HEAD, then overlay bytes, modes, safe
+      relative symlinks and deletions.
+    - **Verify.** Re-sample the source and accept only an identical second
+      sample. Retry a bounded number of times, then refuse.
+    - **Unsupported layouts.** Absolute or root-escaping symlinks, sparse
+      layouts and unreproducible gitlinks or submodules are refused.
+    - **Review materials.** Beside the checkout, not inside it, host code
+      writes: the literal base SHA, the review range, the changed-file list,
+      the full diff from the base to the captured state (untracked files as
+      additions), and base-revision copies of each changed file. Review
+      sessions reach them only through the read-only tools.
+    - **Dependencies.** Host code runs the configured `qualityReview.prepare`
+      argv, for example `bun install --frozen-lockfile`, in the clone before
+      any check. A failure ends the assessment `failed`, naming the step.
+    - **Analysis consent.** Host code verifies the user's existing consent
+      for the source root's real path, then passes an explicit in-memory
+      authorization for the snapshot root to the analysis capabilities. It
+      never writes or copies a consent record.
+    - **No path back.** No link, mount or path to the source root or the host
+      run store is given to a review session.
+  - Alternatives:
+    - A linked detached `git worktree`: it shares refs, stash, hooks and config
+      with the operator repository, which INV-001 forbids changing (H-002).
+    - A snapshot commit in the source repository: it writes the source object
+      database.
+    - A plain directory copy: no history for base comparison.
+    - A symlink to the operator's `node_modules`: a writable path back into
+      the checkout.
+    - Copying consent: contradicts the user-owned consent contract.
+  - Why: INV-001; AC-003 and AC-004; AC-016 (checks and analysis must actually
+    run).
+  - Decided by: planner-proposed, 2026-09-23; revised by coordinator after
+    review (DESIGN-ATTACK-001/002/004, FEASIBILITY-001, review-2 PR-002, PR-003,
+    PR-006), 2026-09-23. Replacing the decided "detached worktree" mechanism
+    is H-002.
 
-- **D-005 - A configured generalist carries host-attested model diversity**
-  - Decision: the always-present general `reviewer` uses
-    `qualityReview.diverseReviewerModel`. Project config also maps exact,
-    Pi-resolved model IDs to opaque family IDs. The default built-in worker model
-    and configured reviewer model must each belong to exactly one different
-    family. Session creation returns the actual resolved provider/model identity;
-    the host records it with reviewer evidence and refuses unknown, overlapping,
-    same-family, unavailable, or substituted identities. This repository maps a
-    Claude-family reviewer; no shipped agent definition names a provider.
-  - Alternatives: infer family from provider/name strings (rejected because
-    aliases such as `openai`/`openai-codex` are not a family contract); trust
-    reviewer markdown (rejected by `review-1.md PR-005`); assign diversity to a
-    conditional specialist (rejected because it may not run).
-  - Why: INV-003 and AC-014 require a durable fact, not a self-report.
-  - Decided by: planner-proposed, 2026-09-23 (revised for `review-1.md PR-005`)
+- **D-005 - The generalist runs on a configured model of a different family**
+  - Decision:
+    - `qualityReview.diverseReviewerModel` in project config overrides only
+      the always-present general reviewer's model. Shipped definitions keep
+      their current `model` values.
+    - A model's family is its Pi-resolved provider, normalized by a shipped
+      alias table (for example `openai-codex` → `openai`). Project config can
+      extend the table with `qualityReview.modelFamilies`.
+    - The implementer family is taken from the resolved model of the default
+      worker definition.
+    - Session creation returns the actual resolved identity, and the host
+      records it for every reviewer.
+    - The same family, an unresolvable model, or a substituted model fails the
+      review visibly.
+    - The unconfigured outcome is H-003.
+  - Alternatives:
+    - Trust reviewer markdown: forgeable.
+    - A provider-to-family map with no default: every existing project would
+      refuse (SPEC-FIDELITY-004).
+    - Give the diversity role to a conditional specialist: it may not run.
+  - Why: AC-014 and INV-003. Diversity must be a recorded fact, not a
+    self-report.
+  - Decided by: planner-proposed, 2026-09-23; revised by coordinator
+    (FEASIBILITY-005, SPEC-FIDELITY-004), 2026-09-23
 
 - **D-006 - Exact QM report paths are run-owned and host-only**
-  - Decision: full artifacts live under
-    `missions/sessions/chain/runs/<runId>/artifacts/qm/`: `lifecycle.jsonl`,
-    `checks.md`, `final.md`, optional `raw-final.md`, and one immutable
-    `reviewers/<lens>.md` for each actual panel member. An active plan gets
-    `missions/plans/<planSlug>/qm-runs/<runId>.md`. Only host code writes these
-    paths. `final.md` and the plan summary are initialized with a conservative
-    complete failure/interruption record, then atomically replaced by the host
-    before the QM step returns; reviewer files are exclusive-created and never
-    replaced. No path is supplied to an agent.
-  - Alternatives: agent-written paths or a linked artifact directory (rejected
-    by `review-1.md PR-001/PR-004`); tracked full reports under
-    `missions/reviews/qm` (rejected by human decision 2); one mutable plan
-    summary (rejected because runs would overwrite history).
+  - Decision:
+    - Full artifacts live under `missions/sessions/chain/runs/<runId>/artifacts/qm/`
+      (gitignored): `lifecycle.jsonl`, `checks.md`, `final.md`, an optional
+      `raw-final.md`, and one immutable `reviewers/<lens>.md` per actual panel
+      member.
+    - An active plan also gets a new tracked file,
+      `missions/plans/<planSlug>/qm-runs/<runId>.md` (subject to H-001).
+    - Only host code writes these paths. `final.md` and the plan summary are
+      first written as a conservative, complete failure record, then atomically
+      replaced before the QM step returns.
+    - Reviewer files are exclusive-created and never replaced. No path is
+      given to an agent.
+  - Alternatives:
+    - Agent-written paths: forgeable.
+    - Tracked full reports under `missions/reviews/qm`: rejected by human
+      decision 2.
+    - One mutable plan summary: runs would overwrite history.
   - Why: INV-002, INV-003, AC-005 through AC-007.
-  - Decided by: planner-proposed, 2026-09-23 (revised for review round 1)
+  - Decided by: planner-proposed, 2026-09-23
 
 - **D-007 - Assessment outcome and execution outcome stay distinct**
-  - Decision: `ready` and `not-ready` are completed assessments; `refused`
-    blocks the run; execution/report-integrity failure fails it; caller
-    cancellation cancels it. The QM-specific executor finalizes the complete
-    report before returning its `StepResult`, so the scheduler cannot write the
-    first terminal run event first. The bounded stage summary remains unchanged.
-  - Alternatives: make negative findings an execution failure (rejected because
-    the assessment completed); encode the verdict in the bounded summary
-    (rejected by AC-007 and execution-liveness AC-018).
-  - Why: INV-003 and AC-006 through AC-009.
+  - Decision:
+    - `ready` and `not-ready` are completed assessments.
+    - `refused` blocks the run.
+    - Execution or report-integrity failure fails it.
+    - Caller cancellation cancels it.
+    - The QM-specific executor finalizes the complete report before returning
+      its `StepResult`. The bounded stage summary is unchanged.
+  - Alternatives:
+    - Make negative findings an execution failure: the assessment completed.
+    - Encode the verdict in the summary: conflicts with AC-007 and
+      execution-liveness AC-018.
+  - Why: INV-003, AC-006 through AC-009.
   - Decided by: planner-proposed, 2026-09-23
 
-- **D-008 - Bootstrap and then consume all three committed Fallow baselines**
-  - Decision: before enabling mandatory baseline arguments, explicitly generate
-    `.fallow-baselines/duplication.json` from the recorded clean comparison base,
-    without implementation changes present, and record the command-equivalent
-    provider request, reason, base SHA, timestamp, provider version, and digests
-    for all three files in `.fallow-baselines/manifest.json`. Thereafter ordinary
-    changed-scope audit always passes dead-code, health, and duplication
-    baselines and never creates or rewrites them. Refresh remains a separate,
-    reason-required action.
-  - Alternatives: require the currently missing file and break every audit
-    (rejected by `review-1.md PR-008`); leave duplication unbaselined (rejected
-    because inherited duplicate findings could fail touched files); silently
-    generate during review (rejected by INV-005).
-  - Why: INV-005 and AC-010 require an explicit, non-self-refreshing baseline.
-  - Decided by: planner-proposed, 2026-09-23 (revised for `review-1.md PR-008`)
+- **D-008 - Consume the three committed Fallow baselines as they are**
+  - Decision:
+    - The changed-scope audit builder passes
+      `--dead-code-baseline .fallow-baselines/dead-code.json`,
+      `--health-baseline .fallow-baselines/health.json` and
+      `--dupes-baseline .fallow-baselines/dupes.json`. The existing files are
+      adopted unchanged; `dupes.json` is the duplication baseline of record.
+    - A missing or unreadable baseline file fails the gate visibly. It never
+      degrades to an unbaselined audit, and ordinary review never writes
+      baselines.
+    - A new `.fallow-baselines/manifest.json` records each file's digest and
+      provenance. The initial entries say "adopted as-is", pointing to the
+      commit that last wrote each file.
+    - A separate `scripts/update-fallow-baselines.ts` re-saves requested files
+      only given a literal base and a non-empty reason, and appends provenance.
+      Review code never calls it.
+    - The pinned Fallow 2.54.2 already consumes `dupes.json`; the coordinator's
+      verifier live-probed `--dupes-baseline`.
+  - Alternatives:
+    - Bootstrap a new `duplication.json`: rejected. Its premise that no
+      duplication baseline exists was false (SPEC-FIDELITY-001,
+      FEASIBILITY-003, DESIGN-ATTACK-003, SCOPE-SEQUENCING-005), and it would
+      orphan the file of record.
+    - Leave duplication unbaselined: inherited clones would fail touched files.
+  - Why: INV-005, AC-010. D-001 item 4 names "the committed baselines".
+  - Decided by: coordinator, amend-on-record after review, 2026-09-23
+  - Supersedes: the 2026-09-23 D-008 ("Bootstrap and then consume all three committed Fallow baselines")
 
-- **D-009 - Suppression authorization comes only from the comparison base**
-  - Decision: maintain a machine-readable exception registry keyed by directive
-    family, path, and normalized directive/target fingerprint. Authorization is
-    loaded from the explicit comparison base; a registry edit in the reviewed
-    change cannot authorize that same change. A human first lands a separate,
-    reasoned registry update. Existing unchanged or relocated registered
-    directives remain unaffected.
-  - Alternatives: trust same-change registry edits (self-authorization); parse
-    prose as machine policy; or ban every directive forever. All are rejected.
-  - Why: INV-005 and AC-011.
-  - Decided by: planner-proposed, 2026-09-23
+- **D-009 - Suppression authorization comes only from the comparison base, and tampering is surfaced**
+  - Decision:
+    - Keep a machine-readable exception registry keyed by directive family,
+      path, and normalized directive and target fingerprints.
+    - Authorization is loaded from the base revision's registry. A registry
+      edit inside the reviewed change cannot authorize that change.
+    - Unchanged or moved registered directives stay authorized.
+    - A reviewed range that changes any gate-owned file is reported by host
+      code as a human-decision item, and the verdict cannot be `ready`. The
+      gate-owned files are the registry, the suppression checker and its
+      policy module, the Fallow adapter, `.fallow-baselines/*`, and the
+      `qualityReview` config block.
+    - A change can therefore weaken a gate only visibly, never silently.
+  - Alternatives:
+    - Trust same-change registry edits: self-authorization.
+    - Run the checker from the base revision's code: circular when Cosmonauts
+      reviews itself.
+    - Ban every directive forever: rejected.
+  - Why: INV-005 ("cannot be silenced") and AC-011. The tamper rule answers
+    review-2 PR-005.
+  - Decided by: planner-proposed, 2026-09-23; tamper rule added by coordinator after review, 2026-09-23
 
-- **D-010 - Halt and escalate: checkout byte identity conflicts with a tracked summary**
-  - Decision: implementation is blocked pending a human ruling. AC-003 says the
-    checkout's tracked and untracked files are byte-identical after a QM run;
-    AC-007 and human D-001 item 2 require a newly written tracked summary under
-    that checkout's plan directory on every exit. Host-owned run artifacts under
-    the checkout also change ignored bytes. No implementation can make both
-    statements literally true in one checkout.
-  - Alternatives: (A, planner recommendation) amend AC-003 to exempt only
-    host-owned run artifacts and the exact per-run plan summary while keeping
-    every reviewed input, HEAD, ref, index entry, and all other files
-    byte-identical; agents receive no path to either exception; (B) keep AC-003
-    literal and amend AC-007/D-001 item 2 so all evidence lives outside the
-    checkout and is untracked; (C) write/commit through another worktree or ref
-    (rejected because it still changes a ref or does not place the tracked file
-    in the operator checkout).
-  - Why: INV-001 protects reviewed state while INV-003 requires durable output;
-    `review-1.md PR-009` confirms the unresolved ratified collision.
-  - Decided by: planner-proposed halt-and-escalate draft, 2026-09-23
+- **D-010 - superseded by H-001 (2026-09-23).** The AC-003 / AC-007 collision is
+  now drafted as H-001, narrowed to the one real write: ignored run artifacts
+  are not among AC-003's listed items (SPEC-FIDELITY-005).
 
-- **D-011 - Reviewer evidence is captured from host-observed completions**
-  - Decision: when a quality-profile parent starts a panel member through
-    `spawn_agent` or nested `chain_run`, the host correlates requested lens,
-    `spawnId`, child session ID, resolved role, actual model, completion outcome,
-    and full assistant text. It persists the exact final text before delivering
-    the completion to the QM. A missing/duplicate/foreign child, empty final
-    output, or persistence failure fails the assessment. The QM cannot mint or
-    satisfy producer evidence.
-  - Alternatives: bearer producer tokens and agent-written files (rejected as
-    forgeable); generic persistence of every durable stage (rejected by the
-    execution-liveness non-goal and `review-1.md PR-007`).
-  - Why: AC-005/AC-006 and INV-002.
-  - Decided by: planner-proposed, 2026-09-23 (addresses `review-1.md PR-004` and
-    `PR-007`)
+- **D-011 - Reviewer evidence is captured from host-observed completions; the panel uses `spawn_agent` only**
+  - Decision:
+    - A quality-profile parent can start panel members only through
+      `spawn_agent`. `chain_run` is absent from its profile, so no nested
+      durable run or transcript is rooted in the disposable clone.
+    - The host correlates requested lens, `spawnId`, child session ID,
+      resolved role, actual model, outcome and full assistant text. It
+      persists the exact final text before delivering the completion to the
+      QM.
+    - A missing, duplicate, foreign or empty output, or a persistence failure,
+      fails the assessment.
+    - A reviewer whose wait times out counts as missing: the assessment fails,
+      the child is not cancelled, and its workspace is retained.
+    - Late settlement after a timeout is not handled here;
+      execution-liveness AC-015 owns lossless late delivery.
+  - Alternatives:
+    - Bearer tokens with agent-written files: forgeable.
+    - Nested `chain_run` fan-out: it roots run records in the clone
+      (DESIGN-ATTACK-005) and needs new full-text extraction (FEASIBILITY-005).
+    - Implementing late-completion delivery here: that is execution-liveness
+      scope (SCOPE-SEQUENCING-002).
+  - Why: AC-005, AC-006, INV-002.
+  - Decided by: planner-proposed, 2026-09-23; revised by coordinator after review, 2026-09-23
 
-- **D-012 - The review profile removes arbitrary process and write authority**
-  - Decision: QM and panel sessions receive a host-owned effective tool profile,
-    regardless of their ordinary definitions: read-only filesystem discovery,
-    analysis capabilities needed by the QM, and authorized orchestration only.
-    They receive no `bash`, edit, or write tool. Project checks are exact argv
-    entries from validated project config, run by host code inside the private
-    checkout with output captured as evidence. The model cannot submit or alter
-    a command. The QM's subagents are only the four reviewer lenses; verifier,
-    fixer, coordinator, worker, and integration-verifier are absent.
-  - Alternatives: retain Pi's `verification` set (rejected because it includes
-    unrestricted bash); rely only on registered-tool allowlists while shell can
-    launch the top-level CLI (rejected by `review-1.md PR-003`); add an OS
-    sandbox (still deferred by the spec).
-  - Why: INV-001/INV-004 and AC-001/AC-002/AC-009.
-  - Decided by: planner-proposed, 2026-09-23 (addresses `review-1.md PR-003`)
+- **D-012 - The review profile removes arbitrary process and write authority; the host runs checks**
+  - Decision:
+    - QM and panel sessions get a host-owned effective tool profile whatever
+      their ordinary definitions say: read, grep, find and ls, which can also
+      read the D-004 review materials. The QM additionally gets the analysis
+      capabilities and `spawn_agent` restricted to the four reviewer lenses.
+    - No quality-profile session gets `bash`, `edit`, `write`, task or plan
+      mutation, Drive or `chain_run`. The QM's subagents are only `reviewer`,
+      `security-reviewer`, `performance-reviewer` and `ux-reviewer`.
+    - Project checks are exact argv entries from `qualityReview.checks`, run
+      by host code without shell interpolation in the prepared clone. Output,
+      exit code and duration are captured in `checks.md`, and the model cannot
+      add or change a command.
+    - Check durations are the measured-cost evidence available to the
+      performance lens. Without such evidence its findings are at most P2.
+    - The unconfigured outcome is H-003.
+  - Alternatives:
+    - Pi's `verification` tool set: its bash is unrestricted, and a shell can
+      launch the top-level CLI and bypass AC-002 (review-1 PR-003).
+    - Keep shell in the private clone and rely on isolation (SPEC-FIDELITY-002):
+      rejected, because the shell reaches any absolute path and the CLI.
+    - Model-proposed check commands: arbitrary argv again.
+  - Why: INV-001, INV-004, AC-001, AC-002, AC-009.
+  - Decided by: planner-proposed, 2026-09-23; revised by coordinator after review, 2026-09-23
 
-- **D-013 - QM finalization state is persisted before assessment starts**
-  - Decision: after run allocation and before snapshot/check/model work, host
-    code creates `lifecycle.jsonl`, a conservative complete `final.md`, and, when
-    applicable, the per-run plan summary. Lifecycle records every phase,
-    workspace path/owner, child start/settlement, artifact digest, and final
-    disposition. The QM executor reads this record on retry and never fabricates
-    defaults; it finalizes atomically before returning a step result. A timed-out
-    live child leaves the workspace retained. A later QM startup/cleanup pass
-    deletes it only after persisted settlement or proof that the owning process
-    no longer exists.
-  - Alternatives: process-local maps or post-terminal callbacks (rejected by
-    `review-1.md PR-006`); mutate state from `run_status` (rejected because
-    observation remains read-only); generic durable finalizers (rejected by the
-    architecture boundary).
-  - Why: INV-003 and AC-007 require crash/restart reconstruction without
-    depending on future execution-liveness work.
-  - Decided by: planner-proposed, 2026-09-23 (addresses `review-1.md PR-006`)
+- **D-013 - QM finalization state is persisted before assessment; there is no owner-death protocol**
+  - Decision:
+    - After run allocation and before any fallible work, host code creates
+      `lifecycle.jsonl`, a conservative complete `final.md`, and, when a plan
+      is active, the per-run plan summary.
+    - A `workspace-reserved` event naming the deterministic temp path is
+      appended before any clone I/O.
+    - The phases are `allocated`, `workspace-reserved`, `snapshot-ready`,
+      `assessing`, `finalizing`, then `finalized` or `retained`.
+    - Removing the workspace is mandatory on `finalized` and on refusal when
+      no child is live.
+    - With a live timed-out child, the workspace is `retained` and named in
+      the report. Automatic reclaim waits for execution-liveness's owner
+      check; until then, OS temp reaping applies.
+    - The executor never fabricates a phase. It finalizes atomically before
+      returning.
+  - Alternatives:
+    - Process-local maps: lost on crash.
+    - A QM-specific owner-process-death proof: it duplicates
+      execution-liveness's ratified owner and descendant seams
+      (SCOPE-SEQUENCING-004).
+    - Generic durable finalizers: architecture boundary.
+  - Why: INV-003, AC-007.
+  - Decided by: planner-proposed, 2026-09-23; revised by coordinator after review, 2026-09-23
 
-- **D-014 - Canonical plan shape wins over requested executable coupling**
-  - Decision: behavior entries retain source AC, observer, entry point, context,
-    action, result, and conceptual seam, but no test titles or
-    `@cosmo-behavior` markers. There is no separate quality/gate section.
-    Work-specific failure outcomes live in behaviors and pivot conditions live
-    in risks. Actual capability observations remain investigation evidence, not
-    declared sign-off bindings. D-002 stays verbatim because it is human ground.
-  - Alternatives: retain test/marker coupling and a separate sign-off checklist
-    (rejected by the current artifact contract and `review-1.md PR-010/PR-011`).
-  - Why: archived plans must not remain executable authority over live tests.
-  - Decided by: planner-proposed, 2026-09-23
+- **D-014 - Behaviors follow the current plan format**
+  - Decision:
+    - Behaviors carry Source, Observer, Entry point and Outcome only. There
+      are no Seam, Test or Marker fields and no quality-gate section.
+    - Internal structure belongs in Design. Work-specific quality conditions
+      live in behaviors and in Risks.
+  - Alternatives: keep a conceptual Seam field. That contradicts
+    framework-health's human-decided D-001 (review-2 PR-009,
+    SPEC-FIDELITY-006).
+  - Why: `domains/shared/skills/work-artifacts/references/plan-format.md`.
+  - Decided by: planner-proposed, 2026-09-23; Seam fields removed by coordinator, 2026-09-23
 
 - **D-015 - The moved investigation is the current readable evidence path**
   - Decision: preserve D-001 and the authoritative spec verbatim, including
-    their historical `work/todo` citation, while all new design prose points to
+    their historical `work/todo` citation. All new design prose points to
     `.shepherd/work/in-progress/qm-chain-safety/investigation.md`.
-  - Alternatives: rewrite D-001 or spec provenance (rejected because both are
-    ratified); leave every current pointer stale (rejected by
-    `review-1.md PR-012`).
+  - Alternatives: rewrite D-001 or the spec provenance, rejected because both
+    are ratified.
   - Why: workers need readable evidence without altering human decisions.
   - Decided by: planner-proposed, 2026-09-23
+
+- **D-016 - A QM stage of an inline chain runs as its own one-step durable QM run** *(Added 2026-09-23 after review)*
+  - Decision:
+    - Chains that `shouldRunChainInline` keeps inline (a completion label, a
+      loop stage such as `coordinator`, or a completion check) execute their
+      terminal QM stage through the same durable QM launcher used for a
+      standalone QM. That launcher allocates a separate one-step durable run.
+    - The inline chain records the QM run ID in its stage result, and the plan
+      slug passes through from the chain's completion label.
+    - The durable scheduler gains no loop or completion-label support.
+  - Alternatives: force QM-ending chains onto the durable runner. That hits
+    the existing refusal in `durable-chain-runner.ts` for four of the five
+    named chains, and making it work needs scheduler work across Wave B
+    (FEASIBILITY-002).
+  - Why: AC-007 and AC-016 for `plan-and-build`, `implement`, `spec-and-build`
+    and `adapt`.
+  - Decided by: coordinator, record, 2026-09-23
+
+- **D-017 - Missing report index is a report defect, not a failed run** *(Added 2026-09-23 after review)*
+  - Decision:
+    - The QM returns its final markdown with a `COSMO_QM_REPORT` index block.
+    - If the AC-008 sections are present but the index is missing or
+      malformed, the host keeps the text, marks the report "index unavailable"
+      and derives the plan summary from the section headings. The assessment
+      outcome stands.
+    - A report missing required AC-008 sections is a report-integrity failure.
+  - Alternatives: fail the run on any footer defect. That adds failure surface
+    for formatting (SPEC-FIDELITY-006).
+  - Why: INV-003. The verdict must survive, and a formatting slip must not
+    erase it.
+  - Decided by: coordinator, record, 2026-09-23
+
+- **H-001 - Needs the human: AC-003 byte identity vs the AC-007 tracked plan summary** *(halt-and-escalate draft, 2026-09-23)*
+  - Collision: AC-003 requires the checkout's untracked files to be
+    byte-identical after a QM run, while AC-007 (and D-001 item 2) requires a
+    new tracked plan summary under that checkout on every exit. The summary is
+    a new untracked file until committed. The run artifacts under
+    `missions/sessions/` are gitignored, so AC-003's list does not cover them
+    and they are not part of the collision.
+  - Options:
+    - (A, recommended) Amend AC-003 to exempt exactly one path, the
+      host-written new file `missions/plans/<slug>/qm-runs/<runId>.md`, which
+      never overwrites an existing file. Everything else stays byte-identical,
+      and no agent receives the path.
+    - (B) Keep AC-003 literal and move the plan summary out of the checkout.
+      That amends AC-007 and D-001 item 2.
+  - Blocks: Stage 4, plan-summary part only.
+
+- **H-002 - Needs the human: a private clone instead of the decided "detached worktree"** *(halt-and-escalate draft, 2026-09-23)*
+  - Collision: D-001 item 3 names a detached worktree. A linked `git worktree`
+    shares refs, stash, hooks and config with the operator repository.
+    INV-001 forbids the QM run from changing refs, and the host-run checks
+    execute project test code that can run `git`. Two ratified pieces
+    collide, so an agent may not choose.
+  - Options:
+    - (A, recommended) Amend D-001 item 3 to "an isolated detached checkout (a
+      private local clone)", as D-004 describes.
+    - (B) Keep the linked worktree and accept that shared refs, stash and hooks
+      are reachable from host-run checks. That narrows INV-001.
+  - Blocks: Stage 5.
+
+- **H-003 - Needs the human: projects without `qualityReview` config** *(halt-and-escalate draft, 2026-09-23)*
+  - Collision: AC-016 says the QM's project checks "keep working". Today the
+    QM discovers checks from project artifacts through a shell-capable
+    verifier. D-012 makes checks exact configured argv, and D-005 makes the
+    diverse reviewer model configured. A project without the new config block
+    has neither.
+  - Options:
+    - (A, recommended) Unconfigured checks, or an unconfigured diverse model,
+      produce a visible "not configured" item in the report plus a
+      human-decision item naming the missing key, and the verdict cannot be
+      `ready`. Nothing is skipped silently and nothing is refused. This
+      repository configures both. It narrows the letter of AC-016 for
+      unconfigured projects.
+    - (B) Refuse the QM in unconfigured projects, with setup guidance.
+    - (C) Let the QM model propose check commands that the host runs. That
+      reintroduces model-chosen argv and weakens INV-001.
+  - Blocks: Stage 6 and Stage 7, unconfigured-path behavior only.
+
+- **H-004 - Needs the human: does INV-001's "QM run" include the runtime bootstrap?** *(halt-and-escalate draft, 2026-09-23)*
+  - Collision: A standalone QM is resolved only after the Cosmonauts runtime
+    has bootstrapped in the operator checkout. Bootstrap imports the project's
+    active `domain.ts`, agent and chain modules, the same as every Cosmonauts
+    command. Review-2 PR-004 showed a pre-import classification cannot be made
+    airtight, because an alias is known only after import.
+  - Options:
+    - (A, recommended) Read INV-001's "QM run" as starting at the QM launch
+      boundary. The framework bootstrap common to every command is outside it,
+      and the snapshot is taken before any QM or panel session exists (D-003).
+    - (B) Keep the stricter reading, which needs a CLI bootstrap redesign to
+      classify QM requests before any project module loads. That is a
+      separate, larger plan.
+  - Blocks: Stage 5, standalone-launch part.
+
+- **H-005 - Needs the human: what "nothing links to their old paths" covers in AC-015** *(halt-and-escalate draft, 2026-09-23)*
+  - Collision: A tracked search for the eleven old paths also hits files that
+    record history and are pinned against editing:
+    - the frozen fixture `tests/fixtures/knowledge-seed-inventory.json`, which
+      a test already excludes from legacy-path searches;
+    - byte-pinned curated records under `knowledge/`, where editing needs a
+      promotion-ledger `curatedRecords` round plus a corpus-digest re-pin;
+    - evidence reports such as `missions/reviews/qm/framework-health-incidents.md`
+      and `missions/reviews/improvements/living-memory-fidelity.md`;
+    - archived plans.
+  - Options:
+    - (A, recommended) "Nothing links" covers live surfaces: prompts, skills,
+      docs, code, tests other than frozen fixtures, active plans and
+      `ROADMAP.md`. Frozen fixtures, curated knowledge records, evidence
+      reports and archived plans keep their historical text, and a
+      `missions/archive/reviews/qm/shared-rounds/README.md` maps each old path
+      to its new home.
+    - (B) Rewrite every occurrence, including curated records (a ledger round
+      plus a digest re-pin) and the frozen fixture (a human ruling on the
+      fixture).
+  - Blocks: Stage 8, link-repair part only.
 
 ## Behaviors
 
 ### B-001 - Every agent-starting route enforces caller authority
 
 - Source: AC-001, AC-002
-- Observer: an agent using an orchestration tool, and a lead or operator using an
-  allowed route
-- Entry point: `spawn_agent`, `chain_run`, `run_driver`, and a QM review profile
-- Context: the caller requests allowed or forbidden sequential, bracket,
-  fan-out, Drive, or shell-equivalent delegation
-- Action: the request reaches launch admission
-- Expected result: every forbidden registered target is refused before a run or
-  child is allocated, with caller and target named; QM and panel sessions have no
-  arbitrary process tool with which to bypass admission; a QM cannot start
-  fixer, coordinator, worker, verifier, or integration-verifier; listed leads
-  and genuine top-level CLI invocations retain their behavior
-- Seam: shared orchestration authorization plus host-owned effective tool profile
+- Observer: an agent using an orchestration tool, and a lead or operator using an allowed route
+- Entry point: the `spawn_agent`, `chain_run` and `run_driver` tools, and the QM review session
+- Outcome:
+  - A forbidden target in any sequential, bracket or fan-out position of a
+    `chain_run` expression is refused before any run is allocated. So is a
+    `run_driver` call from a caller not allowed to start `worker`, and a
+    forbidden `spawn_agent`. Each refusal names the caller and the target.
+  - Leads whose definitions list the target, and top-level CLI invocations,
+    behave as before.
+  - A QM session cannot start `fixer`, `coordinator`, `worker`, `verifier` or
+    `integration-verifier` by any route, and has no process tool with which to
+    launch the CLI.
 
-### B-002 - QM reviews a stable private snapshot or refuses
+### B-002 - The QM reviews a stable private snapshot, or refuses
 
 - Source: AC-003, AC-004
-- Observer: an operator with staged, unstaged, deleted, and untracked work
-- Entry point: standalone QM, direct QM spawn, or the terminal QM stage of a
-  named/raw chain
-- Context: the operator may keep using the checkout; a standalone review has not
-  yet loaded executable project/domain code, while a terminal review samples
-  state at its stage boundary
-- Action: trusted launch admission captures and materializes the review state
-- Expected result: the review sees the captured uncommitted state; no review
-  session has a link or path supplied back to source or host evidence; all
-  reviewed inputs, Git metadata, and non-exempt source bytes remain identical;
-  unsupported layout, unsafe symlink, unstable capture, unclassified QM alias,
-  or setup failure produces a named persisted refusal and never falls back to
-  the shared checkout. The exact host-output exception remains subject to D-010
-- Seam: data-only launch classification and private detached checkout
+- Observer: an operator with staged, unstaged, deleted and untracked work who keeps using the checkout
+- Entry point: `cosmonauts -a coding/quality-manager`, a `spawn_agent` of the QM, and the terminal QM stage of a named or raw chain
+- Outcome:
+  - The review sees the captured uncommitted state, including untracked files
+    as additions.
+  - After the run, the operator checkout's HEAD, refs, `.git/index` bytes,
+    tracked files, uncommitted edits and untracked files are byte-identical to
+    before. That holds even when the stat cache was stale at capture. The only
+    exception is the H-001 plan summary.
+  - An unsupported layout, unsafe symlink, unstable capture, failed dependency
+    preparation, a QM in a non-terminal or parallel position, or a setup
+    failure each produce a persisted refusal or failure report with a named
+    reason, never a run in the shared checkout.
 
 ### B-003 - Reviewer evidence belongs to the observed child and run
 
 - Source: AC-005, AC-006
-- Observer: a QM synthesizing its panel and an operator comparing concurrent runs
-- Entry point: host-captured reviewer artifacts and the final QM report
-- Context: reviews overlap, a child exits silently, a role runs twice, a child
-  reports a foreign run, or persistence fails
-- Action: the host settles each panel child and the QM attempts synthesis
-- Expected result: each immutable reviewer artifact is correlated to this run's
-  lens, spawn, session, role, actual model, full final output, and digest; no
-  shared round path is written; missing, duplicate, foreign, empty, or
-  unpersisted output fails the assessment and stale content is never substituted
-- Seam: quality-profile child completion sink
+- Observer: an operator comparing concurrent QM runs, and the QM synthesizing its panel
+- Entry point: the run's `artifacts/qm/reviewers/` files and the final QM report
+- Outcome:
+  - Each reviewer artifact records its run, lens, spawn, session, resolved
+    role, actual model, digest and full final text.
+  - Two concurrent runs never write, modify or delete each other's files.
+  - No `missions/reviews/*-round-N.md` file is written.
+  - A reviewer that ends silently, times out, runs twice, reports for another
+    run or fails to persist fails the assessment. Stale content is never
+    substituted.
 
-### B-004 - A complete durable verdict precedes every terminal outcome
+### B-004 - A complete durable verdict exists on every exit
 
 - Source: AC-007
-- Observer: an operator after ready, not-ready, failed, refused, cancelled,
-  interrupted, or restarted execution
-- Entry point: run record, `run status`/`run_status`, full QM artifact, and an
-  active plan's per-run summary
-- Context: failure can occur before snapshot, during checks/panel work, while a
-  child remains alive, or during final persistence
-- Action: the QM-specific executor advances its persisted lifecycle and returns
-  a step result
-- Expected result: a complete conservative report and applicable plan summary
-  exist before fallible work; the host atomically finalizes them before the
-  scheduler can terminalize; a fresh process reconstructs phase, artifacts,
-  child settlement, and workspace retention from persisted records; status
-  points to the full report; the existing stage summary remains the same bounded
-  200-character value
-- Seam: pre-terminal QM lifecycle protocol and existing `ArtifactRef` result
+- Observer: an operator after a ready, not-ready, failed, refused, cancelled or interrupted QM run
+- Entry point: `cosmonauts run status`, the `run_status` tool, the run's `artifacts/qm/final.md`, and an active plan's `missions/plans/<slug>/qm-runs/<runId>.md`
+- Outcome:
+  - A complete report exists before any fallible work begins and is replaced
+    atomically before the run's terminal event.
+  - Status points to the full report. The plan summary exists for every exit
+    of a plan-scoped run, including inline chains (D-016).
+  - The stage summary stays the same bounded 200-character value.
+  - After a crash, the persisted lifecycle names the phase reached and any
+    retained workspace.
 
 ### B-005 - A QM report is actionable without transcript recovery
 
 - Source: AC-008
 - Observer: a coordinator or human triaging findings
-- Entry point: the full QM artifact and plan-summary link
-- Context: checks pass, fail, or cannot run; reviewers return findings,
-  pre-existing/out-of-range observations, or decision-needed items
-- Action: the operator opens the report
-- Expected result: it contains the verdict; checks and gate evidence; every
-  finding's id, priority, severity, file:line, suggested fix, and concrete
-  failing input where one exists; separate human-decision items; marked
-  pre-existing/out-of-range observations; host-attested reviewer models; and a
-  positive statement of what was checked
-- Seam: validated quality-report contract
+- Entry point: the run's `artifacts/qm/final.md` and the plan summary
+- Outcome: the report states:
+  - the verdict;
+  - each check with its argv, exit code, duration and output excerpt;
+  - each gate state with evidence;
+  - every finding, with id, priority, severity, `file:line`, suggested fix, and
+    a concrete failing input where one exists;
+  - human-decision items, in their own section, including gate-owned-file
+    changes (D-009) and not-configured items (H-003);
+  - out-of-range and pre-existing observations, marked as such;
+  - which models reviewed, as the host observed them;
+  - a positive statement of what was checked.
 
-### B-006 - QM performs one assessment and no remediation
+  A missing index block is reported as "index unavailable" without losing the
+  verdict (D-017).
+
+### B-006 - The QM makes one assessment pass and no remediation
 
 - Source: AC-009, AC-016
-- Observer: an operator inspecting tasks, plan state, Git history, check evidence,
-  and the final report
-- Entry point: QM-ending chains and direct QM review
-- Context: configured project checks or reviewers find blocking and non-blocking
-  defects
-- Action: host checks run once and the QM completes Setup → Assess → Report
-- Expected result: configured project checks, direct gate resolution, panel
-  triage, and applicable specialists still run; the QM creates no task, starts
-  no implementation/verifier role, commits nothing, changes no plan status, and
-  performs no remediation/re-review round; it returns findings and caller-owned
-  remediation advice
-- Seam: restricted QM profile and authored one-pass workflow
+- Observer: an operator inspecting tasks, plan status, Git history and the report after a QM run
+- Entry point: QM-ending named chains and a direct QM review
+- Outcome:
+  - Configured project checks, direct gate resolution, panel triage and the
+    applicable specialists all run once.
+  - The QM creates no task, starts no implementation or verifier role, makes
+    no commit, changes no plan status and runs no second review round.
+  - The report ends with caller-owned remediation advice.
 
-### B-007 - Changed-scope analysis distinguishes inherited and introduced debt
+### B-007 - Changed-scope analysis separates inherited from introduced debt
 
 - Source: AC-010
-- Observer: an implementer touching a file with committed baseline findings
-- Entry point: changed-scope analysis through the registered audit capability
-- Context: the explicit duplication baseline has been bootstrapped from the
-  recorded clean base; one change preserves debt and another introduces an
-  equivalent finding
-- Action: audit resolves the change against that base and all committed
-  per-analysis baselines
-- Expected result: inherited findings do not fail their category, introduced
-  findings do, ordinary review never rewrites a baseline, and missing/unreadable
-  baselines fail visibly; an explicit refresh records base, reason, provider
-  version, timestamp, and resulting digests
-- Seam: Fallow adapter and baseline provenance manifest
+- Observer: an implementer touching a file with findings recorded in the committed baselines
+- Entry point: the `analysis_audit` tool
+- Outcome:
+  - A change that only touches files with baselined findings passes each
+    category.
+  - A change that introduces a new finding fails that category.
+  - A missing or unreadable baseline file fails visibly.
+  - No review writes a baseline. The explicit refresh script requires a base
+    and a reason and records provenance.
 
-### B-008 - A change cannot self-authorize a new suppression
+### B-008 - A change cannot silence a gate without a human seeing it
 
 - Source: AC-011
-- Observer: an implementer or reviewer adding a suppression directive
-- Entry point: the project-native suppression check against an explicit base
-- Context: the diff adds a named/configured-equivalent directive, optionally
-  beside a registry edit
-- Action: suppression policy evaluates added lines
-- Expected result: an unregistered directive fails; a same-change registry edit
-  cannot clear it; a directive authorized in the base registry passes; unchanged
-  existing directives remain unaffected
-- Seam: pure base-owned exception policy and project check adapter
+- Observer: an implementer or reviewer adding a suppression directive or editing a gate-owned file
+- Entry point: the project's suppression check script, and the QM report
+- Outcome:
+  - An added `fallow-ignore`, `biome-ignore`, `eslint-disable`, `@ts-ignore`
+    or `@ts-expect-error` (or a configured equivalent) fails unless it is
+    registered in the base revision's registry.
+  - A same-change registry edit does not clear it.
+  - Existing and moved registered directives pass.
+  - A change to a gate-owned file appears as a human-decision item and blocks
+    `ready`.
 
-### B-009 - Baseline and debt documentation agrees
+### B-009 - Baseline and debt documentation agree
 
 - Source: AC-012
 - Observer: a maintainer preparing baseline maintenance or debt paydown
-- Entry point: Fallow exception documentation, the roadmap debt item, and the
-  committed baseline manifest
-- Context: dead-code, health, and bootstrapped duplication state are recorded
-- Action: the maintainer compares the three surfaces
-- Expected result: they describe the same baseline files, current debt/threshold
-  state, suppression registry, and explicit reasoned refresh process
-- Seam: tracked policy and provenance records
+- Entry point: `docs/fallow-exceptions.md`, `ROADMAP.md` item `analysis-debt-paydown`, and `.fallow-baselines/manifest.json`
+- Outcome: all three describe the same three baseline files, the current debt
+  state, the suppression registry and the explicit reasoned refresh process. In
+  particular, `docs/fallow-exceptions.md` no longer says that no duplication
+  baseline exists.
 
 ### B-010 - Specialist severity and closure require independent evidence
 
 - Source: AC-013
 - Observer: a coordinator triaging specialist findings
-- Entry point: panel reports and final QM report
-- Context: a performance concern is speculative or measured, and a specialist
-  considers its prior finding closed/dismissible
-- Action: the panel assigns priority and the QM synthesizes disposition
-- Expected result: performance P1 requires measured or reproduced cost;
-  otherwise it is at most P2; no specialist lens is the only evidence used to
-  close or dismiss its own finding
-- Seam: reviewer guidance and final-report validation
+- Entry point: the QM report
+- Outcome:
+  - A performance finding is P1 only when it cites a measured or reproduced
+    cost; otherwise it is at most P2.
+  - No finding is closed or dismissed on the evidence of the lens that raised
+    it alone.
 
-### B-011 - Every completed panel has host-attested model-family diversity
+### B-011 - Every completed panel records model-family diversity
 
 - Source: AC-014
-- Observer: an operator reading a completed or refused QM record
-- Entry point: configured QM launch and host-captured reviewer metadata
-- Context: worker/reviewer models resolve to different, same, unknown,
-  overlapping, unavailable, or substituted family identities
-- Action: the host creates and settles the general reviewer
-- Expected result: completion requires one actual different-family generalist;
-  every actual reviewer model is recorded; every invalid/same-family/unavailable
-  cell refuses or fails visibly rather than falling back
-- Seam: validated family map and session-factory model attestation
+- Observer: an operator reading a completed, failed or refused QM report
+- Entry point: the QM report's reviewer-models section
+- Outcome:
+  - A completed assessment includes one generalist whose host-observed model
+    is from a different family than the default implementer, and records every
+    reviewer's model.
+  - A same-family, unresolvable or substituted model fails visibly.
+  - Unconfigured diversity follows H-003.
 
-### B-012 - Legacy evidence is archived and callers remain coherent
+### B-012 - Legacy records are archived and callers describe the review-only contract
 
 - Source: AC-015, AC-016
-- Observer: an operator using named chains/docs and a maintainer following history
-- Entry point: chain registry, lead/dispatch/spawning guidance, orchestration
-  docs, external implementation flow, and review archive
-- Context: eleven shared round files and their tracked references exist
-- Action: migration moves those records and updates callers
-- Expected result: all eleven have one archive home with Git history reachable;
-  no old-path link remains; direct checks, gate resolution, triage, specialists,
-  and QM-ending chains work under the review-only contract; callers route
-  remediation to tasks/Drive/independent review and never claim QM fixes or
-  completes plans
-- Seam: shipped chain/caller surface and tracked archive
+- Observer: an operator using named chains and docs, and a maintainer following history
+- Entry point: the named chains in `bundled/coding/chains.ts`, lead and skill guidance, `docs/orchestration.md`, `external-commands/implement-plan.md`, and `missions/archive/reviews/qm/shared-rounds/`
+- Outcome:
+  - All eleven shared round files have one archive home, and their Git history
+    stays reachable with `--follow`.
+  - Live surfaces no longer link to the old paths (scope per H-005).
+  - QM-ending chains complete with a findings report.
+  - Callers route remediation to tasks, Drive and independent review, and
+    never claim the QM fixes code, completes plans or leaves a clean tree.
 
 ## Design
 
-### 1. Authority and restricted execution profile
+### 1. Authority and the restricted review profile
 
-Keep `isSubagentAllowed` as the single role predicate and place shared target
-resolution/denial facts beside it. `chain_run` authorizes every resolved
-sequential, bracket, and fan-out member before allocating a run. `run_driver`
-treats every backend as worker authority and checks before task discovery or run
-ID allocation. `spawn_agent` retains its existing check. Unknown caller/target
-and internal-domain visibility fail closed; genuine top-level CLI paths remain
-unchanged.
+- Keep `isSubagentAllowed` as the single role predicate, with shared target
+  resolution and denial formatting beside it.
+- `chain_run` authorizes every resolved sequential, bracket and fan-out member
+  after `parseChain` and before allocating a run.
+- `run_driver` requires `worker` authority before task discovery or run
+  allocation.
+- `spawn_agent` keeps its existing check.
+- An unknown caller or target fails closed. Top-level CLI paths, which have no
+  caller, are unchanged.
 
-Add an internal, host-created session profile, never a model parameter:
+A host-created session profile, never a model parameter, narrows the effective
+Pi tools for the QM and every panel child:
 
 ```ts
 interface QualityReviewSessionProfile {
   readonly run: { readonly scope: "chain"; readonly runId: string };
-  readonly workspaceRoot: string;
+  readonly workspaceRoot: string;      // private clone, the session cwd
+  readonly materialsRoot: string;      // D-004 review materials, read-only
+  readonly hostRunStoreRoot: string;   // operator-side run store; never exposed to sessions
   readonly planSlug?: string;
   readonly allowedPanelRoles: readonly ReviewLens[];
-  readonly evidenceSinkId: string;
-  readonly diverseReviewerModel: string;
+  readonly diverseReviewerModel?: string;
 }
 ```
 
-The profile narrows effective Pi tools for the QM and all panel children to
-read/grep/find/ls. Only the QM additionally receives analysis capability tools
-and the already-authorized orchestration extension. No quality-profile session
-receives bash, edit, write, task/plan mutation, Drive, or unrestricted coding
-tools. Nested `spawn_agent` and `chain_run` propagate the host profile; absence
-or mismatch refuses the child. Quality correctness never defaults from an empty
-in-memory map: `evidenceSinkId` resolves a persisted run lifecycle record, and a
-missing mapping or record fails the run.
+- All quality sessions get read, grep, find and ls.
+- The QM additionally gets the analysis-capability tools, with the D-004
+  in-memory consent authorization, and `spawn_agent` limited to the four
+  lenses.
+- Session assembly applies the profile after resolving the definition. Any
+  quality session that ends up with `bash`, `edit`, `write`, `chain_run`,
+  Drive, or task or plan mutation is refused (R-005).
+- `spawn_agent` from a quality parent propagates the profile. Absence or
+  mismatch refuses the child.
+- `hostRunStoreRoot` is what the spawner and session factory use for run
+  records and transcripts, while children use `workspaceRoot` as their `cwd`
+  (DESIGN-ATTACK-005).
 
-Project checks are configured as validated argv arrays, for example:
+### 2. Launch boundary, snapshot and review materials
 
-```ts
-interface QualityReviewCheck {
-  readonly id: string;
-  readonly command: string;
-  readonly args: readonly string[];
-}
-```
-
-Host code runs exactly those entries, without shell interpolation, in the
-private checkout after operator consent, and writes combined evidence to
-`checks.md`. The model cannot add a command. This repository configures its
-existing test, lint, and typecheck surfaces. Project-controlled scripts are a
-trust boundary, but execute only in the disposable checkout.
-
-### 2. Trusted launch admission and private snapshot
-
-Add a framework-shipped, data-only QM launch policy naming the canonical
-qualified role, terminal-only topology rule, and built-in QM-ending chain names.
-A small preflight reader can inspect raw CLI/tool requests and project JSON chain
-overrides without importing `domain.ts`, agent modules, or `chains.ts`.
-
-- Standalone canonical QM and the built-in standalone verify chain snapshot
-  before runtime bootstrap; runtime/domain/agent code is then loaded inside the
-  clone.
-- A terminal QM after ordinary prefix stages snapshots at the stage boundary;
-  the existing chain keeps one durable run ID and the QM stage uses the private
-  `cwd`.
-- An inline chain containing QM is forced through the durable runner so a run
-  identity and artifact root exist before assessment.
-- Direct `spawn_agent` of canonical QM creates a one-step durable run while
-  preserving accepted/completion messages.
-- An isolated stage in a parallel group or before a later stage is refused.
-- A custom executable alias discovered only after unsafe bootstrap is refused as
-  an unsupported QM entry; there is no shared-cwd fallback.
-
-Snapshot creation uses injected, framework-owned Git/filesystem/process ports:
-
-1. Read HEAD, refs, index identity, tracked paths, non-ignored untracked paths,
-   lstat metadata, file/symlink bytes, and deletions without source writes.
-2. Create a no-hardlink/no-alternate local clone in an OS temp directory, detach
-   at captured HEAD, remove origin, and run checkout/filter activity only there.
-3. Overlay bytes, modes, safe relative symlinks, and deletions; stage only the
-   private index so `git diff HEAD` sees the whole captured change.
-4. Re-read identities and bytes. Accept only an identical second sample; retry
-   boundedly, then refuse. Absolute/root-escaping symlinks, sparse checkout,
-   unreproducible submodules/gitlinks, or errors refuse.
-5. Supply only the clone path as Pi `cwd`. Do not link, mount, expose, or mention
-   the source root, run store, or plan-summary path to any review session.
-6. Never merge/copy source content back. Host output follows D-010 only.
+- A new `lib/orchestration/quality-review-launch.ts` recognizes the resolved
+  canonical role and wraps each entry point: the CLI agent launch, the
+  `spawn_agent` of the QM, the durable terminal stage, and the inline-chain
+  terminal stage (D-016). Each routes to one launcher.
+- The launcher allocates the durable run and lifecycle first (Design §3), then
+  builds the snapshot.
+- `lib/orchestration/quality-review-workspace.ts` implements D-004 through
+  injected Git and filesystem ports. Every source read runs with
+  `GIT_OPTIONAL_LOCKS=0` and uses plumbing only: `ls-files -s`,
+  `diff-index --cached --no-ext-diff`, `hash-object` without `-w`, and
+  `cat-file`. There is no `status`, no `update-index` and no `add`.
+- The clone gets the base as a local ref before `origin` is removed.
+- The review materials (base SHA, range, changed files, the full diff including
+  untracked additions, and base copies of changed files) are written under
+  `materialsRoot`, a sibling of the clone inside the same reserved temp
+  directory.
+- Preparation: `qualityReview.prepare` argv entries run in the clone before any
+  check, through the same host process port as the checks.
 
 ### 3. Persisted QM lifecycle and workspace ownership
 
-QM allocation creates its run record and `qm/lifecycle.jsonl` before fallible
-work. The append-only lifecycle uses these phases:
-
-```ts
-type QualityRunPhase =
-  | "allocated"
-  | "snapshot-ready"
-  | "assessing"
-  | "finalizing"
-  | "finalized"
-  | "retained";
-```
-
-Each transition records timestamp, previous phase, workspace identity, owner
-process instance, active/settled child IDs, artifact digests, and disposition.
-`allocated` immediately creates a complete conservative `final.md`; an active
-plan also gets its exact per-run summary. Consequently a crash cannot leave a
-run with only the 200-character summary. Retry/recovery reads the last valid
-lifecycle event; malformed/missing history fails rather than fabricating a
-phase.
-
-The QM-specific step executor catches setup, model, child, cancellation, and
-persistence failures; validates or generates the final report; atomically
-replaces its own provisional report/summary; appends `finalized`; and only then
-returns `StepResult`. Thus the existing scheduler cannot write the first
-terminal run event before full evidence exists. No generic finalizer or general
-attempt-evidence behavior is added.
-
-A child wait timeout records the still-live child and transitions to `retained`;
-it never calls child cancellation. Completion callback records settlement and
-can remove the workspace. After process restart, a QM startup/cleanup pass reads
-persisted owner/child state and deletes only when all children settled or the
-recorded owning process is provably dead. Uncertainty retains the workspace.
-Every lifecycle phase therefore has a safe exit.
+- Allocation creates the run record and `qm/lifecycle.jsonl`. Phases follow
+  D-013.
+- Each event records the timestamp, previous phase, workspace path, active and
+  settled child IDs, artifact digests and disposition. There is no
+  owner-process identity: execution-liveness owns that.
+- On `allocated`, host code writes a conservative complete `final.md` and, for
+  an active plan, the per-run plan summary.
+- The QM-specific executor catches setup, preparation, check, model, child,
+  cancellation and persistence failures. It then:
+  1. validates or generates the final report (D-017);
+  2. atomically replaces its own provisional files;
+  3. appends `finalized`;
+  4. removes the workspace when no child is live;
+  5. only then returns its `StepResult`.
+- A timed-out child leads to `retained` and is named in the report. It is never
+  cancelled.
 
 ### 4. Host-owned reviewer and report artifacts
 
-Add a path-safe QM artifact sink rooted from the loaded `RunRecord.artifactsDir`.
-It rejects absolute/traversal/symlink-escape paths and cross-run roots. Only host
-code holds the sink. Each successful write is fsynced/atomically renamed as
-appropriate and followed by the existing `artifact_written` event; the QM
-`StepResult.artifacts` returns those references.
+- A path-safe sink rooted at the loaded `RunRecord.artifactsDir` rejects
+  absolute, traversal, symlink-escape and cross-run paths. Only host code holds
+  it.
+- Each write is atomically renamed and emits the existing `artifact_written`
+  event. `StepResult.artifacts` returns those references.
+- For a quality parent, detached `spawn_agent` completion handling calls the
+  sink before delivering the completion message, using this record:
 
-For a quality-profile parent, both detached spawn handling and nested chain
-spawning call the same evidence sink before delivering completion. The evidence
-record binds:
+  ```ts
+  interface ReviewerEvidence {
+    readonly runId: string;
+    readonly lens: ReviewLens;
+    readonly spawnId: string;
+    readonly sessionId: string;
+    readonly resolvedRole: string;
+    readonly resolvedModel: { readonly provider: string; readonly id: string };
+    readonly outcome: "success" | "failed";
+    readonly digest: string;
+    readonly fullText: string;
+  }
+  ```
 
-```ts
-interface ReviewerEvidence {
-  readonly runId: string;
-  readonly lens: ReviewLens;
-  readonly spawnId: string;
-  readonly sessionId: string;
-  readonly resolvedRole: string;
-  readonly resolvedModel: { readonly provider: string; readonly id: string };
-  readonly outcome: "success" | "failed";
-  readonly digest: string;
-  readonly fullText: string;
-}
-```
-
-The first successful completion for each expected lens exclusive-creates its
-artifact. Duplicate lens, unexpected role, absent/empty final text, model
-mismatch, wrong run context, or failed persistence is a report-integrity
-failure. The QM still receives the same full text in the normal completion
-message for synthesis, but it never receives a host file path or authority to
-create producer evidence.
-
-Only QM evidence is persisted by this feature. Ordinary durable stages continue
-to return `artifacts: []` as today; execution-liveness retains ownership of any
-future general attempt-evidence design.
+- The first successful completion per expected lens exclusive-creates its
+  artifact. Any other case is a report-integrity failure: a duplicate lens, an
+  unexpected role, empty text, a model mismatch, the wrong run, a timeout or a
+  persistence failure.
+- Ordinary durable stages keep returning `artifacts: []`.
 
 ### 5. Final report, status, and terminal matrix
 
-The QM returns final markdown as assistant text. Host validation requires all
-AC-008 sections and one machine-readable `COSMO_QM_REPORT` footer:
-
-```ts
-type QualityVerdict = "ready" | "not-ready" | "failed" | "refused";
-
-interface QualityReportIndex {
-  readonly runId: string;
-  readonly verdict: QualityVerdict;
-  readonly checks: readonly CheckResult[];
-  readonly gates: readonly GateResult[];
-  readonly findings: readonly QualityFinding[];
-  readonly humanItems: readonly HumanDecisionItem[];
-  readonly observations: readonly ScopedObservation[];
-  readonly reviewed: readonly string[];
-  readonly reviewerModels: readonly ReviewerModelRecord[];
-}
-```
-
-Malformed model output is retained as `raw-final.md`; host code generates a
-complete failed `final.md`. Refusal, cancellation, pre-model errors, and child or
-storage failure use the same sections with explicit failure evidence.
+- The QM returns its final markdown with the AC-008 sections and a
+  `COSMO_QM_REPORT` index block (`QualityReportIndex`: verdict, checks, gates,
+  findings, human items, observations, reviewed, reviewer models). D-017
+  governs index defects.
+- Malformed output is kept as `raw-final.md`.
 
 | Isolation/assessment state | Durable run outcome | Report verdict |
 |---|---|---|
-| isolation refused | blocked | `refused` with reason |
+| isolation or preparation refused | blocked | `refused` with reason |
 | assessment ready | completed | `ready` |
-| findings/blockers | completed | `not-ready` |
-| execution/report-integrity failure | failed | `failed` |
+| findings, blockers, not-configured, or gate-owned-file items | completed | `not-ready` |
+| execution or report-integrity failure | failed | `failed` |
 | caller cancellation | cancelled | `failed`, cancellation named |
 
-`run status`/`run_status` aggregate existing step `ArtifactRef` values and point
-to `qm/final.md`; this is read-only projection, not recovery. The plan summary at
-`missions/plans/<planSlug>/qm-runs/<runId>.md` contains run/verdict, artifact
-link, checks/gates, finding IDs, human items, and reviewer models. Plan identity
-comes only from existing explicit completion-label/plan-session context; absent
-or ambiguous identity yields a planless run. D-010 governs whether these host
-writes may occur inside the source checkout.
+- `run status` and `run_status` project the existing step `ArtifactRef` values
+  and point to `qm/final.md`, as a read-only projection.
+- The plan summary contains the run and verdict, an artifact link, checks and
+  gates, finding IDs, human items and reviewer models.
+- Plan identity comes only from an explicit completion label or plan-session
+  context. When it is absent or ambiguous, the run is planless and writes no
+  summary.
 
-### 6. One-pass assessment and model policy
+### 6. One-pass assessment, checks and model policy
 
-Rewrite QM prose as Setup → Assess → Report:
+The QM prompt becomes Setup → Assess → Report:
 
-1. Consume host-provided snapshot/run/check context.
-2. Resolve direct analysis capability states and execute applicable bound
-   capabilities in the snapshot.
-3. Triage specialist applicability.
-4. Start the general reviewer plus applicable specialists once. Host policy
-   overrides the generalist to the configured diverse model.
-5. Consume correlated completion text, synthesize the final report, and stop.
+1. Read the host-provided context: run ID, materials location, check results
+   from `checks.md`, and the base SHA.
+2. Resolve analysis capability states and run the bound capabilities against
+   the literal base SHA.
+3. Triage which specialists apply, from the changed-file list and the diff.
+4. Start the generalist and the applicable specialists once through
+   `spawn_agent`. The host overrides the generalist's model with
+   `diverseReviewerModel`.
+5. Read the correlated completion texts, synthesize the report, and stop.
 
-There is no verifier child, remediation, task creation, commit, plan mutation,
-cleanup of other runs, or re-review loop. The generalist always runs;
-specialists remain conditional. A specialist finding may be closed/dismissed
-only with independent generalist or QM evidence. Performance P1 requires a
-measured or reproduced cost; speculative cost is at most P2.
+Reviewer prompts:
 
-Project config defines model families without provider-specific framework code:
+- Read scope from the materials instead of shell `git`.
+- Return the report as final text; there are no output paths.
+- Follow the P1 and closure rules (B-010).
+
+Config, validated in `lib/config`:
 
 ```ts
-interface QualityReviewModelConfig {
-  readonly diverseReviewerModel: string;
-  readonly modelFamilies: Readonly<Record<string, readonly string[]>>;
-  readonly checks: readonly QualityReviewCheck[];
+interface QualityReviewConfig {
+  readonly prepare?: readonly QualityReviewCommand[];
+  readonly checks?: readonly QualityReviewCommand[];
+  readonly diverseReviewerModel?: string;
+  readonly modelFamilies?: Readonly<Record<string, readonly string[]>>; // extends the shipped provider-alias table
 }
+interface QualityReviewCommand { readonly id: string; readonly command: string; readonly args: readonly string[] }
 ```
 
-After Pi resolves canonical model identities, each model must occur in exactly
-one family list and the worker/reviewer families must differ. Session creation
-returns its actual resolved identity to the host. Substitution or fallback that
-does not equal the configured resolved ID fails the review and is recorded.
+Unconfigured `checks` or `diverseReviewerModel` follow H-003 option A.
 
 ### 7. Baseline-aware changed-scope audit
 
-First, in a clean detached checkout of the explicit comparison base, invoke the
-pinned provider's supported duplication-baseline generation path and create
-`.fallow-baselines/duplication.json`. Record its reason, base SHA, timestamp,
-provider version/request, and digest alongside dead-code and health in the
-manifest. This bootstrap is a standalone tracked act before implementation
-changes and cannot include the reviewed diff. If the pinned provider cannot
-produce/consume the expected baseline or gives contradictory exit/envelope
-semantics, stop for a dependency/spec decision.
+Per D-008:
 
-After bootstrap, only the Fallow adapter's `changed-scope-audit` builder adds all
-three baseline arguments before common JSON/failure flags. Missing/unreadable or
-digest-mismatched files fail visibly; they never degrade to unbaselined audit.
-Ordinary audit is read-only.
+- Only the Fallow adapter's `changed-scope-audit` builder adds the three
+  baseline arguments, before the common JSON and failure flags.
+- Missing or unreadable files fail visibly.
+- `manifest.json` records digests and provenance.
+- `scripts/update-fallow-baselines.ts` is the only writer, and it requires a
+  base and a reason.
 
-A separate explicit maintenance script takes a literal base plus nonempty human
-reason, refreshes requested baseline files atomically, and appends updated
-provenance/digests. Review code never calls it.
+A live probe before enforcement confirms that each flag is accepted and that
+the verdict and envelope stay consistent (R-010).
 
-### 8. Base-owned suppression registry
+### 8. Base-owned suppression registry and gate-owned files
 
-Add a pure policy and project check with this registry shape:
+A pure policy module in `lib/quality/suppression-policy.ts` and a project check
+in `scripts/check-new-suppressions.ts` implement D-009:
 
-```ts
-interface SuppressionExceptionRegistry {
-  readonly version: 1;
-  readonly directivePatterns: readonly string[];
-  readonly exceptions: readonly {
-    id: string;
-    path: string;
-    directiveFingerprint: string;
-    targetFingerprint: string;
-    reason: string;
-    approvedBy: "human";
-    approvedAt: string;
-  }[];
-}
-```
+- The registry is `.cosmonauts/suppression-exceptions.json`, seeded with the
+  current intentional directives.
+- The check reads added lines against the explicit base and loads the registry
+  from the base revision.
+- The QM launcher computes gate-owned-file changes from the changed-file list
+  and injects them into the report as human-decision items (B-008).
 
-The check reads added lines against the explicit base and loads authorization
-from that base revision's registry, never working-tree registry bytes. A base
-exception survives movement through directive+target fingerprints; changing
-either needs a new human entry. Same-change registry additions are separately
-reported and cannot authorize that diff. Seed intentional existing directives;
-never edit registry or source from the check.
+### 9. Documentation, callers and legacy migration
 
-### 9. Documentation, callers, and legacy migration
-
-Reconcile `docs/fallow-exceptions.md`, `.fallow-baselines/manifest.json`, and the
-roadmap: dead-code/health retain their committed floors; duplication now has the
-explicitly bootstrapped comparison-base baseline while its threshold/current
-state is stated accurately; changed-scope consumes all three; inline directives
-use the human registry; refresh is reasoned and explicit.
-
-Move exactly the eleven shared QM files—three general, three security, three UX,
-and two performance—to `missions/archive/reviews/qm/shared-rounds/` with history.
-The two plan-qualified `analysis-gate-coverage-*-round-1.md` files stay. Update
-all tracked old-path links; an old-path search must be empty and each moved
-file's history reachable.
-
-Update named-chain descriptions and callers so QM-ending chains stop at findings.
-The external implementation flow creates/updates remediation tasks, runs Drive,
-and obtains independent review separately. No caller promises automatic fixes,
-plan completion, or a clean source tree from QM.
+- Reconcile `docs/fallow-exceptions.md`, `.fallow-baselines/manifest.json` and
+  the roadmap item (B-009).
+- Move the eleven shared files (three general, three security, three UX, two
+  performance) to `missions/archive/reviews/qm/shared-rounds/` with `git mv`.
+  Add a README mapping old paths to new. The two plan-qualified
+  `analysis-gate-coverage-*-round-1.md` files stay.
+- Repair links on live surfaces per H-005.
+- Update named-chain descriptions, `cody.md`, the spawning and dispatch skills,
+  `docs/orchestration.md`, `README.md`, `AGENTS.md` and
+  `external-commands/implement-plan.md`. QM-ending chains now stop at findings,
+  and remediation is separate.
 
 ## Files to Change
 
-- `bundled/coding/review-launch-policy.json` (new) — data-only canonical QM and
-  built-in-chain preflight facts.
-- `cli/main.ts`, `cli/run/subcommand.ts`, and `cli/chain-execution.ts` — perform
-  safe standalone admission, force QM-containing chains durable, and preserve a
-  host run store while the QM stage uses snapshot `cwd`.
-- `domains/shared/extensions/orchestration/authorization.ts` — centralize target
-  resolution/denial facts.
-- `domains/shared/extensions/orchestration/chain-tool.ts` — preauthorize all
-  members and propagate quality context to nested panel chains.
-- `domains/shared/extensions/orchestration/spawn-tool.ts` — route canonical QM
-  through the durable quality launcher and persist correlated panel completion
-  text before notifying the parent.
-- `domains/shared/extensions/orchestration/driver-tool.ts` — require worker
-  authority before task/run allocation.
-- `lib/agents/types.ts` and `lib/agents/session-assembly.ts` — define/apply the
-  narrow internal effective-tool profile without changing ordinary agents.
-- `lib/orchestration/session-factory.ts` — return host-observed resolved model
-  identity and honor host-owned effective tools/extensions.
-- `lib/orchestration/agent-spawner.ts`,
-  `lib/orchestration/spawn-completion-loop.ts`, and
-  `lib/orchestration/spawn-tracker.ts` — carry quality context and correlated
-  full-text/model completion evidence without changing wait-timeout cancellation.
-- `lib/orchestration/quality-review-policy.ts` (new) — load/validate data-only
-  launch, check, and model-family policy.
-- `lib/orchestration/quality-review-context.ts` (new) — bind active sessions to
-  persisted quality run identity; absence fails closed.
-- `lib/orchestration/quality-review-workspace.ts` (new) — capture and materialize
-  the independent stable snapshot.
-- `lib/orchestration/quality-review-checks.ts` (new) — execute only configured
-  argv checks in the snapshot and capture evidence.
-- `lib/orchestration/quality-review-artifacts.ts` (new) — own path-safe host
-  writes, lifecycle, producer correlation, and retained-workspace cleanup.
-- `lib/orchestration/quality-review-report.ts` (new) — validate/generate final
-  reports and per-run plan summaries.
-- `lib/orchestration/quality-review-run.ts` (new) — compose allocation,
-  snapshot, checks, restricted spawn, pre-terminal finalization, and refusal.
-- `lib/orchestration/durable-chain-compiler.ts` — reject unsafe QM topology and
-  mark only the terminal QM step for the quality executor.
-- `lib/orchestration/durable-chain-runner.ts` — delegate that marked step to the
-  focused executor and return its QM-only artifacts while preserving summaries.
-- `lib/orchestration/types.ts` — carry the narrow host-owned quality context and
-  resolved model evidence.
-- `lib/durable-runtime/types.ts` and `lib/durable-runtime/controller.ts` — expose
-  existing step artifact references in normalized status without changing
-  leases, attempts, settlement, or general persistence.
-- `domains/shared/extensions/orchestration/run-control-tools.ts` and
-  `cli/run/subcommand.ts` — render QM full-report pointers.
-- `bundled/coding/agents/quality-manager.ts` — narrow extensions/subagents and
-  describe a review-only role.
-- `bundled/coding/prompts/quality-manager.md` — replace remediation rounds with
-  Setup → Assess → Report and completion-text panel consumption.
-- `bundled/coding/prompts/reviewer.md`,
-  `bundled/coding/prompts/security-reviewer.md`,
-  `bundled/coding/prompts/performance-reviewer.md`, and
-  `bundled/coding/prompts/ux-reviewer.md` — return reports as final text,
-  calibrate closure/severity, and stop naming shared output paths.
-- `lib/config/types.ts` and `lib/config/loader.ts` — validate exact argv checks,
-  diverse model, and non-overlapping model-family membership.
-- `.cosmonauts/config.json` and `.cosmonauts/config.example.json` — configure and
-  document this project's checks and provider-neutral family/model selection.
-- `domains/shared/extensions/project-tools/fallow-provider.ts` — pass all three
-  baselines only for changed-scope audit.
-- `.fallow-baselines/duplication.json` (new) — explicit clean-base bootstrap.
-- `.fallow-baselines/manifest.json` (new) — record baseline reason/base/provider
-  request/version/digests.
-- `scripts/update-fallow-baselines.ts` (new) — explicit reasoned refresh outside
-  review.
-- `lib/quality/suppression-policy.ts` (new) — pure base-registry classification.
-- `scripts/check-new-suppressions.ts` (new) — project-native check adapter.
-- `.cosmonauts/suppression-exceptions.json` (new) — human-owned registry seeded
-  from current directives.
-- `package.json` — expose suppression checking and explicit baseline maintenance.
-- `docs/fallow-exceptions.md`, `ROADMAP.md`, and `AGENTS.md` — align baseline,
-  debt, suppression, and project-check guidance.
-- `bundled/coding/chains.ts`, `bundled/coding/prompts/cody.md`,
-  `domains/shared/skills/spawning/SKILL.md`,
-  `domains/main/skills/dispatch/SKILL.md`, `docs/orchestration.md`, `README.md`,
-  and `external-commands/implement-plan.md` — describe findings-only completion
-  and separate remediation.
-- `missions/reviews/review-round-1.md`,
-  `missions/reviews/review-round-2.md`,
-  `missions/reviews/review-round-3.md`,
-  `missions/reviews/security-review-round-1.md`,
-  `missions/reviews/security-review-round-2.md`,
-  `missions/reviews/security-review-round-3.md`,
-  `missions/reviews/ux-review-round-1.md`,
-  `missions/reviews/ux-review-round-2.md`,
-  `missions/reviews/ux-review-round-3.md`,
-  `missions/reviews/performance-review-round-1.md`, and
-  `missions/reviews/performance-review-round-2.md` — move with history to
-  `missions/archive/reviews/qm/shared-rounds/`.
-- `missions/reviews/codex-post-review-code-structure-map.md`,
-  `missions/plans/framework-health/plan.md`,
-  `knowledge/analysis-capability-runtime.md`,
-  `knowledge/analysis-investigation-procedures.md`,
-  `missions/archive/plans/coding-agnostic-framework/qm.md`,
-  `missions/archive/plans/code-structure-map/qm.md`,
-  `missions/archive/tasks/TASK-361 - Reviewerquality-manager resolve diff base to originmain, pulling already-merged commits into the review range.md`, and
-  `missions/archive/tasks/TASK-399 - Restore recursive and extra skill visibility under internal deny-list filtering.md`
-  — update historical links to archive paths without changing substantive
-  history.
+- `domains/shared/extensions/orchestration/authorization.ts` — shared target resolution and denial facts.
+- `domains/shared/extensions/orchestration/chain-tool.ts` — authorize every chain member before allocation.
+- `domains/shared/extensions/orchestration/driver-tool.ts` — require worker authority before task or run allocation.
+- `domains/shared/extensions/orchestration/spawn-tool.ts` — route the canonical QM through the quality launcher; for quality parents, persist correlated panel completion text before notifying.
+- `domains/shared/extensions/orchestration/run-control-tools.ts` and `cli/run/subcommand.ts` — render QM report pointers.
+- `cli/main.ts` and `cli/chain-execution.ts` — route standalone and chain QM launches through the launcher.
+- `lib/agents/types.ts` and `lib/agents/session-assembly.ts` — apply the host-owned effective tool profile without changing ordinary agents.
+- `lib/orchestration/session-factory.ts` — return the host-observed resolved model identity; honor the profile's tools and `hostRunStoreRoot`.
+- `lib/orchestration/agent-spawner.ts`, `lib/orchestration/spawn-completion-loop.ts`, `lib/orchestration/spawn-tracker.ts` — carry quality context and correlated full-text and model evidence; timeouts still never cancel.
+- `lib/orchestration/chain-runner.ts` — the inline-chain terminal QM stage delegates to the launcher (D-016).
+- `lib/orchestration/durable-chain-compiler.ts` — reject a QM in a non-terminal or parallel position; mark the terminal QM step.
+- `lib/orchestration/durable-chain-runner.ts` — delegate the marked step to the QM executor and return its artifacts; summaries unchanged.
+- `lib/orchestration/types.ts` — the narrow quality context and resolved-model evidence.
+- `lib/orchestration/quality-review-launch.ts` (new) — role recognition, entry-point routing, refusal.
+- `lib/orchestration/quality-review-workspace.ts` (new) — capture, clone, overlay, re-sample, materials, prepare.
+- `lib/orchestration/quality-review-checks.ts` (new) — run configured argv in the clone and capture evidence.
+- `lib/orchestration/quality-review-artifacts.ts` (new) — path-safe sink, lifecycle, reviewer evidence, workspace removal.
+- `lib/orchestration/quality-review-report.ts` (new) — report validation and generation, plan summaries, gate-owned-file items.
+- `lib/orchestration/quality-review-run.ts` (new) — the executor composing allocation, snapshot, checks, the restricted QM session and finalization.
+- `lib/orchestration/quality-review-models.ts` (new) — the family alias table, config extension and diversity check.
+- `domains/shared/extensions/project-tools/analysis-consent.ts` — accept an explicit in-memory authorization for a verified snapshot of a consented root; never write consent.
+- `domains/shared/extensions/project-tools/fallow-provider.ts` — pass the three baselines for changed-scope audit only.
+- `lib/durable-runtime/types.ts`, `lib/durable-runtime/controller.ts` — expose existing step artifact refs in normalized status; no lease, attempt or settlement changes.
+- `lib/config/types.ts`, `lib/config/loader.ts` — validate the `qualityReview` block.
+- `.cosmonauts/config.json`, `.cosmonauts/config.example.json` — this repository's `prepare`, `checks`, `diverseReviewerModel`; documented example.
+- `bundled/coding/agents/quality-manager.ts` — subagents limited to the four lenses; description is review-only.
+- `bundled/coding/prompts/quality-manager.md` — Setup → Assess → Report.
+- `bundled/coding/prompts/reviewer.md`, `security-reviewer.md`, `performance-reviewer.md`, `ux-reviewer.md` — scope from materials, final-text reports, P1 and closure rules.
+- `.fallow-baselines/manifest.json` (new) — provenance and digests of the three existing files.
+- `scripts/update-fallow-baselines.ts` (new) — explicit reasoned refresh.
+- `lib/quality/suppression-policy.ts` (new), `scripts/check-new-suppressions.ts` (new), `.cosmonauts/suppression-exceptions.json` (new).
+- `package.json` — expose the suppression check and the baseline refresh.
+- `docs/fallow-exceptions.md`, `ROADMAP.md`, `AGENTS.md` — baseline, debt, suppression and project-check guidance.
+- `bundled/coding/chains.ts`, `bundled/coding/prompts/cody.md`, `domains/shared/skills/spawning/SKILL.md`, `domains/main/skills/dispatch/SKILL.md`, `docs/orchestration.md`, `README.md`, `external-commands/implement-plan.md`, `external-skills/cosmonauts/SKILL.md` — findings-only completion and separate remediation.
+- The eleven files `missions/reviews/{review,security-review,ux-review}-round-{1,2,3}.md` and `missions/reviews/performance-review-round-{1,2}.md` — `git mv` to `missions/archive/reviews/qm/shared-rounds/`, plus a `README.md` there.
+- Live-surface old-path references found by an exact tracked search at Stage 8, per H-005.
 
 ## Risks
 
-- **R-001 — Ratified AC collision blocks implementation.** D-010 remains open.
-  Pivot only after the human selects A or B and the authoritative ground records
-  that amendment. Abort any attempt to hide host writes from the integrity
-  comparison.
-- **R-002 — Generic isolation scope creep.** If implementation needs
-  `WorktreeSpec.isolated`, scheduler worktrees, merge finalizers, declared panel
-  graph migration, or mutable parallel execution, stop under D-003.
+- **R-001 — Human rulings pending.** H-001..H-005 block only the stage parts
+  named in each entry. Proceed with the unblocked stages; do not implement a
+  blocked part on the recommended option before the ruling is recorded.
+- **R-002 — Generic isolation scope creep.** If delivery needs
+  `WorktreeSpec.isolated`, scheduler worktrees, merge finalizers, a declared
+  panel graph or mutable parallel execution, stop under D-003.
 - **R-003 — Snapshot fidelity varies across Git layouts.** Unsafe symlinks,
-  sparse checkouts, gitlinks/submodules, rapid edits, and unusual nesting may be
-  unprovable. Refuse; never copy approximately or fall back.
-- **R-004 — Unsafe pre-bootstrap execution.** Standalone built-in QM admission
-  must occur from data before executable project/domain imports. If the CLI/tool
-  path cannot do that, refuse and redesign; do not weaken INV-001. Prefix stages
-  remain ordinary execution and the snapshot boundary is immediately before QM.
-- **R-005 — Shell authority reappears through session assembly.** Any quality
-  session receiving bash/edit/write, or any model-selected check command, is an
-  abort condition because it reopens `review-1.md PR-003`.
-- **R-006 — Timed-out child remains alive.** Never cancel it. Persist retention,
-  keep the workspace, and clean only after settlement or proven owner death.
-- **R-007 — Execution-liveness rebase collision.** QM lifecycle/artifact
-  projection may sit near TASK-714/TASK-718. This plan must not depend on or
-  implement their leases, general attempt evidence, start registration, or
-  settlement semantics; the later plan rebases onto the narrow additive seam.
-- **R-008 — Report persistence partially fails.** Provisional report/summary
-  must precede fallible work. A failed replacement leaves the conservative
-  record and fails the run; no completed/ready outcome can precede finalization.
-- **R-009 — Model identity/family is ambiguous or unavailable.** Unknown,
-  overlapping, same-family, fallback, or unavailable resolution refuses/fails;
-  never infer from a provider string or silently substitute.
-- **R-010 — Pinned Fallow baseline semantics differ.** Bootstrap in a clean
-  detached base and live-probe flags/envelope before adapter enforcement. Abort
-  if 2.54.2 cannot generate and consume the missing duplication baseline.
-- **R-011 — Baseline bootstrap absorbs the feature diff.** The duplication file
-  must derive from the recorded pre-implementation base. Any working-tree input
-  or unexplained digest aborts the stage.
-- **R-012 — Suppression matching is weak/noisy.** Exercise named/equivalent
-  directives, movement, target changes, and same-change registry edits. Pivot
-  fingerprints within D-009; never weaken base ownership.
-- **R-013 — Host artifact escape/forgery.** Path traversal, symlink escape,
-  duplicate lens, absent producer correlation, or an agent-visible artifact path
-  fails the run. No review session may see a path back to source.
-- **R-014 — Historical links are missed.** Verify all eleven histories and a
-  full tracked old-path search. Do not move the two plan-qualified analysis gate
-  reports merely because a glob matches.
-- **R-015 — Structural evidence remains incomplete.** Duplication analysis was
-  unusable, boundary conformance is unbound, and the architecture map is absent.
-  Independent review must inspect module direction and keep policy out of the
-  named complexity hotspots; no clean baseline is inferred.
-- **R-016 — Authority drifts at a new launch surface.** Any newly discovered
-  agent-starting tool must use shared admission or be proven genuine top-level.
-  Do not ship AC-001 with another bypass.
-- **R-017 — Configured checks lose existing coverage.** This repository's exact
-  existing test/lint/typecheck commands must be configured and their captured
-  outcomes shown in B-006. If another current project check is discovered, add
-  it to data before removing verifier shell access.
+  sparse checkouts, submodules, rapid edits and unusual nesting refuse. Never
+  copy approximately or fall back.
+- **R-004 — Source writes during capture.** Any source command that is not
+  plumbing, or runs without `GIT_OPTIONAL_LOCKS=0`, can rewrite `.git/index`.
+  The B-002 stale-stat-cache case must go red if a porcelain command sneaks
+  in.
+- **R-005 — Shell authority reappears.** Any quality session that ends up with
+  `bash`, `edit`, `write` or `chain_run`, or any model-chosen command, is an
+  abort condition.
+- **R-006 — Dependency preparation is slow or network-bound.** Record the
+  duration in `checks.md`. If preparation routinely exceeds the QM's useful
+  budget, pivot to a lockfile-keyed prepared cache outside the checkout. Never
+  pivot to a link back into the operator checkout.
+- **R-007 — Consent mapping widens authority.** The in-memory authorization
+  must apply only to the verified snapshot of the exact consented real path,
+  for one run. A reusable or persisted grant aborts the stage.
+- **R-008 — Execution-liveness rebase.** This plan adds no leases, owner
+  identity, start registration or settlement. Host-run prepare and check
+  processes and the clone are new descendants of the outer QM attempt. When
+  execution-liveness rebases, its plan needs an amend-on-record entry to
+  register them (the human acknowledged on 2026-09-23 that it lands after this
+  plan).
+- **R-009 — Report persistence partially fails.** The provisional report
+  precedes all fallible work. A failed replacement keeps the conservative
+  record and fails the run.
+- **R-010 — Pinned Fallow baseline semantics.** Live-probe all three flags
+  against the committed files before enforcing them. If 2.54.2 rejects a file
+  or reports contradictory envelopes, stop for a dependency decision.
+- **R-011 — Suppression matching is weak or noisy.** Exercise named and
+  equivalent directives, movement, target changes and same-change registry
+  edits. Tune fingerprints within D-009; never weaken base ownership.
+- **R-012 — Host artifact escape or forgery.** Path traversal, symlink escape,
+  a duplicate lens, a missing correlation, or a path visible to an agent fails
+  the run.
+- **R-013 — Authority drifts at a new launch surface.** Any newly discovered
+  agent-starting tool must use shared admission or be shown to be a genuine
+  top-level path.
+- **R-014 — Structural evidence is incomplete.** Boundary conformance is
+  unbound and the architecture map is absent. Independent review must check
+  module direction and keep policy out of the named complexity hotspots.
 
 ## Implementation Order
 
-All stages are blocked until D-010 receives a human ruling and the chosen
-ratified amendment is recorded. Thereafter each code stage follows failing
-behavioral coverage → minimal implementation → refactor. Authored prompt/skill
-outcomes are reviewed semantically, not asserted by sentence matching.
+Each code stage follows red → green → refactor. Authored prompt and skill
+outcomes are reviewed semantically, not by matching sentences. An authority is
+removed only in the stage that delivers its replacement (SCOPE-SEQUENCING-001).
 
-1. **Close authority and constrain review sessions — B-001, B-006.** Centralize
-   target admission for spawn, every chain member, and Drive before allocation.
-   Add the host-owned effective tool profile, remove QM implementation/verifier
-   roles, and prove no QM/panel path receives shell/edit/write while allowed
-   leads and top-level CLI behavior remains unchanged.
-2. **Establish trusted launch and snapshot isolation — B-002.** Add data-only
-   canonical preflight, terminal-only topology rules, stable capture, independent
-   clone materialization, and fail-closed layout outcomes. Prove standalone
-   bootstrap occurs after snapshot and hostile private writes cannot reach source.
-3. **Persist lifecycle before work — B-004.** Allocate QM run identity, create
-   provisional complete report/summary, record reconstructible phases and
-   workspace ownership, order finalization before `StepResult`, and retain
-   timed-out-child workspaces without cancellation.
-4. **Capture host-correlated panel evidence — B-003, B-004, B-005.** Carry actual
-   resolved model identity from session creation, persist full child text by
-   run/lens/spawn/session/role before completion delivery, reject missing or
-   duplicate producers, validate/generate final reports, and expose QM artifact
-   references through status without generalizing other stages.
-5. **Deliver one review-only assessment pass — B-005, B-006.** Configure and run
-   exact host-owned project checks in the clone, rewrite QM/panel prose for final
-   text and one Setup → Assess → Report pass, and preserve direct analysis,
-   triage, and applicable specialist behavior without remediation.
-6. **Bootstrap and enforce baseline-aware audit — B-007, B-009.** From the
-   recorded clean base, create the missing duplication baseline plus provenance;
-   then pass all three baselines, fail closed on missing/mismatch, and add
-   reasoned explicit refresh. Reconcile docs and roadmap in the same stage.
-7. **Enforce base-owned suppression exceptions — B-008, B-009.** Add/seed the
-   registry, pure classifier, and project check. Cover unauthorized,
-   self-authorized, pre-authorized, moved, target-changed, and equivalent
-   directives with no implementer-decided cells.
-8. **Attest and calibrate the panel — B-010, B-011.** Add non-overlapping family
-   config, force the always-present generalist override, validate actual model
-   identity, record all reviewers, and revise performance/closure guidance.
-   Exercise every valid/invalid family-resolution cell without fallback.
-9. **Archive records and update callers — B-012.** Move the eleven files with
-   history, repair every old link, update chains/leads/skills/docs/external flow,
-   and walk direct checks, analysis, triage, specialists, findings-only chain
-   endings, and separate remediation routing end to end.
-10. **Independent closure under D-002 — B-001 through B-012.** Resolve the
-    project's runtime-capable evidence at sign-off, attack every refusal,
-    producer, lifecycle, authority, baseline, suppression, and model-family
-    negative, and use the ratified Claude plus read-only Codex
-    correctness/liveness review instead of QM. Any remediation goes through
-    ordinary tasks/Drive and another independent review; QM never certifies the
-    component that confines it.
+1. **Close the authority bypass — B-001 (routes only).** Make `chain_run` and
+   `run_driver` admit only allowed targets, sharing facts with `spawn_agent`.
+   Independent of H-*.
+2. **Baseline-aware audit and documentation — B-007, B-009.** Live-probe the
+   flags, pass the three committed baselines, add the manifest and refresh
+   script, and reconcile the docs and the roadmap. Independent of H-*. This
+   lands early so later stages are judged on introduced debt only.
+3. **Base-owned suppression check — B-008 (check part).** Add the registry,
+   policy and project check, and seed the current directives. Independent of
+   H-*.
+4. **QM run allocation, lifecycle and host artifacts — B-003 (sink), B-004.**
+   Allocate the durable QM run (including D-016 for inline chains), write the
+   conservative report first, add the lifecycle, path-safe sink, finalization
+   ordering, refusal report and status pointers. The plan-summary write waits
+   for H-001; everything else does not.
+5. **Private snapshot, materials and preparation — B-002.** Capture, clone,
+   overlay, re-sample, materials, prepare, and the consent mapping, with every
+   refusal reason. Waits for H-002 and H-004.
+6. **Review-only QM pass — B-001 (QM profile), B-003, B-005, B-006, B-008
+   (report part).** Together, in one stage: the restricted profile,
+   host-run checks, `spawn_agent`-only panel capture, the one-pass QM and
+   reviewer prompts, gate-owned-file items, and removal of fixer, coordinator,
+   verifier and integration-verifier. The unconfigured path waits for H-003.
+7. **Model diversity and calibration — B-010, B-011.** The family table and
+   config, the generalist override, host-observed model recording, and the P1
+   and closure guidance. The unconfigured path waits for H-003.
+8. **Archive and callers — B-012.** `git mv` the eleven files with a README,
+   update chains, leads, skills, docs and the external flow, and walk
+   QM-ending chains end to end. Link repair waits for H-005.
+9. **Independent closure under D-002 — B-001 through B-012.** A Claude subagent
+   reviewer plus read-only codex (`gpt-6-sol`, high), framed as
+   correctness/liveness. Attack every refusal, producer, lifecycle, authority,
+   baseline, suppression and model-family negative. Any remediation goes
+   through ordinary tasks and Drive and gets another independent review.
+
+If a stage surfaces unexpected complexity, stop at the stage boundary and
+record an amend-on-record entry, or halt and escalate if ratified ground is
+touched. Do not press through.
