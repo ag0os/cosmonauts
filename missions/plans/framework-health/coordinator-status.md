@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `3e643bd` on `feature/framework-health` (not pushed).
+HEAD: `a124dba` on `feature/framework-health` (not pushed).
 
 ## Done
 
@@ -17,7 +17,18 @@ HEAD: `3e643bd` on `feature/framework-health` (not pushed).
 
 ## Running
 
-- Nothing yet. Next: TASK-711 (framework-health Stage 2 close-out), per D-023.
+- TASK-711 (framework-health Stage 2 close-out):
+  - (2) done in `a124dba`: the test-health-audit spec is rewritten to the probe method
+    under D-002. `scripts/test-health-audit/` (~10k lines), its tests and its docs
+    page are deleted; one census script replaces them (D-037), which discharges
+    `validateCalibrationRecord` by deletion.
+  - (1) running: 75 sampled declarations over 240 admitted files, census frozen at
+    `4a6300f`. Five probe workers each run in their own throwaway worktree under the
+    scratchpad; the main checkout is untouched.
+  - The B-007 tool-name probe (three mutants on shipped agent definitions and
+    capability files, full suite each) is running in a separate worktree.
+  - Left after that: survivors strengthened and re-probed, stage2-probes.md,
+    ROADMAP, full gates, codex review (D-023).
 
 ## Noticed (no action needed now)
 
