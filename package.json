@@ -35,7 +35,8 @@
 		"compile:drive-step": "bun build --compile lib/driver/run-step.ts --outfile bin/cosmonauts-drive-step",
 		"test": "node ./scripts/vitest-runner.mjs",
 		"test:watch": "vitest",
-		"test:coverage": "vitest run --coverage"
+		"test:coverage": "vitest run --coverage",
+		"probe:census": "bun scripts/probe-census.ts"
 	},
 	"dependencies": {
 		"@earendil-works/pi-agent-core": "0.80.6",

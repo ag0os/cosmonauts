@@ -7,6 +7,8 @@ updatedAt: '2026-09-17T05:00:00.000Z'
 
 ## Overview
 
+> **Superseded by `framework-health`** (D-002, human, 2026-09-20; D-033, TASK-711). The method below is forfeit. See the rewritten `spec.md`. TASK-710 cancels TASK-706/TASK-707, marks this plan completed, and archives it.
+
 This plan implements the ratified quality pause in `spec.md`: establish a repeatable test-health assessment method, apply it to the complete current Vitest suite, remediate confirmed weaknesses or remove them from claimed guardrail evidence, and present a revision-pinned baseline for project-owner ratification. It is planned quality/refactor work, not a feature.
 
 Repository exploration on 2026-09-15 enumerated 267 `tests/**/*.test.ts` files. File count is only the starting census: the audit batches by auditable test declarations and relevant source span, and permits subdivisions inside very large test files. Generated objective evidence plus bounded, resumable assessment work units avoid asking one agent to hold the whole suite in one context.
