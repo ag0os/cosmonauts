@@ -36,6 +36,7 @@
 		"test": "node ./scripts/vitest-runner.mjs",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
+		"check:reachability": "bun scripts/check-reachability.ts",
 		"probe:census": "bun scripts/probe-census.ts"
 	},
 	"dependencies": {

@@ -38,7 +38,9 @@ in repository history.
 
 ### Public API entry points
 
-Configured in `fallow.toml` under `entry`.
+Declared in `missions/architecture/staged-code.toml` under `public` and
+configured in `fallow.toml` under `entry`. The reachability command checks that
+`entry` contains exactly these public paths plus the owner-backed `staged` paths.
 
 Reason: public API.
 
