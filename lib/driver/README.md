@@ -174,8 +174,9 @@ commit outside Drive, resume may accept safe external evidence instead of
 rerunning the backend: source-commit recovery requires the recorded
 pre-finalization HEAD and a current changed HEAD with no remaining committable
 source changes; state-commit recovery also requires the current task files for
-all pending task IDs to exist and be `Done`. Without that evidence, Drive leaves
-pending finalization in place and reports `finalization_failed` again.
+all pending task IDs to exist and be `Done` or `Cancelled`. Without that
+evidence, Drive leaves pending finalization in place and reports
+`finalization_failed` again.
 
 `cosmonauts run status` and `cosmonauts run list` classify a run directory in this
 order:
@@ -297,9 +298,9 @@ Callers may set `stateCommitPolicy` explicitly to `final-state-commit` or
 
 The final state commit is bounded task-state persistence. It is not archive,
 memory, push, PR, or automatic plan lifecycle automation, and Drive does not
-mark a plan completed. When all tasks for a `plan:<slug>` are `Done`, Drive may
-emit `plan_completion_candidate` so an operator can decide the plan lifecycle
-step manually.
+mark a plan completed. When all tasks for a `plan:<slug>` are `Done` or
+`Cancelled`, Drive may emit `plan_completion_candidate` so an operator can
+decide the plan lifecycle step manually.
 
 Verification-only work can complete without source changes. For a successful
 `driver-commits` task with no source changes to commit, Drive emits explicit

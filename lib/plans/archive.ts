@@ -8,6 +8,7 @@ import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { sessionsDirForPlan } from "../sessions/session-store.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
+import { isTaskClosed } from "../tasks/task-types.ts";
 import type { PlanManager } from "./plan-manager.ts";
 import { validateSlug } from "./plan-manager.ts";
 
@@ -52,7 +53,7 @@ export interface ArchiveResult {
  *
  * This function:
  * 1. Verifies the plan exists
- * 2. Checks all associated tasks are in Done status (safety check)
+ * 2. Checks all associated tasks are Done or Cancelled (safety check)
  * 3. Creates archive directories as needed
  * 4. Moves the plan directory to missions/archive/plans/<slug>/
  * 5. Moves all tasks with plan:<slug> label to missions/archive/tasks/
@@ -63,7 +64,7 @@ export interface ArchiveResult {
  * @param planManager - PlanManager instance to verify the plan
  * @param taskManager - TaskManager instance to find and verify associated tasks
  * @returns Archive result with paths and details
- * @throws Error if plan doesn't exist or tasks are not all Done
+ * @throws Error if plan doesn't exist or tasks are not all Done or Cancelled
  */
 export async function archivePlan(
 	projectRoot: string,
@@ -80,12 +81,14 @@ export async function archivePlan(
 		throw new Error(`Plan "${slug}" not found`);
 	}
 
-	// 2. Get associated tasks, check all are Done
+	// 2. Get associated tasks, check all are closed
 	const tasks = await taskManager.listTasks({ label: `plan:${slug}` });
-	const nonDoneTasks = tasks.filter((t) => t.status !== "Done");
-	if (nonDoneTasks.length > 0) {
-		const ids = nonDoneTasks.map((t) => `${t.id} (${t.status})`).join(", ");
-		throw new Error(`Cannot archive plan "${slug}": tasks not Done: ${ids}`);
+	const openTasks = tasks.filter((t) => !isTaskClosed(t.status));
+	if (openTasks.length > 0) {
+		const ids = openTasks.map((t) => `${t.id} (${t.status})`).join(", ");
+		throw new Error(
+			`Cannot archive plan "${slug}": tasks not Done or Cancelled: ${ids}`,
+		);
 	}
 
 	// 3. Ensure archive directories exist

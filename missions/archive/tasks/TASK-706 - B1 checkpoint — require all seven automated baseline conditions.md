@@ -1,7 +1,7 @@
 ---
 id: TASK-706
 title: B1 checkpoint — require all seven automated baseline conditions
-status: Blocked
+status: Cancelled
 priority: high
 labels:
   - testing
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-705
 createdAt: '2026-09-16T18:37:59.779Z'
-updatedAt: '2026-09-20T05:03:53.035Z'
+updatedAt: '2026-09-23T14:08:08.808Z'
 ---
 
 ## Description

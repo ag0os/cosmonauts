@@ -118,6 +118,7 @@ describe("artifact-viewer foundation", () => {
 			"In Progress": 0,
 			Done: 0,
 			Blocked: 0,
+			Cancelled: 0,
 		});
 		await expect(access(join(tmp.path, "missions", "tasks"))).rejects.toThrow();
 
@@ -157,6 +158,30 @@ describe("artifact-viewer foundation", () => {
 		await expect(
 			access(join(tmp.path, "missions", "tasks", "config.json")),
 		).rejects.toThrow();
+	});
+
+	test("counts a Cancelled plan task in the plan task status", async () => {
+		await mkdir(join(tmp.path, "missions", "tasks"), { recursive: true });
+		await writeFile(
+			join(tmp.path, "missions", "tasks", "TASK-001 - Superseded.md"),
+			serializeTask(
+				createTaskRecordFixture({
+					id: "TASK-001",
+					title: "Superseded",
+					labels: ["plan:status-plan"],
+					status: "Cancelled",
+				}),
+			),
+			"utf-8",
+		);
+
+		const status = await loadPlanTaskStatus({
+			projectRoot: tmp.path,
+			slug: "status-plan",
+		});
+
+		expect(status.counts.Cancelled).toBe(1);
+		expect(status.counts["To Do"]).toBe(0);
 	});
 
 	test("plan task status does not parse unrelated task files", async () => {

@@ -52,7 +52,7 @@ describe("parseTaskListFilter", () => {
 		expect(parseTaskListFilter({ status: "waiting" })).toEqual({
 			ok: false,
 			error:
-				"Invalid status: waiting. Must be one of: todo, in-progress, done, blocked",
+				"Invalid status: waiting. Must be one of: todo, in-progress, done, blocked, cancelled",
 		});
 	});
 

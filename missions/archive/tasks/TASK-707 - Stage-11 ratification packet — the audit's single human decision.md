@@ -1,7 +1,7 @@
 ---
 id: TASK-707
 title: Stage-11 ratification packet — the audit's single human decision
-status: Blocked
+status: Cancelled
 priority: high
 labels:
   - testing
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-706
 createdAt: '2026-09-16T18:38:11.684Z'
-updatedAt: '2026-09-20T05:03:53.512Z'
+updatedAt: '2026-09-23T14:08:09.259Z'
 ---
 
 ## Description

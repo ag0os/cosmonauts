@@ -167,7 +167,7 @@ export function expectInvalidStatusDiagnostics(
 ): void {
 	expect(output.stdout()).toBe("");
 	expect(output.stderr()).toBe(
-		"Invalid status: waiting. Must be one of: todo, in-progress, done, blocked\n",
+		"Invalid status: waiting. Must be one of: todo, in-progress, done, blocked, cancelled\n",
 	);
 	expect(exit.calls()).toEqual([1]);
 }

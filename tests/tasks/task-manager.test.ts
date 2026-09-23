@@ -1072,6 +1072,43 @@ describe("TaskManager", () => {
 			]);
 		});
 
+		it("keeps dependents blocked by a Cancelled task before and after archive", async () => {
+			await manager.init();
+			const cancelled = await manager.createTask({ title: "Superseded" });
+			const dependent = await manager.createTask({
+				title: "Dependent",
+				dependencies: [cancelled.id],
+			});
+			await manager.updateTask(cancelled.id, { status: "Cancelled" });
+			expect(
+				(await new TaskManager(tempDir).getTask(cancelled.id))?.status,
+			).toBe("Cancelled");
+			expect(
+				(await manager.listTasks({ ready: true })).map((task) => task.id),
+			).not.toContain(dependent.id);
+			await mkdir(join(tempDir, "missions", "archive", "tasks"), {
+				recursive: true,
+			});
+			const activePath = join(
+				tempDir,
+				"missions",
+				"tasks",
+				`${cancelled.id} - Superseded.md`,
+			);
+			const archivedPath = join(
+				tempDir,
+				"missions",
+				"archive",
+				"tasks",
+				`${cancelled.id} - Superseded.md`,
+			);
+			await writeFile(archivedPath, await readFile(activePath));
+			await rm(activePath);
+			expect(
+				(await manager.listTasks({ ready: true })).map((task) => task.id),
+			).not.toContain(dependent.id);
+		});
+
 		it("keeps a task blocked when a dependency exists nowhere", async () => {
 			await manager.init();
 			await manager.createTask({

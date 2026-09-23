@@ -11,7 +11,7 @@ Use Drive for approved plan-linked task batches where a mechanical loop should r
 
 - Do not start Drive until the plan is approved and the task set is clear.
 - Do not claim Drive execution happened unless `run_driver` or `cosmonauts run drive` returns a `runId`.
-- Pass ordered `taskIds` when dependency order matters. The default task selection is all non-Done tasks labeled `plan:<slug>`.
+- Pass ordered `taskIds` when dependency order matters. The default task selection is all tasks that are neither Done nor Cancelled labeled `plan:<slug>`.
 - Keep runs observable: record the `runId`, `scope`, `planSlug`, `workdir`, and `eventLogPath`; monitor new runs with `run_status` / `run_watch` or `cosmonauts run status` / `cosmonauts run watch`. Use `watch_events` only when an existing Drive caller needs legacy event shape or cursor compatibility.
 - Backends execute prompts; the driver owns task status transitions, event logging, configured postflight verification, and commits when `commitPolicy` is `driver-commits`.
 - Drive injects run expectations into each prompt: backend, branch, commit policy, preflight commands, and postflight commands. These expectations are the authority for what the backend should verify and whether it should commit.
@@ -86,11 +86,11 @@ The CLI emits JSON natively; do not pass `--json`. Status values are `completed`
 
 `finalization_failed` means Drive verified the task work but could not finish commit, task-status, or final task-state persistence. Do not treat it as a behavioral blocked task: route `blocked` to implementation or verification remediation, but route `finalization_failed` to `cosmonauts run drive --plan <slug> --resume <runId>` after checking `run status` / `run watch` output for the failed phase and reason.
 
-Resume retries the pending finalization step first. If the missing commit was safely completed outside Drive, resume may accept safe external evidence: source commit recovery needs the recorded pre-finalization HEAD and a changed current HEAD with no remaining committable source changes; state commit recovery also needs the current pending task files to exist and be `Done`. If the evidence is unsafe, leave `pending-finalization.json` in place and report the failure instead of rerunning backend work.
+Resume retries the pending finalization step first. If the missing commit was safely completed outside Drive, resume may accept safe external evidence: source commit recovery needs the recorded pre-finalization HEAD and a changed current HEAD with no remaining committable source changes; state commit recovery also needs the current pending task files to exist and be `Done` or `Cancelled`. If the evidence is unsafe, leave `pending-finalization.json` in place and report the failure instead of rerunning backend work.
 
 With `commitPolicy: "driver-commits"`, Drive defaults `stateCommitPolicy` to `final-state-commit`; with `backend-commits` or `no-commit`, the default is `none`. You may pass `stateCommitPolicy: "final-state-commit"` / `"none"` or CLI `--state-commit-policy final-state-commit|none` explicitly when needed. A final state commit persists only Drive-owned task status updates for the run under `missions/tasks/`; it does not archive, write memory, push, open a PR, or automatically complete the plan.
 
-Verification-only tasks may produce no source changes. Treat explicit no-source-change finalization evidence as a successful source-commit skip for verification-only work, then route any later `task_status` or `state_commit` failure through resume recovery. When Drive emits `plan_completion_candidate`, it is only a signal that all `plan:<slug>` tasks are `Done`; an operator still decides whether to complete, archive, or distill the plan. If `partialMode=continue` leaves any task not Done, Drive skips the final state commit and completion candidate with `not_all_tasks_done` evidence.
+Verification-only tasks may produce no source changes. Treat explicit no-source-change finalization evidence as a successful source-commit skip for verification-only work, then route any later `task_status` or `state_commit` failure through resume recovery. When Drive emits `plan_completion_candidate`, it is only a signal that all `plan:<slug>` tasks are `Done` or `Cancelled`; an operator still decides whether to complete, archive, or distill the plan. If `partialMode=continue` leaves any run task not Done, Drive skips the final state commit and completion candidate with `not_all_tasks_done` evidence.
 
 ## Improvement Pass (post-run)
 
@@ -109,7 +109,7 @@ Claude runs as `claude --dangerously-skip-permissions -p` by default for the sam
 - **Active run already exists.** Monitor the existing `runId`; do not start a competing run for the same plan.
 - **Preflight or postflight failed.** Stop, summarize the failing command and stderr, then fix or route remediation before resuming.
 - **Report outcome unknown.** The backend did not emit the structured JSON/`OUTCOME:` marker. If postflight checks were configured and passed, Drive may infer success; otherwise inspect the worktree and rerun with a prompt override that asks for the final marker, or manually update the task when you have independent evidence.
-- **Partial task result.** Treat it as blocked progress by default. Add a focused prompt override or split the remaining work before rerunning. If you deliberately used `partialMode=continue`, do not expect a final state commit or completion candidate until all tasks are Done.
+- **Partial task result.** Treat it as blocked progress by default. Add a focused prompt override or split the remaining work before rerunning. If you deliberately used `partialMode=continue`, do not expect a final state commit or completion candidate until all tasks are Done or Cancelled.
 - **Detached backend rejected.** Use `codex` or `claude-cli`; `cosmonauts-subagent` is inline-only.
 - **Codex sandbox blocks e2e/build gates.** Codex defaults to YOLO in Drive. If you opted out with `COSMONAUTS_DRIVER_CODEX_YOLO=0`, `--full-auto` is still sandboxed and may block sockets/network; re-enable YOLO or move incompatible checks to host-side verification.
 - **Status says `dead` or `orphaned`.** Inspect `events.jsonl` and resume with `--resume <runId>` after deciding whether the worktree is safe. Pass `--resume-dirty` only when the local changes are expected.

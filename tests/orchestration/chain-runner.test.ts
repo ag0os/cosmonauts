@@ -899,6 +899,24 @@ describe("createDefaultCompletionCheck", () => {
 		expect(result).toBe(true);
 	});
 
+	test("returns true when every task is Done or Cancelled, with the Cancelled criteria left unchecked", async () => {
+		const tm = new TaskManager(tmpDir);
+		await tm.init();
+		const done = await tm.createTask({ title: "Task A" });
+		const cancelled = await tm.createTask({
+			title: "Superseded",
+			acceptanceCriteria: ["Will not be completed"],
+		});
+
+		await tm.updateTask(done.id, { status: "Done" });
+		await tm.updateTask(cancelled.id, { status: "Cancelled" });
+
+		const check = createDefaultCompletionCheck(tmpDir);
+		const result = await check();
+
+		expect(result).toBe(true);
+	});
+
 	test("returns false when Done tasks still have unchecked acceptance criteria", async () => {
 		const tm = new TaskManager(tmpDir);
 		await tm.init();

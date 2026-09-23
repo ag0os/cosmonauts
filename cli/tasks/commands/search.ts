@@ -86,7 +86,7 @@ export function registerSearchCommand(program: Command): void {
 		.argument("<query>", "Search query")
 		.option(
 			"-s, --status <status>",
-			"Filter by status: todo, in-progress, done, blocked",
+			"Filter by status: todo, in-progress, done, blocked, cancelled",
 		)
 		.option(
 			"-p, --priority <priority>",

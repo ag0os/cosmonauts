@@ -21,7 +21,7 @@ Phase 1 export is intentionally separate from orchestration execution. Existing 
 
 ## Chain Runner
 
-Runs agent pipelines using Pi sessions. The DSL is pure topology — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops until all tasks are Done; others run once).
+Runs agent pipelines using Pi sessions. The DSL is pure topology — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops until all tasks are Done or Cancelled; others run once).
 
 ```
 cosmonauts run chain "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "design and implement auth"

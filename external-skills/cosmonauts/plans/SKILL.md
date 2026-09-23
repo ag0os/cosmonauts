@@ -96,7 +96,7 @@ The intended lifecycle for a plan:
 2. **Link tasks via the `plan:<slug>` label.** Cosmonauts associates tasks with a plan by labeling them `plan:<slug>` — `plan view`, `drive run --plan <slug>`, and `plan archive` all use that label as the query. The `task-manager` agent adds it automatically. From outside, set it explicitly: `cosmonauts task create "..." --label "plan:auth-system"`, or on an existing task `cosmonauts task edit <id> --add-label "plan:auth-system"`. (See `cosmonauts-tasks` → "Linking tasks to a plan" for the YAML batch form.) **Do not use `task edit --plan`** — that flag writes free-form implementation notes, it does not link to a plan slug.
 3. **Optionally check artifact conformance.** Run `cosmonauts plan check-artifacts <slug> --json` after editing the Decision Log to catch an undeclared decision citation or an undated supersession.
 4. **Drive execution.** `cosmonauts run drive --plan <slug> --backend claude-cli|codex --mode detached` walks the plan's `plan:<slug>`-labeled tasks in dependency order, dispatching each to the chosen backend.
-5. **Verify & complete.** When all tasks are `Done` and acceptance criteria are checked, set status: `cosmonauts plan edit <slug> --status completed`. Drive may emit `plan_completion_candidate`, but it does not edit the plan status for you.
+5. **Verify & complete.** When all tasks are `Done` with acceptance criteria checked or `Cancelled`, set status: `cosmonauts plan edit <slug> --status completed`. Drive may emit `plan_completion_candidate`, but it does not edit the plan status for you.
 6. **Archive.** `cosmonauts plan archive <slug>` moves the plan and its tasks into `missions/archive/`.
 
 ## Recipes

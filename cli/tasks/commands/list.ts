@@ -25,7 +25,7 @@ export function registerListCommand(program: Command): void {
 		.description("List all tasks")
 		.option(
 			"-s, --status <status>",
-			"Filter by status: todo, in-progress, done, blocked",
+			"Filter by status: todo, in-progress, done, blocked, cancelled",
 		)
 		.option(
 			"-p, --priority <priority>",

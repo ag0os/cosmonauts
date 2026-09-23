@@ -109,7 +109,7 @@ Completion loop:
 1. Create or update the plan.
 2. Create linked tasks with `task_create`.
 3. Implement tasks and update statuses as work progresses.
-4. When all tasks are done, mark the plan completed.
+4. When all tasks are Done or Cancelled, mark the plan completed.
 5. Archive with `plan_archive`.
 6. Optionally distill completed learnings with `/skill:archive`.
 

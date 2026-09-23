@@ -23,6 +23,7 @@ const VALID_STATUSES: TaskStatus[] = [
 	"In Progress",
 	"Done",
 	"Blocked",
+	"Cancelled",
 ];
 const VALID_PRIORITIES: TaskPriority[] = ["high", "medium", "low"];
 

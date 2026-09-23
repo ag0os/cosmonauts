@@ -189,6 +189,22 @@ export async function readTaskFile(
 }
 
 /**
+ * Read an archived task file's content from missions/archive/tasks/
+ * @param projectRoot - The project root directory
+ * @param filename - The filename to read
+ * @returns The file content
+ */
+export async function readArchivedTaskFile(
+	projectRoot: string,
+	filename: string,
+): Promise<string> {
+	return await readFile(
+		join(projectRoot, MISSIONS_DIR, ARCHIVE_DIR, TASKS_DIR, filename),
+		"utf-8",
+	);
+}
+
+/**
  * Write task file to missions/tasks/
  * @param projectRoot - The project root directory
  * @param filename - The filename to write

@@ -71,6 +71,7 @@ import type { SpawnAgentResolution } from "../../lib/orchestration/spawn-resolut
 import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { isTaskClosed } from "../../lib/tasks/task-types.ts";
 
 type DriverMode = "inline" | "detached";
 
@@ -1412,14 +1413,11 @@ async function acceptExternalStateCommit(
 		{ phase: "state_commit" }
 	>,
 ): Promise<{ ok: true; sha: string } | { ok: false; reason: string }> {
-	const notDoneTaskId = await findFirstTaskNotDone(
-		taskManager,
-		pending.taskIds,
-	);
-	if (notDoneTaskId) {
+	const openTaskId = await findFirstOpenTask(taskManager, pending.taskIds);
+	if (openTaskId) {
 		return {
 			ok: false,
-			reason: `pending state task is not Done: ${notDoneTaskId}`,
+			reason: `pending state task is neither Done nor Cancelled: ${openTaskId}`,
 		};
 	}
 	const dirtyTaskPaths = await getDirtyStateTaskPaths(
@@ -1448,13 +1446,13 @@ async function acceptExternalStateCommit(
 	return { ok: true, sha };
 }
 
-async function findFirstTaskNotDone(
+async function findFirstOpenTask(
 	taskManager: TaskManager,
 	taskIds: readonly string[],
 ): Promise<string | undefined> {
 	for (const taskId of taskIds) {
 		const task = await taskManager.getTask(taskId);
-		if (task?.status !== "Done") {
+		if (!task || !isTaskClosed(task.status)) {
 			return taskId;
 		}
 	}

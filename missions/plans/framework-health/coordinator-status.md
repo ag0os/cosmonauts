@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `1a876e7` on `feature/framework-health` (not pushed).
+HEAD: `e445a8e` on `feature/framework-health` (not pushed). The TASK-710 work is uncommitted, in progress.
 
 ## Done
 
@@ -17,19 +17,20 @@ HEAD: `1a876e7` on `feature/framework-health` (not pushed).
 
 ## Running
 
-- TASK-711 (framework-health Stage 2 close-out). All parts are implemented; the independent
-  codex review (D-023) is running before I mark it Done.
-  - Census at `4a6300f`: 240 files, 30 strata, 75 sampled declarations. First probe: 66
-    killed, 9 survived. Six were strengthened and then re-probed to killed by an
-    agent that did not write the patches. S42 was deleted: it compared test-local
-    constants with copies of themselves. S59, a pin of Pi's own behavior, was killed by
-    mutating Pi's agent-loop. S11, a type-only declaration, was killed by the type-check
-    step. B-007's resolved-name case: three mutants, all killed. Recorded in
-    `stage2-probes.md` (`1a876e7`).
-  - test-health-audit is re-specified to the probe method. The old audit suite is
-    deleted, and `validateCalibrationRecord` goes with it (`a124dba`, D-037).
-  - Gates at `1a876e7`: 2,997/2,997, lint, typecheck, check-artifacts x3 all clean.
-- Next: TASK-708..710 (Stage 3) via /implement-plan, after the codex verdict.
+- **TASK-711 done** (Stage 2 closed). Codex took three rounds: FIX (2 findings), FIX (1), then SHIP. Census:
+  240 files, 30 strata, 75 declarations. First probe: 66 killed, 9 survived. Every survivor was closed:
+  six were strengthened and independently re-probed, S42 was deleted, S59 was killed in Pi, and S11
+  was killed by typecheck. Derived decisions D-037 and D-038 are on the record.
+- **TASK-708 done** (Drive/codex), plus a coordinator follow-up (D-039). The worker's check ran
+  Fallow and discarded its output, and treated every `cli/` file as a root. It now roots at
+  what `bin/` imports (test first). Fallow cannot follow the extensionless `bin/cosmonauts`.
+- **TASK-709 done** (Drive/codex). Deleted `run-run-loop.ts`, `spawn-compiler.ts` and
+  `harness-adapters/index.ts` with their tests. `check:reachability` reports 199/199 and exits 0.
+  Suite 2,994/2,994.
+- **TASK-710 in progress.** The codex worker hit its usage limit (the 5h window resets at
+  15:29 local). A Claude worker is finishing it from the partial diff (backup in the scratchpad).
+- Still to do: gates, then an independent review of Stage 3. Codex is unavailable until 15:29,
+  so either wait for it or use another reviewer. QM (D-023) runs on a committed tree only.
 
 ## Noticed (no action needed now)
 

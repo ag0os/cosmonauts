@@ -19,6 +19,6 @@ Manage the project-level task system (persistent markdown files in `missions/tas
 - New task IDs are allocated from active task frontmatter in `missions/tasks/` plus archived task filenames in `missions/archive/tasks/`, using the next number after the highest matching configured-prefix ID.
 - Task IDs are repository-local, not branch-global. Cross-branch duplicate IDs are an accepted caveat when two branches allocate from the same base before merging.
 - `cosmonauts task renumber` is only a future reconciliation option for duplicate readable IDs; it is FUTURE-only and not implemented.
-- Task statuses: To Do, In Progress, Done, Blocked.
+- Task statuses: To Do, In Progress, Done, Blocked, Cancelled.
 - Dependencies must form a DAG (directed acyclic graph). No circular references.
 - Use labels for routing: `backend`, `frontend`, `api`, `database`, `testing`, `devops`.

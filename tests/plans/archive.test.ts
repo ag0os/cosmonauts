@@ -45,6 +45,28 @@ describe("archivePlan", () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
+	it("archives a plan whose only task is Cancelled", async () => {
+		await planManager.createPlan({
+			slug: "cancelled-plan",
+			title: "Cancelled Plan",
+		});
+		const task = await taskManager.createTask({
+			title: "Superseded",
+			labels: ["plan:cancelled-plan"],
+		});
+		await taskManager.updateTask(task.id, { status: "Cancelled" });
+		const result = await archivePlan(
+			tempDir,
+			"cancelled-plan",
+			planManager,
+			taskManager,
+		);
+		expect(result.archivedTaskFiles).toHaveLength(1);
+		expect(
+			await stat(join(tempDir, "missions/archive/plans/cancelled-plan")),
+		).toBeTruthy();
+	});
+
 	it("moves plan directory to missions/archive/plans/<slug>/", async () => {
 		await planManager.createPlan({
 			slug: "test-plan",

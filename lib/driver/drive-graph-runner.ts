@@ -16,6 +16,7 @@ import {
 } from "../memory/episode.ts";
 import type { EpisodeEvent } from "../memory/episodic-records.ts";
 import type { MemoryWarning } from "../memory/types.ts";
+import { isTaskClosed } from "../tasks/task-types.ts";
 import {
 	isDoneTaskStatusStep,
 	isPartialTaskStatusStep,
@@ -818,7 +819,7 @@ async function planCompletionCandidate(
 	const tasks = await ctx.taskManager.listTasks({
 		label: `plan:${spec.planSlug}`,
 	});
-	if (tasks.length === 0 || !tasks.every((task) => task.status === "Done")) {
+	if (tasks.length === 0 || !tasks.every((task) => isTaskClosed(task.status))) {
 		return {};
 	}
 	const candidate = { planSlug: spec.planSlug, taskCount: tasks.length };

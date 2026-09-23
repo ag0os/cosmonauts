@@ -99,7 +99,7 @@ Finalization recovery quick guide:
 
 - `blocked` means implementation or verification needs remediation.
 - `finalization_failed` means backend work and verification passed, but Drive could not finish a source commit, task status update, or final task-state commit. Inspect `cosmonauts run status`, `cosmonauts run list`, `cosmonauts run watch`, or `events.jsonl` for the failed phase/reason, then run `cosmonauts run drive --plan <slug> --resume <runId>`; resume checks `pending-finalization.json` before starting any backend work.
-- With default `driver-commits`, Drive also creates one final state commit for its task status updates. It does **not** complete/archive the plan, write memory, push, or open a PR. `plan_completion_candidate` is only evidence that all `plan:<slug>` tasks are Done.
+- With default `driver-commits`, Drive also creates one final state commit for its task status updates. It does **not** complete/archive the plan, write memory, push, or open a PR. `plan_completion_candidate` is only evidence that all `plan:<slug>` tasks are Done or Cancelled.
 - Verification-only tasks may legitimately have no source changes; treat explicit `no_changes` finalization evidence as a successful source-commit skip.
 
 ### Recipe 3 — Inspect what was done

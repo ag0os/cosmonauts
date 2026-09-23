@@ -35,7 +35,7 @@ createdAt: 2026-02-09T10:00:00.000Z
 
 - `id` — Auto-assigned sequential, readable ID using the configured prefix and numeric suffix.
 - `title` — Short, descriptive name for the work.
-- `status` — Current state: `To Do`, `In Progress`, `Done`, `Blocked`.
+- `status` — Current state: `To Do`, `In Progress`, `Done`, `Blocked`, `Cancelled`.
 - `priority` — Importance level: `high`, `medium`, `low`.
 - `labels` — Routing tags for specialist matching.
 - `dependencies` — List of task IDs that must be Done before this task can start.
@@ -63,12 +63,15 @@ The description explains what needs to be done and why. Acceptance criteria are 
 To Do → In Progress → Done
   │                    ↑
   └──→ Blocked ───────┘
+
+Any open status → Cancelled (terminal)
 ```
 
 - **To Do** — Not started. Waiting for dependencies or assignment.
 - **In Progress** — A worker is actively implementing this task.
 - **Done** — All acceptance criteria are met, code is committed.
 - **Blocked** — Cannot proceed due to an external issue. Add notes explaining why.
+- **Cancelled** — Closed without completion; acceptance criteria and notes remain as recorded. It never satisfies a dependency.
 
 ## Scoping Tasks
 

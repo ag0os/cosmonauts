@@ -18,6 +18,7 @@ import {
 	listTaskFiles,
 	loadConfig,
 	parseTaskIdFromFilename,
+	readArchivedTaskFile,
 	readTaskFile,
 	saveConfig,
 	saveTaskFile,
@@ -51,6 +52,7 @@ const TASK_STATUS_OUTCOMES = {
 	"In Progress": "in-progress",
 	Done: "done",
 	Blocked: "blocked",
+	Cancelled: "cancelled",
 } as const satisfies Record<TaskStatus, string>;
 
 export interface TaskManagerEpisodeContext {
@@ -566,13 +568,22 @@ export class TaskManager {
 		const statuses = new Map<string, TaskStatus>(
 			tasks.map((task) => [task.id.toUpperCase(), task.status]),
 		);
-		// A plan cannot be archived until every task in it is Done, so an archived
-		// id is satisfied. Reading the archive is what separates that from a
+		// An archived dependency keeps the status it was archived with: a plan
+		// archives with Cancelled tasks, and those never satisfy a dependent.
+		// Reading the archive is also what separates an archived id from a
 		// dependency that never existed.
+		const unresolved = new Set(
+			tasks
+				.flatMap((task) => task.dependencies)
+				.map((id) => id.toUpperCase())
+				.filter((id) => !statuses.has(id)),
+		);
 		for (const file of await listArchivedTaskFiles(this.projectRoot)) {
-			const id = parseTaskIdFromFilename(file);
-			if (id && !statuses.has(id.toUpperCase()))
-				statuses.set(id.toUpperCase(), "Done");
+			const id = parseTaskIdFromFilename(file)?.toUpperCase();
+			if (id && unresolved.has(id)) {
+				const content = await readArchivedTaskFile(this.projectRoot, file);
+				statuses.set(id, parseTask(content).status);
+			}
 		}
 		return statuses;
 	}
@@ -643,7 +654,8 @@ function matchesLabelFilter(task: Task, filter: TaskListFilter): boolean {
  * Unblocked means every listed dependency is `Done` — not that the task has no
  * dependencies at all. `dependencyStatuses` is undefined when the caller did not
  * ask for readiness, and covers active and archived tasks alike so an archived
- * dependency reads as satisfied rather than hiding its dependents forever. An id
+ * `Done` dependency reads as satisfied rather than hiding its dependents
+ * forever. A `Cancelled` dependency never does: the work will not happen. An id
  * in neither is a broken reference, and calling that "ready" would let a typo
  * unblock work.
  */

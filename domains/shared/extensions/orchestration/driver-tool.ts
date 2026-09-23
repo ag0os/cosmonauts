@@ -103,7 +103,7 @@ export function registerDriverTool(
 			taskIds: Type.Optional(
 				Type.Array(Type.String(), {
 					description:
-						"Ordered task IDs to run. Pass them when dependency order matters. Defaults to all non-Done tasks labeled plan:<planSlug>.",
+						"Ordered task IDs to run. Pass them when dependency order matters. Defaults to all tasks that are neither Done nor Cancelled labeled plan:<planSlug>.",
 				}),
 			),
 			backend: Type.Union(

@@ -19,6 +19,7 @@ const StatusLiterals = [
 	Type.Literal("In Progress"),
 	Type.Literal("Done"),
 	Type.Literal("Blocked"),
+	Type.Literal("Cancelled"),
 ];
 
 interface ToolTextContent {
@@ -246,8 +247,11 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				Type.String({ description: "Filter by assignee" }),
 			),
 			label: Type.Optional(Type.String({ description: "Filter by label" })),
-			hasNoDependencies: Type.Optional(
-				Type.Boolean({ description: "Only show tasks with no dependencies" }),
+			ready: Type.Optional(
+				Type.Boolean({
+					description:
+						"Only show unblocked tasks: every dependency is Done (a Cancelled dependency never is)",
+				}),
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {

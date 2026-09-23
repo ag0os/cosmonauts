@@ -7,6 +7,7 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TaskManager } from "../tasks/task-manager.ts";
+import { isTaskClosed } from "../tasks/task-types.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
 import {
 	extractAssistantText,
@@ -85,7 +86,7 @@ function resolveDomainsDir(config: ChainConfig): string {
 
 /**
  * Create a completion check that returns true when all tasks in the
- * project have status "Done".
+ * project are Done or Cancelled.
  */
 export function createDefaultCompletionCheck(
 	projectRoot: string,
@@ -126,7 +127,9 @@ async function evaluateDefaultCompletionState(
 
 	if (
 		tasks.every(
-			(task) => task.status === "Done" && taskAcceptanceCriteriaComplete(task),
+			(task) =>
+				isTaskClosed(task.status) &&
+				(task.status === "Cancelled" || taskAcceptanceCriteriaComplete(task)),
 		)
 	) {
 		return { status: "complete" };

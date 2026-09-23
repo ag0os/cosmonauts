@@ -8,6 +8,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { type Tool, validateToolArguments } from "@earendil-works/pi-ai";
 import { beforeEach, describe, expect, test } from "vitest";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import {
@@ -416,6 +417,58 @@ describe("task_search", () => {
 		})) as ToolResult;
 
 		expect(result.details as Task[]).toHaveLength(0);
+	});
+});
+
+// ── Cancelled status ─────────────────────────────────────────────────────
+
+/** Validate arguments the way Pi does before a model's tool call executes. */
+function validatedArgs(name: string, args: Record<string, unknown>): unknown {
+	const tool = pi.tools.get(name) as unknown as Tool;
+	return validateToolArguments(tool, {
+		type: "toolCall",
+		id: "call-id",
+		name,
+		arguments: args,
+	});
+}
+
+describe("Cancelled status", () => {
+	test("task_edit accepts Cancelled through Pi's argument validation", async () => {
+		const { a } = await seedTasks();
+		const args = validatedArgs("task_edit", {
+			taskId: a.id,
+			status: "Cancelled",
+		});
+
+		await pi.callTool("task_edit", args);
+
+		expect((await new TaskManager(tmp.path).getTask(a.id))?.status).toBe(
+			"Cancelled",
+		);
+	});
+
+	test("the coordinator's ready listing never selects a Cancelled task or its dependents", async () => {
+		const { a, b } = await seedTasks();
+		await pi.callTool("task_edit", { taskId: a.id, status: "Cancelled" });
+		const dependent = (await pi.callTool("task_create", {
+			title: "Depends on cancelled",
+			dependencies: [a.id],
+		})) as ToolResult;
+		const dependentId = (dependent.details as Task).id;
+		const listSchema = (pi.tools.get("task_list") as unknown as Tool)
+			.parameters as { properties: Record<string, unknown> };
+		expect(Object.keys(listSchema.properties)).toContain("ready");
+
+		const result = (await pi.callTool(
+			"task_list",
+			validatedArgs("task_list", { status: "To Do", ready: true }),
+		)) as ToolResult;
+
+		const ids = (result.details as Task[]).map((task) => task.id);
+		expect(ids).toContain(b.id);
+		expect(ids).not.toContain(a.id);
+		expect(ids).not.toContain(dependentId);
 	});
 });
 

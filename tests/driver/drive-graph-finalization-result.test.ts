@@ -33,6 +33,26 @@ const PLAN_SLUG = "durable-frontend-migration";
 const PARENT_SESSION_ID = "drive-graph-finalization-parent";
 
 describe("Drive graph finalization results", () => {
+	test("emits a completion candidate with a Done task and a Cancelled plan task", async () => {
+		const fixture = await setupFixture("cancelled-candidate", 2);
+		const [selectedId, cancelledId] = fixture.taskIds as [string, string];
+		await fixture.taskManager.updateTask(cancelledId, { status: "Cancelled" });
+		fixture.spec.taskIds = [selectedId];
+		await initGit(fixture.projectRoot);
+
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, createBackend()),
+		);
+		expect(result).toMatchObject({
+			outcome: "completed",
+			planCompletionCandidate: { planSlug: PLAN_SLUG, taskCount: 2 },
+		});
+		expect(fixture.events).toContainEqual(
+			expect.objectContaining({ type: "plan_completion_candidate" }),
+		);
+	});
+
 	test("reports completed task-status count and emits one run_finalization_failed for state-commit failure", async () => {
 		const fixture = await setupFixture("state-commit-fails", 2);
 		await initGit(fixture.projectRoot);

@@ -286,5 +286,6 @@ function countTasksByStatus(
 		"In Progress": tasks.filter((task) => task.status === "In Progress").length,
 		Done: tasks.filter((task) => task.status === "Done").length,
 		Blocked: tasks.filter((task) => task.status === "Blocked").length,
+		Cancelled: tasks.filter((task) => task.status === "Cancelled").length,
 	};
 }

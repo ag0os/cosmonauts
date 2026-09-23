@@ -49,7 +49,7 @@ Each completion triggers a new turn. Stay active — do not exit — until every
 chain_run(expression: "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager")
 ```
 
-Pure topology — it declares which roles run in what order. Loop behavior is intrinsic to each role (`coordinator` loops until all tasks are Done; others run once).
+Pure topology — it declares which roles run in what order. Loop behavior is intrinsic to each role (`coordinator` loops until all tasks are Done or Cancelled; others run once).
 
 **Bracket groups** — two or more roles run concurrently at the same stage; all must finish before the next stage starts:
 

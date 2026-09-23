@@ -16,6 +16,7 @@ const TASK_STATUS_ALIASES = new Map<string, TaskStatus>([
 	["in progress", "In Progress"],
 	["done", "Done"],
 	["blocked", "Blocked"],
+	["cancelled", "Cancelled"],
 ]);
 
 const TASK_PRIORITY_VALUES = ["high", "medium", "low"] as const;
@@ -31,7 +32,7 @@ export function parseTaskStatusOption(
 	if (!normalizedStatus) {
 		return {
 			ok: false,
-			error: `Invalid status: ${status}. Must be one of: todo, in-progress, done, blocked`,
+			error: `Invalid status: ${status}. Must be one of: todo, in-progress, done, blocked, cancelled`,
 		};
 	}
 

@@ -270,7 +270,7 @@ export default function plansExtension(pi: ExtensionAPI) {
 		name: "plan_archive",
 		label: "Archive Plan",
 		description:
-			"Archive a completed plan and its associated tasks to missions/archive/. Creates memory/ directory. Rejects if tasks are not all Done.",
+			"Archive a completed plan and its associated tasks to missions/archive/. Creates memory/ directory. Rejects if tasks are not all Done or Cancelled.",
 		parameters: Type.Object({
 			slug: Type.String({ description: "Plan slug to archive" }),
 		}),

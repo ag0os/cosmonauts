@@ -86,7 +86,7 @@ describe("task edit helpers", () => {
 		expect(buildTaskUpdate(renderedTask, { status: "waiting" })).toEqual({
 			ok: false,
 			error:
-				"Invalid status: waiting. Must be one of: todo, in-progress, done, blocked",
+				"Invalid status: waiting. Must be one of: todo, in-progress, done, blocked, cancelled",
 		});
 		expect(buildTaskUpdate(renderedTask, {})).toEqual({
 			ok: false,
@@ -194,7 +194,7 @@ describe("task edit command", () => {
 		await expectEditToExit(["edit", "TASK-001", "--status", "waiting"]);
 
 		expect(output.stderr()).toContain(
-			"Error: Invalid status: waiting. Must be one of: todo, in-progress, done, blocked\n",
+			"Error: Invalid status: waiting. Must be one of: todo, in-progress, done, blocked, cancelled\n",
 		);
 		expect(exit.calls()[0]).toBe(1);
 	});

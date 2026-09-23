@@ -10,7 +10,17 @@
 /**
  * Task status values representing workflow states
  */
-export type TaskStatus = "To Do" | "In Progress" | "Done" | "Blocked";
+export type TaskStatus =
+	| "To Do"
+	| "In Progress"
+	| "Done"
+	| "Blocked"
+	| "Cancelled";
+
+/** Done and Cancelled are terminal: neither is ever selected for work again. */
+export function isTaskClosed(status: TaskStatus): boolean {
+	return status === "Done" || status === "Cancelled";
+}
 
 /**
  * Task priority levels
@@ -145,9 +155,10 @@ export interface TaskListFilter {
 	label?: string;
 	/**
 	 * Filter to unblocked tasks: every listed dependency is `Done`. A task with
-	 * no dependencies is always unblocked. Archived dependencies count as `Done`;
-	 * an id found in neither the active set nor the archive blocks the task,
-	 * since a broken reference is not evidence of completion.
+	 * no dependencies is always unblocked. An archived dependency is read with
+	 * its persisted status, so an archived `Cancelled` task still blocks; an id
+	 * found in neither the active set nor the archive blocks the task, since a
+	 * broken reference is not evidence of completion.
 	 */
 	ready?: boolean;
 }

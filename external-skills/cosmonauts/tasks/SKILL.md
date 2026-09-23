@@ -15,7 +15,7 @@ Tasks are markdown files with YAML frontmatter at `missions/tasks/<ID>.md`. The 
 ---
 id: TASK-007
 title: Wire OAuth provider
-status: To Do            # To Do | In Progress | Done | Blocked
+status: To Do            # To Do | In Progress | Done | Blocked | Cancelled
 priority: high           # high | medium | low
 assignee: alice
 labels: [backend, auth]
@@ -91,12 +91,12 @@ cosmonauts task list --json
 cosmonauts task list --status todo --json
 cosmonauts task list --status in-progress --priority high --json
 cosmonauts task list --label backend --assignee alice --json
-cosmonauts task list --ready --json   # unblocked tasks (deps Done or archived)
+cosmonauts task list --ready --json   # unblocked tasks (deps Done, including archived Done)
 ```
 
-**`--ready` means unblocked:** it matches tasks whose listed dependencies are all `Done`, plus tasks that have no dependencies at all. A task with `dependencies: [TASK-001]` appears in `--ready` results as soon as TASK-001 is marked Done. A dependency that has been archived counts as satisfied, since a plan cannot be archived until its tasks are Done. A dependency id found in neither the active set nor the archive blocks the task — a broken reference is not evidence of completion.
+**`--ready` means unblocked:** it matches tasks whose listed dependencies are all `Done`, plus tasks that have no dependencies at all. A task with `dependencies: [TASK-001]` appears in `--ready` results as soon as TASK-001 is marked Done. An archived dependency is satisfied only if its persisted status is Done; Cancelled stays unsatisfied after archive. A dependency id found in neither the active set nor the archive blocks the task — a broken reference is not evidence of completion.
 
-Status values: `todo`, `in-progress`, `done`, `blocked` (the CLI normalizes these to the title-case form on disk).
+Status values: `todo`, `in-progress`, `done`, `blocked`, `cancelled` (the CLI normalizes these to the title-case form on disk).
 
 ### View / edit / delete / search
 

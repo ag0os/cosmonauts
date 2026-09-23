@@ -107,7 +107,7 @@ export function registerEditCommand(program: Command): void {
 		.option("-d, --description <text>", "Update description")
 		.option(
 			"-s, --status <status>",
-			"Update status: todo, in-progress, done, blocked",
+			"Update status: todo, in-progress, done, blocked, cancelled",
 		)
 		.option("-p, --priority <priority>", "Update priority: high, medium, low")
 		.option("-a, --assignee <name>", "Update assignee")

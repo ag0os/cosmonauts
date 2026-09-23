@@ -278,6 +278,25 @@ describe("cosmonauts run drive compat run", () => {
 		expect(firstRunInlineSpec().taskIds).toHaveLength(3);
 	});
 
+	test("never selects a Cancelled plan task by default", async () => {
+		const fixture = await setupFixture(3);
+		const [first, cancelled, third] = fixture.tasks.map((task) => task.id);
+		await fixture.manager.updateTask(cancelled ?? "TASK-002", {
+			status: "Cancelled",
+		});
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--envelope",
+			fixture.envelopePath,
+			"--mode",
+			"detached",
+		]);
+
+		expect(firstLaunchDetachedSpec().taskIds).toEqual([first, third]);
+	});
+
 	test("does not parse stale Codex env when running claude-cli", async () => {
 		const fixture = await setupFixture(1);
 		const original = process.env.COSMONAUTS_DRIVER_CODEX_EXEC_ARGS;
@@ -1352,6 +1371,32 @@ describe("cosmonauts run drive compat run", () => {
 		);
 	});
 
+	test("resume accepts a Cancelled pending task as closed state-commit evidence", async () => {
+		const fixture = await setupFixture(1);
+		const taskId = fixture.tasks[0]?.id ?? "TASK-001";
+		await fixture.manager.updateTask(taskId, { status: "Cancelled" });
+		await writeResumeRun([taskId], [{ type: "task_done", taskId }], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "final-state-commit",
+		});
+		await writePendingStateCommitFinalization([taskId]);
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-state-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			outcome: "completed",
+			stateCommitSha: "external-state-sha",
+		});
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+	});
+
 	test("resume retries pending state commit without invoking backend work", async () => {
 		const fixture = await setupFixture(2);
 		const taskIds = fixture.tasks.map((task) => task.id);
@@ -1640,7 +1685,7 @@ describe("cosmonauts run drive compat run", () => {
 			runId: "run-previous",
 			outcome: "finalization_failed",
 			finalizationPhase: "state_commit",
-			finalizationReason: `pending state task is not Done: ${notDoneTaskId}`,
+			finalizationReason: `pending state task is neither Done nor Cancelled: ${notDoneTaskId}`,
 		});
 		expect(
 			await readDurableFinalizerAttempts("finalizer-state-commit"),
@@ -1660,7 +1705,7 @@ describe("cosmonauts run drive compat run", () => {
 				attemptId: "attempt-003",
 				result: expect.objectContaining({
 					outcome: "failed",
-					summary: `pending state task is not Done: ${notDoneTaskId}`,
+					summary: `pending state task is neither Done nor Cancelled: ${notDoneTaskId}`,
 					nextAction: "retry",
 				}),
 			}),
