@@ -475,8 +475,6 @@ describe("cosmonauts run drive compat run", () => {
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 	});
 
-	// Backend and domain cases intentionally share one frozen-resolution scenario.
-	// fallow-ignore-next-line complexity
 	test("freezes enabled detached Codex and Claude specs from the execution resolution", async () => {
 		const fixture = await setupFixture(1);
 		await writeEpisodicConfig(process.cwd(), true);
@@ -1215,8 +1213,6 @@ describe("cosmonauts run drive compat run", () => {
 		).toContain('"sha":"external-sha"');
 	});
 
-	// External-commit evidence variants remain together in this resume behavior test.
-	// fallow-ignore-next-line complexity
 	test("resume refuses external commit acceptance without changed head evidence", async () => {
 		const fixture = await setupFixture(1);
 		const taskId = fixture.tasks[0]?.id ?? "TASK-001";
@@ -1524,8 +1520,6 @@ describe("cosmonauts run drive compat run", () => {
 		);
 	});
 
-	// Finalizer phases share one retry-attempt behavior scenario.
-	// fallow-ignore-next-line complexity
 	test("resume records source task-status and state-commit finalizer retry failures as attempts", async () => {
 		const resetResumeCase = async () => {
 			process.exitCode = undefined;

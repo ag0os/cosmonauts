@@ -273,8 +273,6 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		parameters: Type.Object({
 			taskId: taskIdParameter("Task ID (e.g., TASK-001)"),
 		}),
-		// Task rendering intentionally handles every optional task field independently.
-		// fallow-ignore-next-line complexity
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const result = await getTaskForTool(ctx.cwd, params.taskId);
 			if (!result.ok) {

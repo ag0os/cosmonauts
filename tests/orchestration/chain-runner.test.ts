@@ -1909,8 +1909,6 @@ describe("runChain", () => {
 		await rm(projectRoot, { recursive: true, force: true });
 	});
 
-	// The scenario matrix intentionally exercises every review-report binding variant.
-	// fallow-ignore-next-line complexity
 	test("binds plan review to the expected or reviewer-established active target", async () => {
 		const terminal = planReviewReport("review-target", 1);
 		const cases = [
@@ -2375,8 +2373,6 @@ Review incomplete.
 		}
 	});
 
-	// Sequential and parallel permutations share one end-to-end review gate scenario.
-	// fallow-ignore-next-line complexity
 	test("blocks sequential and parallel task decomposition until earlier plan review is addressed", async () => {
 		const codingDefinitions = [
 			"planner",
@@ -3627,8 +3623,6 @@ describe("stats tracking", () => {
 	});
 
 	describe("runChain stats", () => {
-		// The aggregate assertion keeps all stage-stat variants in one behavior test.
-		// fallow-ignore-next-line complexity
 		test("chain result includes ChainStats with per-stage breakdown", async () => {
 			const stats1 = makeMockStats(1);
 			const stats2 = makeMockStats(2);

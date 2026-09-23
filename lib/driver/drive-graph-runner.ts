@@ -305,8 +305,6 @@ export function stampDriveEpisodeResult<Result extends DriverResult>(
 	return driveEpisodeIdentity(spec) ? stampDriverResult(result) : result;
 }
 
-// Kept exported for consumers of the shipped driver deep import.
-// fallow-ignore-next-line unused-export
 export function buildDriveTerminalEpisode(
 	spec: DriverRunSpec,
 	result: DriverResult,
@@ -381,8 +379,6 @@ async function captureDriveEpisode(
 	});
 }
 
-// Terminal recording preserves the persisted claim and recovery state matrix.
-// fallow-ignore-next-line complexity
 async function recordClaimedDriveTerminalEpisode(options: {
 	spec: DriverRunSpec;
 	outcome: DriveTerminalOutcome;
@@ -642,8 +638,6 @@ function inputForStep(step: StepRecord): SchedulerStepInput {
 	};
 }
 
-// Result reconstruction intentionally distinguishes every durable terminal shape.
-// fallow-ignore-next-line complexity
 async function toDriverResult(
 	spec: DriverRunSpec,
 	ctx: RunDriveOnGraphCtx,
@@ -1033,8 +1027,6 @@ function diagnosticTask(
 	};
 }
 
-// Blocking diagnostics retain each scheduler dependency terminal state.
-// fallow-ignore-next-line complexity
 function blockingTaskIdsForPendingTasks(
 	spec: DriverRunSpec,
 	steps: readonly StepRecord[],

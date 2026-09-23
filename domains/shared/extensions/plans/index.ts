@@ -20,8 +20,6 @@ function createPlanCaptureEdge(
 	if (!episodeSource) return { manager: new PlanManager(cwd), warnings };
 
 	return {
-		// Plan and task extensions intentionally expose matching episode-warning edges.
-		// fallow-ignore-next-line code-duplication
 		manager: new PlanManager(cwd, {
 			episodeSource,
 			reportEpisodeWarning: async (warning) => {
@@ -216,8 +214,6 @@ export default function plansExtension(pi: ExtensionAPI) {
 				}),
 			),
 		}),
-		// Plan edits preserve independent optional-field validation and responses.
-		// fallow-ignore-next-line complexity
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const { slug, ...updates } = params;
 			// Check at least one field is provided

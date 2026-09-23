@@ -52,8 +52,6 @@ export interface DriveTaskStatusSnapshot {
 	statuses: ReadonlyMap<string, TaskStatus>;
 }
 
-// Public context for consumers constructing the shipped scheduler backend.
-// fallow-ignore-next-line unused-type
 export interface DriveSchedulerBackendContext {
 	spec: DriverRunSpec;
 	taskManager: TaskManager;
@@ -136,8 +134,6 @@ export function createDriveSchedulerBackend(
 				promptLayers,
 				context.taskManager,
 				{
-					// Initial and retry prompts intentionally carry the same run contract.
-					// fallow-ignore-next-line code-duplication
 					runExpectations: {
 						backendName: context.spec.backendName,
 						commitPolicy: context.spec.commitPolicy,
@@ -231,8 +227,6 @@ async function runDriveTaskStep(
 	let retried = false;
 	while (true) {
 		const attempt = await runDriveTaskAttempt(context, prepared, appendedNote);
-		// The graph backend preserves the legacy contradicted-block retry flow.
-		// fallow-ignore-next-line code-duplication
 		if (attempt.kind === "step-result") {
 			return attempt.result;
 		}
@@ -256,8 +250,6 @@ async function runDriveTaskStep(
 	}
 }
 
-// Attempt handling preserves each report, verification, and finalization variant.
-// fallow-ignore-next-line complexity
 async function runDriveTaskAttempt(
 	context: DriveSchedulerBackendContext,
 	prepared: DrivePreparedStep,
@@ -473,8 +465,6 @@ function validateDriveTaskStep(
 	}
 }
 
-// Finalizer paths independently validate the same persisted task-id metadata.
-// fallow-ignore-next-line code-duplication
 function authoritativeDriveTaskIds(
 	metadata: Record<string, unknown> | undefined,
 	spec: DriverRunSpec,
@@ -514,8 +504,6 @@ async function runPreflight(
 		);
 		if (branch.exitCode !== 0) {
 			const reason = branch.stderr || "failed to determine git branch";
-			// Graph and legacy runners preserve identical preflight event semantics.
-			// fallow-ignore-next-line code-duplication
 			await emit(context, {
 				type: "preflight",
 				taskId,
@@ -531,8 +519,6 @@ async function runPreflight(
 		const actualBranch = branch.stdout.trim();
 		if (actualBranch !== spec.branch) {
 			const reason = `branch mismatch: expected ${spec.branch}, got ${actualBranch}`;
-			// Graph and legacy runners preserve identical branch mismatch semantics.
-			// fallow-ignore-next-line code-duplication
 			await emit(context, {
 				type: "preflight",
 				taskId,
@@ -619,8 +605,6 @@ function runBackendWithTimeout(
 	if (parentSignal.aborted) {
 		abortFromParent();
 	} else {
-		// Graph and legacy runners preserve identical abort and timeout behavior.
-		// fallow-ignore-next-line code-duplication
 		parentSignal.addEventListener("abort", abortFromParent, { once: true });
 	}
 
@@ -655,8 +639,6 @@ function runBackendWithTimeout(
 	});
 }
 
-// Graph and legacy runners independently guard the same acceptance contract.
-// fallow-ignore-next-line code-duplication
 async function findUncheckedAcceptanceCriteriaReason(
 	taskManager: TaskManager,
 	taskId: string,
@@ -846,8 +828,6 @@ function toRunOneTaskCtx(
 	};
 }
 
-// Graph and legacy runners keep equivalent subprocess behavior during migration.
-// fallow-ignore-next-line code-duplication
 function runShellCommand(
 	command: string,
 	cwd: string,

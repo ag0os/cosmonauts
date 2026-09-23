@@ -189,8 +189,6 @@ export function registerDriverTool(
 				}),
 			),
 		}),
-		// Tool execution preserves the public error variants and launch modes.
-		// fallow-ignore-next-line complexity
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const planSlug = params.planSlug;
 			try {

@@ -65,14 +65,10 @@ function renderEventsText(events: DriverEvent[], cursor: number): string {
 	return lines.join("\n");
 }
 
-// Kept exported for consumers of the shipped orchestration extension deep import.
-// fallow-ignore-next-line unused-export
 export function summarizeDriverEvent(event: DriverEvent): string {
 	return clip(`${event.type}: ${describeDriverEvent(event)}`);
 }
 
-// Event variants intentionally map one-to-one to their stable compatibility text.
-// fallow-ignore-next-line complexity
 function describeDriverEvent(event: DriverEvent): string {
 	switch (event.type) {
 		case "run_started":

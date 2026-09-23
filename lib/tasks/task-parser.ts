@@ -180,8 +180,6 @@ function escapeRegex(str: string): string {
  * Parse acceptance criteria from content between AC markers
  * Format: - [ ] #N Text or - [x] #N Text
  */
-// Parsing preserves marker, legacy, malformed, and checkbox variants.
-// fallow-ignore-next-line complexity
 function parseAcceptanceCriteria(content: string): AcceptanceCriterion[] {
 	const normalized = normalizeLineEndings(content);
 

@@ -55,8 +55,6 @@ const TASK_STATUS_OUTCOMES = {
 	Cancelled: "cancelled",
 } as const satisfies Record<TaskStatus, string>;
 
-// Public constructor context for shipped TaskManager deep-import consumers.
-// fallow-ignore-next-line unused-type
 export interface TaskManagerEpisodeContext {
 	readonly episodeSource: string;
 	readonly reportEpisodeWarning?: EpisodeWarningReporter;
@@ -67,8 +65,6 @@ interface TaskUpdateExecution {
 	readonly previousStatus?: TaskStatus;
 }
 
-// Public result contract for dependency snapshot consumers.
-// fallow-ignore-next-line unused-type
 export interface TaskDependencyStatusSnapshot {
 	readonly tasks: readonly Task[];
 	readonly statuses: ReadonlyMap<string, TaskStatus>;
@@ -379,8 +375,6 @@ export class TaskManager {
 	async listTasks(filter?: TaskListFilter): Promise<Task[]> {
 		await this.ensureInitialized();
 
-		// Mutable and read-only listing deliberately share filtering semantics.
-		// fallow-ignore-next-line code-duplication
 		const tasks = await this.loadAllTasks();
 
 		if (!filter) {
@@ -586,8 +580,6 @@ export class TaskManager {
 	 * Resolve selected active tasks and all of their dependency statuses from one
 	 * active-task read. Archived dependencies are read only when unresolved.
 	 */
-	// Called through the public TaskManager contract by the graph runner.
-	// fallow-ignore-next-line unused-class-member
 	async getTaskDependencyStatusSnapshot(
 		taskIds: readonly string[],
 	): Promise<TaskDependencyStatusSnapshot> {
