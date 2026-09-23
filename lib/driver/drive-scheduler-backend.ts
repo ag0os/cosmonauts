@@ -13,7 +13,6 @@ import type {
 	VerificationResult,
 } from "../durable-runtime/index.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
-import type { TaskStatus } from "../tasks/task-types.ts";
 import { DRIVE_BACKEND_ORCHESTRATION_CAPABILITIES } from "./backends/orchestration-adapter.ts";
 import type {
 	Backend,
@@ -47,15 +46,9 @@ import {
 	resolveStateCommitPolicy,
 } from "./types.ts";
 
-export interface DriveTaskStatusSnapshot {
-	dependenciesByTaskId: ReadonlyMap<string, readonly string[]>;
-	statuses: ReadonlyMap<string, TaskStatus>;
-}
-
 export interface DriveSchedulerBackendContext {
 	spec: DriverRunSpec;
 	taskManager: TaskManager;
-	taskStatusSnapshot: DriveTaskStatusSnapshot;
 	backend: Backend;
 	eventSink: EventSink;
 }
@@ -198,10 +191,7 @@ async function runDriveTaskStep(
 	const taskId = prepared.taskId;
 	await emit(context, { type: "task_started", taskId });
 
-	const cancelledReason = cancelledDependencyReason(
-		context.taskStatusSnapshot,
-		taskId,
-	);
+	const cancelledReason = await cancelledDependencyReason(taskManager, taskId);
 	if (cancelledReason) {
 		await emit(context, {
 			type: "task_blocked",
@@ -661,20 +651,20 @@ async function findUncheckedAcceptanceCriteriaReason(
 
 /**
  * A Cancelled dependency — active or archived — will never be done, so its
- * dependent must not run. The snapshot is frozen once immediately before the
- * scheduler starts; Drive's own status writes cannot change dependency
- * cancellation during the run.
+ * dependent must not run. Statuses are read when the step begins, so a
+ * dependency Cancelled after the run started still blocks its dependent.
  */
-function cancelledDependencyReason(
-	snapshot: DriveTaskStatusSnapshot,
+async function cancelledDependencyReason(
+	taskManager: TaskManager,
 	taskId: string,
-): string | undefined {
-	const dependencies = snapshot.dependenciesByTaskId.get(taskId.toUpperCase());
-	if (!dependencies || dependencies.length === 0) {
+): Promise<string | undefined> {
+	const task = await taskManager.getTask(taskId);
+	if (!task || task.dependencies.length === 0) {
 		return undefined;
 	}
-	const cancelled = dependencies.filter(
-		(id) => snapshot.statuses.get(id.toUpperCase()) === "Cancelled",
+	const statuses = await taskManager.getTaskStatuses(task.dependencies);
+	const cancelled = task.dependencies.filter(
+		(id) => statuses.get(id.toUpperCase()) === "Cancelled",
 	);
 	if (cancelled.length === 0) {
 		return undefined;

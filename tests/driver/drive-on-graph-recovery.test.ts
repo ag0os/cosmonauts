@@ -11,10 +11,7 @@ import {
 	recordDriveTerminalEpisode,
 	runDriveOnGraph,
 } from "../../lib/driver/drive-graph-runner.ts";
-import {
-	createDriveSchedulerBackendMap,
-	type DriveTaskStatusSnapshot,
-} from "../../lib/driver/drive-scheduler-backend.ts";
+import { createDriveSchedulerBackendMap } from "../../lib/driver/drive-scheduler-backend.ts";
 import {
 	createEventSink,
 	type DriverEventBusEvent,
@@ -51,10 +48,6 @@ const PLAN_SLUG = "durable-frontend-migration";
 const PARENT_SESSION_ID = "drive-on-graph-recovery-parent";
 const NOW = "2026-06-04T12:00:00.000Z";
 const OLD = "2026-06-04T11:59:00.000Z";
-const EMPTY_TASK_STATUS_SNAPSHOT = {
-	dependenciesByTaskId: new Map(),
-	statuses: new Map(),
-} satisfies DriveTaskStatusSnapshot;
 
 const selectedBackends = [
 	"codex",
@@ -295,7 +288,6 @@ describe("Drive-on-graph recovery", () => {
 			const backends = createDriveSchedulerBackendMap({
 				spec: fixture.spec,
 				taskManager: fixture.taskManager,
-				taskStatusSnapshot: EMPTY_TASK_STATUS_SNAPSHOT,
 				backend,
 				eventSink: fixture.recordEvent,
 			});
@@ -350,7 +342,6 @@ describe("Drive-on-graph recovery", () => {
 			const backends = createDriveSchedulerBackendMap({
 				spec: fixture.spec,
 				taskManager: fixture.taskManager,
-				taskStatusSnapshot: EMPTY_TASK_STATUS_SNAPSHOT,
 				backend,
 				eventSink: fixture.recordEvent,
 			});

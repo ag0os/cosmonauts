@@ -12,7 +12,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import matter from "gray-matter";
 import ts from "typescript";
-import { projectPath } from "./project-path.ts";
+import { binEntryImports, projectPath } from "./project-path.ts";
 
 declare const Bun: { TOML: { parse(source: string): unknown } };
 
@@ -257,14 +257,11 @@ try {
 			.bin ?? {},
 	);
 	const binEntries = binScripts.flatMap((script) => {
-		const path = join(root, script);
-		if (!existsSync(path)) {
+		if (!existsSync(join(root, script))) {
 			errors.push(`missing bin entry: ${script}`);
 			return [];
 		}
-		return [...read(script).matchAll(/^import\s+["']([^"']+)["']/gm)].map(
-			(match) => projectPath(root, resolve(dirname(path), match[1] ?? "")),
-		);
+		return binEntryImports({ root, script, source: read(script) });
 	});
 	const roots = new Set<string>([
 		...declared,

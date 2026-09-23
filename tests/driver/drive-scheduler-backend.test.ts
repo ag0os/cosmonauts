@@ -10,7 +10,6 @@ import type {
 import {
 	createDriveSchedulerBackend,
 	createDriveSchedulerBackendMap,
-	type DriveTaskStatusSnapshot,
 } from "../../lib/driver/drive-scheduler-backend.ts";
 import type { DriverEvent, DriverRunSpec } from "../../lib/driver/types.ts";
 import type {
@@ -25,10 +24,6 @@ import { useTempDir } from "../helpers/fs.ts";
 const temp = useTempDir("drive-scheduler-backend-");
 const PLAN_SLUG = "durable-frontend-migration";
 const PARENT_SESSION_ID = "drive-scheduler-parent";
-const EMPTY_TASK_STATUS_SNAPSHOT = {
-	dependenciesByTaskId: new Map(),
-	statuses: new Map(),
-} satisfies DriveTaskStatusSnapshot;
 
 describe("Drive scheduler backend", () => {
 	test("builds BackendInvocation from scheduler input and rendered task prompts", async () => {
@@ -42,7 +37,6 @@ describe("Drive scheduler backend", () => {
 		const backend = createDriveSchedulerBackend({
 			spec,
 			taskManager: fixture.taskManager,
-			taskStatusSnapshot: EMPTY_TASK_STATUS_SNAPSHOT,
 			backend: createBackend(),
 			eventSink: fixture.recordEvent,
 		});
@@ -318,7 +312,6 @@ describe("Drive scheduler backend", () => {
 			const backends = createDriveSchedulerBackendMap({
 				spec,
 				taskManager: fixture.taskManager,
-				taskStatusSnapshot: EMPTY_TASK_STATUS_SNAPSHOT,
 				backend: createBackend({ name }),
 				eventSink: fixture.recordEvent,
 			});
@@ -450,7 +443,6 @@ async function prepareTaskStep(options: {
 	const bridge = createDriveSchedulerBackend({
 		spec: options.spec,
 		taskManager: options.fixture.taskManager,
-		taskStatusSnapshot: EMPTY_TASK_STATUS_SNAPSHOT,
 		backend: createBackend({ run: options.backendRun }),
 		eventSink: async (event) => {
 			options.events.push(event);

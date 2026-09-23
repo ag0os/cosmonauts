@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import type {
 	Backend,
 	BackendRunResult,
@@ -164,29 +164,37 @@ describe("Drive and a Cancelled dependency", { timeout: 30_000 }, () => {
 		expect(result).toMatchObject({ outcome: "completed", tasksDone: 1 });
 	});
 
-	test("resolves dependency statuses once for a multi-task run", async () => {
-		const fixture = await setupFixture("single-status-snapshot");
-		const first = await fixture.taskManager.createTask({ title: "First" });
-		const second = await fixture.taskManager.createTask({
-			title: "Second",
-			dependencies: [first.id],
+	test("blocks a dependent whose dependency is Cancelled after the run starts", async () => {
+		const fixture = await setupFixture("cancelled-mid-run");
+		const dependency = await fixture.taskManager.createTask({
+			title: "Shipped",
 		});
-		const third = await fixture.taskManager.createTask({
-			title: "Third",
-			dependencies: [second.id],
+		await fixture.taskManager.updateTask(dependency.id, { status: "Done" });
+		const dependent = await fixture.taskManager.createTask({
+			title: "Dependent",
+			dependencies: [dependency.id],
 		});
-		const statusSpy = vi.spyOn(
-			fixture.taskManager,
-			"getTaskDependencyStatusSnapshot",
-		);
+		fixture.onEvent(async (event) => {
+			if (event.type !== "run_started") return;
+			await fixture.taskManager.updateTask(dependency.id, {
+				status: "Cancelled",
+			});
+		});
 
+		const backend = createBackend();
 		const result = await runDriveOnGraph(
-			fixture.spec([first.id, second.id, third.id]),
-			fixture.context(createBackend()),
+			fixture.spec([dependent.id]),
+			fixture.context(backend),
 		);
 
-		expect(result).toMatchObject({ outcome: "completed", tasksDone: 3 });
-		expect(statusSpy).toHaveBeenCalledTimes(1);
+		expect(backend.startedTaskIds).toEqual([]);
+		expect(result).toMatchObject({
+			outcome: "blocked",
+			blockedTaskId: dependent.id,
+		});
+		expect(result.outcome === "blocked" && result.blockedReason).toContain(
+			`${dependency.id} is Cancelled`,
+		);
 	});
 
 	test("fails closed when a matched archived dependency is malformed", async () => {
@@ -244,6 +252,7 @@ interface Fixture {
 	projectRoot: string;
 	taskManager: TaskManager;
 	events: DriverEvent[];
+	onEvent(listener: (event: DriverEvent) => Promise<void>): void;
 	spec(taskIds: string[]): DriverRunSpec;
 	context(backend: Backend): Parameters<typeof runDriveOnGraph>[1];
 }
@@ -257,10 +266,14 @@ async function setupFixture(name: string): Promise<Fixture> {
 	const taskManager = new TaskManager(projectRoot);
 	await taskManager.init();
 	const events: DriverEvent[] = [];
+	const listeners: Array<(event: DriverEvent) => Promise<void>> = [];
 	return {
 		projectRoot,
 		taskManager,
 		events,
+		onEvent: (listener) => {
+			listeners.push(listener);
+		},
 		spec: (taskIds) => ({
 			runId,
 			parentSessionId: "drive-cancelled-dependency-parent",
@@ -282,6 +295,7 @@ async function setupFixture(name: string): Promise<Fixture> {
 			backend,
 			eventSink: async (event: DriverEvent) => {
 				events.push(event);
+				for (const listener of listeners) await listener(event);
 			},
 			parentSessionId: "drive-cancelled-dependency-parent",
 			runId,

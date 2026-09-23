@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-711
 createdAt: '2026-09-22T19:37:54.114Z'
-updatedAt: '2026-09-23T16:26:14.013Z'
+updatedAt: '2026-09-23T19:58:51.067Z'
 ---
 
 ## Description
@@ -83,3 +83,5 @@ Left open (outside this task): the coordinator chain's default completion check 
 2026-09-23 codex Stage 3 findings 5a/6: the default coordinator completion check (lib/orchestration/chain-runner.ts) now returns terminal (success:false, 'No actionable tasks ...') when no task is In Progress and no To Do task has every dependency Done (Cancelled deps never satisfy; statuses resolved across active+archive), mirroring the all-Blocked fail-fast; checked before the first spawn and after each iteration. Red first: Cancelled+Blocked and To Do-on-Cancelled ran to the 10-iteration cap. isTaskClosed doc corrected (resume remaining IDs come from run events); plan_completion_candidate reason value unchanged, its type doc and the watch_events rendering now say 'plan tasks closed (Done or Cancelled)'.
 
 2026-09-23 follow-up (lead ruling): the no-actionable-tasks terminal fires only when at least one task is not Done; all Done with unchecked acceptance criteria stays pending so the coordinator is re-invoked as before (pinned by a runStage test, seen red first).
+
+2026-09-23 (codex QM-review fix): (1) Restored the live Cancelled-dependency check at step start in lib/driver/drive-scheduler-backend.ts (getTask + getTaskStatuses, active then archived) — f1c1acf's run-start snapshot let a dependency Cancelled after run_started go unnoticed (repro started TASK-002). drive-graph-runner keeps the up-front rejection of selected Cancelled tasks and fail-closed read (assertDriveTasksRunnable); DriveTaskStatusSnapshot removed. Removed the 'resolves dependency statuses once' test (pinned the snapshot, INV-007); added 'blocks a dependent whose dependency is Cancelled after the run starts' via runDriveOnGraph, seen red before the fix. (2) tests/tasks/task-manager.test.ts: executable-frontmatter marker moved from /tmp/archive-pwned into the test's temp dir, global cleanup dropped; reverting assertYamlFrontmatter in lib/tasks/task-parser.ts (cp backup) turns it red.

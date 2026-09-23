@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, win32 } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { projectPath } from "../../scripts/project-path.ts";
+import { binEntryImports } from "../../scripts/project-path.ts";
 
 const projectRoot = resolve(".");
 const roots: string[] = [];
@@ -479,9 +479,15 @@ describe("reachability command", () => {
 	});
 });
 
-describe("projectPath", () => {
+describe("binEntryImports", () => {
 	test("records a Windows bin-entry import with forward slashes", () => {
-		const target = win32.resolve("C:\\repo\\bin", "../cli/main.ts");
-		expect(projectPath("C:\\repo", target, win32)).toBe("cli/main.ts");
+		expect(
+			binEntryImports({
+				root: "C:\\repo",
+				script: "bin/cosmonauts",
+				source: 'import "../cli/main.ts";\n',
+				pathApi: win32,
+			}),
+		).toEqual(["cli/main.ts"]);
 	});
 });
