@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `82e4a80` on `feature/framework-health` (not pushed), clean.
+HEAD: `1ec9f99` on `feature/framework-health` (not pushed), clean.
 
 ## Done
 
@@ -33,9 +33,15 @@ HEAD: `82e4a80` on `feature/framework-health` (not pushed), clean.
   test-health-audit is archived. It also fixed a pre-existing coordinator bug: the `task_list`
   filter had been renamed, so the "ready" listing ignored dependencies. Suite 3,004/3,004; lint,
   typecheck, check-artifacts and reachability are clean.
-- **Stage 3 verification:** an independent Claude correctness review is running now. The QM
-  (D-023) and the codex review both run on the openai-codex account, which is at its 5h limit
-  until **15:29 local**. They run after the reset.
+- **Stage 3 verification, round 1** (independent Claude review, 19 executed mutation probes): FIX,
+  with 2 blocking findings. (1) Drive's default selection ignored dependencies, so it would run a
+  dependent of a Cancelled task. (2) The reachability tests pinned no root. Both are fixed test
+  first (`6d6e9db`). The re-review says SHIP (`1ec9f99` corrects one comment). Suite 3,017/3,017.
+  Known low-severity limitation: a malformed archived dependency file fails closed with a
+  misleading "scheduler drained" diagnosis. This is a pre-existing gray-matter quirk, not fixed.
+- **Waiting for 15:29 local** (the openai-codex account's 5h window). Then the QM (D-023's
+  shipped verification path) and an independent codex review of Stage 3, then TASK-708..710
+  close-out.
 
 ## Noticed (no action needed now)
 
