@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-711
 createdAt: '2026-09-22T19:16:28.862Z'
-updatedAt: '2026-09-23T14:23:14.234Z'
+updatedAt: '2026-09-23T16:24:32.597Z'
 ---
 
 ## Description
@@ -26,3 +26,5 @@ Framework-health Stage 3, first half (D-020, D-024). Root fallow at bin/, cli/, 
 ## Implementation Notes
 
 2026-09-23 review follow-up (F4): tests/scripts/check-reachability.test.ts now pins every root kind — bin->cli->lib, bun build --compile entry, runnerModule, dynamic import(), domain agent, extension entry, domain.ts and chains.ts manifests, type-only module not reported, and a present-but-completed plan owner rejected. Each proven by reverting that code in scripts/check-reachability.ts from a cp backup (test went red) and restoring. Script header now lists runnerModule, chains/workflows manifests, and the types-only exemption.
+
+2026-09-23 codex Stage 3 findings 1a/1b: scripts/check-reachability.ts now parses fallow.toml and staged-code.toml with Bun.TOML.parse and validates shapes (entry/public string[]; staged array of {path, owner} strings, absent = none), failing loudly with the file name on malformed TOML or wrong shapes; the staged-owner plan status is read with gray-matter so status: 'active' is accepted. Red first: [[staged ]] row with missing entry exited 0 with '0 staged'; malformed TOML error lacked the file; quoted status was rejected. Tests in tests/scripts/check-reachability.test.ts.

@@ -788,6 +788,178 @@ describe("runStage", () => {
 			}
 		});
 
+		async function runDefaultCoordinator(
+			tmpDir: string,
+			spawner: ReturnType<typeof createMockSpawner>,
+		) {
+			const stage = makeStage("coordinator", true);
+			const config = makeConfig([stage], {
+				projectRoot: tmpDir,
+				completionLabel: "plan:alpha",
+			});
+			return runStage(stage, config, spawner, {
+				maxTotalIterations: 10,
+				deadlineMs: FIXED_NOW + 60_000,
+			});
+		}
+
+		test("fails fast when the open tasks are Blocked beside Cancelled ones", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
+			const tmpDir = await mkdtemp(
+				join(tmpdir(), "chain-runner-stage-cancelled-blocked-"),
+			);
+			const tm = new TaskManager(tmpDir);
+			await tm.init();
+			const taskA = await tm.createTask({ title: "A", labels: ["plan:alpha"] });
+			const taskB = await tm.createTask({ title: "B", labels: ["plan:alpha"] });
+			await tm.updateTask(taskA.id, { status: "Cancelled" });
+			await tm.updateTask(taskB.id, { status: "Blocked" });
+			const spawner = createMockSpawner();
+
+			try {
+				const result = await runDefaultCoordinator(tmpDir, spawner);
+
+				expect(result.success).toBe(false);
+				expect(result.iterations).toBe(0);
+				expect(result.error).toContain("No actionable tasks");
+				expect(spawner.spawn).not.toHaveBeenCalled();
+			} finally {
+				await rm(tmpDir, { recursive: true, force: true });
+			}
+		});
+
+		test("fails fast when the only To Do task depends on a Cancelled task", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
+			const tmpDir = await mkdtemp(
+				join(tmpdir(), "chain-runner-stage-cancelled-dep-"),
+			);
+			const tm = new TaskManager(tmpDir);
+			await tm.init();
+			const taskA = await tm.createTask({ title: "A", labels: ["plan:alpha"] });
+			await tm.createTask({
+				title: "B",
+				labels: ["plan:alpha"],
+				dependencies: [taskA.id],
+			});
+			await tm.updateTask(taskA.id, { status: "Cancelled" });
+			const spawner = createMockSpawner();
+
+			try {
+				const result = await runDefaultCoordinator(tmpDir, spawner);
+
+				expect(result.success).toBe(false);
+				expect(result.iterations).toBe(0);
+				expect(result.error).toContain("No actionable tasks");
+				expect(spawner.spawn).not.toHaveBeenCalled();
+			} finally {
+				await rm(tmpDir, { recursive: true, force: true });
+			}
+		});
+
+		test("stops after the iteration that leaves no actionable task", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
+			const tmpDir = await mkdtemp(
+				join(tmpdir(), "chain-runner-stage-becomes-stuck-"),
+			);
+			const tm = new TaskManager(tmpDir);
+			await tm.init();
+			const taskA = await tm.createTask({ title: "A", labels: ["plan:alpha"] });
+			await tm.createTask({
+				title: "B",
+				labels: ["plan:alpha"],
+				dependencies: [taskA.id],
+			});
+			const spawner = createMockSpawner();
+			vi.mocked(spawner.spawn).mockImplementation(async () => {
+				await tm.updateTask(taskA.id, { status: "Cancelled" });
+				return { success: true, sessionId: "session-1", messages: [] };
+			});
+
+			try {
+				const result = await runDefaultCoordinator(tmpDir, spawner);
+
+				expect(result.success).toBe(false);
+				expect(result.iterations).toBe(1);
+				expect(result.error).toContain("No actionable tasks");
+			} finally {
+				await rm(tmpDir, { recursive: true, force: true });
+			}
+		});
+
+		test("keeps iterating while a To Do task's dependencies are all Done", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
+			const tmpDir = await mkdtemp(
+				join(tmpdir(), "chain-runner-stage-ready-dep-"),
+			);
+			const tm = new TaskManager(tmpDir);
+			await tm.init();
+			const taskA = await tm.createTask({ title: "A", labels: ["plan:alpha"] });
+			const taskB = await tm.createTask({
+				title: "B",
+				labels: ["plan:alpha"],
+				dependencies: [taskA.id],
+			});
+			await tm.updateTask(taskA.id, { status: "Done" });
+			const spawner = createMockSpawner();
+			vi.mocked(spawner.spawn).mockImplementation(async () => {
+				await tm.updateTask(taskB.id, { status: "Done" });
+				return { success: true, sessionId: "session-1", messages: [] };
+			});
+
+			try {
+				const result = await runDefaultCoordinator(tmpDir, spawner);
+
+				expect(result.success).toBe(true);
+				expect(result.iterations).toBe(1);
+			} finally {
+				await rm(tmpDir, { recursive: true, force: true });
+			}
+		});
+
+		test("keeps re-invoking the coordinator while every task is Done but a criterion is unchecked", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
+			const tmpDir = await mkdtemp(
+				join(tmpdir(), "chain-runner-stage-done-unchecked-"),
+			);
+			const tm = new TaskManager(tmpDir);
+			await tm.init();
+			const task = await tm.createTask({
+				title: "A",
+				labels: ["plan:alpha"],
+				acceptanceCriteria: ["Ship the behavior"],
+			});
+			await tm.updateTask(task.id, { status: "Done" });
+			const spawner = createMockSpawner();
+			vi.mocked(spawner.spawn).mockImplementation(async () => {
+				await tm.updateTask(task.id, {
+					acceptanceCriteria: [
+						{ index: 1, text: "Ship the behavior", checked: true },
+					],
+				});
+				return { success: true, sessionId: "session-1", messages: [] };
+			});
+
+			try {
+				const result = await runDefaultCoordinator(tmpDir, spawner);
+
+				expect(result.success).toBe(true);
+				expect(result.iterations).toBe(1);
+				expect(spawner.spawn).toHaveBeenCalledTimes(1);
+			} finally {
+				await rm(tmpDir, { recursive: true, force: true });
+			}
+		});
+
 		test("forwards compaction config to spawn call in loop stage", async () => {
 			vi.useFakeTimers();
 			const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();

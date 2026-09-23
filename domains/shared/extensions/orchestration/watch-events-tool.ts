@@ -137,7 +137,7 @@ function describeDriverEvent(event: DriverEvent): string {
 				event.commitSha && `commit ${shortSha(event.commitSha)}`,
 			]);
 		case "plan_completion_candidate":
-			return `${event.planSlug}, all ${event.taskCount} plan tasks done, reason: ${event.reason}`;
+			return `${event.planSlug}, all ${event.taskCount} plan tasks closed (Done or Cancelled), reason: ${event.reason}`;
 		default:
 			return JSON.stringify(event);
 	}

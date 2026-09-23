@@ -239,6 +239,7 @@ export type DriverEvent =
 			type: "plan_completion_candidate";
 			planSlug: string;
 			taskCount: number;
+			/** Emitted when every plan task is closed (Done or Cancelled). */
 			reason: "all_plan_tasks_done";
 	  });
 

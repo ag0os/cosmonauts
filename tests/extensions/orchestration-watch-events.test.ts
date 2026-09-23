@@ -202,7 +202,7 @@ describe("watch_events tool", () => {
 		const text = result.content[0]?.text ?? "";
 
 		expect(text).toContain(
-			"plan_completion_candidate: watch-events-plan, all 3 plan tasks done, reason: all_plan_tasks_done",
+			"plan_completion_candidate: watch-events-plan, all 3 plan tasks closed (Done or Cancelled), reason: all_plan_tasks_done",
 		);
 		expect(result.details.events[0]).toMatchObject({
 			type: "plan_completion_candidate",

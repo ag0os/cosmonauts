@@ -18,9 +18,12 @@ export type TaskStatus =
 	| "Cancelled";
 
 /**
- * Done and Cancelled are terminal: status-derived selection (Drive's pending
- * plan tasks and resume point, plan archive's open-task check) skips them. An
- * explicit Drive `--task-ids` list is not filtered by status.
+ * Done and Cancelled are terminal: status-derived checks (Drive's pending plan
+ * tasks and plan completion candidate, resume's acceptance of an external state
+ * commit, plan archive's open-task check, the coordinator completion check)
+ * treat them as closed. Drive resume derives its remaining task IDs from the
+ * run's events, not from status, and an explicit `--task-ids` list is not
+ * filtered by status.
  */
 export function isTaskClosed(status: TaskStatus): boolean {
 	return status === "Done" || status === "Cancelled";

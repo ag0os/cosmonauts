@@ -144,7 +144,39 @@ async function evaluateDefaultCompletionState(
 		};
 	}
 
+	// All Done with unchecked criteria stays pending: re-invoking the
+	// coordinator is how those criteria get finished.
+	if (
+		tasks.some((task) => task.status !== "Done") &&
+		!(await hasActionableTask(tm, tasks))
+	) {
+		return {
+			status: "terminal",
+			reason: label
+				? `No actionable tasks for completion label "${label}": none is In Progress or To Do with every dependency Done`
+				: "No actionable tasks: none is In Progress or To Do with every dependency Done",
+		};
+	}
+
 	return { status: "pending" };
+}
+
+/**
+ * Only an In Progress task, or a To Do task whose dependencies are all Done,
+ * can move the scope forward. A Cancelled dependency never becomes Done.
+ */
+async function hasActionableTask(
+	tm: TaskManager,
+	tasks: Awaited<ReturnType<TaskManager["listTasks"]>>,
+): Promise<boolean> {
+	if (tasks.some((task) => task.status === "In Progress")) return true;
+	const todo = tasks.filter((task) => task.status === "To Do");
+	const statuses = await tm.getTaskStatuses(
+		todo.flatMap((task) => task.dependencies),
+	);
+	return todo.some((task) =>
+		task.dependencies.every((id) => statuses.get(id.toUpperCase()) === "Done"),
+	);
 }
 
 function taskAcceptanceCriteriaComplete(

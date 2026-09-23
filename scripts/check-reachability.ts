@@ -10,7 +10,10 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import matter from "gray-matter";
 import ts from "typescript";
+
+declare const Bun: { TOML: { parse(source: string): unknown } };
 
 const root = resolve(process.argv[2] ?? ".");
 const errors: string[] = [];
@@ -19,36 +22,37 @@ function read(path: string): string {
 	return readFileSync(join(root, path), "utf8");
 }
 
-function stringArray(source: string, key: string): string[] {
-	const match = source.match(
-		new RegExp(`(?:^|\\n)${key}\\s*=\\s*\\[([\\s\\S]*?)\\]`),
-	);
-	if (!match) throw new Error(`missing ${key} array`);
-	const values: string[] = [];
-	const cleaned = match[1]?.replace(/#.*$/gm, "") ?? "";
-	const tokens = cleaned.match(/"(?:\\.|[^"\\])*"|[^\s,]+/g) ?? [];
-	for (const token of tokens) {
-		if (!token.startsWith('"'))
-			throw new Error(`invalid ${key} item: ${token}`);
-		values.push(JSON.parse(token) as string);
+function parseToml(path: string): Record<string, unknown> {
+	try {
+		return Bun.TOML.parse(read(path)) as Record<string, unknown>;
+	} catch (error) {
+		throw new Error(
+			`${path}: invalid TOML: ${error instanceof Error ? error.message : String(error)}`,
+		);
 	}
-	return values;
 }
 
-function stagedRows(source: string): Array<{ path: string; owner: string }> {
-	return source
-		.split(/\[\[staged\]\]/)
-		.slice(1)
-		.map((block) => {
-			const path = block.match(/^path\s*=\s*("(?:\\.|[^"\\])*")/m)?.[1];
-			const owner = block.match(/^owner\s*=\s*("(?:\\.|[^"\\])*")/m)?.[1];
-			if (!path || !owner)
-				throw new Error("staged row requires path and owner");
-			return {
-				path: JSON.parse(path) as string,
-				owner: JSON.parse(owner) as string,
-			};
-		});
+function stringArray(value: unknown, label: string): string[] {
+	if (
+		!Array.isArray(value) ||
+		!value.every((item): item is string => typeof item === "string")
+	)
+		throw new Error(`${label} must be an array of strings`);
+	return value;
+}
+
+function stagedRows(value: unknown): Array<{ path: string; owner: string }> {
+	if (value === undefined) return [];
+	if (!Array.isArray(value))
+		throw new Error("staged-code.toml: staged must be an array of tables");
+	return value.map((row: unknown) => {
+		const { path, owner } = (row ?? {}) as Record<string, unknown>;
+		if (typeof path !== "string" || typeof owner !== "string")
+			throw new Error(
+				"staged-code.toml: each staged row requires string path and owner",
+			);
+		return { path, owner };
+	});
 }
 
 function ownerLive(owner: string): boolean {
@@ -56,11 +60,9 @@ function ownerLive(owner: string): boolean {
 		const slug = owner.slice(5);
 		if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) return false;
 		const path = `missions/plans/${slug}/plan.md`;
-		const frontmatter = existsSync(join(root, path))
-			? read(path).match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1]
-			: undefined;
 		return (
-			frontmatter !== undefined && /^status:\s*active\s*$/m.test(frontmatter)
+			existsSync(join(root, path)) &&
+			matter(read(path)).data.status === "active"
 		);
 	}
 	if (owner.startsWith("roadmap:")) {
@@ -183,10 +185,13 @@ function hasRuntimeCode(path: string): boolean {
 }
 
 try {
-	const entry = stringArray(read("fallow.toml"), "entry");
-	const registry = read("missions/architecture/staged-code.toml");
-	const publicPaths = stringArray(registry, "public");
-	const staged = stagedRows(registry);
+	const entry = stringArray(
+		parseToml("fallow.toml").entry,
+		"fallow.toml: entry",
+	);
+	const registry = parseToml("missions/architecture/staged-code.toml");
+	const publicPaths = stringArray(registry.public, "staged-code.toml: public");
+	const staged = stagedRows(registry.staged);
 	const declared = [...publicPaths, ...staged.map((row) => row.path)];
 	for (const [name, paths] of [
 		["entry", entry],

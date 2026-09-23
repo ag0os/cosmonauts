@@ -148,6 +148,60 @@ describe("reachability command", () => {
 		const result = run(root);
 		expect(result.stdout).toContain("missing entry: lib/staged.ts");
 	});
+	test("rejects a staged path absent from Fallow entry when the row header uses valid TOML spacing", () => {
+		const { root } = fixture();
+		writeFileSync(join(root, "fallow.toml"), 'entry = ["lib/public.ts"]\n');
+		writeFileSync(
+			join(root, "missions/architecture/staged-code.toml"),
+			'public = ["lib/public.ts"]\n[[staged ]]\npath = "lib/staged.ts"\nowner = "plan:future-work"\n',
+		);
+		const result = run(root);
+		expect(result.status).toBe(1);
+		expect(result.stdout).toContain("missing entry: lib/staged.ts");
+		expect(result.stdout).toContain("1 staged");
+	});
+
+	test("fails loudly on a staged row whose owner is not a string", () => {
+		const { root } = fixture();
+		writeFileSync(
+			join(root, "missions/architecture/staged-code.toml"),
+			'public = ["lib/public.ts"]\n[[staged]]\npath = "lib/staged.ts"\nowner = 7\n',
+		);
+		const result = run(root);
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain("staged");
+	});
+
+	test("fails loudly on a Fallow entry that is not a string array", () => {
+		const { root } = fixture();
+		writeFileSync(join(root, "fallow.toml"), 'entry = "lib/public.ts"\n');
+		const result = run(root);
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain("entry");
+	});
+
+	test("fails loudly on malformed TOML", () => {
+		const { root } = fixture();
+		writeFileSync(
+			join(root, "missions/architecture/staged-code.toml"),
+			'public = ["lib/public.ts"\n',
+		);
+		const result = run(root);
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain("staged-code.toml");
+	});
+
+	test("accepts a staged owner plan whose YAML status is quoted", () => {
+		const { root } = fixture();
+		writeFileSync(
+			join(root, "missions/plans/future-work/plan.md"),
+			"---\nstatus: 'active'\n---\n",
+		);
+		const result = run(root);
+		expect(result.stdout).not.toContain("staged owner archived or absent");
+		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
+	});
+
 	test("rejects a staged owner whose plan is still present but completed", () => {
 		const { root } = fixture();
 		writeFileSync(

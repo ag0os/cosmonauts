@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-711
 createdAt: '2026-09-22T19:37:54.114Z'
-updatedAt: '2026-09-23T14:23:13.772Z'
+updatedAt: '2026-09-23T16:26:14.013Z'
 ---
 
 ## Description
@@ -79,3 +79,7 @@ Gates: lint clean, typecheck 0, full suite 241 files / 3004 tests passed (exit 0
 Left open (outside this task): the coordinator chain's default completion check still has no terminal state for a To Do task whose dependency is Cancelled — it stays pending until the loop's iteration cap; the coordinator prompt now says to report such a task instead of dispatching it. Archived TASK-150 was archived as Blocked; with persisted-status resolution it would now block a dependent (none exists), which is the intended semantics.
 
 2026-09-23 review follow-up (F3a/F3b): Drive now refuses to run a task with a Cancelled dependency (active or archived). lib/driver/drive-scheduler-backend.ts checks dependencies before preflight via new TaskManager.getTaskStatuses (active then archive), emits task_blocked, and returns a blocked step whose reason names the dependency ('dependency TASK-X is Cancelled; ...'); the task stays not-Done. Other dependencies are left to graph order and operator selection. Pinned through runDriveOnGraph in tests/driver/drive-cancelled-dependency.test.ts (red before the fix). task list --ready help, the isTaskClosed doc, and the external tasks SKILL.md ready example corrected.
+
+2026-09-23 codex Stage 3 findings 5a/6: the default coordinator completion check (lib/orchestration/chain-runner.ts) now returns terminal (success:false, 'No actionable tasks ...') when no task is In Progress and no To Do task has every dependency Done (Cancelled deps never satisfy; statuses resolved across active+archive), mirroring the all-Blocked fail-fast; checked before the first spawn and after each iteration. Red first: Cancelled+Blocked and To Do-on-Cancelled ran to the 10-iteration cap. isTaskClosed doc corrected (resume remaining IDs come from run events); plan_completion_candidate reason value unchanged, its type doc and the watch_events rendering now say 'plan tasks closed (Done or Cancelled)'.
+
+2026-09-23 follow-up (lead ruling): the no-actionable-tasks terminal fires only when at least one task is not Done; all Done with unchecked acceptance criteria stays pending so the coordinator is re-invoked as before (pinned by a runStage test, seen red first).
