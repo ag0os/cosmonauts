@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `a124dba` on `feature/framework-health` (not pushed).
+HEAD: `1a876e7` on `feature/framework-health` (not pushed).
 
 ## Done
 
@@ -17,18 +17,19 @@ HEAD: `a124dba` on `feature/framework-health` (not pushed).
 
 ## Running
 
-- TASK-711 (framework-health Stage 2 close-out):
-  - (2) done in `a124dba`: the test-health-audit spec is rewritten to the probe method
-    under D-002. `scripts/test-health-audit/` (~10k lines), its tests and its docs
-    page are deleted; one census script replaces them (D-037), which discharges
-    `validateCalibrationRecord` by deletion.
-  - (1) running: 75 sampled declarations over 240 admitted files, census frozen at
-    `4a6300f`. Five probe workers each run in their own throwaway worktree under the
-    scratchpad; the main checkout is untouched.
-  - The B-007 tool-name probe (three mutants on shipped agent definitions and
-    capability files, full suite each) is running in a separate worktree.
-  - Left after that: survivors strengthened and re-probed, stage2-probes.md,
-    ROADMAP, full gates, codex review (D-023).
+- TASK-711 (framework-health Stage 2 close-out). All parts are implemented; the independent
+  codex review (D-023) is running before I mark it Done.
+  - Census at `4a6300f`: 240 files, 25 strata, 75 sampled declarations. First probe: 65
+    killed, 10 survived. Seven were strengthened and then re-probed to killed by an
+    agent that did not write the patches. S42 was deleted: it compared test-local
+    constants with copies of themselves. S59, a pin of Pi's own behavior, was killed by
+    mutating Pi's agent-loop. S11, a type-only declaration, was killed by the type-check
+    step. B-007's resolved-name case: three mutants, all killed. Recorded in
+    `stage2-probes.md` (`1a876e7`).
+  - test-health-audit is re-specified to the probe method. The old audit suite is
+    deleted, and `validateCalibrationRecord` goes with it (`a124dba`, D-037).
+  - Gates at `1a876e7`: 2,997/2,997, lint, typecheck, check-artifacts x3 all clean.
+- Next: TASK-708..710 (Stage 3) via /implement-plan, after the codex verdict.
 
 ## Noticed (no action needed now)
 
