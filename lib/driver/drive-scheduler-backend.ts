@@ -650,15 +650,18 @@ async function findUncheckedAcceptanceCriteriaReason(
 }
 
 /**
- * A Cancelled dependency — active or archived — will never be done, so its
- * dependent must not run. Statuses are read when the step begins, so a
- * dependency Cancelled after the run started still blocks its dependent.
+ * Read at step start, not run start: a task Cancelled after the run began
+ * must not run, and a Cancelled dependency — active or archived — will never
+ * be done, so its dependent must not run.
  */
 async function cancelledDependencyReason(
 	taskManager: TaskManager,
 	taskId: string,
 ): Promise<string | undefined> {
 	const task = await taskManager.getTask(taskId);
+	if (task?.status === "Cancelled") {
+		return `${taskId} is Cancelled; it will not run`;
+	}
 	if (!task || task.dependencies.length === 0) {
 		return undefined;
 	}

@@ -197,6 +197,37 @@ describe("Drive and a Cancelled dependency", { timeout: 30_000 }, () => {
 		);
 	});
 
+	test("never runs a selected task that is Cancelled after the run starts, nor its dependent", async () => {
+		const fixture = await setupFixture("selected-cancelled-mid-run");
+		const first = await fixture.taskManager.createTask({ title: "First" });
+		const second = await fixture.taskManager.createTask({
+			title: "Second",
+			dependencies: [first.id],
+		});
+		fixture.onEvent(async (event) => {
+			if (event.type !== "run_started") return;
+			await fixture.taskManager.updateTask(first.id, { status: "Cancelled" });
+		});
+
+		const backend = createBackend();
+		const result = await runDriveOnGraph(
+			fixture.spec([first.id, second.id]),
+			fixture.context(backend),
+		);
+
+		expect(backend.startedTaskIds).toEqual([]);
+		expect(result).toMatchObject({
+			outcome: "blocked",
+			blockedTaskId: first.id,
+		});
+		expect((await fixture.taskManager.getTask(first.id))?.status).toBe(
+			"Cancelled",
+		);
+		expect((await fixture.taskManager.getTask(second.id))?.status).toBe(
+			"To Do",
+		);
+	});
+
 	test("fails closed when a matched archived dependency is malformed", async () => {
 		const fixture = await setupFixture("malformed-archive");
 		const dependency = await fixture.taskManager.createTask({
