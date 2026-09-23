@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isSubagentAllowed } from "../domains/shared/extensions/orchestration/authorization.ts";
 import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
 import { DomainValidationError } from "../lib/domains/validator.ts";
@@ -8,8 +8,23 @@ import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import { compileChainToGraph } from "../lib/orchestration/durable-chain-compiler.ts";
 import { CosmonautsRuntime, DomainBindingTargetError } from "../lib/runtime.ts";
 import { useTempDir } from "./helpers/fs.ts";
+import { writeSyntheticInstallableDomainPackage } from "./helpers/packages.ts";
 
 const tmp = useTempDir("runtime-test-");
+let originalHome: string | undefined;
+
+beforeEach(() => {
+	originalHome = process.env.HOME;
+	process.env.HOME = join(tmp.path, "home");
+});
+
+afterEach(() => {
+	if (originalHome === undefined) {
+		delete process.env.HOME;
+	} else {
+		process.env.HOME = originalHome;
+	}
+});
 
 // ============================================================================
 // Helpers
@@ -848,6 +863,26 @@ describe("CosmonautsRuntime", () => {
 	});
 
 	describe("no installed domains (only shared)", () => {
+		it("does not discover an installed user coding package outside the synthetic runtime", async () => {
+			const domainsDir = join(tmp.path, "domains");
+			const ambientHome = join(tmp.path, "ambient-home");
+			await mkdir(domainsDir, { recursive: true });
+			await setupSharedDomain(domainsDir);
+			await writeSyntheticInstallableDomainPackage(
+				join(ambientHome, ".cosmonauts", "packages", "coding"),
+				{ packageName: "coding", domainId: "coding" },
+			);
+
+			const runtime = await CosmonautsRuntime.create({
+				builtinDomainsDir: domainsDir,
+				projectRoot: tmp.path,
+			});
+
+			expect(runtime.domains.map((domain) => domain.manifest.id)).toEqual([
+				"shared",
+			]);
+		});
+
 		it("succeeds when only the shared domain is present", async () => {
 			const domainsDir = join(tmp.path, "domains");
 			await mkdir(domainsDir, { recursive: true });
