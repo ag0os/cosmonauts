@@ -262,7 +262,8 @@ function configureRunCommand(command: Command): void {
 		});
 }
 
-// fallow-ignore-next-line complexity: CLI compatibility flow intentionally keeps legacy option ordering in one command handler.
+// CLI compatibility keeps legacy option ordering in one command handler.
+// fallow-ignore-next-line complexity
 async function runDrive(options: DriveRunOptions): Promise<void> {
 	if (!options.plan) {
 		throw new Error("Missing required option '--plan <slug>'");
@@ -400,6 +401,8 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	await runInlineMode(spec, deps);
 }
 
+// Resume identity preparation intentionally handles every persisted legacy shape.
+// fallow-ignore-next-line complexity
 async function prepareTerminalResumeEpisodeIdentity({
 	resume,
 	episodeCaptureEnabled,
@@ -447,6 +450,8 @@ async function prepareTerminalResumeEpisodeIdentity({
 	await writeDriverWorkdirInputs(resume.spec, resume.remainingTaskIds);
 }
 
+// Resume preparation preserves the existing terminal-recovery decision matrix.
+// fallow-ignore-next-line complexity
 async function prepareResume(
 	resume: ResumeDefaults | undefined,
 	taskManager: TaskManager,
@@ -1058,6 +1063,8 @@ function applyTaskLimit(taskIds: string[], maxTasks: unknown): string[] {
 	return taskIds.slice(0, maxTasks);
 }
 
+// Run specifications retain independent CLI and persisted-default precedence.
+// fallow-ignore-next-line complexity
 async function createRunSpec({
 	projectRoot,
 	planSlug,

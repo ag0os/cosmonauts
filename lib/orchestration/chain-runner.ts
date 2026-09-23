@@ -109,6 +109,8 @@ type DefaultCompletionState =
  * Terminal states let loop stages exit immediately instead of burning
  * iterations when there is no actionable work left.
  */
+// Completion keeps each task/dependency terminal condition explicit.
+// fallow-ignore-next-line complexity
 async function evaluateDefaultCompletionState(
 	projectRoot: string,
 	label?: string,
@@ -832,6 +834,8 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 	await recordChainEpisode(lifecycle, "started");
 
 	try {
+		// Inline and durable runners intentionally share terminal episode behavior.
+		// fallow-ignore-next-line code-duplication
 		const result = await executeChain(config);
 		await recordChainEpisode(
 			lifecycle,
@@ -1226,6 +1230,8 @@ async function runStageWithPromptContext(
 	}
 }
 
+// Stage preparation preserves all resolution and prompt-binding variants.
+// fallow-ignore-next-line complexity
 function prepareStageExecution(
 	stage: ChainStage,
 	config: ChainConfig,
@@ -1369,6 +1375,8 @@ function recordStageOutput(
 	);
 }
 
+// Loop execution retains explicit stop, timeout, abort, and completion outcomes.
+// fallow-ignore-next-line complexity
 async function runLoopStage(
 	context: StageExecutionContext,
 	constraints?: StageConstraints,

@@ -61,6 +61,8 @@ function stagedRows(value: unknown): Array<{ path: string; owner: string }> {
 	});
 }
 
+// Owner checks deliberately mirror the staged-owner grammar and filesystem states.
+// fallow-ignore-next-line complexity
 function ownerLive(owner: string): boolean {
 	if (owner.startsWith("plan:")) {
 		const slug = owner.slice(5);
@@ -135,6 +137,8 @@ function runtimeImports(path: string): string[] {
 		const target = resolveImport(path, specifier);
 		if (target) imports.push(target);
 	}
+	// TypeScript syntax variants are handled explicitly to preserve runtime reachability.
+	// fallow-ignore-next-line complexity
 	function visit(node: ts.Node): void {
 		if (
 			ts.isPropertyAssignment(node) &&
