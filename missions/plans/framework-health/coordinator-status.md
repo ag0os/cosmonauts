@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `49b4fa9` on `feature/framework-health` (not pushed), clean.
+HEAD: `61527f6` on `feature/framework-health` (not pushed), clean. Suite 3,051/3,051; lint, typecheck, check-artifacts and reachability are clean.
 
 ## Done
 
@@ -49,8 +49,16 @@ HEAD: `49b4fa9` on `feature/framework-health` (not pushed), clean.
     Fixed in `5149d92`.
   - Round 2, FIX: the new terminal counted Cancelled tasks as open. Fixed in `49b4fa9`.
   - Round 3: SHIP. Suite 3,028/3,028.
-- **Quality Manager running** (chain `chain-5f1f1c94-0db8-4bea-9d6e-952044c1d2d4`; its prompt is `$SP/qm-prompt.txt`
-  and its output `$SP/qm.out`). Do not edit the tree while it runs. It reverts uncommitted work.
+- **Quality Manager done** (about 3h; verdict "Not merge-ready": one human decision, one P2 deferred). Its full
+  report was lost to the chain's 200-character summary cap; its findings are in `missions/reviews/*-round-3.md`
+  (committed `6d213f6`). It committed five `REVIEW-FIX` commits:
+  - Kept, **not yet independently verified**: `1b130e5` (frontmatter/reachability hardening), `f1c1acf`
+    (Cancelled handling), `7549348` (test runtime HOME isolation), `02d5bd4` (staged-owner parsing).
+  - **Reverted** `e4ba2f0` (`61527f6`): about 20 `fallow-ignore` suppressions on mostly pre-existing code,
+    three of them keeping unused exports green. That conflicts with INV-006/INV-007 and is out of scope.
+  - Open P2 F-006: bin-root paths are not normalized to `/` on Windows (`scripts/check-reachability.ts:269`).
+    Simple; to fix test first.
+  - F-002 needs the user; see below.
 
 ## Noticed (no action needed now)
 
@@ -64,54 +72,30 @@ HEAD: `49b4fa9` on `feature/framework-health` (not pushed), clean.
 
 For the next coordinator. The brief is `.shepherd/work/in-progress/framework-health/brief-coordinator-1.md`
 (read-only; `.shepherd/` is git-excluded, so never add it). Shepherd relays the user's decisions; write
-questions under `## Needs the user` and stop.
+questions under `## Needs the user
 
-**State.** Brief steps 1–2 are done. On framework-health, Stage 2 is closed and Stage 3 (TASK-708..710)
-is implemented and reviewed; only its final verification remains. All four framework-health tasks
-are Done in the task files. Execution-liveness has a backlog (TASK-712..719, all To Do). H-004 is
-resolved (architecture D-007 amended, D-042). Nothing else is open with the user.
+### Q1 (2026-09-23): the spawn compiler deleted in TASK-709 conflicts with a human-ratified record
 
-**In flight when this was written.** Codex round 2 on the Stage 3 remediation `5149d92`:
-`codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only`. Its prompt is
-`$SP/codex-s3-r2.txt` and its output `$SP/codex-s3-r2.out`, where SP is this session's scratchpad:
-`/private/tmp/claude-501/-Users-cosmos-Projects-cosmonauts/48a323d3-6dcb-4e30-8670-c9509cf01121/scratchpad`.
-Read the verdict with `tail` after the line `tokens used`.
+TASK-709 deleted `lib/orchestration/spawn-compiler.ts` (`compileSpawnToGraph`) and its test (`f1948ad`) as an
+orphan: no shipped module imports it. The framework-health plan's Overview named it as an orphan to
+resolve. The QM (`missions/reviews/review-round-3.md`, F-002) points out that
+`missions/architecture/durable-orchestration-runtime.md` **D-012/D-014** (decided by "spike + human review")
+say that spawn is modeled by `compileSpawnToGraph`, which produces a one-node agent graph. On the other hand,
+`orchestration-future.md` calls that document "the historical Wave-1/2 record", and its own D-001 calls
+"the unused spawn compiler" a migration exception rather than shipped behavior. The two records do not say
+which one governs a module that nothing uses.
 
-**Remaining, in order.**
-1. Triage codex round 2. For each real finding, have a worker fix it test first (seen red), commit it
-   yourself, then re-review. Every remediation round has produced new defects so far.
-2. Run the Quality Manager (D-023's shipped verification path for Stage 3), only on a committed, clean
-   tree, and never alongside codex (both were OOM-killed when run together):
-   `bun bin/cosmonauts run chain "coding/quality-manager" "<prompt>"`. In the prompt, name plan
-   framework-health, Stage 3 = TASK-708..710 plus review fixes, range `9be076b..HEAD`, and say to
-   reconcile against the LOCAL branch, not origin (origin/main is far behind). State out of scope:
-   the D-007 architecture amendment `05b021e` (human) and execution-liveness. Known accepted items:
-   the malformed-archived-file diagnosis, and a bare `--ready` listing that displays Cancelled/Done
-   tasks. The QM runs on `openai-codex/gpt-5.6-sol` (Pi 0.80.6's catalog has no gpt-6-sol). It
-   reverts uncommitted work and tends to under-remediate, so fix real findings yourself through a worker.
-3. Then report to Shepherd: framework-health Stages 1–3 done and verified. Offering archive plus
-   distillation is a follow-up for the user; do not archive unattended. Do not start execution-liveness
-   implementation unless Shepherd says so.
+Options:
+- **A. Restore it and stage it with an owner.** Restore the file and test from `f1948ad^`, and add a
+  `[[staged]]` row in `missions/architecture/staged-code.toml` with a live owner. The candidate owner is
+  a ROADMAP heading for spawn-as-graph, which would need to exist (I found none). You would name or approve
+  the owner.
+- **B. Keep it deleted and amend D-014 on the record.** One dated line in `durable-orchestration-runtime.md`
+  D-014: the compiler was removed as unused on 2026-09-23 and is re-created when spawn moves onto the
+  graph substrate. This is the same kind of human architecture amendment as D-007.
+- **C. Restore it unstaged** and accept that the reachability gate reports it unreachable until someone
+  wires it. This contradicts INV-006; I do not recommend it.
 
-**Method notes (hard-won today).**
-- Drive: `bun bin/cosmonauts run drive --plan framework-health --task-ids <ID> --backend codex --mode detached
-  --branch feature/framework-health --task-timeout 3600000`. Wait with a background until-loop on
-  `events.jsonl` for run_completed/run_aborted. Drive leaves files under `missions/` (other than task
-  files) uncommitted; commit them yourself.
-- A codex worker that exits 1 after a few minutes: check the newest `~/.codex/sessions/.../rollout-*.jsonl`
-  for `usage_limit_exceeded`. The user has since upgraded the subscription.
-- Claude subagents (the Agent tool) were reliable as workers and as independent reviewers. Tell them:
-  no git state changes, cp backups rather than `git checkout`, their own scratchpad worktree for mutation
-  experiments, and "seen red first".
-- Unquoted heredocs run backticks. Write Python generators to a file, or use `<<'EOF'`.
-- `tests/packages/` is gitignored but tracked: `git add -f` its files.
-- The home command pins in `tests/harness-adapters/inventory.test.ts` break whenever the user re-syncs
-  `~/.claude/commands/*`. Re-pin after checking that the home copy equals the branch export.
-
-## Needs the user
-
-Nothing open.
-
-(H-004 / review-7 PR-006 is resolved. The human approved both D-007 edits exactly as drafted
-(relayed 2026-09-23), and they are applied to `missions/architecture/orchestration-future.md`.
-Execution-liveness D-042 records it, D-033 and H-003 are superseded in part, and H-004 is closed.)
+Coordinator recommendation: **B**. The module was test-only, `orchestration-future.md` already treats it
+as a migration exception, and INV-006/INV-007 favor deletion. Its design is in git and in D-014's text.
+Nothing is changed until you rule; the rest of Stage 3 verification continues meanwhile.
