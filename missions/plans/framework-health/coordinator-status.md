@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `61527f6` on `feature/framework-health` (not pushed), clean. Suite 3,051/3,051; lint, typecheck, check-artifacts and reachability are clean.
+HEAD: `a8cc97f` on `feature/framework-health` (not pushed), clean. Suite 3,052/3,052; lint, typecheck, check-artifacts and reachability are clean.
 
 ## Done
 
@@ -56,8 +56,13 @@ HEAD: `61527f6` on `feature/framework-health` (not pushed), clean. Suite 3,051/3
     (Cancelled handling), `7549348` (test runtime HOME isolation), `02d5bd4` (staged-owner parsing).
   - **Reverted** `e4ba2f0` (`61527f6`): about 20 `fallow-ignore` suppressions on mostly pre-existing code,
     three of them keeping unused exports green. That conflicts with INV-006/INV-007 and is out of scope.
-  - Open P2 F-006: bin-root paths are not normalized to `/` on Windows (`scripts/check-reachability.ts:269`).
-    Simple; to fix test first.
+  - F-006 (Windows bin-root normalization) fixed test first (`238cae4`).
+  - Codex review of the four kept QM commits plus F-006 returned FIX:
+    - The QM's `f1c1acf` had replaced the live step-start Cancelled check with a run-start snapshot, so a
+      mid-run cancellation no longer blocked the dependent (reproduced).
+    - A test touched `/tmp`.
+    - The F-006 test bypassed the call site.
+    All three are fixed (`a8cc97f`); the narrow codex re-review is running.
   - F-002 needs the user; see below.
 
 ## Noticed (no action needed now)
@@ -83,13 +88,11 @@ resolved (architecture D-007 amended, D-042). Nothing else is open with the user
 outputs is `/private/tmp/claude-501/-Users-cosmos-Projects-cosmonauts/48a323d3-6dcb-4e30-8670-c9509cf01121/scratchpad`.
 
 **Remaining, in order.**
-1. Wait for the user's answer on the spawn compiler (`## Needs the user`, Q1), then do what it says.
-2. Have a worker fix F-006 (Windows bin-root normalization) test first, and commit it yourself.
-3. Get an independent review (codex `gpt-6-sol` high, or a Claude agent) of the QM's kept commits
-   `1b130e5 f1c1acf 7549348 02d5bd4`, plus the F-006 fix and whatever the Q1 ruling produces.
-   Fix, commit and re-review until SHIP. Do not run the QM again unless Shepherd asks; it takes about
-   3 hours and edits code.
-4. Report Stage 3 closed to Shepherd. Do not archive unattended, and do not start execution-liveness.
+1. Read the narrow codex re-review of `a8cc97f` (prompt `$SP/codex-qm-r2.txt`, output `$SP/codex-qm-r2.out`).
+   Fix and re-review until SHIP.
+2. Wait for the user's answer on the spawn compiler (`## Needs the user`, Q1), then do what it says, followed
+   by a narrow review of that change.
+3. Report Stage 3 closed to Shepherd. Do not archive unattended, and do not start execution-liveness.
 
 **Method notes (hard-won today).**
 - Drive: `bun bin/cosmonauts run drive --plan framework-health --task-ids <ID> --backend codex --mode detached
