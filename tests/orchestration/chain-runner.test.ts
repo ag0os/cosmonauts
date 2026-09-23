@@ -960,6 +960,46 @@ describe("runStage", () => {
 			}
 		});
 
+		test("keeps re-invoking the coordinator when a Cancelled task sits beside a Done task with an unchecked criterion", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
+			const tmpDir = await mkdtemp(
+				join(tmpdir(), "chain-runner-stage-cancelled-done-unchecked-"),
+			);
+			const tm = new TaskManager(tmpDir);
+			await tm.init();
+			const cancelled = await tm.createTask({
+				title: "Dropped",
+				labels: ["plan:alpha"],
+			});
+			await tm.updateTask(cancelled.id, { status: "Cancelled" });
+			const task = await tm.createTask({
+				title: "A",
+				labels: ["plan:alpha"],
+				acceptanceCriteria: ["Ship the behavior"],
+			});
+			await tm.updateTask(task.id, { status: "Done" });
+			const spawner = createMockSpawner();
+			vi.mocked(spawner.spawn).mockImplementation(async () => {
+				await tm.updateTask(task.id, {
+					acceptanceCriteria: [
+						{ index: 1, text: "Ship the behavior", checked: true },
+					],
+				});
+				return { success: true, sessionId: "session-1", messages: [] };
+			});
+
+			try {
+				const result = await runDefaultCoordinator(tmpDir, spawner);
+
+				expect(result.success).toBe(true);
+				expect(spawner.spawn).toHaveBeenCalledTimes(1);
+			} finally {
+				await rm(tmpDir, { recursive: true, force: true });
+			}
+		});
+
 		test("forwards compaction config to spawn call in loop stage", async () => {
 			vi.useFakeTimers();
 			const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();

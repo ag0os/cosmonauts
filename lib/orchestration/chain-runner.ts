@@ -144,10 +144,11 @@ async function evaluateDefaultCompletionState(
 		};
 	}
 
-	// All Done with unchecked criteria stays pending: re-invoking the
-	// coordinator is how those criteria get finished.
+	// A scope whose tasks are all closed (Done or Cancelled) but not yet
+	// complete has Done tasks with unchecked criteria; it stays pending, since
+	// re-invoking the coordinator is how those criteria get finished.
 	if (
-		tasks.some((task) => task.status !== "Done") &&
+		tasks.some((task) => !isTaskClosed(task.status)) &&
 		!(await hasActionableTask(tm, tasks))
 	) {
 		return {
