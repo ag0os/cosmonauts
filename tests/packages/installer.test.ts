@@ -334,7 +334,7 @@ describe("installPackage — invalid source", () => {
 		await expect(
 			installPackage({ source: pkgDir, scope: "project", projectRoot }),
 		).rejects.toThrow(
-			/move each domain into its own subdirectory or keep path "\." as the only domain entry/i,
+			/root-not-exclusive.*move each domain into its own subdirectory or keep path "\." as the only domain entry/i,
 		);
 		await expect(stat(join(projectRoot, ".cosmonauts/packages"))).rejects.toThrow();
 	});

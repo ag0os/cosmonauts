@@ -31,55 +31,6 @@ import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("harness-inventory-");
 const TEST_CODING_DOMAIN = `cod${"ing"}`;
-const BUNDLED_PLAYWRIGHT_SOURCE = `bundled/${TEST_CODING_DOMAIN}/skills/playwright-cli`;
-
-const PROJECT_EXPORT_BASELINES = [
-	{
-		assetId: "skill:plan",
-		sourcePath: "domains/shared/skills/plan",
-		targetPath: ".claude/skills/plan",
-		treeSha256:
-			"1625946e86e24ee37a1765f4df39c96dd3eaa6af0cbc50e4f057bfb0908341f2",
-	},
-	{
-		assetId: "skill:roadmap",
-		sourcePath: "domains/shared/skills/roadmap",
-		targetPath: ".claude/skills/roadmap",
-		treeSha256:
-			"6bfce5bd8f823522d8c7fb43000c6da762ef0b7a0b19f25fe1530a0f699941aa",
-	},
-	{
-		assetId: "skill:skills-cli",
-		sourcePath: "domains/shared/skills/skills-cli",
-		targetPath: ".claude/skills/skills-cli",
-		treeSha256:
-			"273b796f42e350707ac28b8cee547d14e1d9de074604864a7a25f1c776402f8b",
-	},
-	{
-		assetId: "skill:task",
-		sourcePath: "domains/shared/skills/task",
-		targetPath: ".claude/skills/task",
-		treeSha256:
-			"886ef2a3b0721f98dc26a79ed7cae169330079dc224775dc297c4902f3a894e0",
-	},
-] as const;
-
-const PERSONAL_BUNDLE_BASELINE = {
-	assetId: "external-skill:cosmonauts",
-	sourcePath: "external-skills/cosmonauts",
-	targetPath: "/Users/cosmos/.claude/skills/cosmonauts",
-	treeSha256:
-		"543d215db19d89fa079faf60416d4eb63704aa95302f304347af1d01f61a9b35",
-} as const;
-
-const PERMANENT_FOREIGN_CONFLICT = {
-	assetId: "skill:playwright-cli",
-	sourcePath: BUNDLED_PLAYWRIGHT_SOURCE,
-	targetPath: ".claude/skills/playwright-cli",
-	status: "locally-edited",
-	reason: "foreign-or-untraceable",
-} as const;
-
 const LIVE_COMMAND_BASELINES = [
 	{
 		assetId: "command:spec-to-backlog",
@@ -518,20 +469,6 @@ describe("live harness inventory characterization", () => {
 		expect(wrapperInputDrift).toMatchObject({
 			beforeStatus: "source-ahead",
 			reason: "generated-input-changed",
-		});
-	});
-
-	test("keeps playwright-cli only as the permanent foreign conflict", () => {
-		expect(PROJECT_EXPORT_BASELINES.map((row) => row.assetId)).not.toContain(
-			"skill:playwright-cli",
-		);
-		expect(PERSONAL_BUNDLE_BASELINE.assetId).not.toBe("skill:playwright-cli");
-		expect(PERMANENT_FOREIGN_CONFLICT).toEqual({
-			assetId: "skill:playwright-cli",
-			sourcePath: BUNDLED_PLAYWRIGHT_SOURCE,
-			targetPath: ".claude/skills/playwright-cli",
-			status: "locally-edited",
-			reason: "foreign-or-untraceable",
 		});
 	});
 

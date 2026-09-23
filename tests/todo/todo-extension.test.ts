@@ -187,6 +187,7 @@ describe("todo extension", () => {
 
 	describe("before_agent_start", () => {
 		test("returns nothing when list is empty", async () => {
+			expect(pi.events.get("before_agent_start")).toHaveLength(1);
 			const result = await pi.fireEvent("before_agent_start");
 			expect(result).toBeUndefined();
 		});

@@ -233,6 +233,7 @@ describe("buildAgentPackage", () => {
 
 	it("embeds skills selected by source-agent skill mode", async () => {
 		await writeFlatSkill("tdd", "# TDD\n\nPractice red-green-refactor.");
+		await writeFlatSkill("unselected", "# Unselected\n\nNot for this agent.");
 		const sourceAgent = makeAgent({ skills: ["tdd"] });
 
 		const agentPackage = await buildAgentPackage({
@@ -248,6 +249,7 @@ describe("buildAgentPackage", () => {
 		expect(agentPackage.skills.map((skill) => skill.name)).toEqual(["tdd"]);
 		expect(agentPackage.systemPrompt).toContain("# Packaged Skills");
 		expect(agentPackage.systemPrompt).toContain("Practice red-green-refactor.");
+		expect(agentPackage.systemPrompt).not.toContain("Not for this agent.");
 	});
 
 	it("preserves serialized targets prompt and tool options and inline skill delivery", async () => {

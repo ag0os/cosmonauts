@@ -21,6 +21,7 @@ import {
 import { TaskManager } from "../../lib/tasks/task-manager.js";
 
 const CONCURRENCY = 8;
+const CROSS_INSTANCE_CONCURRENCY = 32;
 
 async function listTaskFilenames(projectRoot: string): Promise<string[]> {
 	const entries = await readdir(join(projectRoot, "missions", "tasks"));
@@ -60,16 +61,16 @@ describe("TaskManager concurrency", () => {
 		await new TaskManager(tempDir).init();
 
 		const tasks = await Promise.all(
-			Array.from({ length: CONCURRENCY }, (_, i) =>
+			Array.from({ length: CROSS_INSTANCE_CONCURRENCY }, (_, i) =>
 				new TaskManager(tempDir).createTask({ title: `Task ${i}` }),
 			),
 		);
 
 		const ids = new Set(tasks.map((task) => task.id));
-		expect(ids.size).toBe(CONCURRENCY);
+		expect(ids.size).toBe(CROSS_INSTANCE_CONCURRENCY);
 
 		const files = await listTaskFilenames(tempDir);
-		expect(files).toHaveLength(CONCURRENCY);
+		expect(files).toHaveLength(CROSS_INSTANCE_CONCURRENCY);
 	});
 
 	it("serializes enabled same-task updates and records only actual status transitions", async () => {

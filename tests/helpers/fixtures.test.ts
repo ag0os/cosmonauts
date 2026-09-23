@@ -32,7 +32,11 @@ describe("test fixture helpers", () => {
 		expect(plan.title).toBe("Custom Plan");
 		expect(plan.body).toBe("Custom body");
 		expect(plan.spec).toBe("# Custom Spec");
-		expect(await manager.getPlan("custom-plan")).not.toBeNull();
+		expect(await manager.getPlan("custom-plan")).toMatchObject({
+			title: "Custom Plan",
+			body: "Custom body",
+			spec: "# Custom Spec",
+		});
 	});
 
 	it("captures stdout and stderr then restores stream mocks", () => {

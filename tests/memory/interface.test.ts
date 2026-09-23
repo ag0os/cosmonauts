@@ -1277,7 +1277,7 @@ describe("memory interface", () => {
 			path: expect.stringContaining("not-a-directory"),
 		});
 		if (failed.kind !== "failed") throw new Error("expected failed write");
-		expect(failed.reason).not.toBe("");
+		expect(failed.reason).toMatch(/ENOTDIR|EEXIST/);
 
 		const typesSource = await readFile(
 			join(process.cwd(), "lib", "memory", "types.ts"),

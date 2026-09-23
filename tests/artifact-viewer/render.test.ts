@@ -24,10 +24,12 @@ describe("artifact-viewer render", () => {
 
 	test("renders inline links in the supported subset with escaped href and label", () => {
 		const html = renderArtifactMarkdown(
-			"See [the docs](https://example.test/a?b=c) for details.",
+			'See [the <docs> & more](https://example.test/a?b=c&d="e") for details.',
 		);
 
-		expect(html).toContain('<a href="https://example.test/a?b=c">the docs</a>');
+		expect(html).toContain(
+			'<a href="https://example.test/a?b=c&amp;d=&quot;e&quot;">the &lt;docs&gt; &amp; more</a>',
+		);
 	});
 
 	test("does not render unsafe link schemes as active anchors", () => {
