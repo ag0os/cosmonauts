@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 const projectRoot = resolve(".");
@@ -48,6 +48,11 @@ function fixture(owner = "plan:future-work") {
 		"---\nstatus: active\n---\n",
 	);
 	return { root };
+}
+
+function write(root: string, path: string, content: string) {
+	mkdirSync(dirname(join(root, path)), { recursive: true });
+	writeFileSync(join(root, path), content);
 }
 
 function run(root: string) {
@@ -142,5 +147,132 @@ describe("reachability command", () => {
 		writeFileSync(join(root, "fallow.toml"), 'entry = ["lib/public.ts"]\n');
 		const result = run(root);
 		expect(result.stdout).toContain("missing entry: lib/staged.ts");
+	});
+	test("rejects a staged owner whose plan is still present but completed", () => {
+		const { root } = fixture();
+		writeFileSync(
+			join(root, "missions/plans/future-work/plan.md"),
+			"---\nstatus: completed\n---\n",
+		);
+		const result = run(root);
+		expect(result.stdout).toContain(
+			"staged owner archived or absent: lib/staged.ts -> plan:future-work",
+		);
+	});
+
+	test("reaches a lib module through a bin script and the CLI module it imports", () => {
+		const { root } = fixture();
+		write(root, "lib/cli-dep.ts", "export function dep() { return 1; }\n");
+		write(
+			root,
+			"cli/main.ts",
+			'import { dep } from "../lib/cli-dep.ts";\nexport const main = dep();\n',
+		);
+		const result = run(root);
+		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
+		expect(result.stdout).not.toContain("lib/cli-dep.ts");
+	});
+
+	test("reaches a lib module named as a bun build --compile entry in package scripts", () => {
+		const { root } = fixture();
+		write(
+			root,
+			"package.json",
+			JSON.stringify({
+				type: "module",
+				bin: { fixture: "bin/fixture" },
+				scripts: {
+					compile: "bun build --compile lib/step.ts --outfile bin/step",
+				},
+			}),
+		);
+		write(root, "lib/step.ts", "export function step() { return 1; }\n");
+		const result = run(root);
+		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
+		expect(result.stdout).not.toContain("lib/step.ts");
+	});
+
+	test("reaches a module named by a runnerModule property", () => {
+		const { root } = fixture();
+		write(
+			root,
+			"lib/public.ts",
+			'export const runner = { runnerModule: "./runner.ts" };\n',
+		);
+		write(root, "lib/runner.ts", "export function runIt() { return 1; }\n");
+		const result = run(root);
+		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
+		expect(result.stdout).not.toContain("lib/runner.ts");
+	});
+
+	test("reaches a lib module through a dynamic import", () => {
+		const { root } = fixture();
+		write(root, "lib/lazy.ts", "export function lazy() { return 1; }\n");
+		write(
+			root,
+			"cli/main.ts",
+			'export async function main() { return import("../lib/lazy.ts"); }\n',
+		);
+		const result = run(root);
+		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
+		expect(result.stdout).not.toContain("lib/lazy.ts");
+	});
+
+	test("reaches a lib module through a domain agent definition", () => {
+		const { root } = fixture();
+		write(root, "lib/agent-dep.ts", "export const agentDep = 1;\n");
+		write(
+			root,
+			"domains/example/agents/helper.ts",
+			'import { agentDep } from "../../../lib/agent-dep.ts";\nexport default { id: agentDep };\n',
+		);
+		const result = run(root);
+		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
+		expect(result.stdout).not.toContain("lib/agent-dep.ts");
+	});
+
+	test("reaches a lib module through a domain extension entry", () => {
+		const { root } = fixture();
+		write(root, "lib/extension-dep.ts", "export const extensionDep = 1;\n");
+		write(
+			root,
+			"domains/example/extensions/tools/index.ts",
+			'import { extensionDep } from "../../../../lib/extension-dep.ts";\nexport default () => extensionDep;\n',
+		);
+		const result = run(root);
+		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
+		expect(result.stdout).not.toContain("lib/extension-dep.ts");
+	});
+
+	test("reaches lib modules through a domain manifest and its chains", () => {
+		const { root } = fixture();
+		write(root, "lib/manifest-dep.ts", "export const manifestDep = 1;\n");
+		write(root, "lib/chains-dep.ts", "export const chainsDep = 1;\n");
+		write(
+			root,
+			"domains/example/domain.ts",
+			'import { manifestDep } from "../../lib/manifest-dep.ts";\nexport default { id: manifestDep };\n',
+		);
+		write(
+			root,
+			"domains/example/chains.ts",
+			'import { chainsDep } from "../../lib/chains-dep.ts";\nexport default [chainsDep];\n',
+		);
+		const result = run(root);
+		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
+		expect(result.stdout).not.toContain("lib/manifest-dep.ts");
+		expect(result.stdout).not.toContain("lib/chains-dep.ts");
+	});
+
+	test("does not report an unreached module that holds only types", () => {
+		const { root } = fixture();
+		write(
+			root,
+			"lib/shapes.ts",
+			"export interface Shape { id: string }\nexport type Id = string;\n",
+		);
+		const result = run(root);
+		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
+		expect(result.stdout).not.toContain("lib/shapes.ts");
 	});
 });

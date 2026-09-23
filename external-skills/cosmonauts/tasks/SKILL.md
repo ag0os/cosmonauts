@@ -151,11 +151,8 @@ The minted IDs are sequential (TASK-1, TASK-2, TASK-3 in this example, assuming 
 ```bash
 cosmonauts task edit TASK-006 --status done --check-ac 1 --check-ac 2 --json
 
-# --ready won't help here (TASK-007 still has TASK-006 listed in its deps).
-# Compute "all deps now Done" manually:
-DONE=$(cosmonauts task list --status done --json | jq -c '[.[].id]')
-cosmonauts task list --status todo --json \
-  | jq --argjson done "$DONE" '[.[] | select((.dependencies // []) - $done | length == 0)]'
+# Dependents whose dependencies are now all Done (a Cancelled one still blocks):
+cosmonauts task list --status todo --ready --json
 ```
 
 ## Linking tasks to a plan

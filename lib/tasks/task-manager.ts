@@ -565,19 +565,40 @@ export class TaskManager {
 		}
 
 		const tasks = await this.loadAllTasks();
-		const statuses = new Map<string, TaskStatus>(
-			tasks.map((task) => [task.id.toUpperCase(), task.status]),
+		return this.resolveStatuses(
+			tasks,
+			tasks.flatMap((task) => task.dependencies),
 		);
-		// An archived dependency keeps the status it was archived with: a plan
+	}
+
+	/**
+	 * Statuses of the given task ids, keyed by upper-cased id, read from the
+	 * active set and then the archive. An id found in neither is absent.
+	 */
+	async getTaskStatuses(
+		ids: readonly string[],
+	): Promise<ReadonlyMap<string, TaskStatus>> {
+		await this.ensureInitialized();
+		return this.resolveStatuses(await this.loadAllTasks(), ids);
+	}
+
+	private async resolveStatuses(
+		activeTasks: readonly Task[],
+		ids: readonly string[],
+	): Promise<ReadonlyMap<string, TaskStatus>> {
+		const statuses = new Map<string, TaskStatus>(
+			activeTasks.map((task) => [task.id.toUpperCase(), task.status]),
+		);
+		// An archived task keeps the status it was archived with: a plan
 		// archives with Cancelled tasks, and those never satisfy a dependent.
 		// Reading the archive is also what separates an archived id from a
 		// dependency that never existed.
 		const unresolved = new Set(
-			tasks
-				.flatMap((task) => task.dependencies)
-				.map((id) => id.toUpperCase())
-				.filter((id) => !statuses.has(id)),
+			ids.map((id) => id.toUpperCase()).filter((id) => !statuses.has(id)),
 		);
+		if (unresolved.size === 0) {
+			return statuses;
+		}
 		for (const file of await listArchivedTaskFiles(this.projectRoot)) {
 			const id = parseTaskIdFromFilename(file)?.toUpperCase();
 			if (id && unresolved.has(id)) {

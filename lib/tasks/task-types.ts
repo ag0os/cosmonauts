@@ -17,7 +17,11 @@ export type TaskStatus =
 	| "Blocked"
 	| "Cancelled";
 
-/** Done and Cancelled are terminal: neither is ever selected for work again. */
+/**
+ * Done and Cancelled are terminal: status-derived selection (Drive's pending
+ * plan tasks and resume point, plan archive's open-task check) skips them. An
+ * explicit Drive `--task-ids` list is not filtered by status.
+ */
 export function isTaskClosed(status: TaskStatus): boolean {
 	return status === "Done" || status === "Cancelled";
 }

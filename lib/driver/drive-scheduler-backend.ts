@@ -191,6 +191,16 @@ async function runDriveTaskStep(
 	const taskId = prepared.taskId;
 	await emit(context, { type: "task_started", taskId });
 
+	const cancelledReason = await cancelledDependencyReason(taskManager, taskId);
+	if (cancelledReason) {
+		await emit(context, {
+			type: "task_blocked",
+			taskId,
+			reason: cancelledReason,
+		});
+		return blockedStepResult(cancelledReason);
+	}
+
 	const preflight = await runPreflight(context, taskId, prepared.abortSignal);
 	if (!preflight.passed) {
 		return blockedStepResult(preflight.reason);
@@ -637,6 +647,29 @@ async function findUncheckedAcceptanceCriteriaReason(
 
 	const ids = unchecked.map((criterion) => `#${criterion.index}`).join(", ");
 	return `acceptance criteria still unchecked: ${ids}`;
+}
+
+/**
+ * A Cancelled dependency — active or archived — will never be done, so its
+ * dependent must not run. Every other dependency is left to the graph order
+ * and the operator's selection.
+ */
+async function cancelledDependencyReason(
+	taskManager: TaskManager,
+	taskId: string,
+): Promise<string | undefined> {
+	const task = await taskManager.getTask(taskId);
+	if (!task || task.dependencies.length === 0) {
+		return undefined;
+	}
+	const statuses = await taskManager.getTaskStatuses(task.dependencies);
+	const cancelled = task.dependencies.filter(
+		(id) => statuses.get(id.toUpperCase()) === "Cancelled",
+	);
+	if (cancelled.length === 0) {
+		return undefined;
+	}
+	return `dependency ${cancelled.map((id) => `${id} is Cancelled`).join(", ")}; ${taskId} will not run`;
 }
 
 async function blockTask(

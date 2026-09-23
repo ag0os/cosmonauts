@@ -820,7 +820,9 @@ async function setupFixture(name: string, taskCount: number): Promise<Fixture> {
 		postflightCommands: [],
 		commitPolicy: "no-commit",
 		stateCommitPolicy: "none",
-		taskTimeoutMs: 10,
+		// No acceptance test here exercises the task timeout; 10ms tripped under
+		// full-suite load once Drive began reading dependency status per task.
+		taskTimeoutMs: 10_000,
 		workdir,
 		eventLogPath: join(workdir, "events.jsonl"),
 	};

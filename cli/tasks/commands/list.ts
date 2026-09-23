@@ -35,7 +35,7 @@ export function registerListCommand(program: Command): void {
 		.option("-l, --label <label>", "Filter by label")
 		.option(
 			"--ready",
-			"Show only unblocked tasks (every dependency Done or archived)",
+			"Show only unblocked tasks (every dependency Done, active or archived; a Cancelled dependency blocks)",
 		)
 		.action(async (options: TaskListCliOptions) => {
 			const projectRoot = process.cwd();

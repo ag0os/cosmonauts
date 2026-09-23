@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-711
 createdAt: '2026-09-22T19:16:28.862Z'
-updatedAt: '2026-09-23T13:48:05.510Z'
+updatedAt: '2026-09-23T14:23:14.234Z'
 ---
 
 ## Description
@@ -22,3 +22,7 @@ Framework-health Stage 3, first half (D-020, D-024). Root fallow at bin/, cli/, 
 - [x] #3 The owner check is driven through the command with a synthetic fallow.toml and synthetic plan/roadmap state; the test was seen red before the check existed.
 - [x] #4 check-artifacts, lint, typecheck and the full suite pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+2026-09-23 review follow-up (F4): tests/scripts/check-reachability.test.ts now pins every root kind — bin->cli->lib, bun build --compile entry, runnerModule, dynamic import(), domain agent, extension entry, domain.ts and chains.ts manifests, type-only module not reported, and a present-but-completed plan owner rejected. Each proven by reverting that code in scripts/check-reachability.ts from a cp backup (test went red) and restoring. Script header now lists runnerModule, chains/workflows manifests, and the types-only exemption.

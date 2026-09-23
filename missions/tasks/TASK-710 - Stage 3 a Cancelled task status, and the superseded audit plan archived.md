@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-711
 createdAt: '2026-09-22T19:37:54.114Z'
-updatedAt: '2026-09-23T14:09:53.849Z'
+updatedAt: '2026-09-23T14:23:13.772Z'
 ---
 
 ## Description
@@ -77,3 +77,5 @@ AC#3: TASK-706/707 saved before editing; after `task edit --status cancelled` an
 Gates: lint clean, typecheck 0, full suite 241 files / 3004 tests passed (exit 0), check-artifacts framework-health 0 issues.
 
 Left open (outside this task): the coordinator chain's default completion check still has no terminal state for a To Do task whose dependency is Cancelled — it stays pending until the loop's iteration cap; the coordinator prompt now says to report such a task instead of dispatching it. Archived TASK-150 was archived as Blocked; with persisted-status resolution it would now block a dependent (none exists), which is the intended semantics.
+
+2026-09-23 review follow-up (F3a/F3b): Drive now refuses to run a task with a Cancelled dependency (active or archived). lib/driver/drive-scheduler-backend.ts checks dependencies before preflight via new TaskManager.getTaskStatuses (active then archive), emits task_blocked, and returns a blocked step whose reason names the dependency ('dependency TASK-X is Cancelled; ...'); the task stays not-Done. Other dependencies are left to graph order and operator selection. Pinned through runDriveOnGraph in tests/driver/drive-cancelled-dependency.test.ts (red before the fix). task list --ready help, the isTaskClosed doc, and the external tasks SKILL.md ready example corrected.

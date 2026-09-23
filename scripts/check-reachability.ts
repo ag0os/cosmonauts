@@ -2,7 +2,10 @@
  * Project reachability gate (framework-health D-020, D-024, D-039).
  * Walks runtime imports (type-only imports do not count) from the shipped roots:
  * what package.json `bin` scripts import, `bun build --compile` entries, domain
- * manifests/agents/extensions, and the public and staged declarations.
+ * `domain.ts`/`chains.ts`/`workflows.ts` manifests, agents, and extension
+ * entries, and the public and staged declarations. Static and dynamic imports,
+ * `require()`, and `runnerModule: "<path>"` properties are followed. Unreached
+ * lib modules with no runtime code (types only) are not reported.
  * Usage: bun scripts/check-reachability.ts [projectRoot]
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
