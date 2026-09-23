@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `5149d92` on `feature/framework-health` (not pushed), clean.
+HEAD: `49b4fa9` on `feature/framework-health` (not pushed), clean.
 
 ## Done
 
@@ -44,8 +44,13 @@ HEAD: `5149d92` on `feature/framework-health` (not pushed), clean.
   high. The usage limit is lifted. The QM chain and its Pi-side reviewers stay on
   `openai-codex/gpt-5.6-sol`: Pi 0.80.6's model catalog has no `gpt-6-sol`, so their shipped
   definitions can't move until the Pi upgrade branch lands.
-- Codex Stage 3 review (`gpt-6-sol`, high) is running; the QM runs after it. They are never run
-  together, because both were OOM-killed when run concurrently before.
+- Stage 3 codex review (`gpt-6-sol`, high), three rounds:
+  - Round 1, FIX: TOML/YAML parsed by regex, and the coordinator looped when no work could progress.
+    Fixed in `5149d92`.
+  - Round 2, FIX: the new terminal counted Cancelled tasks as open. Fixed in `49b4fa9`.
+  - Round 3: SHIP. Suite 3,028/3,028.
+- **Quality Manager running** (chain `chain-5f1f1c94-0db8-4bea-9d6e-952044c1d2d4`; its prompt is `$SP/qm-prompt.txt`
+  and its output `$SP/qm.out`). Do not edit the tree while it runs. It reverts uncommitted work.
 
 ## Noticed (no action needed now)
 
