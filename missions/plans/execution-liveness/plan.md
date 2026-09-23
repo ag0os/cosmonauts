@@ -594,9 +594,44 @@ R-012.
   - Decided by: planner-proposed
   - Supersedes: D-026's after-CAS descendant-registration order (2026-09-22).
 
+- **D-041 — Planning stops at review 7; its open findings become task acceptance criteria**
+  - Decision: no further planner or plan-reviewer round runs. `review-7.md`
+    PR-001, PR-002, PR-003, PR-004, PR-005 and PR-007, plus its Missing Coverage
+    items, are carried into the implementation tasks as acceptance criteria.
+    The task that owns each one resolves it before closing: it either defines
+    the missing contract or reports the stop condition under the deviation
+    protocol. PR-006 (the architecture record against the mandatory hard
+    ceiling) is not carried into the tasks. It is H-004, resolved by a separate
+    human ruling that amends the architecture record.
+  - Why: the finding count did not converge over rounds 4–7, and the remaining
+    findings are derived interface work a worker can close with the code in
+    front of it.
+  - Decided by: human, 2026-09-23, relayed by the supervising session ("STOP
+    planner/reviewer iteration. Carry review-7's open findings into the tasks
+    as acceptance criteria, EXCEPT PR-006"). The mapping of findings to tasks
+    was derived by the coordinator.
+
 ## Human Decisions Required
 
-All recorded decisions are resolved; none is an implementation gate.
+H-001 and H-002 are resolved. H-004 is ruled, and its exact amendment text
+awaits the human's approval. It does not gate implementation (INV-002 governs
+the code either way), but it gates the plan's completion.
+
+### H-004 — Architecture record against the mandatory hard ceiling
+
+`review-7.md` PR-006: `missions/architecture/orchestration-future.md` D-007
+says that a hard timeout is optional and that useful active work has no
+mandatory wall-clock ceiling. Ratified INV-002 requires an absolute hard
+ceiling in every mode.
+
+**Ruling: amend D-007 to agree with INV-002** (human, 2026-09-23, relayed by
+the supervising session; the human typed "amend"). The two alternatives,
+keeping D-007 as it is and reopening `ruling-packet.md` Q1, were rejected.
+Substance: every attempt has an absolute hard ceiling, enforced in every mode,
+with a config-only policy and a 4h default. Idle/useful-activity detection
+keeps its shadow/enforce policy. The coordinator drafts the exact text as an
+amendment on the record. Until the human approves that text, the architecture
+record and D-033 stay unchanged and the plan is not marked completed.
 
 ### H-001 — Enforcement while no local execution authority can run
 
