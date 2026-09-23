@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `1ec9f99` on `feature/framework-health` (not pushed), clean.
+HEAD: `8e00c00` on `feature/framework-health` (not pushed), clean.
 
 ## Done
 
@@ -42,6 +42,10 @@ HEAD: `1ec9f99` on `feature/framework-health` (not pushed), clean.
 - **Waiting for 15:29 local** (the openai-codex account's 5h window). Then the QM (D-023's
   shipped verification path) and an independent codex review of Stage 3, then TASK-708..710
   close-out.
+- Codex model switched to `gpt-5.6-sol` (user, relayed 2026-09-23). Reviews use
+  `-c model_reasoning_effort=high`. Drive runs get `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-5.6-sol -c
+  model_reasoning_effort=medium"`; `~/.codex/config.toml` is left as it is. The QM agents already
+  run on `gpt-5.6-sol`. The usage limit is account-wide, so `gpt-5.6-sol` is also blocked until 15:29.
 
 ## Noticed (no action needed now)
 
