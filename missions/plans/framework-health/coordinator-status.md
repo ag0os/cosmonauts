@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `05b021e` on `feature/framework-health` (not pushed), clean.
+HEAD: `5149d92` on `feature/framework-health` (not pushed), clean.
 
 ## Done
 
@@ -54,6 +54,54 @@ HEAD: `05b021e` on `feature/framework-health` (not pushed), clean.
   differs from `external-commands/spec-to-backlog.md` (the Quality Contract wording).
   When it is re-synced, `tests/harness-adapters/inventory.test.ts` fails until its pin
   (`c64297bd…`) is moved as well. I will re-pin it after a re-sync.
+
+## Successor handoff (written 2026-09-23 at ~45% context)
+
+For the next coordinator. The brief is `.shepherd/work/in-progress/framework-health/brief-coordinator-1.md`
+(read-only; `.shepherd/` is git-excluded, so never add it). Shepherd relays the user's decisions; write
+questions under `## Needs the user` and stop.
+
+**State.** Brief steps 1–2 are done. On framework-health, Stage 2 is closed and Stage 3 (TASK-708..710)
+is implemented and reviewed; only its final verification remains. All four framework-health tasks
+are Done in the task files. Execution-liveness has a backlog (TASK-712..719, all To Do). H-004 is
+resolved (architecture D-007 amended, D-042). Nothing else is open with the user.
+
+**In flight when this was written.** Codex round 2 on the Stage 3 remediation `5149d92`:
+`codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only`. Its prompt is
+`$SP/codex-s3-r2.txt` and its output `$SP/codex-s3-r2.out`, where SP is this session's scratchpad:
+`/private/tmp/claude-501/-Users-cosmos-Projects-cosmonauts/48a323d3-6dcb-4e30-8670-c9509cf01121/scratchpad`.
+Read the verdict with `tail` after the line `tokens used`.
+
+**Remaining, in order.**
+1. Triage codex round 2. For each real finding, have a worker fix it test first (seen red), commit it
+   yourself, then re-review. Every remediation round has produced new defects so far.
+2. Run the Quality Manager (D-023's shipped verification path for Stage 3), only on a committed, clean
+   tree, and never alongside codex (both were OOM-killed when run together):
+   `bun bin/cosmonauts run chain "coding/quality-manager" "<prompt>"`. In the prompt, name plan
+   framework-health, Stage 3 = TASK-708..710 plus review fixes, range `9be076b..HEAD`, and say to
+   reconcile against the LOCAL branch, not origin (origin/main is far behind). State out of scope:
+   the D-007 architecture amendment `05b021e` (human) and execution-liveness. Known accepted items:
+   the malformed-archived-file diagnosis, and a bare `--ready` listing that displays Cancelled/Done
+   tasks. The QM runs on `openai-codex/gpt-5.6-sol` (Pi 0.80.6's catalog has no gpt-6-sol). It
+   reverts uncommitted work and tends to under-remediate, so fix real findings yourself through a worker.
+3. Then report to Shepherd: framework-health Stages 1–3 done and verified. Offering archive plus
+   distillation is a follow-up for the user; do not archive unattended. Do not start execution-liveness
+   implementation unless Shepherd says so.
+
+**Method notes (hard-won today).**
+- Drive: `bun bin/cosmonauts run drive --plan framework-health --task-ids <ID> --backend codex --mode detached
+  --branch feature/framework-health --task-timeout 3600000`. Wait with a background until-loop on
+  `events.jsonl` for run_completed/run_aborted. Drive leaves files under `missions/` (other than task
+  files) uncommitted; commit them yourself.
+- A codex worker that exits 1 after a few minutes: check the newest `~/.codex/sessions/.../rollout-*.jsonl`
+  for `usage_limit_exceeded`. The user has since upgraded the subscription.
+- Claude subagents (the Agent tool) were reliable as workers and as independent reviewers. Tell them:
+  no git state changes, cp backups rather than `git checkout`, their own scratchpad worktree for mutation
+  experiments, and "seen red first".
+- Unquoted heredocs run backticks. Write Python generators to a file, or use `<<'EOF'`.
+- `tests/packages/` is gitignored but tracked: `git add -f` its files.
+- The home command pins in `tests/harness-adapters/inventory.test.ts` break whenever the user re-syncs
+  `~/.claude/commands/*`. Re-pin after checking that the home copy equals the branch export.
 
 ## Needs the user
 
