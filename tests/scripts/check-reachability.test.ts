@@ -7,8 +7,9 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { projectPath } from "../../scripts/project-path.ts";
 
 const projectRoot = resolve(".");
 const roots: string[] = [];
@@ -475,5 +476,12 @@ describe("reachability command", () => {
 		expect(result.stdout).toContain(
 			"reachability: 2/2 runtime lib modules reached; 1 type-only lib module exempt; 1 staged",
 		);
+	});
+});
+
+describe("projectPath", () => {
+	test("records a Windows bin-entry import with forward slashes", () => {
+		const target = win32.resolve("C:\\repo\\bin", "../cli/main.ts");
+		expect(projectPath("C:\\repo", target, win32)).toBe("cli/main.ts");
 	});
 });

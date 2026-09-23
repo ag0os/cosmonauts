@@ -9,9 +9,10 @@
  * Usage: bun scripts/check-reachability.ts [projectRoot]
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import matter from "gray-matter";
 import ts from "typescript";
+import { projectPath } from "./project-path.ts";
 
 declare const Bun: { TOML: { parse(source: string): unknown } };
 
@@ -120,8 +121,7 @@ function resolveImport(from: string, specifier: string): string | undefined {
 		`${base}/index.ts`,
 		base.replace(/\.js$/, ".ts"),
 	]) {
-		if (existsSync(candidate))
-			return relative(root, candidate).replaceAll("\\", "/");
+		if (existsSync(candidate)) return projectPath(root, candidate);
 	}
 	return undefined;
 }
@@ -263,7 +263,7 @@ try {
 			return [];
 		}
 		return [...read(script).matchAll(/^import\s+["']([^"']+)["']/gm)].map(
-			(match) => relative(root, resolve(dirname(path), match[1] ?? "")),
+			(match) => projectPath(root, resolve(dirname(path), match[1] ?? "")),
 		);
 	});
 	const roots = new Set<string>([
