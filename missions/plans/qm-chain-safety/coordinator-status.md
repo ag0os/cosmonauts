@@ -1,6 +1,6 @@
 # qm-chain-safety — coordinator status
 
-Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. Not pushed.
+Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. HEAD `ac0c37b`. Not pushed.
 
 ## State (2026-09-23)
 
