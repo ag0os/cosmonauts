@@ -18,7 +18,7 @@ Framework-health Stage 2, remaining work, executed by the paired sessions per D-
 <!-- AC:BEGIN -->
 - [ ] #1 stage2-probes.md carries the census and a killed/survived row per sampled declaration, with every survivor either re-probed to killed or deleted (B-008).
 - [ ] #2 missions/plans/test-health-audit/spec.md describes the sampled-probe method and names framework-health as its successor; no script under scripts/test-health-audit/ remains without a stated fate.
-- [ ] #3 Every sampled row names a mutation target in shipped code or shipped content, never test code (D-038; helper- and subprocess-admitted declarations included, hand-probed where no tool can route them), and the probe table carries a resolved-tool-name row (B-007).
+- [ ] #3 Every sampled row names a mutation target in shipped code or shipped content, or, for a pin of an exact-pinned runtime dependency's contract, in that dependency's code; never test code (D-038; helper- and subprocess-admitted declarations included, hand-probed where no tool can route them), and the probe table carries a resolved-tool-name row (B-007).
 - [ ] #4 validateCalibrationRecord either rejects a calibration source whose path does not exist (seen red first) or is deleted together with its callers.
 - [ ] #5 check-artifacts, lint, typecheck and the full suite pass.
 <!-- AC:END -->

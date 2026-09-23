@@ -71,7 +71,8 @@ The previous INV-001 through INV-008 are retired by framework-health D-002
    alone, apply one realistic defect to the production unit it covers, run it
    alone, and record `killed` (red) or `survived` (green). Restore from `cp`
    backups, never `git checkout`. The mutation target is always shipped code or
-   shipped content, never test code (D-038). A declaration that reaches production through a helper or a subprocess
+   shipped content, or, for a pin of an exact-pinned runtime dependency's
+   contract, that dependency's code; never test code (D-038). A declaration that reaches production through a helper or a subprocess
    is probed at the production function its behavior depends on, by hand where
    a tool cannot route it (D-036).
 5. **Survivors.** A survivor is strengthened or replaced and then probed again
