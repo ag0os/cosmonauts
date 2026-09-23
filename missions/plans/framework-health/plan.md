@@ -399,6 +399,11 @@ contract; nothing in Stage 3 depends on which side computes it. Added
   - Why: TASK-711 (2); INV-007 (the new script names what it replaces); INV-006.
   - Decided by: coordinator, 2026-09-23 (derived)
   - Supersedes: D-032 in part (2026-09-23)
+- **D-038 - Declarations are found by syntax; a mutation target may be shipped content**
+  - Decision: (1) the census finds `it`/`test` declarations with the TypeScript AST, including multiline and chained forms such as `test.each([...])(...)`. A line regex missed one in `tests/packages/installer.test.ts`, so S57's median moved from line 309 to line 285. That declaration was probed afresh; the line-309 strengthening stays as an unsampled improvement. (2) A mutation target is shipped material a declaration actually exercises: code under `lib/`, `cli/`, `domains/`, `scripts/` or `bundled/`, or shipped content under `external-skills/` or `external-commands/` (package.json `files`). It is never test code. S71 reads only shipped `external-skills/**/SKILL.md` and is probed there. This corrects the coordinator-derived wording of D-036 (1) and TASK-711 AC #3; the human decision D-036 records, to carry review-8's findings into the tasks, is unchanged, and INV-005 is not weakened.
+  - Why: codex review of TASK-711, 2026-09-23 (findings 1 and 5).
+  - Decided by: coordinator, 2026-09-23 (derived)
+  - Supersedes: D-036 (1) and D-030 in part (2026-09-23)
 
 ## Behaviors
 

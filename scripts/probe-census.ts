@@ -1,20 +1,21 @@
 /**
  * Draws the mutation-probe sample of framework-health Stage 2
- * (plan D-021, D-024, D-030, D-032, D-034, D-037) from the committed tests.
+ * (plan D-021, D-024, D-030, D-032, D-034, D-037, D-038). Paths come from
+ * `git ls-files`, contents from the working tree: run it in a clean worktree
+ * of the commit being recorded.
  *
  * Usage: bun scripts/probe-census.ts [repoRoot]   → JSON on stdout
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+import ts from "typescript";
 
 const PRODUCTION_ROOTS = ["lib/", "cli/", "domains/", "scripts/", "bundled/"];
 const IMPORT_RE =
 	/(?:import|export)\s[^;]*?from\s*["']([^"']+)["']|import\(\s*["'`]([^"'`]+)["'`]\s*\)|import\s*["']([^"']+)["']|vi\.mock\(\s*["']([^"']+)["']/g;
 const SUBPROCESS_RE = /\b(?:spawn|execFile|exec)\w*\s*\(/;
 const BIN_RE = /bin\/cosmonauts|["']bin["']/;
-const DECLARATION_RE =
-	/^\s*(?:it|test)(?:\.(?:each\([^)]*\)|concurrent|skipIf\([^)]*\)|runIf\([^)]*\)))?\s*\(\s*(["'`])(.*?)\1/;
 
 interface Admission {
 	file: string;
@@ -84,12 +85,43 @@ function admit(root: string, file: string): Admission | null {
 	};
 }
 
+/** `it`/`test` and every chained form (`test.each([...])(...)`, `it.skipIf(x)(...)`, `test.concurrent(...)`). */
+function isDeclarationCallee(callee: ts.Expression): boolean {
+	if (ts.isIdentifier(callee))
+		return callee.text === "it" || callee.text === "test";
+	if (ts.isPropertyAccessExpression(callee))
+		return isDeclarationCallee(callee.expression);
+	if (ts.isCallExpression(callee))
+		return isDeclarationCallee(callee.expression);
+	if (ts.isTaggedTemplateExpression(callee))
+		return isDeclarationCallee(callee.tag);
+	return false;
+}
+
 function medianDeclaration(root: string, file: string) {
-	const lines = readFileSync(resolve(root, file), "utf8").split("\n");
-	const declarations = lines.flatMap((line, index) => {
-		const match = line.match(DECLARATION_RE);
-		return match ? [{ line: index + 1, name: match[2] ?? "" }] : [];
-	});
+	const text = readFileSync(resolve(root, file), "utf8");
+	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+	const declarations: Array<{ line: number; name: string }> = [];
+	const visit = (node: ts.Node): void => {
+		const [first] = ts.isCallExpression(node) ? node.arguments : [];
+		if (
+			ts.isCallExpression(node) &&
+			first &&
+			(ts.isStringLiteralLike(first) || ts.isTemplateExpression(first)) &&
+			isDeclarationCallee(node.expression)
+		) {
+			const { line } = source.getLineAndCharacterOfPosition(
+				node.getStart(source),
+			);
+			declarations.push({
+				line: line + 1,
+				name: first.getText(source).slice(1, -1),
+			});
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(source);
+	declarations.sort((a, b) => a.line - b.line);
 	return {
 		declarations: declarations.length,
 		median: declarations[Math.floor((declarations.length - 1) / 2)] ?? null,

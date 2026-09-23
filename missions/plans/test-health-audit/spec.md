@@ -7,8 +7,8 @@
 > of that plan is no longer frozen"). The previous spec, with its eight
 > invariants, sixteen acceptance criteria and per-test evidence profiles, is in
 > git at `4a6300f`. Its assessment epochs and profiles are forfeit as evidence
-> (D-002). Execution now lives in framework-health Stage 2 (TASK-711). This plan
-> is completed and archived by TASK-710.
+> (D-002). Execution now lives in framework-health Stage 2 (TASK-711). TASK-710
+> will mark this plan completed and archive it.
 
 ## Purpose
 
@@ -60,8 +60,8 @@ The previous INV-001 through INV-008 are retired by framework-health D-002
    `(root)` for files directly under it. Each stratum contributes the larger of
    three files and ten percent (rounded up), capped at its size, taken at an
    even stride over the path-sorted list. Within each file the unit is the
-   median `it`/`test` declaration by line order, ties to the earlier (D-021,
-   D-024, D-030, D-034).
+   median `it`/`test` declaration by line order, ties to the earlier, found by
+   syntax rather than by line pattern (D-021, D-024, D-030, D-034, D-038).
 3. **Tool.** `bun run probe:census` prints the population, the excluded files,
    each stratum's size, sample and stride, and the sampled declarations, for the
    tree at the given root (default: the current directory). It replaces the former `scripts/test-health-audit/`
@@ -70,8 +70,8 @@ The previous INV-001 through INV-008 are retired by framework-health D-002
    working checkout, for each sampled declaration: confirm that it passes
    alone, apply one realistic defect to the production unit it covers, run it
    alone, and record `killed` (red) or `survived` (green). Restore from `cp`
-   backups, never `git checkout`. The mutation target is always production
-   code. A declaration that reaches production through a helper or a subprocess
+   backups, never `git checkout`. The mutation target is always shipped code or
+   shipped content, never test code (D-038). A declaration that reaches production through a helper or a subprocess
    is probed at the production function its behavior depends on, by hand where
    a tool cannot route it (D-036).
 5. **Survivors.** A survivor is strengthened or replaced and then probed again

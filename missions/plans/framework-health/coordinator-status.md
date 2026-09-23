@@ -19,8 +19,8 @@ HEAD: `1a876e7` on `feature/framework-health` (not pushed).
 
 - TASK-711 (framework-health Stage 2 close-out). All parts are implemented; the independent
   codex review (D-023) is running before I mark it Done.
-  - Census at `4a6300f`: 240 files, 25 strata, 75 sampled declarations. First probe: 65
-    killed, 10 survived. Seven were strengthened and then re-probed to killed by an
+  - Census at `4a6300f`: 240 files, 30 strata, 75 sampled declarations. First probe: 66
+    killed, 9 survived. Six were strengthened and then re-probed to killed by an
     agent that did not write the patches. S42 was deleted: it compared test-local
     constants with copies of themselves. S59, a pin of Pi's own behavior, was killed by
     mutating Pi's agent-loop. S11, a type-only declaration, was killed by the type-check
