@@ -94,7 +94,7 @@ resolved (architecture D-007 amended, D-042). Nothing else is open with the user
 outputs is `/private/tmp/claude-501/-Users-cosmos-Projects-cosmonauts/48a323d3-6dcb-4e30-8670-c9509cf01121/scratchpad`.
 
 **Remaining.** Nothing on Stages 1–3. The next steps are Shepherd's to assign to a fresh successor (archive and
-distill framework-health, execution-liveness implementation TASK-712..719). One follow-up for the user is below.
+distill framework-health, execution-liveness implementation TASK-712..719). Nothing is open with the user.
 
 **Method notes (hard-won today).**
 - Drive: `bun bin/cosmonauts run drive --plan framework-health --task-ids <ID> --backend codex --mode detached
@@ -113,17 +113,8 @@ distill framework-health, execution-liveness implementation TASK-712..719). One 
 
 ## Needs the user
 
-### Follow-up (not blocking): `orchestration-future.md` still describes the deleted spawn compiler
+Nothing open.
 
-The Q1 ruling amended `durable-orchestration-runtime.md`. Codex found three live passages in
-`missions/architecture/orchestration-future.md` that still speak of the compiler as present:
-- line 25–27, **D-001 decision text**: "the unused spawn compiler are migration exceptions";
-- line 232–235, migration inventory: "the spawn graph compiler has no production caller";
-- line 247–248, Shipped substrate: "The spawn-as-one-node compiler is scaffolded but has no production caller".
-
-It is an architecture record, so I have not edited it. Suggested wording, if the user agrees: "the spawn
-compiler (deleted 2026-09-23 as unused; re-created when spawn moves onto the graph substrate)" at the first
-two, and drop the scaffolding sentence from Shipped substrate.
-
-(Q1 is resolved: the human ruled option B, relayed 2026-09-23. `durable-orchestration-runtime.md` D-012/D-014
-are amended; framework-health D-040.)
+(The last item, `orchestration-future.md`'s three spawn-compiler passages, is resolved. The user approved the
+suggested wording (relayed 2026-09-23), and it was applied in `863740f`. Q1 was resolved earlier as option B,
+framework-health D-040.)
