@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `3dbde3e` on `feature/framework-health` (not pushed), clean. Suite 3,053/3,053; lint, typecheck, check-artifacts and reachability are clean.
+HEAD: `aed3197`+status on `feature/framework-health` (not pushed), clean. Suite 3,053/3,053; lint, typecheck, check-artifacts and reachability are clean.
 
 ## Done
 
@@ -67,7 +67,8 @@ HEAD: `3dbde3e` on `feature/framework-health` (not pushed), clean. Suite 3,053/3
     Accepted dispositions, which codex agreed with: a blocked run is terminal on resume, and the Windows
     call-site test cannot run end to end on POSIX.
   - Round 3: **SHIP.**
-- **Stage 3 is verified.** The only open item is Q1 (spawn compiler) below.
+- **Stage 3 is verified.** Q1 is resolved (option B, `aed3197`, D-040), and codex found D-012/D-014 and D-040 correct.
+- **Framework-health Stages 1–3 are closed.** No archive, and execution-liveness is not started (per Shepherd).
   - F-002 needs the user; see below.
 
 ## Noticed (no action needed now)
@@ -82,40 +83,19 @@ HEAD: `3dbde3e` on `feature/framework-health` (not pushed), clean. Suite 3,053/3
 
 For the next coordinator. The brief is `.shepherd/work/in-progress/framework-health/brief-coordinator-1.md`
 (read-only; `.shepherd/` is git-excluded, so never add it). Shepherd relays the user's decisions; write
-questions under `## Needs the user` and stop.
+questions under `## Needs the user
 
-**State.** Brief steps 1–2 are done. On framework-health, Stage 2 is closed and Stage 3 (TASK-708..710)
-is implemented and reviewed; only its final verification remains. All four framework-health tasks
-are Done in the task files. Execution-liveness has a backlog (TASK-712..719, all To Do). H-004 is
-resolved (architecture D-007 amended, D-042). Nothing else is open with the user.
+### Follow-up (not blocking): `orchestration-future.md` still describes the deleted spawn compiler
 
-**In flight.** Nothing is running (updated after the QM run). The scratchpad for prompts and
-outputs is `/private/tmp/claude-501/-Users-cosmos-Projects-cosmonauts/48a323d3-6dcb-4e30-8670-c9509cf01121/scratchpad`.
+The Q1 ruling amended `durable-orchestration-runtime.md`. Codex found three live passages in
+`missions/architecture/orchestration-future.md` that still speak of the compiler as present:
+- line 25–27, **D-001 decision text**: "the unused spawn compiler are migration exceptions";
+- line 232–235, migration inventory: "the spawn graph compiler has no production caller";
+- line 247–248, Shipped substrate: "The spawn-as-one-node compiler is scaffolded but has no production caller".
 
-**Remaining, in order.**
-1. Wait for the user's answer on the spawn compiler (`## Needs the user`, Q1), then do what it says, followed
-   by a narrow independent review of that change.
-2. Report framework-health Stages 1–3 closed to Shepherd. Offer archive plus distillation as a follow-up;
-   do not do it unattended. Do not start execution-liveness unless Shepherd says so.
+It is an architecture record, so I have not edited it. Suggested wording, if the user agrees: "the spawn
+compiler (deleted 2026-09-23 as unused; re-created when spawn moves onto the graph substrate)" at the first
+two, and drop the scaffolding sentence from Shipped substrate.
 
-**Method notes (hard-won today).**
-- Drive: `bun bin/cosmonauts run drive --plan framework-health --task-ids <ID> --backend codex --mode detached
-  --branch feature/framework-health --task-timeout 3600000`. Wait with a background until-loop on
-  `events.jsonl` for run_completed/run_aborted. Drive leaves files under `missions/` (other than task
-  files) uncommitted; commit them yourself.
-- A codex worker that exits 1 after a few minutes: check the newest `~/.codex/sessions/.../rollout-*.jsonl`
-  for `usage_limit_exceeded`. The user has since upgraded the subscription.
-- Claude subagents (the Agent tool) were reliable as workers and as independent reviewers. Tell them:
-  no git state changes, cp backups rather than `git checkout`, their own scratchpad worktree for mutation
-  experiments, and "seen red first".
-- Unquoted heredocs run backticks. Write Python generators to a file, or use `<<'EOF'`.
-- `tests/packages/` is gitignored but tracked: `git add -f` its files.
-- The home command pins in `tests/harness-adapters/inventory.test.ts` break whenever the user re-syncs
-  `~/.claude/commands/*`. Re-pin after checking that the home copy equals the branch export.
-
-## Needs the user
-
-Nothing open.
-
-(Q1, the spawn compiler, is resolved: the human ruled option B, relayed 2026-09-23. It stays deleted, and
-`durable-orchestration-runtime.md` D-012 and D-014 carry dated amendment lines; framework-health D-040.)
+(Q1 is resolved: the human ruled option B, relayed 2026-09-23. `durable-orchestration-runtime.md` D-012/D-014
+are amended; framework-health D-040.)
