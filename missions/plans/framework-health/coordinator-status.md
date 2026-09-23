@@ -115,28 +115,7 @@ outputs is `/private/tmp/claude-501/-Users-cosmos-Projects-cosmonauts/48a323d3-6
 
 ## Needs the user
 
-### Q1 (2026-09-23): the spawn compiler deleted in TASK-709 conflicts with a human-ratified record
+Nothing open.
 
-TASK-709 deleted `lib/orchestration/spawn-compiler.ts` (`compileSpawnToGraph`) and its test (`f1948ad`) as an
-orphan: no shipped module imports it. The framework-health plan's Overview named it as an orphan to
-resolve. The QM (`missions/reviews/review-round-3.md`, F-002) points out that
-`missions/architecture/durable-orchestration-runtime.md` **D-012/D-014** (decided by "spike + human review")
-say that spawn is modeled by `compileSpawnToGraph`, which produces a one-node agent graph. On the other hand,
-`orchestration-future.md` calls that document "the historical Wave-1/2 record", and its own D-001 calls
-"the unused spawn compiler" a migration exception rather than shipped behavior. The two records do not say
-which one governs a module that nothing uses.
-
-Options:
-- **A. Restore it and stage it with an owner.** Restore the file and test from `f1948ad^`, and add a
-  `[[staged]]` row in `missions/architecture/staged-code.toml` with a live owner. The candidate owner is
-  a ROADMAP heading for spawn-as-graph, which would need to exist (I found none). You would name or approve
-  the owner.
-- **B. Keep it deleted and amend D-014 on the record.** One dated line in `durable-orchestration-runtime.md`
-  D-014: the compiler was removed as unused on 2026-09-23 and is re-created when spawn moves onto the
-  graph substrate. This is the same kind of human architecture amendment as D-007.
-- **C. Restore it unstaged** and accept that the reachability gate reports it unreachable until someone
-  wires it. This contradicts INV-006; I do not recommend it.
-
-Coordinator recommendation: **B**. The module was test-only, `orchestration-future.md` already treats it
-as a migration exception, and INV-006/INV-007 favor deletion. Its design is in git and in D-014's text.
-Nothing is changed until you rule; the rest of Stage 3 verification continues meanwhile.
+(Q1, the spawn compiler, is resolved: the human ruled option B, relayed 2026-09-23. It stays deleted, and
+`durable-orchestration-runtime.md` D-012 and D-014 carry dated amendment lines; framework-health D-040.)

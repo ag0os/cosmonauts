@@ -176,7 +176,12 @@ Follow-ups`.
     but "inline" today means "non-durable" for chains and "in-host but still
     durable" for Drive, which misleads any unified surface. Naming the two axes
     apart removes that ambiguity without churn.
-  - Decided-by: spike + human review.
+  - Decided-by: spike + human review. Amended 2026-09-23 by human ruling
+    (relayed by the supervising session; framework-health Q1 option B): the
+    unused `lib/orchestration/spawn-compiler.ts` (`compileSpawnToGraph`) was
+    deleted as an orphan (framework-health TASK-709). `spawn`'s 1-node graph
+    shape stays modeled here, and the compiler is re-created when spawn moves
+    onto the graph substrate.
 
 - `D-013 - 'cosmonauts run' is the sole orchestration CLI surface`
   - Decision: `cosmonauts run` is **the** CLI surface for orchestration —
@@ -221,7 +226,12 @@ Follow-ups`.
     "every frontend is a compiler" thesis without putting durable run machinery on
     the latency-sensitive coordinator fan-out path. Deferring nested-run keeps the
     boundary honest (`D-007`/post-production worktree + lifecycle work gates it).
-  - Decided-by: spike + human review.
+  - Decided-by: spike + human review. Amended 2026-09-23 by human ruling
+    (relayed by the supervising session; framework-health Q1 option B):
+    `compileSpawnToGraph` shipped unused and was deleted as an orphan
+    (framework-health TASK-709, `f1948ad`). The minimal-compiler decision
+    stands; the compiler is re-created when spawn moves onto the graph
+    substrate. Its last version is in git at `f1948ad^`.
 
 - `D-015 - "workflow" is not a distinct concept; collapse it into "chain"`
   - Decision: a cosmonauts "workflow" is exactly a **named chain** —
