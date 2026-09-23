@@ -1,40 +1,32 @@
 # qm-chain-safety — coordinator status
 
-Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. HEAD `37ad121`. Not pushed.
+Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. HEAD `ad7c3e1`. Not pushed.
 
 ## State (2026-09-23)
 
-- **Done:** spec + seed plan (D-001, D-002); roadmap item removed; **Intent INV-001..005 ratified by the human as drafted** (`1930dda`); both consequences acknowledged; decisions 6/7 stay ACs.
-- **Running:** `/spec-to-backlog` Phase 2 — independent 4-lens review workflow `wf_d255f9f5-310` (read-only). Phase 1 done: chain `chain-f21fd921` designed `plan.md` (B-001..B-012) and wrote `review-1.md`/`review-2.md` (both verified to be about this plan), committed `37ad121`. Known gap: plan has no `## Quality Contract` section.
-- **Blocked on:** nothing.
-- **Next:** Phase 2 independent review workflow → Phase 3 revision → task-manager → coverage + compliance review → `/implement-plan` (QM replaced per D-002).
+- **Done:** Intent ratified (`1930dda`); `/spec-to-backlog` Phases 1-3.
+  - The chain (`chain-f21fd921`) designed the plan and wrote review-1 and review-2, both about this plan (`37ad121`).
+  - My independent 4-lens adversarial review produced 24 findings, all verified (17 confirmed, 7 partial), recorded as `review-3.md`.
+  - The plan is revised from both channels (`ad7c3e1`); the dispositions are in review-3.md.
+- **Running:** nothing.
+- **Blocked on:** the Phase 3 human gate plus five rulings on ratified ground (H-001..H-005 below; drafted in full in plan.md's Decision Log).
+- **Next:** on the rulings, record them (amend the spec/D-001 where chosen), then Phase 4 task-manager → coverage matrix → compliance review → `/implement-plan`. Stages 1-3 (authority, baselines, suppressions) do not depend on any H-item.
 
 ## Needs the user
 
-### 1. ~~Ratify the Intent~~ — RATIFIED 2026-09-23 (relayed). Text kept for reference.
+Five rulings. Each touches ratified ground (a spec AC's letter, a human decision, or an INV reading), so an agent may not pick. Recommendation first. Full drafts are in plan.md H-001..H-005.
 
-Goal: a Quality Manager run can only produce findings. It cannot damage the work it reviews, it cannot mistake another run's record for its own, and its gates cannot be passed by hiding a finding.
+1. **H-001 — AC-003 vs AC-007.** AC-003 says the checkout's untracked files stay byte-identical, while AC-007 requires a new tracked plan summary in that checkout on every exit. Recommend (A): amend AC-003 to exempt exactly the host-written new file `missions/plans/<slug>/qm-runs/<runId>.md`, never an overwrite and never agent-visible. (B) would move the summary out of the checkout instead, amending AC-007 and D-001 item 2.
+2. **H-002 — clone instead of the decided "detached worktree" (D-001 item 3).** A linked git worktree shares refs, stash, hooks and config with your repo, and INV-001 forbids changing refs. The host-run checks execute test code that can run git. Recommend (A): amend item 3 to "an isolated detached checkout (a private local clone)".
+3. **H-003 — projects without the new `qualityReview` config.** Checks become configured argv run by host code, since the QM has no shell, and the diverse reviewer model is configured. Recommend (A): unconfigured → a visible "not configured" item and a human item, and the verdict can't be `ready`. Nothing is silent and nothing is refused. This repo configures both. This narrows AC-016's letter for unconfigured projects. (B) refuse; (C) the model proposes commands (weakens INV-001).
+4. **H-004 — does INV-001's "QM run" include the runtime bootstrap?** A standalone QM is identified only after cosmonauts bootstraps and imports project domain modules, as every command does. Recommend (A): the run starts at the QM launch boundary, with the snapshot taken before any QM session exists. (B) the strict reading needs a separate CLI-bootstrap redesign.
+5. **H-005 — AC-015 "nothing links to their old paths".** Hits include the frozen fixture `tests/fixtures/knowledge-seed-inventory.json`, byte-pinned `knowledge/` records, evidence reports and archived plans. Recommend (A): "nothing links" covers live surfaces only (prompts, skills, docs, code, active plans, ROADMAP). History keeps its text, and an archive README maps old paths to new ones.
 
-- INV-001 - Review does not mutate. A QM run, and every agent it starts, cannot change the reviewed checkout: tracked and untracked files, uncommitted edits, the index, refs or HEAD. This holds by construction (isolation and authority limits), never by instruction. If the isolation cannot be established, the run is refused; it never falls back to the shared checkout.
-- INV-002 - Records belong to their run. Every report a QM run relies on was created by that run, in a location no other run writes to. A missing report is a failure, never a stand-in from an earlier run. No run modifies or deletes a record it did not create.
-- INV-003 - The verdict outlives the conversation. The complete final report (verdict, findings, items needing a human, gate results) is persisted outside the conversation on every exit, including failure and refusal.
-- INV-004 - Authority lists bind every path. An agent can start only the agents its definition allows, whichever orchestration tool it uses.
-- INV-005 - Gates judge the change and cannot be silenced. A changed-scope analysis gate fails only on findings that the change introduced relative to the committed baseline. Findings already present in touched files never fail it. A newly added suppression directive fails the quality gate unless a human has listed it in the project's exception registry.
+Also for acknowledgement (no choice needed): when execution-liveness rebases, its plan needs an amend-on-record entry registering this plan's host-run check processes as descendants of the QM attempt (plan R-008).
 
-Ranking: INV-001 wins over availability (a review that cannot be isolated does not run, and the refusal is reported). INV-002 wins over continuity with existing file locations. INV-005's baseline never absorbs a new finding silently.
+### Earlier (resolved)
 
-Decisions 6 (performance P1 needs measured cost; a lens never closes its own finding alone) and 7 (model diversity) appear as AC-013 and AC-014, not as invariants. They are reviewer policy, not properties a mechanism could collide with. Say so if you want them promoted.
-
-### 2. Consequences — ACKNOWLEDGED 2026-09-23 (relayed)
-
-- The named chains that end in `quality-manager` (`bundled/coding/chains.ts`, five chains) will end at a findings report, not a remediated tree. Remediation becomes a separate invocation.
-- `execution-liveness` (TASK-712..719, all To Do) lands after this plan and rebases onto it. Its ratified AC-015 (a timed-out wait never cancels the child) is why aborting orphaned children is a non-goal here. Worktree isolation makes orphans harmless to your checkout instead.
-
-### 3. Open to the planner (comes back to you only if it moves scope)
-
-- Isolation at the QM launch surface, or in the durable runtime's `WorktreeSpec.isolated` slot. The latter overlaps `execution-liveness`'s launch and store seams.
-- Which reviewer runs on the other model family, and how its model is chosen without hard-coding a provider.
-- The exact report paths: run artifacts plus a tracked plan summary, per decision 2.
+- Intent RATIFIED 2026-09-23; consequences acknowledged; decisions 6/7 stay ACs.
 
 ## Successor handoff
 
