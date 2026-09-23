@@ -23,7 +23,8 @@ are ready to promote.
   - Decision: Target one durable run-graph execution substrate for Chains,
     Drive, declared graphs, and swarms. A swarm is not a separate execution
     engine. Current inline coordinator chains, detached `spawn_agent`, and the
-    unused spawn compiler are migration exceptions, not evidence that this
+    spawn compiler (deleted 2026-09-23 as unused; re-created when spawn moves
+    onto the graph substrate) are migration exceptions, not evidence that this
     boundary has shipped.
   - Alternatives: Maintain independent graph and swarm runtimes; keep dynamic
     spawning outside durable orchestration.
@@ -31,7 +32,10 @@ are ready to promote.
     cancellation, events, artifacts, recovery, and control semantics.
   - Decided-by: human architecture dialogue, 2026-09-11. Amended 2026-09-13 by
     codex from the independent review and human-accepted 2026-09-14 (derived):
-    the current-exceptions sentence.
+    the current-exceptions sentence. Amended 2026-09-23 by human ruling
+    (relayed by the supervising session; framework-health D-040): the spawn
+    compiler's deletion is recorded in that sentence, in the migration
+    inventory and in Shipped substrate.
 
 - `D-002 - Authoring and coordination modes remain distinct`
   - Decision: Chain, Drive, declared-graph, swarm, and script-coordinated modes
@@ -232,7 +236,8 @@ Boundary rules:
 Current exceptions to these target rules are deliberate migration inventory:
 coordinator-bearing chains execute in the inline chain runner; dynamic
 `spawn_agent` creates detached promises without scheduler handles; the spawn
-graph compiler has no production caller; and Drive owns backend-local timeout
+graph compiler was deleted 2026-09-23 as unused and is re-created when spawn
+moves onto the graph substrate; and Drive owns backend-local timeout
 and task-write seams. Waves A through C retire these exceptions in named slices.
 
 ## Current Architecture
@@ -244,8 +249,9 @@ and task-write seams. Waves A through C retire these exceptions in named slices.
   durable Chain and Drive paths, with normalized
   `cosmonauts run chain|drive|status|watch|list` and events. Loop-free chains and
   Drive have production graph compilers. Coordinator-bearing chains still run
-  inline. The spawn-as-one-node compiler is scaffolded but has no production
-  caller, while `spawn_agent` launches detached work outside scheduler ownership.
+  inline. The spawn-as-one-node compiler was deleted 2026-09-23 as unused and is
+  re-created when spawn moves onto the graph substrate; `spawn_agent` launches
+  detached work outside scheduler ownership.
 - **Graph shape.** `RunGraph` currently contains nodes plus unconditional edges.
   It persists execution topology but is not yet a general workflow language:
   there are no route decisions, edge conditions, registered operation contract,
