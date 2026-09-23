@@ -36,7 +36,11 @@ continuing active-plan or new feature development, complete `framework-health`
 against the plan statements that ordered them and reasoned about
 fault-sensitivity instead of probing it, so it reproduced the defect it was
 built to find. The new plan fixes the planning format first, then the tests,
-then unreachable code. Once both items establish trustworthy baselines, resume
+then unreachable code. Stages 1 and 2 are done (2026-09-23): a 75-declaration
+mutation probe sample is recorded in `missions/plans/framework-health/stage2-probes.md`,
+the old audit tooling is deleted, and `test-health-audit` is re-specified to the
+probe method and marked superseded. Stage 3 (reachability, orphans, the `Cancelled` status) is
+TASK-708..710. Once both items establish trustworthy baselines, resume
 the existing dependency order.
 
 ### `plain-listing-pipe-defect`: `--plain` Rows Corrupt on a Pipe in a Title
