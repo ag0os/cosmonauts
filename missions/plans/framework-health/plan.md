@@ -390,6 +390,10 @@ contract; nothing in Stage 3 depends on which side computes it. Added
   - Why: `review-7.md PR-003, PR-004`.
   - Decided by: worker-proposed, 2026-09-22 (derived)
   - Supersedes: D-031 in part (2026-09-22)
+- **D-036 - Review 8's three mediums close at the task boundary; the plan is implementation-ready**
+  - Decision: review-8's PR-001..PR-003 are accepted into the tasks and no further plan-review round runs. (1) TASK-711: every sampled declaration, including those D-032 admits through a helper or a `bin/` subprocess, is probed against a production mutation target under `lib/`, `cli/`, `domains/` or `scripts/`, never test code. Where `scripts/test-health-audit/probe.ts` cannot express the route (its `declaredImportRoute` must resolve to the target), the declaration is probed by hand in the same throwaway worktree, and its row names the target, the mutant, and the red/green result. The kill rule is unchanged (INV-005 is not weakened). The committed probe table also gains the B-007 "tool name that code resolves" case. (2) TASK-711: `validateCalibrationRecord` in `scripts/test-health-audit/artifacts.ts` is either fixed, so that a calibration source whose path does not exist is rejected (seen red first), or deleted with its callers in `cli.ts`/`dispatch.ts`. A prose fate alone does not close it. (3) TASK-710: D-031/D-035's list gains `domains/shared/skills/spawning/SKILL.md` (coordinator loops until all Done), `lib/driver/README.md` (completion candidate requires all Done), `cli/drive/subcommand.ts` resume finalization (`status !== "Done"`), and `lib/driver/run-run-loop.ts`'s completion check, unless TASK-709 deleted that file first. TASK-710 records each status-literal site it found and what happened to it.
+  - Why: `review-8.md PR-001, PR-002, PR-003` and its Missing Coverage.
+  - Decided by: human, 2026-09-23, relayed by the supervising session ("accept review-8's three mediums into TASK-710/711 and treat the plan as implementation-ready"); the concrete task wording is derived by the coordinator.
 
 ## Behaviors
 
