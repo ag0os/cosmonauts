@@ -1,6 +1,6 @@
 # Coordinator status
 
-HEAD: `a8cc97f` on `feature/framework-health` (not pushed), clean. Suite 3,052/3,052; lint, typecheck, check-artifacts and reachability are clean.
+HEAD: `3dbde3e` on `feature/framework-health` (not pushed), clean. Suite 3,053/3,053; lint, typecheck, check-artifacts and reachability are clean.
 
 ## Done
 
@@ -62,7 +62,12 @@ HEAD: `a8cc97f` on `feature/framework-health` (not pushed), clean. Suite 3,052/3
       mid-run cancellation no longer blocked the dependent (reproduced).
     - A test touched `/tmp`.
     - The F-006 test bypassed the call site.
-    All three are fixed (`a8cc97f`); the narrow codex re-review is running.
+    All three are fixed (`a8cc97f`).
+  - Re-review, FIX: a selected task cancelled mid-run still ran and was persisted Done. Fixed (`3dbde3e`).
+    Accepted dispositions, which codex agreed with: a blocked run is terminal on resume, and the Windows
+    call-site test cannot run end to end on POSIX.
+  - Round 3: **SHIP.**
+- **Stage 3 is verified.** The only open item is Q1 (spawn compiler) below.
   - F-002 needs the user; see below.
 
 ## Noticed (no action needed now)
@@ -88,11 +93,10 @@ resolved (architecture D-007 amended, D-042). Nothing else is open with the user
 outputs is `/private/tmp/claude-501/-Users-cosmos-Projects-cosmonauts/48a323d3-6dcb-4e30-8670-c9509cf01121/scratchpad`.
 
 **Remaining, in order.**
-1. Read the narrow codex re-review of `a8cc97f` (prompt `$SP/codex-qm-r2.txt`, output `$SP/codex-qm-r2.out`).
-   Fix and re-review until SHIP.
-2. Wait for the user's answer on the spawn compiler (`## Needs the user`, Q1), then do what it says, followed
-   by a narrow review of that change.
-3. Report Stage 3 closed to Shepherd. Do not archive unattended, and do not start execution-liveness.
+1. Wait for the user's answer on the spawn compiler (`## Needs the user`, Q1), then do what it says, followed
+   by a narrow independent review of that change.
+2. Report framework-health Stages 1–3 closed to Shepherd. Offer archive plus distillation as a follow-up;
+   do not do it unattended. Do not start execution-liveness unless Shepherd says so.
 
 **Method notes (hard-won today).**
 - Drive: `bun bin/cosmonauts run drive --plan framework-health --task-ids <ID> --backend codex --mode detached
