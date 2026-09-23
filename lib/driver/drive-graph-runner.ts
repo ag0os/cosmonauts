@@ -24,7 +24,7 @@ import {
 import { compileDriveRunStart } from "./drive-graph-compiler.ts";
 import { createDriveSchedulerBackendMap } from "./drive-scheduler-backend.ts";
 import { EventLogWriteError } from "./event-stream.ts";
-import type { RunRunLoopCtx } from "./run-run-loop.ts";
+import type { RunOneTaskCtx } from "./run-one-task.ts";
 import {
 	claimDriveTerminalIntent,
 	type DriveTerminalOutcome,
@@ -45,7 +45,7 @@ import type {
 import { resolveStateCommitPolicy, stampDriverResult } from "./types.ts";
 import { writeDriverWorkdirInputs } from "./workdir-inputs.ts";
 
-export interface RunDriveOnGraphCtx extends RunRunLoopCtx {
+export interface RunDriveOnGraphCtx extends RunOneTaskCtx {
 	mode?: "inline" | "detached";
 	onTerminalPersisted?: TerminalPersistedHook;
 }

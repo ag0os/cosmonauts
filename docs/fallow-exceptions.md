@@ -83,6 +83,18 @@ that Fallow can follow as a normal import graph.
 
 This is not temporary while the domain/plugin architecture remains dynamic.
 
+## Framework Health Stage 3 Deletions
+
+- `lib/orchestration/spawn-compiler.ts`: no shipped module imported the graph
+  compiler. Its only importer was `tests/orchestration/spawn-compiler.test.ts`,
+  which was deleted with it.
+- `lib/driver/run-run-loop.ts`: the shipped graph runner imported only its
+  `RunRunLoopCtx` type, while `runRunLoop` was exercised only by
+  `tests/driver/run-run-loop.test.ts`. The graph runner now uses the equivalent
+  `RunOneTaskCtx` type directly; the unused loop and its test were deleted.
+- `lib/harness-adapters/index.ts`: no shipped module imported this barrel.
+  Shipped callers import the adapter modules directly, so the barrel was deleted.
+
 ## Review Rules For Future Exceptions
 
 - Prefer fixing the code over adding a suppression.
