@@ -28,6 +28,21 @@ Test description.
 			expect(task.priority).toBe("high");
 		});
 
+		test.each([
+			"yaml",
+			"yml",
+		])("parses explicit %s frontmatter as YAML", (language) => {
+			const task = parseTask(`---${language}
+id: TASK-1
+title: Test
+status: Done
+---
+`);
+
+			expect(task.id).toBe("TASK-1");
+			expect(task.status).toBe("Done");
+		});
+
 		test("parses all valid status values", () => {
 			const statuses: Array<"To Do" | "In Progress" | "Done" | "Blocked"> = [
 				"To Do",

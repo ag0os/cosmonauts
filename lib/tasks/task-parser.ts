@@ -38,6 +38,12 @@ function normalizeLineEndings(content: string): string {
 	return content.replace(/\r\n/g, "\n");
 }
 
+function assertYamlFrontmatter(content: string): void {
+	const language = /^\uFEFF?---([^\n]*)/.exec(content)?.[1]?.trim();
+	if (language && language !== "yaml" && language !== "yml")
+		throw new Error(`unsupported frontmatter language: ${language}`);
+}
+
 /**
  * Parse a date value from frontmatter
  * Handles Date objects, ISO strings, and various date formats
@@ -309,7 +315,7 @@ export function parseTask(content: string): Task {
 	const normalized = normalizeLineEndings(content);
 	const now = new Date();
 
-	// Parse frontmatter using gray-matter
+	assertYamlFrontmatter(normalized);
 	const parsed = matter(normalized);
 	const frontmatter = parsed.data;
 	const bodyContent = parsed.content.trim();

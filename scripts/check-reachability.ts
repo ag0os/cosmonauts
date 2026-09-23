@@ -22,6 +22,12 @@ function read(path: string): string {
 	return readFileSync(join(root, path), "utf8");
 }
 
+function assertYamlFrontmatter(source: string): void {
+	const language = /^\uFEFF?---([^\r\n]*)/.exec(source)?.[1]?.trim();
+	if (language && language !== "yaml" && language !== "yml")
+		throw new Error(`unsupported frontmatter language: ${language}`);
+}
+
 function parseToml(path: string): Record<string, unknown> {
 	try {
 		return Bun.TOML.parse(read(path)) as Record<string, unknown>;
@@ -60,10 +66,16 @@ function ownerLive(owner: string): boolean {
 		const slug = owner.slice(5);
 		if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) return false;
 		const path = `missions/plans/${slug}/plan.md`;
-		return (
-			existsSync(join(root, path)) &&
-			matter(read(path)).data.status === "active"
-		);
+		if (!existsSync(join(root, path))) return false;
+		try {
+			const source = read(path);
+			assertYamlFrontmatter(source);
+			return matter(source).data.status === "active";
+		} catch (error) {
+			throw new Error(
+				`staged owner ${owner} plan ${path}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 	}
 	if (owner.startsWith("roadmap:")) {
 		const heading = owner.slice(8);
@@ -217,8 +229,9 @@ try {
 			);
 	}
 
+	const libModules = files("lib");
 	const modules = [
-		...files("lib"),
+		...libModules,
 		...files("cli"),
 		...files("domains"),
 		...files("bundled"),
@@ -233,13 +246,19 @@ try {
 			(match) => match[1] ?? "",
 		),
 	);
+	for (const path of compiledEntries)
+		if (!existsSync(join(root, path)))
+			errors.push(`missing compile entry: ${path}`);
 	const binScripts = Object.values(
 		(JSON.parse(read("package.json")) as { bin?: Record<string, string> })
 			.bin ?? {},
 	);
 	const binEntries = binScripts.flatMap((script) => {
 		const path = join(root, script);
-		if (!existsSync(path)) return [];
+		if (!existsSync(path)) {
+			errors.push(`missing bin entry: ${script}`);
+			return [];
+		}
 		return [...read(script).matchAll(/^import\s+["']([^"']+)["']/gm)].map(
 			(match) => relative(root, resolve(dirname(path), match[1] ?? "")),
 		);
@@ -266,12 +285,17 @@ try {
 		reached.add(path);
 		queue.push(...runtimeImports(path));
 	}
-	for (const path of files("lib").sort())
-		if (!reached.has(path) && hasRuntimeCode(path))
-			errors.push(`unreachable: ${path}`);
+	const runtimeLibModules = libModules.filter(hasRuntimeCode);
+	for (const path of runtimeLibModules.sort())
+		if (!reached.has(path)) errors.push(`unreachable: ${path}`);
+	const reachedRuntimeModules = runtimeLibModules.filter((path) =>
+		reached.has(path),
+	).length;
+	const typeOnlyLibModules = libModules.length - runtimeLibModules.length;
+	const typeOnlyLabel = typeOnlyLibModules === 1 ? "module" : "modules";
 	for (const error of errors) console.log(error);
 	console.log(
-		`reachability: ${files("lib").length - errors.filter((x) => x.startsWith("unreachable:")).length}/${files("lib").length} lib modules reached; ${staged.length} staged`,
+		`reachability: ${reachedRuntimeModules}/${runtimeLibModules.length} runtime lib modules reached; ${typeOnlyLibModules} type-only lib ${typeOnlyLabel} exempt; ${staged.length} staged`,
 	);
 	if (errors.length > 0) process.exitCode = 1;
 } catch (error) {

@@ -104,7 +104,7 @@ describe("Drive backend orchestration adapter", () => {
 			"utf-8",
 		);
 		expect(source).not.toMatch(
-			/(prompt-template|report-parser|state-commit|task-manager|task-parser|run-one-task|run-run-loop|driver\.ts)/,
+			/(prompt-template|report-parser|state-commit|task-manager|task-parser|run-one-task|driver\.ts)/,
 		);
 		expect(source).not.toMatch(/\bparseReport\b|\bcommit\b|\bverify\b/);
 	});

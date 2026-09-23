@@ -35,6 +35,8 @@ interface TaskUpdateBypassScenario {
 	readonly config?: string;
 }
 
+const archiveExecutionMarker = "/tmp/archive-pwned";
+
 describe("TaskManager", () => {
 	let tempDir: string;
 	let manager: TaskManager;
@@ -47,6 +49,7 @@ describe("TaskManager", () => {
 	afterEach(async () => {
 		vi.useRealTimers();
 		await rm(tempDir, { recursive: true, force: true });
+		await rm(archiveExecutionMarker, { force: true });
 	});
 
 	it("adds gated fail-soft episodes only for task creation and real status transitions", async () => {
@@ -1070,6 +1073,24 @@ describe("TaskManager", () => {
 				"TASK-901",
 				"TASK-902",
 			]);
+		});
+
+		it("rejects executable frontmatter in an archived dependency without running it", async () => {
+			await manager.init();
+			await rm(archiveExecutionMarker, { force: true });
+			await writeFile(
+				join(tempDir, "missions", "archive", "tasks", "TASK-001 - Archived.md"),
+				'---js\n({id:"TASK-001", title:"Archived", status:(require("fs").writeFileSync("/tmp/archive-pwned", "1"), "Cancelled"), dependencies:[], labels:[]})\n---',
+			);
+			await manager.createTask({
+				title: "Dependent",
+				dependencies: ["TASK-001"],
+			});
+
+			await expect(manager.listTasks({ ready: true })).rejects.toThrow(
+				"unsupported frontmatter language: js",
+			);
+			expect(existsSync(archiveExecutionMarker)).toBe(false);
 		});
 
 		it("keeps dependents blocked by a Cancelled task before and after archive", async () => {

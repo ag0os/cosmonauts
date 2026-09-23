@@ -1,15 +1,23 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 const projectRoot = resolve(".");
+const executionMarker = "/tmp/reachability-pwned";
 const roots: string[] = [];
 
 afterEach(() => {
 	for (const root of roots.splice(0))
 		rmSync(root, { recursive: true, force: true });
+	rmSync(executionMarker, { force: true });
 });
 
 function fixture(owner = "plan:future-work") {
@@ -202,6 +210,52 @@ describe("reachability command", () => {
 		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
 	});
 
+	test.each([
+		"yaml",
+		"yml",
+	])("accepts explicit %s staged-owner YAML frontmatter", (language) => {
+		const { root } = fixture();
+		writeFileSync(
+			join(root, "missions/plans/future-work/plan.md"),
+			`---${language}\nstatus: active\n---\n`,
+		);
+
+		const result = run(root);
+
+		expect(result.stderr).not.toContain("unsupported frontmatter language");
+		expect(result.stdout).not.toContain("staged owner archived or absent");
+	});
+
+	test("rejects executable staged-owner frontmatter without running it", () => {
+		const { root } = fixture();
+		rmSync(executionMarker, { force: true });
+		writeFileSync(
+			join(root, "missions/plans/future-work/plan.md"),
+			'---js\n({status:(require("fs").writeFileSync("/tmp/reachability-pwned","1"),"active")})\n---',
+		);
+
+		const result = run(root);
+
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain("unsupported frontmatter language");
+		expect(existsSync(executionMarker)).toBe(false);
+	});
+
+	test("identifies a staged owner and plan when its YAML is malformed", () => {
+		const { root } = fixture();
+		writeFileSync(
+			join(root, "missions/plans/future-work/plan.md"),
+			"---\nstatus: [active\n---\n",
+		);
+
+		const result = run(root);
+
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain("plan:future-work");
+		expect(result.stderr).toContain("missions/plans/future-work/plan.md");
+		expect(result.stderr).toContain("unexpected end of the stream");
+	});
+
 	test("rejects a staged owner whose plan is still present but completed", () => {
 		const { root } = fixture();
 		writeFileSync(
@@ -244,6 +298,68 @@ describe("reachability command", () => {
 		const result = run(root);
 		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
 		expect(result.stdout).not.toContain("lib/step.ts");
+	});
+
+	test("rejects missing configured bin and compile roots with their paths", () => {
+		const { root } = fixture();
+		rmSync(join(root, "lib/orphan.ts"));
+		write(
+			root,
+			"package.json",
+			JSON.stringify({
+				type: "module",
+				bin: { fixture: "bin/DOES-NOT-EXIST" },
+				scripts: {
+					compile: "bun build --compile lib/DOES-NOT-EXIST.ts --outfile bin/x",
+				},
+			}),
+		);
+
+		const result = run(root);
+
+		expect(result.status).toBe(1);
+		expect(result.stdout).toContain("missing bin entry: bin/DOES-NOT-EXIST");
+		expect(result.stdout).toContain(
+			"missing compile entry: lib/DOES-NOT-EXIST.ts",
+		);
+	});
+
+	test("reaches a runtime module through an export-all declaration", () => {
+		const { root } = fixture();
+		write(root, "lib/public.ts", 'export * from "./exported.ts";\n');
+		write(root, "lib/exported.ts", "export const value = 1;\n");
+
+		const result = run(root);
+
+		expect(result.stdout).not.toContain("unreachable: lib/exported.ts");
+	});
+
+	test("reaches a runtime module through a named value re-export", () => {
+		const { root } = fixture();
+		write(root, "lib/public.ts", 'export { value } from "./exported.ts";\n');
+		write(root, "lib/exported.ts", "export const value = 1;\n");
+
+		const result = run(root);
+
+		expect(result.stdout).not.toContain("unreachable: lib/exported.ts");
+	});
+
+	test("does not treat a type-only re-export as runtime reachability", () => {
+		const { root } = fixture();
+		write(
+			root,
+			"lib/public.ts",
+			'export type { Shape } from "./exported.ts";\n',
+		);
+		write(
+			root,
+			"lib/exported.ts",
+			"export interface Shape { id: string }\nexport const value = 1;\n",
+		);
+
+		const result = run(root);
+
+		expect(result.stdout).toContain("unreachable: lib/exported.ts");
 	});
 
 	test("reaches a module named by a runnerModule property", () => {
@@ -328,5 +444,18 @@ describe("reachability command", () => {
 		const result = run(root);
 		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
 		expect(result.stdout).not.toContain("lib/shapes.ts");
+	});
+
+	test("separates reached runtime modules from type-only exemptions", () => {
+		const { root } = fixture();
+		rmSync(join(root, "lib/orphan.ts"));
+		write(root, "lib/shapes.ts", "export interface Shape { id: string }\n");
+
+		const result = run(root);
+
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain(
+			"reachability: 2/2 runtime lib modules reached; 1 type-only lib module exempt; 1 staged",
+		);
 	});
 });
