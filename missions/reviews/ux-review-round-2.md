@@ -2,73 +2,38 @@
 
 ## Overall
 
-incorrect
+correct
 
 ## Assessment
 
-The remediation makes size guidance deterministic, fixes the planner's step-8 references, and keeps advisory/withdrawn diagnostics clear and terminal-safe across human, plain, and JSON output. The live-probe flow remains unusable under the plan-reviewer's no-shell role contract, and two newly identified integration gaps can show users stale review evidence or a false conformance pass. The targeted prompt, conformance, CLI, and artifact-viewer suites passed (55 tests).
+The four prior UX findings are resolved in the exact `9be076b1ca06b2e9a1131e8c2da5bc8ac3463356..HEAD` scope after the stated exclusions. The changed CLI, coordinator, Drive, and reachability flows now expose the relevant status, blocker, path, and exemption information without introducing another concrete user-facing defect.
 
 ## Prior Findings
 
-- id: UR-001
+- id: UX-001
   status: resolved
-  evidence: `bundled/coding/prompts/planner.md:32` and `bundled/coding/prompts/plan-reviewer.md:128-133` now state the same limit of at most 12 behaviors and identify behavior clusters/Implementation Order stages as candidate task units; `lib/artifacts/behavior-conformance.ts:798-812` applies the same threshold. Content coverage is present at `tests/prompts/planner.test.ts:121-136` and `tests/prompts/plan-reviewer.test.ts:97-107`.
+  evidence: `scripts/check-reachability.ts:253-265` now validates every discovered `bun build --compile` entry and configured bin path, emits the missing path, and leaves the command nonzero through `scripts/check-reachability.ts:300-304`. The regression at `tests/scripts/check-reachability.test.ts:303-325` supplies both missing roots and requires exit 1 plus both path-specific diagnostics.
 
-- id: UR-002
-  status: unresolved
-  evidence: `bundled/coding/prompts/plan-reviewer.md:26` now adds consent/sandbox safeguards and an unchecked fallback for project-controlled configuration, but it still requires a live invocation without naming any permitted invocation mechanism. The plan-reviewer loads `coding-readonly` (`bundled/coding/agents/plan-reviewer.ts:7-14`), whose contract expressly forbids shell execution (`bundled/coding/capabilities/coding-readonly.md:1-3`); the agent has no subagent fallback (`bundled/coding/agents/plan-reviewer.ts:23`). The content test at `tests/prompts/plan-reviewer.test.ts:77-95` proves the new phrases exist, not that the reviewer has a contract-compliant way to run the probe.
-
-- id: UR-003
+- id: UX-002
   status: resolved
-  evidence: The workflow, handoff, and sidecar references now consistently identify plan-reviewer as step 8 (`bundled/coding/prompts/planner.md:50,65-75`). `tests/prompts/planner.test.ts:159-167` positively requires step 8 and rejects the stale step-7 sidecar text.
+  evidence: `lib/orchestration/chain-runner.ts:152-208` now builds the no-actionable diagnostic from each stranded To Do task, each unsatisfied dependency and status, and remaining Blocked task IDs. `tests/orchestration/chain-runner.test.ts:806-871` proves both the Cancelled-plus-Blocked case and `Stranded: TASK-... (TASK-...: Cancelled)` case terminate before spawning while naming the affected IDs.
+
+- id: UX-003
+  status: resolved
+  evidence: `scripts/check-reachability.ts:66-80` wraps staged-owner parsing failures with both the owner and `missions/plans/<slug>/plan.md` path. `tests/scripts/check-reachability.test.ts:244-257` supplies malformed owner YAML and requires exit 1, `plan:future-work`, the exact plan path, and the parser cause.
+
+- id: UX-004
+  status: resolved
+  evidence: `scripts/check-reachability.ts:292-303` computes the numerator from reached runtime-bearing modules and reports type-only modules as a separate exempt count. `tests/scripts/check-reachability.test.ts:449-460` requires the exact `2/2 runtime lib modules reached; 1 type-only lib module exempt` summary.
+
+## UX Recheck
+
+- The Cancelled status is discoverable and consistent in task filtering/edit help (`cli/tasks/commands/shared.ts:10-39`; `cli/tasks/commands/list.ts:21-39`). The accepted behavior of bare `task list --ready` remains documented rather than treated as a defect.
+- Explicit CLI and `run_driver` selections of Cancelled tasks fail before launch with the task ID, while default plan selection omits them (`lib/driver/task-selection.ts:4-27`; `tests/cli/drive/run.test.ts:281-333`; `tests/extensions/orchestration-driver-tool.test.ts:145-155`). Resume finalization still recognizes a persisted Cancelled task as closed without invoking backend work (`tests/cli/drive/run.test.ts:1414-1438`).
+- The accepted malformed archived-dependency diagnosis was not raised again.
+- `7549348` changes only test HOME setup (`tests/runtime.test.ts:13-27`) and adds an isolation regression (`tests/runtime.test.ts:865-884`); it does not alter production package-discovery precedence or add a user-facing surface.
+- Targeted verification passed: 197 tests across reachability, coordinator, task CLI, Drive CLI, artifact-viewer status, and runtime isolation. `bun run check:reachability` also passed with `186/186 runtime lib modules reached; 13 type-only lib modules exempt; 0 staged`.
 
 ## Findings
 
-- id: UR-004
-  dimension: consistency
-  priority: P2
-  severity: medium
-  confidence: 0.99
-  complexity: complex
-  title: "Versioned review rounds disappear from the plan viewer"
-  files: bundled/coding/prompts/plan-reviewer.md, lib/artifact-viewer/loaders.ts, lib/artifact-viewer/server.ts
-  lineRange: 153-155
-  summary: |
-    The changed reviewer flow writes every new review to `review-<n>.md`
-    (`bundled/coding/prompts/plan-reviewer.md:153-155`). The human-facing plan viewer still
-    loads only `missions/plans/<slug>/review.md` (`lib/artifact-viewer/loaders.ts:102-117`)
-    and renders “No review markdown found” when that legacy file is absent
-    (`lib/artifact-viewer/server.ts:410-420`). A new plan with `review-1.md` therefore appears
-    unreviewed; a migrated plan with legacy `review.md` plus a newer `review-2.md` silently shows
-    only the stale first round. Existing viewer coverage also creates only `review.md`
-    (`tests/artifact-viewer/server.test.ts:90-122`), so the versioned flow is untested from the
-    human's seat.
-  evidence: The write contract and viewer read contract name mutually exclusive default paths; the viewer has no scan or selection path for `review-<n>.md`.
-  suggestedFix: Make the plan viewer discover and clearly present versioned rounds while retaining legacy `review.md` as round 1.
-  task:
-    title: "Show versioned plan-review rounds in the artifact viewer"
-    labels: [review-fix]
-    acceptanceCriteria:
-      - "A plan containing only `review-1.md` displays that review instead of the no-review empty state."
-      - "A plan containing legacy `review.md` and newer numbered rounds exposes the rounds in chronological order and does not present the legacy round as current."
-      - "Viewer tests cover numbered-only and mixed legacy/numbered plans."
-
-- id: UR-005
-  dimension: confusing-states
-  priority: P1
-  severity: high
-  confidence: 1.0
-  complexity: simple
-  title: "A missing Decision Log turns unresolved citations into a false pass"
-  files: lib/artifacts/behavior-conformance.ts
-  lineRange: 513-522
-  summary: |
-    `validateDecisionReferences` returns no issues as soon as `## Decision Log` is absent, without
-    scanning the rest of the plan for `D-###` citations. Consequently, a plan that cites `D-999`
-    but has no Decision Log receives `ok: true` and the CLI tells the user “Artifact conformance
-    passed,” even though the new command contract says unresolved decision citations are checked.
-    A direct invocation with such markdown returned `{ "ok": true, "issues": [] }`. The shipped
-    test at `tests/artifacts/behavior-conformance.test.ts:603-652` covers an unresolved citation
-    only when a Decision Log already exists, so it does not catch this false-green state.
-  evidence: `lib/artifacts/behavior-conformance.ts:520-522` exits before the citation scan at lines 533-550.
-  suggestedFix: Treat an absent Decision Log as an empty declaration set when citation tokens exist, and add a regression proving the CLI/checker fails that case.
+(none)

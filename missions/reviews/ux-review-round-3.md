@@ -2,64 +2,39 @@
 
 ## Overall
 
-incorrect
+correct
 
 ## Assessment
 
-The prior UX findings are resolved: review history is visible and ordered, the constrained live-probe flow degrades explicitly and safely, and conformance output remains clear and terminal-safe. One low-severity accessibility gap remains in the new multi-round viewer: embedded review headings override the round hierarchy presented to screen-reader users. The supplied final verifier result is 8/8 green.
+After reviewing the exact local range `9be076b1ca06b2e9a1131e8c2da5bc8ac3463356..HEAD` at `02d5bd45dd41060c9fe085a465177cb9d247019d`, with commit `05b021e`, the D-007 amendment, and execution-liveness plan/task work excluded, I found no user-facing regression. Reachability failures remain actionable across the hardened YAML parser variants, and Cancelled task flows remain visible and recoverable across the CLI, tools, coordinator, and Drive.
 
 ## Prior Findings
 
-- id: UR-001
+- id: UX-001
   status: resolved
-  evidence: `bundled/coding/prompts/planner.md:32` defines the limit as at most 12 behaviors and names behavior clusters/Implementation Order stages as candidate task units; `bundled/coding/prompts/plan-reviewer.md:127-133` applies the same units and threshold. Content regressions remain at `tests/prompts/planner.test.ts:121-136` and `tests/prompts/plan-reviewer.test.ts:97-107`.
+  evidence: `scripts/check-reachability.ts:251-271` validates configured compile and bin roots and names each missing path; `scripts/check-reachability.ts:303-310` reports the collected failures and exits nonzero. `tests/scripts/check-reachability.test.ts:321-343` supplies missing bin and compile entries and requires both path-specific diagnostics plus exit status 1.
 
-- id: UR-002
+- id: UX-002
   status: resolved
-  evidence: `bundled/coding/prompts/plan-reviewer.md:26` permits a live invocation only through a mechanism that cannot load or execute project-controlled configuration/plugins. Otherwise it requires explicit consent or an approved sandbox, and requires the exact config/plugin limitation to be recorded as `unchecked`. This is a safe explicit degradation under the ratified constraints: `bundled/coding/capabilities/coding-readonly.md:1-3` still forbids shell execution, while `bundled/coding/agents/plan-reviewer.ts:7-23` retains the existing tool/config and no-subagent shape. No forbidden tool or agent-configuration expansion is needed.
+  evidence: `lib/orchestration/chain-runner.ts:152-208` reports stranded To Do task IDs, each unsatisfied dependency and status, and remaining Blocked IDs before terminating. `tests/orchestration/chain-runner.test.ts:806-871` proves the mixed Cancelled/Blocked case names the Blocked task and the dependent case renders `Stranded: <task> (<dependency>: Cancelled)` without spawning a worker.
 
-- id: UR-003
+- id: UX-003
   status: resolved
-  evidence: The planner identifies plan-reviewer as step 8 in both the sanity-check transition and sidecar guidance (`bundled/coding/prompts/planner.md:50,65-75`); `tests/prompts/planner.test.ts:159-167` requires step 8 and rejects the stale step-7 reference.
+  evidence: `scripts/check-reachability.ts:75-82` still wraps every staged-owner frontmatter failure with the owner and exact plan path after the YAML-only parser change. `tests/scripts/check-reachability.test.ts:262-275` supplies malformed YAML and requires the owner, `missions/plans/future-work/plan.md`, and parser cause in the failure output.
 
-- id: UR-004
+- id: UX-004
   status: resolved
-  evidence: `lib/artifact-viewer/loaders.ts:66-145` discovers numbered rounds, treats legacy `review.md` as round 1, sorts numerically, and selects the final round as current. `lib/artifact-viewer/server.ts:432-455` renders every discovered round and labels the latest `(current)`. Integration coverage at `tests/artifact-viewer/server.test.ts:137-225` proves numbered-only, mixed legacy/numbered chronological ordering with round 10 current, and legacy-only compatibility.
-
-- id: UR-005
-  status: resolved
-  evidence: `lib/artifacts/behavior-conformance.ts:513-550` now treats a missing Decision Log as an empty declaration set and still scans real citations, so `D-404` produces an unresolved-citation issue rather than a false pass. `tests/artifacts/behavior-conformance.test.ts:653-686` covers both the citation-free pass and missing-log unresolved-citation failure path.
+  evidence: `scripts/check-reachability.ts:295-305` derives the numerator from reached runtime-bearing modules and reports type-only modules separately. `tests/scripts/check-reachability.test.ts:467-477` requires the exact `2/2 runtime lib modules reached; 1 type-only lib module exempt` summary.
 
 ## UX Recheck
 
-- Numbered-only, mixed, and legacy review flows render without the false empty state; mixed rounds are numeric/chronological and only the latest is marked current (`tests/artifact-viewer/server.test.ts:137-225`).
-- Prompt handoff, revision history, and constrained live-probe/`unchecked` flows are explicit (`bundled/coding/prompts/planner.md:65-75`; `bundled/coding/prompts/plan-reviewer.md:26,127-160`).
-- Human and plain conformance output separately names withdrawn counts, issues, and advisories; advisories remain visibly non-blocking (`cli/plans/commands/check-artifacts.ts:107-170`; `tests/cli/plans/commands/check-artifacts.test.ts:144-189`).
-- Human/plain diagnostics escape terminal control characters and use text labels rather than color-only or symbol-only status (`cli/plans/commands/check-artifacts.ts:127-170,213-219`; `tests/cli/plans/subcommand.test.ts:32-63`).
+- The latest staged-owner parser preserves observable behavior for ordinary YAML, quoted status, CRLF, and explicit `yaml`/`yml` frontmatter (`scripts/check-reachability.ts:25-33`; `tests/scripts/check-reachability.test.ts:200-238`). LF-tagged, CRLF-tagged, and bare-CR executable-language inputs now fail before an alternate gray-matter engine can be selected, retain owner/path context, and leave no marker file (`tests/scripts/check-reachability.test.ts:240-275`).
+- Cancelled remains discoverable in task edit/list/search and tool schemas, persists visibly as `Cancelled`, blocks dependents after archive, is omitted from default Drive selection, and produces a task-specific error when explicitly selected (`cli/tasks/commands/shared.ts:10-39`; `cli/tasks/commands/list.ts:26-39`; `tests/cli/tasks/cancelled-status.test.ts:35-54`; `tests/cli/drive/run.test.ts:281-334`; `tests/extensions/orchestration-driver-tool.test.ts:145-155`). The accepted bare `task list --ready` behavior is not raised as a defect.
+- The accepted malformed archived-dependency fail-closed diagnosis is not raised again.
+- The HOME remediation changes test setup only: the synthetic HOME is asserted, a package seeded there is discovered with global precedence, and an empty synthetic HOME exposes only shared (`tests/runtime.test.ts:16-27,865-925`). No production package-precedence path changed.
+- The analysis suppressions introduced by `e4ba2f0` are line-scoped `fallow-ignore-next-line` directives adjacent to a specific declaration or branch (including `scripts/check-reachability.ts:69-71`, `lib/orchestration/chain-runner.ts:112-114`, and `cli/drive/subcommand.ts:265-267`); none suppresses runtime diagnostics or user-visible branches.
+- Verification passed: 209 targeted reachability, runtime, task CLI, Drive CLI/tool, and coordinator tests. `bun run check:reachability` also passed with `186/186 runtime lib modules reached; 13 type-only lib modules exempt; 0 staged`.
 
 ## Findings
 
-- id: UR-006
-  dimension: accessibility
-  priority: P3
-  severity: low
-  confidence: 0.98
-  complexity: complex
-  title: "Embedded review headings break the multi-round heading hierarchy"
-  files: lib/artifact-viewer/server.ts, tests/artifact-viewer/server.test.ts
-  lineRange: 432-455
-  summary: |
-    The multi-round viewer emits an `h2` for Reviews and an `h3` for each round, then inserts
-    `review.document.html` unchanged beneath that `h3`. Review artifacts conventionally begin
-    with `#`, including every new integration fixture, so the resulting outline is `h2 Reviews →
-    h3 Round 1 → h1 review title → h3 Round 2 → h1 review title`. A screen-reader user navigating
-    by heading level hears each embedded artifact title as a higher-level page heading instead of
-    content belonging to its round, obscuring the otherwise clear chronological structure.
-  evidence: `lib/artifact-viewer/server.ts:447-453` inserts unchanged document HTML after each round heading; `tests/artifact-viewer/server.test.ts:145-196` supplies `#` headings for numbered and mixed rounds but asserts only text/order/current labels, not the rendered heading outline.
-  suggestedFix: Render each review's headings at levels subordinate to its round heading and add a multi-round heading-outline regression.
-  task:
-    title: "Preserve semantic heading hierarchy for versioned reviews"
-    labels: [review-fix]
-    acceptanceCriteria:
-      - "Numbered and mixed review pages expose Reviews, each round, and each review's internal headings in a logical nested heading order without embedded h1 page headings."
-      - "Viewer coverage asserts the semantic heading outline while preserving chronological order and the text-based current label."
+(none)

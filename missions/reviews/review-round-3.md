@@ -1,143 +1,90 @@
 # Review Report
 
-base: main
-range: 360f176c2654745c8a1c46f01f001feeef71950b..HEAD
+base: local main at 9be076b1ca06b2e9a1131e8c2da5bc8ac3463356
+range: 9be076b1ca06b2e9a1131e8c2da5bc8ac3463356..HEAD
 overall: incorrect
 
 ## Overall Assessment
 
-The final test, lint, and typecheck gates pass, and the review-history, supersession, pairing, and chain-synchronization remediations are present with regression evidence. The patch remains incorrect because two prior scanner findings are not fully resolved: code-quoted withdrawal examples can still bypass all active-behavior checks, and multiline code-span masking can cross Markdown block boundaries and hide real decision citations.
+The latest remediation closes the executable-frontmatter and runtime-HOME regressions, and all earlier code, performance, security, and UX fixes remain intact. The patch remains incorrect because the spawn compiler deletion still contradicts human-ratified architecture and the new reachability gate misidentifies bin-root reachability on Windows; the 3,051-test suite, lint, typecheck, and reachability checks otherwise pass. Commit `05b021e`, the D-007 amendment, and execution-liveness plan/task work were excluded as requested.
 
 ## Prior Findings
 
-- id: UR-004
-  status: resolved
-  evidence: `lib/artifact-viewer/loaders.ts:77-145` discovers numbered rounds, preserves legacy `review.md` as round 1, sorts numerically, and selects the latest round; `lib/artifact-viewer/server.ts:432-455` renders all rounds and labels only the latest current. `tests/artifact-viewer/server.test.ts:137-225` covers numbered-only, mixed legacy/numbered chronological ordering with round 10 current, and legacy-only compatibility.
-
-- id: UR-005
-  status: resolved
-  evidence: `lib/artifacts/behavior-conformance.ts:519-554` treats a missing Decision Log as an empty declaration set while still scanning citations; `tests/artifacts/behavior-conformance.test.ts:653-686` proves a real `D-404` citation fails when the log is absent and citation-free content still passes.
-
-- id: SR-003
-  status: resolved
-  evidence: `lib/artifacts/behavior-conformance.ts:578-594` validates the date on the structured `Supersedes:` value itself, while `tests/artifacts/behavior-conformance.test.ts:887-936` covers one- and multi-D-ID forms with and without pointer-local dates.
-
-- id: F-009
-  status: resolved
-  evidence: `lib/artifacts/behavior-conformance.ts:130-131,578-594` recognizes structured one/multi-D-ID pointers using comma, slash, or `and` connectors. `tests/artifacts/behavior-conformance.test.ts:887-959` proves undated structured pointers fail, dated forms pass, and the ratified descriptive legacy grounds remain free of new issue kinds without editing the parked fixture.
-
-- id: SR-007
-  status: unresolved
-  evidence: Although the exact dated grammar is now required at `lib/artifacts/behavior-conformance.ts:132-133`, withdrawal is still derived from the raw heading title at `lib/artifacts/behavior-conformance.ts:255-282`. A public-checker probe with ``### B-001 - Sample `*(withdrawn by D-001, 2026-07-28)*` `` returned `ok: true`, `withdrawn: 1`, and no issues, so a quoted mention still bypasses required evidence.
-
-- id: SR-008
-  status: resolved
-  evidence: `lib/artifacts/behavior-conformance.ts:622-743` indexes exact paths in a set, caches wildcard results, and caps wildcard comparisons at 4,096. The collection regression at `tests/artifacts/behavior-conformance.test.ts:965-1020` exercises many references/candidates and proves exact test paths remain indexed when wildcard work reaches the bound.
-
-- id: F-008
-  status: unresolved
-  evidence: `lib/artifacts/behavior-conformance.ts:440-442` joins the entire artifact before matching inline delimiters. The added multiline test covers soft line breaks within one paragraph, but a public-checker probe with unmatched backticks in two separate paragraphs and a real `D-999` citation between them returned no issue because the delimiters were paired across the blank-line block boundary.
-
-- id: C-003
-  status: resolved
-  evidence: `tests/orchestration/chain-runner.test.ts:2383-2452` now synchronizes on explicit worker-start and planner-failure signals and always releases the blocked worker in `finally`; the final full run passed all 82 chain-runner tests, including the seven parallel-group cases.
-
-- id: C-004
-  status: resolved
-  evidence: `fallow.toml:10` declares the public artifact barrel as an entry point, the stale command helper export is absent, and the supplied final scoped Fallow audit is clean.
-
 - id: F-001
   status: resolved
-  evidence: Fence character/length and exact inline delimiter runs are tracked at `lib/artifacts/behavior-conformance.ts:418-513`; same-block multi-backtick, longer-fence, tilde-fence, and unmatched-fence regressions remain at `tests/artifacts/behavior-conformance.test.ts:722-785`.
-
-- id: SR-004
-  status: resolved
-  evidence: Decision declarations, citations, and supersession scans consume the shared quoted-masked representation at `lib/artifacts/behavior-conformance.ts:516-604`, and quoted declarations cannot satisfy real citations in the masking regression.
-
+  evidence: CLI and `run_driver` reject selected Cancelled IDs before launch (`cli/drive/subcommand.ts:295-298`, `domains/shared/extensions/orchestration/driver-tool.ts:241`), and direct or resumed graph execution validates the authoritative selected tasks before scheduler construction (`lib/driver/drive-graph-runner.ts:93-109,595-607`). Regressions cover direct selection and a persisted pending graph (`tests/driver/drive-cancelled-dependency.test.ts:20-61`).
 - id: F-002
-  status: resolved
-  evidence: Section discovery uses fence-masked lines at `lib/artifacts/behavior-conformance.ts:1097-1119`; the fenced-heading regressions at `tests/artifacts/behavior-conformance.test.ts:787-823` preserve the real Behaviors section.
-
+  status: unresolved
+  evidence: `lib/orchestration/spawn-compiler.ts` and `tests/orchestration/spawn-compiler.test.ts` remain deleted, while ratified D-012 still names `compileSpawnToGraph` as spawn's modeled one-node shape, D-014 still says it produces that graph, and Group D still requires the compiler and its test (`missions/architecture/durable-orchestration-runtime.md:160-208,1085-1094`).
 - id: F-003
   status: resolved
-  evidence: Both prompts define at most 12 behaviors and name behavior clusters/Implementation Order stages as candidate task units (`bundled/coding/prompts/planner.md:32`, `bundled/coding/prompts/plan-reviewer.md:127-133`), aligned with the checker advisory threshold.
-
-- id: UR-001
-  status: resolved
-  evidence: The reviewer has deterministic size units and threshold in its own prompt at `bundled/coding/prompts/plan-reviewer.md:127-133`, pinned by `tests/prompts/plan-reviewer.test.ts:97-108`.
-
+  evidence: The enabled TaskManager lifecycle performs a real transition to Cancelled and asserts outcome `cancelled` plus the prior/current status details (`tests/tasks/task-manager.test.ts:149-198`), exercising the exhaustive mapping at `lib/tasks/task-manager.ts:50-56`.
 - id: F-004
   status: resolved
-  evidence: `lib/artifacts/behavior-conformance.ts:777-789` extracts quoted and unquoted file-shaped seam tokens; the public checker regression at `tests/artifacts/behavior-conformance.test.ts:1055-1083` pairs an unquoted path while ignoring a non-file seam name.
-
+  evidence: Runtime export declarations retain value/type discrimination (`scripts/check-reachability.ts:163-172`), with export-all, named-value, and type-only regression cases at `tests/scripts/check-reachability.test.ts:345-380`.
 - id: F-005
   status: resolved
-  evidence: `tests/cli/plans/commands/check-artifacts.test.ts:144-189` exercises the real command in human, plain, and JSON modes with 13 conforming behaviors and asserts no exit call plus visible advisory output.
-
-- id: F-006
-  status: resolved
-  evidence: `tests/artifacts/behavior-conformance.test.ts:1085-1118` pairs the Seam but omits the Test path and asserts the test-field behavior ID and path, so removal of Test pairing would fail the regression.
-
-- id: F-007
-  status: resolved
-  evidence: Planner handoff and sidecar guidance consistently identify plan-reviewer as step 8 at `bundled/coding/prompts/planner.md:50,65-75`, with stale-step rejection in `tests/prompts/planner.test.ts:159-169`.
-
-- id: UR-003
-  status: resolved
-  evidence: The sanity-check transition, handoff, and sidecar all identify workflow step 8 (`bundled/coding/prompts/planner.md:50,65-75`).
-
+  evidence: Every runtime test sets and restores the actual per-test synthetic HOME (`tests/runtime.test.ts:16-27`); the regression seeds a user package under that HOME and proves global precedence (`tests/runtime.test.ts:866-896`), while a separate empty-HOME case proves shared-only discovery (`tests/runtime.test.ts:911-923`). The fix changes tests only, so production precedence is unchanged.
 - id: SR-001
   status: resolved
-  evidence: `bundled/coding/prompts/plan-reviewer.md:26` permits a live probe only through a mechanism that cannot load or execute project-controlled configuration/plugins; otherwise it requires consent or an approved sandbox and the exact limitation as `unchecked`.
-
-- id: UR-002
-  status: resolved
-  evidence: Under the ratified no-agent-config and reviewer no-shell constraints, `bundled/coding/prompts/plan-reviewer.md:26` is a coherent safe degradation: unavailable safe execution routes to consent/approved isolation or exact `unchecked`, without proposing forbidden tool/config expansion.
-
+  evidence: The staged-owner parser now requires an LF/CRLF/EOS-terminated opening marker, permits only YAML labels, removes any accepted label, and invokes `gray-matter` with YAML forced (`scripts/check-reachability.ts:25-35`). Regressions accept ordinary/explicit YAML and CRLF, and reject LF-tagged, CRLF-tagged, and bare-CR executable payloads without creating markers (`tests/scripts/check-reachability.test.ts:211-260`), so alternate spellings cannot select a gray-matter executable engine.
 - id: SR-002
   status: resolved
-  evidence: `lib/artifacts/behavior-conformance.ts:746-776` uses deterministic segment/index wildcard matching rather than a dynamic regular expression; repeated-wildcard and 20,000-character nonmatch coverage remains at `tests/artifacts/behavior-conformance.test.ts:1022-1053`.
-
-- id: SR-005
+  evidence: Shared task parsing rejects non-YAML matter languages before `gray-matter` (`lib/tasks/task-parser.ts:41-45,320`), and the archived-dependency caller regression proves an executable payload is rejected without creating its marker (`tests/tasks/task-manager.test.ts:1091-1112`). Existing CRLF task parsing remains covered at `tests/tasks/task-parser.test.ts:521-552`.
+- id: PRF-001
   status: resolved
-  evidence: Supersession validation makes one forward pass over masked lines at `lib/artifacts/behavior-conformance.ts:557-575`, without the former per-pointer section rescans and block copies.
-
-- id: SR-006
+  evidence: `runDriveOnGraph` creates one run-scoped dependency-status snapshot and injects it into the scheduler (`lib/driver/drive-graph-runner.ts:93-109`); task and archived status discovery occurs once (`lib/tasks/task-manager.ts:591-644`), while each task uses map lookup (`lib/driver/drive-scheduler-backend.ts:205-215,686-700`). The multi-task call-count and malformed-archive controls remain at `tests/driver/drive-cancelled-dependency.test.ts:167-223`.
+- id: UX-001
   status: resolved
-  evidence: Human/plain output visibly escapes C0, DEL, and C1 controls at `cli/plans/commands/check-artifacts.ts:127-170,213-219`, while JSON preserves structured values; `tests/cli/plans/subcommand.test.ts:32-63` covers the contract.
+  evidence: Missing compile and bin roots produce path-specific errors (`scripts/check-reachability.ts:253-272`), with both diagnostics and nonzero exit covered at `tests/scripts/check-reachability.test.ts:321-343`.
+- id: UX-002
+  status: resolved
+  evidence: No-actionable diagnostics enumerate stranded dependency statuses and Blocked IDs (`lib/orchestration/chain-runner.ts:152-208`), with concrete Cancelled-dependency and Blocked-ID assertions at `tests/orchestration/chain-runner.test.ts:806-868`.
+- id: UX-003
+  status: resolved
+  evidence: Staged-owner parse failures include both owner and plan path (`scripts/check-reachability.ts:75-83`), and malformed YAML verifies both contexts at `tests/scripts/check-reachability.test.ts:262-275`.
+- id: UX-004
+  status: resolved
+  evidence: The summary separately reports reached runtime modules and type-only exemptions (`scripts/check-reachability.ts:293-305`), covered at `tests/scripts/check-reachability.test.ts:467-478`.
+- id: CHECK-RUNTIME
+  status: resolved
+  evidence: The corrected tests assert the active synthetic HOME, discover a package from it with `global:coding` precedence, and separately cover an empty synthetic HOME (`tests/runtime.test.ts:866-923`); no production package-discovery code changed.
+- id: DIRECT-GATES
+  status: resolved
+  evidence: The introduced analysis directives remain single-next-line suppressions immediately adjacent to a specific declaration, branch, or scenario and to a rationale (representative sites: `cli/drive/subcommand.ts:265-266`, `lib/driver/drive-scheduler-backend.ts:259-260`, `scripts/check-reachability.ts:69-70,143-144`). No file-wide or baseline suppression was added, and the current lint and reachability gates pass.
 
 ## Findings
 
-- id: SR-007
-  priority: P1
-  severity: high
-  confidence: 1.0
-  complexity: simple
-  title: "[P1] Code-quoted withdrawal examples still bypass active evidence checks"
-  files: lib/artifacts/behavior-conformance.ts, tests/artifacts/behavior-conformance.test.ts
-  lineRange: lib/artifacts/behavior-conformance.ts:247-283
-  summary: Withdrawal status is matched against the raw behavior title, so when a project-controlled heading contains the exact dated grammar inside an inline code span—such as a syntax example—the checker classifies the behavior as withdrawn and skips required fields, test files, markers, uniqueness, and pairing. This contradicts the branch's explicit rule that code-quoted annotations are mentions and lets a plan return `ok: true` with no evidence for the behavior; the malformed-grammar regression does not cover quoted exact grammar.
-  suggestedFix: Determine withdrawal status from a quote-masked heading (or otherwise require the annotation token to be outside code), and add a public-checker regression for an exact dated withdrawal inside inline code.
-  task:
-    title: "-"
-    labels: "-"
-    acceptanceCriteria:
-      1. An exact dated withdrawal inside inline code remains an active behavior and receives normal evidence validation.
-      2. The same exact dated annotation outside code still marks the behavior withdrawn.
-
-- id: F-008
+- id: F-002
   priority: P2
   severity: medium
-  confidence: 0.99
+  confidence: 1.0
+  complexity: complex
+  title: "[P2] Spawn compiler deletion still contradicts ratified architecture"
+  files: lib/orchestration/spawn-compiler.ts, tests/orchestration/spawn-compiler.test.ts, missions/architecture/durable-orchestration-runtime.md, docs/fallow-exceptions.md
+  lineRange: missions/architecture/durable-orchestration-runtime.md:160-208
+  summary: Reproduction: `await import("./lib/orchestration/spawn-compiler.ts")` fails with module-not-found because the compiler remains deleted, while human-ratified D-012/D-014 and Group D still require `compileSpawnToGraph` and its exercised one-node graph shape. The shipped state therefore contradicts governing architecture, leaving future orchestration work unable to follow both; the orphan rationale does not amend ratified ground.
+  suggestedFix: Escalate for a human decision. Restore and wire or owner-stage the compiler under the current decisions, or have the human ratify revised architecture; do not apply an automatic architecture edit.
+  task:
+    title: Resolve spawn compiler state against ratified architecture
+    labels: architecture, orchestration
+    acceptanceCriteria:
+      1. A human chooses whether D-012/D-014 remain or are revised.
+      2. The shipped compiler surface and behavioral evidence agree with the resulting ratified record.
+
+- id: F-006
+  priority: P2
+  severity: medium
+  confidence: 1.0
   complexity: simple
-  title: "[P2] Multiline code-span masking crosses Markdown block boundaries"
-  files: lib/artifacts/behavior-conformance.ts, tests/artifacts/behavior-conformance.test.ts
-  lineRange: lib/artifacts/behavior-conformance.ts:418-491
-  summary: The remediation joins the complete artifact before finding matching backtick runs, but Markdown inline code can continue only within the same inline block; blank lines and block headings terminate that context. When unmatched literal backticks occur in separate paragraphs, the scanner pairs them anyway and masks all intervening content, so a real unresolved decision citation between those paragraphs falsely passes; the committed multiline regressions cover only valid same-paragraph soft line breaks.
-  suggestedFix: Preserve delimiter state across soft line breaks within a Markdown block, but reset it at paragraph/block boundaries; add regressions for same-paragraph multiline spans and unmatched backticks in separate paragraphs.
+  title: "[P2] Normalize bin roots before matching discovered modules"
+  files: scripts/check-reachability.ts, tests/scripts/check-reachability.test.ts
+  lineRange: scripts/check-reachability.ts:269-272
+  summary: On Windows, run the gate on the existing synthetic shape where `bin/fixture` imports `../cli/main.ts` and that CLI module imports `../lib/cli-dep.ts`: `path.relative` returns `cli\\main.ts`, but `files("cli")` records `cli/main.ts`, so the traversal drops the bin root and falsely reports `lib/cli-dep.ts` unreachable. `resolveImport` already normalizes separators, but this new bin-root path does not, making the shipped health gate fail for valid projects specifically on Windows.
+  suggestedFix: Normalize each relative bin import path to `/` before adding it to `roots`, and add a regression around the normalization boundary.
   task:
     title: "-"
     labels: "-"
     acceptanceCriteria:
-      1. Valid multiline code spans within one paragraph remain masked.
-      2. Backticks in separate Markdown blocks cannot hide a real decision citation or declaration between them.
+      1. Bin-import roots match discovered module paths on Windows and POSIX.
+      2. A bin-only runtime dependency remains reachable under Windows-style separators.
