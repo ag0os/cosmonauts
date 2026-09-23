@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -30,6 +30,11 @@ function fixture(owner = "plan:future-work") {
 	writeFileSync(join(root, "lib/staged.ts"), "export const stagedValue = 1;\n");
 	writeFileSync(join(root, "lib/orphan.ts"), "export const orphanValue = 1;\n");
 	writeFileSync(join(root, "cli/main.ts"), "export const main = 1;\n");
+	mkdirSync(join(root, "bin"), { recursive: true });
+	writeFileSync(
+		join(root, "bin/fixture"),
+		'#!/usr/bin/env bun\nimport "../cli/main.ts";\n',
+	);
 	writeFileSync(
 		join(root, "fallow.toml"),
 		'entry = ["lib/public.ts", "lib/staged.ts"]\n',
@@ -42,31 +47,27 @@ function fixture(owner = "plan:future-work") {
 		join(root, "missions/plans/future-work/plan.md"),
 		"---\nstatus: active\n---\n",
 	);
-	const fallow = join(root, "fallow");
-	writeFileSync(fallow, "#!/bin/sh\nprintf '{\"unused_files\":[]}\\n'\n");
-	execFileSync("chmod", ["+x", fallow]);
-	return { root, fallow };
+	return { root };
 }
 
-function run(root: string, fallow: string) {
+function run(root: string) {
 	return spawnSync("bun", ["run", "check:reachability", root], {
 		cwd: projectRoot,
 		encoding: "utf8",
-		env: { ...process.env, FALLOW_BIN: fallow },
 	});
 }
 
 describe("reachability command", () => {
 	test("reports an unimported lib module while accepting public and live staged roots", () => {
-		const { root, fallow } = fixture();
-		const result = run(root, fallow);
+		const { root } = fixture();
+		const result = run(root);
 		expect(result.status).toBe(1);
 		expect(result.stdout).toContain("lib/orphan.ts");
 		expect(result.stdout).not.toContain("lib/staged.ts");
 	});
 
 	test("rejects an archived staged owner through the command", () => {
-		const { root, fallow } = fixture();
+		const { root } = fixture();
 		rmSync(join(root, "missions/plans/future-work"), { recursive: true });
 		mkdirSync(join(root, "missions/archive/plans/future-work"), {
 			recursive: true,
@@ -75,30 +76,30 @@ describe("reachability command", () => {
 			join(root, "missions/archive/plans/future-work/plan.md"),
 			"---\nstatus: completed\n---\n",
 		);
-		const result = run(root, fallow);
+		const result = run(root);
 		expect(result.status).toBe(1);
 		expect(result.stdout).toContain("plan:future-work");
 		expect(result.stdout).toContain("archived or absent");
 	});
 
 	test("rejects an absent staged owner through the command", () => {
-		const { root, fallow } = fixture("plan:does-not-exist");
-		const result = run(root, fallow);
+		const { root } = fixture("plan:does-not-exist");
+		const result = run(root);
 		expect(result.stdout).toContain(
 			"staged owner archived or absent: lib/staged.ts -> plan:does-not-exist",
 		);
 	});
 
 	test("accepts an exact roadmap heading as a staged owner", () => {
-		const { root, fallow } = fixture("roadmap:Future work");
+		const { root } = fixture("roadmap:Future work");
 		writeFileSync(join(root, "ROADMAP.md"), "## Ideas\n\n### Future work\n");
-		const result = run(root, fallow);
+		const result = run(root);
 		expect(result.stdout).not.toContain("staged owner archived or absent");
 		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
 	});
 
 	test("does not treat a type-only import as runtime reachability", () => {
-		const { root, fallow } = fixture();
+		const { root } = fixture();
 		writeFileSync(
 			join(root, "lib/run-loop.ts"),
 			"export interface Loop { id: string }\nexport function run() { return 1; }\n",
@@ -107,25 +108,39 @@ describe("reachability command", () => {
 			join(root, "cli/main.ts"),
 			'import type { Loop } from "../lib/run-loop.ts";\nexport const id: Loop = { id: "one" };\n',
 		);
-		const result = run(root, fallow);
+		const result = run(root);
 		expect(result.stdout).toContain("unreachable: lib/run-loop.ts");
 	});
 
+	test("does not treat a CLI module that no bin entry reaches as a root", () => {
+		const { root } = fixture();
+		writeFileSync(
+			join(root, "lib/only-dead-cli.ts"),
+			"export function used() { return 1; }\n",
+		);
+		writeFileSync(
+			join(root, "cli/dead-command.ts"),
+			'import { used } from "../lib/only-dead-cli.ts";\nexport const x = used();\n',
+		);
+		const result = run(root);
+		expect(result.stdout).toContain("unreachable: lib/only-dead-cli.ts");
+	});
+
 	test("rejects an entry outside the public and staged declarations", () => {
-		const { root, fallow } = fixture();
+		const { root } = fixture();
 		writeFileSync(
 			join(root, "fallow.toml"),
 			'entry = ["lib/public.ts", "lib/staged.ts", "lib/orphan.ts"]\n',
 		);
-		const result = run(root, fallow);
+		const result = run(root);
 		expect(result.status).toBe(1);
 		expect(result.stdout).toContain("undeclared entry: lib/orphan.ts");
 	});
 
 	test("rejects a declared staged path absent from Fallow entry", () => {
-		const { root, fallow } = fixture();
+		const { root } = fixture();
 		writeFileSync(join(root, "fallow.toml"), 'entry = ["lib/public.ts"]\n');
-		const result = run(root, fallow);
+		const result = run(root);
 		expect(result.stdout).toContain("missing entry: lib/staged.ts");
 	});
 });

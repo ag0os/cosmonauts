@@ -404,6 +404,11 @@ contract; nothing in Stage 3 depends on which side computes it. Added
   - Why: codex review of TASK-711, 2026-09-23 (round 1 findings 1 and 5; round 2 finding 1).
   - Decided by: coordinator, 2026-09-23 (derived)
   - Supersedes: D-036 (1) and D-030 in part (2026-09-23)
+- **D-039 - The reachability check walks runtime imports itself; Fallow keeps only its entry list**
+  - Decision: `check:reachability` (`scripts/check-reachability.ts`) computes reachability with its own walk of runtime imports; type-only imports do not count. Its roots are what `package.json` `bin` scripts import, `bun build --compile` entries, domain manifests, agents and extensions, and the public and staged declarations. It never roots every `cli/` file. Fallow is not run. It cannot follow the extensionless `bin/cosmonauts` (it reports all of `cli/` unused), and it would count type-only reach such as `lib/driver/run-run-loop.ts`'s. `fallow.toml` `entry` is still asserted equal to `public` ∪ `staged` (D-029). The TASK-708 worker's first version ran Fallow and discarded its output, and it rooted all of `cli/`. The coordinator removed both, test first.
+  - Why: D-006/D-024 named "the tool"; the measured tool cannot see this repository's entry point. INV-007: the walker replaces the Fallow run rather than sitting beside it.
+  - Decided by: coordinator, 2026-09-23 (derived)
+  - Supersedes: D-006 and D-024 in part (2026-09-23)
 
 ## Behaviors
 

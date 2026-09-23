@@ -1,5 +1,10 @@
-/** Project reachability gate. Usage: bun scripts/check-reachability.ts [projectRoot] */
-import { spawnSync } from "node:child_process";
+/**
+ * Project reachability gate (framework-health D-020, D-024, D-039).
+ * Walks runtime imports (type-only imports do not count) from the shipped roots:
+ * what package.json `bin` scripts import, `bun build --compile` entries, domain
+ * manifests/agents/extensions, and the public and staged declarations.
+ * Usage: bun scripts/check-reachability.ts [projectRoot]
+ */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
@@ -175,36 +180,6 @@ function hasRuntimeCode(path: string): boolean {
 }
 
 try {
-	const fallow = spawnSync(
-		process.env.FALLOW_BIN ?? join(root, "node_modules/.bin/fallow"),
-		[
-			"--root",
-			root,
-			"--production",
-			"--format",
-			"json",
-			"--quiet",
-			"--no-cache",
-			"dead-code",
-			"--unused-files",
-		],
-		{ encoding: "utf8" },
-	);
-	if (fallow.error || ![0, 1].includes(fallow.status ?? -1)) {
-		throw new Error(
-			`fallow failed: ${fallow.error?.message ?? fallow.stderr.trim()}`,
-		);
-	}
-	const result: unknown = JSON.parse(fallow.stdout);
-	if (
-		!result ||
-		typeof result !== "object" ||
-		!("unused_files" in result) ||
-		!Array.isArray(result.unused_files)
-	) {
-		throw new Error("fallow did not return unused_files JSON");
-	}
-
 	const entry = stringArray(read("fallow.toml"), "entry");
 	const registry = read("missions/architecture/staged-code.toml");
 	const publicPaths = stringArray(registry, "public");
@@ -250,9 +225,20 @@ try {
 			(match) => match[1] ?? "",
 		),
 	);
+	const binScripts = Object.values(
+		(JSON.parse(read("package.json")) as { bin?: Record<string, string> })
+			.bin ?? {},
+	);
+	const binEntries = binScripts.flatMap((script) => {
+		const path = join(root, script);
+		if (!existsSync(path)) return [];
+		return [...read(script).matchAll(/^import\s+["']([^"']+)["']/gm)].map(
+			(match) => relative(root, resolve(dirname(path), match[1] ?? "")),
+		);
+	});
 	const roots = new Set<string>([
 		...declared,
-		...files("cli"),
+		...binEntries,
 		...compiledEntries,
 		...modules.filter(
 			(path) =>
