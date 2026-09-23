@@ -65,9 +65,13 @@ never a side effect of a review.
 
 Provenance. The eight decisions behind these invariants were accepted by the
 human on 2026-09-23 and relayed by Shepherd (`investigation.md` §5, decisions
-1-8). The invariant wording was drafted by the coordinator and is **awaiting
-human ratification**. Until it is ratified, this Intent is a draft and no
-backlog is created from it.
+1-8). The invariant wording was drafted by the coordinator and ratified by
+the human exactly as drafted on 2026-09-23 (human, relayed by Shepherd).
+INV-001..INV-005 are ratified ground and change only by human decision. The
+human also acknowledged two consequences of decision 1. First, the named chains
+ending in the QM end at a findings report. Second, `execution-liveness` lands
+after this plan. Decisions 6 and 7 stay as AC-013 and AC-014, by human
+direction.
 
 ## Users
 
