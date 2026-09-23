@@ -863,24 +863,35 @@ describe("CosmonautsRuntime", () => {
 	});
 
 	describe("no installed domains (only shared)", () => {
-		it("does not discover an installed user coding package outside the synthetic runtime", async () => {
+		it("discovers a user package from the isolated synthetic HOME with global precedence", async () => {
 			const domainsDir = join(tmp.path, "domains");
-			const ambientHome = join(tmp.path, "ambient-home");
+			const syntheticHome = join(tmp.path, "home");
+			expect(process.env.HOME).toBe(syntheticHome);
 			await mkdir(domainsDir, { recursive: true });
 			await setupSharedDomain(domainsDir);
+			await setupCodingDomain(domainsDir, []);
 			await writeSyntheticInstallableDomainPackage(
-				join(ambientHome, ".cosmonauts", "packages", "coding"),
-				{ packageName: "coding", domainId: "coding" },
+				join(syntheticHome, ".cosmonauts", "packages", "coding"),
+				{
+					packageName: "coding",
+					domainId: "coding",
+					domainDescription: "User coding domain",
+				},
 			);
 
 			const runtime = await CosmonautsRuntime.create({
 				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
+			const coding = runtime.domains.find(
+				(domain) => domain.manifest.id === "coding",
+			);
 
-			expect(runtime.domains.map((domain) => domain.manifest.id)).toEqual([
-				"shared",
-			]);
+			expect(coding?.manifest.description).toBe("User coding domain");
+			expect(coding?.provenance[0]).toMatchObject({
+				origin: "global:coding",
+				precedence: 1,
+			});
 		});
 
 		it("succeeds when only the shared domain is present", async () => {
@@ -897,8 +908,9 @@ describe("CosmonautsRuntime", () => {
 			).resolves.toBeDefined();
 		});
 
-		it("exposes only the shared domain in the registry", async () => {
+		it("exposes only the shared domain with an empty synthetic HOME", async () => {
 			const domainsDir = join(tmp.path, "domains");
+			expect(process.env.HOME).toBe(join(tmp.path, "home"));
 			await mkdir(domainsDir, { recursive: true });
 			await setupSharedDomain(domainsDir);
 

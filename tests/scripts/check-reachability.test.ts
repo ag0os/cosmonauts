@@ -11,13 +11,11 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 const projectRoot = resolve(".");
-const executionMarker = "/tmp/reachability-pwned";
 const roots: string[] = [];
 
 afterEach(() => {
 	for (const root of roots.splice(0))
 		rmSync(root, { recursive: true, force: true });
-	rmSync(executionMarker, { force: true });
 });
 
 function fixture(owner = "plan:future-work") {
@@ -210,6 +208,19 @@ describe("reachability command", () => {
 		expect(result.stdout).toContain("unreachable: lib/orphan.ts");
 	});
 
+	test("accepts staged-owner YAML frontmatter with CRLF line endings", () => {
+		const { root } = fixture();
+		writeFileSync(
+			join(root, "missions/plans/future-work/plan.md"),
+			"---\r\nstatus: active\r\n---\r\n",
+		);
+
+		const result = run(root);
+
+		expect(result.stderr).not.toContain("unsupported frontmatter language");
+		expect(result.stdout).not.toContain("staged owner archived or absent");
+	});
+
 	test.each([
 		"yaml",
 		"yml",
@@ -226,12 +237,19 @@ describe("reachability command", () => {
 		expect(result.stdout).not.toContain("staged owner archived or absent");
 	});
 
-	test("rejects executable staged-owner frontmatter without running it", () => {
+	test.each([
+		{ name: "LF-tagged", opening: "---js\n" },
+		{ name: "CRLF-tagged", opening: "---js\r\n" },
+		{ name: "bare-CR", opening: "---\rjs\n" },
+	])("rejects $name executable staged-owner frontmatter without running it", ({
+		name,
+		opening,
+	}) => {
 		const { root } = fixture();
-		rmSync(executionMarker, { force: true });
+		const executionMarker = join(root, `${name}-pwned`);
 		writeFileSync(
 			join(root, "missions/plans/future-work/plan.md"),
-			'---js\n({status:(require("fs").writeFileSync("/tmp/reachability-pwned","1"),"active")})\n---',
+			`${opening}({status:(require("fs").writeFileSync(${JSON.stringify(executionMarker)},"1"),"active")})\n---`,
 		);
 
 		const result = run(root);

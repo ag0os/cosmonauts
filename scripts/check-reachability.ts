@@ -22,10 +22,15 @@ function read(path: string): string {
 	return readFileSync(join(root, path), "utf8");
 }
 
-function assertYamlFrontmatter(source: string): void {
-	const language = /^\uFEFF?---([^\r\n]*)/.exec(source)?.[1]?.trim();
-	if (language && language !== "yaml" && language !== "yml")
+function parseYamlFrontmatter(source: string): Record<string, unknown> {
+	const opening = /^\uFEFF?---([^\r\n]*)(\r\n|\n|$)/.exec(source);
+	if (!opening) throw new Error("unsupported frontmatter language delimiter");
+	const language = (opening[1] as string).trim();
+	if (!["", "yaml", "yml"].includes(language))
 		throw new Error(`unsupported frontmatter language: ${language}`);
+
+	const yamlSource = `---${opening[2] as string}${source.slice(opening[0].length)}`;
+	return matter(yamlSource, { language: "yaml" }).data;
 }
 
 function parseToml(path: string): Record<string, unknown> {
@@ -70,9 +75,7 @@ function ownerLive(owner: string): boolean {
 		const path = `missions/plans/${slug}/plan.md`;
 		if (!existsSync(join(root, path))) return false;
 		try {
-			const source = read(path);
-			assertYamlFrontmatter(source);
-			return matter(source).data.status === "active";
+			return parseYamlFrontmatter(read(path)).status === "active";
 		} catch (error) {
 			throw new Error(
 				`staged owner ${owner} plan ${path}: ${error instanceof Error ? error.message : String(error)}`,
