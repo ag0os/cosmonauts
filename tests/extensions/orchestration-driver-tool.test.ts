@@ -142,6 +142,18 @@ describe("driver e2e run_driver integration", () => {
 		}
 	});
 
+	test("run_driver rejects an explicitly selected Cancelled task before launch", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const taskId = onlyTaskId(fixture);
+		await fixture.taskManager.updateTask(taskId, { status: "Cancelled" });
+
+		await expect(runDriver(fixture)).rejects.toThrow(`${taskId} is Cancelled`);
+		expect(backendMocks.run).not.toHaveBeenCalled();
+		expect((await fixture.taskManager.getTask(taskId))?.status).toBe(
+			"Cancelled",
+		);
+	});
+
 	test("driver preflight failure aborts without task status updates", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const updateSpy = vi.spyOn(TaskManager.prototype, "updateTask");

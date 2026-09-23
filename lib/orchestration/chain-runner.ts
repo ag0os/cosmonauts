@@ -147,15 +147,17 @@ async function evaluateDefaultCompletionState(
 	// A scope whose tasks are all closed (Done or Cancelled) but not yet
 	// complete has Done tasks with unchecked criteria; it stays pending, since
 	// re-invoking the coordinator is how those criteria get finished.
+	const noActionableDetails = await describeNoActionableTasks(tm, tasks);
 	if (
 		tasks.some((task) => !isTaskClosed(task.status)) &&
-		!(await hasActionableTask(tm, tasks))
+		noActionableDetails !== undefined
 	) {
+		const summary = label
+			? `No actionable tasks for completion label "${label}": none is In Progress or To Do with every dependency Done`
+			: "No actionable tasks: none is In Progress or To Do with every dependency Done";
 		return {
 			status: "terminal",
-			reason: label
-				? `No actionable tasks for completion label "${label}": none is In Progress or To Do with every dependency Done`
-				: "No actionable tasks: none is In Progress or To Do with every dependency Done",
+			reason: `${summary}. ${noActionableDetails}`,
 		};
 	}
 
@@ -166,18 +168,42 @@ async function evaluateDefaultCompletionState(
  * Only an In Progress task, or a To Do task whose dependencies are all Done,
  * can move the scope forward. A Cancelled dependency never becomes Done.
  */
-async function hasActionableTask(
+async function describeNoActionableTasks(
 	tm: TaskManager,
 	tasks: Awaited<ReturnType<TaskManager["listTasks"]>>,
-): Promise<boolean> {
-	if (tasks.some((task) => task.status === "In Progress")) return true;
+): Promise<string | undefined> {
+	if (tasks.some((task) => task.status === "In Progress")) return undefined;
 	const todo = tasks.filter((task) => task.status === "To Do");
 	const statuses = await tm.getTaskStatuses(
 		todo.flatMap((task) => task.dependencies),
 	);
-	return todo.some((task) =>
-		task.dependencies.every((id) => statuses.get(id.toUpperCase()) === "Done"),
-	);
+	if (
+		todo.some((task) =>
+			task.dependencies.every(
+				(id) => statuses.get(id.toUpperCase()) === "Done",
+			),
+		)
+	) {
+		return undefined;
+	}
+
+	const details: string[] = [];
+	const stranded = todo.map((task) => {
+		const unsatisfied = task.dependencies
+			.filter((id) => statuses.get(id.toUpperCase()) !== "Done")
+			.map((id) => `${id}: ${statuses.get(id.toUpperCase()) ?? "missing"}`);
+		return `${task.id} (${unsatisfied.join(", ")})`;
+	});
+	if (stranded.length > 0) {
+		details.push(`Stranded: ${stranded.join("; ")}`);
+	}
+	const blocked = tasks
+		.filter((task) => task.status === "Blocked")
+		.map((task) => task.id);
+	if (blocked.length > 0) {
+		details.push(`Blocked: ${blocked.join(", ")}`);
+	}
+	return details.join(". ");
 }
 
 function taskAcceptanceCriteriaComplete(

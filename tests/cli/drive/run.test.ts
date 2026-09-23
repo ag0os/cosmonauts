@@ -278,6 +278,42 @@ describe("cosmonauts run drive compat run", () => {
 		expect(firstRunInlineSpec().taskIds).toHaveLength(3);
 	});
 
+	test("rejects an explicitly selected Cancelled task before launch", async () => {
+		const fixture = await setupFixture(1);
+		const taskId = fixture.tasks[0]?.id ?? "TASK-001";
+		await fixture.manager.updateTask(taskId, { status: "Cancelled" });
+
+		await expect(
+			parseDrive([
+				"--plan",
+				PLAN,
+				"--task-ids",
+				taskId,
+				"--envelope",
+				fixture.envelopePath,
+			]),
+		).rejects.toThrow(`${taskId} is Cancelled`);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
+	});
+
+	test("preserves explicit selection of a Done task", async () => {
+		const fixture = await setupFixture(1);
+		const taskId = fixture.tasks[0]?.id ?? "TASK-001";
+		await fixture.manager.updateTask(taskId, { status: "Done" });
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			taskId,
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		expect(firstRunInlineSpec().taskIds).toEqual([taskId]);
+	});
+
 	test("never selects a Cancelled plan task by default", async () => {
 		const fixture = await setupFixture(3);
 		const [first, cancelled, third] = fixture.tasks.map((task) => task.id);

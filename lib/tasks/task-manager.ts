@@ -65,6 +65,11 @@ interface TaskUpdateExecution {
 	readonly previousStatus?: TaskStatus;
 }
 
+export interface TaskDependencyStatusSnapshot {
+	readonly tasks: readonly Task[];
+	readonly statuses: ReadonlyMap<string, TaskStatus>;
+}
+
 /**
  * TaskManager orchestrates all core modules for task management
  */
@@ -569,6 +574,28 @@ export class TaskManager {
 			tasks,
 			tasks.flatMap((task) => task.dependencies),
 		);
+	}
+
+	/**
+	 * Resolve selected active tasks and all of their dependency statuses from one
+	 * active-task read. Archived dependencies are read only when unresolved.
+	 */
+	async getTaskDependencyStatusSnapshot(
+		taskIds: readonly string[],
+	): Promise<TaskDependencyStatusSnapshot> {
+		await this.ensureInitialized();
+		const activeTasks = await this.loadAllTasks();
+		const selectedIds = new Set(taskIds.map((id) => id.toUpperCase()));
+		const tasks = activeTasks.filter((task) =>
+			selectedIds.has(task.id.toUpperCase()),
+		);
+		return {
+			tasks,
+			statuses: await this.resolveStatuses(
+				activeTasks,
+				tasks.flatMap((task) => task.dependencies),
+			),
+		};
 	}
 
 	/**

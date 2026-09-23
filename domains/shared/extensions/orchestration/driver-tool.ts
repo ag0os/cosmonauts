@@ -29,7 +29,10 @@ import {
 	writeFallbackRunCompletion,
 	writeInlineRunState,
 } from "../../../../lib/driver/run-state.ts";
-import { listPendingPlanTaskIds } from "../../../../lib/driver/task-selection.ts";
+import {
+	assertDriveTasksNotCancelled,
+	listPendingPlanTaskIds,
+} from "../../../../lib/driver/task-selection.ts";
 import {
 	type BackendName,
 	DETACHED_DEFAULT_TASK_THRESHOLD,
@@ -233,6 +236,7 @@ export function registerDriverTool(
 					planSlug,
 					params.taskIds,
 				);
+				await assertDriveTasksNotCancelled(taskManager, taskIds);
 				mode = mode ?? resolveDefaultMode(taskIds);
 				if (mode === "detached" && params.backend === "cosmonauts-subagent") {
 					clearActiveRun(activeKey, runId);

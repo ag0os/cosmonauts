@@ -146,9 +146,11 @@ describe("TaskManager", () => {
 		const completed = await enabledManager.updateTask(created.id, {
 			status: "Done",
 		});
+		vi.setSystemTime(new Date("2026-07-21T13:07:00.000Z"));
+		await enabledManager.updateTask(created.id, { status: "Cancelled" });
 
 		const captured = await readProjectEpisodes(enabledRoot);
-		expect(captured).toHaveLength(3);
+		expect(captured).toHaveLength(4);
 		expect(
 			captured.map((record) => ({
 				source: record.source,
@@ -182,6 +184,17 @@ describe("TaskManager", () => {
 						subject: { kind: "task", id: "TASK-001" },
 					}),
 					content: expect.stringContaining("In Progress to Done"),
+				}),
+				expect.objectContaining({
+					source: "custom/task-owner",
+					metadata: expect.objectContaining({
+						action: "task.status-changed",
+						outcome: "cancelled",
+						subject: { kind: "task", id: "TASK-001" },
+					}),
+					content: expect.stringContaining(
+						"Previous status: Done\nCurrent status: Cancelled",
+					),
 				}),
 			]),
 		);

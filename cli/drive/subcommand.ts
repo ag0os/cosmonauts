@@ -52,7 +52,10 @@ import {
 	writeInlineRunState,
 } from "../../lib/driver/run-state.ts";
 import { commitFinalState } from "../../lib/driver/state-commit.ts";
-import { listPendingPlanTaskIds } from "../../lib/driver/task-selection.ts";
+import {
+	assertDriveTasksNotCancelled,
+	listPendingPlanTaskIds,
+} from "../../lib/driver/task-selection.ts";
 import {
 	type BackendName,
 	DETACHED_DEFAULT_TASK_THRESHOLD,
@@ -288,6 +291,10 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	}
 
 	const taskIds = await resolveTaskIds(taskManager, planSlug, options, resume);
+	await assertDriveTasksNotCancelled(
+		taskManager,
+		resumeModeTaskIds(resume, taskIds),
+	);
 	const mode =
 		options.mode ??
 		(resumeModeTaskIds(resume, taskIds).length >=

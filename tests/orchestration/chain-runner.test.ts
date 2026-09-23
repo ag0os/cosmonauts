@@ -803,7 +803,7 @@ describe("runStage", () => {
 			});
 		}
 
-		test("fails fast when the open tasks are Blocked beside Cancelled ones", async () => {
+		test("fails fast and names Blocked tasks beside Cancelled ones", async () => {
 			vi.useFakeTimers();
 			vi.setSystemTime(FIXED_NOW);
 
@@ -824,13 +824,14 @@ describe("runStage", () => {
 				expect(result.success).toBe(false);
 				expect(result.iterations).toBe(0);
 				expect(result.error).toContain("No actionable tasks");
+				expect(result.error).toContain(`Blocked: ${taskB.id}`);
 				expect(spawner.spawn).not.toHaveBeenCalled();
 			} finally {
 				await rm(tmpDir, { recursive: true, force: true });
 			}
 		});
 
-		test("fails fast when the only To Do task depends on a Cancelled task", async () => {
+		test("fails fast and names a To Do task's Cancelled dependency", async () => {
 			vi.useFakeTimers();
 			vi.setSystemTime(FIXED_NOW);
 
@@ -840,12 +841,17 @@ describe("runStage", () => {
 			const tm = new TaskManager(tmpDir);
 			await tm.init();
 			const taskA = await tm.createTask({ title: "A", labels: ["plan:alpha"] });
-			await tm.createTask({
+			const taskB = await tm.createTask({
 				title: "B",
 				labels: ["plan:alpha"],
 				dependencies: [taskA.id],
 			});
+			const taskC = await tm.createTask({
+				title: "C",
+				labels: ["plan:alpha"],
+			});
 			await tm.updateTask(taskA.id, { status: "Cancelled" });
+			await tm.updateTask(taskC.id, { status: "Blocked" });
 			const spawner = createMockSpawner();
 
 			try {
@@ -854,6 +860,10 @@ describe("runStage", () => {
 				expect(result.success).toBe(false);
 				expect(result.iterations).toBe(0);
 				expect(result.error).toContain("No actionable tasks");
+				expect(result.error).toContain(
+					`Stranded: ${taskB.id} (${taskA.id}: Cancelled)`,
+				);
+				expect(result.error).toContain(`Blocked: ${taskC.id}`);
 				expect(spawner.spawn).not.toHaveBeenCalled();
 			} finally {
 				await rm(tmpDir, { recursive: true, force: true });

@@ -23,7 +23,10 @@ import {
 	readRetryableDriveFinalizerFailure,
 } from "./drive-finalization.ts";
 import { compileDriveRunStart } from "./drive-graph-compiler.ts";
-import { createDriveSchedulerBackendMap } from "./drive-scheduler-backend.ts";
+import {
+	createDriveSchedulerBackendMap,
+	type DriveTaskStatusSnapshot,
+} from "./drive-scheduler-backend.ts";
 import { EventLogWriteError } from "./event-stream.ts";
 import type { RunOneTaskCtx } from "./run-one-task.ts";
 import {
@@ -87,6 +90,10 @@ export async function runDriveOnGraph(
 		const runSpec = graphRun.run
 			? withAuthoritativeTaskIds(spec, graphRun.run)
 			: spec;
+		const taskStatusSnapshot = await createDriveTaskStatusSnapshot(
+			ctx.taskManager,
+			runSpec.taskIds,
+		);
 		await prepareCompatibilityWorkdir(runSpec, mode);
 		await emit(runSpec, ctx, {
 			type: "run_started",
@@ -99,6 +106,7 @@ export async function runDriveOnGraph(
 		const backends = createDriveSchedulerBackendMap({
 			spec: runSpec,
 			taskManager: ctx.taskManager,
+			taskStatusSnapshot,
 			backend: ctx.backend,
 			eventSink: ctx.eventSink,
 		});
@@ -578,6 +586,29 @@ function withAuthoritativeTaskIds(
 
 function compatibilityQueueTaskIds(spec: DriverRunSpec): readonly string[] {
 	return spec.remainingTaskIds ?? spec.taskIds;
+}
+
+async function createDriveTaskStatusSnapshot(
+	taskManager: RunDriveOnGraphCtx["taskManager"],
+	taskIds: readonly string[],
+): Promise<DriveTaskStatusSnapshot> {
+	const snapshot = await taskManager.getTaskDependencyStatusSnapshot(taskIds);
+	const cancelled = snapshot.tasks.filter(
+		(task) => task.status === "Cancelled",
+	);
+	if (cancelled.length > 0) {
+		throw new Error(
+			`Drive cannot run Cancelled task(s): ${cancelled.map((task) => `${task.id} is Cancelled`).join(", ")}`,
+		);
+	}
+
+	const dependenciesByTaskId = new Map(
+		snapshot.tasks.map((task) => [
+			task.id.toUpperCase(),
+			[...task.dependencies],
+		]),
+	);
+	return { dependenciesByTaskId, statuses: snapshot.statuses };
 }
 
 function validateDriveTaskIds(
