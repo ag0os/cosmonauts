@@ -95,8 +95,12 @@ const LIVE_COMMAND_BASELINES = [
 	{
 		assetId: "command:implement-plan",
 		path: "/Users/cosmos/.claude/commands/implement-plan.md",
+		// Amended 2026-09-23: external-commands/implement-plan.md dropped the
+		// deleted Quality Contract format (framework-health, 5ee5fbb) and the
+		// user re-exported it via `cosmonauts harness sync` on 2026-09-22.
+		// Previous baseline: d81caaec48616ccad2c0d73a7034d44c258165524c9bcf4c8249ba4908e1e603
 		byteSha256:
-			"d81caaec48616ccad2c0d73a7034d44c258165524c9bcf4c8249ba4908e1e603",
+			"92dd78d08c65ba759de5138df6a9ff9cdeae44737755c28a9fecf60adc5128f5",
 	},
 ] as const;
 
