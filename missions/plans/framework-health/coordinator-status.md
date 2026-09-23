@@ -72,7 +72,41 @@ HEAD: `61527f6` on `feature/framework-health` (not pushed), clean. Suite 3,051/3
 
 For the next coordinator. The brief is `.shepherd/work/in-progress/framework-health/brief-coordinator-1.md`
 (read-only; `.shepherd/` is git-excluded, so never add it). Shepherd relays the user's decisions; write
-questions under `## Needs the user
+questions under `## Needs the user` and stop.
+
+**State.** Brief steps 1–2 are done. On framework-health, Stage 2 is closed and Stage 3 (TASK-708..710)
+is implemented and reviewed; only its final verification remains. All four framework-health tasks
+are Done in the task files. Execution-liveness has a backlog (TASK-712..719, all To Do). H-004 is
+resolved (architecture D-007 amended, D-042). Nothing else is open with the user.
+
+**In flight.** Nothing is running (updated after the QM run). The scratchpad for prompts and
+outputs is `/private/tmp/claude-501/-Users-cosmos-Projects-cosmonauts/48a323d3-6dcb-4e30-8670-c9509cf01121/scratchpad`.
+
+**Remaining, in order.**
+1. Wait for the user's answer on the spawn compiler (`## Needs the user`, Q1), then do what it says.
+2. Have a worker fix F-006 (Windows bin-root normalization) test first, and commit it yourself.
+3. Get an independent review (codex `gpt-6-sol` high, or a Claude agent) of the QM's kept commits
+   `1b130e5 f1c1acf 7549348 02d5bd4`, plus the F-006 fix and whatever the Q1 ruling produces.
+   Fix, commit and re-review until SHIP. Do not run the QM again unless Shepherd asks; it takes about
+   3 hours and edits code.
+4. Report Stage 3 closed to Shepherd. Do not archive unattended, and do not start execution-liveness.
+
+**Method notes (hard-won today).**
+- Drive: `bun bin/cosmonauts run drive --plan framework-health --task-ids <ID> --backend codex --mode detached
+  --branch feature/framework-health --task-timeout 3600000`. Wait with a background until-loop on
+  `events.jsonl` for run_completed/run_aborted. Drive leaves files under `missions/` (other than task
+  files) uncommitted; commit them yourself.
+- A codex worker that exits 1 after a few minutes: check the newest `~/.codex/sessions/.../rollout-*.jsonl`
+  for `usage_limit_exceeded`. The user has since upgraded the subscription.
+- Claude subagents (the Agent tool) were reliable as workers and as independent reviewers. Tell them:
+  no git state changes, cp backups rather than `git checkout`, their own scratchpad worktree for mutation
+  experiments, and "seen red first".
+- Unquoted heredocs run backticks. Write Python generators to a file, or use `<<'EOF'`.
+- `tests/packages/` is gitignored but tracked: `git add -f` its files.
+- The home command pins in `tests/harness-adapters/inventory.test.ts` break whenever the user re-syncs
+  `~/.claude/commands/*`. Re-pin after checking that the home copy equals the branch export.
+
+## Needs the user
 
 ### Q1 (2026-09-23): the spawn compiler deleted in TASK-709 conflicts with a human-ratified record
 
