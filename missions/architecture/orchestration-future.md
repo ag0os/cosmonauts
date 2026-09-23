@@ -87,21 +87,32 @@ are ready to promote.
 - `D-007 - Liveness is a universal node-attempt contract`
   - Decision: Every executing graph node has separate lease, useful-activity,
     and host-availability signals; bounded settlement-based cancellation;
-    attempt fencing; persisted execution identity/evidence; and explicit
-    shadow/enforce idle plus optional hard-timeout policy. Only the current
-    unsuperseded token may mutate lifecycle state. Lease expiry is health
-    evidence, not automatic authority to replace an unconfirmed mutating
-    attempt. Useful active work has no mandatory wall-clock ceiling.
+    attempt fencing; persisted execution identity/evidence; an absolute hard
+    ceiling on every attempt, enforced in every mode; and shadow/enforce idle
+    policy. Hard-ceiling and idle policy are set in project configuration
+    only; the hard ceiling defaults to four hours. Only the idle deadline is
+    shadowable. Only the current unsuperseded token may mutate lifecycle
+    state. Lease expiry is health evidence, not automatic authority to replace
+    an unconfirmed mutating attempt.
   - Alternatives: Add timeouts only to chain stages or Quality Manager; treat
-    process heartbeat as proof of execution progress; require a global hard
-    timeout.
+    process heartbeat as proof of execution progress; leave the hard ceiling
+    optional, or make it shadowable with idle.
   - Why: A node that can remain `running` forever makes every higher-level mode
     non-durable. Lease liveness and execution progress answer different
-    questions and must not mask each other.
+    questions and must not mask each other. A shadow-default idle deadline
+    alone cannot end a silent attempt that keeps its lease, so the ceiling is
+    the backstop that makes termination unconditional.
   - Decided-by: human architecture dialogue, 2026-09-10 through 2026-09-11.
     Amended 2026-09-13 by codex from the independent review and
     human-accepted 2026-09-14 (derived): the unsuperseded-token and lease-expiry
     sentences, as further amended by the execution-liveness quarantine ruling.
+    Amended 2026-09-23 by human ruling ("amend", relayed by the supervising
+    session) to agree with execution-liveness INV-002 and its provenance
+    (`missions/plans/execution-liveness/ruling-packet.md` Q1: hard ceiling
+    always enforced, only idle shadowable; Q2: project config only; plan H-002:
+    four-hour default): the hard ceiling is mandatory in every mode, and the
+    former sentence "Useful active work has no mandatory wall-clock ceiling"
+    and the rejected alternative "require a global hard timeout" are removed.
 
 - `D-008 - Artifacts carry substantive graph state`
   - Decision: Structured artifact references carry durable outputs between
@@ -361,7 +372,8 @@ backend, receives:
 
 - an ownership lease with renewal, expiry, and a fencing token;
 - a separate last-activity signal derived from normalized execution evidence;
-- explicit idle timeout, optional hard timeout, and bounded cancellation grace;
+- an absolute hard ceiling enforced in every mode, shadowable or enforced idle
+  timeout, and bounded cancellation grace;
 - cancellation propagation to tools, nested graphs, and spawned descendants;
 - attempt-scoped session and output persistence;
 - normalized result, artifact, usage, diagnostic, and terminal-state capture.

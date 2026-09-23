@@ -21,8 +21,8 @@ its population or weakening policy meanings.
 
 The human rulings remain final: first-opportunity enforcement under amended
 INV-002 and a four-hour framework default. Review 6 is resolved inside the
-existing `missions/architecture/orchestration-future.md` boundary; that record
-is not changed by this plan.
+existing `missions/architecture/orchestration-future.md` boundary. The one
+change to that record, D-007's hard ceiling, is a human amendment (D-042).
 
 ## Architecture Context
 
@@ -32,9 +32,10 @@ architecture decisions are:
 
 - D-001: converge in-scope durable populations on one graph substrate while
   keeping current migration exceptions explicit.
-- D-007: liveness is a universal node-attempt contract. The newer ratified
-  INV-002 and D-013 select a mandatory hard ceiling for this slice without
-  changing the architecture record in this revision.
+- D-007: liveness is a universal node-attempt contract with an absolute hard
+  ceiling on every attempt, enforced in every mode, and a shadowable idle
+  deadline. It was amended on 2026-09-23 by human ruling to agree with INV-002
+  and D-013 (D-042).
 - D-009: coordinator host and worker execution remain independently selected.
 - D-010: coordinator context is not authoritative run state.
 - D-011: capability incompatibility is explicit and never causes hidden backend
@@ -470,7 +471,9 @@ R-012.
     decision (deviation protocol); the constraint was set by the doer session's
     prompt, not by the human.
   - Decided by: doer session, 2026-09-22 (derived; recorded by the planner as
-    human and corrected the same day)
+    human and corrected the same day) *(superseded in part by D-042,
+    2026-09-23: D-007 and the envelope line were amended by the human. Any
+    other boundary amendment still halts for a human decision.)*
   - Supersedes: D-011's architecture-edit implementation step (2026-09-22).
 
 - **D-034 — Start registration is a reachable, gated contract at both backend layers**
@@ -611,11 +614,26 @@ R-012.
     as acceptance criteria, EXCEPT PR-006"). The mapping of findings to tasks
     was derived by the coordinator.
 
+- **D-042 — The architecture record's D-007 now requires the hard ceiling**
+  - Decision: `missions/architecture/orchestration-future.md` D-007 and its
+    Universal execution envelope line are amended to agree with INV-002. Every
+    attempt has an absolute hard ceiling, enforced in every mode. The policy is
+    set in project configuration only, with a four-hour default, and only the
+    idle deadline is shadowable. The amended text is exactly the draft the
+    coordinator wrote into `missions/plans/framework-health/coordinator-status.md`.
+    `review-7.md` PR-006 is closed. H-004 is resolved. D-033 and H-003 no
+    longer forbid this edit. They still forbid any other boundary change
+    without a human decision.
+  - Why: two human-ratified sources disagreed. The human chose to amend the
+    architecture record, rejecting keeping it or reopening `ruling-packet.md`
+    Q1.
+  - Decided by: human, 2026-09-23, relayed by the supervising session. The
+    ruling was "amend"; the exact text of both edits was approved as drafted.
+  - Supersedes: D-033 in part; H-003 in part (2026-09-23).
+
 ## Human Decisions Required
 
-H-001 and H-002 are resolved. H-004 is ruled, and its exact amendment text
-awaits the human's approval. It does not gate implementation (INV-002 governs
-the code either way), but it gates the plan's completion.
+H-001, H-002 and H-004 are resolved. None of them is an implementation gate.
 
 ### H-004 — Architecture record against the mandatory hard ceiling
 
@@ -630,8 +648,10 @@ keeping D-007 as it is and reopening `ruling-packet.md` Q1, were rejected.
 Substance: every attempt has an absolute hard ceiling, enforced in every mode,
 with a config-only policy and a 4h default. Idle/useful-activity detection
 keeps its shadow/enforce policy. The coordinator drafts the exact text as an
-amendment on the record. Until the human approves that text, the architecture
-record and D-033 stay unchanged and the plan is not marked completed.
+amendment on the record.
+
+**Resolved 2026-09-23** (human, relayed): both drafted edits were approved
+exactly and applied (D-042). `review-7.md` PR-006 is closed.
 
 ### H-001 — Enforcement while no local execution authority can run
 
@@ -645,7 +665,9 @@ amended accordingly. No external enforcement service is in scope.
 ### H-003 — Architecture record during Review 5/6 remediation
 
 **Constraint from the doer session, not a human ruling** (2026-09-22): do
-not change `missions/architecture/orchestration-future.md` in this revision. It
+not change `missions/architecture/orchestration-future.md` in this revision.
+*(Superseded in part by D-042, 2026-09-23: the human amended D-007 and the
+envelope line. The rest of this constraint stands.)* It
 is derived from the deviation protocol — the architecture record is ratified
 ground and changes only by human decision — and was stated in the prompt that
 drove the revision; the planner recorded it as a human ruling, which is
@@ -1512,7 +1534,7 @@ framework process can run.
 ## Risks
 
 - **R-003 — Architecture boundary drift is a stop condition.** The architecture
-  record is unchanged. If implementation requires persistence to execute Driver
+  record changes only by human decision; the sole change so far is D-042. If implementation requires persistence to execute Driver
   code, durable-runtime to import Driver/task/Git, or another boundary amendment,
   halt and draft the decision under H-003.
 - **R-004 — A backend may not expose honest control or settlement.** Repair or
@@ -1569,8 +1591,9 @@ framework process can run.
 ## Implementation Order
 
 0. **Ratified ground and architecture conformance.** Freeze INV-001–INV-007,
-   D-013, H-001/H-002, the twelve behaviors, and H-003's no-architecture-edit
-   rule. Confirm every contract depends in the recorded direction; a required
+   D-013, H-001/H-002/H-004, the amended architecture D-007 (D-042), the twelve
+   behaviors, and H-003's rule that no other architecture edit happens without
+   a human decision. Confirm every contract depends in the recorded direction; a required
    boundary change stops before code.
 1. **Shared contracts and platform proofs.** Define policy, clocks, authority,
    start phases and D-034 start signatures, stop/failed-dispatch provenance,
