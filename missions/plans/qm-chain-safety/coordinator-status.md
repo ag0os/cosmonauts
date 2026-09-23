@@ -1,11 +1,11 @@
 # qm-chain-safety — coordinator status
 
-Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. HEAD `1930dda`. Not pushed.
+Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. HEAD `37ad121`. Not pushed.
 
 ## State (2026-09-23)
 
 - **Done:** spec + seed plan (D-001, D-002); roadmap item removed; **Intent INV-001..005 ratified by the human as drafted** (`1930dda`); both consequences acknowledged; decisions 6/7 stay ACs.
-- **Running:** `/spec-to-backlog` Phase 1 — `planner -> plan-reviewer` chain (background; log in the coordinator scratchpad `chain-plan.log`). Do not edit `plan.md` while it runs.
+- **Running:** `/spec-to-backlog` Phase 2 — independent 4-lens review workflow `wf_d255f9f5-310` (read-only). Phase 1 done: chain `chain-f21fd921` designed `plan.md` (B-001..B-012) and wrote `review-1.md`/`review-2.md` (both verified to be about this plan), committed `37ad121`. Known gap: plan has no `## Quality Contract` section.
 - **Blocked on:** nothing.
 - **Next:** Phase 2 independent review workflow → Phase 3 revision → task-manager → coverage + compliance review → `/implement-plan` (QM replaced per D-002).
 
