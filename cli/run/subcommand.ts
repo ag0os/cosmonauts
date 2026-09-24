@@ -27,6 +27,7 @@ import { printJson } from "../shared/output.ts";
 interface RunProgramOptions {
 	runtimeOptions?: CliRuntimeOptions;
 	createContext?: (options: CliRuntimeOptions) => Promise<CliRuntimeContext>;
+	executeChain?: typeof executeChainExpression;
 }
 
 interface RunStatusOptions {
@@ -59,6 +60,7 @@ interface ResolvedRunChain {
 export function createRunProgram({
 	runtimeOptions = { piFlags: {} },
 	createContext = createCliRuntimeContext,
+	executeChain = executeChainExpression,
 }: RunProgramOptions = {}): Command {
 	const program = new Command();
 
@@ -123,6 +125,7 @@ export function createRunProgram({
 					expressionOrName,
 					promptArgs,
 					options,
+					executeChain,
 				});
 			},
 		);
@@ -217,12 +220,14 @@ async function runChainCommand({
 	expressionOrName,
 	promptArgs,
 	options,
+	executeChain,
 }: {
 	context: CliRuntimeContext;
 	runtimeOptions: CliRuntimeOptions;
 	expressionOrName?: string;
 	promptArgs: string[];
 	options: RunChainOptions;
+	executeChain: typeof executeChainExpression;
 }): Promise<void> {
 	if (!options.name && (!expressionOrName || expressionOrName === "list")) {
 		await listRunChains(context.cwd, context.runtime);
@@ -244,7 +249,7 @@ async function runChainCommand({
 		options.name && expressionOrName
 			? [expressionOrName, ...promptArgs]
 			: promptArgs;
-	const result = await executeChainExpression({
+	const result = await executeChain({
 		runtime: context.runtime,
 		cwd: context.cwd,
 		chainExpr: resolved.expression,

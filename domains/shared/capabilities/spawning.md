@@ -13,12 +13,12 @@ Roles: `planner`, `spec-writer`, `plan-reviewer`, `task-manager`, `coordinator`,
 
 ## When to delegate
 
-- Designing across multiple files → `planner`. Approved plan → tasks → `task-manager`. Implementing a task set → `coordinator` or a chain. Merge-readiness gates → `quality-manager`. Fresh-context review → `reviewer` (+ `security-reviewer` / `performance-reviewer` / `ux-reviewer` for targeted lenses). Remediation from findings → `fixer`. Codebase mapping → `explorer`. Validating specific claims → `verifier` / `integration-verifier`. Structural changes → `refactorer`. Knowledge extraction → `distiller`.
+- Designing across multiple files → `planner`. Approved plan → tasks → `task-manager`. Implementing a task set → `coordinator` or a chain. Durable findings report and merge-readiness verdict → `quality-manager`. Fresh-context review → `reviewer` (+ `security-reviewer` / `performance-reviewer` / `ux-reviewer` for targeted lenses). Route remediation from QM findings through tasks, Drive, and independent re-review; a focused `fixer` can address findings outside the QM run. Codebase mapping → `explorer`. Validating specific claims → `verifier` / `integration-verifier`. Structural changes → `refactorer`. Knowledge extraction → `distiller`.
 - Named chains wrap the common pipelines (`plan-and-build`, `implement`, `verify`, `spec-and-build`, `adapt`) — prefer them over hand-writing a chain expression. `cosmonauts run chain list` shows the live list including project overrides.
 - `spawn_agent` is not a public `cosmonauts run` command and does not expose a nested run. Use `cosmonauts run chain <name-or-expression>` for shell-launched multi-agent pipelines.
 
 ## After a chain or spawn
 
-A chain returns stage outcomes (and a cost summary), not the changes themselves. To know the final state — what the quality-manager changed, whether gates passed, which tasks are Done — check `task_list` and `git log`. Don't re-run a stage on a hunch that it didn't run; verify first.
+A chain returns stage outcomes (and a cost summary), not the findings themselves. Read the QM report path from the result and inspect its findings and verdict. Check `task_list` for task status and `git log` / `git diff` for implementation changes. The QM reviews a private local clone and does not edit code, commit, complete plans, or promise a clean tree. Don't re-run a stage on a hunch that it didn't run; verify first.
 
 For the parallel-spawning protocol, per-role prompt patterns, and chain DSL details, **load `/skill:spawning`**.

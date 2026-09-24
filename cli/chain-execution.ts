@@ -8,7 +8,7 @@ import {
 } from "../lib/orchestration/chain-runner.ts";
 import { shouldRunChainInline } from "../lib/orchestration/durable-chain-compiler.ts";
 import { runDurableChain } from "../lib/orchestration/durable-chain-runner.ts";
-import type { ChainResult } from "../lib/orchestration/types.ts";
+import type { ChainConfig, ChainResult } from "../lib/orchestration/types.ts";
 import type { CosmonautsRuntime } from "../lib/runtime.ts";
 import { sessionsDirForPlan } from "../lib/sessions/session-store.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
@@ -23,11 +23,13 @@ export async function executeChainExpression({
 	options,
 	cwd,
 	chainExpr,
+	qualityReview,
 }: {
 	runtime: CosmonautsRuntime;
 	options: ChainExecutionOptions;
 	cwd: string;
 	chainExpr: string;
+	qualityReview?: ChainConfig["qualityReview"];
 }): Promise<ChainResult> {
 	const {
 		agentRegistry: registry,
@@ -68,6 +70,7 @@ export async function executeChainExpression({
 			registry,
 			domainsDir: runtime.domainsDir,
 			resolver: runtime.domainResolver,
+			qualityReview,
 			...(options.model && { models: { default: options.model } }),
 			...(options.thinking && { thinking: { default: options.thinking } }),
 		};

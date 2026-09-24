@@ -268,7 +268,7 @@ Investigate ArchSpec (archspecrb.dev) — architecture-boundary static analysis 
 - Real-time run visibility: what domains/agents are working right now, live run status
 - Later: inspect other sessions (output, token spend) and inject a message into one — the write half rides on `agent-interaction`
 - Plans: render `missions/plans/<slug>/` + task list/status as a navigable view; render versioned `review-<n>.md` rounds (currently invisible — reimplement the reverted symlink-unsafe fix with real path containment)
-- Quality-manager review panel writes generic `review-round-N.md` names that overwrite other plans' rounds — needs plan-scoped naming, which changes what the viewer lists
+- Show plan-scoped Quality Manager findings reports and their verdicts alongside plan review rounds
 - Overall review first: walk `cosmonauts serve` end to end and scope from that pass, not assumption
 
 ### `hook-system`: Plugin & Hook System
