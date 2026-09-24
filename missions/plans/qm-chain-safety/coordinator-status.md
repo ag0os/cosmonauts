@@ -178,7 +178,9 @@ All tasks have label `plan:qm-chain-safety`.
 
 ## Needs the user
 
-### N-005 (open, 2026-09-24): the D-002 codex closure channel is out of usage until 2026-09-30 10:29
+### N-005 (RULED 2026-09-24 → D-033): the D-002 codex closure channel is out of usage until 2026-09-30 10:29
+
+**Ruling (user, via Shepherd):** switch everything that used codex to Opus 5.5. Drive uses `--backend claude-cli` on Opus 5.5. Reviews use two independent Claude subagent channels on Opus 5.5, with different framings. **The cross-family codex closure review is PENDING until 2026-09-30.** Do not merge.
 
 `codex exec` returns "You've hit your usage limit ... try again at Sep 30th, 2026 10:29 AM". D-002 (ratified) names that exact command as the second closure channel for TASK-728. The TASK-760 worker failure has the same cause. The Claude closure channel and the real end-to-end QM run are proceeding.
 

@@ -678,6 +678,17 @@ Investigation evidence gathered before design:
   - Decided by: coordinator, amend-on-record, 2026-09-24 (supervisor concurred)
   - Supersedes: D-031 floor 2's allowance of dismissals in Findings; TASK-748 AC #2 and TASK-749 AC #1 as to dismissals in Findings.
 
+- **D-033 - Codex is out of credits: Opus 5.5 replaces codex until 2026-09-30** *(human ruling, from N-005)*
+  - Decision:
+    - From 2026-09-24, every step that used codex runs on Opus 5.5 instead.
+      - **Drive workers** use `--backend claude-cli` with `COSMONAUTS_DRIVER_CLAUDE_ARGS="--model claude-opus-5-5"`.
+      - **The D-002 read-only `codex exec` review channel** becomes a second independent Claude subagent on Opus 5.5. It runs beside the existing Claude channel, with a different framing.
+    - The cross-family (non-Claude) closure review for TASK-728 is **pending until 2026-09-30**, when codex credits reset. Everything else is finished and verified before then. The branch is not merged.
+  - Alternatives: wait for the codex reset before continuing; buy credits now.
+  - Why: D-002's two-channel correctness/liveness review is kept. Only its model-family diversity is deferred, and that deferral is recorded.
+  - Decided by: human, 2026-09-24, relayed by Shepherd
+  - Supersedes: D-002's codex channel and worker model, until 2026-09-30 only.
+
 - **D-018 - AC-003 exempts exactly the host-written plan summary** *(from H-001)*
   - Decision: option A. AC-003 exempts only the host-written new file
     `missions/plans/<slug>/qm-runs/<runId>.md`, which never overwrites and is
