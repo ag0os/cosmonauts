@@ -52,7 +52,7 @@ it("assesses one triaged panel before running one configured check", async () =>
 		join(projectRoot, ".cosmonauts", "config.json"),
 		JSON.stringify({
 			qualityReview: {
-				diverseReviewerModel: "test/other",
+				diverseReviewerModel: "anthropic/claude-sonnet-4-5",
 				checks: [
 					{
 						id: "one",
@@ -73,7 +73,7 @@ it("assesses one triaged panel before running one configured check", async () =>
 		"export const authorized = false;\n",
 	);
 	mocks.runtimeCreate.mockResolvedValue({
-		agentRegistry: {},
+		agentRegistry: { get: () => ({ model: "openai-codex/gpt-5.6-sol" }) },
 		domainsDir: "/tmp/domains",
 		domainResolver: {},
 		projectSkills: [],
@@ -113,7 +113,10 @@ it("assesses one triaged panel before running one configured check", async () =>
 					spawnId: `spawn-${lens}`,
 					sessionId: `session-${lens}`,
 					resolvedRole: `coding/${lens}`,
-					resolvedModel: { provider: "test", id: lens },
+					resolvedModel:
+						lens === "reviewer"
+							? { provider: "anthropic", id: "claude-sonnet-4-5" }
+							: { provider: "test", id: lens },
 					outcome: "success",
 					digest: createHash("sha256").update(fullText).digest("hex"),
 					fullText,
@@ -199,7 +202,8 @@ it("assesses one triaged panel before running one configured check", async () =>
 	expect(report).toContain("Verdict: ready");
 	expect(report).toContain("one: argv");
 	expect(report).toContain('output "ok"');
-	expect(report).toContain("reviewer: test/reviewer");
+	expect(report).toContain("reviewer: anthropic/claude-sonnet-4-5");
+	expect(report).toContain("Diversity: attested");
 	expect(report).toContain("security-reviewer: test/security-reviewer");
 	expect(report).toContain("ux-reviewer: test/ux-reviewer");
 });

@@ -32,6 +32,7 @@ import {
 	isQualityReviewReference,
 	launchQualityReview,
 } from "../../../../lib/orchestration/quality-review-launch.ts";
+import { qualityReviewPanelModel } from "../../../../lib/orchestration/quality-review-models.ts";
 import { createAgentSessionFromDefinition } from "../../../../lib/orchestration/session-factory.ts";
 import {
 	awaitNextCompletionMessages,
@@ -866,7 +867,12 @@ export function registerSpawnTool(
 					domainContext: runtime.domainContext,
 					cwd: qualityContext?.workspaceRoot ?? ctx.cwd,
 					prompt: panelPrompt,
-					model: params.model,
+					model: qualityContext
+						? qualityReviewPanelModel(
+								resolvedTargetRole,
+								qualityContext.diverseReviewerModel,
+							)
+						: params.model,
 					thinkingLevel: params.thinkingLevel,
 					runtimeContext: params.runtimeContext,
 					projectSkills: runtime.projectSkills,

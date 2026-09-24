@@ -66,12 +66,14 @@ describe("loadProjectConfig", () => {
 				qualityReview: {
 					checks: [check],
 					diverseReviewerModel: "anthropic/test-model",
+					modelFamilies: { anthropic: ["my-provider"] },
 				},
 			}),
 		);
 		expect((await loadProjectConfig(tmp.path)).qualityReview).toMatchObject({
 			checks: [check],
 			diverseReviewerModel: "anthropic/test-model",
+			modelFamilies: { anthropic: ["my-provider"] },
 		});
 		await writeFile(
 			path,

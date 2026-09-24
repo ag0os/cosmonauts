@@ -1294,6 +1294,90 @@ describe("quality review durable lifecycle", () => {
 		expect(report).not.toContain("test/claimed");
 	});
 
+	// @cosmo-behavior plan:qm-chain-safety#B-010
+	it("caps unsupported performance P1 and blocks lens-only closure in the completed report", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "anthropic/reviewer",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		await commitBaseConfig(projectRoot);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				for (const [lens, fullText] of [
+					[
+						"reviewer",
+						"- id: F-1\n  status: resolved\n  evidence: my own assertion",
+					],
+					[
+						"performance-reviewer",
+						"- id: PF-1\n  priority: P1\n  measuredCost: asserted 20 ms",
+					],
+				] as const) {
+					await artifactSink.writeReviewer({
+						runId,
+						lens,
+						spawnId: `spawn-${lens}`,
+						sessionId: `session-${lens}`,
+						resolvedRole: `coding/${lens}`,
+						resolvedModel:
+							lens === "reviewer"
+								? { provider: "anthropic", id: "reviewer" }
+								: { provider: "openai-codex", id: "performance" },
+						outcome: "success",
+						digest: createHash("sha256").update(fullText).digest("hex"),
+						fullText,
+					});
+				}
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: ["audit passed"],
+						findings: ["PF-1 priority: P1 costly path"],
+					}),
+					gateState: "completed-bound",
+					implementerModel: { provider: "openai-codex", id: "worker" },
+					requiredLenses: ["reviewer", "performance-reviewer"],
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain("PF-1 priority: P2 costly path");
+		expect(report).toContain(
+			"Finding F-1 was closed or dismissed without independent cited evidence",
+		);
+		expect(report).toContain("Diversity: attested");
+	});
+
 	// @cosmo-behavior plan:qm-chain-safety#B-008
 	it("fails the configured suppression check for an unregistered directive", async () => {
 		const projectRoot = await root(true);
@@ -4021,7 +4105,8 @@ describe("quality review durable lifecycle", () => {
 				"utf8",
 			);
 			expect(report).toContain("tamper: argv");
-			expect(report).toContain("Verdict: not-ready");
+			expect(report).toContain("Verdict: failed");
+			expect(report).toContain("Reviewer model family unresolvable");
 			expect(report).not.toContain("Report integrity: materials/full.diff");
 			await expect(stat(marker)).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(stat(lateMarker)).rejects.toMatchObject({ code: "ENOENT" });

@@ -9,6 +9,7 @@ export interface QualityReviewSessionContext {
 	readonly workspaceRoot: string;
 	readonly baseProjectRoot?: string;
 	readonly baseRuntime?: CosmonautsRuntime;
+	readonly diverseReviewerModel?: string;
 	readonly sourceRoot?: string;
 	readonly materialsRoot: string;
 	readonly base: string;

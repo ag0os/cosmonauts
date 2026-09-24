@@ -40,7 +40,14 @@ import {
 	runQualityReviewChecks,
 } from "./quality-review-checks.ts";
 import {
+	assessReviewerDiversity,
+	calibrateReviewerFindings,
+	type ObservedModel,
+	reviewerEvidenceFromLines,
+} from "./quality-review-models.ts";
+import {
 	amendUnindexedQualityReviewReport,
+	applyReviewerCalibration,
 	assessQualityReviewReport,
 	hasQualityReviewSectionContent,
 	indexedQualityReviewReport,
@@ -58,6 +65,7 @@ import {
 
 interface QualityReviewAssessment {
 	markdown: string;
+	implementerModel?: ObservedModel;
 	gateState?: string;
 	auditFindings?: readonly string[];
 	omittedSkillPaths?: readonly string[];
@@ -280,6 +288,8 @@ export async function runQualityReview(
 		let runtimeSetupLive = false;
 		const activeChildIds = new Set<string>();
 		let observedReviewerModels: string[] = [];
+		let diversityIssue: string | undefined;
+		let diversityHumanItem: string | undefined;
 		const omittedSkillPaths: string[] = [];
 		let panelTimeoutMs = options.panelTimeoutMs ?? 300_000;
 		let assessmentTimeoutMs = options.assessmentTimeoutMs ?? 900_000;
@@ -694,6 +704,7 @@ export async function runQualityReview(
 				sink,
 				assessment.requiredLenses ?? [],
 			);
+			attestReviewerDiversity(assessment);
 			const abandonedBeforeChecks = await sink.sealReviewers(
 				options.reviewerSealGraceMs ?? 1000,
 			);
@@ -703,6 +714,21 @@ export async function runQualityReview(
 				);
 			if (materialsRoot && materialDigests)
 				await verifyReviewMaterials(materialsRoot, materialDigests);
+		}
+
+		function attestReviewerDiversity(
+			assessment: QualityReviewAssessment,
+		): void {
+			if (!assessment.implementerModel) return;
+			const diversity = assessReviewerDiversity({
+				implementer: assessment.implementerModel,
+				configured: baseQualityReview?.diverseReviewerModel,
+				modelFamilies: baseQualityReview?.modelFamilies,
+				reviewers: reviewerEvidenceFromLines(observedReviewerModels),
+			});
+			observedReviewerModels = diversity.lines;
+			diversityIssue = diversity.issue;
+			diversityHumanItem = diversity.humanItem;
 		}
 
 		async function verifySealedArtifacts(): Promise<void> {
@@ -807,6 +833,7 @@ export async function runQualityReview(
 			const assessed = assessQualityReviewReport(assessmentText);
 			if (!(assessed.verdict === "failed" && assessed.reason))
 				await sink.write("raw-final.md", markdown, { replace: true });
+			const calibration = await calibrateHostReport();
 			const gateState = observedGateState(assessment);
 			const gateEvidenceMissing = !hasQualityReviewSectionContent(
 				markdown,
@@ -814,8 +841,14 @@ export async function runQualityReview(
 			);
 			const hostHumanDecisionItems = [
 				...hostHumanItems(gateState, gateEvidenceMissing),
+				...(diversityHumanItem ? [diversityHumanItem] : []),
+				...calibration.humanItems,
 				...preparationHumanItems(),
 			];
+			if (diversityIssue && verdict !== "failed") {
+				verdict = "failed";
+				reason = diversityIssue;
+			}
 			if (
 				hostBlocksReady(gateState, hostHumanDecisionItems) &&
 				verdict !== "failed"
@@ -828,9 +861,48 @@ export async function runQualityReview(
 			mergeHostReport({
 				checks: hostCheckLines(),
 				gates: hostGateLines,
-				findings: hostFindingLines,
+				findings: [...hostFindingLines, ...calibration.findings],
 				humanItems: hostHumanDecisionItems,
 			});
+		}
+
+		async function calibrateHostReport(): Promise<{
+			humanItems: string[];
+			findings: string[];
+		}> {
+			const reviewerTexts = await Promise.all(
+				sink
+					.references()
+					.filter((artifact) => artifact.id.startsWith("qm/reviewers/"))
+					.map(async (artifact) => ({
+						lens: artifact.id.slice("qm/reviewers/".length, -3),
+						text: await readFile(artifact.path, "utf8"),
+					})),
+			);
+			const reportedFindings =
+				indexedQualityReviewReport(markdown)?.findings ?? [];
+			const calibration = calibrateReviewerFindings({
+				materials: materialsRoot
+					? await readFile(join(materialsRoot, "full.diff"), "utf8")
+					: "",
+				reviewers: reviewerTexts,
+				findings: reportedFindings,
+			});
+			const calibrationHumanItems = calibration.issues.filter((issue) =>
+				issue.startsWith("Finding "),
+			);
+			const calibrationFindings = calibration.issues.filter((issue) =>
+				issue.startsWith("Performance "),
+			);
+			markdown = applyReviewerCalibration(
+				markdown,
+				calibration.findings,
+				calibrationFindings,
+			);
+			return {
+				humanItems: calibrationHumanItems,
+				findings: calibrationFindings,
+			};
 		}
 
 		function hostBlocksReady(

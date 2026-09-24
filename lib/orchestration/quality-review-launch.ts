@@ -3,12 +3,14 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentRegistry } from "../agents/resolver.ts";
 import type { AnalysisFinding } from "../analysis/types.ts";
+import { loadProjectConfig } from "../config/loader.ts";
 import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import { discoverFrameworkBundledPackageDirs } from "../packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../runtime.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
 import { extractAssistantText } from "./assistant-text.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
+import { resolveModel } from "./model-resolution.ts";
 import {
 	type QualityReviewRunOptions,
 	runQualityReview,
@@ -324,6 +326,8 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 			assertLaunchSnapshot(context, runtime, baseProjectRoot);
 			const activeRuntime = runtime as CosmonautsRuntime;
 			const baseRoot = baseProjectRoot as string;
+			const baseConfig = await loadProjectConfig(baseRoot);
+			const workerModel = resolveDefaultWorkerModel(activeRuntime);
 			const lenses = triageReviewLenses(
 				context.changedFiles ?? [],
 				await readFile(join(context.materialsRoot, "full.diff"), "utf8"),
@@ -334,6 +338,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				workspaceRoot: context.workspaceRoot,
 				baseProjectRoot: baseRoot,
 				baseRuntime: activeRuntime,
+				diverseReviewerModel: baseConfig.qualityReview?.diverseReviewerModel,
 				sourceRoot: context.sourceRoot,
 				materialsRoot: context.materialsRoot,
 				base: context.base,
@@ -389,6 +394,10 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 					throw new Error(qualityContext.integrityFailures.join("; "));
 				return {
 					markdown: extractAssistantText(result.messages, "quality-manager"),
+					implementerModel: {
+						provider: workerModel.provider,
+						id: workerModel.id,
+					},
 					requiredLenses: requiredReviewLenses(
 						lenses,
 						qualityContext.attemptedLenses,
@@ -404,6 +413,17 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 			}
 		},
 	});
+}
+
+function resolveDefaultWorkerModel(runtime: CosmonautsRuntime): {
+	provider: string;
+	id: string;
+} {
+	const definition = runtime.agentRegistry.get("worker", "coding");
+	if (!definition?.model)
+		throw new Error("Default worker model is unresolvable");
+	const model = resolveModel(definition.model);
+	return { provider: model.provider, id: model.id };
 }
 
 function qualityReviewGateAssessment(

@@ -41,6 +41,27 @@ export function renderQualityReviewReport(report: QualityReviewReport): string {
 	return `# Quality review\n\nVerdict: ${report.verdict}\n\nReason: ${report.reason}\n\n${body}\n\n<!-- COSMO_QM_REPORT ${JSON.stringify({ verdict: report.verdict, checks: report.checks ?? [], gates: report.gates ?? [], findings: report.findings ?? [], humanItems: report.humanItems ?? [], observations: report.observations ?? [], reviewed: report.reviewed ?? [], reviewerModels: report.reviewerModels ?? [] })} -->\n`;
 }
 
+/** Reflect host calibration in the visible report and its optional index. */
+export function applyReviewerCalibration(
+	markdown: string,
+	findings: readonly string[],
+	issues: readonly string[],
+): string {
+	if (issues.length === 0) return markdown;
+	const indexed = indexedQualityReviewReport(markdown);
+	if (indexed) return renderQualityReviewReport({ ...indexed, findings });
+	let amended = markdown;
+	for (const issue of issues) {
+		const id = issue.match(/^Performance (\S+)/)?.[1];
+		if (!id) continue;
+		amended = amended
+			.split("\n")
+			.map((line) => (line.includes(id) ? line.replace(/\bP1\b/g, "P2") : line))
+			.join("\n");
+	}
+	return amended;
+}
+
 export function assessQualityReviewReport(markdown: string): {
 	verdict: QualityReviewVerdict;
 	indexAvailable: boolean;

@@ -33,6 +33,7 @@
 			"vitest.config.ts"
 		],
 		"diverseReviewerModel": "anthropic/claude-sonnet-4-5",
+		"modelFamilies": { "openai": ["openai-codex"] },
 		"analysisPrepare": [
 			{
 				"id": "analysis-dependencies",

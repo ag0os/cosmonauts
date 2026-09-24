@@ -198,12 +198,7 @@ export function parseQualityReviewConfig(
 		throw new Error("Invalid qualityReview config: expected object");
 	const raw = value as Record<string, unknown>;
 	validateQualityReviewTimeouts(raw);
-	if (
-		raw.diverseReviewerModel !== undefined &&
-		(typeof raw.diverseReviewerModel !== "string" ||
-			!raw.diverseReviewerModel.includes("/"))
-	)
-		throw new Error("Invalid qualityReview.diverseReviewerModel");
+	validateQualityReviewModels(raw);
 	const prepare = parseQualityReviewCommands(raw, "prepare");
 	const analysisPrepare = parseQualityReviewCommands(raw, "analysisPrepare");
 	for (const step of analysisPrepare ?? [])
@@ -219,6 +214,34 @@ export function parseQualityReviewConfig(
 	)
 		throw new Error("Invalid qualityReview.gateOwnedPaths");
 	return qualityReviewConfigFields(raw, { prepare, analysisPrepare, checks });
+}
+
+function validateQualityReviewModels(raw: Record<string, unknown>): void {
+	if (
+		raw.diverseReviewerModel !== undefined &&
+		(typeof raw.diverseReviewerModel !== "string" ||
+			!/^[^/\s]+\/[^/\s]+$/.test(raw.diverseReviewerModel))
+	)
+		throw new Error("Invalid qualityReview.diverseReviewerModel");
+	if (raw.modelFamilies !== undefined) {
+		if (
+			typeof raw.modelFamilies !== "object" ||
+			raw.modelFamilies === null ||
+			Array.isArray(raw.modelFamilies)
+		)
+			throw new Error("Invalid qualityReview.modelFamilies");
+		for (const [family, aliases] of Object.entries(raw.modelFamilies))
+			if (
+				!/^[a-z0-9][a-z0-9-]*$/.test(family) ||
+				!Array.isArray(aliases) ||
+				aliases.length === 0 ||
+				!aliases.every(
+					(alias) =>
+						typeof alias === "string" && /^[a-z0-9][a-z0-9-]*$/.test(alias),
+				)
+			)
+				throw new Error("Invalid qualityReview.modelFamilies");
+	}
 }
 
 function validateQualityReviewTimeouts(raw: Record<string, unknown>): void {
@@ -252,6 +275,9 @@ function qualityReviewConfigFields(
 		...(checks !== undefined ? { checks } : {}),
 		...(raw.diverseReviewerModel !== undefined
 			? { diverseReviewerModel: raw.diverseReviewerModel as string }
+			: {}),
+		...(raw.modelFamilies !== undefined
+			? { modelFamilies: raw.modelFamilies as Record<string, string[]> }
 			: {}),
 	};
 }
