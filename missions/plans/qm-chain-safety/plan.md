@@ -4,7 +4,7 @@ title: >-
   reviews
 status: active
 createdAt: '2026-09-23T20:56:11.879Z'
-updatedAt: '2026-09-24T03:13:09.000Z'
+updatedAt: '2026-09-24T03:23:43.000Z'
 ---
 
 ## Overview
@@ -471,6 +471,24 @@ Investigation evidence gathered before design:
   - Why: INV-003. The verdict must survive, and a formatting slip must not
     erase it.
   - Decided by: coordinator, record, 2026-09-23
+
+- **D-024 - Two sequencing adjustments from the task compliance review** *(Added 2026-09-24 after review)*
+  - Decision:
+    - Host-observed resolved-model identity (session factory →
+      `ReviewerEvidence.resolvedModel`) is delivered in Stage 6 (TASK-725),
+      because Stage 6's reviewer evidence needs it. Stage 7 (TASK-726) keeps
+      family normalization, the override, config validation and the diversity
+      verdict.
+    - Stage 2 (TASK-721) depends on Stage 3 (TASK-722), so the B-009 docs
+      describe the suppression registry that actually shipped.
+  - Alternatives: leave the model seam in Stage 7, which makes Stage 6 unable
+    to prove its "actual model" outcome; write the registry docs before the
+    registry exists.
+  - Why: each stage stays independently provable (SCOPE-SEQUENCING-001
+    principle), and B-009's docs stay accurate.
+  - Decided by: coordinator, amend-on-record, 2026-09-24
+  - Supersedes: Implementation Order item 7's "host-observed model recording";
+    the independence of stages 2 and 3
 
 - **D-018 - AC-003 exempts exactly the host-written plan summary** *(from H-001)*
   - Decision: option A. AC-003 exempts only the host-written new file
@@ -1036,7 +1054,8 @@ removed only in the stage that delivers its replacement (SCOPE-SEQUENCING-001).
    reviewer prompts, gate-owned-file items, and removal of fixer, coordinator,
    verifier and integration-verifier. The unconfigured path follows D-019.
 7. **Model diversity and calibration — B-010, B-011.** The family table and
-   config, the generalist override, host-observed model recording, and the P1
+   config, the generalist override, the diversity verdict over the model identity
+   Stage 6 records (D-024), and the P1
    and closure guidance. The unconfigured path follows D-019.
 8. **Archive and callers — B-012.** `git mv` the eleven files with a README,
    update chains, leads, skills, docs and the external flow, and walk

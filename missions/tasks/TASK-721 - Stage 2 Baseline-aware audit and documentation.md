@@ -8,7 +8,8 @@ labels:
   - devops
   - testing
   - 'plan:qm-chain-safety'
-dependencies: []
+dependencies:
+  - TASK-722
 createdAt: '2026-09-24T03:15:35.215Z'
 updatedAt: '2026-09-24T03:15:35.215Z'
 ---
@@ -27,4 +28,5 @@ Binding ratified ground (not worker-adjustable; any collision requires halt-and-
 - [ ] #5 The Stage 2 file seam is complete in `domains/shared/extensions/project-tools/fallow-provider.ts`, `.fallow-baselines/manifest.json`, `scripts/update-fallow-baselines.ts`, the baseline-refresh exposure in `package.json`, and the baseline/debt/suppression guidance in `docs/fallow-exceptions.md`, `ROADMAP.md`, and `AGENTS.md`; ordinary review has no path to the writer.
 - [ ] #6 Code delivery follows red → green → refactor with Vitest coverage under `tests/` mirroring source and proves B-007 at `analysis_audit` plus refresh-script failure/success entry points; realistic mutations such as omitting one flag, accepting a missing baseline, or refreshing without provenance fail the tests.
 - [ ] #7 R-001 and the ratified INV/D constraints in this task are stop-and-escalate ground; derived collisions are amended on record before code, and no baseline is regenerated merely to make a gate pass.
+- [ ] #8 (Compliance patch, 2026-09-24) The B-009 description of the suppression registry, its base-revision ownership and its check script is written against what TASK-722 actually shipped; this task therefore depends on TASK-722, and the docs are re-read against the landed registry before this task closes.
 <!-- AC:END -->
