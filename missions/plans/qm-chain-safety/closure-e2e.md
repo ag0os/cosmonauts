@@ -1,6 +1,6 @@
 # Closure evidence: real end-to-end QM runs on a dirty checkout (TASK-728 AC #6)
 
-The coordinator ran three real `verify` runs on 2026-09-24. They used real model sessions: the QM and panel on `openai-codex/gpt-5.6-sol` through Pi, with no fakes. No Quality Manager was used to verify this plan (D-002, D-033, D-034). These runs are evidence about the product.
+The coordinator ran three real `verify` runs on 2026-09-24. They used real model sessions through Pi, with no fakes. The QM and the specialist lenses ran on `openai-codex/gpt-5.6-sol`. The generalist was `openai-codex` in run 1, where no diverse model was configured, and was configured as `anthropic/claude-sonnet-5` in runs 2–3, where it had no API key. No Quality Manager was used to verify this plan (D-002, D-033, D-034). These runs are evidence about the product.
 
 ## Setup
 
