@@ -558,6 +558,28 @@ Investigation evidence gathered before design:
   - Supersedes: the Stage 6 host-only lens triage, and the implicit
     "base = resolved ref tip"
 
+- **D-026 - Review before execution: no reviewed code runs while review evidence is open** *(Added 2026-09-24 after mid-review-6)*
+  - Decision:
+    - The QM run order becomes:
+      1. Capture the snapshot.
+      2. Export the review base's project files (`.cosmonauts/`, `.pi/`, `AGENTS.md`/`CLAUDE.md`, `package.json`, the gate-owned paths) from the **operator's source repository** with read-only plumbing (`GIT_OPTIONAL_LOCKS=0`), into a host-owned directory beside the clone.
+      3. Build every quality runtime from the framework plus that export: the QM **and every panel spawn**, never `getRuntime(clone)`.
+      4. Write and digest the materials.
+      5. Run the QM assessment (analysis plus the panel).
+      6. Seal the reviewer evidence and verify every digest.
+      7. Only then run `qualityReview.prepare` and `checks` in the clone.
+      8. The host merges the check results into the Checks section. A failing or not-run check forces `not-ready`.
+      9. Finalize.
+    - No reviewed code executes before step 6. The residual (steps 7–8 execute reviewed code with host authority) is exactly N-004.
+    - Quality sessions use an untrusted in-memory Pi `SettingsManager`, so no project `.pi/settings.json`, packages or `npmCommand` apply. They take no project `APPEND_SYSTEM.md`. Their project context files come from the base export.
+    - All `git show base:` reads that decide gate-owned items use the operator's source repository, not the clone.
+    - If the pinned analysis provider needs installed dependencies to produce a correct verdict, a base-owned `qualityReview.analysisPrepare` argv may run before step 5. It must not execute project lifecycle scripts (for example `bun install --frozen-lockfile --ignore-scripts`), and the report records it. This repository probes whether it is needed.
+    - The performance lens no longer receives check durations. P1 still requires measured or reproduced cost (B-010), so without it a performance finding is at most P2.
+  - Alternatives: keep patching each route by which executed reviewed code reaches the host. Rounds 4–6 each found a new route (argv, scripts, domains, object-database tampering, `.pi` settings, materials races), so that approach does not converge. An OS sandbox is excluded by the spec (N-004 option B).
+  - Why: INV-001, INV-004, INV-005, D-025. The change must not choose what reviews it or what the host loads.
+  - Decided by: coordinator, amend-on-record, 2026-09-24
+  - Supersedes: D-004's "prepare … before any check" placement before assessment; D-012's "check durations are the measured-cost evidence available to the performance lens"; Design §6 step 1's "check results from `checks.md`" as QM input; the TASK-737 base export built from the clone
+
 - **D-018 - AC-003 exempts exactly the host-written plan summary** *(from H-001)*
   - Decision: option A. AC-003 exempts only the host-written new file
     `missions/plans/<slug>/qm-runs/<runId>.md`, which never overwrites and is

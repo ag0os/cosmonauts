@@ -1,58 +1,75 @@
 # qm-chain-safety — coordinator status
 
 Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. Not pushed, not merged.
-HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm-chain-safety/coordinator-status.md`). The worktree is clean at that commit.
+HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm-chain-safety/coordinator-status.md`) or a later Drive commit. Check `git status` and `git log`.
 
-## State (2026-09-24) — IMPLEMENTING (`/implement-plan`, session "qm-implementer")
+## State (2026-09-24) — SUCCESSOR HANDOFF from session "qm-implementer" (implementation mid-way)
 
-- **Done:** spec ratified; `/spec-to-backlog` complete (see history below). Baseline gates at `e43c238`: typecheck 0, lint 0, tests 3053/3053 green.
-- **Done (implementation):** Drive batch 1 `run-cc1c22ad-1847-4133-9daa-814c1b8cbb83` — TASK-720 `ece6af2`, TASK-722 `a8bacae`, TASK-721 `44f0566`, state `9b48a09`. Gates after batch 1: typecheck 0, lint 0, tests 3075/3075; `check:suppressions --base main` passes.
-- **Done:** Drive batch 2 `run-45abf529-0210-43c6-9a3b-52809bc6197f` — TASK-723 `eb539cd` (state `3df0145`). Gates: typecheck 0, lint 0, tests 3110/3110. Until TASK-724/725 supply the workspace and assessment ports, every QM launch refuses (expected mid-branch).
-- **TASK-724 first attempt** `run-3161f58f-…` blocked. The knowledge-surface backfill config-digest tripwire fired on the plan-sanctioned `.cosmonauts/config.json` change. Resolved by precedent in amendment-3 (`624c813`), pending owner ratification (N-002).
-- **Done:** TASK-724 retry `run-d43e663f-…` — `4cc1093` (state `93bed5e`). Gates: typecheck 0, lint 0, tests 3121/3121. The amendment-3 digest was updated to the Stage 5 config.
-- **TASK-725:** the first attempt `run-2ae54c4f-…` blocked on the same config-digest tripwire and was resolved by note (`c6bfe5f`). The retry `run-3ab35870-…` finished it: `a4d3731`, state `7213f3d`, amendment digest in `b437cd1`. Gates: typecheck 0, lint 0, tests 3159/3159.
-- **Mid-branch review 1 (Stages 1–6)**, both channels DO-NOT-SHIP-YET: `mid-review-1-codex.md` (7 findings) and `mid-review-1-claude.md` (3 HIGH, 6 MEDIUM, 8 LOW). The prompt is in `mid-review-prompt.md`. My spot-check findings (a)–(c) were all confirmed.
-  - **Dispositions:** plan D-025 amend-on-record (merge-base review base, checks in materials, D-025 triage, host-verified gate state, summary excluded from capture, bounded assessment, dual-caller reviewer prompts). Remediation tasks:
-    - TASK-729: consent, path exposure, unbound gate, merge-base, finalization order, L1/L2/L3/L7, fail-closed markerless caller, L6.
-    - TASK-730: cancellation, process-group kill, QM deadline, panel timeout.
-    - TASK-731: restore specialist prompts and QM triage.
-    - TASK-732: suppression directive forms.
-  - **Accepted without a task:**
-    - Claude L5 (test-only `execute` port): it has no production caller, so it gets another look at closure.
-    - Claude L8 (`StepResult.childRun`): a generic runtime field used for D-016's inline-chain QM run id. Recorded here, and re-checked at closure under R-014.
-  - TASK-726 and TASK-728 now depend on TASK-729..732.
-- **Done:** Drive remediation `run-00e07810-…`: TASK-732 `8a3351a`, TASK-729 `c6b3d96`, TASK-730 `48435d8`, TASK-731 `38f579e`, state `a203b54`. Gates: typecheck 0, lint 0, tests 3198/3198, `check:suppressions --base main` passes.
-- **Mid-branch review 2** (re-review of TASK-729..732), both DO-NOT-SHIP-YET: `mid-review-2-codex.md` and `mid-review-2-claude.md`. Most round-1 findings are RESOLVED. New findings:
-  - codex HIGH: deadline race; missing `gateState` fails open.
-  - Claude HIGH: the suppression scanner regressed from 23 to 15 directives.
-  - MEDIUM: a late-reviewer window; source-root skill paths in panel system prompts; detached check groups outlive Ctrl-C.
-  - **Dispositions:** TASK-733 (settle, seal, hide, plus LOW L1/L3/L4/L6) and TASK-734 (parser-based scanner plus a repo-level registry-equality test).
-  - **Accepted with record:**
-    - Claude L5 (materials writable during checks): same-uid bits were never a boundary.
-    - The residual own-process-group grandchild (codex): a configured check that deliberately detaches cannot be bounded without an OS sandbox, which the spec excludes.
-    - Claude round-1 L4 remainder (caller prompt and model dropped): scope is host-determined by design, and the model is Stage 7.
-  - My earlier acceptance of round-1 L5 (the `execute` port) is withdrawn. TASK-733 #2 closes it.
-- **Done:** TASK-734 `e6c89ff`, TASK-733 `4fbf361` (state `8ef7a8f`). Gates: typecheck 0, lint 0, tests 3206/3206, suppressions pass.
-- **Mid-branch review 3**, both DO-NOT-SHIP-YET; the Claude channel says "close". Files: `mid-review-3-codex.md`, `mid-review-3-claude.md`. Every round-2 finding is RESOLVED.
-  - **New findings:**
-    - codex HIGH: unbounded seal wait; workspace removal runs before the terminal event.
-    - MEDIUM: SIGINT/SIGTERM swallowed; the triage floor drops `lib/memory`, deletions and prompts; failed-audit reporting vs D-025.
-    - Both channels reject my grandchild acceptance: bound the wait on exit, not on close. codex also rejects the prompt-drop acceptance.
-  - **Dispositions:** D-025 amended on record (a bound failing audit is a gate failure with findings, not a human item). TASK-735 covers all of it. Accepted with record: Claude NEW-L3 (JSX text false positive errs toward safety) and round-2 L5 (both channels agree it is sound).
-- **Done:** TASK-735 `a9725bf` (state `1e00833`). Gates: typecheck 0, lint 0, tests 3222/3222.
-- **Mid-branch review 4**, both DO-NOT-SHIP-YET (Claude: no HIGH, three small MEDIUMs). Files: `mid-review-4-codex.md` (verbatim) and `mid-review-4-claude.md` (coordinator condensation). Every round-3 finding is RESOLVED or soundly accepted.
-  - **New findings:** the operator note leaks the path and carries generated boilerplate; an abandoned write discards the report and its late event can still land; normal-exit group leak; lost `run_*` terminal event (a QM branch in generic runtime); incomplete host audit findings; triage of capability markdown; removal timeout.
-  - **Structural (codex):** the `qualityReview` config was read from the reviewed clone.
-  - **Dispositions:** D-025 amended (base-owned config, sanitized caller-only note). TASK-736 covers all of it. The residual goes to the human as N-004.
-- **Done:** TASK-736 `a7136e0` (state `971f76a`). Gates: typecheck 0, lint 0, tests 3226/3226.
-- **Mid-branch review 5**, both DO-NOT-SHIP-YET. Files: `mid-review-5-codex.md` (verbatim) and `mid-review-5-claude.md` (condensed). All round-4 findings are RESOLVED.
-  - **Remaining class:** a change can choose what the host executes or loads.
-    - codex: `package.json` scripts under base argv.
-    - Claude H-1: the QM runtime is built from the reviewed clone, so the change's project domains are imported into the host and can override reviewer definitions (probed).
-    - Also: materials can be rewritten during checks, plus LOWs.
-  - **Dispositions:** D-025 amended (base-owned review runtime, executed-code gate items, materials digests, reviewer refs via StepResult). TASK-737 covers all of it.
-- **Running:** Drive TASK-737, then mid-branch review 6.
-- **Blocked on:** N-001 (below) blocks closure only, not the next stages.
+### Where things stand
+
+- **Stages 1–6** are implemented, plus seven remediation rounds.
+- **TASK-738** is the remediation from review round 6. The run order is being redesigned under D-026 ("review before execution").
+- **Stages 7–9 have not started:** TASK-726 (model diversity and calibration), TASK-727 (archive and callers), TASK-728 (independent closure, done by the coordinator per D-002).
+- **Branch:** `feature/qm-chain-safety`. Never pushed or merged. Commit only with explicit paths.
+- **Gates at `cabfd08`** (after TASK-737): typecheck 0, lint 0, tests 3233/3233 (baseline at `e43c238` was 3053). `check:suppressions -- --base main` passes.
+
+### Task ledger
+
+| Task | Commit | Notes |
+|---|---|---|
+| 720 authority | `ece6af2` | |
+| 722 suppression check | `a8bacae` | |
+| 721 baselines + docs | `44f0566` | R-010 probe done by the coordinator. See N-001. |
+| 723 QM lifecycle | `eb539cd` | |
+| 724 snapshot | `4cc1093` | First attempt blocked on the backfill config tripwire. Resolved by amendment-3 (N-002). |
+| 725 review-only QM | `a4d3731` | First attempt blocked on the same tripwire. |
+| 729 remediation A (isolation, consent, verdict) | `c6b3d96` | From mid-review-1. |
+| 730 remediation B (liveness) | `48435d8` | From mid-review-1. |
+| 731 remediation C (restore lenses) | `38f579e` | From mid-review-1. |
+| 732 suppression forms | `8a3351a` | From mid-review-1. |
+| 733 remediation D | `4fbf361` | From mid-review-2. |
+| 734 parser-based scanner | `e6c89ff` | From mid-review-2. |
+| 735 remediation E | `a9725bf` | From mid-review-3. |
+| 736 remediation F | `a7136e0` | From mid-review-4. |
+| 737 remediation G | `d6dd6c7` | From mid-review-5. |
+| **738 remediation H (D-026)** | — | From mid-review-6. Status: see "Running" below. |
+
+TASK-726 and TASK-728 depend on TASK-729..738.
+
+### Review history
+
+- **Where the reviews live:** `mid-review-<n>-{codex,claude}.md` and `mid-review-<n>-prompt.md`, n = 1..6. Rounds 1–3 are verbatim; from round 4 on, the Claude files are condensed.
+- **The pattern:** every round closed the previous round's findings, and the fixes introduced new ones. Rounds 4–6 kept finding new ways for **code or files the reviewed change controls to reach the host** (argv, package scripts, project domains, object-database tampering, `.pi` settings, materials races).
+- **D-026 addresses that class structurally.** It reorders the run so that no reviewed code executes until the review evidence is sealed, and builds every quality runtime (including panel spawns) from a base export taken from the operator's source repository. The one remaining residual is N-004.
+- **Plan amendments on record:**
+  - D-025, 2026-09-24, amended three times: merge-base, checks in materials, triage floor plus QM additions, host-verified gate state (a failing audit is a gate failure with findings), summary excluded from capture, bounded assessment, dual-caller prompts, base-owned config, sanitized caller note, and "the change cannot choose what reviews it".
+  - D-026, 2026-09-24.
+- **Accepted with record** (reviewers judged these sound):
+  - JSX text false positive in the suppression scanner (fails closed).
+  - A process that deliberately leaves its process group can survive (the host wait is bounded).
+  - `StepResult.childRun` as a generic field.
+  - The `execute` port stays, and fails closed.
+  - Reviewer artifact refs are published only via the StepResult (D-025).
+
+### Running / next
+
+- **Running:** Drive TASK-738 (see the run id in the last commit of this file, or `ls -t missions/sessions/qm-chain-safety/runs | head -1`).
+- **Next steps for the successor:**
+  1. When TASK-738 finishes, run the gates yourself.
+  2. Commit any stranded `missions/reviews/knowledge-surface-backfill-amendment-3.md` digest change, after checking it equals `shasum -a 256 .cosmonauts/config.json`.
+  3. Run mid-branch review 7 on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
+  4. Loop through remediation tasks until both channels give SHIP for Stages 1–6.
+  5. Then Drive TASK-726, then TASK-727, each followed by a two-channel review.
+  6. Then do TASK-728 closure (needs N-001 and N-003 ruled).
+- **Reusable mechanics:**
+  - Drive: `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-6-sol -c model_reasoning_effort=medium" cosmonauts run drive --plan qm-chain-safety --task-ids <ids> --backend codex --mode detached --branch feature/qm-chain-safety --task-timeout 7200000`.
+  - Watch `events.jsonl` for `run_completed|run_aborted|task_blocked`.
+  - `--resume` of an aborted run only replays the result. Relaunch with `--task-ids` instead; the worker continues from uncommitted partial work.
+  - Codex review: `codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only "$(cat prompt)" < /dev/null > log 2>&1`. The final message follows the last line that reads exactly `codex`.
+  - Claude reviewer: a general-purpose subagent. Tell it to read the prompt file, stay read-only, keep probes in the scratchpad, and check that each test could actually fail.
+  - Task batches: `cosmonauts task create --from-file <yaml>`, with single-line ACs.
+  - Workers must run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`. With the runner's Codex args injected, two detached-driver tests fail.
+- **Blocked on:** nothing for Stages 1–8. Closure (TASK-728) needs N-001 and N-003; N-004 shapes the final INV-001 statement.
 
 ### Spec-to-backlog history
 
@@ -138,7 +155,7 @@ What remains is only that the base commands execute the reviewed code (tests, in
   - `review-3.md` — my independent four-lens adversarial review: 24 verified findings, with dispositions.
   - `task-compliance-review.md` — 15 verified findings, with dispositions.
 
-## Backlog (all To Do, label `plan:qm-chain-safety`)
+## Original backlog (label `plan:qm-chain-safety`; see the task ledger above for status)
 
 | Task | Stage | Owns | Depends on |
 |---|---|---|---|
