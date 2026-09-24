@@ -48,7 +48,7 @@ All tasks have label `plan:qm-chain-safety`.
 | 757 | Done | `4ceb768` | Malformed index lines fail safe (review 11) |
 | 758 | Done | `9a45d1c` | Single-line Reason/Verdict rewrite, indented marker (review 12) |
 | 727 | To Do | — | **Stage 8.** Depends on 758 (all done). **Next.** Coordinator note added (`f17cf51`). |
-| 728 | To Do | — | **Stage 9 closure.** Coordinator-run, per D-002. |
+| **728** | In Progress | — | **Stage 9 closure.** Coordinator-run, per D-002 |
 
 **TASK-742 note.** The worker returned "partial" only because its full-suite run hit the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS` artifact. The coordinator verified all its criteria and committed the work in `0b5e7d1` and `7e75231`. Marking it Done, a coordinator regex bug left `status: Done Progress`, which the task parser reads as To Do. Fixed on 2026-09-24 in the handoff commit. It is Done.
 
@@ -155,6 +155,16 @@ All tasks have label `plan:qm-chain-safety`.
   - the generic reason given for a malformed marker;
   - three end-to-end "empty Reason" tests that are shielded, with unit tests guarding instead.
 - **Next:** Stage 8, TASK-727.
+
+### Stage 8 CLOSED — review 2, both channels SHIP (`61ac478`)
+
+- Review 1 (both channels DO-NOT-SHIP-YET) found stale QM caller prose and no named-chain entry-point test. TASK-759 fixed both.
+- Review 2: both channels SHIP. TASK-760 then fixed its two LOWs.
+
+### Stage 9 (TASK-728) — in progress
+
+- Closure prompt: `closure-review-prompt.md`. Two channels are running closure review 1; the outputs go to `closure-review-1-{codex,claude}.md`.
+- The real end-to-end QM runs in a dirty scratch clone at `cca8f7d` with before/after snapshots. Script: `scratchpad/e2e/snapshot.sh`. Evidence goes to `closure-e2e.md`.
 
 ### Spec-to-backlog history
 
