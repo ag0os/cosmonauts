@@ -8,6 +8,7 @@ labels:
   - testing
   - 'plan:qm-chain-safety'
 dependencies:
+  - TASK-747
   - TASK-725
   - TASK-726
 createdAt: '2026-09-24T03:18:07.184Z'
