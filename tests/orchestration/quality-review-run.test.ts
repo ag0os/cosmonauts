@@ -2560,6 +2560,12 @@ describe("quality review durable lifecycle", () => {
 			(report: string) => report.replace(/ -->\n$/, "\n"),
 			"<!-- COSMO_QM_REPORT",
 		],
+		[
+			"indented index suffix",
+			(report: string) =>
+				report.replace(/^(<!-- COSMO_QM_REPORT [^\n]* -->)/m, "  $1 F-9 crash"),
+			"  <!-- COSMO_QM_REPORT",
+		],
 	] as const)("preserves %s and blocks ready with host checks", async (_name, change, evidence) => {
 		const projectRoot = await root(true);
 		await configureCleanHostReview(projectRoot);
@@ -2594,8 +2600,53 @@ describe("quality review durable lifecycle", () => {
 		);
 		expect(report).toContain("Verdict: not-ready");
 		expect(report).toContain(evidence);
+		if (_name === "indented index suffix")
+			expect(report).toContain("--> F-9 crash");
 		if (_name === "CRLF duplicate")
 			expect(report.match(/^## Findings$/gm)).toHaveLength(2);
+	});
+
+	it.each([
+		["same-line suffix", "<!-- COSMO_QM_REPORT {} --> F-9 crash"],
+		["trailing whitespace", "<!-- COSMO_QM_REPORT {} --> \t"],
+		["unclosed marker", "<!-- COSMO_QM_REPORT {}"],
+	] as const)("keeps an empty Reason's %s and host checks", async (_name, marker) => {
+		const projectRoot = await root(true);
+		await configureCleanHostReview(projectRoot);
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+			gates: ["audit passed"],
+		})
+			.replace("Reason: clear", "Reason:")
+			.replace(/^<!-- COSMO_QM_REPORT[^\n]*\n/m, "")
+			.replace("\n\n## Checks", `\n${marker}\n\n## Checks`);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				await writeCleanReviewerEvidence(runId, artifactSink);
+				return { markdown, gateState: "completed-bound" };
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain(marker);
+		expect(report).toContain("## Checks");
+		expect(report).toContain("ok: argv");
 	});
 
 	it.each([

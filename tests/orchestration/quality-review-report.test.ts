@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calibrateReviewerFindings } from "../../lib/orchestration/quality-review-models.ts";
 import {
+	amendUnindexedQualityReviewReport,
 	applyReviewerCalibration,
 	assessQualityReviewReport,
 	hasUnexpectedQualityReviewSectionContent,
@@ -11,6 +12,59 @@ import {
 } from "../../lib/orchestration/quality-review-report.ts";
 
 describe("quality review reports", () => {
+	it("rewrites empty verdict and reason lines without consuming the following lines", () => {
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+		})
+			.replace("Verdict: ready", "Verdict:")
+			.replace("Reason: clear", "Reason:");
+		const amended = amendUnindexedQualityReviewReport(markdown, {
+			verdict: "not-ready",
+			reason: "Host review blocked ready",
+			checks: [],
+			humanItems: [],
+			reviewed: [],
+			reviewerModels: [],
+		});
+		expect(amended).toContain(
+			"Verdict: not-ready\n\nReason: Host review blocked ready",
+		);
+		expect(amended).toContain("## Checks\n\n- None recorded.");
+	});
+
+	it("does not read a verdict from the next line", () => {
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+		}).replace("Verdict: ready", "Verdict:\nready");
+		expect(assessQualityReviewReport(markdown).verdict).toBe("failed");
+	});
+
+	it.each([
+		"<!-- COSMO_QM_REPORT {} --> F-9 crash",
+		"<!-- COSMO_QM_REPORT {} --> \t",
+		"<!-- COSMO_QM_REPORT {}",
+	])("keeps a malformed marker after an empty Reason: (%s)", (marker) => {
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+		})
+			.replace(/^<!-- COSMO_QM_REPORT[^\n]*\n/m, "")
+			.replace("Reason: clear", `Reason:\n${marker}`);
+		const amended = amendUnindexedQualityReviewReport(markdown, {
+			verdict: "not-ready",
+			reason: "Malformed marker",
+			checks: ["ok: pass"],
+			humanItems: [],
+			reviewed: [],
+			reviewerModels: [],
+		});
+		expect(amended).toContain("Reason: Malformed marker");
+		expect(amended).toContain(marker);
+		expect(amended).toContain("## Checks");
+		expect(amended).toContain("ok: pass");
+	});
 	it("keeps inline index-marker text inside a finding", () => {
 		const markdown = renderQualityReviewReport({
 			verdict: "not-ready",

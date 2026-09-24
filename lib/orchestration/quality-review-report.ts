@@ -46,7 +46,7 @@ function nextSectionStart(markdown: string, start: number): number {
 }
 
 function indexMarkerStart(markdown: string, start = 0): number {
-	const marker = /^<!-- COSMO_QM_REPORT/gm;
+	const marker = /^[ \t]*<!-- COSMO_QM_REPORT/gm;
 	marker.lastIndex = start;
 	return marker.exec(markdown)?.index ?? markdown.length;
 }
@@ -164,7 +164,7 @@ export function assessQualityReviewReport(markdown: string): {
 		};
 	}
 	const match = markdown.match(
-		/^Verdict:\s*(ready|not-ready|refused|failed)\s*$/m,
+		/^Verdict:[ \t]*(ready|not-ready|refused|failed)[ \t]*$/m,
 	);
 	if (!match)
 		return {
@@ -299,7 +299,7 @@ export function hasUnexpectedQualityReviewSectionContent(
 	markdown: string,
 ): boolean {
 	if (
-		(markdown.match(/^<!-- COSMO_QM_REPORT[^\n]*/gm) ?? []).some(
+		(markdown.match(/^[ \t]*<!-- COSMO_QM_REPORT[^\n]*/gm) ?? []).some(
 			(line) => !/^<!-- COSMO_QM_REPORT [^\n]* -->$/.test(line),
 		)
 	)
@@ -355,10 +355,10 @@ export function amendUnindexedQualityReviewReport(
 	},
 ): string {
 	let amended = markdown.replace(
-		/^Verdict:\s*.*$/m,
+		/^Verdict:[ \t]*.*$/m,
 		`Verdict: ${options.verdict}`,
 	);
-	amended = amended.replace(/^Reason:\s*.*$/m, `Reason: ${options.reason}`);
+	amended = amended.replace(/^Reason:[ \t]*.*$/m, `Reason: ${options.reason}`);
 	for (const [heading, items, replace] of [
 		["Checks", options.checks, false],
 		["Gates", options.gates ?? [], options.replaceGates ?? false],
