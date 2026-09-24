@@ -197,39 +197,56 @@ function parseQualityReviewConfig(
 	if (typeof value !== "object" || value === null || Array.isArray(value))
 		throw new Error("Invalid qualityReview config: expected object");
 	const raw = value as Record<string, unknown>;
-	if (!("prepare" in raw)) return {};
-	if (!Array.isArray(raw.prepare))
-		throw new Error("Invalid qualityReview.prepare: expected steps array");
-	const prepare = raw.prepare.map((entry: unknown, index: number) => {
-		if (typeof entry !== "object" || entry === null || Array.isArray(entry))
-			throw new Error(`Invalid qualityReview.prepare step ${index + 1}`);
-		const step = entry as Record<string, unknown>;
-		if (
-			typeof step.id !== "string" ||
-			!/^[a-z0-9][a-z0-9-]*$/.test(step.id) ||
-			typeof step.command !== "string" ||
-			step.command.length === 0 ||
-			!Array.isArray(step.args) ||
-			!step.args.every((arg) => typeof arg === "string") ||
-			(step.timeoutMs !== undefined &&
-				(!Number.isSafeInteger(step.timeoutMs) ||
-					(step.timeoutMs as number) <= 0))
-		)
-			throw new Error(
-				`Invalid qualityReview.prepare step ${index + 1}: expected id, command, args and positive timeoutMs`,
-			);
-		return {
-			id: step.id,
-			command: step.command,
-			args: step.args as string[],
-			...(step.timeoutMs === undefined
-				? {}
-				: { timeoutMs: step.timeoutMs as number }),
-		};
-	});
-	if (new Set(prepare.map((step) => step.id)).size !== prepare.length)
-		throw new Error("Invalid qualityReview.prepare: duplicate step id");
-	return { prepare };
+	const parseCommands = (key: "prepare" | "checks") => {
+		if (!(key in raw)) return undefined;
+		if (!Array.isArray(raw[key]))
+			throw new Error(`Invalid qualityReview.${key}: expected steps array`);
+		const commands = raw[key].map((entry: unknown, index: number) => {
+			if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+				throw new Error(`Invalid qualityReview.${key} step ${index + 1}`);
+			const step = entry as Record<string, unknown>;
+			if (
+				typeof step.id !== "string" ||
+				!/^[a-z0-9][a-z0-9-]*$/.test(step.id) ||
+				typeof step.command !== "string" ||
+				step.command.length === 0 ||
+				!Array.isArray(step.args) ||
+				!step.args.every((arg) => typeof arg === "string") ||
+				(step.timeoutMs !== undefined &&
+					(!Number.isSafeInteger(step.timeoutMs) ||
+						(step.timeoutMs as number) <= 0))
+			)
+				throw new Error(
+					`Invalid qualityReview.${key} step ${index + 1}: expected id, command, args and positive timeoutMs`,
+				);
+			return {
+				id: step.id,
+				command: step.command,
+				args: step.args as string[],
+				...(step.timeoutMs === undefined
+					? {}
+					: { timeoutMs: step.timeoutMs as number }),
+			};
+		});
+		if (new Set(commands.map((step) => step.id)).size !== commands.length)
+			throw new Error(`Invalid qualityReview.${key}: duplicate step id`);
+		return commands;
+	};
+	if (
+		raw.diverseReviewerModel !== undefined &&
+		(typeof raw.diverseReviewerModel !== "string" ||
+			!raw.diverseReviewerModel.includes("/"))
+	)
+		throw new Error("Invalid qualityReview.diverseReviewerModel");
+	const prepare = parseCommands("prepare");
+	const checks = parseCommands("checks");
+	return {
+		...(prepare !== undefined ? { prepare } : {}),
+		...(checks !== undefined ? { checks } : {}),
+		...(raw.diverseReviewerModel !== undefined
+			? { diverseReviewerModel: raw.diverseReviewerModel as string }
+			: {}),
+	};
 }
 
 export function resolveKnowledgeSurfaceConfig(

@@ -22,11 +22,38 @@
 		"web-search"
 	],
 	"qualityReview": {
+		"diverseReviewerModel": "anthropic/claude-sonnet-4-5",
 		"prepare": [
 			{
 				"id": "dependencies",
 				"command": "bun",
 				"args": ["install", "--frozen-lockfile"],
+				"timeoutMs": 120000
+			}
+		],
+		"checks": [
+			{
+				"id": "suppressions",
+				"command": "bun",
+				"args": ["scripts/check-new-suppressions.ts", "--base", "{base}"],
+				"timeoutMs": 120000
+			},
+			{
+				"id": "test",
+				"command": "bun",
+				"args": ["run", "test"],
+				"timeoutMs": 600000
+			},
+			{
+				"id": "lint",
+				"command": "bun",
+				"args": ["run", "lint"],
+				"timeoutMs": 120000
+			},
+			{
+				"id": "typecheck",
+				"command": "bun",
+				"args": ["run", "typecheck"],
 				"timeoutMs": 120000
 			}
 		]

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	assessQualityReviewReport,
+	indexedQualityReviewReport,
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
 
@@ -48,5 +49,17 @@ describe("quality review reports", () => {
 				`${markdown}\n${markdown.match(/<!-- COSMO_QM_REPORT[\s\S]*?-->/)?.[0]}`,
 			),
 		).toMatchObject({ verdict: "ready", indexAvailable: false });
+	});
+
+	it("does not let an index replace a visible finding", () => {
+		const indexed = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+		});
+		const changed = indexed.replace(
+			"## Findings\n\n- None recorded.",
+			"## Findings\n\n- F-001: high, error, src/auth.ts:4; reject missing token (input: empty token).",
+		);
+		expect(indexedQualityReviewReport(changed)).toBeUndefined();
 	});
 });

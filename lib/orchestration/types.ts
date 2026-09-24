@@ -380,6 +380,10 @@ export interface SpawnHandle {
 
 /** Configuration for spawning an agent */
 export interface SpawnConfig {
+	/** Private host context for the QM parent session. */
+	qualityReviewContext?: import("./quality-review-context.ts").QualityReviewSessionContext;
+	/** Host marker for a panel child; never copied from model tool arguments. */
+	qualityReviewChild?: boolean;
 	/** Agent role to spawn */
 	role: string;
 	/** Binding-aware requested/resolved reference. Execution uses `resolved`; user-facing records keep `role`. */

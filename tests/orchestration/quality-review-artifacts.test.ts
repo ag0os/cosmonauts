@@ -62,6 +62,16 @@ describe("quality review host artifacts", () => {
 			sink.writeReviewer({ ...evidence, runId: second.runId }),
 		).toThrow();
 		await sink.writeReviewer(evidence);
+		const reviewerFile = await readFile(
+			join(first.artifactsDir, "qm", "reviewers", "security.md"),
+			"utf8",
+		);
+		expect(reviewerFile).toContain("Run: one");
+		expect(reviewerFile).toContain("Spawn: spawn-one");
+		expect(reviewerFile).toContain("Session: session-one");
+		expect(reviewerFile).toContain("Model: test/reviewer");
+		expect(reviewerFile).toContain(evidence.digest);
+		expect(reviewerFile).toContain("original");
 		expect(() => sink.writeReviewer(evidence)).toThrow();
 		expect(() =>
 			sink.writeReviewer({ ...evidence, lens: "../security" }),

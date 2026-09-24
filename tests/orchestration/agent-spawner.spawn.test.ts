@@ -140,6 +140,7 @@ const MOCK_SESSION_STATS = {
 function createMockSession(overrides?: Record<string, unknown>) {
 	return {
 		sessionId: "session-1",
+		model: { provider: "fixture-provider", id: "mock-model" },
 		messages: [],
 		prompt: vi.fn(async () => undefined),
 		dispose: vi.fn(),

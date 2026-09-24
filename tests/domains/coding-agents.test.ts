@@ -113,15 +113,19 @@ describe("coding domain agent invariants", () => {
 		}
 	});
 
-	it("allows quality-manager to spawn integration-verifier and coordinator", () => {
+	// @cosmo-behavior plan:qm-chain-safety#B-001
+	it("allows quality-manager to spawn only the four review lenses", () => {
 		const qualityManager = allDefinitions.find(
 			(def) => def.id === "quality-manager",
 		);
 
 		expect(qualityManager).toBeDefined();
-		expect(qualityManager?.subagents).toContain("integration-verifier");
-		expect(qualityManager?.subagents).toContain("coordinator");
-		expect(qualityManager?.subagents).not.toContain("tdd-coordinator");
+		expect(qualityManager?.subagents).toEqual([
+			"reviewer",
+			"security-reviewer",
+			"performance-reviewer",
+			"ux-reviewer",
+		]);
 	});
 
 	it("does not give readonly agents coding-readwrite capability", () => {
@@ -256,7 +260,6 @@ describe("coding domain agent invariants", () => {
 			"coordinator",
 			"plan-reviewer",
 			"planner",
-			"quality-manager",
 			"worker",
 		]);
 

@@ -7,6 +7,7 @@ import {
 	createSnapshotAnalysisAuthorization,
 	type SnapshotAnalysisAuthorization,
 } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
+import { loadProjectConfig } from "../config/loader.ts";
 import {
 	FileRunStore,
 	type RunGraphSchedulerBackend,
@@ -21,7 +22,15 @@ import {
 	type QualityReviewArtifactSink,
 } from "./quality-review-artifacts.ts";
 import {
+	type QualityReviewCheckResult,
+	renderQualityReviewChecks,
+	runQualityReviewChecks,
+} from "./quality-review-checks.ts";
+import {
+	amendUnindexedQualityReviewReport,
 	assessQualityReviewReport,
+	hasQualityReviewSectionContent,
+	indexedQualityReviewReport,
 	type QualityReviewVerdict,
 	renderQualityReviewReport,
 } from "./quality-review-report.ts";
@@ -34,10 +43,14 @@ import {
 
 export interface QualityReviewAssessment {
 	markdown: string;
+	requiredLenses?: readonly string[];
+	liveChildIds?: readonly string[];
 }
 
 export interface QualityReviewRunOptions {
 	projectRoot: string;
+	/** Stage 6 host configured checks; legacy injected assessment tests omit this. */
+	hostChecks?: boolean;
 	/** Only an explicit completion label or an unambiguous plan session may set this. */
 	planSlug?: string;
 	signal?: AbortSignal;
@@ -49,6 +62,11 @@ export interface QualityReviewRunOptions {
 		materialsRoot?: string;
 		analysisConsent?: SnapshotAnalysisAuthorization;
 		artifactSink: QualityReviewArtifactSink;
+		hostRunStoreRoot: string;
+		checkResults?: readonly QualityReviewCheckResult[];
+		changedFiles?: readonly string[];
+		base?: string;
+		activeChildIds: Set<string>;
 	}) => Promise<QualityReviewAssessment>;
 	refusalReason?: string;
 	store?: RunStore;
@@ -164,6 +182,16 @@ export async function runQualityReview(
 		let reservedRoot: string | undefined;
 		let ownsReservedRoot = false;
 		let analysisConsent: SnapshotAnalysisAuthorization | undefined;
+		let checkResults: QualityReviewCheckResult[] = [];
+		let preparationReport = "# Preparation\n\n- No preparation configured.\n";
+		let checkConfigMissing = false;
+		let modelConfigMissing = false;
+		let changedFiles: readonly string[] = [];
+		let capturedBase: string | undefined;
+		let gateOwnedFiles: string[] = [];
+		let liveChildIds: readonly string[] = [];
+		const activeChildIds = new Set<string>();
+		let observedReviewerModels: string[] = [];
 		try {
 			if (cancelled) throw new Error("Caller cancellation");
 			if (summaryInitializationError)
@@ -185,6 +213,8 @@ export async function runQualityReview(
 					);
 					workspaceRoot = snapshot.workspaceRoot;
 					materialsRoot = snapshot.materialsRoot;
+					capturedBase = snapshot.base;
+					changedFiles = snapshot.changedFiles;
 					analysisConsent = await createSnapshotAnalysisAuthorization({
 						sourceRoot: snapshot.sourceRealPath,
 						snapshotRoot: snapshot.workspaceRoot,
@@ -193,10 +223,8 @@ export async function runQualityReview(
 					});
 					try {
 						const preparation = await preparePrivateReviewWorkspace(snapshot);
-						await sink.write(
-							"checks.md",
-							`# Preparation\n\n${preparation.map((step) => `- ${step.id}: passed in ${step.durationMs} ms`).join("\n") || "- No preparation configured."}\n`,
-						);
+						preparationReport = `# Preparation\n\n${preparation.map((step) => `- ${step.id}: passed in ${step.durationMs} ms`).join("\n") || "- No preparation configured."}\n`;
+						await sink.write("checks.md", preparationReport);
 					} catch (error) {
 						if (error instanceof WorkspacePreparationFailure)
 							await sink.write(
@@ -215,6 +243,24 @@ export async function runQualityReview(
 					workspace: reservedRoot,
 					disposition: "active",
 				});
+				if (options.hostChecks) {
+					const config = await loadProjectConfig(workspaceRoot);
+					checkConfigMissing = !config.qualityReview?.checks?.length;
+					modelConfigMissing = !config.qualityReview?.diverseReviewerModel;
+					checkResults = checkConfigMissing
+						? []
+						: await runQualityReviewChecks({
+								cwd: workspaceRoot,
+								base: capturedBase ?? "",
+								checks: config.qualityReview?.checks ?? [],
+							});
+					await sink.write(
+						"checks.md",
+						`${preparationReport}\n${renderQualityReviewChecks(checkResults)}`,
+						{ replace: true },
+					);
+					gateOwnedFiles = changedFiles.filter(isGateOwnedFile);
+				}
 			}
 			if (options.refusalReason) {
 				verdict = "refused";
@@ -227,16 +273,68 @@ export async function runQualityReview(
 					disposition: workspaceRoot ? "active" : "none",
 					...(workspaceRoot ? { workspace: workspaceRoot } : {}),
 				});
-				markdown = (
-					await options.execute({
-						runId: ref.runId,
-						signal: options.signal,
-						workspaceRoot,
-						materialsRoot,
-						analysisConsent,
-						artifactSink: sink,
-					})
-				).markdown;
+				const assessment = await options.execute({
+					runId: ref.runId,
+					signal: options.signal,
+					workspaceRoot,
+					materialsRoot,
+					analysisConsent,
+					artifactSink: sink,
+					hostRunStoreRoot: run.runDir,
+					checkResults,
+					changedFiles,
+					base: capturedBase,
+					activeChildIds,
+				});
+				markdown = assessment.markdown;
+				liveChildIds = [
+					...new Set([...activeChildIds, ...(assessment.liveChildIds ?? [])]),
+				];
+				if (liveChildIds.length > 0)
+					throw new Error(
+						`Reviewers still live at assessment end: ${liveChildIds.join(", ")}`,
+					);
+				const persistedLensIds = new Set(
+					sink.references().map((artifact) => artifact.id),
+				);
+				const missingLenses = (assessment.requiredLenses ?? []).filter(
+					(lens) => !persistedLensIds.has(`qm/reviewers/${lens}.md`),
+				);
+				if (missingLenses.length > 0)
+					throw new Error(
+						`Missing reviewer evidence: ${missingLenses.join(", ")}`,
+					);
+				const seenSpawns = new Set<string>();
+				const seenSessions = new Set<string>();
+				observedReviewerModels = (assessment.requiredLenses ?? []).map(
+					(lens) => {
+						const artifact = sink
+							.references()
+							.find((item) => item.id === `qm/reviewers/${lens}.md`);
+						const metadata = artifact?.metadata;
+						const model = metadata?.resolvedModel;
+						const spawnId = metadata?.spawnId;
+						const sessionId = metadata?.sessionId;
+						if (
+							metadata?.resolvedRole !== `coding/${lens}` ||
+							typeof spawnId !== "string" ||
+							typeof sessionId !== "string" ||
+							typeof metadata.finalTextDigest !== "string" ||
+							typeof model !== "object" ||
+							model === null ||
+							!("provider" in model) ||
+							!("id" in model) ||
+							typeof model.provider !== "string" ||
+							typeof model.id !== "string" ||
+							seenSpawns.has(spawnId) ||
+							seenSessions.has(sessionId)
+						)
+							throw new Error(`Reviewer evidence correlation failed: ${lens}`);
+						seenSpawns.add(spawnId);
+						seenSessions.add(sessionId);
+						return `${lens}: ${model.provider}/${model.id}`;
+					},
+				);
 				assessmentText = markdown;
 				cancelled = options.signal?.aborted === true;
 				if (cancelled) throw new Error("Caller cancellation");
@@ -256,8 +354,80 @@ export async function runQualityReview(
 						reason: `Report integrity: ${assessed.reason}`,
 					});
 				}
+				if (options.hostChecks && verdict !== "refused") {
+					if (!(assessed.verdict === "failed" && assessed.reason))
+						await sink.write("raw-final.md", markdown, { replace: true });
+					const reported = indexedQualityReviewReport(markdown);
+					const gateEvidenceMissing = !hasQualityReviewSectionContent(
+						markdown,
+						"Gates",
+					);
+					const hostBlocksReady =
+						checkConfigMissing ||
+						modelConfigMissing ||
+						gateEvidenceMissing ||
+						hasQualityReviewSectionContent(markdown, "Findings") ||
+						hasQualityReviewSectionContent(markdown, "Human decisions") ||
+						gateOwnedFiles.length > 0 ||
+						checkResults.some(
+							(check) => check.exitCode !== 0 || check.timedOut,
+						);
+					if (hostBlocksReady && verdict !== "failed") {
+						verdict = "not-ready";
+						reason = "Checks, findings, or human decisions require attention.";
+					}
+					const hostCheckLines = checkResults.map(
+						(check) =>
+							`${check.id}: argv ${JSON.stringify(check.argv)}, exit ${check.exitCode ?? "unavailable"}, duration ${check.durationMs} ms, output ${JSON.stringify(check.output.slice(0, 2000))}`,
+					);
+					const hostHumanItems = [
+						...(gateEvidenceMissing
+							? ["Gate evidence missing; human decision required."]
+							: []),
+						...(checkConfigMissing
+							? [
+									"Not configured: qualityReview.checks; human decision required.",
+								]
+							: []),
+						...(modelConfigMissing
+							? [
+									"Not configured: qualityReview.diverseReviewerModel; human decision required.",
+								]
+							: []),
+						...gateOwnedFiles.map(
+							(file) =>
+								`Gate-owned file changed: ${file}; human decision required.`,
+						),
+					];
+					const hostReviewed = [
+						"Host configured checks and captured changed-file list in the private snapshot.",
+					];
+					if (!reported) {
+						markdown = amendUnindexedQualityReviewReport(markdown, {
+							verdict,
+							reason,
+							checks: hostCheckLines,
+							humanItems: hostHumanItems,
+							reviewed: hostReviewed,
+							reviewerModels: observedReviewerModels,
+						});
+					} else
+						markdown = renderQualityReviewReport({
+							...reported,
+							verdict,
+							reason,
+							checks: [...(reported.checks ?? []), ...hostCheckLines],
+							humanItems: [...(reported.humanItems ?? []), ...hostHumanItems],
+							reviewed: [...(reported.reviewed ?? []), ...hostReviewed],
+							reviewerModels:
+								observedReviewerModels.length > 0
+									? observedReviewerModels
+									: (reported.reviewerModels ?? []),
+						});
+				}
 			}
 		} catch (error) {
+			liveChildIds = [...activeChildIds];
 			cancelled = cancelled || options.signal?.aborted === true;
 			verdict =
 				error instanceof QualityReviewRefusal && !cancelled
@@ -266,9 +436,75 @@ export async function runQualityReview(
 			reason = cancelled
 				? `Caller cancellation: ${errorReason(error)}`
 				: errorReason(error);
-			if (markdown) await sink.write("raw-final.md", markdown);
-			markdown = renderQualityReviewReport({ verdict, reason });
+			if (
+				markdown &&
+				!sink.references().some((artifact) => artifact.id === "qm/raw-final.md")
+			)
+				await sink.write("raw-final.md", markdown, { replace: true });
+			const failureReport = renderQualityReviewReport({
+				verdict,
+				reason,
+				checks: checkResults.map(
+					(check) =>
+						`${check.id}: argv ${JSON.stringify(check.argv)}, exit ${check.exitCode ?? "unavailable"}, duration ${check.durationMs} ms, output ${JSON.stringify(check.output.slice(0, 2000))}`,
+				),
+				humanItems: [
+					...(checkConfigMissing
+						? ["Not configured: qualityReview.checks; human decision required."]
+						: []),
+					...(modelConfigMissing
+						? [
+								"Not configured: qualityReview.diverseReviewerModel; human decision required.",
+							]
+						: []),
+					...gateOwnedFiles.map(
+						(file) =>
+							`Gate-owned file changed: ${file}; human decision required.`,
+					),
+				],
+				reviewed:
+					checkResults.length > 0
+						? ["Host configured checks in the private snapshot."]
+						: [],
+				reviewerModels: observedReviewerModels,
+			});
+			const assessmentStructure = markdown
+				? assessQualityReviewReport(markdown)
+				: undefined;
+			markdown =
+				assessmentStructure && !assessmentStructure.reason
+					? amendUnindexedQualityReviewReport(markdown, {
+							verdict,
+							reason,
+							checks: checkResults.map(
+								(check) =>
+									`${check.id}: argv ${JSON.stringify(check.argv)}, exit ${check.exitCode ?? "unavailable"}, duration ${check.durationMs} ms, output ${JSON.stringify(check.output.slice(0, 2000))}`,
+							),
+							humanItems: [
+								...(checkConfigMissing
+									? [
+											"Not configured: qualityReview.checks; human decision required.",
+										]
+									: []),
+								...(modelConfigMissing
+									? [
+											"Not configured: qualityReview.diverseReviewerModel; human decision required.",
+										]
+									: []),
+								...gateOwnedFiles.map(
+									(file) =>
+										`Gate-owned file changed: ${file}; human decision required.`,
+								),
+							],
+							reviewed:
+								checkResults.length > 0
+									? ["Host configured checks in the private snapshot."]
+									: [],
+							reviewerModels: observedReviewerModels,
+						})
+					: failureReport;
 		}
+		markdown = `${markdown.trimEnd()}\n\nCaller-owned remediation: address findings through tasks, Drive and independent review.\n`;
 		await phase("finalizing", {
 			disposition: ownsReservedRoot ? "active" : "none",
 			...(reservedRoot ? { workspace: reservedRoot } : {}),
@@ -277,7 +513,7 @@ export async function runQualityReview(
 		let summaryReplaced = false;
 		try {
 			analysisConsent?.dispose();
-			if (reservedRoot && ownsReservedRoot) {
+			if (reservedRoot && ownsReservedRoot && liveChildIds.length === 0) {
 				await removePrivateReviewWorkspace(reservedRoot);
 				workspaceRemoved = true;
 			}
@@ -297,8 +533,14 @@ export async function runQualityReview(
 			const finalRef = await sink.write("final.md", markdown, {
 				replace: true,
 			});
-			await phase("finalized", {
-				disposition: ownsReservedRoot ? "removed" : "none",
+			await phase(liveChildIds.length > 0 ? "retained" : "finalized", {
+				disposition:
+					liveChildIds.length > 0
+						? "retained"
+						: ownsReservedRoot
+							? "removed"
+							: "none",
+				activeChildIds: liveChildIds,
 				...(reservedRoot ? { workspace: reservedRoot } : {}),
 				artifactDigests: [finalRef.metadata?.sha256],
 			});
@@ -420,6 +662,17 @@ function errorReason(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+function isGateOwnedFile(path: string): boolean {
+	return (
+		path === ".cosmonauts/suppression-exceptions.json" ||
+		path === ".cosmonauts/config.json" ||
+		path === "scripts/check-new-suppressions.ts" ||
+		path === "lib/quality/suppression-policy.ts" ||
+		path === "domains/shared/extensions/project-tools/fallow-provider.ts" ||
+		path.startsWith(".fallow-baselines/")
+	);
+}
+
 class QualityReviewRefusal extends Error {}
 
 function renderPlanSummary(
@@ -435,6 +688,8 @@ function renderPlanSummary(
 		"Gates",
 		"Findings",
 		"Human decisions",
+		"Out-of-range observations",
+		"Reviewed",
 		"Reviewer models",
 	];
 	const sections = headings.map((heading) => {

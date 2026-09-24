@@ -1,4 +1,9 @@
+import { writeFileSync } from "node:fs";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 
 const mocks = vi.hoisted(() => ({
@@ -32,11 +37,25 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 			const pathExtensions = (this.options.additionalExtensionPaths ?? []).map(
 				(path) => ({
 					path,
-					tools: path.includes("conflict")
-						? new Map([["recall", {}]])
-						: new Map([
-								["spawned_unrelated_tool", { execute: mocks.unrelatedTool }],
-							]),
+					tools: path.includes("quality-tools")
+						? new Map([
+								...[
+									"spawn_agent",
+									"analysis_audit",
+									"bash",
+									"edit",
+									"write",
+									"chain_run",
+									"drive_run",
+									"task_create",
+									"plan_edit",
+								].map((name): [string, object] => [name, {}]),
+							])
+						: path.includes("conflict")
+							? new Map([["recall", {}]])
+							: new Map([
+									["spawned_unrelated_tool", { execute: mocks.unrelatedTool }],
+								]),
 				}),
 			);
 			return {
@@ -69,6 +88,7 @@ vi.mock("../../lib/agents/session-assembly.ts", () => ({
 	buildSessionParams: mocks.buildSessionParams,
 }));
 
+import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { createAgentSessionFromDefinition } from "../../lib/orchestration/session-factory.ts";
 
 const TEST_AGENT: AgentDefinition = {
@@ -103,7 +123,22 @@ describe("session-factory planSlug validation", () => {
 		mocks.sessionInMemory.mockReturnValue({ kind: "in-memory" });
 		mocks.sessionOpen.mockReturnValue({ kind: "file-backed" });
 		mocks.createAgentSession.mockResolvedValue({
-			session: { sessionId: "session-1" },
+			session: {
+				sessionId: "session-1",
+				model: { provider: "observed", id: "resolved-model" },
+			},
+		});
+	});
+
+	test("attributes the model exposed by Pi after session creation", async () => {
+		const result = await createAgentSessionFromDefinition(
+			TEST_AGENT,
+			{ role: "planner", cwd: "/tmp/project", prompt: "plan" },
+			"/tmp/domains",
+		);
+		expect(result.resolvedModel).toEqual({
+			provider: "observed",
+			id: "resolved-model",
 		});
 	});
 
@@ -127,6 +162,7 @@ describe("session-factory planSlug validation", () => {
 		mocks.createAgentSession.mockImplementation(async (options) => ({
 			session: {
 				sessionId: "session-1",
+				model: { provider: "observed", id: "resolved-model" },
 				async callTool(name: string, args?: unknown) {
 					if (!options.tools.includes(name)) {
 						throw new Error(`Tool ${name} is not callable`);
@@ -210,5 +246,253 @@ describe("session-factory planSlug validation", () => {
 
 		expect(mocks.sessionOpen).not.toHaveBeenCalled();
 		expect(mocks.createAgentSession).not.toHaveBeenCalled();
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-001
+	test("passes only safe quality tools to Pi after extensions register", async () => {
+		mocks.buildSessionParams.mockResolvedValue({
+			promptContent: "QM",
+			tools: ["read", "grep", "find", "ls", "bash", "edit", "write"],
+			extensionPaths: ["/installed/quality-tools/index.ts"],
+			extensionFactories: [],
+			knowledgeSurfaceEnabled: false,
+			projectContext: false,
+			model: { provider: "test", id: "model" },
+			qualityReviewProfile: "manager",
+		});
+		await createAgentSessionFromDefinition(
+			TEST_AGENT,
+			{ role: "quality-manager", cwd: "/tmp/project", prompt: "review" },
+			"/tmp/domains",
+		);
+		expect(mocks.createAgentSession.mock.calls[0]?.[0].tools).toEqual([
+			"read",
+			"grep",
+			"find",
+			"ls",
+			"spawn_agent",
+			"analysis_audit",
+		]);
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-003
+	test("stores a qualified panel session transcript under the host run", async () => {
+		const hostRunStoreRoot = await mkdtemp(join(tmpdir(), "qm-host-run-"));
+		try {
+			mocks.buildSessionParams.mockResolvedValue({
+				promptContent: "panel",
+				tools: ["read", "grep", "find", "ls", "bash"],
+				extensionPaths: [],
+				extensionFactories: [],
+				knowledgeSurfaceEnabled: false,
+				projectContext: false,
+				model: { provider: "test", id: "model" },
+				qualityReviewProfile: "reviewer",
+			});
+			const result = await createAgentSessionFromDefinition(
+				TEST_AGENT,
+				{
+					role: "coding/reviewer",
+					cwd: "/tmp/review-clone",
+					prompt: "review",
+					qualityReviewChild: true,
+					qualityReviewContext: {
+						hostRunStoreRoot,
+						workspaceRoot: "/tmp/review-clone",
+						materialsRoot: "/tmp/materials",
+						base: "a".repeat(40),
+						changedFiles: [],
+						runId: "one",
+						artifactSink: {} as never,
+						activeSpawns: new Set(),
+						allowedLenses: new Set(["reviewer"]),
+						attemptedLenses: new Set(),
+						integrityFailures: [],
+					},
+				},
+				"/tmp/domains",
+			);
+			expect(result.sessionFilePath).toMatch(
+				new RegExp(
+					`^${hostRunStoreRoot}/transcripts/quality-session-[a-f0-9-]+\\.jsonl$`,
+				),
+			);
+			expect(mocks.createAgentSession.mock.calls[0]?.[0].tools).toEqual([
+				"read",
+				"grep",
+				"find",
+				"ls",
+			]);
+		} finally {
+			await rm(hostRunStoreRoot, { recursive: true, force: true });
+		}
+	});
+
+	test("keeps QM and panel transcripts after their private checkout is removed", async () => {
+		const hostRunStoreRoot = await mkdtemp(
+			join(tmpdir(), "qm-transcripts-host-"),
+		);
+		const workspaceRoot = await mkdtemp(
+			join(tmpdir(), "qm-transcripts-clone-"),
+		);
+		try {
+			mocks.sessionOpen.mockImplementation((path: string) => {
+				writeFileSync(path, "transcript bytes");
+				return { kind: "file-backed" };
+			});
+			mocks.buildSessionParams.mockResolvedValue({
+				promptContent: "review",
+				tools: ["read", "grep", "find", "ls"],
+				extensionPaths: [],
+				extensionFactories: [],
+				knowledgeSurfaceEnabled: false,
+				projectContext: false,
+				model: { provider: "test", id: "model" },
+				qualityReviewProfile: "reviewer",
+			});
+			const qualityReviewContext = {
+				hostRunStoreRoot,
+				workspaceRoot,
+				materialsRoot: "/tmp/materials",
+				base: "a".repeat(40),
+				changedFiles: [],
+				runId: "qm-one",
+				artifactSink: {} as never,
+				activeSpawns: new Set<string>(),
+				allowedLenses: new Set(["reviewer"]),
+				attemptedLenses: new Set<string>(),
+				integrityFailures: [],
+			};
+			const manager = await createAgentSessionFromDefinition(
+				TEST_AGENT,
+				{
+					role: "quality-manager",
+					cwd: workspaceRoot,
+					prompt: "review",
+					qualityReviewContext,
+				},
+				"/tmp/domains",
+			);
+			const panel = await createAgentSessionFromDefinition(
+				TEST_AGENT,
+				{
+					role: "coding/reviewer",
+					cwd: workspaceRoot,
+					prompt: "review",
+					qualityReviewChild: true,
+					qualityReviewContext,
+				},
+				"/tmp/domains",
+			);
+			expect(await readdir(workspaceRoot)).toEqual([]);
+			await rm(workspaceRoot, { recursive: true, force: true });
+			expect(await readFile(manager.sessionFilePath ?? "", "utf8")).toBe(
+				"transcript bytes",
+			);
+			expect(await readFile(panel.sessionFilePath ?? "", "utf8")).toBe(
+				"transcript bytes",
+			);
+		} finally {
+			await rm(workspaceRoot, { recursive: true, force: true });
+			await rm(hostRunStoreRoot, { recursive: true, force: true });
+		}
+	});
+
+	test("spawns QM and panel into a private cwd with host-owned transcripts", async () => {
+		const hostRunStoreRoot = await mkdtemp(join(tmpdir(), "qm-spawn-host-"));
+		const workspaceRoot = await mkdtemp(join(tmpdir(), "qm-spawn-clone-"));
+		try {
+			let sessionNumber = 0;
+			mocks.sessionOpen.mockImplementation((path: string) => {
+				writeFileSync(path, "session bytes");
+				return { kind: "file-backed" };
+			});
+			mocks.buildSessionParams.mockImplementation(async ({ def }) => ({
+				promptContent: "review",
+				tools: ["read", "grep", "find", "ls"],
+				extensionPaths: [],
+				extensionFactories: [],
+				knowledgeSurfaceEnabled: false,
+				projectContext: false,
+				model: { provider: "test", id: "model" },
+				qualityReviewProfile:
+					def.id === "quality-manager" ? "manager" : "reviewer",
+			}));
+			mocks.createAgentSession.mockImplementation(async ({ cwd }) => ({
+				session: {
+					sessionId: `quality-session-${++sessionNumber}`,
+					model: { provider: "observed", id: "model" },
+					messages: [],
+					prompt: async () => undefined,
+					subscribe: () => () => undefined,
+					dispose: () => undefined,
+					getSessionStats: () => ({
+						sessionFile: undefined,
+						sessionId: `quality-session-${sessionNumber}`,
+						userMessages: 0,
+						assistantMessages: 0,
+						toolCalls: 0,
+						toolResults: 0,
+						totalMessages: 0,
+						tokens: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							total: 0,
+						},
+						cost: 0,
+					}),
+					cwd,
+				},
+			}));
+			const qualityReviewContext = {
+				hostRunStoreRoot,
+				workspaceRoot,
+				materialsRoot: "/tmp/materials",
+				base: "a".repeat(40),
+				changedFiles: [],
+				runId: "qm-one",
+				artifactSink: {} as never,
+				activeSpawns: new Set<string>(),
+				allowedLenses: new Set(["reviewer"]),
+				attemptedLenses: new Set<string>(),
+				integrityFailures: [],
+			};
+			const registry = new AgentRegistry([
+				{ ...TEST_AGENT, id: "quality-manager" },
+				{ ...TEST_AGENT, id: "reviewer" },
+			]);
+			const spawner = createPiSpawner(registry, "/tmp/domains");
+			for (const config of [
+				{ role: "quality-manager", qualityReviewChild: false },
+				{ role: "reviewer", qualityReviewChild: true },
+			]) {
+				const result = await spawner.spawn({
+					...config,
+					cwd: workspaceRoot,
+					prompt: "review",
+					qualityReviewContext,
+				});
+				expect(result.success, result.error).toBe(true);
+			}
+			spawner.dispose();
+			expect(
+				mocks.createAgentSession.mock.calls.map(([options]) => options.cwd),
+			).toEqual([workspaceRoot, workspaceRoot]);
+			expect(await readdir(workspaceRoot)).toEqual([]);
+			const transcripts = await readdir(join(hostRunStoreRoot, "transcripts"));
+			expect(
+				transcripts.filter((file) => file.endsWith(".jsonl")),
+			).toHaveLength(2);
+			await rm(workspaceRoot, { recursive: true, force: true });
+			for (const file of transcripts)
+				expect(
+					await readFile(join(hostRunStoreRoot, "transcripts", file), "utf8"),
+				).toBeTruthy();
+		} finally {
+			await rm(workspaceRoot, { recursive: true, force: true });
+			await rm(hostRunStoreRoot, { recursive: true, force: true });
+		}
 	});
 });

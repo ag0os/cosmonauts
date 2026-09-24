@@ -56,6 +56,32 @@ describe("loadProjectConfig", () => {
 		);
 	});
 
+	test("parses configured quality checks and rejects duplicate check IDs", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		const path = join(tmp.path, ".cosmonauts", "config.json");
+		const check = { id: "test", command: "bun", args: ["run", "test"] };
+		await writeFile(
+			path,
+			JSON.stringify({
+				qualityReview: {
+					checks: [check],
+					diverseReviewerModel: "anthropic/test-model",
+				},
+			}),
+		);
+		expect((await loadProjectConfig(tmp.path)).qualityReview).toMatchObject({
+			checks: [check],
+			diverseReviewerModel: "anthropic/test-model",
+		});
+		await writeFile(
+			path,
+			JSON.stringify({ qualityReview: { checks: [check, check] } }),
+		);
+		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
+			"duplicate step id",
+		);
+	});
+
 	test("enables the knowledge surface only for literal true", async () => {
 		for (const [value, expected] of [
 			[true, true],

@@ -60,7 +60,18 @@ import {
 	assertEnabledRecallOwner,
 	buildToolAllowlist,
 } from "../lib/orchestration/definition-resolution.ts";
+import { enforceQualityReviewProfile } from "../lib/orchestration/quality-review-profile.ts";
 import type { PiFlags } from "./pi-flags.ts";
+
+function sessionToolAllowlist(
+	params: SessionParams,
+	loader: Parameters<typeof buildToolAllowlist>[1],
+): string[] {
+	const resolved = buildToolAllowlist(params.tools, loader);
+	return params.qualityReviewProfile
+		? enforceQualityReviewProfile(resolved, params.qualityReviewProfile)
+		: resolved;
+}
 
 /**
  * Encode a cwd into Pi's session directory path.
@@ -609,7 +620,7 @@ export async function createSession(
 						sessionStartEvent,
 						model: newParams.model,
 						thinkingLevel: newParams.thinkingLevel,
-						tools: buildToolAllowlist(newParams.tools, services.resourceLoader),
+						tools: sessionToolAllowlist(newParams, services.resourceLoader),
 					});
 					return {
 						...result,
@@ -642,7 +653,7 @@ export async function createSession(
 			sessionStartEvent,
 			model: params.model,
 			thinkingLevel: params.thinkingLevel,
-			tools: buildToolAllowlist(params.tools, services.resourceLoader),
+			tools: sessionToolAllowlist(params, services.resourceLoader),
 		});
 		return {
 			...result,

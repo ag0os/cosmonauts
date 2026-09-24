@@ -26,6 +26,7 @@ import {
 	assertEnabledRecallOwner,
 	buildToolAllowlist,
 } from "./definition-resolution.ts";
+import { enforceQualityReviewProfile } from "./quality-review-profile.ts";
 import type { SpawnConfig } from "./types.ts";
 
 // ============================================================================
@@ -42,6 +43,7 @@ import type { SpawnConfig } from "./types.ts";
  */
 export interface SessionCreateResult {
 	session: AgentSession;
+	resolvedModel: { provider: string; id: string };
 	/** Absolute path to the JSONL session file, or undefined for in-memory sessions. */
 	sessionFilePath: string | undefined;
 }
@@ -73,6 +75,7 @@ export async function createAgentSessionFromDefinition(
 		modelOverride: config.model,
 		modelRegistry,
 		thinkingLevelOverride: config.thinkingLevel,
+		qualityReviewChild: config.qualityReviewChild,
 	});
 
 	// Build resource loader with all definition fields.
@@ -101,12 +104,24 @@ export async function createAgentSessionFromDefinition(
 		assertEnabledRecallOwner(loader);
 	}
 
-	const toolAllowlist = buildToolAllowlist(params.tools, loader);
+	const resolvedTools = buildToolAllowlist(params.tools, loader);
+	const toolAllowlist = params.qualityReviewProfile
+		? enforceQualityReviewProfile(resolvedTools, params.qualityReviewProfile)
+		: resolvedTools;
 
 	// Determine session manager: file-backed when planSlug is set, in-memory otherwise.
 	let sessionFilePath: string | undefined;
 	let sessionManager: SessionManager;
-	if (config.planSlug) {
+	if (config.qualityReviewContext) {
+		const sessionsDir = join(
+			config.qualityReviewContext.hostRunStoreRoot,
+			"transcripts",
+		);
+		const uuid = crypto.randomUUID();
+		sessionFilePath = join(sessionsDir, `quality-session-${uuid}.jsonl`);
+		await mkdir(sessionsDir, { recursive: true });
+		sessionManager = SessionManager.open(sessionFilePath);
+	} else if (config.planSlug) {
 		validateSlug(config.planSlug);
 		const sessionsDir = sessionsDirForPlan(config.cwd, config.planSlug);
 		const uuid = crypto.randomUUID();
@@ -141,5 +156,12 @@ export async function createAgentSessionFromDefinition(
 	}
 
 	const { session } = await createAgentSession(sessionOptions);
-	return { session, sessionFilePath };
+	const resolvedModel = session.model;
+	if (!resolvedModel?.provider || !resolvedModel.id)
+		throw new Error("Pi session did not expose a resolved model");
+	return {
+		session,
+		sessionFilePath,
+		resolvedModel: { provider: resolvedModel.provider, id: resolvedModel.id },
+	};
 }

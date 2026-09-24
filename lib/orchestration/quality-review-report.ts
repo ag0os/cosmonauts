@@ -97,7 +97,8 @@ export function assessQualityReviewReport(markdown: string): {
 					(parsed as Record<string, unknown[]>)[key]?.every(
 						(item) => typeof item === "string",
 					),
-			)
+			) &&
+			indexMatchesVisibleSections(markdown, parsed as Record<string, unknown>)
 		) {
 			return { verdict, indexAvailable: true };
 		}
@@ -105,4 +106,109 @@ export function assessQualityReviewReport(markdown: string): {
 		// A broken index is visible without changing a valid section-based verdict.
 	}
 	return { verdict, indexAvailable: false };
+}
+
+/** Read only an index whose sections and verdict passed the report validator. */
+export function indexedQualityReviewReport(
+	markdown: string,
+): QualityReviewReport | undefined {
+	if (!assessQualityReviewReport(markdown).indexAvailable) return undefined;
+	const match = markdown.match(/<!-- COSMO_QM_REPORT ([\s\S]*?) -->/);
+	if (!match?.[1]) return undefined;
+	const parsed: unknown = JSON.parse(match[1]);
+	if (typeof parsed !== "object" || parsed === null) return undefined;
+	const report = parsed as Record<string, unknown>;
+	return {
+		verdict: report.verdict as QualityReviewVerdict,
+		reason: typeof report.reason === "string" ? report.reason : "",
+		checks: report.checks as string[],
+		gates: report.gates as string[],
+		findings: report.findings as string[],
+		humanItems: report.humanItems as string[],
+		observations: report.observations as string[],
+		reviewed: report.reviewed as string[],
+		reviewerModels: report.reviewerModels as string[],
+	};
+}
+
+function indexMatchesVisibleSections(
+	markdown: string,
+	report: Record<string, unknown>,
+): boolean {
+	const indexedSections = [
+		report.checks,
+		report.gates,
+		report.findings,
+		report.humanItems,
+		report.observations,
+		report.reviewed,
+		report.reviewerModels,
+	] as string[][];
+	for (const [index, heading] of sections.entries()) {
+		const marker = `## ${heading}\n`;
+		const start = markdown.indexOf(marker);
+		if (start < 0) return false;
+		const tail = markdown.slice(start + marker.length);
+		const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
+		const visible = (end < 0 ? tail : tail.slice(0, end)).trim();
+		const items = indexedSections[index] ?? [];
+		const expected = items.length
+			? items.map((item) => `- ${item}`).join("\n")
+			: "- None recorded.";
+		if (visible !== expected) return false;
+	}
+	return true;
+}
+
+export function hasQualityReviewSectionContent(
+	markdown: string,
+	heading: "Gates" | "Findings" | "Human decisions",
+): boolean {
+	const marker = `## ${heading}\n`;
+	const start = markdown.indexOf(marker);
+	if (start < 0) return false;
+	const tail = markdown.slice(start + marker.length);
+	const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
+	const body = (end < 0 ? tail : tail.slice(0, end)).trim();
+	return body !== "" && body !== "- None recorded.";
+}
+
+/** Keep section prose intact when the optional machine index is unavailable. */
+export function amendUnindexedQualityReviewReport(
+	markdown: string,
+	options: {
+		verdict: QualityReviewVerdict;
+		reason: string;
+		checks: readonly string[];
+		humanItems: readonly string[];
+		reviewed: readonly string[];
+		reviewerModels: readonly string[];
+	},
+): string {
+	let amended = markdown.replace(
+		/^Verdict:\s*.*$/m,
+		`Verdict: ${options.verdict}`,
+	);
+	amended = amended.replace(/^Reason:\s*.*$/m, `Reason: ${options.reason}`);
+	for (const [heading, items, replace] of [
+		["Checks", options.checks, false],
+		["Human decisions", options.humanItems, false],
+		["Reviewed", options.reviewed, false],
+		["Reviewer models", options.reviewerModels, true],
+	] as const) {
+		if (items.length === 0) continue;
+		const marker = `## ${heading}\n`;
+		const start = amended.indexOf(marker);
+		if (start < 0) continue;
+		const bodyStart = start + marker.length;
+		const rest = amended.slice(bodyStart);
+		const next = rest.search(/^## |^<!-- COSMO_QM_REPORT/m);
+		const bodyEnd = next < 0 ? amended.length : bodyStart + next;
+		const body = amended.slice(bodyStart, bodyEnd).trim();
+		const existing = replace || body === "- None recorded." ? "" : `${body}\n`;
+		amended = `${amended.slice(0, bodyStart)}\n${existing}${items.map((item) => `- ${item}`).join("\n")}\n\n${amended.slice(bodyEnd)}`;
+	}
+	return amended.includes("Index unavailable.")
+		? amended
+		: `${amended.trimEnd()}\n\nIndex unavailable.\n`;
 }

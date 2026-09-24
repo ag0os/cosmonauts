@@ -1,5 +1,6 @@
 {
 	"qualityReview": {
+		"diverseReviewerModel": "anthropic/claude-sonnet-4-5",
 		"prepare": [
 			{
 				"id": "dependencies",
@@ -7,6 +8,16 @@
 				"args": ["install", "--frozen-lockfile"],
 				"timeoutMs": 120000
 			}
+		],
+		"checks": [
+			{
+				"id": "suppressions",
+				"command": "bun",
+				"args": ["scripts/check-new-suppressions.ts", "--base", "{base}"]
+			},
+			{ "id": "test", "command": "bun", "args": ["run", "test"] },
+			{ "id": "lint", "command": "bun", "args": ["run", "lint"] },
+			{ "id": "typecheck", "command": "bun", "args": ["run", "typecheck"] }
 		]
 	},
 	"knowledgeSurface": {

@@ -151,8 +151,10 @@ export function createQualityReviewArtifactSink(options: {
 			const id = `qm/reviewers/${lens}.md`;
 			if (emitted.has(id))
 				throw new Error(`Duplicate reviewer evidence: ${lens}`);
-			return write(`reviewers/${lens}.md`, fullText, {
+			const record = `# Reviewer ${lens}\n\nRun: ${evidence.runId}\nLens: ${lens}\nSpawn: ${evidence.spawnId}\nSession: ${evidence.sessionId}\nRole: ${evidence.resolvedRole}\nModel: ${evidence.resolvedModel.provider}/${evidence.resolvedModel.id}\nFinal-text SHA-256: ${evidence.digest}\n\n## Full final text\n\n${fullText}`;
+			return write(`reviewers/${lens}.md`, record, {
 				metadata: {
+					finalTextDigest: evidence.digest,
 					spawnId: evidence.spawnId,
 					sessionId: evidence.sessionId,
 					resolvedRole: evidence.resolvedRole,

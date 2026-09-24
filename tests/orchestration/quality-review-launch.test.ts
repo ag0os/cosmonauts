@@ -6,7 +6,12 @@ import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runDurableChain } from "../../lib/orchestration/durable-chain-runner.ts";
-import { qualityReviewPlanSlug } from "../../lib/orchestration/quality-review-launch.ts";
+import {
+	launchQualityReview,
+	qualityReviewPlanSlug,
+	triageReviewLenses,
+	validateQualityReviewAnalysisCalls,
+} from "../../lib/orchestration/quality-review-launch.ts";
 import { renderQualityReviewReport } from "../../lib/orchestration/quality-review-report.ts";
 
 const agent = (id: string): AgentDefinition => ({
@@ -24,6 +29,71 @@ const agent = (id: string): AgentDefinition => ({
 });
 
 describe("quality review launch policy", () => {
+	it("fails when the QM skips or repeats direct analysis status", () => {
+		expect(() => validateQualityReviewAnalysisCalls([])).toThrow(
+			/analysis_status/,
+		);
+		const status = {
+			type: "tool_execution_end" as const,
+			sessionId: "manager",
+			toolName: "analysis_status",
+			toolCallId: "one",
+			isError: false,
+		};
+		const audit = {
+			...status,
+			toolName: "analysis_audit",
+			toolCallId: "audit",
+		};
+		expect(() =>
+			validateQualityReviewAnalysisCalls([
+				status,
+				{ ...status, toolCallId: "two" },
+				audit,
+			]),
+		).toThrow(/analysis_status/);
+		expect(() => validateQualityReviewAnalysisCalls([status])).toThrow(
+			/analysis_audit/,
+		);
+		expect(() =>
+			validateQualityReviewAnalysisCalls([status, audit]),
+		).not.toThrow();
+	});
+	it("rejects a model-selected base for the direct changed-scope gate", () => {
+		const base = "a".repeat(40);
+		const events = [
+			{
+				type: "tool_execution_start" as const,
+				sessionId: "manager",
+				toolName: "analysis_audit",
+				toolCallId: "audit",
+				args: { base: "b".repeat(40) },
+			},
+			{
+				type: "tool_execution_end" as const,
+				sessionId: "manager",
+				toolName: "analysis_status",
+				toolCallId: "status",
+				isError: false,
+			},
+		];
+		expect(() => validateQualityReviewAnalysisCalls(events, base)).toThrow(
+			/captured base/,
+		);
+	});
+	it("triages applicable lenses from the captured diff as well as filenames", () => {
+		expect(
+			triageReviewLenses(
+				["README.md"],
+				"+ authorization token query cache <form>",
+			),
+		).toEqual([
+			"reviewer",
+			"security-reviewer",
+			"performance-reviewer",
+			"ux-reviewer",
+		]);
+	});
 	const roots: string[] = [];
 	afterEach(async () => {
 		await Promise.all(
@@ -75,6 +145,45 @@ describe("quality review launch policy", () => {
 		expect(qualityReviewPlanSlug({ completionLabel: "plan:first" })).toBe(
 			"first",
 		);
+	});
+
+	it("runs host check policy even with an injected assessment", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "qm-launch-checks-"));
+		roots.push(projectRoot);
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		git("add", ".gitignore");
+		git("commit", "-qm", "base");
+		const result = await launchQualityReview({
+			projectRoot,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain("Not configured: qualityReview.checks");
 	});
 
 	it("delegates a durable terminal QM into a child run with a complete report", async () => {

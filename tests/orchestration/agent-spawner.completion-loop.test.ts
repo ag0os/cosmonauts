@@ -138,6 +138,7 @@ function nextSessionId(): string {
 function createMockSession(sessionId: string) {
 	return {
 		sessionId,
+		model: { provider: "fixture-provider", id: "mock-model" },
 		messages: [],
 		prompt: vi.fn(async () => undefined),
 		dispose: vi.fn(),

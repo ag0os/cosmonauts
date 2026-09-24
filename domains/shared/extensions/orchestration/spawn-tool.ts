@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { basename, dirname } from "node:path";
 import type {
 	AgentSession,
@@ -21,6 +22,12 @@ import {
 	registerPlanContext,
 	removePlanContext,
 } from "../../../../lib/orchestration/plan-session-context.ts";
+import {
+	assertQualityReviewModelIdentity,
+	buildQualityReviewPanelPrompt,
+	getQualityReviewSession,
+	type QualityReviewSessionContext,
+} from "../../../../lib/orchestration/quality-review-context.ts";
 import {
 	isQualityReviewReference,
 	launchQualityReview,
@@ -95,6 +102,9 @@ interface DetachedChildSessionParams extends ChildActivityBase {
 	planSlug: string | undefined;
 	tracker: SpawnTracker;
 	pi: ExtensionAPI;
+	resolvedRole?: string;
+	resolvedModel?: { provider: string; id: string };
+	qualityContext?: QualityReviewSessionContext;
 }
 
 interface ChildPromptRequest {
@@ -176,17 +186,37 @@ async function runDetachedChildSession(
 			...result,
 			stats: captureLineageStats(params, startMs),
 		};
+		if (params.qualityContext) {
+			if (!params.resolvedRole || !params.resolvedModel || !result.fullText)
+				throw new Error("Missing reviewer host correlation");
+			assertQualityReviewModelIdentity(params.resolvedModel, session.model);
+			await params.qualityContext.artifactSink.writeReviewer({
+				runId: params.qualityContext.runId,
+				lens: params.resolvedRole.replace(/^coding\//, ""),
+				spawnId: params.spawnId,
+				sessionId: session.sessionId,
+				resolvedRole: params.resolvedRole,
+				resolvedModel: params.resolvedModel,
+				outcome: "success",
+				digest: createHash("sha256").update(result.fullText).digest("hex"),
+				fullText: result.fullText,
+			});
+			params.qualityContext.activeSpawns.delete(params.spawnId);
+		}
 		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
+		params.qualityContext?.integrityFailures.push(message);
 		result = {
 			role: params.role,
 			startedAt,
 			outcome: "failed",
 			summary: message,
 		};
+		params.qualityContext?.activeSpawns.delete(params.spawnId);
 		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
 	} finally {
+		params.qualityContext?.activeSpawns.delete(params.spawnId);
 		unsubscribeActivity?.();
 		removeTracker(session.sessionId);
 		sessionDepths.delete(session.sessionId);
@@ -541,6 +571,75 @@ export function registerSpawnTool(
 					} as SpawnProgressDetails,
 				};
 			}
+			const parentSessionId = ctx.sessionManager.getSessionId();
+			const qualityContext = getQualityReviewSession(parentSessionId);
+			const panelPrompt = qualityContext
+				? buildQualityReviewPanelPrompt(qualityContext, params.prompt)
+				: params.prompt;
+			const resolvedTargetRole =
+				targetResolution.reference.resolved.qualifiedId;
+			if (callerRole === "coding/quality-manager" && !qualityContext) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "spawn_agent denied: quality review context missing",
+						},
+					],
+					details: {
+						role: params.role,
+						status: "denied",
+					} as SpawnProgressDetails,
+				};
+			}
+			if (
+				qualityContext &&
+				(callerRole !== "coding/quality-manager" ||
+					![
+						"coding/reviewer",
+						"coding/security-reviewer",
+						"coding/performance-reviewer",
+						"coding/ux-reviewer",
+					].includes(resolvedTargetRole) ||
+					!qualityContext.allowedLenses.has(
+						resolvedTargetRole.replace(/^coding\//, ""),
+					) ||
+					params.model !== undefined ||
+					params.thinkingLevel !== undefined)
+			) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "spawn_agent denied: quality panel permits only configured reviewer lenses",
+						},
+					],
+					details: {
+						role: params.role,
+						status: "denied",
+					} as SpawnProgressDetails,
+				};
+			}
+			if (qualityContext) {
+				const lens = resolvedTargetRole.replace(/^coding\//, "");
+				if (qualityContext.attemptedLenses.has(lens)) {
+					qualityContext.integrityFailures.push(
+						`Duplicate reviewer spawn: ${lens}`,
+					);
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `spawn_agent denied: duplicate reviewer ${lens}`,
+							},
+						],
+						details: {
+							role: params.role,
+							status: "denied",
+						} as SpawnProgressDetails,
+					};
+				}
+			}
 
 			if (
 				authorizeAgentStart({
@@ -570,7 +669,6 @@ export function registerSpawnTool(
 			}
 
 			// Determine nesting depth: parent depth + 1
-			const parentSessionId = ctx.sessionManager.getSessionId();
 			const parentDepth = sessionDepths.get(parentSessionId) ?? 0;
 			const childDepth = parentDepth + 1;
 
@@ -619,6 +717,10 @@ export function registerSpawnTool(
 			// Register before launching — acquires semaphore slot synchronously
 			try {
 				tracker.register(spawnId, params.role, childDepth);
+				qualityContext?.activeSpawns.add(spawnId);
+				qualityContext?.attemptedLenses.add(
+					resolvedTargetRole.replace(/^coding\//, ""),
+				);
 			} catch (err: unknown) {
 				const reason = err instanceof Error ? err.message : String(err);
 				return {
@@ -695,8 +797,8 @@ export function registerSpawnTool(
 				role: params.role,
 				agentReference: targetResolution.reference,
 				domainContext: runtime.domainContext,
-				cwd: ctx.cwd,
-				prompt: params.prompt,
+				cwd: qualityContext?.workspaceRoot ?? ctx.cwd,
+				prompt: panelPrompt,
 				model: params.model,
 				thinkingLevel: params.thinkingLevel,
 				runtimeContext: params.runtimeContext,
@@ -704,6 +806,9 @@ export function registerSpawnTool(
 				skillPaths: [...runtime.skillPaths],
 				spawnDepth: childDepth,
 				parentSessionId,
+				...(qualityContext
+					? { qualityReviewContext: qualityContext, qualityReviewChild: true }
+					: {}),
 				...(planSlug !== undefined && { planSlug }),
 			};
 
@@ -714,7 +819,7 @@ export function registerSpawnTool(
 				runtime.domainsDir,
 				runtime.domainResolver,
 			)
-				.then(({ session, sessionFilePath }) =>
+				.then(({ session, sessionFilePath, resolvedModel }) =>
 					runDetachedChildSession({
 						session,
 						sessionFilePath,
@@ -722,7 +827,10 @@ export function registerSpawnTool(
 						parentSessionId,
 						childDepth,
 						role: params.role,
-						prompt: params.prompt,
+						resolvedRole: resolvedTargetRole,
+						resolvedModel,
+						qualityContext,
+						prompt: panelPrompt,
 						planSlug,
 						tracker,
 						pi,
@@ -733,6 +841,7 @@ export function registerSpawnTool(
 					// createAgentSessionFromDefinition() itself failed
 					const message = err instanceof Error ? err.message : String(err);
 					tracker.fail(spawnId, message);
+					qualityContext?.activeSpawns.delete(spawnId);
 					if (tracker.deliveryMode === "self") {
 						sendSpawnCompletion(
 							pi,

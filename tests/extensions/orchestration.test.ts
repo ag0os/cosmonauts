@@ -3,7 +3,7 @@
  * Verifies the cached CosmonautsRuntime is used and forwarded to runtime calls.
  */
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -26,6 +26,13 @@ import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
+import {
+	registerQualityReviewSession,
+	removeQualityReviewSession,
+} from "../../lib/orchestration/quality-review-context.ts";
+import { launchQualityReview } from "../../lib/orchestration/quality-review-launch.ts";
+import { enforceQualityReviewProfile } from "../../lib/orchestration/quality-review-profile.ts";
+import { renderQualityReviewReport } from "../../lib/orchestration/quality-review-report.ts";
 import {
 	getOrCreateTracker,
 	removeTracker,
@@ -911,6 +918,177 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			).toContain("Verdict: refused");
 		} finally {
 			removeTracker(sessionId);
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-001
+	test("a scripted QM and panel refuse mutation tools and a forbidden spawn without changing the checkout", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "qm-scripted-isolation-"));
+		const sessionId = "scripted-qm-session";
+		const fixture = await loadOrchestrationDomainFixtures({
+			domainId: "coding",
+		});
+		const resolver = new DomainResolver(fixture.domainRegistry);
+		const registry = new AgentRegistry([
+			makeAgent("quality-manager", "coding", { subagents: ["reviewer"] }),
+			makeAgent("reviewer", "coding"),
+			makeAgent("verifier", "coding"),
+			makeAgent("worker", "coding"),
+			makeAgent("fixer", "coding"),
+			makeAgent("coordinator", "coding"),
+			makeAgent("integration-verifier", "coding"),
+		]);
+		runtimeCreateMock.mockResolvedValue({
+			agentRegistry: registry,
+			domainContext: "coding",
+			projectSkills: [],
+			skillPaths: [],
+			domainRegistry: fixture.domainRegistry,
+			domainResolver: resolver,
+			domainsDir: testDomainsDir,
+		});
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot, encoding: "utf8" }).trim();
+		try {
+			git("init", "-q");
+			git("config", "user.email", "test@example.com");
+			git("config", "user.name", "Test");
+			await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+			await writeFile(join(projectRoot, "tracked.txt"), "base\n");
+			git("add", ".gitignore", "tracked.txt");
+			git("commit", "-qm", "base");
+			await writeFile(join(projectRoot, "tracked.txt"), "staged\n");
+			git("add", "tracked.txt");
+			await writeFile(join(projectRoot, "tracked.txt"), "unstaged\n");
+			await writeFile(join(projectRoot, "untracked.txt"), "untracked\n");
+			const headRef = git("symbolic-ref", "HEAD");
+			const snapshot = async () => ({
+				head: await readFile(join(projectRoot, ".git", "HEAD")),
+				refs: await readFile(join(projectRoot, ".git", headRef)),
+				index: await readFile(join(projectRoot, ".git", "index")),
+				tracked: await readFile(join(projectRoot, "tracked.txt")),
+				untracked: await readFile(join(projectRoot, "untracked.txt")),
+			});
+			const before = await snapshot();
+			const result = await launchQualityReview({
+				projectRoot,
+				execute: async (context) => {
+					const candidateTools = [
+						"read",
+						"grep",
+						"find",
+						"ls",
+						"bash",
+						"write",
+						"edit",
+						"chain_run",
+						"spawn_agent",
+					];
+					const managerTools = enforceQualityReviewProfile(
+						candidateTools,
+						"manager",
+					);
+					const panelTools = enforceQualityReviewProfile(
+						candidateTools,
+						"reviewer",
+					);
+					const pi = createMockPi(context.workspaceRoot ?? "", {
+						sessionId,
+						systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/quality-manager -->",
+						allowedTools: managerTools,
+					});
+					orchestrationExtension(pi as never);
+					for (const tool of ["bash", "write", "edit", "chain_run"])
+						await expect(pi.callTool(tool, {})).rejects.toThrow(
+							`Tool refused by session profile: ${tool}`,
+						);
+					const qualityContext = {
+						runId: context.runId,
+						workspaceRoot: context.workspaceRoot ?? "",
+						materialsRoot: context.materialsRoot ?? "",
+						base: context.base ?? "",
+						changedFiles: context.changedFiles ?? [],
+						hostRunStoreRoot: context.hostRunStoreRoot,
+						artifactSink: context.artifactSink,
+						activeSpawns: context.activeChildIds,
+						allowedLenses: new Set(["reviewer"]),
+						attemptedLenses: new Set<string>(),
+						integrityFailures: [],
+					};
+					registerQualityReviewSession(sessionId, qualityContext);
+					try {
+						for (const role of [
+							"fixer",
+							"coordinator",
+							"worker",
+							"verifier",
+							"integration-verifier",
+						]) {
+							const denied = (await pi.callTool("spawn_agent", {
+								role,
+								prompt: "change code",
+							})) as { details: { status: string } };
+							expect(denied.details.status).toBe("denied");
+						}
+						const panelSessionId = "scripted-panel-session";
+						const panel = createMockPi(context.workspaceRoot ?? "", {
+							sessionId: panelSessionId,
+							systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/reviewer -->",
+							allowedTools: panelTools,
+						});
+						orchestrationExtension(panel as never);
+						for (const tool of [
+							"bash",
+							"write",
+							"edit",
+							"chain_run",
+							"spawn_agent",
+						])
+							await expect(panel.callTool(tool, {})).rejects.toThrow(
+								`Tool refused by session profile: ${tool}`,
+							);
+						registerQualityReviewSession(panelSessionId, qualityContext);
+						try {
+							await expect(
+								panel.callTool("spawn_agent", {
+									role: "worker",
+									prompt: "change code",
+								}),
+							).rejects.toThrow("Tool refused by session profile: spawn_agent");
+						} finally {
+							removeQualityReviewSession(panelSessionId);
+						}
+						return {
+							markdown: renderQualityReviewReport({
+								verdict: "not-ready",
+								reason: "forbidden attempts refused",
+							}),
+						};
+					} finally {
+						removeQualityReviewSession(sessionId);
+					}
+				},
+			});
+			const report = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.ref.runId,
+					"artifacts",
+					"qm",
+					"final.md",
+				),
+				"utf8",
+			);
+			expect(result.stepResult.outcome, report).toBe("success");
+			expect(await snapshot()).toEqual(before);
+		} finally {
+			removeQualityReviewSession(sessionId);
 			await rm(projectRoot, { recursive: true, force: true });
 		}
 	});

@@ -32,6 +32,10 @@ import {
 	registerPlanContext,
 	removePlanContext,
 } from "./plan-session-context.ts";
+import {
+	registerQualityReviewSession,
+	removeQualityReviewSession,
+} from "./quality-review-context.ts";
 import { createAgentSessionFromDefinition } from "./session-factory.ts";
 import {
 	awaitNextCompletionMessages,
@@ -187,6 +191,11 @@ async function prepareSpawnSession(
 		domainsDir,
 		resolver,
 	);
+	if (config.qualityReviewContext)
+		registerQualityReviewSession(
+			session.sessionId,
+			config.qualityReviewContext,
+		);
 	emitSpawnEvent(config, {
 		type: "agent_resolved",
 		sessionId: session.sessionId,
@@ -304,6 +313,7 @@ function cleanupSpawnSession(
 
 	prepared.unsubscribe?.();
 	removeTracker(session.sessionId);
+	removeQualityReviewSession(session.sessionId);
 	if (config.planSlug) {
 		removePlanContext(session.sessionId);
 	}
@@ -320,6 +330,18 @@ async function persistPlanLinkedSpawn(
 	config: SpawnConfig,
 ): Promise<void> {
 	if (!config.planSlug || !prepared.sessionFilePath) {
+		if (config.qualityReviewContext && prepared.sessionFilePath) {
+			const directory = dirname(prepared.sessionFilePath);
+			const name = basename(prepared.sessionFilePath).replace(
+				/\.jsonl$/,
+				".transcript.md",
+			);
+			await writeTranscript(
+				directory,
+				name,
+				generateTranscript(finalMessages, config.role),
+			);
+		}
 		return;
 	}
 

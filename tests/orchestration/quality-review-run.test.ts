@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	chmod,
 	mkdir,
@@ -12,7 +13,7 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { FileRunStore, runStatus } from "../../lib/durable-runtime/index.ts";
@@ -45,6 +46,651 @@ describe("quality review durable lifecycle", () => {
 		}
 		return path;
 	}
+
+	it("runs host checks in the snapshot, persists output and blocks a failed check", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					checks: [
+						{
+							id: "failure",
+							command: process.execPath,
+							args: [
+								"-e",
+								"process.stderr.write('check failed'); process.exit(7)",
+							],
+						},
+					],
+				},
+			}),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "model said ready",
+					findings: ["F-1 P2 high src/a.ts:7 fix the branch; input: null"],
+					reviewerModels: ["openai-codex/gpt-6-sol"],
+				}),
+			}),
+		});
+		const artifactDir = join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			result.ref.runId,
+			"artifacts",
+			"qm",
+		);
+		const checks = await readFile(join(artifactDir, "checks.md"), "utf8");
+		expect(checks).toContain("# Preparation");
+		expect(checks).toContain("# Configured checks");
+		expect(checks).toContain("check failed");
+		expect(await readFile(join(artifactDir, "final.md"), "utf8")).toContain(
+			"Verdict: not-ready",
+		);
+		expect(await readFile(join(artifactDir, "final.md"), "utf8")).toContain(
+			"F-1 P2 high src/a.ts:7 fix the branch; input: null",
+		);
+		expect(result.stepResult.outcome).toBe("success");
+		expect(
+			(await readFile(join(artifactDir, "final.md"), "utf8")).trimEnd(),
+		).toMatch(/Caller-owned remediation:.*tasks.*Drive.*independent review\.$/);
+	});
+
+	it("reports empty checks and gate-owned changes as human decisions", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ qualityReview: { checks: [] } }),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "model said ready",
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain("Not configured: qualityReview.checks");
+		expect(report).toContain(
+			"Gate-owned file changed: .cosmonauts/config.json",
+		);
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-005
+	it("includes passing host check details even when the model omits them", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.stdout.write('passed')"],
+						},
+					],
+				},
+			}),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", ".cosmonauts/config.json"], {
+			cwd: projectRoot,
+		});
+		execFileSync("git", ["commit", "-qm", "configured checks"], {
+			cwd: projectRoot,
+		});
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("ok: argv");
+		expect(report).toContain("exit 0");
+		expect(report).toContain("passed");
+		expect(report).toContain(
+			"Not configured: qualityReview.diverseReviewerModel",
+		);
+		expect(report).toContain("Gate evidence missing; human decision required.");
+		expect(report).toContain("Verdict: not-ready");
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-003
+	it("reports reviewer models from run-owned evidence", async () => {
+		const projectRoot = await root(true);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				await artifactSink.writeReviewer({
+					runId,
+					lens: "reviewer",
+					spawnId: "spawn-one",
+					sessionId: "session-one",
+					resolvedRole: "coding/reviewer",
+					resolvedModel: { provider: "test", id: "actual" },
+					outcome: "success",
+					digest: createHash("sha256").update("review complete").digest("hex"),
+					fullText: "review complete",
+				});
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						reviewerModels: ["test/claimed"],
+					}),
+					requiredLenses: ["reviewer"],
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("test/actual");
+		expect(report).not.toContain("test/claimed");
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-008
+	it("fails the configured suppression check for an unregistered directive", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await mkdir(join(projectRoot, "lib"));
+		await writeFile(
+			join(projectRoot, "lib", "a.ts"),
+			"export const value = 1;\n",
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "suppression-exceptions.json"),
+			'{"version":1,"entries":[]}\n',
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					checks: [
+						{
+							id: "suppressions",
+							command: "bun",
+							args: [
+								resolve("scripts/check-new-suppressions.ts"),
+								"--base",
+								"{base}",
+							],
+						},
+					],
+				},
+			}),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", "."], { cwd: projectRoot });
+		execFileSync("git", ["commit", "-qm", "base files"], { cwd: projectRoot });
+		await writeFile(
+			join(projectRoot, "lib", "a.ts"),
+			"// @ts-expect-error intentional\nunsafe();\n",
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain("suppressions: argv");
+		expect(report).toContain("exit 1");
+		expect(report).toContain("lib/a.ts:1");
+	});
+
+	it("retains the private workspace while a timed-out reviewer is still live", async () => {
+		const projectRoot = await root(true);
+		let retainedWorkspace = "";
+		try {
+			const result = await runQualityReview({
+				projectRoot,
+				execute: async ({ workspaceRoot, activeChildIds }) => {
+					retainedWorkspace = workspaceRoot ?? "";
+					activeChildIds.add("live-reviewer");
+					return {
+						markdown: renderQualityReviewReport({
+							verdict: "ready",
+							reason: "clear",
+						}),
+						requiredLenses: ["reviewer"],
+					};
+				},
+			});
+			expect(result.stepResult.outcome).toBe("failed");
+			expect((await stat(retainedWorkspace)).isDirectory()).toBe(true);
+			const lifecycle = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.ref.runId,
+					"artifacts",
+					"qm",
+					"lifecycle.jsonl",
+				),
+				"utf8",
+			);
+			expect(lifecycle).toContain('"activeChildIds":["live-reviewer"]');
+		} finally {
+			if (retainedWorkspace)
+				await removePrivateReviewWorkspace(retainedWorkspace);
+		}
+	});
+
+	it("does not substitute a reviewer artifact that settles after the failed assessment", async () => {
+		const projectRoot = await root(true);
+		let retainedWorkspace = "";
+		let lateSink:
+			| Parameters<
+					NonNullable<Parameters<typeof runQualityReview>[0]["execute"]>
+			  >[0]["artifactSink"]
+			| undefined;
+		try {
+			const result = await runQualityReview({
+				projectRoot,
+				execute: async ({ workspaceRoot, activeChildIds, artifactSink }) => {
+					retainedWorkspace = workspaceRoot ?? "";
+					lateSink = artifactSink;
+					activeChildIds.add("live-reviewer");
+					return {
+						markdown: renderQualityReviewReport({
+							verdict: "ready",
+							reason: "clear",
+						}),
+						requiredLenses: ["reviewer"],
+					};
+				},
+			});
+			const reportPath = join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			);
+			const before = await readFile(reportPath);
+			const fullText = "late review";
+			await lateSink?.writeReviewer({
+				runId: result.ref.runId,
+				lens: "reviewer",
+				spawnId: "live-reviewer",
+				sessionId: "late-session",
+				resolvedRole: "coding/reviewer",
+				resolvedModel: { provider: "test", id: "late" },
+				outcome: "success",
+				digest: createHash("sha256").update(fullText).digest("hex"),
+				fullText,
+			});
+			expect(await readFile(reportPath)).toEqual(before);
+			expect(before.toString()).toContain("Verdict: failed");
+		} finally {
+			if (retainedWorkspace)
+				await removePrivateReviewWorkspace(retainedWorkspace);
+		}
+	});
+
+	it.each([
+		"missing",
+		"empty",
+		"duplicate",
+		"foreign",
+	] as const)("fails the assessment for %s reviewer evidence", async (scenario) => {
+		const projectRoot = await root(true);
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async ({ runId, artifactSink }) => {
+				const fullText = scenario === "empty" ? "" : "reviewed";
+				const evidence = {
+					runId: scenario === "foreign" ? "other-run" : runId,
+					lens: "reviewer",
+					spawnId: "spawn-one",
+					sessionId: "session-one",
+					resolvedRole: "coding/reviewer",
+					resolvedModel: { provider: "test", id: "model" },
+					outcome: "success" as const,
+					digest: createHash("sha256").update(fullText).digest("hex"),
+					fullText,
+				};
+				if (scenario !== "missing") await artifactSink.writeReviewer(evidence);
+				if (scenario === "duplicate")
+					await artifactSink.writeReviewer(evidence);
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+					}),
+					requiredLenses: ["reviewer"],
+				};
+			},
+		});
+		expect(result.stepResult.outcome).toBe("failed");
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: failed");
+	});
+
+	it("fails a report returned while a panel child is still live", async () => {
+		const projectRoot = await root(true);
+		let retainedWorkspace = "";
+		try {
+			const result = await runQualityReview({
+				projectRoot,
+				execute: async ({ workspaceRoot, activeChildIds }) => {
+					retainedWorkspace = workspaceRoot ?? "";
+					activeChildIds.add("live-reviewer");
+					return {
+						markdown: renderQualityReviewReport({
+							verdict: "ready",
+							reason: "clear",
+						}),
+					};
+				},
+			});
+			expect(result.stepResult.outcome).toBe("failed");
+			expect((await stat(retainedWorkspace)).isDirectory()).toBe(true);
+		} finally {
+			if (retainedWorkspace)
+				await removePrivateReviewWorkspace(retainedWorkspace);
+		}
+	});
+
+	it("keeps completed host check evidence in a failed assessment report", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.stdout.write('passed')"],
+						},
+					],
+				},
+			}),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", ".cosmonauts/config.json"], {
+			cwd: projectRoot,
+		});
+		execFileSync("git", ["commit", "-qm", "configured checks"], {
+			cwd: projectRoot,
+		});
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => {
+				throw new Error("panel failed");
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: failed");
+		expect(report).toContain("panel failed");
+		expect(report).toContain("ok: argv");
+		expect(report).toContain("passed");
+	});
+
+	it("keeps visible findings when reviewer correlation fails after assessment", async () => {
+		const projectRoot = await root(true);
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "not-ready",
+					reason: "finding",
+					findings: [
+						"F-1 P2 severity high src/a.ts:7; suggested fix: guard nil; failing input: null",
+					],
+				}),
+				requiredLenses: ["reviewer"],
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(result.stepResult.outcome).toBe("failed");
+		expect(report).toContain("Verdict: failed");
+		expect(report).toContain("F-1 P2 severity high src/a.ts:7");
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-005
+	it("keeps actionable report sections in both the full report and plan summary", async () => {
+		const projectRoot = await root(true);
+		const markdown = renderQualityReviewReport({
+			verdict: "not-ready",
+			reason: "one finding",
+			checks: [
+				'test: argv ["bun","run","test"], exit 1, duration 25 ms, output failed',
+			],
+			gates: ["changed-scope: failed; introduced finding at src/a.ts:7"],
+			findings: [
+				"F-1 P2 severity high src/a.ts:7; suggested fix: guard nil; failing input: null",
+			],
+			humanItems: ["Gate-owned file changed: .cosmonauts/config.json"],
+			observations: [
+				"Pre-existing: src/old.ts:2",
+				"Out-of-range: docs/old.md:3",
+			],
+			reviewed: ["Reviewed full captured diff and neighboring test"],
+			reviewerModels: ["reviewer: test/observed"],
+		});
+		const result = await runQualityReview({
+			projectRoot,
+			planSlug: "example",
+			execute: async () => ({ markdown }),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		const summary = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"plans",
+				"example",
+				"qm-runs",
+				`${result.ref.runId}.md`,
+			),
+			"utf8",
+		);
+		for (const evidence of [
+			"Verdict: not-ready",
+			"argv",
+			"exit 1",
+			"duration 25 ms",
+			"changed-scope: failed",
+			"F-1 P2 severity high src/a.ts:7",
+			"failing input: null",
+			"Gate-owned file changed",
+			"Pre-existing:",
+			"Out-of-range:",
+			"Reviewed full captured diff",
+			"reviewer: test/observed",
+		])
+			for (const output of [report, summary])
+				expect(output).toContain(evidence);
+	});
+
+	it("does not accept a ready verdict with reported findings", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "test/other",
+					checks: [{ id: "ok", command: process.execPath, args: ["-e", ""] }],
+				},
+			}),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", ".cosmonauts/config.json"], {
+			cwd: projectRoot,
+		});
+		execFileSync("git", ["commit", "-qm", "configured review"], {
+			cwd: projectRoot,
+		});
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					findings: ["F-1 P2 high src/a.ts:1 fix it"],
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain("F-1 P2 high src/a.ts:1 fix it");
+	});
 
 	// @cosmo-behavior plan:qm-chain-safety#B-002
 	it("launches assessment from a private snapshot containing untracked work", async () => {
@@ -523,6 +1169,8 @@ describe("quality review durable lifecycle", () => {
 			verdict: "ready",
 			reason: "clear",
 			checks: ["unit: pass"],
+			observations: ["Pre-existing: src/old.ts:2"],
+			reviewed: ["Reviewed captured diff against base"],
 		}).replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, "");
 		const result = await runQualityReview({
 			projectRoot,
@@ -559,7 +1207,65 @@ describe("quality review durable lifecycle", () => {
 			),
 			"utf8",
 		);
+		expect(summary).toContain("Pre-existing: src/old.ts:2");
+		expect(summary).toContain("Reviewed captured diff against base");
 		expect(summary).toContain("unit: pass");
+	});
+
+	it("preserves an unindexed report when host checks are configured", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "test/other",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.stdout.write('passed')"],
+						},
+					],
+				},
+			}),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", ".cosmonauts/config.json"], {
+			cwd: projectRoot,
+		});
+		execFileSync("git", ["commit", "-qm", "configured checks"], {
+			cwd: projectRoot,
+		});
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+			gates: ["changed-scope: pass from direct audit"],
+			observations: ["Pre-existing src/a.ts:7 branch"],
+		}).replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, "");
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({ markdown }),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: ready");
+		expect(report).toContain("Pre-existing src/a.ts:7 branch");
+		expect(report).toContain("ok: argv");
+		expect(report).toContain("Index unavailable");
 	});
 
 	it("isolates concurrent run IDs, reports and plan summaries", async () => {

@@ -87,6 +87,7 @@ interface MockPiOptions {
 	systemPrompt?: string;
 	defaultSystemPrompt?: string;
 	sessionId?: string;
+	allowedTools?: readonly string[];
 }
 
 export function createMockPi(cwd: string, options?: MockPiOptions) {
@@ -105,6 +106,8 @@ export function createMockPi(cwd: string, options?: MockPiOptions) {
 			return tools.get(name);
 		},
 		async callTool(name: string, params: unknown) {
+			if (options?.allowedTools && !options.allowedTools.includes(name))
+				throw new Error(`Tool refused by session profile: ${name}`);
 			const tool = tools.get(name);
 			if (!tool) throw new Error(`Tool not found: ${name}`);
 			const context = {

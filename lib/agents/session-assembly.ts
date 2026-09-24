@@ -30,6 +30,7 @@ import {
 	FALLBACK_MODEL,
 	resolveModel,
 } from "../orchestration/model-resolution.ts";
+import type { QualityReviewProfile } from "../orchestration/quality-review-profile.ts";
 import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
@@ -83,6 +84,8 @@ export interface BuildSessionParamsOptions {
 	extraExtensionPaths?: readonly string[];
 	/** Injectable project config loader for frozen gate tests. */
 	loadConfig?: (projectRoot: string) => Promise<ProjectConfig>;
+	/** Set only by the host when launching a panel child. */
+	qualityReviewChild?: boolean;
 }
 
 export interface SessionParams {
@@ -106,6 +109,7 @@ export interface SessionParams {
 	model: Model<Api>;
 	/** Thinking level, or undefined to use Pi's default. */
 	thinkingLevel: ThinkingLevel | undefined;
+	qualityReviewProfile?: QualityReviewProfile;
 }
 
 // ============================================================================
@@ -137,10 +141,30 @@ export async function buildSessionParams(
 		thinkingLevelOverride,
 		extraExtensionPaths,
 		loadConfig = loadProjectConfig,
+		qualityReviewChild,
 	} = options;
 
 	// Tool resolution
-	const tools = resolveTools(def.tools, cwd);
+	const qualityReviewProfile: QualityReviewProfile | undefined =
+		qualifyAgentId(def.id, def.domain) === "coding/quality-manager"
+			? "manager"
+			: qualityReviewChild
+				? "reviewer"
+				: undefined;
+	if (
+		qualityReviewChild &&
+		![
+			"reviewer",
+			"security-reviewer",
+			"performance-reviewer",
+			"ux-reviewer",
+		].includes(def.id)
+	)
+		throw new Error(`Quality review child role is forbidden: ${def.id}`);
+	const tools = resolveTools(
+		qualityReviewProfile ? "readonly" : def.tools,
+		cwd,
+	);
 	const resourceDomain = resolveDefaultDomain({
 		explicitDomain: def.domain,
 		resolver,
@@ -258,5 +282,6 @@ export async function buildSessionParams(
 		projectContext: def.projectContext,
 		model,
 		thinkingLevel,
+		qualityReviewProfile,
 	};
 }

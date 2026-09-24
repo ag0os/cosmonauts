@@ -190,6 +190,25 @@ describe("buildSessionParams", () => {
 	});
 
 	describe("tool resolution", () => {
+		it("does not give an ordinary reviewer session the quality child profile", async () => {
+			await setupMinimalDomains(tmp.path, {
+				domain: "coding",
+				agentId: "reviewer",
+			});
+			const def = makeDef({
+				id: "reviewer",
+				domain: "coding",
+				tools: "coding",
+			});
+			const ordinary = await buildSessionParams(makeOptions({ def }));
+			const panel = await buildSessionParams(
+				makeOptions({ def, qualityReviewChild: true }),
+			);
+			expect(ordinary.qualityReviewProfile).toBeUndefined();
+			expect(ordinary.tools).toContain("bash");
+			expect(panel.qualityReviewProfile).toBe("reviewer");
+			expect(panel.tools).toEqual(["read", "grep", "find", "ls"]);
+		});
 		it('resolves "none" tool set to empty array', async () => {
 			await setupMinimalDomains(tmp.path);
 			const params = await buildSessionParams(makeOptions());

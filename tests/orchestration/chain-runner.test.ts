@@ -1944,7 +1944,7 @@ describe("runChain", () => {
 	test.each([
 		"ready",
 		"not-ready",
-	] as const)("persists a %s QM assessment through an inline chain", async (verdict) => {
+	] as const)("reports an unconfigured %s QM assessment through an inline chain", async (verdict) => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-assessment-"));
 		try {
 			await initQualityReviewRepository(projectRoot);
@@ -1977,7 +1977,22 @@ describe("runChain", () => {
 					),
 					"utf8",
 				),
-			).toContain(`Verdict: ${verdict}`);
+			).toContain("Verdict: not-ready");
+			const raw = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.run?.runId ?? "",
+					"artifacts",
+					"qm",
+					"raw-final.md",
+				),
+				"utf8",
+			);
+			expect(raw).toContain(`Verdict: ${verdict}`);
 			expect(spawnerRef.current?.spawn).not.toHaveBeenCalled();
 		} finally {
 			await rm(projectRoot, { recursive: true, force: true });
