@@ -39,7 +39,12 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
     - MEDIUM: SIGINT/SIGTERM swallowed; the triage floor drops `lib/memory`, deletions and prompts; failed-audit reporting vs D-025.
     - Both channels reject my grandchild acceptance: bound the wait on exit, not on close. codex also rejects the prompt-drop acceptance.
   - **Dispositions:** D-025 amended on record (a bound failing audit is a gate failure with findings, not a human item). TASK-735 covers all of it. Accepted with record: Claude NEW-L3 (JSX text false positive errs toward safety) and round-2 L5 (both channels agree it is sound).
-- **Running:** Drive TASK-735, then mid-branch review 4.
+- **Done:** TASK-735 `a9725bf` (state `1e00833`). Gates: typecheck 0, lint 0, tests 3222/3222.
+- **Mid-branch review 4**, both DO-NOT-SHIP-YET (Claude: no HIGH, three small MEDIUMs). Files: `mid-review-4-codex.md` (verbatim) and `mid-review-4-claude.md` (coordinator condensation). Every round-3 finding is RESOLVED or soundly accepted.
+  - **New findings:** the operator note leaks the path and carries generated boilerplate; an abandoned write discards the report and its late event can still land; normal-exit group leak; lost `run_*` terminal event (a QM branch in generic runtime); incomplete host audit findings; triage of capability markdown; removal timeout.
+  - **Structural (codex):** the `qualityReview` config was read from the reviewed clone.
+  - **Dispositions:** D-025 amended (base-owned config, sanitized caller-only note). TASK-736 covers all of it. The residual goes to the human as N-004.
+- **Running:** Drive TASK-736, then mid-branch review 5.
 - **Blocked on:** N-001 (below) blocks closure only, not the next stages.
 
 ### Spec-to-backlog history
@@ -86,6 +91,19 @@ The user decides one of:
 - (c) accept an end-to-end run on the shadowed definitions.
 
 I will not touch `~/.cosmonauts` myself.
+
+### N-004 (open, 2026-09-24): host-run checks execute the reviewed code without an OS sandbox
+
+**Finding.** This is codex mid-review-4's structural observation, confirmed by the coordinator. The QM host runs `qualityReview.prepare` (for example `bun install`) and `checks` (for example `bun run test`) in the private clone. Those processes execute the reviewed change's own code (tests, install scripts) as ordinary host processes with the operator's filesystem authority. A reviewed test that writes to an absolute path can therefore change the operator checkout. INV-001 says a QM run cannot change the reviewed checkout "by construction". The spec excludes an OS sandbox.
+
+**Mitigation already in progress (derived, D-025 amendment).** The check argv is now base-owned (TASK-736), so a change cannot pick its own commands. The reviewed code the base commands execute is the residual.
+
+**Options:**
+- **A (recommended).** Record an INV-001 interpretation beside the Intent, like D-021. INV-001's by-construction guarantee covers the QM, its agents and the host code. Host-run project checks execute the reviewed change's code with the operator's own authority, the same trust as the operator running those tests, and the report says so explicitly. Nothing else changes.
+- **B.** Require OS-level sandboxing for prepare and checks. This reverses a spec exclusion, is platform-specific, and is new scope.
+- **C.** Drop host-run checks from the QM, so the caller runs the checks. This amends AC-016 ("the QM's project checks keep working").
+
+**Consequence for this branch either way.** With base-owned config and `main` having no `qualityReview` block, a QM review of this branch reports checks and model as "not configured" (D-019) and cannot be `ready`. That is visible and expected until the branch merges.
 
 ### Earlier human decisions (all closed)
 

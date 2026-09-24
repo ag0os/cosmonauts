@@ -525,6 +525,13 @@ Investigation evidence gathered before design:
       prepare and check processes are killed as a process group on timeout.
       Timed-out panel children are still never cancelled (D-011; execution-
       liveness AC-015).
+    - **Quality-review config is base-owned.** *(Amended on record
+      2026-09-24 after mid-review-4:)* `qualityReview` is read from the
+      review base revision, never from the reviewed state, as D-009 does for
+      the suppression registry. A change cannot choose its own prepare or
+      check argv, and a change to the block is still a gate-owned human
+      item. The operator note carries only caller-authored text, with the
+      source and host-store paths replaced.
     - **Reviewer prompts serve both callers.** The specialist prompts keep
       their review dimensions. When host materials are present, they read
       scope from the materials. When spawned directly (`cody`, `cosmo`), they
