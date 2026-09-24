@@ -33,6 +33,34 @@ describe("quality review reports", () => {
 		expect(amended).toContain("## Checks\n\n- None recorded.");
 	});
 
+	it.each([
+		"None recorded.",
+		"- None recorded.",
+	])("drops the %s sentinel above host-appended items", (sentinel) => {
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+		}).replace(
+			/## (Findings|Human decisions)\n\n- None recorded\./g,
+			`## $1\n\n${sentinel}`,
+		);
+		const amended = amendUnindexedQualityReviewReport(markdown, {
+			verdict: "not-ready",
+			reason: "host findings",
+			checks: [],
+			findings: ["f1 P1 lib/a.ts:17 dead-code error: unused export"],
+			humanItems: ["UR-001 omitted from the report"],
+			reviewed: [],
+			reviewerModels: [],
+		});
+		expect(amended).toContain(
+			"## Findings\n\n- f1 P1 lib/a.ts:17 dead-code error: unused export\n",
+		);
+		expect(amended).toContain(
+			"## Human decisions\n\n- UR-001 omitted from the report\n",
+		);
+	});
+
 	it("does not read a verdict from the next line", () => {
 		const markdown = renderQualityReviewReport({
 			verdict: "ready",

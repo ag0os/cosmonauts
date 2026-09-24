@@ -62,6 +62,8 @@ import {
 	createPiSpawner,
 	resolveModel,
 } from "../../lib/orchestration/agent-spawner.ts";
+import { qualityReviewAuditFindingLines } from "../../lib/orchestration/quality-review-launch.ts";
+import type { SpawnEvent } from "../../lib/orchestration/types.ts";
 
 const DOMAINS_DIR = resolve(
 	fileURLToPath(import.meta.url),
@@ -591,6 +593,98 @@ describe("createPiSpawner", () => {
 						},
 					}),
 				);
+			} finally {
+				await rm(hostRunStoreRoot, { recursive: true, force: true });
+			}
+		});
+
+		test("a quality spawn carries failing audit findings through to host report lines", async () => {
+			const base = "b".repeat(40);
+			let listener: ((event: unknown) => void) | undefined;
+			const session = createMockSession({
+				subscribe: vi.fn((callback: (event: unknown) => void) => {
+					listener = callback;
+					return vi.fn();
+				}),
+				prompt: vi.fn(async () => {
+					listener?.({
+						type: "tool_execution_end",
+						toolCallId: "audit",
+						toolName: "analysis_audit",
+						isError: false,
+						result: {
+							details: {
+								kind: "findings",
+								capability: "changed-scope-audit",
+								scope: { kind: "changed", base },
+								verdict: "fail",
+								findings: [
+									{
+										id: "f1",
+										category: "dead-code",
+										severity: "error",
+										message: "unused export",
+										locations: [{ path: "lib/a.ts", line: 17, column: 3 }],
+										actions: [
+											{
+												description: "remove export",
+												providerDetails: { secret: "not forwarded" },
+											},
+										],
+										providerDetails: { secret: "not forwarded" },
+									},
+									{
+										id: "f2",
+										category: "complexity",
+										severity: "warning",
+										message: "complex branch",
+										locations: [{ path: "lib/b.ts", line: 23 }],
+										actions: [],
+									},
+								],
+							},
+						},
+					});
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session });
+			const hostRunStoreRoot = await mkdtemp(join(tmpdir(), "qm-findings-"));
+			try {
+				const events: SpawnEvent[] = [];
+				const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+					resolver: realResolver,
+				});
+				const result = await spawner.spawn({
+					role: "planner",
+					cwd: "/tmp/test-project",
+					prompt: "Plan",
+					onEvent: (event) => events.push(event),
+					qualityReviewContext: {
+						runId: "qm-test",
+						workspaceRoot: "/tmp/test-project",
+						materialsRoot: "/tmp/test-project",
+						base,
+						changedFiles: [],
+						hostRunStoreRoot,
+						artifactSink: {
+							write: vi.fn(),
+							writeReviewer: vi.fn(),
+							references: () => [],
+							reviewersOpen: () => true,
+							sealReviewers: vi.fn(),
+						},
+						activeSpawns: new Set(),
+						allowedLenses: new Set(),
+						attemptedLenses: new Set(),
+						integrityFailures: [],
+					},
+				});
+				expect(result.success, result.error).toBe(true);
+				expect(JSON.stringify(events)).not.toContain("not forwarded");
+				expect(qualityReviewAuditFindingLines(events, base)).toEqual([
+					"f1 P1 lib/a.ts:17 dead-code error: unused export; fix: remove export",
+					"f2 P2 lib/b.ts:23 complexity warning: complex branch; fix: Address complexity finding.",
+				]);
 			} finally {
 				await rm(hostRunStoreRoot, { recursive: true, force: true });
 			}

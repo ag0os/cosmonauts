@@ -53,6 +53,27 @@ describe("quality review model policy", () => {
 		).toBeDefined();
 	});
 
+	it.each([
+		[
+			"reviewer",
+			{ provider: "openai-codex", id: "worker" },
+			{ provider: "mystery", id: "reviewer" },
+		],
+		[
+			"implementer",
+			{ provider: "mystery", id: "worker" },
+			{ provider: "anthropic", id: "reviewer" },
+		],
+	])("rejects a configured, observed generalist when the %s family is unresolvable", (_side, implementer, generalist) => {
+		expect(
+			assessReviewerDiversity({
+				implementer,
+				configured: `${generalist.provider}/${generalist.id}`,
+				reviewers: [{ lens: "reviewer", model: generalist }],
+			}).issue,
+		).toBe("Reviewer model family unresolvable");
+	});
+
 	it("rejects an observed generalist that matches its configured model but shares the implementer family", () => {
 		expect(
 			assessReviewerDiversity({

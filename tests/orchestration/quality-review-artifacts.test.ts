@@ -59,6 +59,9 @@ describe("quality review host artifacts", () => {
 		};
 		expect(() => sink.writeReviewer({ ...evidence, spawnId: "" })).toThrow();
 		expect(() =>
+			sink.writeReviewer({ ...evidence, fullText: "forged" }),
+		).toThrow("Reviewer evidence digest mismatch");
+		expect(() =>
 			sink.writeReviewer({ ...evidence, runId: second.runId }),
 		).toThrow();
 		await sink.writeReviewer(evidence);

@@ -14,6 +14,7 @@ import {
 } from "../../../../lib/orchestration/activity-bus.ts";
 import {
 	extractAssistantText,
+	finalAssistantEvidence,
 	summarizeAssistantText,
 } from "../../../../lib/orchestration/assistant-text.ts";
 import type { SpawnActivityEvent } from "../../../../lib/orchestration/message-bus.ts";
@@ -203,7 +204,7 @@ async function runDetachedChildSession(
 			...result,
 			stats: captureLineageStats(params, startMs),
 		};
-		await recordReviewerResult(params, result);
+		await recordReviewerResult(params);
 		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -233,7 +234,6 @@ async function runDetachedChildSession(
 
 async function recordReviewerResult(
 	params: DetachedChildSessionParams,
-	result: ChildPromptResult,
 ): Promise<void> {
 	const { qualityContext, session, resolvedRole, resolvedModel } = params;
 	if (
@@ -242,19 +242,24 @@ async function recordReviewerResult(
 		!qualityContext.artifactSink.reviewersOpen()
 	)
 		return;
-	if (!resolvedRole || !resolvedModel || !result.fullText)
+	if (!resolvedRole || !resolvedModel)
 		throw new Error("Missing reviewer host correlation");
 	assertQualityReviewModelIdentity(resolvedModel, session.model);
+	const lens = resolvedRole.replace(/^coding\//, "");
+	// The spawn summary may fall back to earlier or synthesized text; evidence may not.
+	const evidence = finalAssistantEvidence(session.messages);
+	if ("failure" in evidence)
+		throw new Error(`Reviewer ${lens} evidence rejected: ${evidence.failure}`);
 	await qualityContext.artifactSink.writeReviewer({
 		runId: qualityContext.runId,
-		lens: resolvedRole.replace(/^coding\//, ""),
+		lens,
 		spawnId: params.spawnId,
 		sessionId: session.sessionId,
 		resolvedRole,
 		resolvedModel,
 		outcome: "success",
-		digest: createHash("sha256").update(result.fullText).digest("hex"),
-		fullText: result.fullText,
+		digest: createHash("sha256").update(evidence.text).digest("hex"),
+		fullText: evidence.text,
 	});
 	qualityContext.activeSpawns.delete(params.spawnId);
 }

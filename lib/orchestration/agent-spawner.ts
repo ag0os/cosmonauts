@@ -14,6 +14,7 @@ import type {
 	AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
+import type { AnalysisFinding } from "../analysis/types.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { appendSession } from "../sessions/manifest.ts";
 import {
@@ -544,7 +545,28 @@ function analysisAuditObservation(details: object): unknown {
 			capability: "capability" in details ? details.capability : undefined,
 			scope: { base: scope && "base" in scope ? scope.base : undefined },
 			verdict: "verdict" in details ? details.verdict : undefined,
+			...auditFindingsObservation(details),
 		},
+	};
+}
+
+function auditFindingsObservation(details: object): {
+	findings?: AnalysisFinding[];
+} {
+	return "findings" in details && Array.isArray(details.findings)
+		? { findings: details.findings.map(auditFindingObservation) }
+		: {};
+}
+
+/** The fields host report lines cite; provider details stay in the QM session. */
+function auditFindingObservation(finding: AnalysisFinding): AnalysisFinding {
+	return {
+		id: finding.id,
+		category: finding.category,
+		severity: finding.severity,
+		message: finding.message,
+		locations: finding.locations.map(({ path, line }) => ({ path, line })),
+		actions: finding.actions.map(({ description }) => ({ description })),
 	};
 }
 

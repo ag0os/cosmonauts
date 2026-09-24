@@ -283,11 +283,12 @@ export function hasQualityReviewSectionContent(
 	heading: "Gates" | "Findings" | "Human decisions",
 ): boolean {
 	const body = visibleSectionBody(markdown, heading);
-	return (
-		body !== undefined &&
-		body !== "" &&
-		!/^(?:-\s*)?None recorded\.$/i.test(body)
-	);
+	return body !== undefined && body !== "" && !isNoneRecorded(body);
+}
+
+/** The QM writes the sentinel bare; the host renders it as a bullet. */
+function isNoneRecorded(body: string): boolean {
+	return /^(?:-\s*)?None recorded\.$/i.test(body);
 }
 
 /** Read visible finding bullets even when the optional machine index is absent. */
@@ -330,7 +331,7 @@ function qualityReviewSectionEntries(
 	heading: string,
 ): string[] {
 	const body = visibleSectionBody(markdown, heading);
-	if (!body || body === "- None recorded.") return [];
+	if (!body || isNoneRecorded(body)) return [];
 	const entries: string[] = [];
 	for (const line of body.split("\n")) {
 		if (/^-\s+/.test(line)) entries.push(line.replace(/^-\s+/, ""));
@@ -372,7 +373,7 @@ export function amendUnindexedQualityReviewReport(
 		if (bodyStart === undefined) continue;
 		const bodyEnd = nextSectionStart(amended, bodyStart);
 		const body = amended.slice(bodyStart, bodyEnd).trim();
-		const existing = replace || body === "- None recorded." ? "" : `${body}\n`;
+		const existing = replace || isNoneRecorded(body) ? "" : `${body}\n`;
 		amended = `${amended.slice(0, bodyStart)}\n${existing}${items.map((item) => `- ${item}`).join("\n")}\n\n${amended.slice(bodyEnd)}`;
 	}
 	return amended.includes("Index unavailable.")

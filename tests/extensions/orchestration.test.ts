@@ -1205,6 +1205,210 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		}
 	});
 
+	async function runScriptedReviewerPanel(childMessages: unknown[]) {
+		const projectRoot = await mkdtemp(join(tmpdir(), "qm-reviewer-final-"));
+		const sessionId = `qm-reviewer-final-${Date.now()}`;
+		const fixture = await loadOrchestrationDomainFixtures({
+			domainId: "coding",
+		});
+		const resolver = new DomainResolver(fixture.domainRegistry);
+		const registry = new AgentRegistry([
+			makeAgent("quality-manager", "coding", { subagents: ["reviewer"] }),
+			makeAgent("reviewer", "coding"),
+		]);
+		const reviewerModel = { provider: "test", id: "reviewer-model" };
+		mocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session: createIdleChildSession("reviewer-child", {
+				model: reviewerModel,
+				messages: childMessages,
+			}),
+			sessionFilePath: undefined,
+			resolvedModel: reviewerModel,
+		});
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot, encoding: "utf8" });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		await writeFile(join(projectRoot, "tracked.txt"), "base\n");
+		git("add", ".gitignore", "tracked.txt");
+		git("commit", "-qm", "base");
+		const integrityFailures: string[] = [];
+		const followUps: string[] = [];
+		try {
+			const result = await launchQualityReview({
+				projectRoot,
+				execute: async (context) => {
+					const pi = createMockPi(context.workspaceRoot ?? "", {
+						sessionId,
+						systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/quality-manager -->",
+					});
+					orchestrationExtension(pi as never);
+					const qualityContext = {
+						runId: context.runId,
+						baseRuntime: {
+							agentRegistry: registry,
+							domainContext: "coding",
+							domainResolver: resolver,
+							domainsDir: testDomainsDir,
+							projectSkills: [],
+							skillPaths: [],
+						} as never,
+						workspaceRoot: context.workspaceRoot ?? "",
+						materialsRoot: context.materialsRoot ?? "",
+						base: context.base ?? "",
+						changedFiles: context.changedFiles ?? [],
+						hostRunStoreRoot: context.hostRunStoreRoot,
+						artifactSink: context.artifactSink,
+						activeSpawns: context.activeChildIds,
+						allowedLenses: new Set(["reviewer"]),
+						attemptedLenses: new Set<string>(),
+						integrityFailures,
+						assessmentActive: true,
+					};
+					registerQualityReviewSession(sessionId, qualityContext);
+					try {
+						await expectAcceptedSpawn(pi, {
+							role: "reviewer",
+							prompt: "review",
+						});
+						for (let i = 0; i < 100 && qualityContext.activeSpawns.size; i++)
+							await flushAsync(5);
+						followUps.push(
+							...pi.sendUserMessage.mock.calls.map(([text]) => String(text)),
+						);
+					} finally {
+						removeQualityReviewSession(sessionId);
+						removeTracker(sessionId);
+					}
+					// The production launcher fails the assessment on the same list.
+					if (integrityFailures.length > 0)
+						throw new Error(integrityFailures.join("; "));
+					return {
+						markdown: renderQualityReviewReport({
+							verdict: "ready",
+							reason: "reviewed",
+						}),
+						requiredLenses: ["reviewer"],
+					};
+				},
+			});
+			const artifacts = join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+			);
+			const reviewerFile = await readFile(
+				join(artifacts, "reviewers", "reviewer.md"),
+				"utf8",
+			).catch(() => undefined);
+			return {
+				report: await readFile(join(artifacts, "final.md"), "utf8"),
+				reviewerFile,
+				integrityFailures,
+				followUps,
+			};
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	}
+
+	function assistantMessage(
+		text: string | undefined,
+		extra: Record<string, unknown> = {},
+	) {
+		return {
+			role: "assistant",
+			content: text === undefined ? [] : [{ type: "text", text }],
+			stopReason: "stop",
+			...extra,
+		};
+	}
+
+	// @cosmo-behavior plan:qm-chain-safety#B-003
+	test.each([
+		[
+			"a text-less provider error after retries",
+			[
+				assistantMessage("I'll start by reading the diff."),
+				assistantMessage("", {
+					stopReason: "error",
+					errorMessage: "usage limit reached",
+				}),
+			],
+			"final assistant message error: usage limit reached",
+		],
+		[
+			"a provider error after partial text",
+			[
+				assistantMessage("Partial review before the stream broke", {
+					stopReason: "error",
+					errorMessage: "stream reset",
+				}),
+			],
+			"final assistant message error: stream reset",
+		],
+		[
+			"an aborted final message",
+			[assistantMessage("Halfway through", { stopReason: "aborted" })],
+			"final assistant message aborted",
+		],
+		[
+			"a final message with no text of its own",
+			[assistantMessage("Earlier review text"), assistantMessage(undefined)],
+			"final assistant message has no text of its own",
+		],
+		["no assistant message at all", [], "no final assistant message"],
+	])("a reviewer ending in %s is a failed review, not evidence", async (_name, messages, reason) => {
+		const { report, reviewerFile, integrityFailures, followUps } =
+			await runScriptedReviewerPanel(messages);
+		expect(reviewerFile).toBeUndefined();
+		expect(integrityFailures).toEqual([
+			`Reviewer reviewer evidence rejected: ${reason}`,
+		]);
+		expect(report).toContain("Verdict: failed");
+		expect(report).toContain(`Reviewer reviewer evidence rejected: ${reason}`);
+		expect(report).not.toContain("reviewer completed");
+		expect(followUps).toEqual([expect.stringContaining("failed")]);
+	});
+
+	test("a reviewer whose final message has its own text is recorded as evidence", async () => {
+		const { reviewerFile, integrityFailures } = await runScriptedReviewerPanel([
+			assistantMessage("Earlier thinking"),
+			assistantMessage("Final review: no findings."),
+		]);
+		expect(integrityFailures).toEqual([]);
+		expect(reviewerFile).toContain("Final review: no findings.");
+		expect(reviewerFile).not.toContain("Earlier thinking");
+	});
+
+	test("an ordinary spawn still reports earlier assistant text when its final message errored", async () => {
+		const { pi } = createExtensionPi("/tmp/project", {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
+		});
+		mockChildSession(
+			createIdleChildSession("ordinary-child", {
+				messages: [
+					assistantMessage("Implemented the change."),
+					assistantMessage("", { stopReason: "error", errorMessage: "boom" }),
+				],
+			}),
+		);
+		await expectAcceptedSpawn(pi, { role: "worker", prompt: "implement" }, 10);
+		expectFollowUpContaining(pi, "Implemented the change.");
+		expect(pi.sendUserMessage).not.toHaveBeenCalledWith(
+			expect.stringContaining("failed"),
+			expect.anything(),
+		);
+	});
+
 	test("spawn_agent allows authorized target with unqualified caller resolving via scan-all", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
