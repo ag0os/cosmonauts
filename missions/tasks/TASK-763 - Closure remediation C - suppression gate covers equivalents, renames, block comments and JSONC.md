@@ -3,7 +3,7 @@ id: TASK-763
 title: >-
   Closure remediation C - suppression gate covers equivalents, renames, block
   comments and JSONC
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -13,7 +13,7 @@ labels:
 dependencies:
   - TASK-761
 createdAt: '2026-09-24T21:40:04.197Z'
-updatedAt: '2026-09-24T21:40:04.197Z'
+updatedAt: '2026-09-24T22:15:27.227Z'
 ---
 
 ## Description
@@ -26,10 +26,9 @@ Fix `missions/plans/qm-chain-safety/closure-review-1-claude.md` MEDIUM-2, LOW-1 
 
 Keep the change in the policy and the script. Do not edit `.cosmonauts/suppression-exceptions.json`: base-owned, human-only. Keep the changed-scope audit against `main` passing: no new complexity, dead-code or duplication findings, no baseline change, no suppression. Lint on tracked paths must pass. Run the suite as `bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Adding `// @ts-nocheck` (and each recognized equivalent) without a base-listed exception fails `check:suppressions`; tested through the real script in a temp repo; the test fails on the current code.
-- [ ] #2 A pure `git mv` of a file carrying an existing directive passes; the same rename plus a newly added directive fails; tested through the real script.
-- [ ] #3 A multi-line block comment ending in `@ts-ignore`, and a `biome-ignore` added to a Biome-linted `.jsonc` file, each fail without an exception; tested through the real script.
-- [ ] #4 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass; `check:suppressions -- --base main` passes on this branch.
+- [x] #1 Adding `// @ts-nocheck` (and each recognized equivalent) without a base-listed exception fails `check:suppressions`; tested through the real script in a temp repo; the test fails on the current code.
+- [x] #2 A pure `git mv` of a file carrying an existing directive passes; the same rename plus a newly added directive fails; tested through the real script.
+- [x] #3 A multi-line block comment ending in `@ts-ignore`, and a `biome-ignore` added to a Biome-linted `.jsonc` file, each fail without an exception; tested through the real script.
+- [x] #4 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass; `check:suppressions -- --base main` passes on this branch.
 <!-- AC:END -->
