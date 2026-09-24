@@ -37,6 +37,7 @@
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
 		"check:reachability": "bun scripts/check-reachability.ts",
+		"check:suppressions": "bun scripts/check-new-suppressions.ts",
 		"probe:census": "bun scripts/probe-census.ts"
 	},
 	"dependencies": {

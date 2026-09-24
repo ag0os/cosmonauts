@@ -1,0 +1,144 @@
+{
+	"version": 1,
+	"equivalents": {},
+	"entries": [
+		{
+			"family": "fallow-ignore",
+			"path": "cli/drive/subcommand.ts",
+			"directive": "be1b4cb00b3bef1c7e24d8dcc8f3c321e878886bf85a2d97e42034cf41afede7",
+			"target": "de613c8a3698d33a47f6ffafb09df25555949fe026978fb6d4c4a0e0ae0dea69"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "domains/shared/extensions/domain-bindings/index.ts",
+			"directive": "2c243de9aded223b36577405286a908ec16af3ff29fd661c57c0efeb6f669870",
+			"target": "76c38b0f717f2c4bc34bef2e4bc322fa17cc59044b5e40cf881ab7b8ae8caafb"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/agents/resolver.ts",
+			"directive": "2c243de9aded223b36577405286a908ec16af3ff29fd661c57c0efeb6f669870",
+			"target": "5984b2f93bf17cadb59d0ec6dd3074be7524eba2aa74037d4ae680970f9c3a0b"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/config/loader.ts",
+			"directive": "2c243de9aded223b36577405286a908ec16af3ff29fd661c57c0efeb6f669870",
+			"target": "9c7d023cb1e286bbf960b74d790a5603d9f09000f54f723d07f0d06a79781812"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/domains/bindings.ts",
+			"directive": "e263964159304f3c765122d9dcd71feafd45cf9f0656083aa3444b6e7867cfcf",
+			"target": "6bbcdc182efbb3c1c0cc5e9645d243250da9e0993726c36ffea1c1d75a5089a0"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/domains/loader.ts",
+			"directive": "2c243de9aded223b36577405286a908ec16af3ff29fd661c57c0efeb6f669870",
+			"target": "3f2840dcf4c087be8712d57c63382d80a750b405b22841d25e128677e86a0c9e"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/driver/driver.ts",
+			"directive": "17ae290fa30ca95a39ae071a84d1d8268b7603fd240b04e75bcc0caa50d4d077",
+			"target": "54a6cbc3d681c5fd1869c5f55027613725a2c8d3d15401412682b2b3c1866c08"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/driver/driver.ts",
+			"directive": "17ae290fa30ca95a39ae071a84d1d8268b7603fd240b04e75bcc0caa50d4d077",
+			"target": "49c83230d89bd4ff46f17e1f4bf95f31c8d54787d91c9d9db2092cf696c926c3"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/durable-runtime/types.ts",
+			"directive": "d3984251af2901757990320036409e73f66efe82d22c58b51d387f42c42e93e2",
+			"target": "03c1929de311b33fc9bbc4ad73ed9e8fef84bdc873641eb2469586b21d6f9c5c"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/durable-runtime/types.ts",
+			"directive": "d3984251af2901757990320036409e73f66efe82d22c58b51d387f42c42e93e2",
+			"target": "36abaa78d0a48812d19ff15e806cc0126ae70a0fc59297ede6d209f01fcde93a"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/durable-runtime/types.ts",
+			"directive": "d3984251af2901757990320036409e73f66efe82d22c58b51d387f42c42e93e2",
+			"target": "548647c5e1fedb5e0d63658da07ca4bd8cf723cdc6d72f452dd75c4062b373ad"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/durable-runtime/types.ts",
+			"directive": "d3984251af2901757990320036409e73f66efe82d22c58b51d387f42c42e93e2",
+			"target": "6dbdced1f316acdb619d3b08a19426ac5a54fa8cfa83de8b48c53b9cc1701931"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/durable-runtime/types.ts",
+			"directive": "d3984251af2901757990320036409e73f66efe82d22c58b51d387f42c42e93e2",
+			"target": "4c7368d910cd2455eeddbb3255315ac489ff0ef684a88d54c902622de984e35f"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/durable-runtime/types.ts",
+			"directive": "d3984251af2901757990320036409e73f66efe82d22c58b51d387f42c42e93e2",
+			"target": "00784923975ce6f63d751320569d15be2302a755fe6599ba5a7720eebbd7f50c"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/durable-runtime/types.ts",
+			"directive": "d3984251af2901757990320036409e73f66efe82d22c58b51d387f42c42e93e2",
+			"target": "83f5d910055e252e6ae070803441e1435bf7acf160238013ffd4f85322169960"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/durable-runtime/types.ts",
+			"directive": "d3984251af2901757990320036409e73f66efe82d22c58b51d387f42c42e93e2",
+			"target": "e4732a1d3fc91dbc13221d44ac9143179b4dbb9ff72daab0e087e80bc063f05a"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/durable-runtime/types.ts",
+			"directive": "d3984251af2901757990320036409e73f66efe82d22c58b51d387f42c42e93e2",
+			"target": "cf35235baaf9301061427d8d54d34c7b2eeef59f3f495e8d82d8c9bc86baf37a"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/skills/discovery.ts",
+			"directive": "2c243de9aded223b36577405286a908ec16af3ff29fd661c57c0efeb6f669870",
+			"target": "36261bc8b8b3971d9a66939fbac03691cac635fed340ccd38d715b54099f1c65"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "lib/skills/discovery.ts",
+			"directive": "2c243de9aded223b36577405286a908ec16af3ff29fd661c57c0efeb6f669870",
+			"target": "eb50e9140d82e07b472c79c943e33b5bafadd2c12c31981299676bdfd9ce4792"
+		},
+		{
+			"family": "biome-ignore",
+			"path": "lib/tasks/file-system.ts",
+			"directive": "25b3a759b103186a3d78f2ff925e9a82d55b8d75ec9dce72a18204696bb0cf1d",
+			"target": "1feca5d3a2ef217bc06f1994eec7fa430dca4fa3ee82e2332805d3e7ee107fe2"
+		},
+		{
+			"family": "@ts-expect-error",
+			"path": "tests/durable-runtime/scheduler-contracts.test.ts",
+			"directive": "1f197d2aa9a5fe76e1baf00604111ec1e9479fb16128f596b6d246dcf2d59b00",
+			"target": "fe6dde3a6626c7def6effa33babc9a1f0834360355c171b5e05807f5e643d293"
+		},
+		{
+			"family": "fallow-ignore",
+			"path": "tests/helpers/packages.ts",
+			"directive": "e263964159304f3c765122d9dcd71feafd45cf9f0656083aa3444b6e7867cfcf",
+			"target": "cd0757089b94f6f5e1e690def4c8698351100902a4e528ffc32cc9fc1aff216a"
+		},
+		{
+			"family": "biome-ignore",
+			"path": "tests/tasks/task-serializer.test.ts",
+			"directive": "ce81d5b91838e9ef58d1207dedeca28d3b4e81171787fad7338858a4f2441035",
+			"target": "c0d067b69c998548148a28d200a9202d7a6b2e0b6ed0c5981e7e1138ca9ef782"
+		}
+	]
+}
