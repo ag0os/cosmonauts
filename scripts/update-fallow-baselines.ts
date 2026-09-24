@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { cliOption } from "./cli-option.ts";
 
 const categories = {
 	"dead-code": {
@@ -24,10 +25,7 @@ const categories = {
 type Category = keyof typeof categories;
 
 const args = process.argv.slice(2);
-function option(name: string): string | undefined {
-	const index = args.indexOf(name);
-	return index < 0 ? undefined : args[index + 1];
-}
+const option = (name: string) => cliOption(args, name);
 const root = resolve(option("--root") ?? ".");
 const base = option("--base");
 const reason = option("--reason");
@@ -43,15 +41,22 @@ function run(
 	allowFindings = false,
 ): string {
 	const result = spawnSync(command, argv, { cwd, encoding: "utf8" });
-	if (
-		result.error ||
-		(result.status !== 0 && !(allowFindings && result.status === 1))
-	) {
+	if (!acceptableResult(result, allowFindings)) {
 		throw new Error(
 			`${command} ${argv.join(" ")}: ${result.error?.message ?? result.stderr.trim()}`,
 		);
 	}
 	return result.stdout.trim();
+}
+
+function acceptableResult(
+	result: ReturnType<typeof spawnSync>,
+	allowFindings: boolean,
+): boolean {
+	return (
+		!result.error &&
+		(result.status === 0 || (allowFindings && result.status === 1))
+	);
 }
 
 try {

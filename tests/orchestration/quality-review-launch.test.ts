@@ -31,6 +31,78 @@ const agent = (id: string): AgentDefinition => ({
 	loop: false,
 });
 
+async function assertDurableTerminalReport(
+	projectRoot: string,
+	result: Awaited<ReturnType<typeof runDurableChain>>,
+	chainEvents: string[],
+): Promise<void> {
+	expect(result.success).toBe(true);
+	expect(chainEvents).toContain("chain_end");
+	expect(result.run?.runId).toMatch(/^chain-/);
+	const child = result.stageResults[0]?.run;
+	expect(child?.runId).toMatch(/^qm-/);
+	expect(result.stageResults[0]?.artifacts?.[0]?.id).toBe("qm/final.md");
+	const report = await readFile(
+		join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			child?.runId ?? "",
+			"artifacts",
+			"qm",
+			"final.md",
+		),
+		"utf8",
+	);
+	expect(report).toContain("Verdict: not-ready");
+	expect(report).toContain("Analysis audit gate state: not observed");
+	expect(report).not.toContain(
+		"Run quality gates, review the diff against main",
+	);
+	const store = new (
+		await import("../../lib/durable-runtime/index.ts")
+	).FileRunStore({
+		rootDir: join(projectRoot, "missions", "sessions"),
+	});
+	const childEvents = (
+		await store.readEvents({ scope: "chain", runId: child?.runId ?? "" })
+	).events;
+	expect(childEvents.some(({ event }) => event.type === "run_completed")).toBe(
+		true,
+	);
+}
+
+async function runDurableWithOperatorNote(
+	projectRoot: string,
+	registry: AgentRegistry,
+): Promise<string | undefined> {
+	const callerStages = parseChain("quality-manager", registry);
+	const callerStage = callerStages[0];
+	if (!callerStage || "stages" in callerStage)
+		throw new Error("expected stage");
+	callerStage.prompt = "Review the payment boundary only.";
+	let operatorNote: string | undefined;
+	await runDurableChain({
+		steps: callerStages,
+		projectRoot,
+		registry,
+		qualityReview: {
+			execute: async ({ operatorNote: note }) => {
+				operatorNote = note;
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "not-ready",
+						reason: "finding",
+					}),
+				};
+			},
+		},
+	});
+	return operatorNote;
+}
+
 describe("quality review launch policy", () => {
 	it("fails when the QM skips or repeats direct analysis status", () => {
 		expect(() => validateQualityReviewAnalysisCalls([])).toThrow(
@@ -716,62 +788,10 @@ describe("quality review launch policy", () => {
 				},
 			},
 		});
-		expect(result.success).toBe(true);
 		expect(operatorNote).toBeUndefined();
-		expect(chainEvents).toContain("chain_end");
-		expect(result.run?.runId).toMatch(/^chain-/);
-		const child = result.stageResults[0]?.run;
-		expect(child?.runId).toMatch(/^qm-/);
-		expect(result.stageResults[0]?.artifacts?.[0]?.id).toBe("qm/final.md");
-		const report = await readFile(
-			join(
-				projectRoot,
-				"missions",
-				"sessions",
-				"chain",
-				"runs",
-				child?.runId ?? "",
-				"artifacts",
-				"qm",
-				"final.md",
-			),
-			"utf8",
+		await assertDurableTerminalReport(projectRoot, result, chainEvents);
+		expect(await runDurableWithOperatorNote(projectRoot, registry)).toBe(
+			"Review the payment boundary only.",
 		);
-		expect(report).toContain("Verdict: not-ready");
-		expect(report).toContain("Analysis audit gate state: not observed");
-		expect(report).not.toContain(
-			"Run quality gates, review the diff against main",
-		);
-		const store = new (
-			await import("../../lib/durable-runtime/index.ts")
-		).FileRunStore({ rootDir: join(projectRoot, "missions", "sessions") });
-		const childEvents = (
-			await store.readEvents({ scope: "chain", runId: child?.runId ?? "" })
-		).events;
-		expect(
-			childEvents.some(({ event }) => event.type === "run_completed"),
-		).toBe(true);
-		const callerStages = parseChain("quality-manager", registry);
-		const callerStage = callerStages[0];
-		if (!callerStage || "stages" in callerStage)
-			throw new Error("expected stage");
-		callerStage.prompt = "Review the payment boundary only.";
-		await runDurableChain({
-			steps: callerStages,
-			projectRoot,
-			registry,
-			qualityReview: {
-				execute: async ({ operatorNote: note }) => {
-					operatorNote = note;
-					return {
-						markdown: renderQualityReviewReport({
-							verdict: "not-ready",
-							reason: "finding",
-						}),
-					};
-				},
-			},
-		});
-		expect(operatorNote).toBe("Review the payment boundary only.");
 	});
 });

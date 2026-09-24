@@ -8,12 +8,10 @@ import {
 	type SuppressionKey,
 	scanSuppressions,
 } from "../lib/quality/suppression-policy.ts";
+import { cliOption } from "./cli-option.ts";
 
 const args = process.argv.slice(2);
-function option(name: string): string | undefined {
-	const index = args.indexOf(name);
-	return index < 0 ? undefined : args[index + 1];
-}
+const option = (name: string) => cliOption(args, name);
 const root = resolve(option("--root") ?? ".");
 const base = option("--base");
 if (
@@ -56,31 +54,53 @@ interface Registry {
 function parseRegistry(source: string | undefined): Registry {
 	if (source === undefined) return { version: 1, entries: [] };
 	const value: unknown = JSON.parse(source);
-	if (typeof value !== "object" || value === null)
-		throw new Error("invalid base suppression registry");
-	const record = value as Record<string, unknown>;
-	if (record.version !== 1 || !Array.isArray(record.entries))
-		throw new Error("invalid base suppression registry version or entries");
-	for (const entry of record.entries) {
-		if (
-			typeof entry !== "object" ||
-			entry === null ||
-			!["family", "path", "directive", "target"].every(
-				(field) => typeof entry[field] === "string",
-			)
-		)
-			throw new Error("invalid base suppression registry entry");
-	}
-	if (
-		record.equivalents !== undefined &&
-		(typeof record.equivalents !== "object" ||
-			record.equivalents === null ||
-			Object.values(record.equivalents).some(
-				(item) => typeof item !== "string",
-			))
-	)
-		throw new Error("invalid base suppression equivalents");
+	validateRegistry(value);
 	return value as Registry;
+}
+
+function validateRegistry(value: unknown): void {
+	if (!isRecord(value)) throw new Error("invalid base suppression registry");
+	if (!hasRegistryEntries(value))
+		throw new Error("invalid base suppression registry version or entries");
+	validateRegistryEntries(value.entries);
+	validateRegistryEquivalents(value.equivalents);
+}
+
+function validateRegistryEntries(entries: unknown[]): void {
+	if (!entries.every(isRegistryEntry))
+		throw new Error("invalid base suppression registry entry");
+}
+
+function validateRegistryEquivalents(equivalents: unknown): void {
+	if (!validEquivalents(equivalents))
+		throw new Error("invalid base suppression equivalents");
+}
+
+function hasRegistryEntries(
+	value: Record<string, unknown>,
+): value is Record<string, unknown> & { entries: unknown[] } {
+	return value.version === 1 && Array.isArray(value.entries);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isRegistryEntry(value: unknown): boolean {
+	return (
+		isRecord(value) &&
+		["family", "path", "directive", "target"].every(
+			(field) => typeof value[field] === "string",
+		)
+	);
+}
+
+function validEquivalents(value: unknown): boolean {
+	return (
+		value === undefined ||
+		(isRecord(value) &&
+			Object.values(value).every((item) => typeof item === "string"))
+	);
 }
 
 try {

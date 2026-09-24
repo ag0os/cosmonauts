@@ -50,6 +50,63 @@ import { getOrchestrationMocks } from "./orchestration-mocks.ts";
 
 const mocks = getOrchestrationMocks();
 
+async function assertToolsRefused(
+	pi: ReturnType<typeof createMockPi>,
+	tools: readonly string[],
+): Promise<void> {
+	for (const tool of tools)
+		await expect(pi.callTool(tool, {})).rejects.toThrow(
+			`Tool refused by session profile: ${tool}`,
+		);
+}
+
+async function assertMutatingSpawnsDenied(
+	pi: ReturnType<typeof createMockPi>,
+): Promise<void> {
+	for (const role of [
+		"fixer",
+		"coordinator",
+		"worker",
+		"verifier",
+		"integration-verifier",
+	]) {
+		const denied = (await pi.callTool("spawn_agent", {
+			role,
+			prompt: "change code",
+		})) as { details: { status: string } };
+		expect(denied.details.status).toBe("denied");
+	}
+}
+
+async function assertPanelReadOnly(
+	workspaceRoot: string,
+	panelTools: string[],
+	qualityContext: Parameters<typeof registerQualityReviewSession>[1],
+): Promise<void> {
+	const panelSessionId = "scripted-panel-session";
+	const panel = createMockPi(workspaceRoot, {
+		sessionId: panelSessionId,
+		systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/reviewer -->",
+		allowedTools: panelTools,
+	});
+	orchestrationExtension(panel as never);
+	await assertToolsRefused(panel, [
+		"bash",
+		"write",
+		"edit",
+		"chain_run",
+		"spawn_agent",
+	]);
+	registerQualityReviewSession(panelSessionId, qualityContext);
+	try {
+		await expect(
+			panel.callTool("spawn_agent", { role: "worker", prompt: "change code" }),
+		).rejects.toThrow("Tool refused by session profile: spawn_agent");
+	} finally {
+		removeQualityReviewSession(panelSessionId);
+	}
+}
+
 describe("orchestration extension", () => {
 	const runtimeCreateMock = vi.mocked(mocks.runtimeCreate);
 	const parseChainMock = vi.mocked(parseChain);
@@ -1085,10 +1142,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 						allowedTools: managerTools,
 					});
 					orchestrationExtension(pi as never);
-					for (const tool of ["bash", "write", "edit", "chain_run"])
-						await expect(pi.callTool(tool, {})).rejects.toThrow(
-							`Tool refused by session profile: ${tool}`,
-						);
+					await assertToolsRefused(pi, ["bash", "write", "edit", "chain_run"]);
 					const qualityContext = {
 						runId: context.runId,
 						baseRuntime: {
@@ -1112,47 +1166,12 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 					};
 					registerQualityReviewSession(sessionId, qualityContext);
 					try {
-						for (const role of [
-							"fixer",
-							"coordinator",
-							"worker",
-							"verifier",
-							"integration-verifier",
-						]) {
-							const denied = (await pi.callTool("spawn_agent", {
-								role,
-								prompt: "change code",
-							})) as { details: { status: string } };
-							expect(denied.details.status).toBe("denied");
-						}
-						const panelSessionId = "scripted-panel-session";
-						const panel = createMockPi(context.workspaceRoot ?? "", {
-							sessionId: panelSessionId,
-							systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/reviewer -->",
-							allowedTools: panelTools,
-						});
-						orchestrationExtension(panel as never);
-						for (const tool of [
-							"bash",
-							"write",
-							"edit",
-							"chain_run",
-							"spawn_agent",
-						])
-							await expect(panel.callTool(tool, {})).rejects.toThrow(
-								`Tool refused by session profile: ${tool}`,
-							);
-						registerQualityReviewSession(panelSessionId, qualityContext);
-						try {
-							await expect(
-								panel.callTool("spawn_agent", {
-									role: "worker",
-									prompt: "change code",
-								}),
-							).rejects.toThrow("Tool refused by session profile: spawn_agent");
-						} finally {
-							removeQualityReviewSession(panelSessionId);
-						}
+						await assertMutatingSpawnsDenied(pi);
+						await assertPanelReadOnly(
+							context.workspaceRoot ?? "",
+							panelTools,
+							qualityContext,
+						);
 						return {
 							markdown: renderQualityReviewReport({
 								verdict: "not-ready",
