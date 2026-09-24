@@ -8,6 +8,7 @@ labels:
   - testing
   - 'plan:qm-chain-safety'
 dependencies:
+  - TASK-758
   - TASK-757
   - TASK-756
   - TASK-755
