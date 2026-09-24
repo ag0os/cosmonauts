@@ -88,12 +88,12 @@ All tasks have label `plan:qm-chain-safety`.
 
 ### Mechanics
 
-- **Drive:** `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-6-sol -c model_reasoning_effort=medium" cosmonauts run drive --plan qm-chain-safety --task-ids <ids> --backend codex --mode detached --branch feature/qm-chain-safety --task-timeout 7200000`.
+- **Drive** (D-034 model `gpt-5.6-sol`; claude-cli with `COSMONAUTS_DRIVER_CLAUDE_ARGS="--model claude-opus-5-5"` also works): `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-5.6-sol -c model_reasoning_effort=medium" cosmonauts run drive --plan qm-chain-safety --task-ids <ids> --backend codex --mode detached --branch feature/qm-chain-safety --task-timeout 7200000`.
   - Poll `missions/sessions/qm-chain-safety/runs/<runId>/events.jsonl` for `run_completed|run_aborted|task_blocked`.
   - `--resume` only replays. Relaunch with `--task-ids`; the worker continues from uncommitted partial work.
   - After each run, commit any stranded `missions/reviews/knowledge-surface-backfill-amendment-3.md` digest change. Check it equals `shasum -a 256 .cosmonauts/config.json`.
   - Workers that report "partial" only because of the runner-args test artifact: verify yourself.
-- **Codex review:** `codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only "$(cat prompt)" < /dev/null > log 2>&1`. The final message follows the last line that is exactly `codex` and precedes `tokens used`.
+- **Codex review** (D-034): `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only "$(cat prompt)" < /dev/null > log 2>&1`. The final message follows the last line that is exactly `codex` and precedes `tokens used`.
 - **Claude review:** a general-purpose subagent, read-only, with probes in the scratchpad. Mutation-check the tests.
 - **Task batches:** `cosmonauts task create --from-file <yaml>`, with single-line ACs.
 - **Workers:** tell them to run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
@@ -265,10 +265,10 @@ This plan is **never** verified by the quality-manager, because the QM is the th
 
 - **Replacement:** wherever `/implement-plan` calls the QM, run instead:
   1. a Claude subagent reviewer;
-  2. `codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only < /dev/null`.
+  2. `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only < /dev/null` (D-034; originally `gpt-6-sol`).
 - **Framing:** both are a **correctness/liveness** review. Never frame them as adversarial or an attack; that trips codex's content filter and kills the run.
 - **Outputs:** save them as `missions/plans/qm-chain-safety/closure-review-<n>.md` (TASK-728 #7).
-- **Workers:** codex `gpt-6-sol` at medium effort. For Drive, set `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-6-sol -c model_reasoning_effort=medium"`.
+- **Workers:** codex `gpt-5.6-sol` at medium effort (D-034; originally `gpt-6-sol`). For Drive, set `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-5.6-sol -c model_reasoning_effort=medium"`.
 
 ## Method notes for the implementer
 

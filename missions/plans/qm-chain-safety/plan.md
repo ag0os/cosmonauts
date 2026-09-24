@@ -678,6 +678,17 @@ Investigation evidence gathered before design:
   - Decided by: coordinator, amend-on-record, 2026-09-24 (supervisor concurred)
   - Supersedes: D-031 floor 2's allowance of dismissals in Findings; TASK-748 AC #2 and TASK-749 AC #1 as to dismissals in Findings.
 
+- **D-035 - AC-008 per-finding fields are prompt-carried; the host enforces structure and fail-safe floors** *(Added 2026-09-24 after closure review 2, codex M1)*
+  - Decision:
+    - The host enforces the parts of AC-008 it can check without interpreting prose: the verdict; the required sections, including Human decisions and Out-of-range observations; the host-verified checks and gates with their evidence; the positive statement of what was checked; and the D-031/D-032 floors. Any Findings content blocks `ready`, and every reviewer finding ID is accounted for.
+    - Host-generated items (carried-over findings, audit findings with file:line, not-configured items) carry their own fields.
+    - Whether each QM-written finding contains a priority, severity, file:line and suggested fix is carried by the QM prompt (`quality-manager.md`), which requires those fields.
+    - The host does not parse free-form finding prose for field completeness. That is the text-recognition class D-031 records as heuristic. A finding missing those fields still blocks `ready`, so the only cost is less actionability, not a false verdict. This is a recorded limit.
+  - Alternatives: host validation of each finding's fields. Rejected as a further prose parser that D-031 and D-032 showed does not converge.
+  - Why: AC-008 read together with D-031, D-032 and INV-003. The report always carries the verdict and the required sections, and cannot be `ready` while any finding is present.
+  - Decided by: coordinator, amend-on-record, 2026-09-24
+  - Supersedes: none (an interpretation of AC-008's per-finding field bullet for QM-written prose).
+
 - **D-034 - Codex is back through the work account on `gpt-5.6-sol`; the cross-family closure runs now** *(human ruling, amends D-033)*
   - Decision:
     - Codex is available again through the user's work account. GPT-6 models are not available there, so every codex use runs on `gpt-5.6-sol`:

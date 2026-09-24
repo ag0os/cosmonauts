@@ -7,6 +7,7 @@ labels:
   - testing
   - 'plan:qm-chain-safety'
 dependencies:
+  - TASK-765
   - TASK-764
   - TASK-762
   - TASK-763
@@ -42,7 +43,7 @@ dependencies:
   - TASK-745
   - TASK-746
 createdAt: '2026-09-24T03:18:26.982Z'
-updatedAt: '2026-09-24T03:18:26.982Z'
+updatedAt: '2026-09-24T23:04:02.908Z'
 ---
 
 ## Description
@@ -60,3 +61,7 @@ Binding ratified ground (not worker-adjustable; any collision requires halt-and-
 - [ ] #6 (Compliance patch, 2026-09-24) The minimum attack list is executed, not just inspected — capture: a stale stat cache plus an injected porcelain call, an absolute or root-escaping symlink, source edits between the two samples; authority: bracket and fan-out `chain_run` to `fixer`, a QM or child attempting bash, write or `chain_run`; reviewer evidence: a forged, duplicate, foreign or empty reviewer completion, a reviewer timeout with no cancellation; suppressions: a same-change registry edit, a gate-owned-file edit; models and config: same-family, unresolvable and substituted models, unconfigured checks and model; end to end: one real QM run on a dirty checkout of this repository, with before/after hashes of HEAD, refs, `.git/index` and every tracked and untracked file.
 - [ ] #7 (Compliance patch, 2026-09-24) Pass condition and evidence: both channels report no unresolved correctness or liveness finding, or each finding has a recorded disposition under #5. Both channels' full outputs are saved as `missions/plans/qm-chain-safety/closure-review-<n>.md`, so the closure verdict is durable.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Coordinator, 2026-09-24: D-033 and D-034 (human) amend the model named in this task's D-002 text and AC #1. The codex channel runs as `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only`, and workers use codex `gpt-5.6-sol` or claude-cli Opus 5.5. The `gpt-6-sol` text above is historical.
