@@ -684,6 +684,7 @@ Investigation evidence gathered before design:
     - Host-generated items (carried-over findings, audit findings with file:line, not-configured items) carry their own fields.
     - Whether each QM-written finding contains a priority, severity, file:line and suggested fix is carried by the QM prompt (`quality-manager.md`), which requires those fields.
     - The host does not parse free-form finding prose for field completeness. That is the text-recognition class D-031 records as heuristic. A finding missing those fields still blocks `ready`, so the only cost is less actionability, not a false verdict. This is a recorded limit.
+    - **Recorded limit** *(added 2026-09-24 after closure review 3)*: AC-012's agreement between `docs/fallow-exceptions.md`, `docs/fallow.md`, the roadmap's `analysis-debt-paydown` item and `.fallow-baselines/manifest.json` is verified by review inspection (closure reviews 2 and 3). No test pins it: a prose-agreement test would be the sentence matching that D-014 rules out.
   - Alternatives: host validation of each finding's fields. Rejected as a further prose parser that D-031 and D-032 showed does not converge.
   - Why: AC-008 read together with D-031, D-032 and INV-003. The report always carries the verdict and the required sections, and cannot be `ready` while any finding is present.
   - Decided by: coordinator, amend-on-record, 2026-09-24
