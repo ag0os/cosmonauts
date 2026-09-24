@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -183,6 +183,67 @@ describe("session-factory planSlug validation", () => {
 				model: { provider: "observed", id: "resolved-model" },
 			},
 		});
+	});
+
+	test("assembles panel skill locations inside the clone without source or host paths in its prompt inputs", async () => {
+		const sourceRoot = await mkdtemp(join(tmpdir(), "qm-source-skills-"));
+		const workspaceRoot = await mkdtemp(join(tmpdir(), "qm-clone-skills-"));
+		const hostRunStoreRoot = await mkdtemp(join(tmpdir(), "qm-host-skills-"));
+		const suffix = join("bundled", "coding", "skills");
+		await mkdir(join(sourceRoot, suffix), { recursive: true });
+		await mkdir(join(workspaceRoot, suffix), { recursive: true });
+		mocks.buildSessionParams.mockImplementation(
+			async ({ skillPaths }: { skillPaths: string[] }) => ({
+				promptContent: `Panel system prompt\n${skillPaths.map((path) => `<location>${path}</location>`).join("\n")}`,
+				tools: [],
+				extensionPaths: [],
+				extensionFactories: [],
+				knowledgeSurfaceEnabled: false,
+				additionalSkillPaths: skillPaths,
+				projectContext: false,
+				model: { provider: "test", id: "model" },
+				qualityReviewProfile: "reviewer",
+			}),
+		);
+		try {
+			await createAgentSessionFromDefinition(
+				TEST_AGENT,
+				{
+					role: "coding/reviewer",
+					cwd: workspaceRoot,
+					prompt: "review",
+					skillPaths: [join(sourceRoot, suffix)],
+					qualityReviewChild: true,
+					qualityReviewContext: {
+						runId: "qm-skills",
+						sourceRoot,
+						workspaceRoot,
+						materialsRoot: workspaceRoot,
+						base: "a".repeat(40),
+						changedFiles: [],
+						hostRunStoreRoot,
+						artifactSink: {} as never,
+						activeSpawns: new Set(),
+						allowedLenses: new Set(["reviewer"]),
+						attemptedLenses: new Set(),
+						integrityFailures: [],
+					},
+				},
+				"/tmp/domains",
+			);
+			const loader = mocks.loaderOptions.mock.calls.at(-1)?.[0] as {
+				systemPrompt?: string;
+				additionalSkillPaths?: string[];
+			};
+			const fullSystemPrompt = `${loader.systemPrompt}\n${loader.additionalSkillPaths?.map((path) => `<location>${path}</location>`).join("\n")}`;
+			expect(fullSystemPrompt).toContain(join(workspaceRoot, suffix));
+			expect(fullSystemPrompt).not.toContain(sourceRoot);
+			expect(fullSystemPrompt).not.toContain(hostRunStoreRoot);
+		} finally {
+			await rm(sourceRoot, { recursive: true, force: true });
+			await rm(workspaceRoot, { recursive: true, force: true });
+			await rm(hostRunStoreRoot, { recursive: true, force: true });
+		}
 	});
 
 	test("attributes the model exposed by Pi after session creation", async () => {

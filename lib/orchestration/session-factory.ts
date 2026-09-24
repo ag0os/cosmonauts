@@ -4,8 +4,8 @@
  * extension loading, skill overrides, and compaction configuration.
  */
 
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, realpath, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	type AgentSession,
 	AuthStorage,
@@ -57,6 +57,36 @@ export async function createAgentSessionFromDefinition(
 ): Promise<SessionCreateResult> {
 	const authStorage = AuthStorage.create();
 	const modelRegistry = ModelRegistry.create(authStorage);
+	const sourceRoot = config.qualityReviewContext?.sourceRoot;
+	const canonicalSourceRoot = sourceRoot
+		? await realpath(sourceRoot).catch(() => sourceRoot)
+		: undefined;
+	const skillPaths =
+		canonicalSourceRoot && config.skillPaths
+			? (
+					await Promise.all(
+						config.skillPaths.map(async (path) => {
+							const canonicalPath = await realpath(path).catch(() => path);
+							const suffix = relative(canonicalSourceRoot, canonicalPath);
+							if (
+								suffix === "" ||
+								(suffix !== ".." &&
+									!suffix.startsWith(`..${sep}`) &&
+									!isAbsolute(suffix))
+							) {
+								const clonePath = resolve(config.cwd, suffix);
+								try {
+									if ((await stat(clonePath)).isDirectory()) return clonePath;
+								} catch {
+									/* absent from clone */
+								}
+								return undefined;
+							}
+							return path;
+						}),
+					)
+				).filter((path): path is string => path !== undefined)
+			: config.skillPaths;
 	const params = await buildSessionParams({
 		def,
 		cwd: config.cwd,
@@ -72,7 +102,7 @@ export async function createAgentSessionFromDefinition(
 					}
 				: undefined,
 		projectSkills: config.projectSkills,
-		skillPaths: config.skillPaths,
+		skillPaths,
 		modelOverride: config.model,
 		modelRegistry,
 		thinkingLevelOverride: config.thinkingLevel,

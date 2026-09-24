@@ -213,6 +213,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				runId: context.runId,
 				analysisConsent: context.analysisConsent,
 				workspaceRoot: context.workspaceRoot,
+				sourceRoot: context.sourceRoot,
 				materialsRoot: context.materialsRoot,
 				base: context.base,
 				changedFiles: context.changedFiles ?? [],
@@ -288,7 +289,30 @@ export function triageReviewLenses(
 	diff = "",
 ): string[] {
 	const lenses = ["reviewer"];
-	const scope = `${files.join("\n")}\n${diff}`;
+	const codeFiles = files.filter(
+		(file) =>
+			!/(?:^|\/)(?:docs?|README|CHANGELOG|missions|memory|knowledge)(?:\/|\.|$)|\.(?:md|mdx|txt|rst)$/i.test(
+				file,
+			),
+	);
+	let inBlockComment = false;
+	const codeLines = diff
+		.split("\n")
+		.filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+		.map((line) => line.slice(1).trim())
+		.filter((line) => {
+			if (inBlockComment) {
+				if (line.includes("*/")) inBlockComment = false;
+				return false;
+			}
+			if (line.startsWith("/*")) {
+				inBlockComment = !line.includes("*/");
+				return false;
+			}
+			return line !== "" && !/^(?:\/\/|\*|#|<!--)/.test(line);
+		});
+	if (codeFiles.length === 0 || codeLines.length === 0) return lenses;
+	const scope = `${codeFiles.join("\n")}\n${codeLines.join("\n")}`;
 	if (
 		/auth|security|permission|secret|token|login|session|dependenc|package\.json|lockfile|bun\.lock|spawn|exec|path|filesystem|node:fs/i.test(
 			scope,
@@ -298,7 +322,7 @@ export function triageReviewLenses(
 	if (/database|query|cache|performance|\.sql\b|fallow/i.test(scope))
 		lenses.push("performance-reviewer");
 	if (
-		/\.(?:tsx|jsx|css|html|erb)\b|\/views\/|<form\b|(?:^|\/)(?:cli|api)\/|\b(?:help|usage|error|flag|user.facing|api|response|output)\b/i.test(
+		/\.(?:tsx|jsx|css|html|erb)\b|\/views\/|<form\b|(?:^|\/)(?:cli|api)\/|\b(?:help|usage|flag|user.facing|response|output)\b/i.test(
 			scope,
 		)
 	)

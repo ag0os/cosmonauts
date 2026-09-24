@@ -155,18 +155,22 @@ describe("quality review launch policy", () => {
 			),
 		).toThrow(/fail/);
 	});
-	it("triages applicable lenses from the captured diff as well as filenames", () => {
+	it("keeps documentation prose out of specialist triage", () => {
 		expect(
 			triageReviewLenses(
 				["README.md"],
 				"+ authorization token query cache <form>",
 			),
-		).toEqual([
-			"reviewer",
-			"security-reviewer",
-			"performance-reviewer",
-			"ux-reviewer",
-		]);
+		).toEqual(["reviewer"]);
+		expect(
+			triageReviewLenses(["lib/auth.ts"], "+// query cache <form> token"),
+		).toEqual(["reviewer"]);
+		expect(
+			triageReviewLenses(["lib/auth.ts"], "+/*\n+filesystem query cache\n+*/"),
+		).toEqual(["reviewer"]);
+		expect(
+			triageReviewLenses(["lib/core.ts"], '+throw new Error("bad state")'),
+		).toEqual(["reviewer"]);
 	});
 	it("requires UX for CLI help and security for dependency changes", () => {
 		expect(triageReviewLenses(["cli/help.ts"], "+Show command usage")).toEqual([
@@ -244,7 +248,7 @@ describe("quality review launch policy", () => {
 		);
 	});
 
-	it("runs host check policy even with an injected assessment", async () => {
+	it("requires an observed audit state even with an injected ready assessment", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "qm-launch-checks-"));
 		roots.push(projectRoot);
 		const { execFileSync } = await import("node:child_process");
@@ -254,7 +258,25 @@ describe("quality review launch policy", () => {
 		git("config", "user.email", "test@example.com");
 		git("config", "user.name", "Test");
 		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
-		git("add", ".gitignore");
+		await (await import("node:fs/promises")).mkdir(
+			join(projectRoot, ".cosmonauts"),
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "test/other",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		git("add", ".gitignore", ".cosmonauts/config.json");
 		git("commit", "-qm", "base");
 		const result = await launchQualityReview({
 			projectRoot,
@@ -262,6 +284,7 @@ describe("quality review launch policy", () => {
 				markdown: renderQualityReviewReport({
 					verdict: "ready",
 					reason: "clear",
+					gates: ["model claims pass"],
 				}),
 			}),
 		});
@@ -280,7 +303,7 @@ describe("quality review launch policy", () => {
 			"utf8",
 		);
 		expect(report).toContain("Verdict: not-ready");
-		expect(report).toContain("Not configured: qualityReview.checks");
+		expect(report).toContain("Analysis audit gate state: not observed");
 	});
 
 	it("delegates a durable terminal QM into a child run with a complete report", async () => {
@@ -314,5 +337,21 @@ describe("quality review launch policy", () => {
 		const child = result.stageResults[0]?.run;
 		expect(child?.runId).toMatch(/^qm-/);
 		expect(result.stageResults[0]?.artifacts?.[0]?.id).toBe("qm/final.md");
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				child?.runId ?? "",
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain("Analysis audit gate state: not observed");
 	});
 });

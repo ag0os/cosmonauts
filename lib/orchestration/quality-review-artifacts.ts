@@ -30,6 +30,8 @@ export interface QualityReviewArtifactSink {
 		options?: { replace?: boolean; metadata?: Record<string, unknown> },
 	): Promise<ArtifactRef>;
 	writeReviewer(evidence: ReviewerEvidence): Promise<ArtifactRef>;
+	reviewersOpen(): boolean;
+	sealReviewers(): Promise<void>;
 	references(): ArtifactRef[];
 }
 
@@ -56,6 +58,8 @@ export function createQualityReviewArtifactSink(options: {
 	const ref = { scope: run.scope, runId: run.runId };
 	const emitted = new Set<string>();
 	const references = new Map<string, ArtifactRef>();
+	let reviewersOpen = true;
+	const reviewerWrites = new Set<Promise<ArtifactRef>>();
 
 	async function write(
 		path: string,
@@ -126,8 +130,14 @@ export function createQualityReviewArtifactSink(options: {
 
 	return {
 		write,
+		reviewersOpen: () => reviewersOpen,
+		async sealReviewers() {
+			reviewersOpen = false;
+			await Promise.allSettled([...reviewerWrites]);
+		},
 		references: () => [...references.values()],
 		writeReviewer(evidence) {
+			if (!reviewersOpen) throw new Error("Reviewer evidence window is closed");
 			const { lens, fullText } = evidence;
 			if (!/^[a-z0-9][a-z0-9-]*$/.test(lens))
 				throw new Error("Invalid reviewer lens");
@@ -152,7 +162,7 @@ export function createQualityReviewArtifactSink(options: {
 			if (emitted.has(id))
 				throw new Error(`Duplicate reviewer evidence: ${lens}`);
 			const record = `# Reviewer ${lens}\n\nRun: ${evidence.runId}\nLens: ${lens}\nSpawn: ${evidence.spawnId}\nSession: ${evidence.sessionId}\nRole: ${evidence.resolvedRole}\nModel: ${evidence.resolvedModel.provider}/${evidence.resolvedModel.id}\nFinal-text SHA-256: ${evidence.digest}\n\n## Full final text\n\n${fullText}`;
-			return write(`reviewers/${lens}.md`, record, {
+			const pending = write(`reviewers/${lens}.md`, record, {
 				metadata: {
 					finalTextDigest: evidence.digest,
 					spawnId: evidence.spawnId,
@@ -161,6 +171,12 @@ export function createQualityReviewArtifactSink(options: {
 					resolvedModel: evidence.resolvedModel,
 				},
 			});
+			reviewerWrites.add(pending);
+			void pending.then(
+				() => reviewerWrites.delete(pending),
+				() => reviewerWrites.delete(pending),
+			);
+			return pending;
 		},
 	};
 }

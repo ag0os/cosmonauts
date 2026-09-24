@@ -426,7 +426,10 @@ function subscribeToSpawnEvents(
 	}
 
 	return session.subscribe((event) => {
-		const mapped = mapSessionEvent(event);
+		const mapped = mapSessionEvent(
+			event,
+			config.qualityReviewContext !== undefined,
+		);
 		if (!mapped) {
 			return;
 		}
@@ -536,6 +539,7 @@ function attachSessionId(
  */
 function mapSessionEvent(
 	event: AgentSessionEvent,
+	captureAnalysisResults: boolean,
 ): SpawnEventPayload | undefined {
 	switch (event.type) {
 		case "turn_start":
@@ -550,10 +554,9 @@ function mapSessionEvent(
 				...(event.args !== undefined && { args: event.args }),
 			};
 		case "tool_execution_end": {
-			const observation = analysisGateObservation(
-				event.toolName as string,
-				event.result,
-			);
+			const observation = captureAnalysisResults
+				? analysisGateObservation(event.toolName as string, event.result)
+				: undefined;
 			return {
 				type: "tool_execution_end",
 				toolName: event.toolName as string,

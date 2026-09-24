@@ -26,6 +26,7 @@ import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
+import { createQualityReviewArtifactSink } from "../../lib/orchestration/quality-review-artifacts.ts";
 import {
 	registerQualityReviewSession,
 	removeQualityReviewSession,
@@ -1169,6 +1170,10 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 	});
 
 	test("discards a panel completion that arrives after assessment", async () => {
+		const hostRoot = await mkdtemp(join(tmpdir(), "qm-late-panel-"));
+		const store = new FileRunStore({ rootDir: hostRoot });
+		const run = await store.createRun({ scope: "chain", runId: "qm-late" });
+		const artifactSink = createQualityReviewArtifactSink({ store, run });
 		mockRuntime({
 			domainContext: "coding",
 			agentRegistry: new AgentRegistry([
@@ -1181,7 +1186,6 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			sessionId,
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/quality-manager -->",
 		});
-		const writeReviewer = vi.fn();
 		const qualityContext = {
 			runId: "qm-late",
 			workspaceRoot: "/private/snapshot",
@@ -1189,7 +1193,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			base: "a".repeat(40),
 			changedFiles: [],
 			hostRunStoreRoot: "/operator/run-store",
-			artifactSink: { writeReviewer } as never,
+			artifactSink,
 			activeSpawns: new Set<string>(),
 			allowedLenses: new Set(["reviewer"]),
 			attemptedLenses: new Set<string>(),
@@ -1200,17 +1204,17 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		const pending = new Promise<void>((resolve) => {
 			settlePrompt = resolve;
 		});
-		mockChildSession(
-			createIdleChildSession("late-reviewer", {
-				prompt: vi.fn(() => pending),
-				messages: [
-					{
-						role: "assistant",
-						content: [{ type: "text", text: "late full review" }],
-					},
-				],
-			}),
-		);
+		const child = createIdleChildSession("late-reviewer", {
+			abort: vi.fn(),
+			prompt: vi.fn(() => pending),
+			messages: [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "late full review" }],
+				},
+			],
+		});
+		mockChildSession(child);
 		registerQualityReviewSession(sessionId, qualityContext);
 		try {
 			const accepted = (await pi.callTool("spawn_agent", {
@@ -1220,12 +1224,21 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			expect(accepted.details.status, JSON.stringify(accepted)).toBe(
 				"accepted",
 			);
-			qualityContext.assessmentActive = false;
+			await artifactSink.sealReviewers();
 			settlePrompt?.();
 			await flushAsync(10);
-			expect(writeReviewer).not.toHaveBeenCalled();
+			await expect(
+				readFile(join(run.artifactsDir, "qm", "reviewers", "reviewer.md")),
+			).rejects.toMatchObject({ code: "ENOENT" });
+			expect(
+				(
+					await store.readEvents({ scope: "chain", runId: "qm-late" })
+				).events.filter(({ event }) => event.type === "artifact_written"),
+			).toHaveLength(0);
+			expect(child.abort).not.toHaveBeenCalled();
 		} finally {
 			removeQualityReviewSession(sessionId);
+			await rm(hostRoot, { recursive: true, force: true });
 		}
 	});
 

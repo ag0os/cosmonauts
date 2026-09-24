@@ -73,6 +73,7 @@ export interface QualityReviewRunOptions {
 		runId: string;
 		signal?: AbortSignal;
 		workspaceRoot?: string;
+		sourceRoot?: string;
 		materialsRoot?: string;
 		analysisConsent?: SnapshotAnalysisAuthorization;
 		artifactSink: QualityReviewArtifactSink;
@@ -194,6 +195,7 @@ export async function runQualityReview(
 		let reason = "Assessment did not complete.";
 		let cancelled = options.signal?.aborted === true;
 		let workspaceRoot: string | undefined;
+		let sourceRoot: string | undefined;
 		let materialsRoot: string | undefined;
 		let reservedRoot: string | undefined;
 		let ownsReservedRoot = false;
@@ -206,6 +208,7 @@ export async function runQualityReview(
 		let capturedBase: string | undefined;
 		let gateOwnedFiles: string[] = [];
 		let liveChildIds: readonly string[] = [];
+		let qmSessionLive = false;
 		const activeChildIds = new Set<string>();
 		let observedReviewerModels: string[] = [];
 		let panelTimeoutMs = options.panelTimeoutMs ?? 300_000;
@@ -235,6 +238,7 @@ export async function runQualityReview(
 						},
 					);
 					workspaceRoot = snapshot.workspaceRoot;
+					sourceRoot = snapshot.sourceRealPath;
 					materialsRoot = snapshot.materialsRoot;
 					capturedBase = snapshot.base;
 					changedFiles = snapshot.changedFiles;
@@ -358,6 +362,7 @@ export async function runQualityReview(
 					signal: assessmentSignal.signal,
 					panelTimeoutMs,
 					workspaceRoot,
+					sourceRoot,
 					materialsRoot,
 					analysisConsent,
 					artifactSink: sink,
@@ -367,6 +372,15 @@ export async function runQualityReview(
 					base: capturedBase,
 					activeChildIds,
 				});
+				let assessmentSettled = false;
+				void assessmentPromise.then(
+					() => {
+						assessmentSettled = true;
+					},
+					() => {
+						assessmentSettled = true;
+					},
+				);
 				let assessment: QualityReviewAssessment;
 				try {
 					assessment = await Promise.race([
@@ -377,6 +391,16 @@ export async function runQualityReview(
 				} finally {
 					if (deadlineTimer) clearTimeout(deadlineTimer);
 					options.signal?.removeEventListener("abort", abortAssessment);
+					if (!assessmentSettled) {
+						await Promise.race([
+							assessmentPromise.then(
+								() => undefined,
+								() => undefined,
+							),
+							new Promise<void>((resolve) => setTimeout(resolve, 250)),
+						]);
+						qmSessionLive = !assessmentSettled;
+					}
 				}
 				markdown = assessment.markdown;
 				const gateState = assessment.gateState;
@@ -462,7 +486,7 @@ export async function runQualityReview(
 						"Gates",
 					);
 					const hostBlocksReady =
-						(gateState !== undefined && gateState !== "completed-bound") ||
+						gateState !== "completed-bound" ||
 						checkConfigMissing ||
 						modelConfigMissing ||
 						gateEvidenceMissing ||
@@ -481,9 +505,11 @@ export async function runQualityReview(
 							`${check.id}: argv ${JSON.stringify(check.argv)}, exit ${check.exitCode ?? "unavailable"}, duration ${check.durationMs} ms, output ${JSON.stringify(check.output.slice(0, 2000))}`,
 					);
 					const hostHumanItems = [
-						...(gateState !== undefined && gateState !== "completed-bound"
+						...(gateState === undefined ||
+						(gateState !== "completed-bound" &&
+							!gateState.startsWith("Analysis audit gate state: fail"))
 							? [
-									`Analysis audit gate state: ${gateState}; human decision required.`,
+									`Analysis audit gate state: ${gateState?.replace(/^Analysis audit gate state: /, "") ?? "not observed"}; human decision required.`,
 								]
 							: []),
 						...(gateEvidenceMissing
@@ -507,11 +533,22 @@ export async function runQualityReview(
 					const hostReviewed = [
 						"Host configured checks and captured changed-file list in the private snapshot.",
 					];
+					const hostGateLines = gateState?.startsWith(
+						"Analysis audit gate state: fail",
+					)
+						? [gateState]
+						: [];
+					const hostFindingLines =
+						hostGateLines.length > 0
+							? ["Analysis audit found introduced debt."]
+							: [];
 					if (!reported) {
 						markdown = amendUnindexedQualityReviewReport(markdown, {
 							verdict,
 							reason,
 							checks: hostCheckLines,
+							gates: hostGateLines,
+							findings: hostFindingLines,
 							humanItems: hostHumanItems,
 							reviewed: hostReviewed,
 							reviewerModels: observedReviewerModels,
@@ -522,7 +559,11 @@ export async function runQualityReview(
 							verdict,
 							reason,
 							checks: [...(reported.checks ?? []), ...hostCheckLines],
-							humanItems: [...(reported.humanItems ?? []), ...hostHumanItems],
+							gates: [...(reported.gates ?? []), ...hostGateLines],
+							findings: [...(reported.findings ?? []), ...hostFindingLines],
+							humanItems: [
+								...new Set([...(reported.humanItems ?? []), ...hostHumanItems]),
+							],
 							reviewed: [...(reported.reviewed ?? []), ...hostReviewed],
 							reviewerModels:
 								observedReviewerModels.length > 0
@@ -611,6 +652,11 @@ export async function runQualityReview(
 						})
 					: failureReport;
 		}
+		await sink.sealReviewers();
+		if (qmSessionLive)
+			markdown = `${markdown.trimEnd()}\n\nLive work: QM session did not settle after cancellation or deadline.\n`;
+		if (ownsReservedRoot && (qmSessionLive || liveChildIds.length > 0))
+			markdown = `${markdown.trimEnd()}\n\nWorkspace retained: ${reservedRoot}. Live work may still use it.\n`;
 		markdown = `${markdown.trimEnd()}\n\nPanel completion timeout: ${panelTimeoutMs} ms.\n\nCaller-owned remediation: address findings through tasks, Drive and independent review.\n`;
 		await phase("finalizing", {
 			disposition: ownsReservedRoot ? "active" : "none",
@@ -633,29 +679,21 @@ export async function runQualityReview(
 				);
 				summaryReplaced = true;
 			}
-			const finalRef = await sink.write("final.md", markdown, {
-				replace: true,
-			});
-			await phase(liveChildIds.length > 0 ? "retained" : "finalized", {
-				disposition:
-					liveChildIds.length > 0
-						? "retained"
-						: ownsReservedRoot
-							? "pending-removal"
-							: "none",
-				activeChildIds: liveChildIds,
-				...(reservedRoot ? { workspace: reservedRoot } : {}),
-				artifactDigests: [finalRef.metadata?.sha256],
-			});
-			if (reservedRoot && ownsReservedRoot && liveChildIds.length === 0) {
+			let finalRef = await sink.write("final.md", markdown, { replace: true });
+			if (
+				reservedRoot &&
+				ownsReservedRoot &&
+				!qmSessionLive &&
+				liveChildIds.length === 0
+			) {
 				try {
 					await (options.removeWorkspace ?? removePrivateReviewWorkspace)(
 						reservedRoot,
 					);
 					workspaceRemoved = true;
 				} catch (error) {
-					const retained = `${markdown.trimEnd()}\n\nWorkspace retained: ${reservedRoot}. Removal failed: ${errorReason(error)}\n`;
-					await sink.write("final.md", retained, { replace: true });
+					markdown = `${markdown.trimEnd()}\n\nWorkspace retained: ${reservedRoot}. Removal failed: ${errorReason(error)}\n`;
+					finalRef = await sink.write("final.md", markdown, { replace: true });
 					if (summaryPath)
 						await replacePlanSummary(
 							summaryPath,
@@ -664,16 +702,23 @@ export async function runQualityReview(
 								verdict,
 								provisionalRef.path,
 								reason,
-								retained,
+								markdown,
 							),
 						);
-					await phase("retained", {
-						disposition: "retained",
-						workspace: reservedRoot,
-						reason: `Workspace removal failed: ${errorReason(error)}`,
-					});
 				}
 			}
+			const disposition = ownsReservedRoot
+				? workspaceRemoved
+					? "removed"
+					: "retained"
+				: "none";
+			await phase(disposition === "retained" ? "retained" : "finalized", {
+				disposition,
+				activeChildIds: liveChildIds,
+				...(qmSessionLive ? { liveSession: "quality-manager" } : {}),
+				...(reservedRoot ? { workspace: reservedRoot } : {}),
+				artifactDigests: [finalRef.metadata?.sha256],
+			});
 			result = {
 				outcome: cancelled
 					? "cancelled"

@@ -626,15 +626,27 @@ async function handlePrintMode(
 
 	const definition = resolveCliAgent(runtime, options);
 	if (isCliQualityReview(runtime, options, definition)) {
-		const result = await launchQualityReview({
-			projectRoot: cwd,
-			planSlug: qualityReviewPlanSlug({
-				completionLabel: options.completionLabel,
-			}),
-		});
-		process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
-		if (result.stepResult.outcome !== "success") process.exitCode = 1;
-		return;
+		const controller = new AbortController();
+		const interrupt = () => controller.abort();
+		process.on("SIGINT", interrupt);
+		process.on("SIGTERM", interrupt);
+		try {
+			const result = await launchQualityReview({
+				projectRoot: cwd,
+				signal: controller.signal,
+				planSlug: qualityReviewPlanSlug({
+					completionLabel: options.completionLabel,
+				}),
+			});
+			process.stdout.write(
+				`${result.ref.runId}: ${result.stepResult.summary}\n`,
+			);
+			if (result.stepResult.outcome !== "success") process.exitCode = 1;
+			return;
+		} finally {
+			process.off("SIGINT", interrupt);
+			process.off("SIGTERM", interrupt);
+		}
 	}
 	const printRuntime = await createSession({
 		definition,
@@ -662,15 +674,27 @@ async function handleInteractiveMode(
 ): Promise<void> {
 	const definition = resolveCliAgent(runtime, options);
 	if (isCliQualityReview(runtime, options, definition)) {
-		const result = await launchQualityReview({
-			projectRoot: cwd,
-			planSlug: qualityReviewPlanSlug({
-				completionLabel: options.completionLabel,
-			}),
-		});
-		process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
-		if (result.stepResult.outcome !== "success") process.exitCode = 1;
-		return;
+		const controller = new AbortController();
+		const interrupt = () => controller.abort();
+		process.on("SIGINT", interrupt);
+		process.on("SIGTERM", interrupt);
+		try {
+			const result = await launchQualityReview({
+				projectRoot: cwd,
+				signal: controller.signal,
+				planSlug: qualityReviewPlanSlug({
+					completionLabel: options.completionLabel,
+				}),
+			});
+			process.stdout.write(
+				`${result.ref.runId}: ${result.stepResult.summary}\n`,
+			);
+			if (result.stepResult.outcome !== "success") process.exitCode = 1;
+			return;
+		} finally {
+			process.off("SIGINT", interrupt);
+			process.off("SIGTERM", interrupt);
+		}
 	}
 
 	// Expose the main registry to extensions via process-global slot.

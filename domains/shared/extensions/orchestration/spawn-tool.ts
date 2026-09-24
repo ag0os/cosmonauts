@@ -188,7 +188,8 @@ async function runDetachedChildSession(
 		};
 		if (
 			params.qualityContext &&
-			params.qualityContext.assessmentActive !== false
+			params.qualityContext.assessmentActive !== false &&
+			params.qualityContext.artifactSink.reviewersOpen()
 		) {
 			if (!params.resolvedRole || !params.resolvedModel || !result.fullText)
 				throw new Error("Missing reviewer host correlation");

@@ -18,7 +18,10 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { FileRunStore, runStatus } from "../../lib/durable-runtime/index.ts";
 import { summarizeAssistantText } from "../../lib/orchestration/assistant-text.ts";
-import { renderQualityReviewReport } from "../../lib/orchestration/quality-review-report.ts";
+import {
+	indexedQualityReviewReport,
+	renderQualityReviewReport,
+} from "../../lib/orchestration/quality-review-report.ts";
 import { runQualityReview } from "../../lib/orchestration/quality-review-run.ts";
 import { removePrivateReviewWorkspace } from "../../lib/orchestration/quality-review-workspace.ts";
 
@@ -158,6 +161,9 @@ describe("quality review durable lifecycle", () => {
 					verdict: "ready",
 					reason: "all gates passed",
 					gates: ["analysis_audit passed"],
+					humanItems: [
+						"Analysis audit gate state: unbound; human decision required.",
+					],
 				}),
 			}),
 		});
@@ -178,6 +184,64 @@ describe("quality review durable lifecycle", () => {
 		expect(report).toContain("Verdict: not-ready");
 		expect(report).toContain(
 			"Analysis audit gate state: unbound; human decision required.",
+		);
+		expect(
+			indexedQualityReviewReport(report)?.humanItems?.filter((item) =>
+				item.startsWith("Analysis audit gate state:"),
+			),
+		).toEqual(["Analysis audit gate state: unbound; human decision required."]);
+	});
+
+	it("reports a bound failing audit under gates and findings without a human item", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "test/other",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				gateState: "Analysis audit gate state: fail",
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					gates: ["model says pass"],
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toMatch(
+			/## Gates[\s\S]*Analysis audit gate state: fail[\s\S]*## Findings[\s\S]*introduced debt/,
+		);
+		expect(report).not.toContain(
+			"Analysis audit gate state: fail; human decision required",
 		);
 	});
 
@@ -351,8 +415,22 @@ describe("quality review durable lifecycle", () => {
 			expect(result.stepResult.outcome).toBe("success");
 			expect(report).toContain("Verdict: not-ready");
 			expect(report).toContain("Workspace retained:");
-			expect(lifecycle.indexOf('"phase":"finalized"')).toBeLessThan(
-				lifecycle.indexOf('"phase":"retained"'),
+			const terminal = lifecycle
+				.split("\n")
+				.filter(Boolean)
+				.map(
+					(line) =>
+						JSON.parse(line) as {
+							phase: string;
+							disposition: string;
+							artifactDigests: string[];
+						},
+				)
+				.filter((event) => ["finalized", "retained"].includes(event.phase));
+			expect(terminal).toHaveLength(1);
+			expect(terminal[0]?.disposition).toBe("retained");
+			expect(terminal[0]?.artifactDigests).toContain(
+				createHash("sha256").update(report).digest("hex"),
 			);
 		} finally {
 			if (retainedRoot) await removePrivateReviewWorkspace(retainedRoot);
@@ -648,17 +726,35 @@ describe("quality review durable lifecycle", () => {
 			);
 			const before = await readFile(reportPath);
 			const fullText = "late review";
-			await lateSink?.writeReviewer({
-				runId: result.ref.runId,
-				lens: "reviewer",
-				spawnId: "live-reviewer",
-				sessionId: "late-session",
-				resolvedRole: "coding/reviewer",
-				resolvedModel: { provider: "test", id: "late" },
-				outcome: "success",
-				digest: createHash("sha256").update(fullText).digest("hex"),
-				fullText,
-			});
+			expect(() =>
+				lateSink?.writeReviewer({
+					runId: result.ref.runId,
+					lens: "reviewer",
+					spawnId: "live-reviewer",
+					sessionId: "late-session",
+					resolvedRole: "coding/reviewer",
+					resolvedModel: { provider: "test", id: "late" },
+					outcome: "success",
+					digest: createHash("sha256").update(fullText).digest("hex"),
+					fullText,
+				}),
+			).toThrow("Reviewer evidence window is closed");
+			await expect(
+				stat(
+					join(
+						projectRoot,
+						"missions",
+						"sessions",
+						"chain",
+						"runs",
+						result.ref.runId,
+						"artifacts",
+						"qm",
+						"reviewers",
+						"reviewer.md",
+					),
+				),
+			).rejects.toMatchObject({ code: "ENOENT" });
 			expect(await readFile(reportPath)).toEqual(before);
 			expect(before.toString()).toContain("Verdict: failed");
 		} finally {
@@ -1206,7 +1302,15 @@ describe("quality review durable lifecycle", () => {
 		)
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as { phase: string; workspace?: string });
+			.map(
+				(line) =>
+					JSON.parse(line) as {
+						phase: string;
+						workspace?: string;
+						disposition: string;
+						artifactDigests: string[];
+					},
+			);
 		const reserved = lifecycle.find(
 			(event) => event.phase === "workspace-reserved",
 		)?.workspace;
@@ -1260,7 +1364,15 @@ describe("quality review durable lifecycle", () => {
 		)
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as { phase: string; workspace?: string });
+			.map(
+				(line) =>
+					JSON.parse(line) as {
+						phase: string;
+						workspace?: string;
+						disposition: string;
+						artifactDigests: string[];
+					},
+			);
 		const reserved = lifecycle.find(
 			(event) => event.phase === "workspace-reserved",
 		)?.workspace;
@@ -1282,6 +1394,14 @@ describe("quality review durable lifecycle", () => {
 				"final.md",
 			),
 			"utf8",
+		);
+		const terminalPhases = lifecycle.filter((event) =>
+			["finalized", "retained"].includes(event.phase),
+		);
+		expect(terminalPhases).toHaveLength(1);
+		expect(terminalPhases[0]?.disposition).toBe("removed");
+		expect(terminalPhases[0]?.artifactDigests).toContain(
+			createHash("sha256").update(report).digest("hex"),
 		);
 		expect(report).toContain(
 			`Verdict: ${verdict === "refused" ? "failed" : verdict}`,
@@ -1521,6 +1641,54 @@ describe("quality review durable lifecycle", () => {
 		if (reserved) await removePrivateReviewWorkspace(reserved);
 	});
 
+	it("retains the workspace when the QM itself ignores abort without a panel child", async () => {
+		const projectRoot = await root(true);
+		const result = await runQualityReview({
+			projectRoot,
+			assessmentTimeoutMs: 50,
+			execute: async () => new Promise<never>(() => {}),
+		});
+		const qmRoot = join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			result.ref.runId,
+			"artifacts",
+			"qm",
+		);
+		const report = await readFile(join(qmRoot, "final.md"), "utf8");
+		const lifecycle = (await readFile(join(qmRoot, "lifecycle.jsonl"), "utf8"))
+			.trim()
+			.split("\n")
+			.map(
+				(line) =>
+					JSON.parse(line) as {
+						phase: string;
+						workspace?: string;
+						liveSession?: string;
+					},
+			);
+		const terminal = lifecycle.filter((event) =>
+			["finalized", "retained"].includes(event.phase),
+		);
+		expect(terminal).toHaveLength(1);
+		expect(terminal[0]).toMatchObject({
+			phase: "retained",
+			liveSession: "quality-manager",
+		});
+		expect(report).toContain("QM session did not settle");
+		const reserved = lifecycle.find(
+			(event) => event.phase === "workspace-reserved",
+		)?.workspace;
+		expect(reserved).toBeDefined();
+		if (reserved) {
+			expect((await stat(reserved)).isDirectory()).toBe(true);
+			await removePrivateReviewWorkspace(reserved);
+		}
+	});
+
 	it("records the configured panel completion timeout in the final report", async () => {
 		const projectRoot = await root(true);
 		await mkdir(join(projectRoot, ".cosmonauts"));
@@ -1729,7 +1897,8 @@ describe("quality review durable lifecycle", () => {
 			),
 			"utf8",
 		);
-		expect(report).toContain("Verdict: ready");
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain("Analysis audit gate state: not observed");
 		expect(report).toContain("Pre-existing src/a.ts:7 branch");
 		expect(report).toContain("ok: argv");
 		expect(report).toContain("Index unavailable");

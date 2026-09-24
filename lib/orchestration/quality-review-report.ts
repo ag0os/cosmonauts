@@ -180,6 +180,8 @@ export function amendUnindexedQualityReviewReport(
 		verdict: QualityReviewVerdict;
 		reason: string;
 		checks: readonly string[];
+		gates?: readonly string[];
+		findings?: readonly string[];
 		humanItems: readonly string[];
 		reviewed: readonly string[];
 		reviewerModels: readonly string[];
@@ -192,6 +194,8 @@ export function amendUnindexedQualityReviewReport(
 	amended = amended.replace(/^Reason:\s*.*$/m, `Reason: ${options.reason}`);
 	for (const [heading, items, replace] of [
 		["Checks", options.checks, false],
+		["Gates", options.gates ?? [], false],
+		["Findings", options.findings ?? [], false],
 		["Human decisions", options.humanItems, false],
 		["Reviewed", options.reviewed, false],
 		["Reviewer models", options.reviewerModels, true],

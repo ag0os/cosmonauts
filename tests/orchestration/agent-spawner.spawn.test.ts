@@ -45,6 +45,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	},
 	SessionManager: {
 		inMemory: () => ({ kind: "in-memory" }),
+		open: (path: string) => ({ kind: "file", path }),
 	},
 	SettingsManager: {
 		inMemory: (settings?: Record<string, unknown>) => ({
@@ -501,7 +502,7 @@ describe("createPiSpawner", () => {
 			]);
 		});
 
-		test("forwards only compact analysis gate observations", async () => {
+		test("captures compact analysis gate observations only for quality sessions", async () => {
 			let listener: ((event: unknown) => void) | undefined;
 			const session = createMockSession({
 				subscribe: vi.fn((callback: (event: unknown) => void) => {
@@ -541,16 +542,55 @@ describe("createPiSpawner", () => {
 			expect(received).toContainEqual(
 				expect.objectContaining({
 					type: "tool_execution_end",
-					result: {
-						details: {
-							kind: "findings",
-							capability: "changed-scope-audit",
-							scope: { base: "abc" },
-							verdict: "pass",
-						},
-					},
+					toolName: "analysis_audit",
 				}),
 			);
+			expect(JSON.stringify(received)).not.toContain("changed-scope-audit");
+			const hostRunStoreRoot = await mkdtemp(join(tmpdir(), "qm-events-"));
+			try {
+				const qualityEvents: unknown[] = [];
+				const qualityResult = await spawner.spawn({
+					role: "planner",
+					cwd: "/tmp/test-project",
+					prompt: "Plan",
+					onEvent: (event) => qualityEvents.push(event),
+					qualityReviewContext: {
+						runId: "qm-test",
+						workspaceRoot: "/tmp/test-project",
+						materialsRoot: "/tmp/test-project",
+						base: "abc",
+						changedFiles: [],
+						hostRunStoreRoot,
+						artifactSink: {
+							write: vi.fn(),
+							writeReviewer: vi.fn(),
+							references: () => [],
+							reviewersOpen: () => true,
+							sealReviewers: vi.fn(),
+						},
+						activeSpawns: new Set(),
+						allowedLenses: new Set(),
+						attemptedLenses: new Set(),
+						integrityFailures: [],
+					},
+				});
+				expect(qualityResult.success, qualityResult.error).toBe(true);
+				expect(qualityEvents).toContainEqual(
+					expect.objectContaining({
+						type: "tool_execution_end",
+						result: {
+							details: {
+								kind: "findings",
+								capability: "changed-scope-audit",
+								scope: { base: "abc" },
+								verdict: "pass",
+							},
+						},
+					}),
+				);
+			} finally {
+				await rm(hostRunStoreRoot, { recursive: true, force: true });
+			}
 		});
 
 		test("forwards compaction_start/end events through onEvent", async () => {
