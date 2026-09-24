@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-723
 createdAt: '2026-09-24T03:16:46.677Z'
-updatedAt: '2026-09-24T03:16:46.677Z'
+updatedAt: '2026-09-24T04:31:13.812Z'
 ---
 
 ## Description
@@ -32,3 +32,14 @@ Binding ratified ground (not worker-adjustable; any collision requires halt-and-
 - [ ] #9 (Compliance patch, 2026-09-24) Preparation outcomes are pinned. A `qualityReview.prepare` step that runs and exits non-zero or times out ends the run durable-`failed` with verdict `failed`, naming the step id (D-004). Only capture, layout, position or invalid-prepare-config refusals are blocked with verdict `refused` (Design §5 row 1).
 - [ ] #10 (Compliance patch, 2026-09-24) Scope of this stage's byte-identity proof: Stage 5 proves that the host's own actions (capture, clone, overlay, materials, prepare, consent mapping) leave the operator checkout byte-identical, including under a stale stat cache, and that the QM session's cwd is the clone. The end-to-end case 'whatever the QM's agents did' (an adversarial QM or child attempting bash, write, chain_run or spawn) is owned by TASK-725 because the D-012 restrictions land there.
 <!-- AC:END -->
+
+## Implementation Notes
+
+task failed (first attempt, run-3161f58f-08d4-4b2e-aabe-6eaac06cf8eb). Partial work from that attempt is still uncommitted in the worktree: `quality-review-workspace.ts`, the config, consent and run changes, and tests. Continue from it rather than restarting.
+
+Coordinator resolution, 2026-09-24:
+- The worker's blocker was the knowledge-surface backfill config-digest tripwire (option A vs B). It is resolved as A, by precedent: `missions/reviews/knowledge-surface-backfill-amendment-3.md` registers the `.cosmonauts/config.json` digest. The config change is plan-sanctioned (Files to Change, and D-019, human-ratified: "This repository configures both"). Criterion #6 is unchanged.
+- If you change `.cosmonauts/config.json` again, set `configDigest` in that amendment file to the new `shasum -a 256 .cosmonauts/config.json` as your last step. Then re-run `tests/scripts/knowledge-surface-backfill.test.ts`.
+- `QualityReviewCommand` follows plan Design §6: `{ id, command, args }`, with an optional additive `timeoutMs`. It is not an `argv` array. Keep the config, the schema, the example and the tests consistent with that shape.
+- Two CLI tests expect `Private review workspace is not available.`. Now that Stage 5 supplies the workspace, update their expectations to the real refusal and outcome text.
+- The two detached-driver failures (`cross-plan-commit-lock`, `parity`) come from the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS`. Run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.

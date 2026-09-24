@@ -7,7 +7,8 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
 
 - **Done:** spec ratified; `/spec-to-backlog` complete (see history below). Baseline gates at `e43c238`: typecheck 0, lint 0, tests 3053/3053 green.
 - **Done (implementation):** Drive batch 1 `run-cc1c22ad-1847-4133-9daa-814c1b8cbb83` — TASK-720 `ece6af2`, TASK-722 `a8bacae`, TASK-721 `44f0566`, state `9b48a09`. Gates after batch 1: typecheck 0, lint 0, tests 3075/3075; `check:suppressions --base main` passes.
-- **Running:** Drive batch 2 (TASK-723).
+- **Done:** Drive batch 2 `run-45abf529-0210-43c6-9a3b-52809bc6197f` — TASK-723 `eb539cd` (state `3df0145`). Gates: typecheck 0, lint 0, tests 3110/3110. Until TASK-724/725 supply the workspace and assessment ports, every QM launch refuses (expected mid-branch).
+- **Running:** Drive batch 3 `run-3161f58f-08d4-4b2e-aabe-6eaac06cf8eb` (TASK-724).
 - **Next:** gates → batch TASK-723 → TASK-724 → TASK-725 → TASK-726 → TASK-727, gates at each boundary; TASK-728 is done by the coordinator (D-002: Claude subagent + read-only codex, never the QM).
 - **Blocked on:** N-001 (below) blocks closure only, not the next stages.
 
