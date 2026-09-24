@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileRunStore, runStatus } from "../../lib/durable-runtime/index.ts";
 import * as spawnerModule from "../../lib/orchestration/agent-spawner.ts";
 import { summarizeAssistantText } from "../../lib/orchestration/assistant-text.ts";
+import type { QualityReviewArtifactSink } from "../../lib/orchestration/quality-review-artifacts.ts";
 import {
 	launchQualityReview,
 	qualityReviewAuditFindingLines,
@@ -99,6 +100,43 @@ describe("quality review durable lifecycle", () => {
 		execFileSync("git", ["commit", "-qm", "base quality config"], {
 			cwd: projectRoot,
 		});
+	}
+
+	async function configureCleanHostReview(projectRoot: string): Promise<void> {
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "anthropic/reviewer",
+					checks: [{ id: "ok", command: process.execPath, args: ["-e", ""] }],
+				},
+			}),
+		);
+		await commitBaseConfig(projectRoot);
+	}
+
+	async function writeCleanReviewerEvidence(
+		runId: string,
+		artifactSink: QualityReviewArtifactSink,
+	): Promise<void> {
+		for (const [lens, provider] of [
+			["reviewer", "anthropic"],
+			["security-reviewer", "openai-codex"],
+		] as const) {
+			const fullText = "No findings";
+			await artifactSink.writeReviewer({
+				runId,
+				lens,
+				spawnId: `spawn-${lens}`,
+				sessionId: `session-${lens}`,
+				resolvedRole: `coding/${lens}`,
+				resolvedModel: { provider, id: lens },
+				outcome: "success",
+				digest: createHash("sha256").update(fullText).digest("hex"),
+				fullText,
+			});
+		}
 	}
 
 	it("runs host checks in the snapshot, persists output and blocks a failed check", async () => {
@@ -2337,13 +2375,19 @@ describe("quality review durable lifecycle", () => {
 
 	it("keeps a clean report ready with trailing whitespace on a defined heading", async () => {
 		const projectRoot = await root(true);
+		await configureCleanHostReview(projectRoot);
 		const markdown = renderQualityReviewReport({
 			verdict: "ready",
 			reason: "clear",
+			gates: ["audit passed"],
 		}).replace("## Findings\n", "## Findings \t\n");
 		const result = await runQualityReview({
 			projectRoot,
-			execute: async () => ({ markdown }),
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				await writeCleanReviewerEvidence(runId, artifactSink);
+				return { markdown, gateState: "completed-bound" };
+			},
 		});
 		expect(result.stepResult.outcome).toBe("success");
 		const report = await readFile(
@@ -2361,6 +2405,40 @@ describe("quality review durable lifecycle", () => {
 			"utf8",
 		);
 		expect(report).toContain("Verdict: ready");
+	});
+
+	it("keeps a duplicate defined heading at EOF and blocks ready with host checks", async () => {
+		const projectRoot = await root(true);
+		await configureCleanHostReview(projectRoot);
+		const markdown = `${renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+			gates: ["audit passed"],
+		})}## Findings`;
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				await writeCleanReviewerEvidence(runId, artifactSink);
+				return { markdown, gateState: "completed-bound" };
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report.match(/^## Findings$/gm)).toHaveLength(2);
 	});
 
 	it("does not accept a ready verdict with reported findings", async () => {

@@ -265,7 +265,7 @@ export function hasUnexpectedQualityReviewSectionContent(
 	markdown: string,
 ): boolean {
 	const seen = new Set<string>();
-	for (const match of markdown.matchAll(/^## ([^\n]+)\n/gm)) {
+	for (const match of markdown.matchAll(/^## ([^\n]+)$/gm)) {
 		const heading = match[1]?.replace(/[ \t]+$/, "") ?? "";
 		if (sections.includes(heading as (typeof sections)[number])) {
 			if (seen.has(heading)) return true;
