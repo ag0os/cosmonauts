@@ -66,6 +66,28 @@ describe("quality review reports", () => {
 		expect(indexedQualityReviewReport(changed)).toBeUndefined();
 	});
 
+	it.each([
+		"Findings",
+		"Human decisions",
+	])("preserves a repeated %s section during calibration", (heading) => {
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+		});
+		const repeated = markdown.replace(
+			`## ${heading}\n\n- None recorded.`,
+			`## ${heading}\n\n- None recorded.\n\n## ${heading}\n\n- F-9 P2 crashes`,
+		);
+		expect(indexedQualityReviewReport(repeated)).toBeUndefined();
+		expect(
+			applyReviewerCalibration(
+				repeated,
+				[],
+				["Performance PF-1 capped at P2."],
+			),
+		).toContain(`## ${heading}\n\n- F-9 P2 crashes`);
+	});
+
 	it("caps PF-1 in an unindexed report without changing PF-10", () => {
 		const markdown = renderQualityReviewReport({
 			verdict: "not-ready",

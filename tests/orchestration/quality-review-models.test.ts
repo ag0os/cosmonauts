@@ -450,6 +450,41 @@ describe("quality review model policy", () => {
 		}
 	});
 
+	it("rejects a dismissal when no reviewer raised its ID", () => {
+		const result = calibrateReviewerFindings({
+			materials: "fixed in lib/a.ts",
+			reviewers: [
+				{
+					lens: "security-reviewer",
+					text: "- id: F-1\n  closureEvidence: fixed in lib/a.ts",
+				},
+			],
+			findings: [],
+			observations: ["F-1 dismissed; closureEvidence: fixed in lib/a.ts"],
+		});
+		expect(result.issues.join(" ")).toContain(
+			"without independent cited evidence",
+		);
+	});
+
+	it("rejects another lens's different citation", () => {
+		const result = calibrateReviewerFindings({
+			materials: "fixed in lib/a.ts; checked in lib/b.ts",
+			reviewers: [
+				{ lens: "reviewer", text: "- id: F-1\n  priority: P2" },
+				{
+					lens: "security-reviewer",
+					text: "- id: F-1\n  closureEvidence: checked in lib/b.ts",
+				},
+			],
+			findings: [],
+			observations: ["F-1 dismissed; closureEvidence: fixed in lib/a.ts"],
+		});
+		expect(result.issues.join(" ")).toContain(
+			"without independent cited evidence",
+		);
+	});
+
 	it.each([
 		"F-1 P2 dismissed after review",
 		"F-1 P2 not resolved",

@@ -254,12 +254,16 @@ export function qualityReviewFindingLines(markdown: string): string[] {
 export function hasUnexpectedQualityReviewSectionContent(
 	markdown: string,
 ): boolean {
+	const seen = new Set<string>();
 	for (const match of markdown.matchAll(/^## ([^\n]+)\n/gm)) {
-		if (!sections.includes(match[1] as (typeof sections)[number])) {
-			const tail = markdown.slice((match.index ?? 0) + match[0].length);
-			const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
-			if ((end < 0 ? tail : tail.slice(0, end)).trim()) return true;
+		if (sections.includes(match[1] as (typeof sections)[number])) {
+			if (seen.has(match[1] ?? "")) return true;
+			seen.add(match[1] ?? "");
+			continue;
 		}
+		const tail = markdown.slice((match.index ?? 0) + match[0].length);
+		const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
+		if ((end < 0 ? tail : tail.slice(0, end)).trim()) return true;
 	}
 	return false;
 }

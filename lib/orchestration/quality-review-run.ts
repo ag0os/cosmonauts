@@ -42,6 +42,7 @@ import {
 import {
 	assessReviewerDiversity,
 	calibrateReviewerFindings,
+	leadingFindingId,
 	type ObservedModel,
 	reviewerEvidenceFromLines,
 } from "./quality-review-models.ts";
@@ -908,8 +909,14 @@ export async function runQualityReview(
 			const calibrationHumanItems = calibration.issues.filter((issue) =>
 				issue.startsWith("Finding "),
 			);
-			const calibrationFindings = calibration.issues.filter((issue) =>
-				issue.startsWith("Performance "),
+			const calibrationFindings = calibration.issues.filter(
+				(issue) =>
+					issue.startsWith("Performance ") &&
+					!calibration.observations.some(
+						(entry) =>
+							leadingFindingId(entry) ===
+							issue.match(/^Performance ([A-Za-z]+-\d+) /)?.[1],
+					),
 			);
 			const carriedFindings = calibration.findings.slice(
 				reportedFindings.length,

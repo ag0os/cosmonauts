@@ -1324,6 +1324,14 @@ describe("quality review durable lifecycle", () => {
 				["blank line", "- F-1 dismissed\n\n  F-2 P2 null input crashes"],
 				["subheading", "### F-1\n\nP2 null input crashes"],
 				["extra heading", "- None recorded.\n\n## Extra\n\nunexpected"],
+				[
+					"repeated Findings",
+					"- None recorded.\n\n## Findings\n\n- F-9 P2 crashes",
+				],
+				[
+					"repeated Human decisions",
+					"- None recorded.\n\n## Human decisions\n\n- F-9 needs review",
+				],
 				["empty", "", "ready"],
 				["plain sentinel", "None recorded.", "ready"],
 				["case-insensitive bullet sentinel", "- nOnE ReCoRdEd.", "ready"],
@@ -1397,6 +1405,8 @@ describe("quality review durable lifecycle", () => {
 			"utf8",
 		);
 		expect(report).toContain(`Verdict: ${expected ?? "not-ready"}`);
+		if (_shape === "repeated Findings")
+			expect(report).toContain("- F-9 P2 crashes");
 	});
 
 	// @cosmo-behavior plan:qm-chain-safety#B-010
@@ -1617,6 +1627,14 @@ describe("quality review durable lifecycle", () => {
 		["raised", "PF-2 P1 slow path", true, "PF-2 P2", "capped at P2", undefined],
 		["P0", "PF-2 P0 slow path", true, "PF-2 P2", "capped at P2", undefined],
 		[
+			"observation-only P2",
+			"",
+			true,
+			"PF-2 unsupported performance priority capped at P2.",
+			"capped at P2",
+			"PF-2 P2 slow path",
+		],
+		[
 			"unindexed",
 			"PF-2 P1 slow path",
 			false,
@@ -1649,7 +1667,16 @@ describe("quality review durable lifecycle", () => {
 			JSON.stringify({
 				qualityReview: {
 					diverseReviewerModel: "anthropic/reviewer",
-					checks: [],
+					checks:
+						_name === "observation-only P2"
+							? [
+									{
+										id: "ok",
+										command: process.execPath,
+										args: ["-e", "process.exit(0)"],
+									},
+								]
+							: [],
 				},
 			}),
 		);
@@ -1662,7 +1689,7 @@ describe("quality review durable lifecycle", () => {
 					["reviewer", "No findings", "anthropic"],
 					[
 						"performance-reviewer",
-						"- id: PF-2\n  priority: P2",
+						`- id: PF-2\n  priority: ${_name === "observation-only P2" ? "P1" : "P2"}`,
 						"openai-codex",
 					],
 				] as const)
@@ -1711,14 +1738,27 @@ describe("quality review durable lifecycle", () => {
 			),
 			"utf8",
 		);
-		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain(
+			`Verdict: ${_name === "observation-only P2" ? "ready" : "not-ready"}`,
+		);
 		expect(report).toContain(visible);
 		expect(report).toContain(evidence);
+		if (_name === "observation-only P2") {
+			expect(
+				report.match(/## Findings\n\n([\s\S]*?)\n\n## Human decisions/)?.[1],
+			).toBe("- None recorded.");
+			expect(
+				report.match(
+					/## Out-of-range observations\n\n([\s\S]*?)\n\n## Reviewed/,
+				)?.[1],
+			).toContain("capped at P2");
+		}
 		if (observation) {
 			expect(report).toContain(`- ${observation.replace("P0", "P2")}`);
-			expect(report).toContain(
-				"Finding PF-2 has unsupported performance priority above P2 in observations; human decision required.",
-			);
+			if (_name !== "observation-only P2")
+				expect(report).toContain(
+					"Finding PF-2 has unsupported performance priority above P2 in observations; human decision required.",
+				);
 			expect(
 				report.match(/## Findings\n\n([\s\S]*?)\n\n## Human decisions/)?.[1],
 			).not.toContain("capped at P2");

@@ -266,9 +266,7 @@ function recordUnsupportedPerformance(
 				: `Performance ${id} lacked measured or reproduced cost cited from captured materials; capped at P2.`,
 		);
 		if (
-			state.observations.some(
-				(entry) => leadingFindingId(entry) === id && /\bP[01]\b/.test(entry),
-			) &&
+			state.observations.some((entry) => leadingFindingId(entry) === id) &&
 			!state.observations.includes(
 				`${id} unsupported performance priority capped at P2.`,
 			)
@@ -286,7 +284,7 @@ function dismissalAfterId(entry: string, id: string): boolean {
 	).test(entry);
 }
 
-function leadingFindingId(entry: string): string | undefined {
+export function leadingFindingId(entry: string): string | undefined {
 	return entry.match(
 		/^(?:\[P[0-3]\]\s*)?(?:\*\*|`)?(?!(?:TASK|AC|D|INV|B)-)([A-Za-z]+-\d+)\b/,
 	)?.[1];

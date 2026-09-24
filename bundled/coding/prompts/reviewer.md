@@ -159,7 +159,7 @@ Return a concise summary stating:
 
 ## Critical Rules
 
-Do not close or dismiss a finding solely on your own lens evidence. For a prior finding you mark resolved, request independent confirmation from another lens or cite the captured material that verifies the fix; a bare conclusion is not closure evidence. Treat performance P1 as requiring measured or reproduced cost cited from the captured materials.
+Do not close or dismiss a finding solely on your own lens evidence. For a prior finding you mark resolved, request independent confirmation from another lens or cite the captured material that verifies the fix; a bare conclusion is not closure evidence. Treat performance P0 or P1 as requiring measured or reproduced cost cited from the captured materials.
 
 1. **Do not write files.** Return the report as final text. In a QM panel, use only read tools; do not run commands. Do not spawn agents or start chains.
 2. **Do not create tasks or perform remediation.**
