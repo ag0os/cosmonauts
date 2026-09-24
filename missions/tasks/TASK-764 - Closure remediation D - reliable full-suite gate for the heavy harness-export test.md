@@ -3,7 +3,7 @@ id: TASK-764
 title: >-
   Closure remediation D - reliable full-suite gate for the heavy harness-export
   test
-status: To Do
+status: Done
 priority: high
 labels:
   - testing
@@ -12,7 +12,7 @@ labels:
 dependencies:
   - TASK-763
 createdAt: '2026-09-24T22:21:46.613Z'
-updatedAt: '2026-09-24T22:21:46.613Z'
+updatedAt: '2026-09-24T22:33:30.045Z'
 ---
 
 ## Description
@@ -29,9 +29,12 @@ Check the other known load flakes (`cross-plan-commit-lock`, `plans/archive`, `e
 
 Keep the changed-scope audit against `main` passing. Lint on tracked paths must pass.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 The heavy test(s) in `tests/scripts/validate-harness-exports.test.ts` declare an explicit per-test timeout sized to their loaded duration, with assertions unchanged; no gate-owned file is edited.
-- [ ] #2 The full suite (`bun run test`) passes on two consecutive runs; the task notes record both results.
-- [ ] #3 The changed-scope audit against `main` with committed baselines still passes; typecheck and tracked lint pass.
+- [x] #1 The heavy test(s) in `tests/scripts/validate-harness-exports.test.ts` declare an explicit per-test timeout sized to their loaded duration, with assertions unchanged; no gate-owned file is edited.
+- [x] #2 The full suite (`bun run test`) passes on two consecutive runs; the task notes record both results.
+- [x] #3 The changed-scope audit against `main` with committed baselines still passes; typecheck and tracked lint pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Worker verification, 2026-09-24: added a 60,000 ms per-test timeout only to the named heavy harness-export test; its assertions are unchanged. Focused file: 12/12 passed, target 5.150 s. Two consecutive full-suite runs in the repository test environment passed: run 1 = 261/261 files, 3432/3432 tests, 108.88 s (target 13.179 s); run 2 = 261/261 files, 3432/3432 tests, 96.95 s. The known load-sensitive files cross-plan-commit-lock, plans/archive, extensions/project-tools, and project-tools-fallow-fixtures passed in both qualifying runs, so no additional timeout was added. An earlier non-qualifying probe inherited the outer Drive workers COSMONAUTS_DRIVER_CODEX_ARGS and made fake-Codex tests fail; clearing that run-only injection made the focused driver tests pass and was used for the two qualifying suite runs. Fallow audit vs main with all three committed baselines: verdict pass, 0 dead-code issues, 0 complexity findings, 0 clone groups. Typecheck exited 0. Tracked Biome lint checked 599 files with no fixes.
