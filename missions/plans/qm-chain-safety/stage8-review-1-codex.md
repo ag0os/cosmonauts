@@ -1,0 +1,13 @@
+# Stage 8 review 1 — codex
+
+The prompt is `stage8-review-1-prompt.md`. Reviewed HEAD `6f57849`. Final message verbatim:
+
+## Stage 8 verdict: **DO-NOT-SHIP-YET**
+
+**MEDIUM — the named chains lack the required end-to-end entry-point test.** [chain-runner.test.ts:1843](/Users/cosmos/Projects/cosmonauts/tests/orchestration/chain-runner.test.ts:1843) parses each chain string and calls `runChain` with a synthetic QM result. [coding-chains.test.ts:36](/Users/cosmos/Projects/cosmonauts/tests/domains/coding-chains.test.ts:36) resolves names but only inspects their strings; [chain-routing.test.ts:26](/Users/cosmos/Projects/cosmonauts/tests/orchestration/chain-routing.test.ts:26) checks routing without executing it. The shipped CLI resolves names and then selects a runner, with `verify` taking the durable route ([subcommand.ts:147](/Users/cosmos/Projects/cosmonauts/cli/run/subcommand.ts:147), [chain-execution.ts:74](/Users/cosmos/Projects/cosmonauts/cli/chain-execution.ts:74)). An accidental break in that route could prevent `verify` from delivering its report while every new Stage 8 test stays green. **Breaks B-012 and TASK-727 AC #3/#6; leaves AC-016 unproved.** This is a coverage finding, not an observed runtime failure.
+
+The archive and caller review otherwise passed: all eleven moves are 100% renames into one home; `git log --follow` reaches earlier history for three sampled files; the README maps all eleven paths; and both plan-qualified analysis files remain. Exact `git grep -n` searches found old paths only in preserved historical or fixture material and the archive map. No existing frozen fixture, curated record, evidence report, archived plan, or prior review file was changed. The new Stage 8 review prompt is a coordinator artifact, not a repair to historical text. Caller guidance describes findings, separate remediation, retained checks and lenses, and the visible D-019 outcome. D-014/D-015 showed no citation rewrite, invented gate section, or new sentence-matching test.
+
+**Verification and residuals:** The focused 119 tests, typecheck, tracked lint, and changed-scope Fallow audit against `main` passed. Stage 1–7 QM lifecycle tests also passed in the broad run, with no Stage 8 change to QM runtime source. The **full suite is red**: 3403/3406 passed, with three process timing/output failures; each failing file passed on isolated replay. That supports load sensitivity but does not make the full run green. An untracked `stage8-review-1-claude.md` appeared during review; I left it untouched. I made no repository edits and invoked no operational QM, chain, or Drive run.
+
+**Hostile-only routes under D-027:** deliberate materials or Git-object tampering, detached-process escape, and crafted marker or path inputs.
