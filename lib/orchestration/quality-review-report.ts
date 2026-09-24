@@ -1,6 +1,6 @@
 export type QualityReviewVerdict = "ready" | "not-ready" | "refused" | "failed";
 
-export interface QualityReviewReport {
+interface QualityReviewReport {
 	verdict: QualityReviewVerdict;
 	reason: string;
 	checks?: readonly string[];

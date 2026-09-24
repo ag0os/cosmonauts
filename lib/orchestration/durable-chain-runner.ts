@@ -38,11 +38,10 @@ import {
 	type DurableChainStageSpawnOptions,
 	shouldRunChainInline,
 } from "./durable-chain-compiler.ts";
+import { misplacedQualityReviewResult } from "./quality-review-chain.ts";
 import {
 	isQualityReviewReference,
 	launchQualityReview,
-	qualityReviewPlacement,
-	qualityReviewPlanSlug,
 } from "./quality-review-launch.ts";
 import {
 	assessTaskManagerReviewGate,
@@ -84,27 +83,8 @@ const FALLBACK_DOMAINS_DIR = resolve(
 export async function runDurableChain(
 	config: ChainConfig,
 ): Promise<ChainResult> {
-	if (
-		qualityReviewPlacement({
-			steps: config.steps,
-			registry: config.registry,
-			domainContext: config.domainContext,
-		}) === "refused"
-	) {
-		const refusal = await launchQualityReview({
-			...config.qualityReview,
-			projectRoot: config.projectRoot,
-			planSlug: qualityReviewPlanSlug(config),
-			refusalReason: "Quality Manager must be a terminal sequential stage.",
-		});
-		return {
-			success: false,
-			stageResults: [],
-			totalDurationMs: 0,
-			errors: [refusal.stepResult.summary],
-			run: refusal.ref,
-		};
-	}
+	const refusal = await misplacedQualityReviewResult(config);
+	if (refusal) return refusal;
 	if (
 		shouldRunChainInline(config.steps, {
 			completionLabel: config.completionLabel,

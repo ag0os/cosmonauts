@@ -45,7 +45,7 @@ export interface QualityReviewCommand {
 	readonly timeoutMs?: number;
 }
 
-export interface ProjectQualityReviewConfig {
+interface ProjectQualityReviewConfig {
 	readonly analysisPrepare?: readonly QualityReviewCommand[];
 	readonly prepare?: readonly QualityReviewCommand[];
 	readonly checks?: readonly QualityReviewCommand[];

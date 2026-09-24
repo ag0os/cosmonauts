@@ -35,7 +35,7 @@ export interface QualityReviewArtifactSink {
 	references(): ArtifactRef[];
 }
 
-export interface ReviewerEvidence {
+interface ReviewerEvidence {
 	readonly runId: string;
 	readonly lens: string;
 	readonly spawnId: string;

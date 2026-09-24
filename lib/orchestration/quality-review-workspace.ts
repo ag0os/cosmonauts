@@ -15,7 +15,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ProjectConfig } from "../config/types.ts";
 import { runQualityReviewCommand } from "./quality-review-command.ts";
 
-export class WorkspaceRefusal extends Error {}
+class WorkspaceRefusal extends Error {}
 export class WorkspacePreparationFailure extends Error {}
 
 interface Entry {

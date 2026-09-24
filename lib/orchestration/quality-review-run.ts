@@ -47,6 +47,7 @@ import {
 	type QualityReviewVerdict,
 	renderQualityReviewReport,
 } from "./quality-review-report.ts";
+import { reviewerEvidenceModels } from "./quality-review-seal.ts";
 import {
 	createPrivateReviewWorkspace,
 	type PrivateReviewWorkspace,
@@ -55,7 +56,7 @@ import {
 	WorkspacePreparationFailure,
 } from "./quality-review-workspace.ts";
 
-export interface QualityReviewAssessment {
+interface QualityReviewAssessment {
 	markdown: string;
 	gateState?: string;
 	auditFindings?: readonly string[];
@@ -120,7 +121,7 @@ type Phase =
 	| "finalized"
 	| "retained";
 
-export const DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS = 60_000;
+const DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS = 60_000;
 
 /** Allocate and finalize a one-step QM run in a private snapshot. */
 export async function runQualityReview(
@@ -546,46 +547,9 @@ export async function runQualityReview(
 					throw new Error(
 						`Reviewers still live at assessment end: ${liveChildIds.join(", ")}`,
 					);
-				const persistedLensIds = new Set(
-					sink.references().map((artifact) => artifact.id),
-				);
-				const missingLenses = (assessment.requiredLenses ?? []).filter(
-					(lens) => !persistedLensIds.has(`qm/reviewers/${lens}.md`),
-				);
-				if (missingLenses.length > 0)
-					throw new Error(
-						`Missing reviewer evidence: ${missingLenses.join(", ")}`,
-					);
-				const seenSpawns = new Set<string>();
-				const seenSessions = new Set<string>();
-				observedReviewerModels = (assessment.requiredLenses ?? []).map(
-					(lens) => {
-						const artifact = sink
-							.references()
-							.find((item) => item.id === `qm/reviewers/${lens}.md`);
-						const metadata = artifact?.metadata;
-						const model = metadata?.resolvedModel;
-						const spawnId = metadata?.spawnId;
-						const sessionId = metadata?.sessionId;
-						if (
-							metadata?.resolvedRole !== `coding/${lens}` ||
-							typeof spawnId !== "string" ||
-							typeof sessionId !== "string" ||
-							typeof metadata.finalTextDigest !== "string" ||
-							typeof model !== "object" ||
-							model === null ||
-							!("provider" in model) ||
-							!("id" in model) ||
-							typeof model.provider !== "string" ||
-							typeof model.id !== "string" ||
-							seenSpawns.has(spawnId) ||
-							seenSessions.has(sessionId)
-						)
-							throw new Error(`Reviewer evidence correlation failed: ${lens}`);
-						seenSpawns.add(spawnId);
-						seenSessions.add(sessionId);
-						return `${lens}: ${model.provider}/${model.id}`;
-					},
+				observedReviewerModels = reviewerEvidenceModels(
+					sink,
+					assessment.requiredLenses ?? [],
 				);
 				const abandonedBeforeChecks = await sink.sealReviewers(
 					options.reviewerSealGraceMs ?? 1000,
@@ -793,7 +757,7 @@ export async function runQualityReview(
 				await sink
 					.write("raw-final.md", markdown, { replace: true })
 					.catch(() => undefined);
-			const failureReport = renderQualityReviewReport({
+			const failureDetails = {
 				verdict,
 				reason,
 				checks: checkResults.map(
@@ -819,41 +783,14 @@ export async function runQualityReview(
 						? ["Host configured checks in the private snapshot."]
 						: [],
 				reviewerModels: observedReviewerModels,
-			});
+			};
+			const failureReport = renderQualityReviewReport(failureDetails);
 			const assessmentStructure = markdown
 				? assessQualityReviewReport(markdown)
 				: undefined;
 			markdown =
 				assessmentStructure && !assessmentStructure.reason
-					? amendUnindexedQualityReviewReport(markdown, {
-							verdict,
-							reason,
-							checks: checkResults.map(
-								(check) =>
-									`${check.id}: argv ${JSON.stringify(check.argv)}, exit ${check.exitCode ?? "unavailable"}, duration ${check.durationMs} ms, output ${JSON.stringify(check.output.slice(0, 2000))}`,
-							),
-							humanItems: [
-								...(checkConfigMissing
-									? [
-											"Not configured: qualityReview.checks; human decision required.",
-										]
-									: []),
-								...(modelConfigMissing
-									? [
-											"Not configured: qualityReview.diverseReviewerModel; human decision required.",
-										]
-									: []),
-								...gateOwnedFiles.map(
-									(file) =>
-										`Gate-owned file changed: ${file}; human decision required.`,
-								),
-							],
-							reviewed:
-								checkResults.length > 0
-									? ["Host configured checks in the private snapshot."]
-									: [],
-							reviewerModels: observedReviewerModels,
-						})
+					? amendUnindexedQualityReviewReport(markdown, failureDetails)
 					: failureReport;
 		}
 		const abandonedLenses = await sink.sealReviewers(

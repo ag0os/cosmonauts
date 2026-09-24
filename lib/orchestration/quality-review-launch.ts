@@ -17,7 +17,7 @@ import { materializeBaseReviewProject } from "./quality-review-workspace.ts";
 import { derivePlanSlug } from "./stage-prompts.ts";
 import type { ChainStep, SpawnEvent } from "./types.ts";
 
-export const QUALITY_REVIEW_ROLE = "coding/quality-manager";
+const QUALITY_REVIEW_ROLE = "coding/quality-manager";
 
 export function validateQualityReviewAnalysisCalls(
 	events: readonly SpawnEvent[],
@@ -431,4 +431,3 @@ export function requiredReviewLenses(
 ): string[] {
 	return [...new Set([...minimum, ...started])];
 }
-export type { QualityReviewRunOptions };

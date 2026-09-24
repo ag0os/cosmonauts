@@ -20,6 +20,7 @@ import {
 } from "./chain-episodes.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
+import { misplacedQualityReviewResult } from "./quality-review-chain.ts";
 import {
 	launchQualityReview,
 	qualityReviewPlacement,
@@ -882,27 +883,8 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 }
 
 async function executeChain(config: ChainConfig): Promise<ChainResult> {
-	if (
-		qualityReviewPlacement({
-			steps: config.steps,
-			registry: config.registry,
-			domainContext: config.domainContext,
-		}) === "refused"
-	) {
-		const refusal = await launchQualityReview({
-			...config.qualityReview,
-			projectRoot: config.projectRoot,
-			planSlug: qualityReviewPlanSlug(config),
-			refusalReason: "Quality Manager must be a terminal sequential stage.",
-		});
-		return {
-			success: false,
-			stageResults: [],
-			totalDurationMs: 0,
-			errors: [refusal.stepResult.summary],
-			run: refusal.ref,
-		};
-	}
+	const refusal = await misplacedQualityReviewResult(config);
+	if (refusal) return refusal;
 	const state = createChainExecutionState(config);
 	const chainStart = state.chainStart;
 	const spawner = createPiSpawner(config.registry, resolveDomainsDir(config), {
