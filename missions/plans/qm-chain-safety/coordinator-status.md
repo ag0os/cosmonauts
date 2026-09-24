@@ -189,7 +189,9 @@ All tasks have label `plan:qm-chain-safety`.
 
 ### N-005 (RULED 2026-09-24 → D-033): the D-002 codex closure channel is out of usage until 2026-09-30 10:29
 
-**Ruling (user, via Shepherd):** switch everything that used codex to Opus 5.5. Drive uses `--backend claude-cli` on Opus 5.5. Reviews use two independent Claude subagent channels on Opus 5.5, with different framings. **The cross-family codex closure review is PENDING until 2026-09-30.** Do not merge.
+**Amended 2026-09-24 → D-034 (human, relayed by Shepherd):** codex is available again through the work account, on `gpt-5.6-sol` only (no GPT-6). Reviews use `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only`. Drive uses `COSMONAUTS_DRIVER_CODEX_ARGS='-m gpt-5.6-sol -c model_reasoning_effort=medium'`. The cross-family codex closure review runs NOW, as part of Stage 9; it is no longer pending until 2026-09-30.
+
+**Original ruling (D-033):** switch everything that used codex to Opus 5.5. Drive uses `--backend claude-cli` on Opus 5.5. Reviews use two independent Claude subagent channels on Opus 5.5, with different framings. **The cross-family codex closure review is PENDING until 2026-09-30.** Do not merge.
 
 `codex exec` returns "You've hit your usage limit ... try again at Sep 30th, 2026 10:29 AM". D-002 (ratified) names that exact command as the second closure channel for TASK-728. The TASK-760 worker failure has the same cause. The Claude closure channel and the real end-to-end QM run are proceeding.
 

@@ -678,7 +678,19 @@ Investigation evidence gathered before design:
   - Decided by: coordinator, amend-on-record, 2026-09-24 (supervisor concurred)
   - Supersedes: D-031 floor 2's allowance of dismissals in Findings; TASK-748 AC #2 and TASK-749 AC #1 as to dismissals in Findings.
 
-- **D-033 - Codex is out of credits: Opus 5.5 replaces codex until 2026-09-30** *(human ruling, from N-005)*
+- **D-034 - Codex is back through the work account on `gpt-5.6-sol`; the cross-family closure runs now** *(human ruling, amends D-033)*
+  - Decision:
+    - Codex is available again through the user's work account. GPT-6 models are not available there, so every codex use runs on `gpt-5.6-sol`:
+      - reviews: `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only`;
+      - Drive: `COSMONAUTS_DRIVER_CODEX_ARGS='-m gpt-5.6-sol -c model_reasoning_effort=medium'`.
+    - The in-flight claude-cli trial finishes, and its findings are recorded. Later Drive runs may use codex again.
+    - The cross-family codex closure review no longer waits for 2026-09-30. It runs as part of the Stage 9 closure. The TASK-728 closure is therefore two channels, as D-002 requires: a Claude subagent on Opus 5.5 and read-only `codex exec` on `gpt-5.6-sol`.
+  - Alternatives: keep the D-033 all-Claude closure with codex deferred.
+  - Why: this restores D-002's model-family diversity without waiting.
+  - Decided by: human, 2026-09-24, relayed by Shepherd
+  - Supersedes: D-033's deferral of the codex channel, and D-002's `gpt-6-sol` model name (the command is otherwise unchanged).
+
+- **D-033 - Codex is out of credits: Opus 5.5 replaces codex until 2026-09-30** *(human ruling, from N-005)* *(Amended by D-034, 2026-09-24: codex is back on `gpt-5.6-sol`, and the cross-family closure runs in Stage 9.)*
   - Decision:
     - From 2026-09-24, every step that used codex runs on Opus 5.5 instead.
       - **Drive workers** use `--backend claude-cli` with `COSMONAUTS_DRIVER_CLAUDE_ARGS="--model claude-opus-5-5"`.
