@@ -128,56 +128,8 @@ async function sample(root: string, excludePath?: string): Promise<Sample> {
 		.filter((path) => path !== excludePath)
 		.sort();
 	const entries: Entry[] = [];
-	for (const path of paths) {
-		safePath(path);
-		const absolute = join(root, path);
-		let ancestor = dirname(absolute);
-		let missingParent = false;
-		while (ancestor !== root) {
-			const parentStat = await lstat(ancestor).catch(
-				(error: NodeJS.ErrnoException) => {
-					if (error.code === "ENOENT") return undefined;
-					throw error;
-				},
-			);
-			if (!parentStat) {
-				missingParent = true;
-				break;
-			}
-			if (!parentStat.isDirectory() || parentStat.isSymbolicLink())
-				throw new WorkspaceRefusal(`Unsafe parent directory: ${path}`);
-			ancestor = dirname(ancestor);
-		}
-		if (missingParent && trackedPaths.has(path)) {
-			entries.push({ path, kind: "deleted", mode: 0 });
-			continue;
-		}
-		let stat: Awaited<ReturnType<typeof lstat>>;
-		try {
-			stat = await lstat(absolute);
-		} catch (error) {
-			if (
-				(error as NodeJS.ErrnoException).code === "ENOENT" &&
-				trackedPaths.has(path)
-			) {
-				entries.push({ path, kind: "deleted", mode: 0 });
-				continue;
-			}
-			throw error;
-		}
-		if (stat.isSymbolicLink()) {
-			const link = await readlink(absolute);
-			safeLink(root, path, link);
-			entries.push({ path, mode: stat.mode & 0o777, kind: "link", link });
-		} else if (stat.isFile())
-			entries.push({
-				path,
-				mode: stat.mode & 0o777,
-				kind: "file",
-				bytes: await readFile(absolute),
-			});
-		else throw new WorkspaceRefusal(`Unsupported snapshot entry: ${path}`);
-	}
+	for (const path of paths)
+		entries.push(await sampleEntry(root, path, trackedPaths));
 	const state = {
 		head: head.toString().trim(),
 		refs: refs.toString(),
@@ -188,6 +140,65 @@ async function sample(root: string, excludePath?: string): Promise<Sample> {
 		...state,
 		digest: createHash("sha256").update(JSON.stringify(state)).digest("hex"),
 	};
+}
+
+async function sampleEntry(
+	root: string,
+	path: string,
+	trackedPaths: Set<string>,
+): Promise<Entry> {
+	safePath(path);
+	const absolute = join(root, path);
+	if (
+		(await missingSampleParent(root, absolute, path)) &&
+		trackedPaths.has(path)
+	)
+		return { path, kind: "deleted", mode: 0 };
+	let stat: Awaited<ReturnType<typeof lstat>>;
+	try {
+		stat = await lstat(absolute);
+	} catch (error) {
+		if (
+			(error as NodeJS.ErrnoException).code === "ENOENT" &&
+			trackedPaths.has(path)
+		)
+			return { path, kind: "deleted", mode: 0 };
+		throw error;
+	}
+	if (stat.isSymbolicLink()) {
+		const link = await readlink(absolute);
+		safeLink(root, path, link);
+		return { path, mode: stat.mode & 0o777, kind: "link", link };
+	}
+	if (stat.isFile())
+		return {
+			path,
+			mode: stat.mode & 0o777,
+			kind: "file",
+			bytes: await readFile(absolute),
+		};
+	throw new WorkspaceRefusal(`Unsupported snapshot entry: ${path}`);
+}
+
+async function missingSampleParent(
+	root: string,
+	absolute: string,
+	path: string,
+): Promise<boolean> {
+	let ancestor = dirname(absolute);
+	while (ancestor !== root) {
+		const parentStat = await lstat(ancestor).catch(
+			(error: NodeJS.ErrnoException) => {
+				if (error.code === "ENOENT") return undefined;
+				throw error;
+			},
+		);
+		if (!parentStat) return true;
+		if (!parentStat.isDirectory() || parentStat.isSymbolicLink())
+			throw new WorkspaceRefusal(`Unsafe parent directory: ${path}`);
+		ancestor = dirname(ancestor);
+	}
+	return false;
 }
 
 async function verifyLayout(root: string): Promise<void> {
@@ -285,31 +296,80 @@ export async function removePrivateReviewWorkspace(
 	await rm(reservedRoot, { recursive: true, force: true });
 }
 
+interface PrivateReviewWorkspacePorts {
+	afterFirstSample?: (attempt: number) => Promise<void>;
+	excludePath?: string;
+	deferMaterials?: boolean;
+}
+
+async function captureStableSource(
+	root: string,
+	ports: PrivateReviewWorkspacePorts,
+): Promise<Sample> {
+	for (let attempt = 0; attempt < 3; attempt++) {
+		const first = await sample(root, ports.excludePath);
+		await ports.afterFirstSample?.(attempt);
+		const second = await sample(root, ports.excludePath);
+		if (first.digest === second.digest) return first;
+	}
+	throw new WorkspaceRefusal("Unstable source capture after three attempts");
+}
+
+function findReviewBase(refs: string): string {
+	const candidates = [
+		"refs/heads/main",
+		"refs/heads/master",
+		"refs/remotes/origin/main",
+	];
+	for (const candidate of candidates) {
+		const found = refs
+			.split("\n")
+			.find((line) => line.startsWith(`${candidate} `));
+		if (found) return found.slice(candidate.length + 1);
+	}
+	throw new WorkspaceRefusal("Review base ref is unavailable");
+}
+
+async function restoreSnapshotEntries(
+	checkout: string,
+	entries: readonly Entry[],
+): Promise<void> {
+	for (const entry of entries) {
+		const target = join(checkout, entry.path);
+		if (entry.kind === "deleted") {
+			await rm(target, { force: true });
+			continue;
+		}
+		await mkdir(dirname(target), { recursive: true });
+		await rm(target, { force: true });
+		if (entry.kind === "link") await symlink(entry.link ?? "", target);
+		else {
+			await writeFile(target, entry.bytes ?? Buffer.alloc(0));
+			await chmod(target, entry.mode);
+		}
+	}
+}
+
+function validateChangedPathNesting(changed: readonly string[]): void {
+	const changedSet = new Set(changed);
+	for (const path of changed) {
+		const parts = path.split("/");
+		for (let index = 1; index < parts.length; index++) {
+			if (changedSet.has(parts.slice(0, index).join("/")))
+				throw new WorkspaceRefusal(`Unsupported changed-path nesting: ${path}`);
+		}
+	}
+}
+
 /** Capture without source writes; materialize in an exclusively reserved directory. */
 export async function createPrivateReviewWorkspace(
 	projectRoot: string,
 	workspaceRoot: string,
-	ports: {
-		afterFirstSample?: (attempt: number) => Promise<void>;
-		excludePath?: string;
-		deferMaterials?: boolean;
-	} = {},
+	ports: PrivateReviewWorkspacePorts = {},
 ): Promise<PrivateReviewWorkspace> {
 	const sourceRealPath = await realpath(projectRoot);
 	await verifyLayout(sourceRealPath);
-	let captured: Sample | undefined;
-	for (let attempt = 0; attempt < 3; attempt++) {
-		const first = await sample(sourceRealPath, ports.excludePath);
-		await ports.afterFirstSample?.(attempt);
-		const second = await sample(sourceRealPath, ports.excludePath);
-		if (first.digest === second.digest) {
-			captured = first;
-			break;
-		}
-	}
-	if (!captured)
-		throw new WorkspaceRefusal("Unstable source capture after three attempts");
-	const snapshot = captured;
+	const snapshot = await captureStableSource(sourceRealPath, ports);
 	const checkout = join(workspaceRoot, "checkout");
 	const materialsRoot = join(workspaceRoot, "materials");
 	await git(
@@ -329,22 +389,7 @@ export async function createPrivateReviewWorkspace(
 		(await sample(sourceRealPath, ports.excludePath)).digest !== snapshot.digest
 	)
 		throw new WorkspaceRefusal("Source changed during private clone");
-	const candidates = [
-		"refs/heads/main",
-		"refs/heads/master",
-		"refs/remotes/origin/main",
-	];
-	let base: string | undefined;
-	for (const candidate of candidates) {
-		const found = snapshot.refs
-			.split("\n")
-			.find((line) => line.startsWith(`${candidate} `));
-		if (found) {
-			base = found.slice(candidate.length + 1);
-			break;
-		}
-	}
-	if (!base) throw new WorkspaceRefusal("Review base ref is unavailable");
+	let base = findReviewBase(snapshot.refs);
 	await git(checkout, ["update-ref", "refs/heads/qm-review-base", base]);
 	base = (await git(checkout, ["merge-base", snapshot.head, base]))
 		.toString("utf8")
@@ -352,20 +397,7 @@ export async function createPrivateReviewWorkspace(
 	await git(checkout, ["remote", "remove", "origin"]);
 	await git(checkout, ["checkout", "--detach", snapshot.head]);
 	await rm(join(checkout, ".git", "logs"), { recursive: true, force: true });
-	for (const entry of snapshot.entries) {
-		const target = join(checkout, entry.path);
-		if (entry.kind === "deleted") {
-			await rm(target, { force: true });
-			continue;
-		}
-		await mkdir(dirname(target), { recursive: true });
-		await rm(target, { force: true });
-		if (entry.kind === "link") await symlink(entry.link ?? "", target);
-		else {
-			await writeFile(target, entry.bytes ?? Buffer.alloc(0));
-			await chmod(target, entry.mode);
-		}
-	}
+	await restoreSnapshotEntries(checkout, snapshot.entries);
 	await git(checkout, ["add", "-A"]);
 	const changed = (
 		await git(checkout, ["diff", "--cached", "--name-only", "-z", base])
@@ -374,14 +406,7 @@ export async function createPrivateReviewWorkspace(
 		.split("\0")
 		.filter(Boolean);
 	const diff = await git(checkout, ["diff", "--cached", "--binary", base]);
-	const changedSet = new Set(changed);
-	for (const path of changed) {
-		const parts = path.split("/");
-		for (let index = 1; index < parts.length; index++) {
-			if (changedSet.has(parts.slice(0, index).join("/")))
-				throw new WorkspaceRefusal(`Unsupported changed-path nesting: ${path}`);
-		}
-	}
+	validateChangedPathNesting(changed);
 	const materializeMaterials = async () => {
 		await mkdir(join(materialsRoot, "base"), { recursive: true, mode: 0o700 });
 		await writeFile(join(materialsRoot, "base-sha.txt"), `${base}\n`);

@@ -84,6 +84,27 @@ describe("quality review launch policy", () => {
 			/captured base/,
 		);
 	});
+	it("reports the first analysis failure before a later base mismatch", () => {
+		const events = [
+			{
+				type: "tool_execution_end" as const,
+				sessionId: "manager",
+				toolName: "analysis_status",
+				toolCallId: "status",
+				isError: true,
+			},
+			{
+				type: "tool_execution_start" as const,
+				sessionId: "manager",
+				toolName: "analysis_audit",
+				toolCallId: "audit",
+				args: { base: "wrong" },
+			},
+		];
+		expect(() =>
+			validateQualityReviewAnalysisCalls(events, "captured"),
+		).toThrow("Analysis gate failed: analysis_status");
+	});
 	it("rejects an unbound audit completion despite a non-error tool event", () => {
 		const base = "a".repeat(40);
 		const end = {

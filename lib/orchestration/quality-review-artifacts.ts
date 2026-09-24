@@ -47,6 +47,13 @@ interface ReviewerEvidence {
 	readonly fullText: string;
 }
 
+interface ArtifactWriteSettings {
+	replace?: boolean;
+	metadata?: Record<string, unknown>;
+	guard?: () => void;
+	emitEvent?: boolean;
+}
+
 /** Host-only path authority. Callers provide a loaded run record, never an agent path. */
 export function createQualityReviewArtifactSink(options: {
 	store: RunStore;
@@ -67,13 +74,29 @@ export function createQualityReviewArtifactSink(options: {
 	async function write(
 		path: string,
 		contents: string,
-		settings: {
-			replace?: boolean;
-			metadata?: Record<string, unknown>;
-			guard?: () => void;
-			emitEvent?: boolean;
-		} = {},
+		settings: ArtifactWriteSettings = {},
 	): Promise<ArtifactRef> {
+		await verifyArtifactRoot(settings);
+		const target = artifactTarget(path);
+		await persistArtifact(target, contents, settings);
+		const artifact: ArtifactRef = {
+			id: `qm/${path}`,
+			path: target,
+			kind: "quality-review",
+			metadata: {
+				...settings.metadata,
+				sha256: createHash("sha256").update(contents).digest("hex"),
+			},
+		};
+		await publishArtifact(target, artifact, settings);
+		emitted.add(artifact.id);
+		references.set(artifact.id, artifact);
+		return artifact;
+	}
+
+	async function verifyArtifactRoot(
+		settings: ArtifactWriteSettings,
+	): Promise<void> {
 		const persisted = await store.loadRun(ref);
 		settings.guard?.();
 		if (
@@ -91,6 +114,9 @@ export function createQualityReviewArtifactSink(options: {
 		const rootReal = await realpath(root);
 		if (!rootReal.startsWith(`${runReal}${sep}`))
 			throw new Error("Artifact root escapes run");
+	}
+
+	function artifactTarget(path: string): string {
 		if (
 			isAbsolute(path) ||
 			/^[a-zA-Z]:[\\/]/.test(path) ||
@@ -100,7 +126,14 @@ export function createQualityReviewArtifactSink(options: {
 		) {
 			throw new Error(`Unsafe artifact path: ${path}`);
 		}
-		const target = validateRelativePath(root, `qm/${path}`);
+		return validateRelativePath(root, `qm/${path}`);
+	}
+
+	async function persistArtifact(
+		target: string,
+		contents: string,
+		settings: ArtifactWriteSettings,
+	): Promise<void> {
 		await ensureSafeParent(root, dirname(target));
 		const temporary = join(
 			dirname(target),
@@ -126,15 +159,13 @@ export function createQualityReviewArtifactSink(options: {
 		} finally {
 			await rm(temporary, { force: true });
 		}
-		const artifact: ArtifactRef = {
-			id: `qm/${path}`,
-			path: target,
-			kind: "quality-review",
-			metadata: {
-				...settings.metadata,
-				sha256: createHash("sha256").update(contents).digest("hex"),
-			},
-		};
+	}
+
+	async function publishArtifact(
+		target: string,
+		artifact: ArtifactRef,
+		settings: ArtifactWriteSettings,
+	): Promise<void> {
 		try {
 			settings.guard?.();
 		} catch (error) {
@@ -154,9 +185,6 @@ export function createQualityReviewArtifactSink(options: {
 			await rm(target, { force: true });
 			throw error;
 		}
-		emitted.add(artifact.id);
-		references.set(artifact.id, artifact);
-		return artifact;
 	}
 
 	return {
@@ -187,27 +215,8 @@ export function createQualityReviewArtifactSink(options: {
 		},
 		references: () => [...references.values()],
 		writeReviewer(evidence) {
-			if (!reviewersOpen) throw new Error("Reviewer evidence window is closed");
+			validateReviewerEvidence(evidence);
 			const { lens, fullText } = evidence;
-			if (!/^[a-z0-9][a-z0-9-]*$/.test(lens))
-				throw new Error("Invalid reviewer lens");
-			if (evidence.runId !== run.runId)
-				throw new Error("Reviewer evidence belongs to another run");
-			if (
-				!evidence.spawnId ||
-				!evidence.sessionId ||
-				!evidence.resolvedRole ||
-				!evidence.resolvedModel.provider ||
-				!evidence.resolvedModel.id
-			)
-				throw new Error("Reviewer evidence is missing host correlation");
-			if (evidence.outcome !== "success")
-				throw new Error("Reviewer did not complete successfully");
-			if (fullText.trim() === "") throw new Error("Empty reviewer evidence");
-			if (
-				createHash("sha256").update(fullText).digest("hex") !== evidence.digest
-			)
-				throw new Error("Reviewer evidence digest mismatch");
 			const id = `qm/reviewers/${lens}.md`;
 			if (emitted.has(id))
 				throw new Error(`Duplicate reviewer evidence: ${lens}`);
@@ -237,6 +246,32 @@ export function createQualityReviewArtifactSink(options: {
 			return pending;
 		},
 	};
+
+	function validateReviewerEvidence(evidence: ReviewerEvidence): void {
+		if (!reviewersOpen) throw new Error("Reviewer evidence window is closed");
+		const { lens, fullText } = evidence;
+		if (!/^[a-z0-9][a-z0-9-]*$/.test(lens))
+			throw new Error("Invalid reviewer lens");
+		if (evidence.runId !== run.runId)
+			throw new Error("Reviewer evidence belongs to another run");
+		validateReviewerCorrelation(evidence);
+		if (evidence.outcome !== "success")
+			throw new Error("Reviewer did not complete successfully");
+		if (fullText.trim() === "") throw new Error("Empty reviewer evidence");
+		if (createHash("sha256").update(fullText).digest("hex") !== evidence.digest)
+			throw new Error("Reviewer evidence digest mismatch");
+	}
+
+	function validateReviewerCorrelation(evidence: ReviewerEvidence): void {
+		if (
+			!evidence.spawnId ||
+			!evidence.sessionId ||
+			!evidence.resolvedRole ||
+			!evidence.resolvedModel.provider ||
+			!evidence.resolvedModel.id
+		)
+			throw new Error("Reviewer evidence is missing host correlation");
+	}
 }
 
 function validateRelativePath(root: string, path: string): string {
