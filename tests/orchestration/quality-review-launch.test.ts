@@ -14,7 +14,10 @@ import {
 	triageReviewLenses,
 	validateQualityReviewAnalysisCalls,
 } from "../../lib/orchestration/quality-review-launch.ts";
-import { renderQualityReviewReport } from "../../lib/orchestration/quality-review-report.ts";
+import {
+	indexedQualityReviewReport,
+	renderQualityReviewReport,
+} from "../../lib/orchestration/quality-review-report.ts";
 import * as workspaceModule from "../../lib/orchestration/quality-review-workspace.ts";
 
 const agent = (id: string): AgentDefinition => ({
@@ -707,6 +710,112 @@ describe("quality review launch policy", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
+	it("assesses a frozen-lockfile mismatch and records the failed analysis preparation", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "qm-stale-lock-"));
+		roots.push(projectRoot);
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(
+			join(projectRoot, ".gitignore"),
+			"missions/sessions/\nnode_modules/\n",
+		);
+		await (await import("node:fs/promises")).mkdir(
+			join(projectRoot, ".cosmonauts"),
+		);
+		await writeFile(
+			join(projectRoot, "package.json"),
+			JSON.stringify({
+				name: "stale-lock",
+				version: "1.0.0",
+				dependencies: { fixture: "file:./dep" },
+			}),
+		);
+		await (await import("node:fs/promises")).mkdir(join(projectRoot, "dep"));
+		await writeFile(
+			join(projectRoot, "dep", "package.json"),
+			JSON.stringify({ name: "fixture", version: "1.0.0" }),
+		);
+		execFileSync("bun", ["install", "--ignore-scripts"], {
+			cwd: projectRoot,
+			stdio: "ignore",
+		});
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					analysisPrepare: [
+						{
+							id: "dependencies",
+							command: "bun",
+							args: ["install", "--frozen-lockfile", "--ignore-scripts"],
+						},
+					],
+					gateOwnedPaths: ["package.json"],
+					diverseReviewerModel: "test/other",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		git("add", ".");
+		git("commit", "-qm", "base");
+		await writeFile(
+			join(projectRoot, "package.json"),
+			JSON.stringify({
+				name: "stale-lock",
+				version: "1.0.0",
+				dependencies: { fixture: "file:./dep", fixture2: "file:./dep" },
+			}),
+		);
+		let assessed = false;
+		const result = await launchQualityReview({
+			projectRoot,
+			execute: async () => {
+				assessed = true;
+				return {
+					gateState: "completed-bound",
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: ["audit passed"],
+					}),
+				};
+			},
+		});
+		const artifacts = join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			result.ref.runId,
+			"artifacts",
+			"qm",
+		);
+		const report = await readFile(join(artifacts, "final.md"), "utf8");
+		expect(assessed).toBe(true);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain("Analysis preparation dependencies: failed");
+		expect(report).toMatch(/lockfile/i);
+		expect(report).toContain("Analysis audit gate state: failed-to-run");
+		expect(indexedQualityReviewReport(report)?.gates).toEqual([
+			"Analysis audit gate state: failed-to-run (analysis preparation failed)",
+		]);
+		expect(report).toContain("Gate-owned file changed: package.json");
+		expect(await readFile(join(artifacts, "checks.md"), "utf8")).toContain(
+			"Analysis preparation dependencies: failed",
+		);
+	});
+
 	it.each([
 		"deadline",
 		"caller",
@@ -748,6 +857,31 @@ describe("quality review launch policy", () => {
 			if (reason === "caller") controller.abort();
 			const result = await pending;
 			expect(observedSignal?.aborted).toBe(true);
+			const artifacts = join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+			);
+			const report = await readFile(join(artifacts, "final.md"), "utf8");
+			expect(report).not.toContain("Live work: base runtime setup");
+			const { FileRunStore, runStatus } = await import(
+				"../../lib/durable-runtime/index.ts"
+			);
+			expect(
+				(
+					await runStatus(
+						new FileRunStore({
+							rootDir: join(projectRoot, "missions", "sessions"),
+						}),
+						result.ref,
+					)
+				)?.postTerminalDisposition?.disposition,
+			).toBe("removed");
 			expect(result.stepResult.outcome).toBe(
 				reason === "caller" ? "cancelled" : "failed",
 			);

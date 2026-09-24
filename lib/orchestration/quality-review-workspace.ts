@@ -16,7 +16,14 @@ import type { ProjectConfig } from "../config/types.ts";
 import { runQualityReviewCommand } from "./quality-review-command.ts";
 
 class WorkspaceRefusal extends Error {}
-export class WorkspacePreparationFailure extends Error {}
+export class WorkspacePreparationFailure extends Error {
+	constructor(
+		message: string,
+		readonly completedSteps: readonly { id: string; durationMs: number }[] = [],
+	) {
+		super(message);
+	}
+}
 
 interface Entry {
 	path: string;
@@ -487,6 +494,7 @@ export async function preparePrivateReviewWorkspace(
 		} catch (error) {
 			throw new WorkspacePreparationFailure(
 				`Preparation step ${step.id || index + 1} failed after ${Date.now() - started}ms: ${error instanceof Error ? error.message : String(error)}`,
+				results,
 			);
 		}
 		results.push({ id: step.id, durationMs: Date.now() - started });

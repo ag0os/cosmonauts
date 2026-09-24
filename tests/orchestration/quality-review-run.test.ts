@@ -29,8 +29,10 @@ import {
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
 import { runQualityReview } from "../../lib/orchestration/quality-review-run.ts";
+import * as workspaceModule from "../../lib/orchestration/quality-review-workspace.ts";
 import { removePrivateReviewWorkspace } from "../../lib/orchestration/quality-review-workspace.ts";
 import type { SpawnEvent } from "../../lib/orchestration/types.ts";
+import { writeSyntheticInstallableDomainPackage } from "../helpers/packages.ts";
 
 describe("quality review durable lifecycle", () => {
 	it("uses the configured workspace removal timeout on a stalled remover", async () => {
@@ -3088,7 +3090,7 @@ describe("quality review durable lifecycle", () => {
 							command: process.execPath,
 							args: [
 								"-e",
-								"const fs = require('node:fs'); fs.chmodSync('../materials/full.diff', 0o600); fs.writeFileSync('../materials/full.diff', 'hidden')",
+								"const fs = require('node:fs'); fs.writeFileSync('changed.ts', 'check rewrite'); fs.writeFileSync('late-marker', 'go'); for (let i = 0; i < 200 && !fs.existsSync('late-ack'); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5); if (!fs.existsSync('late-ack')) process.exit(1)",
 							],
 						},
 					],
@@ -3101,11 +3103,77 @@ describe("quality review durable lifecycle", () => {
 			"export const changed = true;\n",
 		);
 		let assessed = false;
+		let originalReviewer = "";
+		let originalMaterials = "";
+		let postCheckMaterials = "";
+		let postCheckWorkspace = "";
+		let lateWrite: Promise<void> | undefined;
 		const result = await runQualityReview({
 			projectRoot,
 			hostChecks: true,
-			execute: async () => {
+			execute: async ({
+				artifactSink,
+				runId,
+				workspaceRoot,
+				materialsRoot,
+			}) => {
 				assessed = true;
+				const fullText = "reviewer evidence before checks";
+				const reviewer = await artifactSink.writeReviewer({
+					runId,
+					lens: "reviewer",
+					spawnId: "reviewer-spawn",
+					sessionId: "reviewer-session",
+					resolvedRole: "coding/reviewer",
+					resolvedModel: { provider: "test", id: "model" },
+					outcome: "success",
+					fullText,
+					digest: createHash("sha256").update(fullText).digest("hex"),
+				});
+				originalReviewer = await readFile(reviewer.path, "utf8");
+				originalMaterials = await readFile(
+					join(materialsRoot ?? "", "full.diff"),
+					"utf8",
+				);
+				lateWrite = (async () => {
+					const checkout = workspaceRoot ?? "";
+					for (let attempt = 0; attempt < 200; attempt++) {
+						if (
+							await stat(join(checkout, "late-marker")).then(
+								() => true,
+								() => false,
+							)
+						)
+							break;
+						await new Promise((resolve) => setTimeout(resolve, 5));
+					}
+					postCheckWorkspace = await readFile(
+						join(checkout, "changed.ts"),
+						"utf8",
+					);
+					postCheckMaterials = await readFile(
+						join(materialsRoot ?? "", "full.diff"),
+						"utf8",
+					);
+					try {
+						const lateText = "late reviewer rewrite";
+						await artifactSink.writeReviewer({
+							runId,
+							lens: "late-reviewer",
+							spawnId: "late-spawn",
+							sessionId: "late-session",
+							resolvedRole: "coding/reviewer",
+							resolvedModel: { provider: "test", id: "model" },
+							outcome: "success",
+							fullText: lateText,
+							digest: createHash("sha256").update(lateText).digest("hex"),
+						});
+					} catch {
+						// The reviewer window is closed before the check starts.
+					} finally {
+						await writeFile(join(checkout, "late-ack"), "done");
+					}
+				})();
 				return {
 					markdown: renderQualityReviewReport({
 						verdict: "ready",
@@ -3114,6 +3182,25 @@ describe("quality review durable lifecycle", () => {
 				};
 			},
 		});
+		await lateWrite;
+		const artifacts = join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			result.ref.runId,
+			"artifacts",
+			"qm",
+		);
+		expect(
+			await readFile(join(artifacts, "reviewers", "reviewer.md"), "utf8"),
+		).toBe(originalReviewer);
+		await expect(
+			readFile(join(artifacts, "reviewers", "late-reviewer.md")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+		expect(postCheckWorkspace).toBe("check rewrite");
+		expect(postCheckMaterials).toBe(originalMaterials);
 		const report = await readFile(
 			join(
 				projectRoot,
@@ -3133,6 +3220,247 @@ describe("quality review durable lifecycle", () => {
 			"Report integrity: materials/full.diff changed before assessment",
 		);
 		expect(report).toContain("rewrite: argv");
+	});
+
+	it("records successful analysis preparation when the assessment fails", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, "package.json"),
+			JSON.stringify({ name: "prep-failure-report", version: "1.0.0" }),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("bun", ["install", "--ignore-scripts"], {
+			cwd: projectRoot,
+			stdio: "ignore",
+		});
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					analysisPrepare: [
+						{
+							id: "dependencies",
+							command: "bun",
+							args: ["install", "--frozen-lockfile", "--ignore-scripts"],
+						},
+					],
+					diverseReviewerModel: "test/other",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		const { execFileSync: git } = await import("node:child_process");
+		git("git", ["add", "."], { cwd: projectRoot });
+		git("git", ["commit", "-qm", "base"], { cwd: projectRoot });
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => {
+				throw new Error("session initialization failed");
+			},
+		});
+		const artifacts = join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			result.ref.runId,
+			"artifacts",
+			"qm",
+		);
+		expect(await readFile(join(artifacts, "checks.md"), "utf8")).toContain(
+			"Analysis preparation dependencies: passed",
+		);
+		const report = await readFile(join(artifacts, "final.md"), "utf8");
+		expect(report).toContain("Analysis preparation dependencies: passed");
+		expect(report).toContain("session initialization failed");
+	});
+
+	it("records earlier analysis preparation successes before a later failure", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					analysisPrepare: ["first", "second"].map((id) => ({
+						id,
+						command: "bun",
+						args: ["install", "--frozen-lockfile", "--ignore-scripts"],
+					})),
+					diverseReviewerModel: "test/other",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		await commitBaseConfig(projectRoot);
+		const prepare = vi
+			.spyOn(workspaceModule, "preparePrivateReviewWorkspace")
+			.mockImplementation(async (_workspace, _signal, config) => {
+				if (config?.prepare?.[0]?.id === "first")
+					throw new workspaceModule.WorkspacePreparationFailure(
+						"Preparation step second failed: frozen lockfile mismatch",
+						[{ id: "first", durationMs: 2 }],
+					);
+				return [];
+			});
+		let assessed = false;
+		try {
+			const result = await runQualityReview({
+				projectRoot,
+				hostChecks: true,
+				execute: async () => {
+					assessed = true;
+					return {
+						gateState: "completed-bound",
+						markdown: renderQualityReviewReport({
+							verdict: "ready",
+							reason: "clear",
+							gates: ["audit passed"],
+						}),
+					};
+				},
+			});
+			const artifacts = join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+			);
+			for (const name of ["checks.md", "final.md"]) {
+				const contents = await readFile(join(artifacts, name), "utf8");
+				expect(contents).toContain("Analysis preparation first: passed");
+				expect(contents).toContain("Analysis preparation second: failed");
+			}
+			expect(assessed).toBe(true);
+		} finally {
+			prepare.mockRestore();
+		}
+	});
+
+	it.each([
+		"abort",
+		"deadline",
+	] as const)("removes a base runtime whose setup settles after %s", async (cause) => {
+		const projectRoot = await root(true);
+		const controller = new AbortController();
+		let started!: () => void;
+		const setupStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const resultPromise = runQualityReview({
+			projectRoot,
+			signal: controller.signal,
+			assessmentTimeoutMs: cause === "deadline" ? 40 : 10_000,
+			qmSettleGraceMs: 100,
+			prepareRuntime: async ({ signal }) => {
+				started();
+				await new Promise<void>((resolve) =>
+					signal.addEventListener("abort", () => setTimeout(resolve, 15), {
+						once: true,
+					}),
+				);
+				throw new Error("setup cancelled");
+			},
+		});
+		await setupStarted;
+		if (cause === "abort") controller.abort();
+		const result = await resultPromise;
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).not.toContain("Live work: base runtime setup");
+		const store = new FileRunStore({
+			rootDir: join(projectRoot, "missions", "sessions"),
+		});
+		expect(
+			(await runStatus(store, result.ref))?.postTerminalDisposition
+				?.disposition,
+		).toBe("removed");
+	});
+
+	it.each([
+		"ready",
+		"not-ready",
+		"failed",
+		"refused",
+	] as const)("discloses operator authority on a %s exit and plan summary", async (exit) => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, "missions", "plans", "example"), {
+			recursive: true,
+		});
+		const result = await runQualityReview({
+			projectRoot,
+			planSlug: "example",
+			...(exit === "refused" ? { refusalReason: "unsupported" } : {}),
+			execute: async () => {
+				if (exit === "failed") throw new Error("assessment failed");
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: exit,
+						reason: "review",
+					}),
+				};
+			},
+		});
+		const disclosure =
+			"Host-run preparation and checks execute the reviewed change's code with the operator's authority, unsandboxed.";
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		const summary = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"plans",
+				"example",
+				"qm-runs",
+				`${result.ref.runId}.md`,
+			),
+			"utf8",
+		);
+		expect(report).toContain(disclosure);
+		expect(summary).toContain(disclosure);
 	});
 
 	it("redacts tilde paths for a source and an external store root", async () => {
@@ -3225,6 +3553,48 @@ describe("quality review durable lifecycle", () => {
 			"reviewer writes abandoned after sealing grace: reviewer",
 		);
 		await removePrivateReviewWorkspace(retainedRoot);
+	});
+
+	it("uses the bundled quality manager when a user package overrides coding", async () => {
+		const projectRoot = await root(true);
+		const syntheticHome = await root();
+		const previousHome = process.env.HOME;
+		process.env.HOME = syntheticHome;
+		await writeSyntheticInstallableDomainPackage(
+			join(syntheticHome, ".cosmonauts", "packages", "coding"),
+			{
+				packageName: "coding",
+				domainId: "coding",
+				agents: [
+					{
+						id: "quality-manager",
+						description: "USER-OVERRIDE",
+						model: "test/model",
+						tools: "none",
+					},
+				],
+			},
+		);
+		let selectedDescription: string | undefined;
+		const spawned = vi
+			.spyOn(spawnerModule, "createPiSpawner")
+			.mockImplementation((registry) => {
+				selectedDescription = registry.resolve(
+					"coding/quality-manager",
+				)?.description;
+				throw new Error("Stop after registry assertion");
+			});
+		try {
+			await launchQualityReview({ projectRoot });
+			expect(spawned).toHaveBeenCalled();
+			expect(selectedDescription).toBe(
+				"Runs one review-only quality pass and reports findings for caller-owned remediation.",
+			);
+		} finally {
+			spawned.mockRestore();
+			if (previousHome === undefined) delete process.env.HOME;
+			else process.env.HOME = previousHome;
+		}
 	});
 
 	it("loads base project domains without importing reviewed domains", async () => {

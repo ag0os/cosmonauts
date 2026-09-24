@@ -122,6 +122,35 @@ type Phase =
 	| "retained";
 
 const DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS = 60_000;
+const OPERATOR_AUTHORITY_DISCLOSURE =
+	"Host-run preparation and checks execute the reviewed change's code with the operator's authority, unsandboxed.";
+
+function discloseOperatorAuthority(
+	markdown: string,
+	verdict: QualityReviewVerdict,
+	reason: string,
+): string {
+	const indexed = indexedQualityReviewReport(markdown);
+	return indexed
+		? renderQualityReviewReport({
+				...indexed,
+				reason,
+				reviewed: [
+					...new Set([
+						...(indexed.reviewed ?? []),
+						OPERATOR_AUTHORITY_DISCLOSURE,
+					]),
+				],
+			})
+		: amendUnindexedQualityReviewReport(markdown, {
+				verdict,
+				reason,
+				checks: [],
+				humanItems: [],
+				reviewed: [OPERATOR_AUTHORITY_DISCLOSURE],
+				reviewerModels: [],
+			});
+}
 
 /** Allocate and finalize a one-step QM run in a private snapshot. */
 export async function runQualityReview(
@@ -193,6 +222,7 @@ export async function runQualityReview(
 	const provisional = renderQualityReviewReport({
 		verdict: "failed",
 		reason: "Assessment did not complete.",
+		reviewed: [OPERATOR_AUTHORITY_DISCLOSURE],
 	});
 	const provisionalRef = await sink.write("final.md", provisional);
 	let summaryPath: string | undefined;
@@ -229,6 +259,7 @@ export async function runQualityReview(
 		let checkResults: QualityReviewCheckResult[] = [];
 		let preparationReport = "# Preparation\n\n- No preparation configured.\n";
 		const analysisPreparationLines: string[] = [];
+		let analysisPreparationFailed = false;
 		let preparationFailed = false;
 		let checkConfigMissing = false;
 		let modelConfigMissing = false;
@@ -301,6 +332,33 @@ export async function runQualityReview(
 			fallback: number,
 		): number {
 			return caller ?? base ?? fallback;
+		}
+
+		function observedGateState(
+			assessment: QualityReviewAssessment,
+		): string | undefined {
+			return analysisPreparationFailed
+				? "failed-to-run (analysis preparation failed)"
+				: assessment.gateState;
+		}
+
+		function hostGateLinesFor(gateState: string | undefined): string[] {
+			if (analysisPreparationFailed)
+				return [
+					"Analysis audit gate state: failed-to-run (analysis preparation failed)",
+				];
+			return gateState?.startsWith("Analysis audit gate state: fail")
+				? [gateState]
+				: [];
+		}
+
+		function hostAuditFindings(
+			assessment: QualityReviewAssessment,
+			gateLines: readonly string[],
+		): string[] {
+			return !analysisPreparationFailed && gateLines.length > 0
+				? [...(assessment.auditFindings ?? [])]
+				: [];
 		}
 
 		async function captureSnapshot(): Promise<void> {
@@ -390,7 +448,18 @@ export async function runQualityReview(
 						}),
 					]);
 				} finally {
-					if (!setupSettled) runtimeSetupLive = true;
+					if (!setupSettled) {
+						await Promise.race([
+							setupPromise.then(
+								() => undefined,
+								() => undefined,
+							),
+							new Promise<void>((resolve) =>
+								setTimeout(resolve, qmSettleGraceMs),
+							),
+						]);
+						runtimeSetupLive = !setupSettled;
+					}
 					if (timer) clearTimeout(timer);
 					options.signal?.removeEventListener("abort", abort);
 				}
@@ -419,19 +488,33 @@ export async function runQualityReview(
 
 		async function prepareAnalysisWorkspace(): Promise<void> {
 			if (privateWorkspace && baseQualityReview?.analysisPrepare?.length) {
-				const prepared = await preparePrivateReviewWorkspace(
-					privateWorkspace,
-					options.signal,
-					{
-						prepare: baseQualityReview.analysisPrepare,
-					},
-				);
-				analysisPreparationLines.push(
-					...prepared.map(
-						(step) =>
-							`Analysis preparation ${step.id}: passed in ${step.durationMs} ms (lifecycle scripts disabled).`,
-					),
-				);
+				try {
+					const prepared = await preparePrivateReviewWorkspace(
+						privateWorkspace,
+						options.signal,
+						{
+							prepare: baseQualityReview.analysisPrepare,
+						},
+					);
+					analysisPreparationLines.push(
+						...prepared.map(
+							(step) =>
+								`Analysis preparation ${step.id}: passed in ${step.durationMs} ms (lifecycle scripts disabled).`,
+						),
+					);
+				} catch (error) {
+					if (!(error instanceof WorkspacePreparationFailure)) throw error;
+					analysisPreparationLines.push(
+						...error.completedSteps.map(
+							(step) =>
+								`Analysis preparation ${step.id}: passed in ${step.durationMs} ms (lifecycle scripts disabled).`,
+						),
+					);
+					analysisPreparationLines.push(
+						`Analysis preparation ${baseQualityReview.analysisPrepare[error.completedSteps.length]?.id ?? "unknown"}: failed (${error.message}).`,
+					);
+					analysisPreparationFailed = true;
+				}
 			}
 		}
 
@@ -711,7 +794,7 @@ export async function runQualityReview(
 			const assessed = assessQualityReviewReport(assessmentText);
 			if (!(assessed.verdict === "failed" && assessed.reason))
 				await sink.write("raw-final.md", markdown, { replace: true });
-			const gateState = assessment.gateState;
+			const gateState = observedGateState(assessment);
 			const gateEvidenceMissing = !hasQualityReviewSectionContent(
 				markdown,
 				"Gates",
@@ -723,13 +806,8 @@ export async function runQualityReview(
 				verdict = "not-ready";
 				reason = "Checks, findings, or human decisions require attention.";
 			}
-			const hostGateLines = gateState?.startsWith(
-				"Analysis audit gate state: fail",
-			)
-				? [gateState]
-				: [];
-			const hostFindingLines =
-				hostGateLines.length > 0 ? [...(assessment.auditFindings ?? [])] : [];
+			const hostGateLines = hostGateLinesFor(gateState);
+			const hostFindingLines = hostAuditFindings(assessment, hostGateLines);
 			mergeHostReport({
 				checks: hostCheckLines(),
 				gates: hostGateLines,
@@ -835,7 +913,9 @@ export async function runQualityReview(
 					verdict,
 					reason,
 					checks: host.checks,
-					gates: [...(reported.gates ?? []), ...host.gates],
+					gates: analysisPreparationFailed
+						? host.gates
+						: [...(reported.gates ?? []), ...host.gates],
 					findings: [...(reported.findings ?? []), ...host.findings],
 					humanItems: [
 						...new Set([...(reported.humanItems ?? []), ...host.humanItems]),
@@ -854,7 +934,7 @@ export async function runQualityReview(
 				await sink
 					.write(
 						"checks.md",
-						"# Checks\n\n- Not run: review evidence did not seal or assessment failed.\n",
+						`${analysisPreparationLines.join("\n")}\n# Checks\n\n- Not run: review evidence did not seal or assessment failed.\n`,
 					)
 					.catch(() => undefined);
 			liveChildIds = [...activeChildIds];
@@ -880,10 +960,7 @@ export async function runQualityReview(
 			const failureDetails = {
 				verdict,
 				reason,
-				checks: checkResults.map(
-					(check) =>
-						`${check.id}: argv ${JSON.stringify(check.argv)}, exit ${check.exitCode ?? "unavailable"}, duration ${check.durationMs} ms, output ${JSON.stringify(check.output.slice(0, 2000))}`,
-				),
+				checks: hostCheckLines(),
 				humanItems: [
 					...(checkConfigMissing
 						? ["Not configured: qualityReview.checks; human decision required."]
@@ -939,6 +1016,7 @@ export async function runQualityReview(
 		}
 
 		function appendFinalAnnotations(): void {
+			markdown = discloseOperatorAuthority(markdown, verdict, reason);
 			if (qmSessionLive)
 				markdown = `${markdown.trimEnd()}\n\nLive work: QM session did not settle after cancellation or deadline.\n`;
 			if (runtimeSetupLive)
