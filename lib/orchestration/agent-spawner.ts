@@ -239,6 +239,15 @@ async function runSpawnSession(
 			const messages = await cancellation.waitFor(
 				awaitNextCompletionMessages(tracker, spawnTimeoutMs),
 			);
+			if (
+				config.qualityReviewContext &&
+				messages.some((message) =>
+					message.includes(`Timed out after ${spawnTimeoutMs}ms`),
+				)
+			)
+				config.qualityReviewContext.integrityFailures.push(
+					`Panel completion timed out after ${spawnTimeoutMs}ms`,
+				);
 			for (const message of messages) {
 				await cancellation.waitFor(session.prompt(message));
 			}

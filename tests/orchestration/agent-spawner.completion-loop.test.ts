@@ -21,6 +21,7 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { MessageBus } from "../../lib/orchestration/message-bus.ts";
+import type { QualityReviewSessionContext } from "../../lib/orchestration/quality-review-context.ts";
 import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
 import { writeSyntheticDomainPackage } from "../helpers/domain-package-fixture.ts";
 
@@ -50,6 +51,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	},
 	SessionManager: {
 		inMemory: () => ({ kind: "in-memory" }),
+		open: () => ({ kind: "quality-review" }),
 	},
 	SettingsManager: {
 		inMemory: (settings?: Record<string, unknown>) => ({
@@ -239,6 +241,50 @@ describe("createPiSpawner — completion loop", () => {
 		expect(completionMsg).toContain("outcome=failed");
 		expect(completionMsg).toContain("spawnId=spawn-fail");
 		expect(completionMsg).toContain("Something went wrong");
+	});
+
+	test("records a quality panel timeout without aborting its child", async () => {
+		const sessionId = nextSessionId();
+		const session = createMockSession(sessionId);
+		session.prompt = vi.fn(async () => {
+			if (session.prompt.mock.calls.length === 1)
+				getOrCreateTracker(sessionId, bus).register(
+					"slow-reviewer",
+					"reviewer",
+					1,
+				);
+		});
+		mocks.createAgentSession.mockResolvedValue({ session });
+		const integrityFailures: string[] = [];
+		const qualityReviewContext = {
+			runId: "qm-test",
+			workspaceRoot: "/tmp",
+			materialsRoot: "/tmp",
+			base: "a".repeat(40),
+			changedFiles: [],
+			hostRunStoreRoot: syntheticPackageRoot,
+			artifactSink: {},
+			activeSpawns: new Set(["slow-reviewer"]),
+			allowedLenses: new Set(["reviewer"]),
+			attemptedLenses: new Set(["reviewer"]),
+			integrityFailures,
+		} as unknown as QualityReviewSessionContext;
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			bus,
+			resolver: realResolver,
+			spawnTimeoutMs: 20,
+		});
+		const result = await spawner.spawn({
+			role: "planner",
+			cwd: "/tmp",
+			prompt: "go",
+			qualityReviewContext,
+		});
+		expect(result.error).toBeUndefined();
+		expect(integrityFailures).toContain(
+			"Panel completion timed out after 20ms",
+		);
+		expect(qualityReviewContext.activeSpawns.has("slow-reviewer")).toBe(true);
 	});
 
 	// AC#1: loop iterates once per child when multiple children complete sequentially

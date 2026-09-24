@@ -197,6 +197,14 @@ function parseQualityReviewConfig(
 	if (typeof value !== "object" || value === null || Array.isArray(value))
 		throw new Error("Invalid qualityReview config: expected object");
 	const raw = value as Record<string, unknown>;
+	for (const key of ["assessmentTimeoutMs", "panelTimeoutMs"] as const)
+		if (
+			raw[key] !== undefined &&
+			(!Number.isSafeInteger(raw[key]) || (raw[key] as number) <= 0)
+		)
+			throw new Error(
+				`Invalid qualityReview.${key}: expected positive integer`,
+			);
 	const parseCommands = (key: "prepare" | "checks") => {
 		if (!(key in raw)) return undefined;
 		if (!Array.isArray(raw[key]))
@@ -241,6 +249,12 @@ function parseQualityReviewConfig(
 	const prepare = parseCommands("prepare");
 	const checks = parseCommands("checks");
 	return {
+		...(raw.assessmentTimeoutMs !== undefined
+			? { assessmentTimeoutMs: raw.assessmentTimeoutMs as number }
+			: {}),
+		...(raw.panelTimeoutMs !== undefined
+			? { panelTimeoutMs: raw.panelTimeoutMs as number }
+			: {}),
 		...(prepare !== undefined ? { prepare } : {}),
 		...(checks !== undefined ? { checks } : {}),
 		...(raw.diverseReviewerModel !== undefined

@@ -227,7 +227,10 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 			const spawner = createPiSpawner(
 				runtime.agentRegistry,
 				runtime.domainsDir,
-				{ resolver: runtime.domainResolver },
+				{
+					resolver: runtime.domainResolver,
+					spawnTimeoutMs: context.panelTimeoutMs,
+				},
 			);
 			const analysisEvents: SpawnEvent[] = [];
 			try {
@@ -236,6 +239,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 					cwd: context.workspaceRoot,
 					prompt: `Review the captured diff at ${context.materialsRoot}/full.diff, with base ${context.base}. Read the host check results from ${context.materialsRoot}/checks.md. Spawn exactly these reviewer lenses once each: ${lenses.join(", ")}. Synthesize their full final text and direct analysis gate results into a complete final report. Do not run commands or start remediation.`,
 					qualityReviewContext: qualityContext,
+					signal: context.signal,
 					onEvent: (event) => {
 						if (
 							(event.type === "tool_execution_end" ||

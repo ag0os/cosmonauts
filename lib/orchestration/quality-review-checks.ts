@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
 import type { QualityReviewCommand } from "../config/types.ts";
+import { runQualityReviewCommand } from "./quality-review-command.ts";
 
 export interface QualityReviewCheckResult {
 	readonly id: string;
@@ -15,11 +15,13 @@ export async function runQualityReviewChecks(options: {
 	cwd: string;
 	base: string;
 	checks: readonly QualityReviewCommand[];
+	signal?: AbortSignal;
 }): Promise<QualityReviewCheckResult[]> {
 	if (!/^[a-f0-9]{40,64}$/.test(options.base))
 		throw new Error("Quality review base is not a literal commit");
 	const results: QualityReviewCheckResult[] = [];
 	for (const check of options.checks) {
+		if (options.signal?.aborted) throw new Error("Caller cancellation");
 		const env = { ...process.env };
 		delete env.COSMONAUTS_DRIVER_CODEX_ARGS;
 		const argv = [
@@ -27,40 +29,23 @@ export async function runQualityReviewChecks(options: {
 			...check.args.map((arg) => (arg === "{base}" ? options.base : arg)),
 		];
 		const started = Date.now();
-		results.push(
-			await new Promise<QualityReviewCheckResult>((resolve) => {
-				const child = spawn(argv[0] ?? "", argv.slice(1), {
-					cwd: options.cwd,
-					env,
-					stdio: ["ignore", "pipe", "pipe"],
-					shell: false,
-				});
-				const output: Buffer[] = [];
-				let timedOut = false;
-				let settled = false;
-				const timeout = setTimeout(() => {
-					timedOut = true;
-					child.kill("SIGKILL");
-				}, check.timeoutMs ?? 120_000);
-				child.stdout.on("data", (data: Buffer) => output.push(data));
-				child.stderr.on("data", (data: Buffer) => output.push(data));
-				const finish = (exitCode: number | null, error?: string) => {
-					if (settled) return;
-					settled = true;
-					clearTimeout(timeout);
-					resolve({
-						id: check.id,
-						argv,
-						exitCode,
-						durationMs: Date.now() - started,
-						output: Buffer.concat(output).toString("utf8") + (error ?? ""),
-						timedOut,
-					});
-				};
-				child.on("error", (error) => finish(null, error.message));
-				child.on("close", (code) => finish(code));
-			}),
-		);
+		const result = await runQualityReviewCommand({
+			command: argv[0] ?? "",
+			args: argv.slice(1),
+			cwd: options.cwd,
+			env,
+			timeoutMs: check.timeoutMs ?? 120_000,
+			signal: options.signal,
+		});
+		if (result.cancelled) throw new Error("Caller cancellation");
+		results.push({
+			id: check.id,
+			argv,
+			exitCode: result.exitCode,
+			durationMs: Date.now() - started,
+			output: result.output.toString("utf8"),
+			timedOut: result.timedOut,
+		});
 	}
 	return results;
 }

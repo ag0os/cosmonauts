@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	chmod,
@@ -14,6 +13,7 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { loadProjectConfig } from "../config/loader.ts";
+import { runQualityReviewCommand } from "./quality-review-command.ts";
 
 export class WorkspaceRefusal extends Error {}
 export class WorkspacePreparationFailure extends Error {}
@@ -39,51 +39,35 @@ async function processOutput(
 	cwd: string,
 	source = false,
 	timeout = 120_000,
+	signal?: AbortSignal,
 ): Promise<Buffer> {
-	return new Promise((resolveOutput, reject) => {
-		const env: NodeJS.ProcessEnv = {};
-		for (const name of [
-			"PATH",
-			"HOME",
-			"TMPDIR",
-			"LANG",
-			"LC_ALL",
-			"CI",
-			"NO_COLOR",
-		])
-			if (process.env[name]) env[name] = process.env[name];
-		if (source) env.GIT_OPTIONAL_LOCKS = "0";
-		const child = spawn(command, args, {
-			cwd,
-			env,
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-		const stdout: Buffer[] = [];
-		const stderr: Buffer[] = [];
-		let timedOut = false;
-		const timer = setTimeout(() => {
-			timedOut = true;
-			child.kill("SIGKILL");
-		}, timeout);
-		child.stdout.on("data", (data: Buffer) => stdout.push(data));
-		child.stderr.on("data", (data: Buffer) => stderr.push(data));
-		child.on("error", (error) => {
-			clearTimeout(timer);
-			reject(error);
-		});
-		child.on("close", (code) => {
-			clearTimeout(timer);
-			if (timedOut)
-				reject(new Error(`${command} timed out after ${timeout}ms`));
-			else if (code === 0) resolveOutput(Buffer.concat(stdout));
-			else
-				reject(
-					new Error(
-						`${command} ${args[0] ?? ""} exited ${code}: ${Buffer.concat(stderr).toString("utf8").slice(-2000)}`,
-					),
-				);
-		});
+	const env: NodeJS.ProcessEnv = {};
+	for (const name of [
+		"PATH",
+		"HOME",
+		"TMPDIR",
+		"LANG",
+		"LC_ALL",
+		"CI",
+		"NO_COLOR",
+	])
+		if (process.env[name]) env[name] = process.env[name];
+	if (source) env.GIT_OPTIONAL_LOCKS = "0";
+	const result = await runQualityReviewCommand({
+		command,
+		args,
+		cwd,
+		env,
+		timeoutMs: timeout,
+		signal,
 	});
+	if (result.cancelled) throw new Error(`${command} cancelled`);
+	if (result.timedOut)
+		throw new Error(`${command} timed out after ${timeout}ms`);
+	if (result.exitCode === 0) return result.output;
+	throw new Error(
+		`${command} ${args[0] ?? ""} exited ${result.exitCode}: ${result.output.toString("utf8").slice(-2000)}`,
+	);
 }
 
 const git = (root: string, args: string[], source = false) =>
@@ -411,10 +395,12 @@ export async function createPrivateReviewWorkspace(
 
 export async function preparePrivateReviewWorkspace(
 	workspace: PrivateReviewWorkspace,
+	signal?: AbortSignal,
 ): Promise<readonly { id: string; durationMs: number }[]> {
 	const config = await loadProjectConfig(workspace.workspaceRoot);
 	const results: { id: string; durationMs: number }[] = [];
 	for (const [index, step] of (config.qualityReview?.prepare ?? []).entries()) {
+		if (signal?.aborted) throw new Error("Caller cancellation");
 		const started = Date.now();
 		try {
 			await processOutput(
@@ -423,6 +409,7 @@ export async function preparePrivateReviewWorkspace(
 				workspace.workspaceRoot,
 				false,
 				step.timeoutMs ?? 120_000,
+				signal,
 			);
 		} catch (error) {
 			throw new WorkspacePreparationFailure(

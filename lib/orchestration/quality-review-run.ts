@@ -66,6 +66,8 @@ export interface QualityReviewRunOptions {
 	/** Only an explicit completion label or an unambiguous plan session may set this. */
 	planSlug?: string;
 	signal?: AbortSignal;
+	assessmentTimeoutMs?: number;
+	panelTimeoutMs?: number;
 	/** Stage 5 supplies isolation and Stage 6 supplies assessment through this host port. */
 	execute?: (context: {
 		runId: string;
@@ -76,6 +78,7 @@ export interface QualityReviewRunOptions {
 		artifactSink: QualityReviewArtifactSink;
 		hostRunStoreRoot: string;
 		checkResults?: readonly QualityReviewCheckResult[];
+		panelTimeoutMs: number;
 		changedFiles?: readonly string[];
 		base?: string;
 		activeChildIds: Set<string>;
@@ -205,6 +208,8 @@ export async function runQualityReview(
 		let liveChildIds: readonly string[] = [];
 		const activeChildIds = new Set<string>();
 		let observedReviewerModels: string[] = [];
+		let panelTimeoutMs = options.panelTimeoutMs ?? 300_000;
+		let assessmentTimeoutMs = options.assessmentTimeoutMs ?? 900_000;
 		try {
 			if (cancelled) throw new Error("Caller cancellation");
 			if (summaryInitializationError)
@@ -240,7 +245,10 @@ export async function runQualityReview(
 						providerId: "fallow",
 					});
 					try {
-						const preparation = await preparePrivateReviewWorkspace(snapshot);
+						const preparation = await preparePrivateReviewWorkspace(
+							snapshot,
+							options.signal,
+						);
 						preparationReport = `# Preparation\n\n${preparation.map((step) => `- ${step.id}: passed in ${step.durationMs} ms`).join("\n") || "- No preparation configured."}\n`;
 						await sink.write("checks.md", preparationReport);
 					} catch (error) {
@@ -252,6 +260,7 @@ export async function runQualityReview(
 						throw error;
 					}
 				} catch (error) {
+					if (options.signal?.aborted) throw error;
 					if (error instanceof WorkspacePreparationFailure) throw error;
 					throw new QualityReviewRefusal(
 						`Private workspace preparation refused: ${errorReason(error)}`,
@@ -261,8 +270,16 @@ export async function runQualityReview(
 					workspace: reservedRoot,
 					disposition: "active",
 				});
+				const config = await loadProjectConfig(workspaceRoot);
+				panelTimeoutMs =
+					options.panelTimeoutMs ??
+					config.qualityReview?.panelTimeoutMs ??
+					panelTimeoutMs;
+				assessmentTimeoutMs =
+					options.assessmentTimeoutMs ??
+					config.qualityReview?.assessmentTimeoutMs ??
+					assessmentTimeoutMs;
 				if (options.hostChecks) {
-					const config = await loadProjectConfig(workspaceRoot);
 					checkConfigMissing = !config.qualityReview?.checks?.length;
 					modelConfigMissing = !config.qualityReview?.diverseReviewerModel;
 					checkResults = checkConfigMissing
@@ -271,6 +288,7 @@ export async function runQualityReview(
 								cwd: workspaceRoot,
 								base: capturedBase ?? "",
 								checks: config.qualityReview?.checks ?? [],
+								signal: options.signal,
 							});
 					await sink.write(
 						"checks.md",
@@ -296,6 +314,7 @@ export async function runQualityReview(
 				}
 			}
 			if (materialsRoot) await chmod(materialsRoot, 0o500);
+			if (options.signal?.aborted) throw new Error("Caller cancellation");
 			if (options.refusalReason) {
 				verdict = "refused";
 				reason = options.refusalReason;
@@ -307,9 +326,37 @@ export async function runQualityReview(
 					disposition: workspaceRoot ? "active" : "none",
 					...(workspaceRoot ? { workspace: workspaceRoot } : {}),
 				});
-				const assessment = await options.execute({
+				const assessmentSignal = new AbortController();
+				const abortAssessment = () => assessmentSignal.abort();
+				options.signal?.addEventListener("abort", abortAssessment, {
+					once: true,
+				});
+				if (options.signal?.aborted) abortAssessment();
+				let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+				const deadline = new Promise<never>((_resolve, reject) => {
+					deadlineTimer = setTimeout(() => {
+						assessmentSignal.abort();
+						reject(
+							new Error(
+								`QM assessment deadline exceeded after ${assessmentTimeoutMs}ms`,
+							),
+						);
+					}, assessmentTimeoutMs);
+				});
+				const cancelledAssessment = new Promise<never>((_resolve, reject) => {
+					assessmentSignal.signal.addEventListener(
+						"abort",
+						() => {
+							if (options.signal?.aborted)
+								reject(new Error("Caller cancellation"));
+						},
+						{ once: true },
+					);
+				});
+				const assessmentPromise = options.execute({
 					runId: ref.runId,
-					signal: options.signal,
+					signal: assessmentSignal.signal,
+					panelTimeoutMs,
 					workspaceRoot,
 					materialsRoot,
 					analysisConsent,
@@ -320,6 +367,17 @@ export async function runQualityReview(
 					base: capturedBase,
 					activeChildIds,
 				});
+				let assessment: QualityReviewAssessment;
+				try {
+					assessment = await Promise.race([
+						assessmentPromise,
+						deadline,
+						cancelledAssessment,
+					]);
+				} finally {
+					if (deadlineTimer) clearTimeout(deadlineTimer);
+					options.signal?.removeEventListener("abort", abortAssessment);
+				}
 				markdown = assessment.markdown;
 				const gateState = assessment.gateState;
 				liveChildIds = [
@@ -553,7 +611,7 @@ export async function runQualityReview(
 						})
 					: failureReport;
 		}
-		markdown = `${markdown.trimEnd()}\n\nCaller-owned remediation: address findings through tasks, Drive and independent review.\n`;
+		markdown = `${markdown.trimEnd()}\n\nPanel completion timeout: ${panelTimeoutMs} ms.\n\nCaller-owned remediation: address findings through tasks, Drive and independent review.\n`;
 		await phase("finalizing", {
 			disposition: ownsReservedRoot ? "active" : "none",
 			...(reservedRoot ? { workspace: reservedRoot } : {}),

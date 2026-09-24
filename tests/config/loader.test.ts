@@ -82,6 +82,28 @@ describe("loadProjectConfig", () => {
 		);
 	});
 
+	test("validates quality review assessment and panel deadlines", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		const path = join(tmp.path, ".cosmonauts", "config.json");
+		await writeFile(
+			path,
+			JSON.stringify({
+				qualityReview: { assessmentTimeoutMs: 900, panelTimeoutMs: 300 },
+			}),
+		);
+		expect((await loadProjectConfig(tmp.path)).qualityReview).toMatchObject({
+			assessmentTimeoutMs: 900,
+			panelTimeoutMs: 300,
+		});
+		await writeFile(
+			path,
+			JSON.stringify({ qualityReview: { panelTimeoutMs: 0 } }),
+		);
+		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
+			"Invalid qualityReview.panelTimeoutMs",
+		);
+	});
+
 	test("enables the knowledge surface only for literal true", async () => {
 		for (const [value, expected] of [
 			[true, true],

@@ -60,6 +60,29 @@ it("does not run a shell when a configured argument contains shell syntax", asyn
 	});
 	expect(result[0]?.output).toBe("$(touch forbidden)");
 });
+
+it("bounds a check whose grandchild inherits stdout", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "qm-checks-tree-"));
+	roots.push(cwd);
+	const started = Date.now();
+	const [result] = await runQualityReviewChecks({
+		cwd,
+		base: "a".repeat(40),
+		checks: [
+			{
+				id: "tree",
+				command: process.execPath,
+				args: [
+					"-e",
+					"require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {stdio: ['ignore', 'inherit', 'inherit']}); setInterval(() => {}, 1000)",
+				],
+				timeoutMs: 200,
+			},
+		],
+	});
+	expect(result?.timedOut).toBe(true);
+	expect(Date.now() - started).toBeLessThan(2000);
+});
 it("does not inherit runner-injected Codex arguments into configured checks", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "qm-checks-env-"));
 	try {

@@ -1394,6 +1394,215 @@ describe("quality review durable lifecycle", () => {
 		expect(report).toContain("Caller cancellation");
 	});
 
+	it.each([
+		"prepare",
+		"checks",
+		"assessment",
+	] as const)("cancels promptly during %s", async (stage) => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		const marker = join(projectRoot, `${stage}.started`);
+		const slow = {
+			id: "slow",
+			command: process.execPath,
+			args: [
+				"-e",
+				"require('node:fs').writeFileSync(process.argv[1], 'started'); setInterval(() => {}, 1000)",
+				marker,
+			],
+			timeoutMs: 10_000,
+		};
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					prepare: stage === "prepare" ? [slow] : [],
+					checks: stage === "checks" ? [slow] : [],
+				},
+			}),
+		);
+		const controller = new AbortController();
+		const started = Date.now();
+		let assessmentSignalAborted = false;
+		const pending = runQualityReview({
+			projectRoot,
+			signal: controller.signal,
+			hostChecks: stage === "checks",
+			execute: async ({ signal }) => {
+				signal?.addEventListener(
+					"abort",
+					() => {
+						assessmentSignalAborted = true;
+					},
+					{ once: true },
+				);
+				await writeFile(marker, "started");
+				await new Promise(() => {});
+				return { markdown: "" };
+			},
+		});
+		try {
+			let reached = false;
+			for (let attempt = 0; attempt < 150; attempt++) {
+				try {
+					await readFile(marker);
+					reached = true;
+					break;
+				} catch {
+					await new Promise((resolve) => setTimeout(resolve, 20));
+				}
+			}
+			expect(reached).toBe(true);
+		} finally {
+			controller.abort();
+		}
+		const result = await pending;
+		if (stage === "assessment") expect(assessmentSignalAborted).toBe(true);
+		expect(result.stepResult.outcome).toBe("cancelled");
+		expect(Date.now() - started).toBeLessThan(3000);
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Caller cancellation");
+		expect(report).toContain("Verdict: failed");
+	});
+
+	it("ends a stalled assessment at its configured deadline and retains live child workspace", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ qualityReview: { assessmentTimeoutMs: 100 } }),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async ({ activeChildIds }) => {
+				activeChildIds.add("live-reviewer");
+				await new Promise(() => {});
+				return { markdown: "" };
+			},
+		});
+		expect(result.stepResult.outcome).toBe("failed");
+		const artifacts = join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			result.ref.runId,
+			"artifacts",
+			"qm",
+		);
+		expect(await readFile(join(artifacts, "final.md"), "utf8")).toContain(
+			"QM assessment deadline exceeded after 100ms",
+		);
+		const lifecycle = await readFile(
+			join(artifacts, "lifecycle.jsonl"),
+			"utf8",
+		);
+		expect(lifecycle).toContain('"phase":"retained"');
+		expect(lifecycle).toContain("live-reviewer");
+		const reserved = lifecycle
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as { phase: string; workspace?: string })
+			.find((event) => event.phase === "workspace-reserved")?.workspace;
+		if (reserved) await removePrivateReviewWorkspace(reserved);
+	});
+
+	it("records the configured panel completion timeout in the final report", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ qualityReview: { panelTimeoutMs: 1234 } }),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async () => {
+				throw new Error("reviewer completion timed out");
+			},
+		});
+		expect(result.stepResult.outcome).toBe("failed");
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Panel completion timeout: 1234 ms");
+	});
+
+	it("records a grandchild check timeout in checks.md", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					checks: [
+						{
+							id: "tree",
+							command: process.execPath,
+							args: [
+								"-e",
+								"require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {stdio: ['ignore', 'inherit', 'inherit']}); setInterval(() => {}, 1000)",
+							],
+							timeoutMs: 200,
+						},
+					],
+				},
+			}),
+		);
+		const started = Date.now();
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+				}),
+			}),
+		});
+		expect(Date.now() - started).toBeLessThan(3000);
+		const checks = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"checks.md",
+			),
+			"utf8",
+		);
+		expect(checks).toContain("## tree");
+		expect(checks).toContain("timed out: true");
+	});
+
 	it("retains malformed raw output and fails report integrity", async () => {
 		const projectRoot = await root(true);
 		const result = await runQualityReview({
