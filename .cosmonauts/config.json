@@ -25,10 +25,22 @@
 		"gateOwnedPaths": [
 			"package.json",
 			"bun.lock",
+			"tsconfig.json",
+			"biome.json",
+			"tests/setup.ts",
+			"fallow.toml",
 			"scripts/vitest-runner.mjs",
 			"vitest.config.ts"
 		],
 		"diverseReviewerModel": "anthropic/claude-sonnet-4-5",
+		"analysisPrepare": [
+			{
+				"id": "analysis-dependencies",
+				"command": "bun",
+				"args": ["install", "--frozen-lockfile", "--ignore-scripts"],
+				"timeoutMs": 120000
+			}
+		],
 		"prepare": [
 			{
 				"id": "dependencies",

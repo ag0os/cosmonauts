@@ -33,6 +33,8 @@ export interface ScanDomainSourcesOptions {
 	bundledDirs?: string[];
 	/** Optional extra domain source directories (e.g. from --plugin-dir flag). */
 	pluginDirs?: string[];
+	/** Exclude user-installed packages and domains for a base-owned review runtime. */
+	includeUserSources?: boolean;
 }
 
 /**
@@ -69,22 +71,26 @@ export async function scanDomainSources(
 	}
 
 	// Global packages (user scope)
-	const globalPackages = await listInstalledPackages("user");
-	addPackageSources(sources, globalPackages, "global", 1);
+	if (options.includeUserSources !== false) {
+		const globalPackages = await listInstalledPackages("user");
+		addPackageSources(sources, globalPackages, "global", 1);
+	}
 
 	// User-domains: ~/.cosmonauts/domains/
-	const userDomainsDir = join(homedir(), ".cosmonauts", "domains");
-	try {
-		const userDomainsStat = await stat(userDomainsDir);
-		if (userDomainsStat.isDirectory()) {
-			sources.push({
-				domainsDir: userDomainsDir,
-				origin: "user-domains",
-				precedence: 1.5,
-			});
+	if (options.includeUserSources !== false) {
+		const userDomainsDir = join(homedir(), ".cosmonauts", "domains");
+		try {
+			const userDomainsStat = await stat(userDomainsDir);
+			if (userDomainsStat.isDirectory()) {
+				sources.push({
+					domainsDir: userDomainsDir,
+					origin: "user-domains",
+					precedence: 1.5,
+				});
+			}
+		} catch {
+			// Directory does not exist — skip silently
 		}
-	} catch {
-		// Directory does not exist — skip silently
 	}
 
 	// Local packages (project scope)

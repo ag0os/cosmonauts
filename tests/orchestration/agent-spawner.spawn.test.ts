@@ -51,6 +51,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 		inMemory: (settings?: Record<string, unknown>) => ({
 			kind: "in-memory-settings",
 			settings,
+			setProjectTrusted: vi.fn(),
 		}),
 	},
 }));
@@ -260,6 +261,7 @@ describe("createPiSpawner", () => {
 			expect.objectContaining({
 				settingsManager: {
 					kind: "in-memory-settings",
+					setProjectTrusted: expect.any(Function),
 					settings: {
 						compaction: {
 							enabled: true,
@@ -287,6 +289,7 @@ describe("createPiSpawner", () => {
 			expect.objectContaining({
 				settingsManager: {
 					kind: "in-memory-settings",
+					setProjectTrusted: expect.any(Function),
 					settings: {
 						compaction: {
 							enabled: true,

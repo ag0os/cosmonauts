@@ -62,29 +62,43 @@ export async function createAgentSessionFromDefinition(
 	const canonicalSourceRoot = sourceRoot
 		? await realpath(sourceRoot).catch(() => sourceRoot)
 		: undefined;
+	const baseProjectRoot = config.qualityReviewContext?.baseProjectRoot;
+	const inside = (root: string, path: string) => {
+		const suffix = relative(root, path);
+		return (
+			suffix === "" ||
+			(suffix !== ".." && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix))
+		);
+	};
 	const skillPaths =
-		canonicalSourceRoot && config.skillPaths
+		config.qualityReviewContext && config.skillPaths
 			? (
 					await Promise.all(
 						config.skillPaths.map(async (path) => {
 							const canonicalPath = await realpath(path).catch(() => path);
-							const suffix = relative(canonicalSourceRoot, canonicalPath);
+							const candidate = !isAbsolute(path)
+								? baseProjectRoot
+									? resolve(baseProjectRoot, path)
+									: undefined
+								: canonicalSourceRoot &&
+										baseProjectRoot &&
+										inside(canonicalSourceRoot, canonicalPath)
+									? resolve(
+											baseProjectRoot,
+											relative(canonicalSourceRoot, canonicalPath),
+										)
+									: baseProjectRoot && inside(baseProjectRoot, canonicalPath)
+										? canonicalPath
+										: inside(resolve(domainsDir, ".."), canonicalPath)
+											? canonicalPath
+											: undefined;
 							if (
-								suffix === "" ||
-								(suffix !== ".." &&
-									!suffix.startsWith(`..${sep}`) &&
-									!isAbsolute(suffix))
-							) {
-								const clonePath = resolve(config.cwd, suffix);
-								try {
-									if ((await stat(clonePath)).isDirectory()) return clonePath;
-								} catch {
-									/* absent from clone */
-								}
-								config.qualityReviewContext?.omittedSkillPaths?.push(path);
-								return undefined;
-							}
-							return path;
+								candidate &&
+								(await stat(candidate).catch(() => undefined))?.isDirectory()
+							)
+								return candidate;
+							config.qualityReviewContext?.omittedSkillPaths?.push(path);
+							return undefined;
 						}),
 					)
 				).filter((path): path is string => path !== undefined)
@@ -127,7 +141,6 @@ export async function createAgentSessionFromDefinition(
 		"project-tools",
 	);
 	const qualityAnalysis = config.qualityReviewContext?.analysisConsent;
-	const baseProjectRoot = config.qualityReviewContext?.baseProjectRoot;
 	const baseAgentsFiles =
 		baseProjectRoot && params.projectContext
 			? (
@@ -151,10 +164,16 @@ export async function createAgentSessionFromDefinition(
 	const extensionPaths = qualityAnalysis
 		? params.extensionPaths.filter((path) => path !== projectToolsPath)
 		: params.extensionPaths;
+	const qualitySettings = config.qualityReviewContext
+		? SettingsManager.inMemory()
+		: undefined;
+	qualitySettings?.setProjectTrusted(false);
 	const loader = new DefaultResourceLoader({
 		cwd: config.cwd,
 		agentDir: getAgentDir(),
+		...(qualitySettings && { settingsManager: qualitySettings }),
 		...(params.promptContent && { systemPrompt: params.promptContent }),
+		...(config.qualityReviewContext && { appendSystemPrompt: [] }),
 		noExtensions: true,
 		noSkills: true,
 		...(extensionPaths.length > 0 && {
@@ -227,7 +246,9 @@ export async function createAgentSessionFromDefinition(
 		thinkingLevel: params.thinkingLevel,
 	};
 
-	if (config.compaction) {
+	if (qualitySettings) {
+		sessionOptions.settingsManager = qualitySettings;
+	} else if (config.compaction) {
 		sessionOptions.settingsManager = SettingsManager.inMemory({
 			compaction: {
 				enabled: config.compaction.enabled,

@@ -210,7 +210,7 @@ export function parseQualityReviewConfig(
 			throw new Error(
 				`Invalid qualityReview.${key}: expected positive integer`,
 			);
-	const parseCommands = (key: "prepare" | "checks") => {
+	const parseCommands = (key: "analysisPrepare" | "prepare" | "checks") => {
 		if (!(key in raw)) return undefined;
 		if (!Array.isArray(raw[key]))
 			throw new Error(`Invalid qualityReview.${key}: expected steps array`);
@@ -252,6 +252,16 @@ export function parseQualityReviewConfig(
 	)
 		throw new Error("Invalid qualityReview.diverseReviewerModel");
 	const prepare = parseCommands("prepare");
+	const analysisPrepare = parseCommands("analysisPrepare");
+	for (const step of analysisPrepare ?? [])
+		if (
+			!/(?:^|\/)bun$/.test(step.command) ||
+			JSON.stringify(step.args) !==
+				JSON.stringify(["install", "--frozen-lockfile", "--ignore-scripts"])
+		)
+			throw new Error(
+				"Invalid qualityReview.analysisPrepare: only bun install --frozen-lockfile --ignore-scripts is supported",
+			);
 	const checks = parseCommands("checks");
 	if (
 		raw.gateOwnedPaths !== undefined &&
@@ -284,6 +294,7 @@ export function parseQualityReviewConfig(
 			? { workspaceRemovalTimeoutMs: raw.workspaceRemovalTimeoutMs as number }
 			: {}),
 		...(prepare !== undefined ? { prepare } : {}),
+		...(analysisPrepare !== undefined ? { analysisPrepare } : {}),
 		...(checks !== undefined ? { checks } : {}),
 		...(raw.diverseReviewerModel !== undefined
 			? { diverseReviewerModel: raw.diverseReviewerModel as string }

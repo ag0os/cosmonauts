@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { SnapshotAnalysisAuthorization } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
+import type { CosmonautsRuntime } from "../runtime.ts";
 import type { QualityReviewArtifactSink } from "./quality-review-artifacts.ts";
 
 export interface QualityReviewSessionContext {
@@ -7,6 +8,7 @@ export interface QualityReviewSessionContext {
 	readonly analysisConsent?: SnapshotAnalysisAuthorization;
 	readonly workspaceRoot: string;
 	readonly baseProjectRoot?: string;
+	readonly baseRuntime?: CosmonautsRuntime;
 	readonly sourceRoot?: string;
 	readonly materialsRoot: string;
 	readonly base: string;

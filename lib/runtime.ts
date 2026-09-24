@@ -42,6 +42,8 @@ export interface CosmonautsRuntimeOptions {
 	pluginDirs?: string[];
 	/** CLI-level domain override (takes priority over project config). */
 	domainOverride?: string;
+	/** Base-owned quality review runtime excludes user package and domain overrides. */
+	includeUserSources?: boolean;
 }
 
 /**
@@ -132,6 +134,7 @@ export class CosmonautsRuntime {
 			projectRoot: options.projectRoot,
 			bundledDirs: options.bundledDirs,
 			pluginDirs: options.pluginDirs,
+			includeUserSources: options.includeUserSources,
 		});
 
 		// 3. Load and merge domains from all sources

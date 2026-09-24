@@ -87,7 +87,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 		inMemory: mocks.sessionInMemory,
 	},
 	SettingsManager: {
-		inMemory: vi.fn(() => ({})),
+		inMemory: vi.fn(() => ({ setProjectTrusted: vi.fn() })),
 	},
 }));
 
@@ -260,13 +260,15 @@ describe("session-factory planSlug validation", () => {
 		});
 	});
 
-	test("assembles panel skill locations inside the clone without source or host paths in its prompt inputs", async () => {
+	test("assembles panel skill locations from the base export without source or host paths", async () => {
 		const sourceRoot = await mkdtemp(join(tmpdir(), "qm-source-skills-"));
 		const workspaceRoot = await mkdtemp(join(tmpdir(), "qm-clone-skills-"));
+		const baseProjectRoot = await mkdtemp(join(tmpdir(), "qm-base-skills-"));
 		const hostRunStoreRoot = await mkdtemp(join(tmpdir(), "qm-host-skills-"));
 		const suffix = join("bundled", "coding", "skills");
 		await mkdir(join(sourceRoot, suffix), { recursive: true });
 		await mkdir(join(workspaceRoot, suffix), { recursive: true });
+		await mkdir(join(baseProjectRoot, suffix), { recursive: true });
 		mocks.buildSessionParams.mockImplementation(
 			async ({ skillPaths }: { skillPaths: string[] }) => ({
 				promptContent: `Panel system prompt\n${skillPaths.map((path) => `<location>${path}</location>`).join("\n")}`,
@@ -292,6 +294,7 @@ describe("session-factory planSlug validation", () => {
 					qualityReviewContext: {
 						runId: "qm-skills",
 						sourceRoot,
+						baseProjectRoot,
 						workspaceRoot,
 						materialsRoot: workspaceRoot,
 						base: "a".repeat(40),
@@ -311,12 +314,14 @@ describe("session-factory planSlug validation", () => {
 				additionalSkillPaths?: string[];
 			};
 			const fullSystemPrompt = `${loader.systemPrompt}\n${loader.additionalSkillPaths?.map((path) => `<location>${path}</location>`).join("\n")}`;
-			expect(fullSystemPrompt).toContain(join(workspaceRoot, suffix));
+			expect(fullSystemPrompt).toContain(join(baseProjectRoot, suffix));
+			expect(fullSystemPrompt).not.toContain(join(workspaceRoot, suffix));
 			expect(fullSystemPrompt).not.toContain(sourceRoot);
 			expect(fullSystemPrompt).not.toContain(hostRunStoreRoot);
 		} finally {
 			await rm(sourceRoot, { recursive: true, force: true });
 			await rm(workspaceRoot, { recursive: true, force: true });
+			await rm(baseProjectRoot, { recursive: true, force: true });
 			await rm(hostRunStoreRoot, { recursive: true, force: true });
 		}
 	});

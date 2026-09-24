@@ -319,16 +319,19 @@ describe("cosmonauts run", () => {
 	test("status points to the persisted QM full report", async () => {
 		const review = await runQualityReview({ projectRoot: temp.path });
 		await parseRun(["status", review.ref.runId]);
-		expect(JSON.parse(output.stdout())).toMatchObject({
+		const status = JSON.parse(output.stdout());
+		expect(status).toMatchObject({
 			found: true,
 			status: "blocked",
-			artifacts: [
-				{
+		});
+		expect(status.artifacts).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
 					id: "qm/final.md",
 					path: expect.stringContaining("/artifacts/qm/final.md"),
-				},
-			],
-		});
+				}),
+			]),
+		);
 	});
 
 	test("status watch and list use normalized store observations with inferred scope", async () => {

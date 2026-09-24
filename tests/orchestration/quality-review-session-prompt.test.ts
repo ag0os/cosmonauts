@@ -8,11 +8,12 @@ import { createAgentSessionFromDefinition } from "../../lib/orchestration/sessio
 it("keeps source and host paths out of a real panel reviewer's full system prompt", async () => {
 	const sourceRoot = await mkdtemp(join(tmpdir(), "qm-prompt-source-"));
 	const workspaceRoot = await mkdtemp(join(tmpdir(), "qm-prompt-clone-"));
+	const baseProjectRoot = await mkdtemp(join(tmpdir(), "qm-prompt-base-"));
 	const hostRunStoreRoot = await mkdtemp(join(tmpdir(), "qm-prompt-host-"));
 	const relativeSkill = join("bundled", "coding", "skills", "review-scope");
 	const skill =
 		"---\nname: review-scope\ndescription: Review the captured scope.\n---\n\nReview the captured scope.\n";
-	for (const root of [sourceRoot, workspaceRoot]) {
+	for (const root of [sourceRoot, workspaceRoot, baseProjectRoot]) {
 		await mkdir(join(root, relativeSkill), { recursive: true });
 		await writeFile(join(root, relativeSkill, "SKILL.md"), skill);
 	}
@@ -56,6 +57,7 @@ it("keeps source and host paths out of a real panel reviewer's full system promp
 				qualityReviewContext: {
 					runId: "qm-prompt",
 					sourceRoot,
+					baseProjectRoot,
 					workspaceRoot,
 					materialsRoot: workspaceRoot,
 					base: "a".repeat(40),
@@ -73,6 +75,9 @@ it("keeps source and host paths out of a real panel reviewer's full system promp
 		);
 		try {
 			expect(session.systemPrompt).toContain(
+				join(baseProjectRoot, relativeSkill),
+			);
+			expect(session.systemPrompt).not.toContain(
 				join(workspaceRoot, relativeSkill),
 			);
 			expect(session.systemPrompt).not.toContain(sourceRoot);
@@ -88,6 +93,7 @@ it("keeps source and host paths out of a real panel reviewer's full system promp
 	} finally {
 		await rm(sourceRoot, { recursive: true, force: true });
 		await rm(workspaceRoot, { recursive: true, force: true });
+		await rm(baseProjectRoot, { recursive: true, force: true });
 		await rm(hostRunStoreRoot, { recursive: true, force: true });
 	}
 });

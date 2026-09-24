@@ -46,6 +46,7 @@ export interface QualityReviewCommand {
 }
 
 export interface ProjectQualityReviewConfig {
+	readonly analysisPrepare?: readonly QualityReviewCommand[];
 	readonly prepare?: readonly QualityReviewCommand[];
 	readonly checks?: readonly QualityReviewCommand[];
 	readonly gateOwnedPaths?: readonly string[];

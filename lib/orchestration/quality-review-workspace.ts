@@ -220,25 +220,49 @@ export interface PrivateReviewWorkspace {
 	readonly head: string;
 	readonly base: string;
 	readonly changedFiles: readonly string[];
+	materializeMaterials(): Promise<void>;
 }
 
-/** A separate checkout of the captured base supplies project runtime inputs. */
+/** Export the captured base from the operator repository before reviewed code runs. */
 export async function materializeBaseReviewProject(
-	workspaceRoot: string,
+	sourceRoot: string,
+	reservedRoot: string,
 	base: string,
+	signal?: AbortSignal,
 ): Promise<string> {
-	const destination = join(dirname(workspaceRoot), "base-runtime");
-	await git(dirname(workspaceRoot), [
-		"clone",
-		"--no-hardlinks",
-		"--no-checkout",
-		"--no-tags",
-		"--",
-		workspaceRoot,
+	const destination = join(reservedRoot, "base-runtime");
+	await processOutput(
+		"git",
+		[
+			"clone",
+			"--no-hardlinks",
+			"--no-checkout",
+			"--no-tags",
+			"--",
+			sourceRoot,
+			destination,
+		],
+		reservedRoot,
+		true,
+		120_000,
+		signal,
+	);
+	await processOutput(
+		"git",
+		["checkout", "--detach", base],
 		destination,
-	]);
-	await git(destination, ["checkout", "--detach", base]);
-	await git(destination, ["remote", "remove", "origin"]);
+		false,
+		120_000,
+		signal,
+	);
+	await processOutput(
+		"git",
+		["remote", "remove", "origin"],
+		destination,
+		false,
+		120_000,
+		signal,
+	);
 	return destination;
 }
 
@@ -268,6 +292,7 @@ export async function createPrivateReviewWorkspace(
 	ports: {
 		afterFirstSample?: (attempt: number) => Promise<void>;
 		excludePath?: string;
+		deferMaterials?: boolean;
 	} = {},
 ): Promise<PrivateReviewWorkspace> {
 	const sourceRealPath = await realpath(projectRoot);
@@ -357,52 +382,54 @@ export async function createPrivateReviewWorkspace(
 				throw new WorkspaceRefusal(`Unsupported changed-path nesting: ${path}`);
 		}
 	}
-	await mkdir(join(materialsRoot, "base"), { recursive: true, mode: 0o700 });
-	await writeFile(join(materialsRoot, "base-sha.txt"), `${base}\n`);
-	await writeFile(
-		join(materialsRoot, "range.txt"),
-		`${base}..captured:${snapshot.head}\n`,
-	);
-	await writeFile(
-		join(materialsRoot, "changed-files.txt"),
-		`${changed.join("\n")}\n`,
-	);
-	await writeFile(join(materialsRoot, "full.diff"), diff);
-	for (const path of changed) {
-		safePath(path);
-		const blob = await git(checkout, [
-			"cat-file",
-			"blob",
-			`${base}:${path}`,
-		]).catch(() => undefined);
-		if (blob) {
-			const output = join(materialsRoot, "base", path);
-			await mkdir(dirname(output), { recursive: true });
-			await writeFile(output, blob);
+	const materializeMaterials = async () => {
+		await mkdir(join(materialsRoot, "base"), { recursive: true, mode: 0o700 });
+		await writeFile(join(materialsRoot, "base-sha.txt"), `${base}\n`);
+		await writeFile(
+			join(materialsRoot, "range.txt"),
+			`${base}..captured:${snapshot.head}\n`,
+		);
+		await writeFile(
+			join(materialsRoot, "changed-files.txt"),
+			`${changed.join("\n")}\n`,
+		);
+		await writeFile(join(materialsRoot, "full.diff"), diff);
+		for (const path of changed) {
+			safePath(path);
+			const blob = await git(
+				sourceRealPath,
+				["cat-file", "blob", `${base}:${path}`],
+				true,
+			).catch(() => undefined);
+			if (blob) {
+				const output = join(materialsRoot, "base", path);
+				await mkdir(dirname(output), { recursive: true });
+				await writeFile(output, blob);
+			}
 		}
-	}
-	for (const path of [
-		"base-sha.txt",
-		"range.txt",
-		"changed-files.txt",
-		"full.diff",
-	])
-		await chmod(join(materialsRoot, path), 0o400);
-	for (const path of changed) {
-		let cursor = dirname(join(materialsRoot, "base", path));
-		while (cursor !== materialsRoot) {
-			await chmod(cursor, 0o500).catch((error: NodeJS.ErrnoException) => {
+		for (const path of [
+			"base-sha.txt",
+			"range.txt",
+			"changed-files.txt",
+			"full.diff",
+		])
+			await chmod(join(materialsRoot, path), 0o400);
+		for (const path of changed) {
+			let cursor = dirname(join(materialsRoot, "base", path));
+			while (cursor !== materialsRoot) {
+				await chmod(cursor, 0o500).catch((error: NodeJS.ErrnoException) => {
+					if (error.code !== "ENOENT") throw error;
+				});
+				cursor = dirname(cursor);
+			}
+			const copy = join(materialsRoot, "base", path);
+			await chmod(copy, 0o400).catch((error: NodeJS.ErrnoException) => {
 				if (error.code !== "ENOENT") throw error;
 			});
-			cursor = dirname(cursor);
 		}
-		const copy = join(materialsRoot, "base", path);
-		await chmod(copy, 0o400).catch((error: NodeJS.ErrnoException) => {
-			if (error.code !== "ENOENT") throw error;
-		});
-	}
-	await chmod(join(materialsRoot, "base"), 0o500);
-	// The host adds checks.md after preparation and checks, then seals this directory.
+		await chmod(join(materialsRoot, "base"), 0o500);
+	};
+	if (!ports.deferMaterials) await materializeMaterials();
 	return {
 		workspaceRoot: checkout,
 		materialsRoot,
@@ -410,6 +437,7 @@ export async function createPrivateReviewWorkspace(
 		head: snapshot.head,
 		base,
 		changedFiles: changed,
+		materializeMaterials,
 	};
 }
 

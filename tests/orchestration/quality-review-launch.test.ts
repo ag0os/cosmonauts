@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
@@ -14,6 +15,7 @@ import {
 	validateQualityReviewAnalysisCalls,
 } from "../../lib/orchestration/quality-review-launch.ts";
 import { renderQualityReviewReport } from "../../lib/orchestration/quality-review-report.ts";
+import * as workspaceModule from "../../lib/orchestration/quality-review-workspace.ts";
 
 const agent = (id: string): AgentDefinition => ({
 	id,
@@ -342,6 +344,323 @@ describe("quality review launch policy", () => {
 		);
 		expect(report).toContain("Verdict: not-ready");
 		expect(report).toContain("Analysis audit gate state: not observed");
+	});
+
+	it("runs configured checks only after the QM and reviewer evidence complete", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "qm-launch-order-"));
+		roots.push(projectRoot);
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		await (await import("node:fs/promises")).mkdir(
+			join(projectRoot, ".cosmonauts"),
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "test/other",
+					checks: [
+						{
+							id: "order",
+							command: process.execPath,
+							args: [
+								"-e",
+								"const fs=require('node:fs'); if (!fs.existsSync('qm.done') || !fs.existsSync('panel.done')) process.exit(7); console.log('evidence sealed')",
+							],
+						},
+					],
+				},
+			}),
+		);
+		git("add", ".gitignore", ".cosmonauts/config.json");
+		git("commit", "-qm", "base");
+		const result = await launchQualityReview({
+			projectRoot,
+			execute: async (context) => {
+				const fullText = "review complete";
+				await context.artifactSink.writeReviewer({
+					runId: context.runId,
+					lens: "reviewer",
+					spawnId: "spawn-one",
+					sessionId: "panel-one",
+					resolvedRole: "coding/reviewer",
+					resolvedModel: { provider: "test", id: "other" },
+					outcome: "success",
+					digest: createHash("sha256").update(fullText).digest("hex"),
+					fullText,
+				});
+				await writeFile(
+					join(context.workspaceRoot ?? "", "panel.done"),
+					"done",
+				);
+				await writeFile(join(context.workspaceRoot ?? "", "qm.done"), "done");
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: ["audit pass"],
+					}),
+					gateState: "completed-bound",
+					requiredLenses: ["reviewer"],
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: ready");
+		expect(report).toContain("order: argv");
+		expect(report).toContain("evidence sealed");
+	});
+
+	it("marks checks not run and not-ready when preparation fails after assessment", async () => {
+		const projectRoot = await mkdtemp(
+			join(tmpdir(), "qm-prepare-after-review-"),
+		);
+		roots.push(projectRoot);
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		await (await import("node:fs/promises")).mkdir(
+			join(projectRoot, ".cosmonauts"),
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "test/other",
+					prepare: [
+						{
+							id: "dependencies",
+							command: process.execPath,
+							args: ["-e", "process.exit(5)"],
+						},
+					],
+					checks: [
+						{
+							id: "test",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		git("add", ".gitignore", ".cosmonauts/config.json");
+		git("commit", "-qm", "base");
+		let assessed = false;
+		const result = await launchQualityReview({
+			projectRoot,
+			execute: async () => {
+				assessed = true;
+				return {
+					gateState: "completed-bound",
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: ["audit passed"],
+					}),
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(assessed).toBe(true);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain("test: not run (preparation failed)");
+	});
+
+	it("installs analysis dependencies before assessment without running lifecycle scripts", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "qm-analysis-prepare-"));
+		roots.push(projectRoot);
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(
+			join(projectRoot, ".gitignore"),
+			"missions/sessions/\nnode_modules/\n",
+		);
+		await (await import("node:fs/promises")).mkdir(join(projectRoot, "dep"));
+		await writeFile(
+			join(projectRoot, "dep", "package.json"),
+			JSON.stringify({ name: "fixture", version: "1.0.0" }),
+		);
+		await writeFile(
+			join(projectRoot, "package.json"),
+			JSON.stringify({
+				name: "qm-analysis-prepare",
+				version: "1.0.0",
+				dependencies: { fixture: "file:./dep" },
+				scripts: {
+					preinstall:
+						"node -e \"require('node:fs').writeFileSync('lifecycle-marker','ran')\"",
+				},
+			}),
+		);
+		execFileSync("bun", ["install", "--ignore-scripts"], {
+			cwd: projectRoot,
+			stdio: "ignore",
+		});
+		await (await import("node:fs/promises")).mkdir(
+			join(projectRoot, ".cosmonauts"),
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					analysisPrepare: [
+						{
+							id: "analysis-dependencies",
+							command: "bun",
+							args: ["install", "--frozen-lockfile", "--ignore-scripts"],
+						},
+					],
+					diverseReviewerModel: "test/other",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		git("add", ".");
+		git("commit", "-qm", "base");
+		let observedDependency = false;
+		const result = await launchQualityReview({
+			projectRoot,
+			execute: async (context) => {
+				observedDependency = (
+					await readFile(
+						join(
+							context.workspaceRoot ?? "",
+							"node_modules",
+							"fixture",
+							"package.json",
+						),
+						"utf8",
+					)
+				).includes("fixture");
+				await expect(
+					readFile(join(context.workspaceRoot ?? "", "lifecycle-marker")),
+				).rejects.toMatchObject({ code: "ENOENT" });
+				return {
+					gateState: "completed-bound",
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: ["audit passed"],
+					}),
+				};
+			},
+		});
+		expect(observedDependency).toBe(true);
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain(
+			"Analysis preparation analysis-dependencies: passed",
+		);
+		await expect(
+			readFile(join(projectRoot, "lifecycle-marker")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	it.each([
+		"deadline",
+		"caller",
+	] as const)("aborts a slow base export on %s", async (reason) => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "qm-slow-export-"));
+		roots.push(projectRoot);
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		git("add", ".gitignore");
+		git("commit", "-qm", "base");
+		const controller = new AbortController();
+		let observedSignal: AbortSignal | undefined;
+		let started!: () => void;
+		const startedPromise = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const exportSpy = vi
+			.spyOn(workspaceModule, "materializeBaseReviewProject")
+			.mockImplementation(async (_source, _reserved, _base, signal) => {
+				observedSignal = signal;
+				started();
+				await new Promise<void>((resolve) =>
+					signal?.addEventListener("abort", () => resolve(), { once: true }),
+				);
+				throw new Error("export aborted");
+			});
+		try {
+			const pending = launchQualityReview({
+				projectRoot,
+				signal: controller.signal,
+				assessmentTimeoutMs: reason === "deadline" ? 40 : 10_000,
+			});
+			await startedPromise;
+			if (reason === "caller") controller.abort();
+			const result = await pending;
+			expect(observedSignal?.aborted).toBe(true);
+			expect(result.stepResult.outcome).toBe(
+				reason === "caller" ? "cancelled" : "failed",
+			);
+		} finally {
+			exportSpy.mockRestore();
+		}
 	});
 
 	it("delegates a durable terminal QM into a child run with a complete report", async () => {

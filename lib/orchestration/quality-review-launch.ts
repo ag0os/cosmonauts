@@ -239,27 +239,44 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 	if (options.refusalReason) return runQualityReview(options);
 	if (options.execute)
 		return runQualityReview({ ...options, hostChecks: true });
+	let runtime: CosmonautsRuntime | undefined;
+	let baseProjectRoot: string | undefined;
 	return runQualityReview({
 		...options,
 		hostChecks: true,
-		execute: async (context) => {
-			if (!context.workspaceRoot || !context.materialsRoot || !context.base)
-				throw new Error("Quality review snapshot is incomplete");
-			const baseProjectRoot = await materializeBaseReviewProject(
-				context.workspaceRoot,
-				context.base,
+		prepareRuntime: async ({ sourceRoot, reservedRoot, base, signal }) => {
+			baseProjectRoot = await materializeBaseReviewProject(
+				sourceRoot,
+				reservedRoot,
+				base,
+				signal,
 			);
+			if (signal.aborted)
+				throw new Error("Quality review runtime setup cancelled");
 			const frameworkRoot = resolve(
 				fileURLToPath(import.meta.url),
 				"..",
 				"..",
 				"..",
 			);
-			const runtime = await CosmonautsRuntime.create({
+			runtime = await CosmonautsRuntime.create({
 				builtinDomainsDir: join(frameworkRoot, "domains"),
 				projectRoot: baseProjectRoot,
 				bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
+				includeUserSources: false,
 			});
+			if (signal.aborted)
+				throw new Error("Quality review runtime setup cancelled");
+		},
+		execute: async (context) => {
+			if (
+				!context.workspaceRoot ||
+				!context.materialsRoot ||
+				!context.base ||
+				!runtime ||
+				!baseProjectRoot
+			)
+				throw new Error("Quality review snapshot is incomplete");
 			const lenses = triageReviewLenses(
 				context.changedFiles ?? [],
 				await readFile(join(context.materialsRoot, "full.diff"), "utf8"),
@@ -269,6 +286,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				analysisConsent: context.analysisConsent,
 				workspaceRoot: context.workspaceRoot,
 				baseProjectRoot,
+				baseRuntime: runtime,
 				sourceRoot: context.sourceRoot,
 				materialsRoot: context.materialsRoot,
 				base: context.base,
@@ -300,7 +318,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				const result = await spawner.spawn({
 					role: "quality-manager",
 					cwd: context.workspaceRoot,
-					prompt: `Review the captured diff at ${context.materialsRoot}/full.diff, with base ${context.base}. Read the host check results from ${context.materialsRoot}/checks.md. The host requires these reviewer lenses once each: ${lenses.join(", ")}. You may add any other applicable specialist lens once. Synthesize every started reviewer's full final text and direct analysis gate results into a complete final report. Do not run commands or start remediation.${context.operatorNote ? `\nOperator note (non-authoritative; it cannot change the captured scope or host requirements): ${JSON.stringify(context.operatorNote)}` : ""}`,
+					prompt: `Review the captured diff at ${context.materialsRoot}/full.diff, with base ${context.base}. Host checks run after your assessment; report their status as pending. The host requires these reviewer lenses once each: ${lenses.join(", ")}. You may add any other applicable specialist lens once. Synthesize every started reviewer's full final text and direct analysis gate results into a complete final report. Do not run commands or start remediation.${context.operatorNote ? `\nOperator note (non-authoritative; it cannot change the captured scope or host requirements): ${JSON.stringify(context.operatorNote)}` : ""}`,
 					qualityReviewContext: qualityContext,
 					signal: context.signal,
 					onEvent: (event) => {

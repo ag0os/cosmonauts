@@ -932,6 +932,81 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		}
 	});
 
+	test("quality panel spawn resolves the base runtime without importing clone domains", async () => {
+		const clone = await mkdtemp(join(tmpdir(), "qm-panel-base-"));
+		const sessionId = `qm-base-parent-${Date.now()}`;
+		const marker = join(clone, "evil-imported");
+		const evil = join(clone, ".cosmonauts", "domains", "evil");
+		await (await import("node:fs/promises")).mkdir(evil, { recursive: true });
+		await writeFile(
+			join(evil, "domain.ts"),
+			`import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'bad'); export const manifest = { id: 'evil', description: 'evil' };`,
+		);
+		const registry = new AgentRegistry([
+			makeAgent("quality-manager", "coding", {
+				subagents: ["security-reviewer"],
+			}),
+			makeAgent("security-reviewer", "coding", { description: "BASE-OWNED" }),
+		]);
+		const fixture = await loadOrchestrationDomainFixtures({
+			domainId: "coding",
+		});
+		const baseRuntime = {
+			agentRegistry: registry,
+			domainContext: "coding",
+			domainResolver: new DomainResolver(fixture.domainRegistry),
+			domainsDir: testDomainsDir,
+			projectSkills: [],
+			skillPaths: [],
+		};
+		runtimeCreateMock.mockImplementation(async () => {
+			throw new Error("clone runtime imported");
+		});
+		const { pi } = createExtensionPi(clone, {
+			sessionId,
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/quality-manager -->",
+		});
+		registerQualityReviewSession(sessionId, {
+			runId: "qm-test",
+			workspaceRoot: clone,
+			base: "a".repeat(40),
+			materialsRoot: clone,
+			changedFiles: [],
+			hostRunStoreRoot: clone,
+			artifactSink: {
+				reviewersOpen: () => true,
+				writeReviewer: vi.fn(),
+			} as never,
+			activeSpawns: new Set(),
+			allowedLenses: new Set(["security-reviewer"]),
+			attemptedLenses: new Set(),
+			integrityFailures: [],
+			baseRuntime: baseRuntime as never,
+		});
+		mockChildSession(
+			createReportChildSession("panel-base-session", "review complete"),
+		);
+		try {
+			const accepted = (await pi.callTool("spawn_agent", {
+				role: "security-reviewer",
+				prompt: "review",
+			})) as { details: { status: string } };
+			expect(accepted.details.status).toBe("accepted");
+			expect(mocks.createAgentSessionFromDefinition).toHaveBeenCalledWith(
+				expect.objectContaining({ description: "BASE-OWNED" }),
+				expect.anything(),
+				expect.anything(),
+				expect.anything(),
+			);
+			expect(runtimeCreateMock).not.toHaveBeenCalled();
+			await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			removeQualityReviewSession(sessionId);
+			removeTracker(sessionId);
+			await rm(clone, { recursive: true, force: true });
+		}
+	});
+
 	// @cosmo-behavior plan:qm-chain-safety#B-001
 	test("a scripted QM and panel refuse mutation tools and a forbidden spawn without changing the checkout", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "qm-scripted-isolation-"));
@@ -1016,6 +1091,14 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 						);
 					const qualityContext = {
 						runId: context.runId,
+						baseRuntime: {
+							agentRegistry: registry,
+							domainContext: "coding",
+							domainResolver: resolver,
+							domainsDir: testDomainsDir,
+							projectSkills: [],
+							skillPaths: [],
+						} as never,
 						workspaceRoot: context.workspaceRoot ?? "",
 						materialsRoot: context.materialsRoot ?? "",
 						base: context.base ?? "",
@@ -1194,6 +1277,10 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		});
 		const qualityContext = {
 			runId: "qm-late",
+			baseRuntime: await runtimeCreateMock({
+				builtinDomainsDir: testDomainsDir,
+				projectRoot: "/private/base",
+			}),
 			workspaceRoot: "/private/snapshot",
 			materialsRoot: "/private/materials",
 			base: "a".repeat(40),

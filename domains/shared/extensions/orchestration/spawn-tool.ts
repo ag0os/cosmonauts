@@ -485,7 +485,12 @@ export function registerSpawnTool(
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
-			const runtime = await getRuntime(ctx.cwd);
+			const parentSessionId = ctx.sessionManager.getSessionId();
+			const qualityContext = getQualityReviewSession(parentSessionId);
+			const baseRuntime = qualityContext?.baseRuntime;
+			if (qualityContext && !baseRuntime)
+				throw new Error("Quality review base runtime is missing");
+			const runtime = baseRuntime ?? (await getRuntime(ctx.cwd));
 			const systemPrompt = ctx.getSystemPrompt();
 			const callerRole = extractAgentIdFromSystemPrompt(systemPrompt);
 			if (!callerRole) {
@@ -575,8 +580,6 @@ export function registerSpawnTool(
 					} as SpawnProgressDetails,
 				};
 			}
-			const parentSessionId = ctx.sessionManager.getSessionId();
-			const qualityContext = getQualityReviewSession(parentSessionId);
 			const panelPrompt = qualityContext
 				? buildQualityReviewPanelPrompt(qualityContext, params.prompt)
 				: params.prompt;

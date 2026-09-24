@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 // @cosmo-behavior plan:qm-chain-safety#B-006
-it("runs configured checks and one triaged panel in a single QM pass", async () => {
+it("assesses one triaged panel before running one configured check", async () => {
 	const projectRoot = await mkdtemp(join(tmpdir(), "qm-one-pass-"));
 	roots.push(projectRoot);
 	const git = (...args: string[]) =>
@@ -88,11 +88,13 @@ it("runs configured checks and one triaged panel in a single QM pass", async () 
 			const exposed = `${config.prompt}\n${buildQualityReviewPanelPrompt(context, "Review the scope")}`;
 			expect(exposed).not.toContain(projectRoot);
 			expect(exposed).not.toContain(context.hostRunStoreRoot);
-			expect(exposed).toContain(join(context.materialsRoot, "checks.md"));
-			expect(
-				await readFile(join(context.materialsRoot, "checks.md"), "utf8"),
-			).toContain("one");
-			expect(await readFile(join(config.cwd, "check-count"), "utf8")).toBe("x");
+			expect(exposed).toContain(join(context.materialsRoot, "full.diff"));
+			await expect(
+				readFile(join(context.materialsRoot, "checks.md"), "utf8"),
+			).rejects.toMatchObject({ code: "ENOENT" });
+			await expect(
+				readFile(join(config.cwd, "check-count"), "utf8"),
+			).rejects.toMatchObject({ code: "ENOENT" });
 			expect([...context.allowedLenses]).toEqual([
 				"reviewer",
 				"security-reviewer",
@@ -196,6 +198,7 @@ it("runs configured checks and one triaged panel in a single QM pass", async () 
 	expect(result.stepResult.outcome, report).toBe("success");
 	expect(report).toContain("Verdict: ready");
 	expect(report).toContain("one: argv");
+	expect(report).toContain('output "ok"');
 	expect(report).toContain("reviewer: test/reviewer");
 	expect(report).toContain("security-reviewer: test/security-reviewer");
 	expect(report).toContain("ux-reviewer: test/ux-reviewer");

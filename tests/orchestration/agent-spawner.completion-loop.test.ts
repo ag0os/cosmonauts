@@ -57,6 +57,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 		inMemory: (settings?: Record<string, unknown>) => ({
 			kind: "in-memory-settings",
 			settings,
+			setProjectTrusted: vi.fn(),
 		}),
 	},
 }));
