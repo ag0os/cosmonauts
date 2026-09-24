@@ -1,6 +1,6 @@
 # Closure evidence: real end-to-end QM runs on a dirty checkout (TASK-728 AC #6)
 
-The coordinator ran two real `verify` runs on 2026-09-24. They used real model sessions: the QM and panel on `openai-codex/gpt-5.6-sol` through Pi, with no fakes. No Quality Manager was used to verify this plan (D-002/D-033). These runs are evidence about the product.
+The coordinator ran three real `verify` runs on 2026-09-24. They used real model sessions: the QM and panel on `openai-codex/gpt-5.6-sol` through Pi, with no fakes. No Quality Manager was used to verify this plan (D-002, D-033, D-034). These runs are evidence about the product.
 
 ## Setup
 
