@@ -118,6 +118,15 @@ async function replayRuntime(
 		writeFile(join(projectRoot, "fallow.toml"), "", "utf8"),
 		writeFile(executablePath, "#!/bin/sh\nexit 0\n", "utf8"),
 	]);
+	await mkdir(join(projectRoot, ".fallow-baselines"));
+	for (const name of ["dead-code", "health", "dupes"]) {
+		await writeFile(
+			join(projectRoot, ".fallow-baselines", `${name}.json`),
+			await readFile(
+				join(REPOSITORY_ROOT, ".fallow-baselines", `${name}.json`),
+			),
+		);
+	}
 	await chmod(executablePath, 0o755);
 	const canonicalProjectRoot = await realpath(projectRoot);
 	await writeFile(

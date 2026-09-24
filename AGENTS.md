@@ -53,6 +53,15 @@ Work flows: **roadmap → plan → tasks → sessions → archive → proposals/
 
 ## When Working on This Codebase
 
+- Changed-scope `analysis_audit` uses all three committed Fallow floors in
+  `.fallow-baselines/` (`dead-code.json`, `health.json`, `dupes.json`). Refresh
+  only with `bun run refresh:fallow-baselines -- --base <revision> --reason '<reason>' --category <dead-code|health|dupes>`;
+  the manifest records provenance.
+- New suppressions need a human-listed exception in the base revision of
+  `.cosmonauts/suppression-exceptions.json`. Check with
+  `bun run check:suppressions -- --base <revision>`; a same-change registry edit
+  cannot authorize one.
+
 - Verify after changes: `bun run test`, `bun run lint`, `bun run typecheck`.
 - For non-trivial features (multi-file or design decisions), scope into tasks before implementing — see `/skill:plan` and `/skill:task`.
 - For small, self-contained changes, skip the task system.

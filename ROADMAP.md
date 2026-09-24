@@ -401,20 +401,22 @@ Two Drive behaviours that cost real work on the `living-memory-fidelity` run (11
 
 ### `analysis-debt-paydown`: Pay Down What the Newly-Bound Analysis Gates Revealed
 
-Per-project `fallow` execution consent was granted 2026-09-10 while preparing `chain-stage-context`, which bound `duplication`, `complexity` and `dead-code` for the first time and immediately showed why binding a gate without running it is unsafe: two of the three fail whole-repo on pre-existing debt. That plan's gates were rewritten as changed-scope regression checks against baselines committed at `.fallow-baselines/`, which stops the debt growing but pays none of it down. This item pays it down. **Duplication is not part of it** — `fallow dupes` exits 0; its 3,288 duplicated lines (3.9% across 50 files) are under threshold and informational.
+Per-project `fallow` execution consent was granted 2026-09-10 while preparing `chain-stage-context`, which bound `duplication`, `complexity` and `dead-code`. Three committed files — `.fallow-baselines/dead-code.json`, `health.json`, and `dupes.json` — now serve as changed-scope regression floors, with digests and adoption provenance in `.fallow-baselines/manifest.json`. They stop introduced findings without paying inherited debt down. Duplication has a baseline even though its 2026-09-10 whole-project scan exited 0; its 3,288 duplicated lines (3.9% across 50 files) were informational. Those figures are historical, not a current census.
+
+Baseline refresh is explicit: `bun run refresh:fallow-baselines -- --base <revision> --reason '<reason>' --category <dead-code|health|dupes>`. It appends provenance; ordinary review cannot write a baseline. New source suppressions require a human-listed entry in the base revision of `.cosmonauts/suppression-exceptions.json`; `bun run check:suppressions -- --base <revision>` enforces that ownership. Same-change registry edits do not grant an exception.
 
 **Part 1 — retire the dead-code baseline.** `fallow dead-code` exits 1: 26 unused exports, 102 unused *type* exports, 2 duplicate-export pairs. Independently pickable, no sequencing constraint.
 
 - `fallow fix` auto-handles 25 of the 26 value exports — it strips the `export` keyword and leaves the symbol, so internally-used constants like `CODEX_ARGS_ENV` are safe. Verified by dry run
 - The **102 unused type exports are not auto-fixable** and are the bulk of the work. Decide per cluster: delete, or suppress with a stated reason. `lib/harness-adapters/sync.ts` alone carries 17 and `scripts/validate-harness-exports.ts` 14
 - Two duplicate-export pairs need a human call about which copy survives, not a fix. `partialReason` is defined at `lib/driver/drive-finalization.ts:699` *and* `lib/driver/run-one-task.ts:827` with byte-identical bodies; `drive-scheduler-backend.ts` imports the `run-one-task` copy while `drive-finalization` uses its own. Not yet drifted, but nothing stops it. `registerEditCommand` is duplicated across `cli/plans/commands/edit.ts` and `cli/tasks/commands/edit.ts`
-- **Completion condition:** `fallow dead-code` exits 0, `.fallow-baselines/dead-code.json` is deleted, and the `chain-stage-context` Quality Contract's dead-code row becomes a whole-repo hard fail instead of a regression floor. That is a strictly stronger gate and is the point of the item
+- **Completion condition:** `fallow dead-code` exits 0 and the gate is deliberately changed to whole-project enforcement before `.fallow-baselines/dead-code.json` is retired. Removing the file while changed-scope audit still names it would fail the audit, so that migration needs its own reviewed change.
 
 **Part 2 — complexity pass. Sequenced *after* `chain-stage-context` ships, deliberately.** `fallow health` exits 1: 74 functions above threshold across 12,574 analysed, maintainability 90.9 ("good").
 
 - `lib/orchestration/chain-runner.ts` is both the top-priority hotspot (18.1) and `chain-stage-context`'s primary seam. Refactoring it first collides with that implementation; refactoring it before the plan lands means re-touching the new code either way. Wait for the file to settle
 - Named targets from the 2026-09-10 baseline include `parseHumanKnowledgeRecord` (cognitive 33) in `lib/memory/knowledge-records.ts`, and `runHarnessSync` (56) plus `groupCatalogue` (45) in `lib/skills/exporter.ts` — a 1036-LOC file
-- **Completion condition is a judgement, not zero.** Maintainability is already "good"; the goal is retiring the named hotspots and lowering the baseline, not driving 74 to 0
+- **Completion condition is a judgement, not zero.** The 2026-09-10 maintainability snapshot was "good"; the goal is retiring the named hotspots and lowering `health.json` with a reasoned refresh, not driving 74 to 0.
 
 **Not in scope: boundary rules.** `boundary-conformance` stays unbound with reason `provider-not-configured` because `fallow.toml` declares entry points but no boundary zones. Authoring those is already a bullet under `analysis-tools` ("Author repository boundary zones where enforcement is wanted") and has repo-wide consequences; keep it there.
 

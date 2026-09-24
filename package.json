@@ -38,6 +38,7 @@
 		"test:coverage": "vitest run --coverage",
 		"check:reachability": "bun scripts/check-reachability.ts",
 		"check:suppressions": "bun scripts/check-new-suppressions.ts",
+		"refresh:fallow-baselines": "bun scripts/update-fallow-baselines.ts",
 		"probe:census": "bun scripts/probe-census.ts"
 	},
 	"dependencies": {

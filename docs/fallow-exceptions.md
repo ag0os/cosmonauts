@@ -16,7 +16,11 @@ reported explicitly; it is never converted to a pass.
 For direct provider diagnosis, the equivalent change-scoped operation is:
 
 ```bash
-fallow audit --base <base-sha> --format json --quiet --explain --no-cache
+fallow audit --base <base-sha> \
+  --dead-code-baseline .fallow-baselines/dead-code.json \
+  --health-baseline .fallow-baselines/health.json \
+  --dupes-baseline .fallow-baselines/dupes.json \
+  --format json --quiet --no-cache --fail-on-issues
 ```
 
 `fallow audit` is not a full-project cleanliness check. Current policy has two
@@ -25,14 +29,25 @@ scopes:
 - Change regression blocks a `fail` verdict or a provider runtime failure from
   the explicit base. Unbound capability state remains visible and requires
   reviewer judgment.
-- Full-project exception hygiene remains a deliberate provider-maintenance
-  check: dead code and duplication are clean without baselines, and health
-  reports `functions_above_threshold: 0`.
+- Full-project debt remains a separate paydown effort. The committed
+  `dead-code.json`, `health.json`, and `dupes.json` files are all active
+  changed-scope floors. The duplication baseline exists even though the
+  2026-09-10 full-project duplication scan was below its failure threshold.
 
-There is no longer a temporary duplication baseline and no inline complexity
-suppressions. Both were removed by the
-`fallow-temp-exceptions-cleanup` plan; see commits on the corresponding branch
-in repository history.
+The three files were adopted as-is. `.fallow-baselines/manifest.json` records
+their SHA-256 digests and last-writer commits. Review never refreshes them.
+To refresh selected floors after deliberate debt work, run
+`bun run refresh:fallow-baselines -- --base <revision> --reason '<reason>' --category dead-code`
+(repeat `--category` for `health` or `dupes`). The script appends the base,
+resolved commit, reason, timestamp, and new digest to provenance. A missing or
+unreadable file fails the audit; it does not cause an unbaselined scan.
+
+New inline suppressions require a human-listed exception in the **base**
+revision of `.cosmonauts/suppression-exceptions.json`. Run
+`bun run check:suppressions -- --base <revision>` to compare current source
+directives with that base-owned registry. Editing the registry in the same
+change cannot authorize a new directive. The registry tracks intentional
+Fallow, Biome, and TypeScript directives by directive and target fingerprint.
 
 ## Configuration Exceptions
 
@@ -101,7 +116,7 @@ This is not temporary while the domain/plugin architecture remains dynamic.
 - If an exception is needed, make it line-specific or pattern-specific.
 - Document the reason using one of: public API, framework convention, generated
   file, optional tooling dependency, false positive, or temporary migration debt.
-- Avoid new baselines. A baseline is only acceptable when cleanup is staged and
-  `fallow audit` still fails new issues.
+- Refresh baselines only after deliberate cleanup, with a literal base and
+  recorded reason. Keep changed-scope audit failing on introduced issues.
 - Remove stale suppressions as soon as refactoring brings a function below the
   threshold.

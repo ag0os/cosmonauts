@@ -108,6 +108,15 @@ beforeEach(async () => {
 	projectRoot = join(fixtureRoot, "project");
 	userStateRoot = join(fixtureRoot, "user-state");
 	await mkdir(projectRoot, { recursive: true });
+	await mkdir(join(projectRoot, ".fallow-baselines"));
+	for (const name of ["dead-code", "health", "dupes"]) {
+		await writeFile(
+			join(projectRoot, ".fallow-baselines", `${name}.json`),
+			await readFile(
+				join(REPOSITORY_ROOT, ".fallow-baselines", `${name}.json`),
+			),
+		);
+	}
 });
 
 afterEach(async () => {
@@ -2453,6 +2462,12 @@ describe("Fallow capability execution", () => {
 			"audit",
 			"--base",
 			literalBase,
+			"--dead-code-baseline",
+			".fallow-baselines/dead-code.json",
+			"--health-baseline",
+			".fallow-baselines/health.json",
+			"--dupes-baseline",
+			".fallow-baselines/dupes.json",
 			"--format",
 			"json",
 			"--quiet",
@@ -2482,6 +2497,159 @@ describe("Fallow capability execution", () => {
 			name: "AnalysisProviderError",
 			failureClass: "invalid-output",
 		});
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-007
+	test("analysis_audit fails visibly before spawn when a baseline is missing", async () => {
+		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+		await recordConsent();
+		const executable = await createExecutable(
+			join(fixtureRoot, "injected", "fallow"),
+		);
+		const invocations: ProviderProcessInvocation[] = [];
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			invocations.push(invocation);
+			if (invocation.args.includes("--version"))
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			return {
+				kind: "code-exit",
+				code: 3,
+				stdout: "no config file found, using defaults\n",
+				stderr: "",
+			};
+		};
+		const pi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
+			userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+		await rm(join(projectRoot, ".fallow-baselines", "dupes.json"));
+		await expect(
+			pi.callTool("analysis_audit", { base: "HEAD" }),
+		).rejects.toMatchObject({
+			name: "AnalysisProviderError",
+			failureClass: "invalid-output",
+		});
+		expect(
+			invocations.some((invocation) => invocation.args[0] === "audit"),
+		).toBe(false);
+	});
+
+	test("analysis_audit passes inherited findings and fails introduced findings in each category", async () => {
+		await createLiveProviderProject(projectRoot);
+		await recordConsent();
+		const executablePath = await resolveInstalledFallowExecutable({
+			projectRoot: REPOSITORY_ROOT,
+		});
+		if (executablePath === null)
+			throw new Error("Expected native Fallow executable");
+		for (const [command, name] of [
+			["dead-code", "dead-code"],
+			["health", "health"],
+			["dupes", "dupes"],
+		] as const) {
+			try {
+				await execFileAsync(
+					executablePath,
+					[
+						command,
+						"--save-baseline",
+						join(projectRoot, ".fallow-baselines", `${name}.json`),
+						"--format",
+						"json",
+						"--quiet",
+						"--no-cache",
+					],
+					{ cwd: projectRoot },
+				);
+			} catch {
+				// The engine returns one when it finds the debt being baselined.
+			}
+			JSON.parse(
+				await readFile(
+					join(projectRoot, ".fallow-baselines", `${name}.json`),
+					"utf8",
+				),
+			);
+		}
+		const pi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
+			userStateRoot,
+			injectedExecutablePath: executablePath,
+		})(pi as never);
+		await writeProjectFile(
+			projectRoot,
+			"src/data/store.ts",
+			'// touched inherited debt\nexport const secret = "classified";\n',
+		);
+		const inherited = resultDetails(
+			await pi.callTool("analysis_audit", { base: "HEAD" }),
+		);
+		expect(inherited.verdict).toBe("pass");
+		await writeProjectFile(
+			projectRoot,
+			"src/data/store.ts",
+			'// touched inherited debt\nexport const secret = "classified";\nexport const newUnused = 1;\n',
+		);
+		const introduced = resultDetails(
+			await pi.callTool("analysis_audit", { base: "HEAD" }),
+		);
+		expect(introduced.verdict).toBe("fail");
+		expect(
+			(
+				introduced.native as {
+					payload: { summary: { dead_code_issues: number } };
+				}
+			).payload.summary.dead_code_issues,
+		).toBeGreaterThan(0);
+		await writeProjectFile(
+			projectRoot,
+			"src/data/store.ts",
+			'// touched inherited debt\nexport const secret = "classified";\n',
+		);
+		await writeProjectFile(
+			projectRoot,
+			"src/complex.ts",
+			`${await readFile(join(projectRoot, "src/complex.ts"), "utf8")}\nexport function newlyComplex(input: number): string {\n if (input > 100) return "huge";\n if (input > 10) return "large";\n if (input > 0) return "positive";\n return "negative";\n}\n`,
+		);
+		const health = resultDetails(
+			await pi.callTool("analysis_audit", { base: "HEAD" }),
+		);
+		expect(health.verdict).toBe("fail");
+		expect(
+			(
+				health.native as {
+					payload: { summary: { complexity_findings: number } };
+				}
+			).payload.summary.complexity_findings,
+		).toBeGreaterThan(0);
+		await writeProjectFile(
+			projectRoot,
+			"src/complex.ts",
+			'export function classify(input: number): string {\n\tif (input > 100) return "huge";\n\tif (input > 10) return "large";\n\tif (input > 0) return "positive";\n\treturn input === 0 ? "zero" : "negative";\n}\n',
+		);
+		await writeProjectFile(
+			projectRoot,
+			"src/duplicate-c.ts",
+			await readFile(join(projectRoot, "src/duplicate-a.ts"), "utf8"),
+		);
+		const duplication = resultDetails(
+			await pi.callTool("analysis_audit", { base: "HEAD" }),
+		);
+		expect(duplication.verdict).toBe("fail");
+		expect(
+			(
+				duplication.native as {
+					payload: { summary: { duplication_clone_groups: number } };
+				}
+			).payload.summary.duplication_clone_groups,
+		).toBeGreaterThan(0);
 	});
 
 	test("audits tracked staged and untracked dirty base changes from HEAD", async () => {

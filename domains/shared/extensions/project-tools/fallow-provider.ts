@@ -1981,7 +1981,18 @@ function scopePathArgs(scope: AnalysisScope): readonly string[] {
 	return scope.paths.flatMap((path) => ["--file", path]);
 }
 
-function capabilityArgs(request: AnalysisRequest): readonly string[] {
+const FALLOW_AUDIT_BASELINES = [
+	["--dead-code-baseline", ".fallow-baselines/dead-code.json"],
+	["--health-baseline", ".fallow-baselines/health.json"],
+	["--dupes-baseline", ".fallow-baselines/dupes.json"],
+] as const;
+
+class FallowBaselineError extends Error {}
+
+function capabilityArgs(
+	request: AnalysisRequest,
+	projectRoot: string,
+): readonly string[] {
 	let operation: readonly string[];
 	switch (request.capability) {
 		case "dead-code":
@@ -2004,7 +2015,22 @@ function capabilityArgs(request: AnalysisRequest): readonly string[] {
 			if (request.scope.base.trim().length === 0) {
 				throw new Error("changed-scope audit requires a nonempty base");
 			}
-			operation = ["audit", "--base", request.scope.base];
+			for (const [, path] of FALLOW_AUDIT_BASELINES) {
+				try {
+					readFileSync(join(projectRoot, path));
+				} catch (error) {
+					throw new FallowBaselineError(
+						`Fallow audit baseline is missing or unreadable: ${path}`,
+						{ cause: error },
+					);
+				}
+			}
+			operation = [
+				"audit",
+				"--base",
+				request.scope.base,
+				...FALLOW_AUDIT_BASELINES.flat(),
+			];
 			break;
 		case "trace":
 			operation = traceArgs(request);
@@ -2563,11 +2589,12 @@ async function executeFallowCapability(
 ): Promise<AnalysisResult> {
 	let args: readonly string[];
 	try {
-		args = capabilityArgs(request);
+		args = capabilityArgs(request, runtime.projectRoot);
 	} catch (error) {
 		return providerFailure(runtime, request.capability, {
 			kind:
-				request.capability === "changed-scope-audit"
+				request.capability === "changed-scope-audit" &&
+				!(error instanceof FallowBaselineError)
 					? "missing-base"
 					: "invalid-output",
 			message: error instanceof Error ? error.message : String(error),
