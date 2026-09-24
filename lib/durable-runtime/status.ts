@@ -16,6 +16,21 @@ export function statusFromEvent(
 			return "stale";
 		case "run_started":
 			return "running";
+		case "run_activity": {
+			const details = event.details;
+			if (typeof details !== "object" || details === null) return undefined;
+			const activity = details as Record<string, unknown>;
+			if (
+				activity.source !== "quality-review" ||
+				!["finalized", "retained"].includes(String(activity.phase))
+			)
+				return undefined;
+			return ["completed", "blocked", "failed", "cancelled"].includes(
+				String(activity.status),
+			)
+				? (activity.status as RunStatus)
+				: undefined;
+		}
 		default:
 			return undefined;
 	}

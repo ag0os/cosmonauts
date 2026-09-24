@@ -172,6 +172,35 @@ describe("quality review launch policy", () => {
 			triageReviewLenses(["lib/core.ts"], '+throw new Error("bad state")'),
 		).toEqual(["reviewer"]);
 	});
+	it("triages source directories, removals and behavioral markdown", () => {
+		expect(
+			triageReviewLenses(["lib/memory/store.ts"], "+writeFile(path, data)"),
+		).toContain("security-reviewer");
+		expect(
+			triageReviewLenses(["lib/auth.ts"], "-if (authorized) return true"),
+		).toContain("security-reviewer");
+		expect(
+			triageReviewLenses(
+				["bundled/coding/prompts/security-reviewer.md"],
+				"+Check auth tokens",
+			),
+		).toContain("security-reviewer");
+		expect(
+			triageReviewLenses(
+				["bundled/coding/skills/review/SKILL.md"],
+				"+Check auth tokens",
+			),
+		).toContain("security-reviewer");
+		expect(triageReviewLenses(["docs/guide.md"], "+Check auth tokens")).toEqual(
+			["reviewer"],
+		);
+		expect(
+			triageReviewLenses(
+				["docs/guide.md", "lib/core.ts"],
+				"diff --git a/docs/guide.md b/docs/guide.md\n+Check auth tokens\ndiff --git a/lib/core.ts b/lib/core.ts\n+return 1",
+			),
+		).toEqual(["reviewer"]);
+	});
 	it("requires UX for CLI help and security for dependency changes", () => {
 		expect(triageReviewLenses(["cli/help.ts"], "+Show command usage")).toEqual([
 			"reviewer",

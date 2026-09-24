@@ -16,6 +16,7 @@ export interface QualityReviewSessionContext {
 	readonly allowedLenses: ReadonlySet<string>;
 	readonly attemptedLenses: Set<string>;
 	readonly integrityFailures: string[];
+	omittedSkillPaths?: string[];
 	assessmentActive?: boolean;
 }
 

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { createQualityReviewArtifactSink } from "../../lib/orchestration/quality-review-artifacts.ts";
 
@@ -80,5 +80,86 @@ describe("quality review host artifacts", () => {
 		expect(await readFile(join(second.artifactsDir, "sentinel"), "utf8")).toBe(
 			"safe",
 		);
+	});
+	it("abandons an in-flight reviewer store write at the sealing grace", async () => {
+		const root = await mkdtemp(join(tmpdir(), "qm-artifacts-"));
+		roots.push(root);
+		const store = new FileRunStore({
+			rootDir: join(root, "missions", "sessions"),
+		});
+		const run = await store.createRun({ scope: "chain", runId: "one" });
+		let release: (() => void) | undefined;
+		vi.spyOn(store, "loadRun").mockImplementation(async () => {
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			return run;
+		});
+		const sink = createQualityReviewArtifactSink({ store, run });
+		const pending = sink.writeReviewer({
+			runId: run.runId,
+			lens: "security-reviewer",
+			spawnId: "spawn",
+			sessionId: "session",
+			resolvedRole: "coding/security-reviewer",
+			resolvedModel: { provider: "test", id: "model" },
+			outcome: "success",
+			fullText: "review",
+			digest: createHash("sha256").update("review").digest("hex"),
+		});
+		const started = Date.now();
+		expect(await sink.sealReviewers(30)).toEqual(["security-reviewer"]);
+		expect(Date.now() - started).toBeLessThan(500);
+		release?.();
+		await expect(pending).rejects.toThrow(/abandoned/);
+		await expect(
+			readFile(
+				join(run.artifactsDir, "qm", "reviewers", "security-reviewer.md"),
+			),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
+	it("removes reviewer bytes when the store append never settles", async () => {
+		const root = await mkdtemp(join(tmpdir(), "qm-artifacts-"));
+		roots.push(root);
+		const store = new FileRunStore({
+			rootDir: join(root, "missions", "sessions"),
+		});
+		const run = await store.createRun({ scope: "chain", runId: "one" });
+		const originalAppend = store.appendEvent.bind(store);
+		vi.spyOn(store, "appendEvent").mockImplementation((ref, event) =>
+			event.type === "artifact_written" &&
+			event.artifact.id === "qm/reviewers/security-reviewer.md"
+				? new Promise(() => {})
+				: originalAppend(ref, event),
+		);
+		const sink = createQualityReviewArtifactSink({ store, run });
+		void sink.writeReviewer({
+			runId: run.runId,
+			lens: "security-reviewer",
+			spawnId: "spawn",
+			sessionId: "session",
+			resolvedRole: "coding/security-reviewer",
+			resolvedModel: { provider: "test", id: "model" },
+			outcome: "success",
+			fullText: "review",
+			digest: createHash("sha256").update("review").digest("hex"),
+		});
+		const path = join(
+			run.artifactsDir,
+			"qm",
+			"reviewers",
+			"security-reviewer.md",
+		);
+		for (let attempt = 0; attempt < 100; attempt++) {
+			try {
+				await readFile(path);
+				break;
+			} catch {
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+		}
+		expect(await sink.sealReviewers(20)).toEqual(["security-reviewer"]);
+		await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+		expect(sink.references()).toEqual([]);
 	});
 });

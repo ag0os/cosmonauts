@@ -51,6 +51,7 @@ export interface ProjectQualityReviewConfig {
 	readonly diverseReviewerModel?: string;
 	readonly assessmentTimeoutMs?: number;
 	readonly panelTimeoutMs?: number;
+	readonly qmSettleGraceMs?: number;
 }
 
 /** Project-level configuration loaded from `.cosmonauts/config.json`. */

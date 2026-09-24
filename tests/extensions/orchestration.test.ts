@@ -920,6 +920,12 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 					"utf8",
 				),
 			).toContain("Verdict: refused");
+			expect(
+				await readFile(
+					join(runs[0]?.artifactsDir ?? "", "qm", "final.md"),
+					"utf8",
+				),
+			).toContain('Operator note (non-authoritative): "review"');
 		} finally {
 			removeTracker(sessionId);
 			await rm(projectRoot, { recursive: true, force: true });

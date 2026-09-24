@@ -20,6 +20,7 @@ import {
 	renderDomainsList,
 	resolveDumpPromptDomain,
 	resolveInteractiveExtensionPaths,
+	runCliQualityReview,
 	selectNoTtyCause,
 	selectRunMode,
 } from "../../cli/main.ts";
@@ -44,6 +45,31 @@ function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 }
 
 type ExpectedRunMode = ReturnType<typeof selectRunMode>;
+
+test("CLI quality review carries the print prompt and aborts on SIGINT", async () => {
+	let capturedPrompt: string | undefined;
+	const result = await runCliQualityReview(
+		{ projectRoot: "/tmp/project", operatorNote: "check this change" },
+		async (options) => {
+			capturedPrompt = options.operatorNote;
+			expect(options.signal?.aborted).toBe(false);
+			const interrupt = process.listeners("SIGINT").at(-1);
+			expect(interrupt).toBeTypeOf("function");
+			interrupt?.("SIGINT");
+			expect(options.signal?.aborted).toBe(true);
+			return {
+				ref: { scope: "chain", runId: "qm-test" },
+				stepResult: {
+					outcome: "cancelled",
+					summary: "cancelled",
+					artifacts: [],
+				},
+			};
+		},
+	);
+	expect(capturedPrompt).toBe("check this change");
+	expect(result.stepResult.outcome).toBe("cancelled");
+});
 
 function makeDomain(id: string): LoadedDomain {
 	return {

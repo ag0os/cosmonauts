@@ -15,15 +15,20 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileRunStore, runStatus } from "../../lib/durable-runtime/index.ts";
 import { summarizeAssistantText } from "../../lib/orchestration/assistant-text.ts";
+import {
+	qualityReviewAuditFindingLines,
+	validateQualityReviewAnalysisCalls,
+} from "../../lib/orchestration/quality-review-launch.ts";
 import {
 	indexedQualityReviewReport,
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
 import { runQualityReview } from "../../lib/orchestration/quality-review-run.ts";
 import { removePrivateReviewWorkspace } from "../../lib/orchestration/quality-review-workspace.ts";
+import type { SpawnEvent } from "../../lib/orchestration/types.ts";
 
 describe("quality review durable lifecycle", () => {
 	const roots: string[] = [];
@@ -237,11 +242,189 @@ describe("quality review durable lifecycle", () => {
 			"utf8",
 		);
 		expect(report).toContain("Verdict: not-ready");
-		expect(report).toMatch(
-			/## Gates[\s\S]*Analysis audit gate state: fail[\s\S]*## Findings[\s\S]*introduced debt/,
-		);
+		expect(report).toContain("Analysis audit gate state: fail");
 		expect(report).not.toContain(
 			"Analysis audit gate state: fail; human decision required",
+		);
+	});
+
+	it("reports each finding from a bound failing audit envelope", async () => {
+		const projectRoot = await root(true);
+		const base = "a".repeat(40);
+		const end = {
+			type: "tool_execution_end" as const,
+			sessionId: "qm",
+			toolCallId: "call",
+			isError: false,
+		};
+		const events: SpawnEvent[] = [
+			{
+				...end,
+				toolName: "analysis_status",
+				result: {
+					details: {
+						capabilities: [
+							{ capability: "changed-scope-audit", state: "bound" },
+						],
+					},
+				},
+			},
+			{
+				...end,
+				toolName: "analysis_audit",
+				result: {
+					details: {
+						kind: "findings",
+						capability: "changed-scope-audit",
+						scope: { base },
+						verdict: "fail",
+						findings: [
+							{
+								id: "f1",
+								category: "dead-code",
+								severity: "error",
+								message: "unused export",
+								locations: [{ path: "lib/a.ts", line: 17 }],
+								actions: [{ description: "remove export" }],
+							},
+							{
+								id: "f2",
+								category: "complexity",
+								severity: "warning",
+								message: "complex branch",
+								locations: [{ path: "lib/b.ts", line: 23 }],
+								actions: [{ description: "split branch" }],
+							},
+						],
+					},
+				},
+			},
+		];
+		let gateState = "";
+		try {
+			validateQualityReviewAnalysisCalls(events, base);
+		} catch (error) {
+			gateState = (error as Error).message;
+		}
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				gateState,
+				auditFindings: qualityReviewAuditFindingLines(events, base),
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					gates: ["model says pass"],
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		const indexed = indexedQualityReviewReport(report);
+		expect(indexed?.verdict).toBe("not-ready");
+		expect(indexed?.findings).toEqual([
+			"lib/a.ts:17 dead-code error: unused export; fix: remove export",
+			"lib/b.ts:23 complexity warning: complex branch; fix: split branch",
+		]);
+		expect(
+			indexed?.humanItems?.some((item) => item.includes("Analysis audit")),
+		).toBe(false);
+	});
+
+	it.each([
+		"unbound",
+		"unconsented",
+		"missing",
+	])("uses one prefix for real %s validator state", async (state) => {
+		const projectRoot = await root(true);
+		const base = "a".repeat(40);
+		const end = {
+			type: "tool_execution_end" as const,
+			sessionId: "qm",
+			toolCallId: "call",
+			isError: false,
+		};
+		const status =
+			state === "missing"
+				? []
+				: [
+						{
+							...end,
+							toolName: "analysis_status",
+							result: {
+								details: {
+									capabilities: [
+										{
+											capability: "changed-scope-audit",
+											state: state === "unbound" ? "unbound" : "bound",
+										},
+									],
+								},
+							},
+						},
+					];
+		const audit = {
+			...end,
+			toolName: "analysis_audit",
+			result: {
+				details: { kind: "unbound", reason: "execution-not-consented" },
+			},
+		};
+		let gateState = "";
+		try {
+			validateQualityReviewAnalysisCalls([...status, audit], base);
+		} catch (error) {
+			gateState = (error as Error).message;
+		}
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				gateState,
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					gates: ["model says pass"],
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		const items = indexedQualityReviewReport(report)?.humanItems ?? [];
+		const expectedPrefix =
+			state === "missing"
+				? `Analysis audit gate state: ${gateState}`
+				: gateState;
+		expect(
+			items.filter((item) => item.startsWith(expectedPrefix)),
+		).toHaveLength(1);
+		expect(items.join(" ")).not.toContain(
+			"Analysis audit gate state: Analysis audit",
 		);
 	});
 
@@ -414,7 +597,7 @@ describe("quality review durable lifecycle", () => {
 			const lifecycle = await readFile(join(qmRoot, "lifecycle.jsonl"), "utf8");
 			expect(result.stepResult.outcome).toBe("success");
 			expect(report).toContain("Verdict: not-ready");
-			expect(report).toContain("Workspace retained:");
+			expect(lifecycle).toContain('"disposition":"removal-failed"');
 			const terminal = lifecycle
 				.split("\n")
 				.filter(Boolean)
@@ -428,13 +611,243 @@ describe("quality review durable lifecycle", () => {
 				)
 				.filter((event) => ["finalized", "retained"].includes(event.phase));
 			expect(terminal).toHaveLength(1);
-			expect(terminal[0]?.disposition).toBe("retained");
+			expect(terminal[0]?.disposition).toBe("pending-removal");
 			expect(terminal[0]?.artifactDigests).toContain(
 				createHash("sha256").update(report).digest("hex"),
 			);
 		} finally {
 			if (retainedRoot) await removePrivateReviewWorkspace(retainedRoot);
 		}
+	});
+	it("persists the terminal report and status before a stalled remover", async () => {
+		const projectRoot = await root(true);
+		const store = new FileRunStore({
+			rootDir: join(projectRoot, "missions", "sessions"),
+		});
+		let observedStatus: string | undefined;
+		let observedReport = "";
+		let observedSummary = "";
+		let removedRoot = "";
+		const started = Date.now();
+		const result = await runQualityReview({
+			projectRoot,
+			store,
+			planSlug: "example",
+			workspaceRemovalTimeoutMs: 50,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "not-ready",
+					reason: "finding",
+					findings: ["issue"],
+				}),
+			}),
+			removeWorkspace: async (path) => {
+				removedRoot = path;
+				const runs = await store.listRecentRuns({ scope: "chain" });
+				const run = runs[0];
+				if (!run) throw new Error("run missing");
+				observedStatus = (
+					await runStatus(store, { scope: "chain", runId: run.runId })
+				)?.status;
+				observedReport = await readFile(
+					join(run.artifactsDir, "qm", "final.md"),
+					"utf8",
+				);
+				observedSummary = await readFile(
+					join(
+						projectRoot,
+						"missions",
+						"plans",
+						"example",
+						"qm-runs",
+						`${run.runId}.md`,
+					),
+					"utf8",
+				);
+				await new Promise(() => {});
+			},
+		});
+		expect(Date.now() - started).toBeLessThan(2000);
+		expect(observedStatus).toBe("completed");
+		expect(observedReport).toContain("Verdict: not-ready");
+		expect(observedSummary).toContain("Verdict: not-ready");
+		const lifecycle = (
+			await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.ref.runId,
+					"artifacts",
+					"qm",
+					"lifecycle.jsonl",
+				),
+				"utf8",
+			)
+		)
+			.trim()
+			.split("\n")
+			.map(
+				(line) =>
+					JSON.parse(line) as {
+						phase?: string;
+						kind?: string;
+						disposition?: string;
+					},
+			);
+		expect(
+			lifecycle.filter((event) => event.phase === "finalized"),
+		).toHaveLength(1);
+		expect(lifecycle.at(-1)).toMatchObject({
+			kind: "workspace-disposition",
+			disposition: "removal-timed-out",
+		});
+		if (removedRoot) await removePrivateReviewWorkspace(removedRoot);
+	});
+	it("finalizes with a named integrity failure when a reviewer store write never settles", async () => {
+		const projectRoot = await root(true);
+		const store = new FileRunStore({
+			rootDir: join(projectRoot, "missions", "sessions"),
+		});
+		const originalLoad = store.loadRun.bind(store);
+		let stall = false;
+		vi.spyOn(store, "loadRun").mockImplementation((ref) =>
+			stall ? new Promise(() => {}) : originalLoad(ref),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			store,
+			reviewerSealGraceMs: 30,
+			execute: async ({ artifactSink, runId }) => {
+				stall = true;
+				void artifactSink
+					.writeReviewer({
+						runId,
+						lens: "security-reviewer",
+						spawnId: "spawn",
+						sessionId: "session",
+						resolvedRole: "coding/security-reviewer",
+						resolvedModel: { provider: "test", id: "model" },
+						outcome: "success",
+						fullText: "review",
+						digest: createHash("sha256").update("review").digest("hex"),
+					})
+					.catch(() => {});
+				stall = false;
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+					}),
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain(
+			"Report integrity: reviewer writes abandoned after sealing grace: security-reviewer",
+		);
+		expect((await runStatus(store, result.ref))?.status).toBe("failed");
+	});
+
+	it("waits several seconds by default for an aborting QM tool to settle", async () => {
+		const projectRoot = await root(true);
+		const started = Date.now();
+		const result = await runQualityReview({
+			projectRoot,
+			assessmentTimeoutMs: 30,
+			execute: async ({ signal }) => {
+				await new Promise<void>((resolve) =>
+					signal?.addEventListener("abort", () => setTimeout(resolve, 400), {
+						once: true,
+					}),
+				);
+				return { markdown: "" };
+			},
+		});
+		expect(Date.now() - started).toBeGreaterThanOrEqual(400);
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).not.toContain("Live work: QM session did not settle");
+	});
+	it("uses the configured QM settle grace", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ qualityReview: { qmSettleGraceMs: 40 } }),
+		);
+		const started = Date.now();
+		const result = await runQualityReview({
+			projectRoot,
+			assessmentTimeoutMs: 20,
+			execute: async () => new Promise<never>(() => {}),
+		});
+		expect(Date.now() - started).toBeLessThan(1500);
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Live work: QM session did not settle");
+		const lifecycle = (
+			await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.ref.runId,
+					"artifacts",
+					"qm",
+					"lifecycle.jsonl",
+				),
+				"utf8",
+			)
+		)
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { phase: string; workspace?: string });
+		const reserved = lifecycle.find(
+			(event) => event.phase === "workspace-reserved",
+		)?.workspace;
+		if (reserved) await removePrivateReviewWorkspace(reserved);
 	});
 
 	it("reports empty checks and gate-owned changes as human decisions", async () => {
@@ -1399,7 +1812,8 @@ describe("quality review durable lifecycle", () => {
 			["finalized", "retained"].includes(event.phase),
 		);
 		expect(terminalPhases).toHaveLength(1);
-		expect(terminalPhases[0]?.disposition).toBe("removed");
+		expect(terminalPhases[0]?.disposition).toBe("pending-removal");
+		expect(lifecycle.at(-1)?.disposition).toBe("removed");
 		expect(terminalPhases[0]?.artifactDigests).toContain(
 			createHash("sha256").update(report).digest("hex"),
 		);
@@ -1428,9 +1842,11 @@ describe("quality review durable lifecycle", () => {
 		);
 		const terminal = events.findIndex(
 			({ event }) =>
-				event.type === "run_completed" ||
-				event.type === "run_blocked" ||
-				event.type === "run_failed",
+				event.type === "run_activity" &&
+				typeof event.details === "object" &&
+				event.details !== null &&
+				"phase" in event.details &&
+				["finalized", "retained"].includes(String(event.details.phase)),
 		);
 		expect(finalWrite).toBeLessThan(terminal);
 	});
@@ -1579,7 +1995,9 @@ describe("quality review durable lifecycle", () => {
 		const result = await pending;
 		if (stage === "assessment") expect(assessmentSignalAborted).toBe(true);
 		expect(result.stepResult.outcome).toBe("cancelled");
-		expect(Date.now() - started).toBeLessThan(3000);
+		expect(Date.now() - started).toBeLessThan(
+			stage === "assessment" ? 5000 : 3000,
+		);
 		const report = await readFile(
 			join(
 				projectRoot,
@@ -1718,6 +2136,69 @@ describe("quality review durable lifecycle", () => {
 			"utf8",
 		);
 		expect(report).toContain("Panel completion timeout: 1234 ms");
+	});
+	it("records omitted skill locations and the non-authoritative operator note", async () => {
+		const projectRoot = await root(true);
+		const result = await runQualityReview({
+			projectRoot,
+			operatorNote: "review only src/a.ts",
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "not-ready",
+					reason: "review",
+				}),
+				omittedSkillPaths: ["/source/node_modules/cosmonauts/skills/security"],
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain(
+			"Omitted skill locations: /source/node_modules/cosmonauts/skills/security",
+		);
+		expect(report).toContain(
+			'Operator note (non-authoritative): "review only src/a.ts"',
+		);
+	});
+	it("records omitted skills when the QM session fails before returning an assessment", async () => {
+		const projectRoot = await root(true);
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async ({ omittedSkillPaths }) => {
+				omittedSkillPaths.push(
+					"/source/node_modules/cosmonauts/skills/security",
+				);
+				throw new Error("session failed");
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain(
+			"Omitted skill locations: /source/node_modules/cosmonauts/skills/security",
+		);
 	});
 
 	it("records a grandchild check timeout in checks.md", async () => {

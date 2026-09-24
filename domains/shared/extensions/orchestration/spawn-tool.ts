@@ -748,6 +748,7 @@ export function registerSpawnTool(
 			if (isQualityReviewReference(targetResolution.reference)) {
 				void launchQualityReview({
 					projectRoot: ctx.cwd,
+					operatorNote: params.prompt,
 					planSlug,
 					signal: _signal,
 				})

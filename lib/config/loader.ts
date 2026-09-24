@@ -197,7 +197,11 @@ function parseQualityReviewConfig(
 	if (typeof value !== "object" || value === null || Array.isArray(value))
 		throw new Error("Invalid qualityReview config: expected object");
 	const raw = value as Record<string, unknown>;
-	for (const key of ["assessmentTimeoutMs", "panelTimeoutMs"] as const)
+	for (const key of [
+		"assessmentTimeoutMs",
+		"panelTimeoutMs",
+		"qmSettleGraceMs",
+	] as const)
 		if (
 			raw[key] !== undefined &&
 			(!Number.isSafeInteger(raw[key]) || (raw[key] as number) <= 0)
@@ -254,6 +258,9 @@ function parseQualityReviewConfig(
 			: {}),
 		...(raw.panelTimeoutMs !== undefined
 			? { panelTimeoutMs: raw.panelTimeoutMs as number }
+			: {}),
+		...(raw.qmSettleGraceMs !== undefined
+			? { qmSettleGraceMs: raw.qmSettleGraceMs as number }
 			: {}),
 		...(prepare !== undefined ? { prepare } : {}),
 		...(checks !== undefined ? { checks } : {}),

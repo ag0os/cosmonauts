@@ -40,6 +40,7 @@ it("keeps source and host paths out of a real panel reviewer's full system promp
 		session: "ephemeral",
 		loop: false,
 	};
+	const omittedSkillPaths: string[] = [];
 	try {
 		const { session } = await createAgentSessionFromDefinition(
 			definition,
@@ -47,7 +48,10 @@ it("keeps source and host paths out of a real panel reviewer's full system promp
 				role: "coding/reviewer",
 				cwd: workspaceRoot,
 				prompt: "review",
-				skillPaths: [join(sourceRoot, "bundled", "coding", "skills")],
+				skillPaths: [
+					join(sourceRoot, "bundled", "coding", "skills"),
+					join(sourceRoot, "bundled", "coding", "skills", "source-only"),
+				],
 				qualityReviewChild: true,
 				qualityReviewContext: {
 					runId: "qm-prompt",
@@ -62,6 +66,7 @@ it("keeps source and host paths out of a real panel reviewer's full system promp
 					allowedLenses: new Set(["reviewer"]),
 					attemptedLenses: new Set(),
 					integrityFailures: [],
+					omittedSkillPaths,
 				},
 			},
 			domainsDir,
@@ -74,6 +79,9 @@ it("keeps source and host paths out of a real panel reviewer's full system promp
 			expect(session.systemPrompt).not.toContain(await realpath(sourceRoot));
 			expect(session.systemPrompt).not.toContain(hostRunStoreRoot);
 			expect(session.systemPrompt).not.toContain("source-only");
+			expect(omittedSkillPaths).toEqual([
+				join(sourceRoot, "bundled", "coding", "skills", "source-only"),
+			]);
 		} finally {
 			session.dispose();
 		}

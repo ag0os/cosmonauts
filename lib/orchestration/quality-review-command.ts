@@ -8,8 +8,14 @@ function killGroup(pid: number): void {
 		/* already exited */
 	}
 }
-export function terminateActiveQualityReviewCommands(): void {
+export function terminateActiveQualityReviewCommands(
+	signal?: NodeJS.Signals,
+): void {
 	for (const pid of activeGroups) killGroup(pid);
+	if (signal === "SIGINT" || signal === "SIGTERM") {
+		process.off(signal, terminateActiveQualityReviewCommands);
+		process.kill(process.pid, signal);
+	}
 }
 function listenForHostExit(): void {
 	if (activeGroups.size !== 1) return;
@@ -87,6 +93,8 @@ export function runQualityReviewCommand(options: {
 		const finish = (exitCode: number | null, error?: string) => {
 			if (finished) return;
 			finished = true;
+			child.stdout.destroy();
+			child.stderr.destroy();
 			if (child.pid) activeGroups.delete(child.pid);
 			stopListeningForHostExit();
 			clearTimeout(timer);
@@ -99,6 +107,6 @@ export function runQualityReviewCommand(options: {
 			});
 		};
 		child.on("error", (error) => finish(null, error.message));
-		child.on("close", (code) => finish(code));
+		child.on("exit", (code) => finish(code));
 	});
 }

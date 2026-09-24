@@ -80,6 +80,7 @@ export async function createAgentSessionFromDefinition(
 								} catch {
 									/* absent from clone */
 								}
+								config.qualityReviewContext?.omittedSkillPaths?.push(path);
 								return undefined;
 							}
 							return path;

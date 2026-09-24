@@ -443,6 +443,7 @@ async function runChainStep(
 		const review = await launchQualityReview({
 			...config.qualityReview,
 			projectRoot: config.projectRoot,
+			operatorNote: stage.prompt,
 			planSlug: qualityReviewPlanSlug(config),
 			signal: config.signal,
 		});
@@ -1252,6 +1253,7 @@ export async function runStage(
 		const review = await launchQualityReview({
 			...config.qualityReview,
 			projectRoot: config.projectRoot,
+			operatorNote: stage.prompt,
 			planSlug: qualityReviewPlanSlug(config),
 			signal: config.signal,
 			...(placement === "refused"

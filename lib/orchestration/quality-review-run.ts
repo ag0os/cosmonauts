@@ -55,6 +55,8 @@ import {
 export interface QualityReviewAssessment {
 	markdown: string;
 	gateState?: string;
+	auditFindings?: readonly string[];
+	omittedSkillPaths?: readonly string[];
 	requiredLenses?: readonly string[];
 	liveChildIds?: readonly string[];
 }
@@ -68,6 +70,10 @@ export interface QualityReviewRunOptions {
 	signal?: AbortSignal;
 	assessmentTimeoutMs?: number;
 	panelTimeoutMs?: number;
+	qmSettleGraceMs?: number;
+	reviewerSealGraceMs?: number;
+	workspaceRemovalTimeoutMs?: number;
+	operatorNote?: string;
 	/** Stage 5 supplies isolation and Stage 6 supplies assessment through this host port. */
 	execute?: (context: {
 		runId: string;
@@ -80,6 +86,8 @@ export interface QualityReviewRunOptions {
 		hostRunStoreRoot: string;
 		checkResults?: readonly QualityReviewCheckResult[];
 		panelTimeoutMs: number;
+		operatorNote?: string;
+		omittedSkillPaths: string[];
 		changedFiles?: readonly string[];
 		base?: string;
 		activeChildIds: Set<string>;
@@ -129,20 +137,9 @@ export async function runQualityReview(
 	const lifecyclePath = join(run.artifactsDir, "qm", "lifecycle.jsonl");
 	await mkdir(join(run.artifactsDir, "qm"));
 	let previousPhase: Phase | undefined;
-	const phase = async (
-		next: Phase,
-		details: Record<string, unknown> = {},
+	const appendLifecycle = async (
+		event: Record<string, unknown>,
 	): Promise<void> => {
-		const event = {
-			at: new Date().toISOString(),
-			previousPhase: previousPhase ?? null,
-			phase: next,
-			activeChildIds: [],
-			settledChildIds: [],
-			artifactDigests: [],
-			disposition: "none",
-			...details,
-		};
 		const handle = await open(
 			lifecyclePath,
 			constants.O_WRONLY |
@@ -162,6 +159,22 @@ export async function runQualityReview(
 			runId: ref.runId,
 			details: { source: "quality-review", ...event },
 		});
+	};
+	const phase = async (
+		next: Phase,
+		details: Record<string, unknown> = {},
+	): Promise<void> => {
+		const event = {
+			at: new Date().toISOString(),
+			previousPhase: previousPhase ?? null,
+			phase: next,
+			activeChildIds: [],
+			settledChildIds: [],
+			artifactDigests: [],
+			disposition: "none",
+			...details,
+		};
+		await appendLifecycle(event);
 		previousPhase = next;
 	};
 	await phase("allocated", { disposition: "none" });
@@ -211,8 +224,10 @@ export async function runQualityReview(
 		let qmSessionLive = false;
 		const activeChildIds = new Set<string>();
 		let observedReviewerModels: string[] = [];
+		const omittedSkillPaths: string[] = [];
 		let panelTimeoutMs = options.panelTimeoutMs ?? 300_000;
 		let assessmentTimeoutMs = options.assessmentTimeoutMs ?? 900_000;
+		let qmSettleGraceMs = options.qmSettleGraceMs ?? 3_000;
 		try {
 			if (cancelled) throw new Error("Caller cancellation");
 			if (summaryInitializationError)
@@ -283,6 +298,10 @@ export async function runQualityReview(
 					options.assessmentTimeoutMs ??
 					config.qualityReview?.assessmentTimeoutMs ??
 					assessmentTimeoutMs;
+				qmSettleGraceMs =
+					options.qmSettleGraceMs ??
+					config.qualityReview?.qmSettleGraceMs ??
+					qmSettleGraceMs;
 				if (options.hostChecks) {
 					checkConfigMissing = !config.qualityReview?.checks?.length;
 					modelConfigMissing = !config.qualityReview?.diverseReviewerModel;
@@ -361,6 +380,8 @@ export async function runQualityReview(
 					runId: ref.runId,
 					signal: assessmentSignal.signal,
 					panelTimeoutMs,
+					operatorNote: options.operatorNote,
+					omittedSkillPaths,
 					workspaceRoot,
 					sourceRoot,
 					materialsRoot,
@@ -397,12 +418,15 @@ export async function runQualityReview(
 								() => undefined,
 								() => undefined,
 							),
-							new Promise<void>((resolve) => setTimeout(resolve, 250)),
+							new Promise<void>((resolve) =>
+								setTimeout(resolve, qmSettleGraceMs),
+							),
 						]);
 						qmSessionLive = !assessmentSettled;
 					}
 				}
 				markdown = assessment.markdown;
+				omittedSkillPaths.push(...(assessment.omittedSkillPaths ?? []));
 				const gateState = assessment.gateState;
 				liveChildIds = [
 					...new Set([...activeChildIds, ...(assessment.liveChildIds ?? [])]),
@@ -509,7 +533,7 @@ export async function runQualityReview(
 						(gateState !== "completed-bound" &&
 							!gateState.startsWith("Analysis audit gate state: fail"))
 							? [
-									`Analysis audit gate state: ${gateState?.replace(/^Analysis audit gate state: /, "") ?? "not observed"}; human decision required.`,
+									`${gateState ? (gateState.startsWith("Analysis audit ") ? gateState : `Analysis audit gate state: ${gateState}`) : "Analysis audit gate state: not observed"}; human decision required.`,
 								]
 							: []),
 						...(gateEvidenceMissing
@@ -540,7 +564,7 @@ export async function runQualityReview(
 						: [];
 					const hostFindingLines =
 						hostGateLines.length > 0
-							? ["Analysis audit found introduced debt."]
+							? [...(assessment.auditFindings ?? [])]
 							: [];
 					if (!reported) {
 						markdown = amendUnindexedQualityReviewReport(markdown, {
@@ -652,18 +676,29 @@ export async function runQualityReview(
 						})
 					: failureReport;
 		}
-		await sink.sealReviewers();
+		const abandonedLenses = await sink.sealReviewers(
+			options.reviewerSealGraceMs ?? 1000,
+		);
+		if (abandonedLenses.length > 0) {
+			verdict = "failed";
+			reason = `Report integrity: reviewer writes abandoned after sealing grace: ${abandonedLenses.join(", ")}`;
+			markdown = renderQualityReviewReport({ verdict, reason });
+		}
 		if (qmSessionLive)
 			markdown = `${markdown.trimEnd()}\n\nLive work: QM session did not settle after cancellation or deadline.\n`;
 		if (ownsReservedRoot && (qmSessionLive || liveChildIds.length > 0))
 			markdown = `${markdown.trimEnd()}\n\nWorkspace retained: ${reservedRoot}. Live work may still use it.\n`;
 		markdown = `${markdown.trimEnd()}\n\nPanel completion timeout: ${panelTimeoutMs} ms.\n\nCaller-owned remediation: address findings through tasks, Drive and independent review.\n`;
+		if (omittedSkillPaths.length > 0)
+			markdown = `${markdown.trimEnd()}\n\nOmitted skill locations: ${[...new Set(omittedSkillPaths)].join(", ")}\n`;
+		if (options.operatorNote)
+			markdown = `${markdown.trimEnd()}\n\nOperator note (non-authoritative): ${JSON.stringify(options.operatorNote)}\n`;
 		await phase("finalizing", {
 			disposition: ownsReservedRoot ? "active" : "none",
 			...(reservedRoot ? { workspace: reservedRoot } : {}),
 		});
-		let workspaceRemoved = false;
 		let summaryReplaced = false;
+		let terminalPersisted = false;
 		try {
 			analysisConsent?.dispose();
 			if (summaryPath) {
@@ -679,46 +714,69 @@ export async function runQualityReview(
 				);
 				summaryReplaced = true;
 			}
-			let finalRef = await sink.write("final.md", markdown, { replace: true });
-			if (
+			const finalRef = await sink.write("final.md", markdown, {
+				replace: true,
+			});
+			const canRemove = Boolean(
 				reservedRoot &&
-				ownsReservedRoot &&
-				!qmSessionLive &&
-				liveChildIds.length === 0
-			) {
-				try {
-					await (options.removeWorkspace ?? removePrivateReviewWorkspace)(
-						reservedRoot,
-					);
-					workspaceRemoved = true;
-				} catch (error) {
-					markdown = `${markdown.trimEnd()}\n\nWorkspace retained: ${reservedRoot}. Removal failed: ${errorReason(error)}\n`;
-					finalRef = await sink.write("final.md", markdown, { replace: true });
-					if (summaryPath)
-						await replacePlanSummary(
-							summaryPath,
-							renderPlanSummary(
-								ref.runId,
-								verdict,
-								provisionalRef.path,
-								reason,
-								markdown,
-							),
-						);
-				}
-			}
-			const disposition = ownsReservedRoot
-				? workspaceRemoved
-					? "removed"
-					: "retained"
-				: "none";
-			await phase(disposition === "retained" ? "retained" : "finalized", {
-				disposition,
+					ownsReservedRoot &&
+					!qmSessionLive &&
+					liveChildIds.length === 0,
+			);
+			const terminalStatus = cancelled
+				? "cancelled"
+				: verdict === "refused"
+					? "blocked"
+					: verdict === "failed"
+						? "failed"
+						: "completed";
+			await phase(canRemove || !ownsReservedRoot ? "finalized" : "retained", {
+				status: terminalStatus,
+				disposition: canRemove
+					? "pending-removal"
+					: ownsReservedRoot
+						? "retained"
+						: "none",
 				activeChildIds: liveChildIds,
 				...(qmSessionLive ? { liveSession: "quality-manager" } : {}),
 				...(reservedRoot ? { workspace: reservedRoot } : {}),
 				artifactDigests: [finalRef.metadata?.sha256],
 			});
+			terminalPersisted = true;
+			if (canRemove && reservedRoot) {
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				let disposition = "removed";
+				let removalReason: string | undefined;
+				try {
+					await Promise.race([
+						(options.removeWorkspace ?? removePrivateReviewWorkspace)(
+							reservedRoot,
+						),
+						new Promise<never>((_resolve, reject) => {
+							timer = setTimeout(
+								() => reject(new Error("removal-timed-out")),
+								options.workspaceRemovalTimeoutMs ?? 2000,
+							);
+						}),
+					]);
+				} catch (error) {
+					disposition =
+						errorReason(error) === "removal-timed-out"
+							? "removal-timed-out"
+							: "removal-failed";
+					removalReason = errorReason(error);
+				} finally {
+					if (timer) clearTimeout(timer);
+				}
+				await appendLifecycle({
+					at: new Date().toISOString(),
+					kind: "workspace-disposition",
+					previousPhase,
+					disposition,
+					workspace: reservedRoot,
+					...(removalReason ? { reason: removalReason } : {}),
+				});
+			}
 			result = {
 				outcome: cancelled
 					? "cancelled"
@@ -740,6 +798,20 @@ export async function runQualityReview(
 			};
 			return result;
 		} catch (error) {
+			if (terminalPersisted) {
+				result = {
+					outcome: cancelled
+						? "cancelled"
+						: verdict === "refused"
+							? "blocked"
+							: verdict === "failed"
+								? "failed"
+								: "success",
+					summary: reason.slice(0, 200),
+					artifacts: sink.references(),
+				};
+				return result;
+			}
 			const failure = `Report persistence failed: ${errorReason(error)}`;
 			if (summaryPath && summaryReplaced) {
 				try {
@@ -757,18 +829,11 @@ export async function runQualityReview(
 					// The persisted lifecycle still records the failed compensation.
 				}
 			}
-			await phase(
-				ownsReservedRoot && !workspaceRemoved ? "retained" : "finalizing",
-				{
-					disposition: ownsReservedRoot
-						? workspaceRemoved
-							? "removed"
-							: "retained"
-						: "none",
-					...(reservedRoot ? { workspace: reservedRoot } : {}),
-					reason: failure,
-				},
-			);
+			await phase(ownsReservedRoot ? "retained" : "finalizing", {
+				disposition: ownsReservedRoot ? "retained" : "none",
+				...(reservedRoot ? { workspace: reservedRoot } : {}),
+				reason: failure,
+			});
 			result = {
 				outcome: "failed",
 				summary: failure.slice(0, 200),

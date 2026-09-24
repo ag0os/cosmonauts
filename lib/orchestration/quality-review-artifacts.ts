@@ -31,7 +31,7 @@ export interface QualityReviewArtifactSink {
 	): Promise<ArtifactRef>;
 	writeReviewer(evidence: ReviewerEvidence): Promise<ArtifactRef>;
 	reviewersOpen(): boolean;
-	sealReviewers(): Promise<void>;
+	sealReviewers(graceMs?: number): Promise<string[]>;
 	references(): ArtifactRef[];
 }
 
@@ -59,14 +59,22 @@ export function createQualityReviewArtifactSink(options: {
 	const emitted = new Set<string>();
 	const references = new Map<string, ArtifactRef>();
 	let reviewersOpen = true;
-	const reviewerWrites = new Set<Promise<ArtifactRef>>();
+	const reviewerWrites = new Map<
+		Promise<ArtifactRef>,
+		{ lens: string; abandoned: boolean }
+	>();
 
 	async function write(
 		path: string,
 		contents: string,
-		settings: { replace?: boolean; metadata?: Record<string, unknown> } = {},
+		settings: {
+			replace?: boolean;
+			metadata?: Record<string, unknown>;
+			guard?: () => void;
+		} = {},
 	): Promise<ArtifactRef> {
 		const persisted = await store.loadRun(ref);
+		settings.guard?.();
 		if (
 			!persisted ||
 			persisted.runDir !== run.runDir ||
@@ -97,14 +105,23 @@ export function createQualityReviewArtifactSink(options: {
 			dirname(target),
 			`.${basename(target)}.${randomUUID()}.tmp`,
 		);
+		let linked = false;
 		try {
 			await writeFile(temporary, contents, { flag: "wx", mode: 0o600 });
+			settings.guard?.();
 			if (settings.replace) {
 				await assertNoSymlink(target);
+				settings.guard?.();
 				await rename(temporary, target);
 			} else {
+				settings.guard?.();
 				await link(temporary, target);
 			}
+			linked = true;
+			settings.guard?.();
+		} catch (error) {
+			if (linked && settings.guard) await rm(target, { force: true });
+			throw error;
 		} finally {
 			await rm(temporary, { force: true });
 		}
@@ -117,12 +134,24 @@ export function createQualityReviewArtifactSink(options: {
 				sha256: createHash("sha256").update(contents).digest("hex"),
 			},
 		};
+		try {
+			settings.guard?.();
+		} catch (error) {
+			await rm(target, { force: true });
+			throw error;
+		}
 		await store.appendEvent(ref, {
 			type: "artifact_written",
 			runId: run.runId,
 			stepId,
 			artifact,
 		});
+		try {
+			settings.guard?.();
+		} catch (error) {
+			await rm(target, { force: true });
+			throw error;
+		}
 		emitted.add(artifact.id);
 		references.set(artifact.id, artifact);
 		return artifact;
@@ -131,9 +160,28 @@ export function createQualityReviewArtifactSink(options: {
 	return {
 		write,
 		reviewersOpen: () => reviewersOpen,
-		async sealReviewers() {
+		async sealReviewers(graceMs = 1000) {
 			reviewersOpen = false;
-			await Promise.allSettled([...reviewerWrites]);
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			try {
+				await Promise.race([
+					Promise.allSettled([...reviewerWrites.keys()]),
+					new Promise<void>((resolve) => {
+						timer = setTimeout(resolve, graceMs);
+					}),
+				]);
+			} finally {
+				if (timer) clearTimeout(timer);
+			}
+			const abandoned: string[] = [];
+			for (const entry of reviewerWrites.values()) {
+				entry.abandoned = true;
+				abandoned.push(entry.lens);
+				await rm(join(root, "qm", "reviewers", `${entry.lens}.md`), {
+					force: true,
+				});
+			}
+			return abandoned;
 		},
 		references: () => [...references.values()],
 		writeReviewer(evidence) {
@@ -162,7 +210,12 @@ export function createQualityReviewArtifactSink(options: {
 			if (emitted.has(id))
 				throw new Error(`Duplicate reviewer evidence: ${lens}`);
 			const record = `# Reviewer ${lens}\n\nRun: ${evidence.runId}\nLens: ${lens}\nSpawn: ${evidence.spawnId}\nSession: ${evidence.sessionId}\nRole: ${evidence.resolvedRole}\nModel: ${evidence.resolvedModel.provider}/${evidence.resolvedModel.id}\nFinal-text SHA-256: ${evidence.digest}\n\n## Full final text\n\n${fullText}`;
+			const state = { lens, abandoned: false };
 			const pending = write(`reviewers/${lens}.md`, record, {
+				guard: () => {
+					if (state.abandoned)
+						throw new Error(`Reviewer write abandoned: ${lens}`);
+				},
 				metadata: {
 					finalTextDigest: evidence.digest,
 					spawnId: evidence.spawnId,
@@ -171,7 +224,7 @@ export function createQualityReviewArtifactSink(options: {
 					resolvedModel: evidence.resolvedModel,
 				},
 			});
-			reviewerWrites.add(pending);
+			reviewerWrites.set(pending, state);
 			void pending.then(
 				() => reviewerWrites.delete(pending),
 				() => reviewerWrites.delete(pending),

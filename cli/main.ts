@@ -47,6 +47,10 @@ import {
 	launchQualityReview,
 	qualityReviewPlanSlug,
 } from "../lib/orchestration/quality-review-launch.ts";
+import type {
+	QualityReviewRunOptions,
+	QualityReviewRunResult,
+} from "../lib/orchestration/quality-review-run.ts";
 import {
 	discoverBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
@@ -615,6 +619,27 @@ async function handleInitMode(
 	await interactive.run();
 }
 
+export async function runCliQualityReview(
+	options: Pick<
+		QualityReviewRunOptions,
+		"projectRoot" | "planSlug" | "operatorNote"
+	>,
+	launch: (
+		options: QualityReviewRunOptions,
+	) => Promise<QualityReviewRunResult> = launchQualityReview,
+): Promise<QualityReviewRunResult> {
+	const controller = new AbortController();
+	const interrupt = () => controller.abort();
+	process.on("SIGINT", interrupt);
+	process.on("SIGTERM", interrupt);
+	try {
+		return await launch({ ...options, signal: controller.signal });
+	} finally {
+		process.off("SIGINT", interrupt);
+		process.off("SIGTERM", interrupt);
+	}
+}
+
 async function handlePrintMode(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
@@ -626,27 +651,16 @@ async function handlePrintMode(
 
 	const definition = resolveCliAgent(runtime, options);
 	if (isCliQualityReview(runtime, options, definition)) {
-		const controller = new AbortController();
-		const interrupt = () => controller.abort();
-		process.on("SIGINT", interrupt);
-		process.on("SIGTERM", interrupt);
-		try {
-			const result = await launchQualityReview({
-				projectRoot: cwd,
-				signal: controller.signal,
-				planSlug: qualityReviewPlanSlug({
-					completionLabel: options.completionLabel,
-				}),
-			});
-			process.stdout.write(
-				`${result.ref.runId}: ${result.stepResult.summary}\n`,
-			);
-			if (result.stepResult.outcome !== "success") process.exitCode = 1;
-			return;
-		} finally {
-			process.off("SIGINT", interrupt);
-			process.off("SIGTERM", interrupt);
-		}
+		const result = await runCliQualityReview({
+			projectRoot: cwd,
+			operatorNote: options.prompt,
+			planSlug: qualityReviewPlanSlug({
+				completionLabel: options.completionLabel,
+			}),
+		});
+		process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
+		if (result.stepResult.outcome !== "success") process.exitCode = 1;
+		return;
 	}
 	const printRuntime = await createSession({
 		definition,
@@ -674,27 +688,15 @@ async function handleInteractiveMode(
 ): Promise<void> {
 	const definition = resolveCliAgent(runtime, options);
 	if (isCliQualityReview(runtime, options, definition)) {
-		const controller = new AbortController();
-		const interrupt = () => controller.abort();
-		process.on("SIGINT", interrupt);
-		process.on("SIGTERM", interrupt);
-		try {
-			const result = await launchQualityReview({
-				projectRoot: cwd,
-				signal: controller.signal,
-				planSlug: qualityReviewPlanSlug({
-					completionLabel: options.completionLabel,
-				}),
-			});
-			process.stdout.write(
-				`${result.ref.runId}: ${result.stepResult.summary}\n`,
-			);
-			if (result.stepResult.outcome !== "success") process.exitCode = 1;
-			return;
-		} finally {
-			process.off("SIGINT", interrupt);
-			process.off("SIGTERM", interrupt);
-		}
+		const result = await runCliQualityReview({
+			projectRoot: cwd,
+			planSlug: qualityReviewPlanSlug({
+				completionLabel: options.completionLabel,
+			}),
+		});
+		process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
+		if (result.stepResult.outcome !== "success") process.exitCode = 1;
+		return;
 	}
 
 	// Expose the main registry to extensions via process-global slot.

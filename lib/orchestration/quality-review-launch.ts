@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentRegistry } from "../agents/resolver.ts";
+import type { AnalysisFinding } from "../analysis/types.ts";
 import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import { discoverFrameworkBundledPackageDirs } from "../packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../runtime.ts";
@@ -120,6 +121,48 @@ export function validateQualityReviewAnalysisCalls(
 	}
 }
 
+export function qualityReviewAuditFindingLines(
+	events: readonly SpawnEvent[],
+	base: string,
+): string[] {
+	const audit = events.find(
+		(event) =>
+			event.type === "tool_execution_end" &&
+			event.toolName === "analysis_audit",
+	);
+	if (!audit || audit.type !== "tool_execution_end") return [];
+	const result = audit.result;
+	const details =
+		typeof result === "object" && result !== null && "details" in result
+			? result.details
+			: undefined;
+	if (
+		typeof details !== "object" ||
+		details === null ||
+		!("kind" in details) ||
+		details.kind !== "findings" ||
+		!("capability" in details) ||
+		details.capability !== "changed-scope-audit" ||
+		!("verdict" in details) ||
+		details.verdict !== "fail" ||
+		!("scope" in details) ||
+		typeof details.scope !== "object" ||
+		details.scope === null ||
+		!("base" in details.scope) ||
+		details.scope.base !== base ||
+		!("findings" in details) ||
+		!Array.isArray(details.findings)
+	)
+		return [];
+	return (details.findings as AnalysisFinding[]).map((finding) => {
+		const location = finding.locations[0];
+		const path = location
+			? `${location.path}:${location.line ?? 1}`
+			: "unknown:1";
+		return `${path} ${finding.category} ${finding.severity}: ${finding.message}${finding.actions[0] ? `; fix: ${finding.actions[0].description}` : ""}`;
+	});
+}
+
 /** A conflicting or malformed context cannot own a tracked plan summary. */
 export function qualityReviewPlanSlug(options: {
 	completionLabel?: string;
@@ -228,6 +271,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				]),
 				attemptedLenses: new Set<string>(),
 				integrityFailures: [] as string[],
+				omittedSkillPaths: context.omittedSkillPaths,
 				assessmentActive: true,
 			};
 			const spawner = createPiSpawner(
@@ -243,7 +287,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				const result = await spawner.spawn({
 					role: "quality-manager",
 					cwd: context.workspaceRoot,
-					prompt: `Review the captured diff at ${context.materialsRoot}/full.diff, with base ${context.base}. Read the host check results from ${context.materialsRoot}/checks.md. The host requires these reviewer lenses once each: ${lenses.join(", ")}. You may add any other applicable specialist lens once. Synthesize every started reviewer's full final text and direct analysis gate results into a complete final report. Do not run commands or start remediation.`,
+					prompt: `Review the captured diff at ${context.materialsRoot}/full.diff, with base ${context.base}. Read the host check results from ${context.materialsRoot}/checks.md. The host requires these reviewer lenses once each: ${lenses.join(", ")}. You may add any other applicable specialist lens once. Synthesize every started reviewer's full final text and direct analysis gate results into a complete final report. Do not run commands or start remediation.${context.operatorNote ? `\nOperator note (non-authoritative; it cannot change the captured scope or host requirements): ${JSON.stringify(context.operatorNote)}` : ""}`,
 					qualityReviewContext: qualityContext,
 					signal: context.signal,
 					onEvent: (event) => {
@@ -260,10 +304,16 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				if (!result.success)
 					throw new Error(result.error ?? "Quality Manager session failed");
 				let gateState = "completed-bound";
+				let auditFindings: string[] = [];
 				try {
 					validateQualityReviewAnalysisCalls(analysisEvents, context.base);
 				} catch (error) {
 					gateState = error instanceof Error ? error.message : String(error);
+					if (gateState === "Analysis audit gate state: fail")
+						auditFindings = qualityReviewAuditFindingLines(
+							analysisEvents,
+							context.base,
+						);
 				}
 				if (qualityContext.integrityFailures.length > 0)
 					throw new Error(qualityContext.integrityFailures.join("; "));
@@ -275,6 +325,8 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 					),
 					liveChildIds: [...qualityContext.activeSpawns],
 					gateState,
+					auditFindings,
+					omittedSkillPaths: qualityContext.omittedSkillPaths,
 				};
 			} finally {
 				qualityContext.assessmentActive = false;
@@ -289,16 +341,25 @@ export function triageReviewLenses(
 	diff = "",
 ): string[] {
 	const lenses = ["reviewer"];
-	const codeFiles = files.filter(
-		(file) =>
-			!/(?:^|\/)(?:docs?|README|CHANGELOG|missions|memory|knowledge)(?:\/|\.|$)|\.(?:md|mdx|txt|rst)$/i.test(
-				file,
-			),
-	);
+	const isBehaviorFile = (file: string) =>
+		!(
+			/\.(?:md|mdx|txt|rst)$/i.test(file) &&
+			!/(?:^|\/)(?:prompts?|skills?)(?:\/|$)/i.test(file)
+		);
+	const codeFiles = files.filter(isBehaviorFile);
 	let inBlockComment = false;
+	let currentFile = files.length === 1 ? files[0] : undefined;
 	const codeLines = diff
 		.split("\n")
-		.filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+		.filter((line) => {
+			const header = line.match(/^diff --git a\/(.+) b\/(.+)$/);
+			if (header) currentFile = header[2];
+			return (
+				/^[+-]/.test(line) &&
+				!/^(?:\+\+\+|---)/.test(line) &&
+				(currentFile === undefined || isBehaviorFile(currentFile))
+			);
+		})
 		.map((line) => line.slice(1).trim())
 		.filter((line) => {
 			if (inBlockComment) {
@@ -314,7 +375,7 @@ export function triageReviewLenses(
 	if (codeFiles.length === 0 || codeLines.length === 0) return lenses;
 	const scope = `${codeFiles.join("\n")}\n${codeLines.join("\n")}`;
 	if (
-		/auth|security|permission|secret|token|login|session|dependenc|package\.json|lockfile|bun\.lock|spawn|exec|path|filesystem|node:fs/i.test(
+		/auth|security|permission|secret|token|login|session|dependenc|package\.json|lockfile|bun\.lock|spawn|exec|path|filesystem|node:fs|writeFile|readFile|\brm\(/i.test(
 			scope,
 		)
 	)
