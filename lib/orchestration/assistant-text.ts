@@ -39,6 +39,12 @@ export function extractAssistantText(
 	return `${role} completed`;
 }
 
+const INCOMPLETE_STOP_REASONS = new Map([
+	["error", "error"],
+	["aborted", "aborted"],
+	["length", "stopped at the token limit"],
+]);
+
 /**
  * The session's final message text, only when that message is a completed
  * assistant turn with text of its own. Never falls back to earlier messages.
@@ -49,9 +55,10 @@ export function finalAssistantEvidence(
 	const final = messages.at(-1) as AssistantMessageLike | undefined;
 	if (final?.role !== "assistant")
 		return { failure: "no final assistant message" };
-	if (final.stopReason === "error" || final.stopReason === "aborted")
+	const incomplete = INCOMPLETE_STOP_REASONS.get(final.stopReason ?? "");
+	if (incomplete)
 		return {
-			failure: `final assistant message ${final.stopReason}${final.errorMessage ? `: ${final.errorMessage}` : ""}`,
+			failure: `final assistant message ${incomplete}${final.errorMessage ? `: ${final.errorMessage}` : ""}`,
 		};
 	const text = ownText(final);
 	return text

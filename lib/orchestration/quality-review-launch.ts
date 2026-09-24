@@ -8,7 +8,7 @@ import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import { discoverFrameworkBundledPackageDirs } from "../packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../runtime.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
-import { extractAssistantText } from "./assistant-text.ts";
+import { finalAssistantEvidence } from "./assistant-text.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
 import { resolveModel } from "./model-resolution.ts";
 import {
@@ -392,8 +392,14 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				);
 				if (qualityContext.integrityFailures.length > 0)
 					throw new Error(qualityContext.integrityFailures.join("; "));
+				// An earlier complete report is not the QM's final word.
+				const report = finalAssistantEvidence(result.messages);
+				if ("failure" in report)
+					throw new Error(
+						`Quality Manager final message rejected: ${report.failure}`,
+					);
 				return {
-					markdown: extractAssistantText(result.messages, "quality-manager"),
+					markdown: report.text,
 					implementerModel: {
 						provider: workerModel.provider,
 						id: workerModel.id,

@@ -354,7 +354,7 @@ Every agent is a Pi session configured by a declarative definition — model, to
 | **Coordinator** | Delegates tasks to workers, monitors progress, verifies completion. |
 | **Worker** | Implements one task. Full coding tools, ephemeral session. |
 | **Integration Verifier** | Checks implemented changes against the approved plan and plan-level contracts. |
-| **Quality Manager** | Runs configured host checks, spawns reviewers, and writes a durable findings report and verdict. It does not change the reviewed checkout. |
+| **Quality Manager** | Spawns reviewers and writes a durable findings report and verdict. The host runs configured checks only after the reviewers' evidence is sealed. It does not change the reviewed checkout. |
 | **Reviewer** | Clean-context code review against main. Writes findings, does not fix. |
 | **Fixer** | Applies targeted remediation from review findings. |
 

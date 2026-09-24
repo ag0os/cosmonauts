@@ -1365,6 +1365,11 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			[assistantMessage("Earlier review text"), assistantMessage(undefined)],
 			"final assistant message has no text of its own",
 		],
+		[
+			"a final message stopped at the token limit",
+			[assistantMessage("Review cut off mid-", { stopReason: "length" })],
+			"final assistant message stopped at the token limit",
+		],
 		["no assistant message at all", [], "no final assistant message"],
 	])("a reviewer ending in %s is a failed review, not evidence", async (_name, messages, reason) => {
 		const { report, reviewerFile, integrityFailures, followUps } =
@@ -1389,18 +1394,23 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		expect(reviewerFile).not.toContain("Earlier thinking");
 	});
 
-	test("an ordinary spawn still reports earlier assistant text when its final message errored", async () => {
+	test.each([
+		[
+			"errored",
+			[
+				assistantMessage("Implemented the change."),
+				assistantMessage("", { stopReason: "error", errorMessage: "boom" }),
+			],
+		],
+		[
+			"stopped at the token limit",
+			[assistantMessage("Implemented the change.", { stopReason: "length" })],
+		],
+	])("an ordinary spawn still reports its assistant text when its final message %s", async (_name, messages) => {
 		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
 		});
-		mockChildSession(
-			createIdleChildSession("ordinary-child", {
-				messages: [
-					assistantMessage("Implemented the change."),
-					assistantMessage("", { stopReason: "error", errorMessage: "boom" }),
-				],
-			}),
-		);
+		mockChildSession(createIdleChildSession("ordinary-child", { messages }));
 		await expectAcceptedSpawn(pi, { role: "worker", prompt: "implement" }, 10);
 		expectFollowUpContaining(pi, "Implemented the change.");
 		expect(pi.sendUserMessage).not.toHaveBeenCalledWith(

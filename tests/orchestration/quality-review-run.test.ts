@@ -5082,4 +5082,131 @@ describe("quality review durable lifecycle", () => {
 			spawned.mockRestore();
 		}
 	});
+
+	async function launchWithQmMessages(
+		projectRoot: string,
+		messages: unknown[],
+	): Promise<{ outcome: string; report: string }> {
+		const spawned = vi.spyOn(spawnerModule, "createPiSpawner").mockReturnValue({
+			spawn: async (config) => {
+				const context = config.qualityReviewContext;
+				if (!context) throw new Error("missing quality context");
+				const fullText = "reviewer completed";
+				context.attemptedLenses.add("reviewer");
+				await context.artifactSink.writeReviewer({
+					runId: context.runId,
+					lens: "reviewer",
+					spawnId: "spawn-reviewer",
+					sessionId: "session-reviewer",
+					resolvedRole: "coding/reviewer",
+					resolvedModel: { provider: "anthropic", id: "reviewer" },
+					outcome: "success",
+					digest: createHash("sha256").update(fullText).digest("hex"),
+					fullText,
+				});
+				return { success: true, messages, sessionId: "qm-test" };
+			},
+			dispose: () => {},
+		} as ReturnType<typeof spawnerModule.createPiSpawner>);
+		try {
+			const result = await launchQualityReview({ projectRoot });
+			const report = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.ref.runId,
+					"artifacts",
+					"qm",
+					"final.md",
+				),
+				"utf8",
+			);
+			return { outcome: result.stepResult.outcome, report };
+		} finally {
+			spawned.mockRestore();
+		}
+	}
+
+	function qmMessage(
+		text: string | undefined,
+		extra: Record<string, unknown> = {},
+	) {
+		return {
+			role: "assistant",
+			content: text === undefined ? [] : [{ type: "text", text }],
+			stopReason: "stop",
+			...extra,
+		};
+	}
+
+	const earlierReport = renderQualityReviewReport({
+		verdict: "not-ready",
+		reason: "EARLIER-COMPLETE-REPORT",
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-004
+	it.each([
+		[
+			"a provider error",
+			[
+				qmMessage(earlierReport),
+				qmMessage("", { stopReason: "error", errorMessage: "usage limit" }),
+			],
+			"final assistant message error: usage limit",
+		],
+		[
+			"an abort",
+			[
+				qmMessage(earlierReport),
+				qmMessage("Halfway", { stopReason: "aborted" }),
+			],
+			"final assistant message aborted",
+		],
+		[
+			"no text of its own",
+			[qmMessage(earlierReport), qmMessage(undefined)],
+			"final assistant message has no text of its own",
+		],
+		[
+			"the token limit",
+			[qmMessage(`${earlierReport}\n\nTruncated`, { stopReason: "length" })],
+			"final assistant message stopped at the token limit",
+		],
+	])("fails the assessment when the QM final message ends in %s", async (_name, messages, reason) => {
+		const projectRoot = await root(true);
+		const { outcome, report } = await launchWithQmMessages(
+			projectRoot,
+			messages,
+		);
+		expect(outcome).toBe("failed");
+		expect(report).toContain("Verdict: failed");
+		expect(report).toContain(
+			`Quality Manager final message rejected: ${reason}`,
+		);
+		expect(report).not.toContain("EARLIER-COMPLETE-REPORT");
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-003
+	it("writes no legacy review-round file on a completed or failed QM run", async () => {
+		const roundFiles = async (projectRoot: string) =>
+			(await readdir(projectRoot, { recursive: true }))
+				.map(String)
+				.filter((path) => /(^|\/)[^/]*-round-\d+\.md$/.test(path));
+		const completedRoot = await root(true);
+		const completed = await launchWithQmMessages(completedRoot, [
+			qmMessage(earlierReport),
+		]);
+		expect(completed.outcome).not.toBe("failed");
+		expect(completed.report).toContain("Verdict: not-ready");
+		const failedRoot = await root(true);
+		const failed = await launchWithQmMessages(failedRoot, [
+			qmMessage("", { stopReason: "error", errorMessage: "boom" }),
+		]);
+		expect(failed.outcome).toBe("failed");
+		expect(await roundFiles(completedRoot)).toEqual([]);
+		expect(await roundFiles(failedRoot)).toEqual([]);
+	});
 });

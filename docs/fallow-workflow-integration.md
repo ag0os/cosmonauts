@@ -232,7 +232,7 @@ delivered by the runtime slice.
 | Worker / refactorer | Run changed-scope analysis after behavior tests pass and after the refactor step; trace before deletion or extraction. | Running broad auto-fix or refactoring passing code solely for a score. |
 | Coordinator | Run an audit at task/wave boundaries to catch cross-task cycles, clones, and interface drift. | Re-running full health after every small edit. |
 | Integration verifier | Check declared boundary and integration contracts against real configured findings. | Claiming boundary conformance when boundaries are unconfigured. |
-| Quality Manager | Review host-run checks and resolved gates, then record structured findings and a verdict in a durable report. | Fixing findings or claiming a clean tree. |
+| Quality Manager | Resolve gates and run the reviewer panel, then record structured findings and a verdict in a durable report; the host adds its check results after the panel's evidence is sealed. | Fixing findings or claiming a clean tree. |
 | CI | Enforce the changed-scope regression lane and publish SARIF or annotations. | Making historical project debt fail every unrelated pull request. |
 | Archive / distiller | Record the final gate evidence and meaningful metric delta. | Copying thousands of raw findings into durable memory. |
 | Scheduled maintenance | Save snapshots, review trends/hotspots/targets/flags, and remove stale suppressions. | Creating unbounded “clean everything” projects. |
@@ -298,14 +298,24 @@ current wave.
 
 ### Quality Manager Protocol
 
-The Quality Manager is a review-only stage. The host captures the review base,
-runs configured checks, and preserves their evidence. The QM obtains the current
-project-tool bindings, resolves applicable gate kinds, marks unavailable bindings
-explicitly, and calls the changed-scope audit with the literal captured base SHA.
-It assesses the structured results, panel triage, and specialist reviews in a
-durable findings report with a verdict and gate status. A missing base-owned
-check or model-diversity configuration is a visible human-decision item that
-blocks a `ready` verdict.
+The Quality Manager is a review-only stage. No reviewed code runs while review
+evidence is open, so the host works in this order:
+
+1. It captures the review base and a stable snapshot of the source tree.
+2. The QM obtains the current project-tool bindings, resolves applicable gate
+   kinds, marks unavailable bindings explicitly, and calls the changed-scope
+   audit with the literal captured base SHA. It runs the specialist panel.
+3. The host seals the panel's reviewer evidence and verifies every material
+   digest.
+4. Only then does the host run the base-owned `qualityReview.prepare` and
+   `checks` in the private clone. These execute reviewed code.
+5. The host merges the check results into the report. A failing or not-run
+   check forces `not-ready`.
+
+The durable findings report carries the verdict, gate status, structured
+results, panel triage, and specialist reviews. A missing base-owned check or
+model-diversity configuration is a visible human-decision item that blocks a
+`ready` verdict.
 
 The QM does not fix code, commit, complete a plan, or promise a clean tree.
 Callers turn actionable findings into tasks, run remediation through Drive, and

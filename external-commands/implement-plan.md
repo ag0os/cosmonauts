@@ -35,6 +35,7 @@ You are coordinating the implementation of an **existing** cosmonauts plan and d
 
 1. Launch detached:
    `cosmonauts run drive --plan $1 --backend ${2:-codex} --mode detached --branch feature/$1`
+   For the `codex` backend, run the workers on `gpt-5.6-sol` by setting `COSMONAUTS_DRIVER_CODEX_ARGS='-m gpt-5.6-sol -c model_reasoning_effort=medium'` in the launch environment.
    Capture the `runId` and `eventLogPath` from the launch output.
 2. **Monitor the event log, not just status** — `run status` lags the event log. Poll `cosmonauts run status <runId>` **and** tail `missions/sessions/$1/runs/<runId>/events.jsonl`; track per-task `task_started` / `task_done` / `blocked`. Prefer a background watcher that blocks until a terminal state (`completed`/`blocked`/`aborted`/`dead`/`finalization_failed`) or a long timeout, so you are re-invoked on a real transition. **The detached launcher exiting is NOT the run finishing.** Tasks run sequentially.
 3. **On stall/abort** (done-count frozen, nothing in-progress): diagnose immediately. If the plan edits code the repo dogfoods, a self-referential break is possible — check the type-check gate, look for a stale path/import, fix, commit, relaunch (Drive re-resolves ready tasks).
@@ -52,8 +53,8 @@ You are coordinating the implementation of an **existing** cosmonauts plan and d
 
 ## Phase 3 — Independent post-review
 
-1. Run an independent read-only review over the branch diff vs local `BASE`. For a plan that changes QM, follow its specific reviewer substitution; `qm-chain-safety` requires a Claude subagent reviewer plus `codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only`, both framed as correctness and liveness. For other plans, use:
-   `codex exec --sandbox read-only "<review prompt>" < /dev/null`
+1. Run an independent read-only review over the branch diff vs local `BASE`. For a plan that changes QM, follow its specific reviewer substitution; `qm-chain-safety` requires a Claude subagent reviewer plus `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only`, both framed as correctness and liveness. For other plans, use:
+   `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only "<review prompt>" < /dev/null`
    **Close stdin (`< /dev/null`)** or it hangs. Redirect output to a file — it can be large; read the **tail** for the findings + verdict.
 2. In the prompt: read-only review; diff against **local `BASE`** (state that origin lags and those commits are out of scope); verify spec/plan conformance, each behavior, the plan's key guarantees, no out-of-scope work (flag any), and correctness/concurrency/dead-code. Ask for severity-ranked findings and a SHIP / DO-NOT-SHIP verdict.
 3. Triage findings against ground truth. Route real findings into remediation tasks and Drive, re-run gates, and obtain another independent review. Record accepted/rejected dispositions. Consider saving a short review record under `missions/plans/$1/` for traceability.

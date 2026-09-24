@@ -305,6 +305,7 @@ export async function removePrivateReviewWorkspace(
 
 interface PrivateReviewWorkspacePorts {
 	afterFirstSample?: (attempt: number) => Promise<void>;
+	afterClone?: () => Promise<void>;
 	excludePath?: string;
 	deferMaterials?: boolean;
 }
@@ -392,6 +393,7 @@ export async function createPrivateReviewWorkspace(
 		],
 		true,
 	);
+	await ports.afterClone?.();
 	if (
 		(await sample(sourceRealPath, ports.excludePath)).digest !== snapshot.digest
 	)

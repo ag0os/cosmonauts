@@ -1519,17 +1519,23 @@ function loadBaseQualityReviewConfig(
 	return block === undefined ? undefined : parseQualityReviewConfig(block);
 }
 
+/** Gate-owned whatever the base's `qualityReview.gateOwnedPaths` says. */
+export const HOST_GATE_OWNED_PATHS: readonly string[] = [
+	".cosmonauts/suppression-exceptions.json",
+	"scripts/check-new-suppressions.ts",
+	"lib/quality/suppression-policy.ts",
+	"domains/shared/extensions/project-tools/fallow-provider.ts",
+];
+export const HOST_GATE_OWNED_DIRECTORY = ".fallow-baselines/";
+
 function isGateOwnedFile(
 	path: string,
 	config: ProjectConfig["qualityReview"],
 ): boolean {
 	return (
 		(config?.gateOwnedPaths ?? []).includes(path) ||
-		path === ".cosmonauts/suppression-exceptions.json" ||
-		path === "scripts/check-new-suppressions.ts" ||
-		path === "lib/quality/suppression-policy.ts" ||
-		path === "domains/shared/extensions/project-tools/fallow-provider.ts" ||
-		path.startsWith(".fallow-baselines/")
+		HOST_GATE_OWNED_PATHS.includes(path) ||
+		path.startsWith(HOST_GATE_OWNED_DIRECTORY)
 	);
 }
 

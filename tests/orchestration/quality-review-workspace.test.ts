@@ -47,6 +47,23 @@ describe("private review workspace capture", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
+	// @cosmo-behavior plan:qm-chain-safety#B-002
+	it("refuses a source edited after a stable capture while the clone runs", async () => {
+		const { root, source } = await repository();
+		const reserved = join(root, "reserved");
+		await mkdir(reserved);
+		await expect(
+			createPrivateReviewWorkspace(source, reserved, {
+				afterClone: async () => {
+					await writeFile(join(source, "tracked.txt"), "edit during clone\n");
+				},
+			}),
+		).rejects.toThrow("Source changed during private clone");
+		await expect(
+			readFile(join(reserved, "materials", "full.diff")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
 	it("refuses sparse, gitlink, nested and linked-worktree layouts", async () => {
 		for (const layout of ["sparse", "gitlink", "nested", "linked"] as const) {
 			const { root, source, git } = await repository();
