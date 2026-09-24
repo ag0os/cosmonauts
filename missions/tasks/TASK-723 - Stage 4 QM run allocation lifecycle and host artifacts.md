@@ -1,0 +1,31 @@
+---
+id: TASK-723
+title: Stage 4 QM run allocation lifecycle and host artifacts
+status: To Do
+priority: high
+labels:
+  - backend
+  - api
+  - testing
+  - 'plan:qm-chain-safety'
+dependencies:
+  - TASK-720
+createdAt: '2026-09-24T03:16:20.957Z'
+updatedAt: '2026-09-24T03:16:20.957Z'
+---
+
+## Description
+
+Implement Implementation Order Stage 4 only: establish the framework-owned QM launcher, durable one-step allocation, lifecycle, path-safe host artifact sink, provisional/final report ordering, inline-chain delegation, refusal outcomes, and status pointers. This task solely owns B-004 and delivers the sink foundation of B-003; Stage 6 is the sole primary owner that completes B-003 by capturing panel completions.
+
+Binding ratified ground (not worker-adjustable; any collision requires halt-and-escalate with a drafted decision under the deviation protocol): INV-001 review and all children cannot mutate the reviewed checkout and isolation failure refuses; INV-002 every relied-on record belongs uniquely to its run and missing evidence fails; INV-003 a complete verdict persists on every exit; INV-004 authority lists bind every launch path; INV-005 changed-scope gates judge only introduced findings and new suppressions require a human-listed exception. D-001 requires: review-only QM with remediation through tasks, Drive and independent review; run-scoped full reports plus an every-exit plan summary and archived shared rounds; a private local clone now with generic runner isolation/OS sandbox deferred; introduced-only committed baselines and reconciled debt docs; human-only suppression exceptions; measured/reproduced evidence for performance P1 and independent closure; a different-family reviewer; and `chain_run` enforcement of the caller allowlist. D-002 forbids QM verification of this plan: implementation workers use codex `gpt-6-sol` at medium effort and closure uses a Claude subagent plus `codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only`, framed as correctness/liveness. D-018 permits exactly one reviewed-checkout change, the host-written new non-overwriting plan summary hidden from agents. D-019 makes missing checks/model config visible not-configured and human-decision items that block `ready`, never silence or refusal. D-020 requires a private local clone, not a linked worktree. D-021 starts the QM run after framework bootstrap at the launch boundary and before any QM/panel session. D-022 repairs only live-surface old links, preserves frozen/curated/evidence/archive history, and requires the archive README map. D-023 requires execution-liveness, when rebased later, to register prepare/check processes and the clone as outer-QM-attempt descendants.
+
+<!-- AC:BEGIN -->
+- [ ] #1 B-004 is owned here and proven at `cosmonauts run status`, `run_status`, `artifacts/qm/final.md`, and plan-summary entry points: “A complete report exists before any fallible work begins and is replaced atomically before the run's terminal event. Status points to the full report. The plan summary exists for every exit of a plan-scoped run, including inline chains (D-016). The stage summary stays the same bounded 200-character value. After a crash, the persisted lifecycle names the phase reached and any retained workspace.”
+- [ ] #2 B-003 sink part (primary owner: Stage 6) satisfies D-006 and Design §4: run-rooted host-only writes reject absolute, traversal, symlink-escape and cross-run paths; reviewer files are immutable exclusive creates; writes atomically emit existing artifact references/events; concurrent runs cannot alter one another; agents receive no artifact path; ordinary durable stages still return `artifacts: []`. Stage 6 owns correlated reviewer capture and the complete B-003 outcome.
+- [ ] #3 D-003 launch routing and D-016 inline-chain handling are established without implementing generic `WorktreeSpec.isolated`: the resolved canonical role—not self-declared metadata—routes CLI, `spawn_agent`, single-stage, durable terminal, and inline terminal QM launches through one framework launcher; non-terminal or parallel QM positions refuse before a session; inline chains allocate a separate one-step durable QM run, return its run ID/artifacts and pass explicit plan identity without adding scheduler loop/completion-label support.
+- [ ] #4 D-007, D-010/D-018, D-013, D-017 and Design §§3/5 hold: lifecycle phases and workspace disposition are truthful; conservative `final.md` and a new non-overwriting hidden plan summary precede fallible work; ready/not-ready complete, refusal blocks, execution/report-integrity fails, cancellation cancels; finalization is atomic before `StepResult`; the 200-character summary is unchanged; malformed raw output is retained; a missing/malformed index with all required sections becomes “index unavailable” without changing verdict, while missing sections fail integrity.
+- [ ] #5 The Stage 4 file seam is complete across QM routing/status/allocation and artifact foundations in `domains/shared/extensions/orchestration/spawn-tool.ts` (launcher routing only), `run-control-tools.ts`, `cli/run/subcommand.ts`, `cli/main.ts`, `cli/chain-execution.ts`, `lib/orchestration/chain-runner.ts`, `durable-chain-compiler.ts`, `durable-chain-runner.ts`, `types.ts`, new `quality-review-launch.ts`, `quality-review-artifacts.ts`, `quality-review-report.ts`, `quality-review-run.ts`, and `lib/durable-runtime/types.ts`/`controller.ts`; durable runtime remains persona/Git unaware and only projects existing `ArtifactRef` values.
+- [ ] #6 R-009 and R-012 are enforced: failed replacement leaves the conservative record and fails the run; traversal, symlink escape, cross-run/duplicate writes, missing correlation, or agent-visible host paths fail. The framework-to-domain dependency direction remains as designed, with policy extracted from existing complexity hotspots rather than embedded in the durable controller/runner.
+- [ ] #7 Code delivery follows red → green → refactor with Vitest tests under `tests/` mirroring source and behavior tests through actual CLI/tool/status/chain entry points for every terminal matrix row, concurrent runs, inline chains, malformed index, crash phase, atomic-write failure, and artifact escape; exported functions alone are not proof.
+<!-- AC:END -->
