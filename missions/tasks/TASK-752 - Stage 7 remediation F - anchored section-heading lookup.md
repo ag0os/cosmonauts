@@ -1,7 +1,7 @@
 ---
 id: TASK-752
 title: Stage 7 remediation F - anchored section-heading lookup
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-751
 createdAt: '2026-09-24T19:14:26.734Z'
-updatedAt: '2026-09-24T19:14:26.734Z'
+updatedAt: '2026-09-24T19:17:50.974Z'
 ---
 
 ## Description
@@ -26,9 +26,8 @@ Keep the changed-scope audit against `main` passing: no new complexity, dead-cod
 
 `bun run lint` has one known error, in the gitignored `.shepherd/backups/`; lint on tracked paths must pass. Run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Section lookup is anchored to whole `## <heading>` lines: end to end through the run, a Checks line ending in `details under ## Findings` followed by a real Findings entry, a `### Findings` subsection containing `None recorded.` under Gates followed by a real Findings entry, and a `#### Human decisions` subheading under Checks followed by a real Human decisions entry each yield `not-ready`; the tests fail on the current code.
-- [ ] #2 The end-to-end repeated `## Human decisions` test is rewritten so its first Human decisions section is empty or the sentinel and only the repeated section has content; it fails when the repeated-heading check is removed.
-- [ ] #3 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
+- [x] #1 Section lookup is anchored to whole `## <heading>` lines: end to end through the run, a Checks line ending in `details under ## Findings` followed by a real Findings entry, a `### Findings` subsection containing `None recorded.` under Gates followed by a real Findings entry, and a `#### Human decisions` subheading under Checks followed by a real Human decisions entry each yield `not-ready`; the tests fail on the current code.
+- [x] #2 The end-to-end repeated `## Human decisions` test is rewritten so its first Human decisions section is empty or the sentinel and only the repeated section has content; it fails when the repeated-heading check is removed.
+- [x] #3 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
 <!-- AC:END -->
