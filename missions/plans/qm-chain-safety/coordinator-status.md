@@ -60,7 +60,9 @@ TASK-726 and TASK-728 depend on TASK-729..738.
 - **Mid-branch review 7** (under D-027), both DO-NOT-SHIP-YET, converging with no HIGH. Files: `mid-review-7-codex.md` (verbatim) and `mid-review-7-claude.md` (condensed).
   - **Remaining findings:** `analysisPrepare` failure aborts the review; lost prep lines; setup cancel always retains the workspace; missing D-028 report disclosure; untested user-source exclusion; a seal test that cannot fail.
   - **Accepted:** Claude LOW-2 (the registry parser rejects array shapes; stricter, and no committed file is affected).
-- **Running:** Drive TASK-743, then mid-branch review 8.
+- **TASK-743 done** (`5c9ee93`). Gates: typecheck 0, tracked lint 0, tests 3254/3254, audit vs `main` pass.
+- **Mid-branch review 8:** Claude says **SHIP** with one LOW; codex says DO-NOT-SHIP-YET with one MEDIUM and one LOW, all in the same code. Files: `mid-review-8-codex.md` (verbatim) and `mid-review-8-claude.md` (condensed). TASK-744 covers all three.
+- **Running:** Drive TASK-744, then a focused two-channel check of its diff. If both SHIP, Stages 1–6 are closed, and TASK-726 comes next.
 - **Lint caveat:** `bun run lint` reports one error, in Shepherd's gitignored backup under `.shepherd/backups/`. Tracked content passes. I asked Shepherd to move the backup out of the repo.
 - **Next steps for the successor:**
   1. Run mid-branch review 7 (after TASK-739/740). The prompt must state the D-027 threat model: hostile-change-only routes are residual limits, not findings to remediate on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
