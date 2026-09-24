@@ -1,7 +1,7 @@
 ---
 id: TASK-740
 title: Stage 6 remediation J - pay down this branch's introduced analysis debt
-status: In Progress
+status: Done
 priority: high
 labels:
   - refactoring
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-739
 createdAt: '2026-09-24T13:27:18.038Z'
-updatedAt: '2026-09-24T13:38:04.401Z'
+updatedAt: '2026-09-24T13:59:48.004Z'
 ---
 
 ## Description
@@ -48,9 +48,9 @@ Do not re-save any baseline, and do not add suppression directives (INV-005, D-0
 Run the full suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
 <!-- AC:BEGIN -->
-- [ ] #1 (Rescoped 2026-09-24 by the coordinator after a partial first pass; the original whole-branch criteria moved to TASK-742) The changed-scope audit reports no complexity finding in `lib/orchestration/quality-review-run.ts`, `quality-review-launch.ts`, `quality-review-artifacts.ts`, `quality-review-workspace.ts`, `quality-review-report.ts`, `quality-review-seal.ts`, `quality-review-chain.ts`, `quality-review-command.ts` or `quality-review-checks.ts`.
-- [ ] #2 QM run orchestration is decomposed into focused, named phases (snapshot and export, runtime, assessment, seal, checks, finalization, lifecycle) in `lib/orchestration/quality-review-*` modules, each under the project complexity thresholds (cyclomatic 20, cognitive 15). D-026 ordering, D-025 guarantees, and all report, lifecycle and event output are unchanged. The pre-refactor test suite passes unchanged.
-- [ ] #3 No baseline changed, no suppression directive added (`bun run check:suppressions -- --base main` passes), typecheck and the full suite pass.
+- [x] #1 (Rescoped 2026-09-24 by the coordinator after a partial first pass; the original whole-branch criteria moved to TASK-742) The changed-scope audit reports no complexity finding in `lib/orchestration/quality-review-run.ts`, `quality-review-launch.ts`, `quality-review-artifacts.ts`, `quality-review-workspace.ts`, `quality-review-report.ts`, `quality-review-seal.ts`, `quality-review-chain.ts`, `quality-review-command.ts` or `quality-review-checks.ts`.
+- [x] #2 QM run orchestration is decomposed into focused, named phases (snapshot and export, runtime, assessment, seal, checks, finalization, lifecycle) in `lib/orchestration/quality-review-*` modules, each under the project complexity thresholds (cyclomatic 20, cognitive 15). D-026 ordering, D-025 guarantees, and all report, lifecycle and event output are unchanged. The pre-refactor test suite passes unchanged.
+- [x] #3 No baseline changed, no suppression directive added (`bun run check:suppressions -- --base main` passes), typecheck and the full suite pass.
 <!-- AC:END -->
 
 ## Implementation Notes

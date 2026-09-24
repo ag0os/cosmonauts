@@ -531,6 +531,39 @@ function sameFileStats(left: Stats, right: Stats): boolean {
 	);
 }
 
+function assertStableExecutable(
+	canonicalPath: string,
+	currentCanonicalPath: string,
+	before: Stats,
+	after: Stats,
+	current: Stats,
+): void {
+	if (
+		canonicalPath !== currentCanonicalPath ||
+		!sameFileStats(before, after) ||
+		!sameFileStats(after, current)
+	) {
+		throw new Error("Executable changed while its identity was captured.");
+	}
+}
+
+function executableIdentity(
+	canonicalPath: string,
+	stats: Stats,
+	contents: Buffer,
+): FallowExecutableIdentity {
+	return {
+		canonicalPath,
+		device: stats.dev,
+		inode: stats.ino,
+		mode: stats.mode,
+		size: stats.size,
+		modifiedAtMs: stats.mtimeMs,
+		changedAtMs: stats.ctimeMs,
+		sha256: createHash("sha256").update(contents).digest("hex"),
+	};
+}
+
 function captureExecutableIdentitySync(
 	executablePath: string,
 ): FallowExecutableIdentity {
@@ -542,23 +575,14 @@ function captureExecutableIdentitySync(
 		const after = fstatSync(descriptor);
 		const currentCanonicalPath = realpathSync(executablePath);
 		const current = statSync(currentCanonicalPath);
-		if (
-			canonicalPath !== currentCanonicalPath ||
-			!sameFileStats(before, after) ||
-			!sameFileStats(after, current)
-		) {
-			throw new Error("Executable changed while its identity was captured.");
-		}
-		return {
+		assertStableExecutable(
 			canonicalPath,
-			device: after.dev,
-			inode: after.ino,
-			mode: after.mode,
-			size: after.size,
-			modifiedAtMs: after.mtimeMs,
-			changedAtMs: after.ctimeMs,
-			sha256: createHash("sha256").update(contents).digest("hex"),
-		};
+			currentCanonicalPath,
+			before,
+			after,
+			current,
+		);
+		return executableIdentity(canonicalPath, after, contents);
 	} finally {
 		closeSync(descriptor);
 	}
@@ -627,23 +651,14 @@ async function captureExecutableIdentity(
 		const after = await handle.stat();
 		const currentCanonicalPath = await realpath(executablePath);
 		const current = await stat(currentCanonicalPath);
-		if (
-			canonicalPath !== currentCanonicalPath ||
-			!sameFileStats(before, after) ||
-			!sameFileStats(after, current)
-		) {
-			throw new Error("Executable changed while its identity was captured.");
-		}
-		return {
+		assertStableExecutable(
 			canonicalPath,
-			device: after.dev,
-			inode: after.ino,
-			mode: after.mode,
-			size: after.size,
-			modifiedAtMs: after.mtimeMs,
-			changedAtMs: after.ctimeMs,
-			sha256: createHash("sha256").update(contents).digest("hex"),
-		};
+			currentCanonicalPath,
+			before,
+			after,
+			current,
+		);
+		return executableIdentity(canonicalPath, after, contents);
 	} finally {
 		await handle.close();
 	}
@@ -1146,6 +1161,22 @@ function discoveryFromSpawnPrecondition(
 	};
 }
 
+function discoveryFromIntrospectionError(
+	error: unknown,
+	detectionSignal: FallowDetectionSignal,
+	executableResolution: FallowExecutableResolutionKind,
+): FallowProviderDiscovery {
+	if (error instanceof FallowSpawnPreconditionError) {
+		const discovery = discoveryFromSpawnPrecondition(
+			detectionSignal,
+			error.precondition,
+			executableResolution,
+		);
+		if (discovery !== undefined) return discovery;
+	}
+	throw error;
+}
+
 async function introspectProvider(
 	options: DiscoverFallowProviderOptions,
 	detectionSignal: FallowDetectionSignal,
@@ -1200,15 +1231,11 @@ async function introspectProvider(
 			{ beforeSpawn },
 		);
 	} catch (error) {
-		if (error instanceof FallowSpawnPreconditionError) {
-			const discovery = discoveryFromSpawnPrecondition(
-				detectionSignal,
-				error.precondition,
-				executableResolution,
-			);
-			if (discovery !== undefined) return discovery;
-		}
-		throw error;
+		return discoveryFromIntrospectionError(
+			error,
+			detectionSignal,
+			executableResolution,
+		);
 	}
 	if (options.signal?.aborted) {
 		return abortedDiscovery(
@@ -1265,15 +1292,11 @@ async function introspectProvider(
 			{ beforeSpawn },
 		);
 	} catch (error) {
-		if (error instanceof FallowSpawnPreconditionError) {
-			const discovery = discoveryFromSpawnPrecondition(
-				detectionSignal,
-				error.precondition,
-				executableResolution,
-			);
-			if (discovery !== undefined) return discovery;
-		}
-		throw error;
+		return discoveryFromIntrospectionError(
+			error,
+			detectionSignal,
+			executableResolution,
+		);
 	}
 	if (options.signal?.aborted) {
 		return abortedDiscovery(

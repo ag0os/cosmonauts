@@ -651,15 +651,7 @@ async function handlePrintMode(
 
 	const definition = resolveCliAgent(runtime, options);
 	if (isCliQualityReview(runtime, options, definition)) {
-		const result = await runCliQualityReview({
-			projectRoot: cwd,
-			operatorNote: options.prompt,
-			planSlug: qualityReviewPlanSlug({
-				completionLabel: options.completionLabel,
-			}),
-		});
-		process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
-		if (result.stepResult.outcome !== "success") process.exitCode = 1;
+		await runCliQualityReviewMode(cwd, options, options.prompt);
 		return;
 	}
 	const printRuntime = await createSession({
@@ -688,14 +680,7 @@ async function handleInteractiveMode(
 ): Promise<void> {
 	const definition = resolveCliAgent(runtime, options);
 	if (isCliQualityReview(runtime, options, definition)) {
-		const result = await runCliQualityReview({
-			projectRoot: cwd,
-			planSlug: qualityReviewPlanSlug({
-				completionLabel: options.completionLabel,
-			}),
-		});
-		process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
-		if (result.stepResult.outcome !== "success") process.exitCode = 1;
+		await runCliQualityReviewMode(cwd, options);
 		return;
 	}
 
@@ -732,6 +717,22 @@ async function handleInteractiveMode(
 
 	await interactive.init();
 	await interactive.run();
+}
+
+async function runCliQualityReviewMode(
+	cwd: string,
+	options: CliOptions,
+	operatorNote?: string,
+): Promise<void> {
+	const result = await runCliQualityReview({
+		projectRoot: cwd,
+		...(operatorNote === undefined ? {} : { operatorNote }),
+		planSlug: qualityReviewPlanSlug({
+			completionLabel: options.completionLabel,
+		}),
+	});
+	process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
+	if (result.stepResult.outcome !== "success") process.exitCode = 1;
 }
 
 function resolveCliAgent(

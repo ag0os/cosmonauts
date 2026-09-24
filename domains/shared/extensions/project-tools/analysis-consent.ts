@@ -113,15 +113,11 @@ function parseConsentState(
 	return state as unknown as AnalysisExecutionConsentState;
 }
 
-/**
- * Read an explicit, per-project provider execution decision from user state.
- *
- * Repository configuration is deliberately not consulted. A repository may
- * advertise a provider, but it cannot grant itself permission to execute one.
- */
-export async function readAnalysisExecutionAuthorization(
-	options: AnalysisExecutionConsentOptions,
-): Promise<AnalysisExecutionAuthorization | null> {
+function consentPaths(options: AnalysisExecutionConsentOptions): {
+	projectRoot: string;
+	userStateRoot: string;
+	consentPath: string;
+} {
 	const projectRoot = resolve(options.projectRoot);
 	const userStateRoot = resolve(
 		options.userStateRoot ?? defaultUserStateRoot(),
@@ -131,8 +127,23 @@ export async function readAnalysisExecutionAuthorization(
 			"Analysis execution consent state must be held outside the target project.",
 		);
 	}
+	return {
+		projectRoot,
+		userStateRoot,
+		consentPath: join(userStateRoot, ANALYSIS_EXECUTION_CONSENT_FILE),
+	};
+}
 
-	const consentPath = join(userStateRoot, ANALYSIS_EXECUTION_CONSENT_FILE);
+/**
+ * Read an explicit, per-project provider execution decision from user state.
+ *
+ * Repository configuration is deliberately not consulted. A repository may
+ * advertise a provider, but it cannot grant itself permission to execute one.
+ */
+export async function readAnalysisExecutionAuthorization(
+	options: AnalysisExecutionConsentOptions,
+): Promise<AnalysisExecutionAuthorization | null> {
+	const { projectRoot, userStateRoot, consentPath } = consentPaths(options);
 	let canonicalProjectRoot: string;
 	try {
 		canonicalProjectRoot = await realpath(projectRoot);
@@ -187,17 +198,7 @@ export async function readAnalysisExecutionAuthorization(
 export function readAnalysisExecutionAuthorizationSync(
 	options: AnalysisExecutionConsentOptions,
 ): AnalysisExecutionAuthorization | null {
-	const projectRoot = resolve(options.projectRoot);
-	const userStateRoot = resolve(
-		options.userStateRoot ?? defaultUserStateRoot(),
-	);
-	if (isPathInside(projectRoot, userStateRoot)) {
-		throw new Error(
-			"Analysis execution consent state must be held outside the target project.",
-		);
-	}
-
-	const consentPath = join(userStateRoot, ANALYSIS_EXECUTION_CONSENT_FILE);
+	const { projectRoot, userStateRoot, consentPath } = consentPaths(options);
 	let canonicalProjectRoot: string;
 	try {
 		canonicalProjectRoot = realpathSync(projectRoot);

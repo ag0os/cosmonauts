@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { recordEpisode } from "../memory/episode.ts";
 import { getFirstExecutableStages } from "./chain-steps.ts";
-import type { ChainConfig } from "./types.ts";
+import type { ChainConfig, ChainResult } from "./types.ts";
 
 export type ChainEpisodeOutcome =
 	| "started"
@@ -29,7 +29,7 @@ export function createDurableChainEpisodeLifecycle(
 	return createChainEpisodeLifecycle(config, runId);
 }
 
-export async function recordChainEpisode(
+async function recordChainEpisode(
 	lifecycle: ChainEpisodeLifecycle,
 	outcome: ChainEpisodeOutcome,
 	details?: string,
@@ -49,12 +49,37 @@ export async function recordChainEpisode(
 	});
 }
 
-export function chainTerminalOutcome(
+function chainTerminalOutcome(
 	success: boolean,
 	aborted: boolean,
 ): Exclude<ChainEpisodeOutcome, "started"> {
 	if (aborted) return "aborted";
 	return success ? "succeeded" : "failed";
+}
+
+/** Record the same lifecycle around either chain execution strategy. */
+export async function withChainEpisode(
+	config: ChainConfig,
+	lifecycle: ChainEpisodeLifecycle,
+	execute: () => Promise<ChainResult>,
+): Promise<ChainResult> {
+	await recordChainEpisode(lifecycle, "started");
+	try {
+		const result = await execute();
+		await recordChainEpisode(
+			lifecycle,
+			chainTerminalOutcome(result.success, config.signal?.aborted === true),
+			result.errors.length > 0 ? result.errors.join("\n") : undefined,
+		);
+		return result;
+	} catch (error: unknown) {
+		await recordChainEpisode(
+			lifecycle,
+			"failed",
+			error instanceof Error ? error.message : String(error),
+		);
+		throw error;
+	}
 }
 
 function createChainEpisodeLifecycle(

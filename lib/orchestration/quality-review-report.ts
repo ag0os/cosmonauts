@@ -145,12 +145,8 @@ function indexMatchesVisibleSections(
 		report.reviewerModels,
 	] as string[][];
 	for (const [index, heading] of sections.entries()) {
-		const marker = `## ${heading}\n`;
-		const start = markdown.indexOf(marker);
-		if (start < 0) return false;
-		const tail = markdown.slice(start + marker.length);
-		const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
-		const visible = (end < 0 ? tail : tail.slice(0, end)).trim();
+		const visible = visibleSectionBody(markdown, heading);
+		if (visible === undefined) return false;
 		const items = indexedSections[index] ?? [];
 		const expected = items.length
 			? items.map((item) => `- ${item}`).join("\n")
@@ -160,17 +156,24 @@ function indexMatchesVisibleSections(
 	return true;
 }
 
+function visibleSectionBody(
+	markdown: string,
+	heading: string,
+): string | undefined {
+	const marker = `## ${heading}\n`;
+	const start = markdown.indexOf(marker);
+	if (start < 0) return undefined;
+	const tail = markdown.slice(start + marker.length);
+	const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
+	return (end < 0 ? tail : tail.slice(0, end)).trim();
+}
+
 export function hasQualityReviewSectionContent(
 	markdown: string,
 	heading: "Gates" | "Findings" | "Human decisions",
 ): boolean {
-	const marker = `## ${heading}\n`;
-	const start = markdown.indexOf(marker);
-	if (start < 0) return false;
-	const tail = markdown.slice(start + marker.length);
-	const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
-	const body = (end < 0 ? tail : tail.slice(0, end)).trim();
-	return body !== "" && body !== "- None recorded.";
+	const body = visibleSectionBody(markdown, heading);
+	return body !== undefined && body !== "" && body !== "- None recorded.";
 }
 
 /** Keep section prose intact when the optional machine index is unavailable. */

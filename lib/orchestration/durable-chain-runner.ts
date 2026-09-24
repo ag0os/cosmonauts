@@ -18,9 +18,8 @@ import {
 	summarizeAssistantText,
 } from "./assistant-text.ts";
 import {
-	chainTerminalOutcome,
 	createDurableChainEpisodeLifecycle,
-	recordChainEpisode,
+	withChainEpisode,
 } from "./chain-episodes.ts";
 import {
 	adaptDurableChainEvents,
@@ -97,20 +96,9 @@ export async function runDurableChain(
 
 	const runId = `chain-${randomUUID()}`;
 	const lifecycle = createDurableChainEpisodeLifecycle(config, runId);
-	await recordChainEpisode(lifecycle, "started");
-
-	try {
-		const result = await executeDurableChain(config, runId);
-		await recordChainEpisode(
-			lifecycle,
-			chainTerminalOutcome(result.success, config.signal?.aborted === true),
-			result.errors.length > 0 ? result.errors.join("\n") : undefined,
-		);
-		return result;
-	} catch (error: unknown) {
-		await recordChainEpisode(lifecycle, "failed", errorReason(error));
-		throw error;
-	}
+	return withChainEpisode(config, lifecycle, () =>
+		executeDurableChain(config, runId),
+	);
 }
 
 async function executeDurableChain(
@@ -205,10 +193,6 @@ async function executeDurableChain(
 		...reconstructed.result,
 		run: { runId, scope: CHAIN_RUN_SCOPE },
 	};
-}
-
-function errorReason(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 interface ChainSchedulerBackendOptions {

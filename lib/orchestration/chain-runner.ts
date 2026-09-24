@@ -14,9 +14,8 @@ import {
 	summarizeAssistantText,
 } from "./assistant-text.ts";
 import {
-	chainTerminalOutcome,
 	createInlineChainEpisodeLifecycle,
-	recordChainEpisode,
+	withChainEpisode,
 } from "./chain-episodes.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
@@ -877,20 +876,7 @@ function finalizeChainResult(
  */
 export async function runChain(config: ChainConfig): Promise<ChainResult> {
 	const lifecycle = createInlineChainEpisodeLifecycle(config);
-	await recordChainEpisode(lifecycle, "started");
-
-	try {
-		const result = await executeChain(config);
-		await recordChainEpisode(
-			lifecycle,
-			chainTerminalOutcome(result.success, config.signal?.aborted === true),
-			result.errors.length > 0 ? result.errors.join("\n") : undefined,
-		);
-		return result;
-	} catch (error: unknown) {
-		await recordChainEpisode(lifecycle, "failed", errorReason(error));
-		throw error;
-	}
+	return withChainEpisode(config, lifecycle, () => executeChain(config));
 }
 
 async function executeChain(config: ChainConfig): Promise<ChainResult> {
@@ -927,10 +913,6 @@ async function executeChain(config: ChainConfig): Promise<ChainResult> {
 	emit(config, { type: "chain_end", result: chainResult });
 
 	return chainResult;
-}
-
-function errorReason(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 // ============================================================================

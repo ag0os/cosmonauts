@@ -3,7 +3,7 @@ id: TASK-741
 title: >-
   Stage 6 remediation K - pay down introduced debt in orchestration tools and
   session plumbing
-status: To Do
+status: Done
 priority: high
 labels:
   - refactoring
@@ -13,7 +13,7 @@ labels:
 dependencies:
   - TASK-740
 createdAt: '2026-09-24T13:40:06.932Z'
-updatedAt: '2026-09-24T13:40:06.932Z'
+updatedAt: '2026-09-24T14:15:58.880Z'
 ---
 
 ## Description
@@ -31,8 +31,7 @@ npx fallow audit --base main \
 
 `bun run lint` has one known error, in Shepherd's gitignored backup under `.shepherd/backups/`. Do not touch it; lint on tracked paths must pass. Run the full suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 The changed-scope audit reports no introduced complexity finding in `domains/shared/extensions/orchestration/{spawn-tool,driver-tool,chain-tool}.ts`, `lib/orchestration/{session-factory,agent-spawner,durable-chain-runner,chain-runner}.ts`, `lib/agents/session-assembly.ts` or `lib/config/loader.ts`; each changed function is under cyclomatic 20 and cognitive 15.
-- [ ] #2 Behavior, output and event order are unchanged; no baseline changed; no suppression directive added; typecheck and the full suite pass.
+- [x] #1 The changed-scope audit reports no introduced complexity finding in `domains/shared/extensions/orchestration/{spawn-tool,driver-tool,chain-tool}.ts`, `lib/orchestration/{session-factory,agent-spawner,durable-chain-runner,chain-runner}.ts`, `lib/agents/session-assembly.ts` or `lib/config/loader.ts`; each changed function is under cyclomatic 20 and cognitive 15.
+- [x] #2 Behavior, output and event order are unchanged; no baseline changed; no suppression directive added; typecheck and the full suite pass.
 <!-- AC:END -->
