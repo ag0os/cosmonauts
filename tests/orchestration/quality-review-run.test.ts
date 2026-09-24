@@ -407,7 +407,7 @@ describe("quality review durable lifecycle", () => {
 			source === "analysis preparation failure"
 				? vi
 						.spyOn(workspaceModule, "preparePrivateReviewWorkspace")
-						.mockRejectedValue(
+						.mockRejectedValueOnce(
 							new workspaceModule.WorkspacePreparationFailure(
 								"frozen lockfile mismatch",
 								[],
@@ -475,6 +475,7 @@ describe("quality review durable lifecycle", () => {
 				},
 			}),
 		);
+		await commitBaseConfig(projectRoot);
 		const result = await runQualityReview({
 			projectRoot,
 			hostChecks: true,
