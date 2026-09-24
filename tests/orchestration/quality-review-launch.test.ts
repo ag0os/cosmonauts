@@ -806,9 +806,12 @@ describe("quality review launch policy", () => {
 		expect(report).toContain("Verdict: not-ready");
 		expect(report).toContain("Analysis preparation dependencies: failed");
 		expect(report).toMatch(/lockfile/i);
-		expect(report).toContain("Analysis audit gate state: failed-to-run");
+		expect(report).toContain("Analysis audit gate state: completed-bound");
+		expect(report).toContain(
+			"Analysis preparation failed; human decision required.",
+		);
 		expect(indexedQualityReviewReport(report)?.gates).toEqual([
-			"Analysis audit gate state: failed-to-run (analysis preparation failed)",
+			"Analysis audit gate state: completed-bound",
 		]);
 		expect(report).toContain("Gate-owned file changed: package.json");
 		expect(await readFile(join(artifacts, "checks.md"), "utf8")).toContain(

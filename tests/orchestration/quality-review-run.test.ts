@@ -3357,6 +3357,146 @@ describe("quality review durable lifecycle", () => {
 	});
 
 	it.each([
+		true,
+		false,
+	])("keeps an observed failing audit after analysis preparation fails (indexed: %s)", async (indexed) => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					analysisPrepare: [
+						{
+							id: "dependencies",
+							command: "bun",
+							args: ["install", "--frozen-lockfile", "--ignore-scripts"],
+						},
+					],
+					diverseReviewerModel: "test/other",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		await commitBaseConfig(projectRoot);
+		const prepare = vi
+			.spyOn(workspaceModule, "preparePrivateReviewWorkspace")
+			.mockRejectedValue(
+				new workspaceModule.WorkspacePreparationFailure(
+					"frozen lockfile mismatch",
+					[],
+				),
+			);
+		try {
+			const markdown = renderQualityReviewReport({
+				verdict: "ready",
+				reason: "clear",
+				gates: ["QM claimed audit passed"],
+			});
+			const result = await runQualityReview({
+				projectRoot,
+				hostChecks: true,
+				execute: async () => ({
+					gateState: "Analysis audit gate state: fail",
+					auditFindings: [
+						"f1 P1 lib/a.ts:17 dead-code error: unused export; fix: remove export",
+					],
+					markdown: indexed
+						? markdown
+						: markdown.replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, ""),
+				}),
+			});
+			const report = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.ref.runId,
+					"artifacts",
+					"qm",
+					"final.md",
+				),
+				"utf8",
+			);
+			expect(report).toContain("Verdict: not-ready");
+			expect(report).toContain("Analysis audit gate state: fail");
+			expect(report).toContain(
+				"f1 P1 lib/a.ts:17 dead-code error: unused export; fix: remove export",
+			);
+			expect(report).toContain("Analysis preparation dependencies: failed");
+			expect(report).toContain(
+				"Analysis preparation failed; human decision required.",
+			);
+			const gates =
+				report.split("## Gates\n")[1]?.split("## Findings\n")[0] ?? "";
+			expect(gates).not.toContain("QM claimed audit passed");
+			expect(gates).not.toContain("failed-to-run");
+		} finally {
+			prepare.mockRestore();
+		}
+	});
+
+	it("clears the setup settle-grace timer when setup settles promptly", async () => {
+		const projectRoot = await root(true);
+		const controller = new AbortController();
+		let started!: () => void;
+		const setupStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const timers = new Set<ReturnType<typeof setTimeout>>();
+		const timeout = globalThis.setTimeout;
+		const clear = globalThis.clearTimeout;
+		const setSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+			handler: Parameters<typeof setTimeout>[0],
+			delay?: number,
+		) => {
+			const timer = timeout(handler, delay);
+			if (delay === 60_000) timers.add(timer);
+			return timer;
+		}) as typeof setTimeout);
+		const clearSpy = vi.spyOn(globalThis, "clearTimeout").mockImplementation(((
+			timer: ReturnType<typeof setTimeout>,
+		) => {
+			timers.delete(timer);
+			clear(timer);
+		}) as typeof clearTimeout);
+		try {
+			const startedAt = Date.now();
+			const resultPromise = runQualityReview({
+				projectRoot,
+				signal: controller.signal,
+				qmSettleGraceMs: 60_000,
+				prepareRuntime: async ({ signal }) => {
+					started();
+					await new Promise<void>((resolve) =>
+						signal.addEventListener("abort", () => setTimeout(resolve, 5), {
+							once: true,
+						}),
+					);
+					throw new Error("setup cancelled");
+				},
+			});
+			await setupStarted;
+			controller.abort();
+			await resultPromise;
+			expect(Date.now() - startedAt).toBeLessThan(5000);
+			expect(timers.size).toBe(0);
+		} finally {
+			for (const timer of timers) clear(timer);
+			setSpy.mockRestore();
+			clearSpy.mockRestore();
+		}
+	});
+
+	it.each([
 		"abort",
 		"deadline",
 	] as const)("removes a base runtime whose setup settles after %s", async (cause) => {

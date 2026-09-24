@@ -337,15 +337,21 @@ export async function runQualityReview(
 		function observedGateState(
 			assessment: QualityReviewAssessment,
 		): string | undefined {
-			return analysisPreparationFailed
-				? "failed-to-run (analysis preparation failed)"
-				: assessment.gateState;
+			if (
+				analysisPreparationFailed &&
+				assessment.gateState !== "completed-bound" &&
+				assessment.gateState !== "Analysis audit gate state: fail"
+			)
+				return "failed-to-run (analysis preparation failed)";
+			return assessment.gateState;
 		}
 
 		function hostGateLinesFor(gateState: string | undefined): string[] {
 			if (analysisPreparationFailed)
 				return [
-					"Analysis audit gate state: failed-to-run (analysis preparation failed)",
+					gateState?.startsWith("Analysis audit gate state: ")
+						? gateState
+						: `Analysis audit gate state: ${gateState}`,
 				];
 			return gateState?.startsWith("Analysis audit gate state: fail")
 				? [gateState]
@@ -356,7 +362,9 @@ export async function runQualityReview(
 			assessment: QualityReviewAssessment,
 			gateLines: readonly string[],
 		): string[] {
-			return !analysisPreparationFailed && gateLines.length > 0
+			return gateLines.some(
+				(line) => line === "Analysis audit gate state: fail",
+			)
 				? [...(assessment.auditFindings ?? [])]
 				: [];
 		}
@@ -449,15 +457,20 @@ export async function runQualityReview(
 					]);
 				} finally {
 					if (!setupSettled) {
-						await Promise.race([
-							setupPromise.then(
-								() => undefined,
-								() => undefined,
-							),
-							new Promise<void>((resolve) =>
-								setTimeout(resolve, qmSettleGraceMs),
-							),
-						]);
+						let settleTimer: ReturnType<typeof setTimeout> | undefined;
+						try {
+							await Promise.race([
+								setupPromise.then(
+									() => undefined,
+									() => undefined,
+								),
+								new Promise<void>((resolve) => {
+									settleTimer = setTimeout(resolve, qmSettleGraceMs);
+								}),
+							]);
+						} finally {
+							if (settleTimer) clearTimeout(settleTimer);
+						}
 						runtimeSetupLive = !setupSettled;
 					}
 					if (timer) clearTimeout(timer);
@@ -812,7 +825,10 @@ export async function runQualityReview(
 				checks: hostCheckLines(),
 				gates: hostGateLines,
 				findings: hostFindingLines,
-				humanItems: hostHumanItems(gateState, gateEvidenceMissing),
+				humanItems: [
+					...hostHumanItems(gateState, gateEvidenceMissing),
+					...analysisPreparationHumanItems(),
+				],
 			});
 		}
 
@@ -886,6 +902,12 @@ export async function runQualityReview(
 			];
 		}
 
+		function analysisPreparationHumanItems(): string[] {
+			return analysisPreparationFailed
+				? ["Analysis preparation failed; human decision required."]
+				: [];
+		}
+
 		function mergeHostReport(host: {
 			checks: string[];
 			gates: string[];
@@ -902,6 +924,7 @@ export async function runQualityReview(
 					reason,
 					checks: host.checks,
 					gates: host.gates,
+					replaceGates: analysisPreparationFailed,
 					findings: host.findings,
 					humanItems: host.humanItems,
 					reviewed: hostReviewed,
