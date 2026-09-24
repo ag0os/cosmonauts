@@ -51,13 +51,26 @@ The QM run was `qm-1ff3fc33`. The clone's local `main` was set to `HEAD~1`, so t
 - **Verdict:** **failed**. The index was unavailable, so the verdict was derived from the report sections. Lifecycle was finalized, and the workspace was **removed**.
 - **Checkout before vs after:** HEAD, refs, `.git/index`, the stash and every file hash were identical. The only difference was 26 added files under `missions/sessions/chain/runs/`.
 
+## Run 3: final HEAD `fc2f7f8`, narrow range, base `8bb53a8` (post-TASK-762..765)
+
+The QM run was `qm-c3626a6e`. The same dirty state was re-applied: an unstaged edit, a staged edit and an untracked file. The range was TASK-765 plus the dirty edits, and the base configures `qualityReview`.
+
+- **Verdict: failed.** Reason: `Reviewer reviewer evidence rejected: final assistant message error: No API key for provider: anthropic`.
+  - The configured diverse generalist `anthropic/claude-sonnet-5` has no API key in Pi on this machine.
+  - The TASK-762/765 final-message evidence rule rejected the errored session. This is closure-review-1 HIGH-1 **fixed and confirmed on live models**: in run 2, the same provider failure was accepted as `"reviewer completed"`.
+- **Host checks:** they did not run, because the assessment failed its integrity check first. They are recorded as `not run`, as D-026 orders it.
+- **Lifecycle:** finalized, and the workspace disposition was **removed**.
+- **Checkout before vs after:** HEAD, refs, `.git/index`, the stash and every file hash were identical. The only change was 28 added files under `missions/sessions/chain/runs/`.
+- **Operational follow-up (for the user):** a real QM run on this repository cannot pass its panel until Pi has an Anthropic API key, or `qualityReview.diverseReviewerModel` names a model this machine can reach. This is a configuration matter. The product fails visibly and correctly.
+
 ## Conclusions
 
-- **INV-001 held on both real runs.** The dirty checkout was byte-identical before and after, apart from the ignored run artifacts. That covers HEAD, refs, the index, the stash, and every tracked, untracked and ignored file.
-- **INV-003 held.** A complete verdict persisted on both exits: a deadline failure and a report failure.
-- **The workspace lifecycle was removed on both runs.**
-- **The production path exercised:** host checks after sealing, base-owned config, not-configured items, gate-owned items and fail-safe carry-over. It also reproduced HIGH-1 on real models.
+- **INV-001 held on all three real runs.** The dirty checkout was byte-identical before and after, apart from the ignored run artifacts. That covers HEAD, refs, the index, the stash, and every tracked, untracked and ignored file.
+- **INV-003 held.** A complete verdict persisted on all three exits: a deadline failure, a report failure and a reviewer-evidence failure.
+- **The workspace lifecycle was removed on all three runs.**
+- **The production path exercised:** host checks after sealing, base-owned config, not-configured items, gate-owned items and fail-safe carry-over. Run 2 reproduced HIGH-1 on real models; run 3 confirms the fix.
 
 **Follow-ups, not blocking:**
+- configure an Anthropic key in Pi, or a reachable `diverseReviewerModel`, before relying on real QM runs here;
 - set a larger `qualityReview.assessmentTimeoutMs` for whole-branch reviews of this repository;
 - the known suite flakes make a host `test` check fail under load.
