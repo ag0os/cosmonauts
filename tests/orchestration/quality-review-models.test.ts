@@ -5,6 +5,10 @@ import {
 	modelFamily,
 	qualityReviewPanelModel,
 } from "../../lib/orchestration/quality-review-models.ts";
+import {
+	qualityReviewFindingLines,
+	renderQualityReviewReport,
+} from "../../lib/orchestration/quality-review-report.ts";
 
 describe("quality review model policy", () => {
 	it("normalizes shipped aliases and project extensions", () => {
@@ -194,5 +198,85 @@ describe("quality review model policy", () => {
 			findings: ["F-1 dismissed by reviewer"],
 		});
 		expect(result.issues.join(" ")).toContain("F-1");
+	});
+
+	it("calibrates a continuation priority without losing finding details", () => {
+		const entry =
+			"PF-2\n  priority: P1\n  file: lib/a.ts:12\n  fix: bound the scan";
+		const result = calibrateReviewerFindings({
+			materials: "no measurement",
+			reviewers: [
+				{ lens: "performance-reviewer", text: "- id: PF-2\n  priority: P2" },
+			],
+			findings: qualityReviewFindingLines(
+				renderQualityReviewReport({
+					verdict: "not-ready",
+					reason: "review",
+					findings: [entry],
+				}),
+			),
+		});
+		expect(result.findings).toEqual([entry.replace("P1", "P2")]);
+		expect(result.issues.join(" ")).toContain("capped at P2");
+	});
+
+	it("carries a finding whose ID appears only in another entry", () => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [{ lens: "reviewer", text: "- id: F-1\n  priority: P2" }],
+			findings: ["F-2 P2: similar to F-1"],
+		});
+		expect(result.findings).toContain(
+			"F-1 open: reviewer finding omitted from QM report.",
+		);
+	});
+
+	it("ignores a task token before an incidental finding ID", () => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [],
+			findings: ["TASK-747 regression: F-001 [P1]"],
+		});
+		expect(result.issues).toEqual([]);
+	});
+
+	it("accepts out-of-range entries and independently evidenced dismissals", () => {
+		const result = calibrateReviewerFindings({
+			materials: "fixed in lib/a.ts",
+			reviewers: [
+				{ lens: "reviewer", text: "- id: F-1\n  priority: P2" },
+				{
+					lens: "security-reviewer",
+					text: "- id: F-1\n  closureEvidence: fixed in lib/a.ts",
+				},
+			],
+			findings: [],
+			observations: ["F-1 dismissed; closureEvidence: fixed in lib/a.ts"],
+		});
+		expect(result.findings).toEqual([]);
+		expect(result.issues).toEqual([]);
+	});
+
+	it("caps unsupported performance P0", () => {
+		const result = calibrateReviewerFindings({
+			materials: "no measurement",
+			reviewers: [
+				{ lens: "performance-reviewer", text: "- id: PF-1\n  priority: P0" },
+			],
+			findings: ["PF-1 P0 costly path"],
+		});
+		expect(result.findings).toEqual(["PF-1 P2 costly path"]);
+	});
+
+	it("raises an unsupported out-of-range performance P0 for a human decision", () => {
+		const result = calibrateReviewerFindings({
+			materials: "no measurement",
+			reviewers: [
+				{ lens: "performance-reviewer", text: "- id: PF-1\n  priority: P0" },
+			],
+			findings: [],
+			observations: ["PF-1 P0 pre-existing slow path"],
+		});
+		expect(result.issues.join(" ")).toContain("human decision required");
 	});
 });

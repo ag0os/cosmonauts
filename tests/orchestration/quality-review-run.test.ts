@@ -1296,24 +1296,72 @@ describe("quality review durable lifecycle", () => {
 
 	// @cosmo-behavior plan:qm-chain-safety#B-010
 	it.each([
-		true,
-		false,
-	])("reports unconfigured diversity once (indexed: %s)", async (indexed) => {
-		const projectRoot = await hostHumanItemProject("model not configured");
+		["out-of-range finding", "F-1 P2 pre-existing issue", false],
+		[
+			"out-of-range dismissal",
+			"F-1 dismissed; closureEvidence: fixed in lib/a.ts",
+			false,
+		],
+		[
+			"in-range dismissal",
+			"F-1 dismissed; closureEvidence: fixed in lib/a.ts",
+			true,
+		],
+	] as const)("reaches ready with an %s", async (_case, entry, inFindings) => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "anthropic/reviewer",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+				},
+			}),
+		);
+		await commitBaseConfig(projectRoot);
+		await mkdir(join(projectRoot, "lib"));
+		await writeFile(join(projectRoot, "lib", "a.ts"), "// fixed in lib/a.ts\n");
 		const result = await runQualityReview({
 			projectRoot,
 			hostChecks: true,
-			execute: async () => {
-				const report = renderQualityReviewReport({
-					verdict: "ready",
-					reason: "clear",
-					gates: ["audit passed"],
-				});
+			execute: async ({ runId, artifactSink }) => {
+				for (const [lens, fullText, provider] of [
+					["reviewer", "- id: F-1\n  priority: P2", "anthropic"],
+					[
+						"security-reviewer",
+						"- id: F-1\n  closureEvidence: fixed in lib/a.ts",
+						"openai-codex",
+					],
+				] as const)
+					await artifactSink.writeReviewer({
+						runId,
+						lens,
+						spawnId: `spawn-${lens}`,
+						sessionId: `session-${lens}`,
+						resolvedRole: `coding/${lens}`,
+						resolvedModel: { provider, id: lens },
+						outcome: "success",
+						digest: createHash("sha256").update(fullText).digest("hex"),
+						fullText,
+					});
 				return {
-					markdown: indexed
-						? report
-						: report.replace(/<!-- COSMO_QM_REPORT [\s\S]*? -->/, ""),
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: ["audit passed"],
+						findings: inFindings ? [entry] : [],
+						observations: inFindings ? [] : [entry],
+					}),
 					gateState: "completed-bound",
+					implementerModel: { provider: "openai-codex", id: "worker" },
+					requiredLenses: ["reviewer", "security-reviewer"],
 				};
 			},
 		});
@@ -1331,13 +1379,12 @@ describe("quality review durable lifecycle", () => {
 			),
 			"utf8",
 		);
-		const visible =
-			report.split("## Human decisions\n")[1]?.split("\n## ")[0] ?? "";
-		expect(
-			visible.match(/Not configured: qualityReview\.diverseReviewerModel/g),
-		).toHaveLength(1);
+		expect(report).toContain("Verdict: ready");
+		expect(report).toContain(`- ${entry}`);
+		expect(report).not.toContain("carried forward as open");
 	});
 
+	// @cosmo-behavior plan:qm-chain-safety#B-010
 	it.each([
 		[
 			"base alias",
@@ -1422,6 +1469,7 @@ describe("quality review durable lifecycle", () => {
 	it.each([
 		["renumbered", "PF-99 P1 slow path", true, "PF-99 P1", "unmapped P1"],
 		["raised", "PF-2 P1 slow path", true, "PF-2 P2", "capped at P2"],
+		["P0", "PF-2 P0 slow path", true, "PF-2 P2", "capped at P2"],
 		["unindexed", "PF-2 P1 slow path", false, "PF-2 P2", "capped at P2"],
 		["omitted", "", true, "PF-2 open", "carried forward as open"],
 	] as const)("calibrates %s performance findings in the final report", async (_name, finding, indexed, visible, evidence) => {

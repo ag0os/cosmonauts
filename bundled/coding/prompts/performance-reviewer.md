@@ -157,7 +157,7 @@ If there are no findings (either `Overall: no findings in scope`, or `Overall: c
 (none)
 ```
 
-A P1 requires measured or reproduced evidence from the captured materials: include `measuredCost:` followed by an exact quotation containing the input and observed numeric cost. A lens assertion, inferred complexity, or later host-check duration is insufficient. Without that citation, grade at most P2. Do not close or dismiss a finding using only your own lens evidence; request independent confirmation with `closureEvidence:` and a finding ID.
+A P0 or P1 requires measured or reproduced evidence from the captured materials: include `measuredCost:` followed by an exact quotation containing the input and observed numeric cost. A lens assertion, inferred complexity, or later host-check duration is insufficient. Without that citation, grade at most P2. Do not close or dismiss a finding using only your own lens evidence; request independent confirmation with `closureEvidence:` and a finding ID.
 
 ### Severity levels
 

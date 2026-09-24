@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { calibrateReviewerFindings } from "../../lib/orchestration/quality-review-models.ts";
 import {
 	applyReviewerCalibration,
 	assessQualityReviewReport,
 	indexedQualityReviewReport,
+	qualityReviewFindingLines,
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
 
@@ -77,5 +79,37 @@ describe("quality review reports", () => {
 		);
 		expect(result).toContain("PF-1 P2 unsupported");
 		expect(result).toContain("PF-10 P1 measured");
+	});
+
+	it.each([
+		true,
+		false,
+	])("rewrites every line of a capped entry (indexed: %s)", (indexed) => {
+		const entry =
+			"PF-2\n  priority: P1\n  file: lib/a.ts:12\n  fix: bound the scan";
+		const rendered = renderQualityReviewReport({
+			verdict: "not-ready",
+			reason: "finding",
+			findings: [entry],
+		});
+		const markdown = indexed
+			? rendered
+			: rendered.replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, "");
+		const calibrated = calibrateReviewerFindings({
+			materials: "no measurement",
+			reviewers: [
+				{ lens: "performance-reviewer", text: "- id: PF-2\n  priority: P2" },
+			],
+			findings: qualityReviewFindingLines(markdown),
+		});
+		const amended = applyReviewerCalibration(
+			markdown,
+			calibrated.findings,
+			calibrated.issues,
+		);
+		expect(amended).toContain(
+			"- PF-2\n  priority: P2\n  file: lib/a.ts:12\n  fix: bound the scan",
+		);
+		expect(amended).not.toContain("priority: P1");
 	});
 });

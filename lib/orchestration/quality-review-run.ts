@@ -53,6 +53,7 @@ import {
 	indexedQualityReviewReport,
 	type QualityReviewVerdict,
 	qualityReviewFindingLines,
+	qualityReviewObservationLines,
 	renderQualityReviewReport,
 } from "./quality-review-report.ts";
 import { reviewerEvidenceModels } from "./quality-review-seal.ts";
@@ -865,7 +866,11 @@ export async function runQualityReview(
 				reason = diversityIssue;
 			}
 			if (
-				hostBlocksReady(gateState, hostHumanDecisionItems) &&
+				hostBlocksReady(
+					gateState,
+					hostHumanDecisionItems,
+					calibration.openFindings,
+				) &&
 				verdict !== "failed"
 			) {
 				verdict = "not-ready";
@@ -884,6 +889,7 @@ export async function runQualityReview(
 		async function calibrateHostReport(): Promise<{
 			humanItems: string[];
 			findings: string[];
+			openFindings: boolean;
 		}> {
 			const reviewerTexts = await Promise.all(
 				sink
@@ -901,6 +907,7 @@ export async function runQualityReview(
 					: "",
 				reviewers: reviewerTexts,
 				findings: reportedFindings,
+				observations: qualityReviewObservationLines(markdown),
 			});
 			const calibrationHumanItems = calibration.issues.filter((issue) =>
 				issue.startsWith("Finding "),
@@ -919,24 +926,26 @@ export async function runQualityReview(
 			return {
 				humanItems: calibrationHumanItems,
 				findings: [...calibrationFindings, ...carriedFindings],
+				openFindings: calibration.openFindings,
 			};
 		}
 
 		function hostBlocksReady(
 			gateState: string | undefined,
 			hostHumanDecisionItems: readonly string[],
+			openFindings: boolean,
 		): boolean {
 			return (
 				gateState !== "completed-bound" ||
 				checkResults.length !== (baseQualityReview?.checks?.length ?? 0) ||
 				hostHumanDecisionItems.length > 0 ||
-				hostResultsBlockReady()
+				hostResultsBlockReady(openFindings)
 			);
 		}
 
-		function hostResultsBlockReady(): boolean {
+		function hostResultsBlockReady(openFindings: boolean): boolean {
 			return (
-				hasQualityReviewSectionContent(markdown, "Findings") ||
+				openFindings ||
 				hasQualityReviewSectionContent(markdown, "Human decisions") ||
 				gateOwnedFiles.length > 0 ||
 				checkResults.some((check) => check.exitCode !== 0 || check.timedOut)

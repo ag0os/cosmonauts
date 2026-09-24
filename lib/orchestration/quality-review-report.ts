@@ -51,18 +51,12 @@ export function applyReviewerCalibration(
 	const indexed = indexedQualityReviewReport(markdown);
 	if (indexed) return renderQualityReviewReport({ ...indexed, findings });
 	let amended = markdown;
-	for (const issue of issues) {
-		const id = issue.match(/^Performance (\S+)/)?.[1];
-		if (!id) continue;
-		const exactId = new RegExp(
-			`\\b${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-		);
-		amended = amended
-			.split("\n")
-			.map((line) =>
-				exactId.test(line) ? line.replace(/\bP1\b/g, "P2") : line,
-			)
-			.join("\n");
+	for (const [index, original] of qualityReviewFindingLines(
+		markdown,
+	).entries()) {
+		const replacement = findings[index];
+		if (replacement && replacement !== original)
+			amended = amended.replace(`- ${original}`, `- ${replacement}`);
 	}
 	return amended;
 }
@@ -204,12 +198,25 @@ export function hasQualityReviewSectionContent(
 
 /** Read visible finding bullets even when the optional machine index is absent. */
 export function qualityReviewFindingLines(markdown: string): string[] {
-	const body = visibleSectionBody(markdown, "Findings");
+	return qualityReviewSectionEntries(markdown, "Findings");
+}
+
+export function qualityReviewObservationLines(markdown: string): string[] {
+	return qualityReviewSectionEntries(markdown, "Out-of-range observations");
+}
+
+function qualityReviewSectionEntries(
+	markdown: string,
+	heading: string,
+): string[] {
+	const body = visibleSectionBody(markdown, heading);
 	if (!body || body === "- None recorded.") return [];
-	return body
-		.split("\n")
-		.filter((line) => /^-\s+/.test(line))
-		.map((line) => line.replace(/^-\s+/, ""));
+	const entries: string[] = [];
+	for (const line of body.split("\n")) {
+		if (/^-\s+/.test(line)) entries.push(line.replace(/^-\s+/, ""));
+		else if (entries.length > 0) entries[entries.length - 1] += `\n${line}`;
+	}
+	return entries;
 }
 
 /** Keep section prose intact when the optional machine index is unavailable. */
