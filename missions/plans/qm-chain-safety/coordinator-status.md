@@ -56,7 +56,11 @@ TASK-726 and TASK-728 depend on TASK-729..738.
 - **Rulings applied (2026-09-24):** D-027..D-030 recorded (`c29255c`). Baselines re-anchored at `main` (`3ca0291`). With the baselines honest, the branch's own changed-scope audit fails on **introduced** debt: 31 complexity findings (`quality-review-run.ts` `execute` is cyclomatic 209), 8 dead-code issues and 10 clone groups. The refresh script analyzes `--root`, not `--base`.
 - **TASK-739 done** (`0211d79`): the refresh script analyzes a temporary checkout of `--base`, and the docs follow D-029.
 - **TASK-740 partial** (`661f98c`, tests 3243/3243): introduced dead code is gone, but 30 complexity findings and 8 clone groups remain. It is rescoped into TASK-740 (quality-review modules), TASK-741 (tools and session plumbing) and TASK-742 (the rest; the branch audit must pass).
-- **Running:** Drive TASK-740 → TASK-741 → TASK-742.
+- **TASK-740..742 done** (`351bf09`, `473178f`, `0b5e7d1`, `7e75231`). The coordinator verified TASK-742, whose only "partial" was the runner-args artifact. The branch's changed-scope audit vs `main` passes (0/0/0). Gates: typecheck 0, tracked lint 0, tests 3244/3244.
+- **Mid-branch review 7** (under D-027), both DO-NOT-SHIP-YET, converging with no HIGH. Files: `mid-review-7-codex.md` (verbatim) and `mid-review-7-claude.md` (condensed).
+  - **Remaining findings:** `analysisPrepare` failure aborts the review; lost prep lines; setup cancel always retains the workspace; missing D-028 report disclosure; untested user-source exclusion; a seal test that cannot fail.
+  - **Accepted:** Claude LOW-2 (the registry parser rejects array shapes; stricter, and no committed file is affected).
+- **Running:** Drive TASK-743, then mid-branch review 8.
 - **Lint caveat:** `bun run lint` reports one error, in Shepherd's gitignored backup under `.shepherd/backups/`. Tracked content passes. I asked Shepherd to move the backup out of the repo.
 - **Next steps for the successor:**
   1. Run mid-branch review 7 (after TASK-739/740). The prompt must state the D-027 threat model: hostile-change-only routes are residual limits, not findings to remediate on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
