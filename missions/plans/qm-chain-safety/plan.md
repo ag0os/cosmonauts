@@ -532,6 +532,21 @@ Investigation evidence gathered before design:
       check argv, and a change to the block is still a gate-owned human
       item. The operator note carries only caller-authored text, with the
       source and host-store paths replaced.
+    - **The change cannot choose what reviews it or what the host imports.**
+      *(Amended on record 2026-09-24 after mid-review-5:)* The QM runtime,
+      and so the QM and panel definitions, prompts, project domains, local
+      packages and config, is built from the framework plus the review
+      base revision's project files, never from the reviewed clone. Review
+      sessions still run with the clone as `cwd`. Changes to what configured
+      checks execute are gate-owned human items that block `ready`. That
+      covers `package.json` scripts named by a configured check or prepare
+      argv, and any path listed in the base-owned
+      `qualityReview.gateOwnedPaths`. Review materials are digested when
+      written and verified before the QM starts. A mismatch is a
+      report-integrity failure. Reviewer artifact refs are published
+      through the StepResult only, with no in-progress `artifact_written`
+      event. This supersedes Design §4's "each write … emits the existing
+      `artifact_written` event" for reviewer files.
     - **Reviewer prompts serve both callers.** The specialist prompts keep
       their review dimensions. When host materials are present, they read
       scope from the materials. When spawned directly (`cody`, `cosmo`), they

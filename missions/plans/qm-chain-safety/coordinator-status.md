@@ -44,7 +44,14 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
   - **New findings:** the operator note leaks the path and carries generated boilerplate; an abandoned write discards the report and its late event can still land; normal-exit group leak; lost `run_*` terminal event (a QM branch in generic runtime); incomplete host audit findings; triage of capability markdown; removal timeout.
   - **Structural (codex):** the `qualityReview` config was read from the reviewed clone.
   - **Dispositions:** D-025 amended (base-owned config, sanitized caller-only note). TASK-736 covers all of it. The residual goes to the human as N-004.
-- **Running:** Drive TASK-736, then mid-branch review 5.
+- **Done:** TASK-736 `a7136e0` (state `971f76a`). Gates: typecheck 0, lint 0, tests 3226/3226.
+- **Mid-branch review 5**, both DO-NOT-SHIP-YET. Files: `mid-review-5-codex.md` (verbatim) and `mid-review-5-claude.md` (condensed). All round-4 findings are RESOLVED.
+  - **Remaining class:** a change can choose what the host executes or loads.
+    - codex: `package.json` scripts under base argv.
+    - Claude H-1: the QM runtime is built from the reviewed clone, so the change's project domains are imported into the host and can override reviewer definitions (probed).
+    - Also: materials can be rewritten during checks, plus LOWs.
+  - **Dispositions:** D-025 amended (base-owned review runtime, executed-code gate items, materials digests, reviewer refs via StepResult). TASK-737 covers all of it.
+- **Running:** Drive TASK-737, then mid-branch review 6.
 - **Blocked on:** N-001 (below) blocks closure only, not the next stages.
 
 ### Spec-to-backlog history
@@ -96,7 +103,13 @@ I will not touch `~/.cosmonauts` myself.
 
 **Finding.** This is codex mid-review-4's structural observation, confirmed by the coordinator. The QM host runs `qualityReview.prepare` (for example `bun install`) and `checks` (for example `bun run test`) in the private clone. Those processes execute the reviewed change's own code (tests, install scripts) as ordinary host processes with the operator's filesystem authority. A reviewed test that writes to an absolute path can therefore change the operator checkout. INV-001 says a QM run cannot change the reviewed checkout "by construction". The spec excludes an OS sandbox.
 
-**Mitigation already in progress (derived, D-025 amendment).** The check argv is now base-owned (TASK-736), so a change cannot pick its own commands. The reviewed code the base commands execute is the residual.
+**Mitigation already in progress (derived, D-025 amendments).**
+- The check argv is base-owned (TASK-736).
+- The QM runtime (definitions, prompts, project domains) is base-owned (TASK-737).
+- Changes to check-referenced scripts and runner files are gate-owned human items that block `ready` (TASK-737).
+- Review materials are digest-verified before the QM reads them (TASK-737).
+
+What remains is only that the base commands execute the reviewed code (tests, install hooks) with host authority.
 
 **Options:**
 - **A (recommended).** Record an INV-001 interpretation beside the Intent, like D-021. INV-001's by-construction guarantee covers the QM, its agents and the host code. Host-run project checks execute the reviewed change's code with the operator's own authority, the same trust as the operator running those tests, and the report says so explicitly. Nothing else changes.
