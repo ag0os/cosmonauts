@@ -4,7 +4,7 @@ title: >-
   reviews
 status: active
 createdAt: '2026-09-23T20:56:11.879Z'
-updatedAt: '2026-09-23T22:53:12.000Z'
+updatedAt: '2026-09-24T03:13:09.000Z'
 ---
 
 ## Overview
@@ -53,9 +53,10 @@ Both channels agreed on the high-severity gaps:
 - the ordering removed QM authority before its replacements existed.
 
 Behaviors now use the current `plan-format.md` shape: Source, Observer, Entry
-point, Outcome. Five questions on ratified ground are drafted as H-001..H-005 in
-the Decision Log. Stages that depend on them are marked; the other stages do
-not wait.
+point, Outcome. Five questions on ratified ground were drafted as H-001..H-005 and ruled by the
+human on 2026-09-23 as recommended (D-018..D-022). The spec's AC-003, AC-015
+and AC-016 are amended in place, and the INV-001 interpretation is recorded
+beside the Intent.
 
 ## Architecture Context
 
@@ -138,7 +139,7 @@ Investigation evidence gathered before design:
   - Decision: accepted as recommended in `.shepherd/work/todo/qm-chain-safety/investigation.md` §5:
     1. The QM is review-only. Remediation goes through tasks, Drive and independent review.
     2. Full reports go to run-scoped artifacts, with a tracked plan-scoped summary on every exit. The shared `missions/reviews/*-round-N.md` files are retired to an archive.
-    3. Isolation is a detached worktree now, with runner support after it. An OS sandbox is deferred.
+    3. Isolation is a detached worktree now, with runner support after it. An OS sandbox is deferred. *(Superseded 2026-09-23 by D-020: "an isolated detached checkout (a private local clone)".)*
     4. Changed-scope gates fail only on introduced findings, using the committed baselines. The doc conflict between `docs/fallow-exceptions.md` and `analysis-debt-paydown` gets resolved.
     5. A new suppression directive needs an exception-registry entry, and only a human adds one.
     6. A performance P1 needs a measured or reproduced cost. A lens is never the only judge that closes its own finding.
@@ -180,7 +181,7 @@ Investigation evidence gathered before design:
       rejected by review-2 PR-004 and PR-007. Aliases are still imported
       before they are refused, and the owner package is being externalized.
     - Instructions only: rejected by INV-001.
-  - Why: INV-001 outranks availability. The bootstrap boundary is H-004.
+  - Why: INV-001 outranks availability. The bootstrap boundary is D-021.
   - Decided by: planner-proposed, 2026-09-23; revised by coordinator after review, 2026-09-23
   - Supersedes: the data-only `bundled/coding/review-launch-policy.json` preflight in the 2026-09-23 D-003
 
@@ -216,7 +217,7 @@ Investigation evidence gathered before design:
       run store is given to a review session.
   - Alternatives:
     - A linked detached `git worktree`: it shares refs, stash, hooks and config
-      with the operator repository, which INV-001 forbids changing (H-002).
+      with the operator repository, which INV-001 forbids changing (D-020).
     - A snapshot commit in the source repository: it writes the source object
       database.
     - A plain directory copy: no history for base comparison.
@@ -228,7 +229,7 @@ Investigation evidence gathered before design:
   - Decided by: planner-proposed, 2026-09-23; revised by coordinator after
     review (DESIGN-ATTACK-001/002/004, FEASIBILITY-001, review-2 PR-002, PR-003,
     PR-006), 2026-09-23. Replacing the decided "detached worktree" mechanism
-    is H-002.
+    is D-020.
 
 - **D-005 - The generalist runs on a configured model of a different family**
   - Decision:
@@ -244,7 +245,7 @@ Investigation evidence gathered before design:
       records it for every reviewer.
     - The same family, an unresolvable model, or a substituted model fails the
       review visibly.
-    - The unconfigured outcome is H-003.
+    - The unconfigured outcome is D-019.
   - Alternatives:
     - Trust reviewer markdown: forgeable.
     - A provider-to-family map with no default: every existing project would
@@ -262,7 +263,7 @@ Investigation evidence gathered before design:
       `raw-final.md`, and one immutable `reviewers/<lens>.md` per actual panel
       member.
     - An active plan also gets a new tracked file,
-      `missions/plans/<planSlug>/qm-runs/<runId>.md` (subject to H-001).
+      `missions/plans/<planSlug>/qm-runs/<runId>.md` (subject to D-018).
     - Only host code writes these paths. `final.md` and the plan summary are
       first written as a conservative, complete failure record, then atomically
       replaced before the QM step returns.
@@ -384,7 +385,7 @@ Investigation evidence gathered before design:
       add or change a command.
     - Check durations are the measured-cost evidence available to the
       performance lens. Without such evidence its findings are at most P2.
-    - The unconfigured outcome is H-003.
+    - The unconfigured outcome is D-019.
   - Alternatives:
     - Pi's `verification` tool set: its bash is unrestricted, and a shell can
       launch the top-level CLI and bypass AC-002 (review-1 PR-003).
@@ -471,89 +472,74 @@ Investigation evidence gathered before design:
     erase it.
   - Decided by: coordinator, record, 2026-09-23
 
-- **H-001 - Needs the human: AC-003 byte identity vs the AC-007 tracked plan summary** *(halt-and-escalate draft, 2026-09-23)*
-  - Collision: AC-003 requires the checkout's untracked files to be
-    byte-identical after a QM run, while AC-007 (and D-001 item 2) requires a
-    new tracked plan summary under that checkout on every exit. The summary is
-    a new untracked file until committed. The run artifacts under
-    `missions/sessions/` are gitignored, so AC-003's list does not cover them
-    and they are not part of the collision.
-  - Options:
-    - (A, recommended) Amend AC-003 to exempt exactly one path, the
-      host-written new file `missions/plans/<slug>/qm-runs/<runId>.md`, which
-      never overwrites an existing file. Everything else stays byte-identical,
-      and no agent receives the path.
-    - (B) Keep AC-003 literal and move the plan summary out of the checkout.
-      That amends AC-007 and D-001 item 2.
-  - Blocks: Stage 4, plan-summary part only.
+- **D-018 - AC-003 exempts exactly the host-written plan summary** *(from H-001)*
+  - Decision: option A. AC-003 exempts only the host-written new file
+    `missions/plans/<slug>/qm-runs/<runId>.md`, which never overwrites and is
+    never visible to an agent. Everything else stays byte-identical. The
+    ignored run artifacts were never covered by AC-003. The spec's AC-003 is
+    amended in place.
+  - Alternatives: (B) keep AC-003 literal and move the summary out of the
+    checkout, amending AC-007 and D-001 item 2.
+  - Why: INV-001 and INV-003 both hold. The reviewed state is untouched and
+    the verdict is durable.
+  - Decided by: human, 2026-09-23 (relayed by Shepherd)
+  - Supersedes: AC-003 letter without exception; the H-001 draft
 
-- **H-002 - Needs the human: a private clone instead of the decided "detached worktree"** *(halt-and-escalate draft, 2026-09-23)*
-  - Collision: D-001 item 3 names a detached worktree. A linked `git worktree`
-    shares refs, stash, hooks and config with the operator repository.
-    INV-001 forbids the QM run from changing refs, and the host-run checks
-    execute project test code that can run `git`. Two ratified pieces
-    collide, so an agent may not choose.
-  - Options:
-    - (A, recommended) Amend D-001 item 3 to "an isolated detached checkout (a
-      private local clone)", as D-004 describes.
-    - (B) Keep the linked worktree and accept that shared refs, stash and hooks
-      are reachable from host-run checks. That narrows INV-001.
-  - Blocks: Stage 5.
+- **D-019 - Unconfigured `qualityReview` produces visible not-configured items** *(from H-003)*
+  - Decision: option A. Unconfigured `checks` or `diverseReviewerModel` yields
+    a visible "not configured" item plus a human-decision item naming the
+    missing key, and the verdict cannot be `ready`. Nothing is silent and
+    nothing is refused. This repository configures both. The spec's AC-016 is
+    amended in place.
+  - Alternatives: (B) refuse with setup guidance; (C) model-proposed check
+    commands, which weaken INV-001.
+  - Why: INV-001 (no model-chosen argv) and INV-003 (visible outcome).
+  - Decided by: human, 2026-09-23 (relayed by Shepherd)
+  - Supersedes: the H-003 draft; the unqualified letter of AC-016
 
-- **H-003 - Needs the human: projects without `qualityReview` config** *(halt-and-escalate draft, 2026-09-23)*
-  - Collision: AC-016 says the QM's project checks "keep working". Today the
-    QM discovers checks from project artifacts through a shell-capable
-    verifier. D-012 makes checks exact configured argv, and D-005 makes the
-    diverse reviewer model configured. A project without the new config block
-    has neither.
-  - Options:
-    - (A, recommended) Unconfigured checks, or an unconfigured diverse model,
-      produce a visible "not configured" item in the report plus a
-      human-decision item naming the missing key, and the verdict cannot be
-      `ready`. Nothing is skipped silently and nothing is refused. This
-      repository configures both. It narrows the letter of AC-016 for
-      unconfigured projects.
-    - (B) Refuse the QM in unconfigured projects, with setup guidance.
-    - (C) Let the QM model propose check commands that the host runs. That
-      reintroduces model-chosen argv and weakens INV-001.
-  - Blocks: Stage 6 and Stage 7, unconfigured-path behavior only.
+- **D-020 - Isolation is a private local clone, not a linked worktree** *(from H-002)*
+  - Decision: option A. D-001 item 3 now reads "an isolated detached checkout
+    (a private local clone)", and D-004 is the mechanism.
+  - Alternatives: (B) a linked worktree sharing refs, stash and hooks with the
+    operator repository, which would narrow INV-001.
+  - Why: INV-001 names refs, and a linked worktree shares them.
+  - Decided by: human, 2026-09-23 (relayed by Shepherd)
+  - Supersedes: D-001 item 3's "detached worktree" wording; the H-002 draft
 
-- **H-004 - Needs the human: does INV-001's "QM run" include the runtime bootstrap?** *(halt-and-escalate draft, 2026-09-23)*
-  - Collision: A standalone QM is resolved only after the Cosmonauts runtime
-    has bootstrapped in the operator checkout. Bootstrap imports the project's
-    active `domain.ts`, agent and chain modules, the same as every Cosmonauts
-    command. Review-2 PR-004 showed a pre-import classification cannot be made
-    airtight, because an alias is known only after import.
-  - Options:
-    - (A, recommended) Read INV-001's "QM run" as starting at the QM launch
-      boundary. The framework bootstrap common to every command is outside it,
-      and the snapshot is taken before any QM or panel session exists (D-003).
-    - (B) Keep the stricter reading, which needs a CLI bootstrap redesign to
-      classify QM requests before any project module loads. That is a
-      separate, larger plan.
-  - Blocks: Stage 5, standalone-launch part.
+- **D-021 - INV-001's "QM run" starts at the QM launch boundary** *(from H-004)*
+  - Decision: option A. The framework bootstrap that every command performs is
+    outside the QM run, and the snapshot is taken before any QM or panel
+    session exists (D-003). The spec records this interpretation beside the
+    Intent.
+  - Alternatives: (B) the stricter reading, which needs a separate
+    CLI-bootstrap redesign.
+  - Why: INV-001 as ratified; it keeps a pre-import classifier out of scope,
+    since that cannot be made airtight (review-2 PR-004).
+  - Decided by: human, 2026-09-23 (relayed by Shepherd)
+  - Supersedes: the H-004 draft
 
-- **H-005 - Needs the human: what "nothing links to their old paths" covers in AC-015** *(halt-and-escalate draft, 2026-09-23)*
-  - Collision: A tracked search for the eleven old paths also hits files that
-    record history and are pinned against editing:
-    - the frozen fixture `tests/fixtures/knowledge-seed-inventory.json`, which
-      a test already excludes from legacy-path searches;
-    - byte-pinned curated records under `knowledge/`, where editing needs a
-      promotion-ledger `curatedRecords` round plus a corpus-digest re-pin;
-    - evidence reports such as `missions/reviews/qm/framework-health-incidents.md`
-      and `missions/reviews/improvements/living-memory-fidelity.md`;
-    - archived plans.
-  - Options:
-    - (A, recommended) "Nothing links" covers live surfaces: prompts, skills,
-      docs, code, tests other than frozen fixtures, active plans and
-      `ROADMAP.md`. Frozen fixtures, curated knowledge records, evidence
-      reports and archived plans keep their historical text, and a
-      `missions/archive/reviews/qm/shared-rounds/README.md` maps each old path
+- **D-022 - AC-015 "nothing links" covers live surfaces** *(from H-005)*
+  - Decision: option A.
+    - In scope: prompts, skills, docs, code, tests other than frozen fixtures,
+      active plans and `ROADMAP.md`.
+    - Kept as historical text: frozen fixtures, curated `knowledge/` records,
+      evidence reports and archived plans.
+    - `missions/archive/reviews/qm/shared-rounds/README.md` maps each old path
       to its new home.
-    - (B) Rewrite every occurrence, including curated records (a ledger round
-      plus a digest re-pin) and the frozen fixture (a human ruling on the
-      fixture).
-  - Blocks: Stage 8, link-repair part only.
+    - The spec's AC-015 is amended in place.
+  - Alternatives: (B) rewrite every occurrence, including a ledger round and
+    digest re-pin for curated records, and a fixture ruling.
+  - Why: history stays byte-stable, and live readers are redirected.
+  - Decided by: human, 2026-09-23 (relayed by Shepherd)
+  - Supersedes: the H-005 draft; AC-015's unqualified "nothing links"
+
+- **D-023 - Execution-liveness registers this plan's QM descendants when it rebases** *(acknowledged)*
+  - Decision: when `execution-liveness` rebases onto this plan, its plan gets
+    an amend-on-record entry that registers the QM launcher's host-run
+    prepare and check processes and the private clone as descendants of the
+    outer QM attempt (R-008).
+  - Why: this keeps a single owner and descendant model.
+  - Decided by: human acknowledgement, 2026-09-23 (relayed by Shepherd)
 
 ## Behaviors
 
@@ -584,7 +570,7 @@ Investigation evidence gathered before design:
   - After the run, the operator checkout's HEAD, refs, `.git/index` bytes,
     tracked files, uncommitted edits and untracked files are byte-identical to
     before. That holds even when the stat cache was stale at capture. The only
-    exception is the H-001 plan summary.
+    exception is the D-018 plan summary.
   - An unsupported layout, unsafe symlink, unstable capture, failed dependency
     preparation, a QM in a non-terminal or parallel position, or a setup
     failure each produce a persisted refusal or failure report with a named
@@ -630,7 +616,7 @@ Investigation evidence gathered before design:
   - every finding, with id, priority, severity, `file:line`, suggested fix, and
     a concrete failing input where one exists;
   - human-decision items, in their own section, including gate-owned-file
-    changes (D-009) and not-configured items (H-003);
+    changes (D-009) and not-configured items (D-019);
   - out-of-range and pre-existing observations, marked as such;
   - which models reviewed, as the host observed them;
   - a positive statement of what was checked.
@@ -708,7 +694,7 @@ Investigation evidence gathered before design:
     is from a different family than the default implementer, and records every
     reviewer's model.
   - A same-family, unresolvable or substituted model fails visibly.
-  - Unconfigured diversity follows H-003.
+  - Unconfigured diversity follows D-019.
 
 ### B-012 - Legacy records are archived and callers describe the review-only contract
 
@@ -718,7 +704,7 @@ Investigation evidence gathered before design:
 - Outcome:
   - All eleven shared round files have one archive home, and their Git history
     stays reachable with `--follow`.
-  - Live surfaces no longer link to the old paths (scope per H-005).
+  - Live surfaces no longer link to the old paths (scope per D-022).
   - QM-ending chains complete with a findings report.
   - Callers route remediation to tasks, Drive and independent review, and
     never claim the QM fixes code, completes plans or leaves a clean tree.
@@ -891,7 +877,7 @@ interface QualityReviewConfig {
 interface QualityReviewCommand { readonly id: string; readonly command: string; readonly args: readonly string[] }
 ```
 
-Unconfigured `checks` or `diverseReviewerModel` follow H-003 option A.
+Unconfigured `checks` or `diverseReviewerModel` follow D-019 option A.
 
 ### 7. Baseline-aware changed-scope audit
 
@@ -927,7 +913,7 @@ in `scripts/check-new-suppressions.ts` implement D-009:
   performance) to `missions/archive/reviews/qm/shared-rounds/` with `git mv`.
   Add a README mapping old paths to new. The two plan-qualified
   `analysis-gate-coverage-*-round-1.md` files stay.
-- Repair links on live surfaces per H-005.
+- Repair links on live surfaces per D-022.
 - Update named-chain descriptions, `cody.md`, the spawning and dispatch skills,
   `docs/orchestration.md`, `README.md`, `AGENTS.md` and
   `external-commands/implement-plan.md`. QM-ending chains now stop at findings,
@@ -970,13 +956,13 @@ in `scripts/check-new-suppressions.ts` implement D-009:
 - `docs/fallow-exceptions.md`, `ROADMAP.md`, `AGENTS.md` — baseline, debt, suppression and project-check guidance.
 - `bundled/coding/chains.ts`, `bundled/coding/prompts/cody.md`, `domains/shared/skills/spawning/SKILL.md`, `domains/main/skills/dispatch/SKILL.md`, `docs/orchestration.md`, `README.md`, `external-commands/implement-plan.md`, `external-skills/cosmonauts/SKILL.md` — findings-only completion and separate remediation.
 - The eleven files `missions/reviews/{review,security-review,ux-review}-round-{1,2,3}.md` and `missions/reviews/performance-review-round-{1,2}.md` — `git mv` to `missions/archive/reviews/qm/shared-rounds/`, plus a `README.md` there.
-- Live-surface old-path references found by an exact tracked search at Stage 8, per H-005.
+- Live-surface old-path references found by an exact tracked search at Stage 8, per D-022.
 
 ## Risks
 
-- **R-001 — Human rulings pending.** H-001..H-005 block only the stage parts
-  named in each entry. Proceed with the unblocked stages; do not implement a
-  blocked part on the recommended option before the ruling is recorded.
+- **R-001 — Human rulings recorded.** D-018..D-022 settled the five questions
+  on ratified ground on 2026-09-23. A new collision with ratified ground is
+  halted and escalated the same way.
 - **R-002 — Generic isolation scope creep.** If delivery needs
   `WorktreeSpec.isolated`, scheduler worktrees, merge finalizers, a declared
   panel graph or mutable parallel execution, stop under D-003.
@@ -1030,10 +1016,10 @@ removed only in the stage that delivers its replacement (SCOPE-SEQUENCING-001).
 
 1. **Close the authority bypass — B-001 (routes only).** Make `chain_run` and
    `run_driver` admit only allowed targets, sharing facts with `spawn_agent`.
-   Independent of H-*.
+   Independent of D-018..D-022.
 2. **Baseline-aware audit and documentation — B-007, B-009.** Live-probe the
    flags, pass the three committed baselines, add the manifest and refresh
-   script, and reconcile the docs and the roadmap. Independent of H-*. This
+   script, and reconcile the docs and the roadmap. Independent of D-018..D-022. This
    lands early so later stages are judged on introduced debt only.
 3. **Base-owned suppression check — B-008 (check part).** Add the registry,
    policy and project check, and seed the current directives. Independent of
@@ -1041,22 +1027,21 @@ removed only in the stage that delivers its replacement (SCOPE-SEQUENCING-001).
 4. **QM run allocation, lifecycle and host artifacts — B-003 (sink), B-004.**
    Allocate the durable QM run (including D-016 for inline chains), write the
    conservative report first, add the lifecycle, path-safe sink, finalization
-   ordering, refusal report and status pointers. The plan-summary write waits
-   for H-001; everything else does not.
+   ordering, refusal report and status pointers. The plan-summary write follows D-018.
 5. **Private snapshot, materials and preparation — B-002.** Capture, clone,
    overlay, re-sample, materials, prepare, and the consent mapping, with every
-   refusal reason. Waits for H-002 and H-004.
+   refusal reason. Follows D-020 and D-021.
 6. **Review-only QM pass — B-001 (QM profile), B-003, B-005, B-006, B-008
    (report part).** Together, in one stage: the restricted profile,
    host-run checks, `spawn_agent`-only panel capture, the one-pass QM and
    reviewer prompts, gate-owned-file items, and removal of fixer, coordinator,
-   verifier and integration-verifier. The unconfigured path waits for H-003.
+   verifier and integration-verifier. The unconfigured path follows D-019.
 7. **Model diversity and calibration — B-010, B-011.** The family table and
    config, the generalist override, host-observed model recording, and the P1
-   and closure guidance. The unconfigured path waits for H-003.
+   and closure guidance. The unconfigured path follows D-019.
 8. **Archive and callers — B-012.** `git mv` the eleven files with a README,
    update chains, leads, skills, docs and the external flow, and walk
-   QM-ending chains end to end. Link repair waits for H-005.
+   QM-ending chains end to end. Link repair follows D-022.
 9. **Independent closure under D-002 — B-001 through B-012.** A Claude subagent
    reviewer plus read-only codex (`gpt-6-sol`, high), framed as
    correctness/liveness. Attack every refusal, producer, lifecycle, authority,

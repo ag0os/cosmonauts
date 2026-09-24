@@ -63,6 +63,12 @@ continuity with existing file locations. INV-005's baseline never absorbs a
 new finding silently: re-saving a baseline is an explicit, recorded act,
 never a side effect of a review.
 
+Interpretation of INV-001 (human ruling 2026-09-23, plan H-004 option A). A
+"QM run" starts at the QM launch boundary. The framework bootstrap that every
+Cosmonauts command performs (loading the project's domain, agent and chain
+modules) is outside it. The snapshot is taken before any QM or panel session
+exists.
+
 Provenance. The eight decisions behind these invariants were accepted by the
 human on 2026-09-23 and relayed by Shepherd (`investigation.md` §5, decisions
 1-8). The invariant wording was drafted by the coordinator and ratified by
@@ -158,7 +164,11 @@ remediation is a separate, explicit invocation.
 - [ ] AC-003 - After a QM run on a checkout with uncommitted edits and
   untracked files, that checkout's HEAD, refs, index, tracked files,
   uncommitted edits and untracked files are byte-identical to before the run,
-  whatever the QM's agents did in their own workspace.
+  whatever the QM's agents did in their own workspace. The one exception is
+  the host-written new file `missions/plans/<slug>/qm-runs/<runId>.md` (the
+  AC-007 plan summary): it never overwrites an existing file and no agent
+  receives its path. *(Amended by the human 2026-09-23, plan H-001 option A;
+  the previous text had no exception.)*
 - [ ] AC-004 - A QM review that covers uncommitted changes sees them. If an
   isolated workspace cannot be created, the run is refused with a named
   reason, and a report of the refusal is persisted.
@@ -201,14 +211,23 @@ remediation is a separate, explicit invocation.
   a different model family from the default implementer, and the report
   records which models reviewed.
 - [ ] AC-015 - The eleven legacy `missions/reviews/*-round-N.md` files are in
-  an archive location with their git history reachable, and nothing links to
-  their old paths.
+  an archive location with their git history reachable, and no live surface
+  links to their old paths: prompts, skills, docs, code, tests other than
+  frozen fixtures, active plans and `ROADMAP.md`. Frozen fixtures, curated
+  `knowledge/` records, evidence reports and archived plans keep their
+  historical text, and an archive README maps each old path to its new home.
+  *(Amended by the human 2026-09-23, plan H-005 option A; the previous text
+  read "nothing links to their old paths".)*
 - [ ] AC-016 - These keep working: the QM's project checks, direct gate
   resolution, panel triage and specialist lenses; the named chains that end in
   the QM; and the callers that document the QM (lead prompts, spawning and
   dispatch skills, `docs/orchestration.md`, the external `implement-plan`
   command). The callers describe the review-only contract and route
-  remediation to tasks.
+  remediation to tasks. In a project without the `qualityReview` config for
+  checks or the diverse reviewer model, the report shows a visible "not
+  configured" item and a human-decision item naming the missing key, and the
+  verdict cannot be `ready`. Nothing is skipped silently and nothing is
+  refused. *(Amended by the human 2026-09-23, plan H-003 option A.)*
 
 ## Scope
 
