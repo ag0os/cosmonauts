@@ -185,6 +185,8 @@ export interface StepResult {
 		| "cancelled";
 	summary: string;
 	artifacts: ArtifactRef[];
+	/** Optional nested durable run identity, independent of backend persona. */
+	childRun?: RunRef;
 	files?: FileChangeSummary[];
 	verification?: VerificationResult[];
 	commits?: CommitRef[];
@@ -325,6 +327,8 @@ export interface RunStatusSummary {
 	eventStatus?: RunStatus;
 	updatedAt?: string;
 	diagnostics: RuntimeDiagnostic[];
+	/** Existing host-written artifact references for read-only status clients. */
+	artifacts?: ArtifactRef[];
 }
 
 export interface CreateRunInput extends RunRef {

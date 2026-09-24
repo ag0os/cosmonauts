@@ -21,6 +21,11 @@ import {
 import { isParallelGroupStep } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
 import {
+	launchQualityReview,
+	qualityReviewPlacement,
+	qualityReviewPlanSlug,
+} from "./quality-review-launch.ts";
+import {
 	assessTaskManagerReviewGate,
 	formatReviewRoundBlockError,
 	type PlanReviewTarget,
@@ -427,6 +432,36 @@ async function runChainStep(
 	}
 
 	const stage = step;
+	if (
+		qualityReviewPlacement({
+			steps: [stage],
+			registry: config.registry,
+			domainContext: config.domainContext,
+		}) === "terminal"
+	) {
+		const started = Date.now();
+		const review = await launchQualityReview({
+			...config.qualityReview,
+			projectRoot: config.projectRoot,
+			planSlug: qualityReviewPlanSlug(config),
+			signal: config.signal,
+		});
+		const result: StageResult = {
+			stage,
+			success: review.stepResult.outcome === "success",
+			iterations: 1,
+			durationMs: Date.now() - started,
+			summary: review.stepResult.summary,
+			run: review.ref,
+			artifacts: review.stepResult.artifacts,
+			...(review.stepResult.outcome === "success"
+				? {}
+				: { error: review.stepResult.summary }),
+		};
+		emit(config, { type: "stage_start", stage, stageIndex: stepIndex });
+		emitStageCompletion(config, stage, result);
+		return singleStageOutcome(stage, result);
+	}
 	const promptContext = stagePromptContext(
 		config.steps,
 		stepIndex,
@@ -846,6 +881,27 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 }
 
 async function executeChain(config: ChainConfig): Promise<ChainResult> {
+	if (
+		qualityReviewPlacement({
+			steps: config.steps,
+			registry: config.registry,
+			domainContext: config.domainContext,
+		}) === "refused"
+	) {
+		const refusal = await launchQualityReview({
+			...config.qualityReview,
+			projectRoot: config.projectRoot,
+			planSlug: qualityReviewPlanSlug(config),
+			refusalReason: "Quality Manager must be a terminal sequential stage.",
+		});
+		return {
+			success: false,
+			stageResults: [],
+			totalDurationMs: 0,
+			errors: [refusal.stepResult.summary],
+			run: refusal.ref,
+		};
+	}
 	const state = createChainExecutionState(config);
 	const chainStart = state.chainStart;
 	const spawner = createPiSpawner(config.registry, resolveDomainsDir(config), {
@@ -868,6 +924,11 @@ async function executeChain(config: ChainConfig): Promise<ChainResult> {
 	}
 
 	const chainResult = finalizeChainResult(state, config, chainStart);
+	const qualityRun = chainResult.stageResults.findLast(
+		(result) => result.run,
+	)?.run;
+	if (qualityRun?.scope === "chain")
+		chainResult.run = { runId: qualityRun.runId, scope: "chain" };
 
 	emit(config, { type: "chain_end", result: chainResult });
 
@@ -1182,6 +1243,36 @@ export async function runStage(
 	spawner: AgentSpawner,
 	constraints?: StageConstraints,
 ): Promise<StageResult> {
+	const placement = qualityReviewPlacement({
+		steps: [stage],
+		registry: config.registry,
+		domainContext: config.domainContext,
+	});
+	if (placement !== "absent") {
+		const review = await launchQualityReview({
+			...config.qualityReview,
+			projectRoot: config.projectRoot,
+			planSlug: qualityReviewPlanSlug(config),
+			signal: config.signal,
+			...(placement === "refused"
+				? {
+						refusalReason: "Quality Manager must be a terminal non-loop stage.",
+					}
+				: {}),
+		});
+		return {
+			stage,
+			success: review.stepResult.outcome === "success",
+			iterations: placement === "refused" ? 0 : 1,
+			durationMs: 0,
+			summary: review.stepResult.summary,
+			run: review.ref,
+			artifacts: review.stepResult.artifacts,
+			...(review.stepResult.outcome === "success"
+				? {}
+				: { error: review.stepResult.summary }),
+		};
+	}
 	return runStageWithPromptContext(stage, config, spawner, constraints, {
 		purpose: { kind: "default" },
 		requiresPlanReviewTarget: false,

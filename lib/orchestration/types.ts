@@ -120,6 +120,11 @@ export interface ChainConfig {
 	steps: ChainStep[];
 	/** Project root directory (for task system, cwd) */
 	projectRoot: string;
+	/** Host-only QM preparation and assessment ports attached by the domain runtime. */
+	qualityReview?: Pick<
+		import("./quality-review-run.ts").QualityReviewRunOptions,
+		"prepareWorkspace" | "execute"
+	>;
 	/** Default domain context for resolving unqualified stage names. */
 	domainContext?: string;
 	/** Model overrides per role */
@@ -238,6 +243,9 @@ export interface StageResult {
 	stats?: SpawnStats;
 	/** Condensed text from the stage agent's final message (last iteration for loops) */
 	summary?: string;
+	/** Child durable run produced by a delegated terminal stage. */
+	run?: import("../durable-runtime/types.ts").RunRef;
+	artifacts?: import("../durable-runtime/types.ts").ArtifactRef[];
 	/** Typed plan-review gate failure, including a pre-spawn task-decomposition block. */
 	reviewRoundBlock?: ReviewRoundBlock;
 }

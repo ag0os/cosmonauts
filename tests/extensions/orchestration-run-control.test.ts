@@ -11,6 +11,7 @@ import {
 	runStatus,
 	runWatch,
 } from "../../lib/durable-runtime/index.ts";
+import { runQualityReview } from "../../lib/orchestration/quality-review-run.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "./orchestration-helpers.ts";
 
@@ -28,6 +29,22 @@ type FilesystemSnapshot = Record<
 >;
 
 describe("orchestration run control tools", () => {
+	test("points to the full QM report through run_status", async () => {
+		const review = await runQualityReview({ projectRoot: temp.path });
+		const pi = createMockPi(temp.path);
+		orchestrationExtension(pi as never);
+		const status = (await pi.callTool(
+			"run_status",
+			review.ref,
+		)) as ToolResult<RunStatusSummary>;
+		expect(
+			status.details.artifacts?.find(
+				(artifact) => artifact.id === "qm/final.md",
+			)?.path,
+		).toContain("/artifacts/qm/final.md");
+		expect(status.content[0]?.text).toContain("report ");
+		expect(status.content[0]?.text).toContain("/artifacts/qm/final.md");
+	});
 	test("registers only read-only normalized run observation tools", async () => {
 		const rootDir = join(temp.path, "missions", "sessions");
 		const store = new FileRunStore({ rootDir });

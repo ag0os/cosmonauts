@@ -3,6 +3,9 @@
  * Verifies the cached CosmonautsRuntime is used and forwarded to runtime calls.
  */
 
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import "./orchestration-mocks.ts";
 
@@ -17,12 +20,16 @@ import type { AgentDefinition } from "../../lib/agents/index.ts";
 import { AgentRegistry } from "../../lib/agents/index.ts";
 import type { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
+import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
-import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
+import {
+	getOrCreateTracker,
+	removeTracker,
+} from "../../lib/orchestration/spawn-tracker.ts";
 import type { ChainResult, ChainStep } from "../../lib/orchestration/types.ts";
 import {
 	createMockPi,
@@ -867,6 +874,45 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 				error: "worker cannot spawn quality-manager",
 			},
 		});
+	});
+
+	test("spawn_agent routes the resolved canonical QM through a durable refusal without a session", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "spawn-qm-"));
+		const sessionId = `qm-parent-${Date.now()}`;
+		const registry = new AgentRegistry([
+			makeAgent("cody", "coding", { subagents: ["quality-manager"] }),
+			makeAgent("quality-manager", "coding"),
+		]);
+		mockRuntime({ domainContext: "coding", agentRegistry: registry });
+		const { pi } = createExtensionPi(projectRoot, {
+			sessionId,
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/cody -->",
+		});
+		const tracker = getOrCreateTracker(sessionId);
+		try {
+			const accepted = (await pi.callTool("spawn_agent", {
+				role: "quality-manager",
+				prompt: "review",
+			})) as { details: { status: string } };
+			expect(accepted.details.status).toBe("accepted");
+			const completion = await tracker.nextCompletion();
+			expect(completion.type).toBe("spawn_failed");
+			expect(JSON.stringify(completion)).not.toContain("/artifacts/");
+			expect(mocks.createAgentSessionFromDefinition).not.toHaveBeenCalled();
+			const runs = await new FileRunStore({
+				rootDir: join(projectRoot, "missions", "sessions"),
+			}).listRecentRuns({ scope: "chain" });
+			expect(runs).toHaveLength(1);
+			expect(
+				await readFile(
+					join(runs[0]?.artifactsDir ?? "", "qm", "final.md"),
+					"utf8",
+				),
+			).toContain("Verdict: refused");
+		} finally {
+			removeTracker(sessionId);
+			await rm(projectRoot, { recursive: true, force: true });
+		}
 	});
 
 	test("spawn_agent allows authorized target with unqualified caller resolving via scan-all", async () => {

@@ -58,7 +58,19 @@ export async function runStatus(
 	}
 
 	const result = await store.readEvents(ref);
-	return summarizeRunStatus(record, result.events, result.diagnostics);
+	const summary = summarizeRunStatus(record, result.events, result.diagnostics);
+	const artifacts = new Map<string, import("./types.ts").ArtifactRef>();
+	for (const { event } of result.events) {
+		if (event.type === "artifact_written")
+			artifacts.set(event.artifact.id, event.artifact);
+	}
+	for (const step of await store.listStepRecords(ref)) {
+		for (const artifact of step.outputArtifacts)
+			artifacts.set(artifact.id, artifact);
+	}
+	return artifacts.size > 0
+		? { ...summary, artifacts: [...artifacts.values()] }
+		: summary;
 }
 
 export function summarizeRunStatus(

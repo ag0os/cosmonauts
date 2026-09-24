@@ -29,6 +29,7 @@ import {
 	runChain,
 	runStage,
 } from "../../lib/orchestration/chain-runner.ts";
+import { renderQualityReviewReport } from "../../lib/orchestration/quality-review-report.ts";
 import {
 	PLAN_REVIEW_REPORT_TOKEN,
 	parseReviewReportLine,
@@ -1824,6 +1825,208 @@ describe("runChain", () => {
 		expect(result.run).toBeUndefined();
 	});
 
+	test("delegates a terminal QM to its own durable run before any QM session", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-"));
+		try {
+			const result = await runChain(
+				makeConfig(parseChain("planner -> quality-manager", defaultRegistry), {
+					projectRoot,
+					completionLabel: "plan:example",
+				}),
+			);
+			expect(result.run?.runId).toMatch(/^qm-/);
+			expect(result.stageResults.at(-1)?.run).toEqual(result.run);
+			expect(result.stageResults.at(-1)?.artifacts?.[0]?.id).toBe(
+				"qm/final.md",
+			);
+			expect(spawnerRef.current?.spawn).toHaveBeenCalledTimes(1);
+			expect(
+				await readFile(
+					join(
+						projectRoot,
+						"missions",
+						"plans",
+						"example",
+						"qm-runs",
+						`${result.run?.runId}.md`,
+					),
+					"utf8",
+				),
+			).toContain("Verdict: refused");
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
+	test("refuses non-terminal QM before any stage session", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-placement-"));
+		try {
+			const result = await runChain(
+				makeConfig(parseChain("quality-manager -> planner", defaultRegistry), {
+					projectRoot,
+				}),
+			);
+			expect(result.success).toBe(false);
+			expect(result.run?.runId).toMatch(/^qm-/);
+			expect(spawnerRef.current?.spawn).not.toHaveBeenCalled();
+			expect(
+				await readFile(
+					join(
+						projectRoot,
+						"missions",
+						"sessions",
+						"chain",
+						"runs",
+						`${result.run?.runId}`,
+						"artifacts",
+						"qm",
+						"final.md",
+					),
+					"utf8",
+				),
+			).toContain("Verdict: refused");
+			await expect(
+				readdir(join(projectRoot, "missions", "plans")),
+			).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
+	test("leaves plans byte-identical when QM plan context is ambiguous", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-ambiguous-"));
+		try {
+			const result = await runChain(
+				makeConfig(parseChain("quality-manager", defaultRegistry), {
+					projectRoot,
+					completionLabel: "plan:first",
+					planSlug: "second",
+				}),
+			);
+			expect(result.run?.runId).toMatch(/^qm-/);
+			await expect(
+				readdir(join(projectRoot, "missions", "plans")),
+			).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
+	test("refuses a forged stage reference that would redirect a non-QM stage to QM", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-forged-"));
+		try {
+			const forged = {
+				...makeStage("planner", false),
+				agentReference:
+					defaultRegistry.resolveReference("quality-manager")?.reference,
+			};
+			const result = await runChain(makeConfig([forged], { projectRoot }));
+			expect(result.success).toBe(false);
+			expect(result.run?.runId).toMatch(/^qm-/);
+			expect(spawnerRef.current?.spawn).not.toHaveBeenCalled();
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
+	test.each([
+		"ready",
+		"not-ready",
+	] as const)("persists a %s QM assessment through an inline chain", async (verdict) => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-assessment-"));
+		try {
+			const result = await runChain(
+				makeConfig(parseChain("quality-manager", defaultRegistry), {
+					projectRoot,
+					completionLabel: "plan:example",
+					qualityReview: {
+						prepareWorkspace: async ({ workspaceRoot }) => {
+							await mkdir(workspaceRoot);
+						},
+						execute: async () => ({
+							markdown: renderQualityReviewReport({
+								verdict,
+								reason: "assessed",
+							}),
+						}),
+					},
+				}),
+			);
+			expect(result.success).toBe(true);
+			expect(result.run?.runId).toMatch(/^qm-/);
+			expect(result.stageResults[0]?.artifacts?.[0]?.id).toBe("qm/final.md");
+			expect(
+				await readFile(
+					join(
+						projectRoot,
+						"missions",
+						"plans",
+						"example",
+						"qm-runs",
+						`${result.run?.runId}.md`,
+					),
+					"utf8",
+				),
+			).toContain(`Verdict: ${verdict}`);
+			expect(spawnerRef.current?.spawn).not.toHaveBeenCalled();
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
+	test.each([
+		"integrity-failure",
+		"cancellation",
+	] as const)("persists %s through an inline QM chain", async (scenario) => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-terminal-"));
+		const controller = new AbortController();
+		try {
+			const result = await runChain(
+				makeConfig(parseChain("quality-manager", defaultRegistry), {
+					projectRoot,
+					signal: controller.signal,
+					qualityReview: {
+						prepareWorkspace: async ({ workspaceRoot }) => {
+							await mkdir(workspaceRoot);
+						},
+						execute: async () => {
+							if (scenario === "cancellation") controller.abort();
+							return {
+								markdown:
+									scenario === "cancellation"
+										? renderQualityReviewReport({
+												verdict: "ready",
+												reason: "clear",
+											})
+										: "Verdict: ready\nMissing sections",
+							};
+						},
+					},
+				}),
+			);
+			expect(result.success).toBe(false);
+			const report = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					`${result.run?.runId}`,
+					"artifacts",
+					"qm",
+					"final.md",
+				),
+				"utf8",
+			);
+			expect(report).toContain("Verdict: failed");
+			if (scenario === "cancellation")
+				expect(report).toContain("Caller cancellation");
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
 	test("user prompt injection preserves default first-stage role prompt", async () => {
 		const steps = parseChain("planner -> task-manager", defaultRegistry);
 		injectUserPrompt(steps, "build auth");
@@ -2678,6 +2881,7 @@ Review incomplete.
 			parseChain("planner -> reviewer -> task-manager", defaultRegistry),
 			...defaultRegistry
 				.listAll()
+				.filter((definition) => definition.id !== "quality-manager")
 				.map((definition) => [makeStage(definition.id, false)]),
 		];
 		for (const steps of unchangedShapes) {

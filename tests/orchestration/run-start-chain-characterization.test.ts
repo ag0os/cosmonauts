@@ -64,6 +64,7 @@ const registry = new AgentRegistry([
 	agent("task-manager"),
 	agent("reviewer"),
 	agent("quality-manager"),
+	agent("integration-verifier"),
 ]);
 
 describe("runStart durable chain characterization", () => {
@@ -107,7 +108,10 @@ describe("runStart durable chain characterization", () => {
 		const projectRoot = join(temp.path, "project");
 
 		const result = await runDurableChain({
-			steps: parseChain("planner -> reviewer -> quality-manager", registry),
+			steps: parseChain(
+				"planner -> reviewer -> integration-verifier",
+				registry,
+			),
 			projectRoot,
 			registry,
 		});
@@ -136,8 +140,8 @@ describe("runStart durable chain characterization", () => {
 					summary: "reviewer durable summary",
 				}),
 				expect.objectContaining({
-					stage: { name: "quality-manager", loop: false },
-					summary: "quality-manager durable summary",
+					stage: { name: "integration-verifier", loop: false },
+					summary: "integration-verifier durable summary",
 				}),
 			],
 		});
@@ -159,12 +163,12 @@ describe("runStart durable chain characterization", () => {
 		expect(graph.graph.steps.map((step) => step.id)).toEqual([
 			"chain-1-planner",
 			"chain-2-reviewer",
-			"chain-3-quality-manager",
+			"chain-3-integration-verifier",
 		]);
 		expect(steps.map((step) => [step.id, step.status])).toEqual([
 			["chain-1-planner", "completed"],
 			["chain-2-reviewer", "completed"],
-			["chain-3-quality-manager", "completed"],
+			["chain-3-integration-verifier", "completed"],
 		]);
 		expect(events.events.at(0)?.event).toEqual({
 			type: "run_started",
@@ -711,7 +715,10 @@ describe("runStart durable chain characterization", () => {
 		configureSpawner(async (config) => successfulSpawn(config));
 
 		const success = await runDurableChain({
-			steps: parseChain("[planner, reviewer] -> quality-manager", registry),
+			steps: parseChain(
+				"[planner, reviewer] -> integration-verifier",
+				registry,
+			),
 			projectRoot: successRoot,
 			registry,
 		});
@@ -767,7 +774,7 @@ describe("runStart durable chain characterization", () => {
 					stage: expect.objectContaining({ name: "reviewer" }),
 				}),
 				expect.objectContaining({
-					stage: expect.objectContaining({ name: "quality-manager" }),
+					stage: expect.objectContaining({ name: "integration-verifier" }),
 				}),
 			],
 		});

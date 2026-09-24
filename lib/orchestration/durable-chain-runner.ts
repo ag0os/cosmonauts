@@ -39,6 +39,12 @@ import {
 	shouldRunChainInline,
 } from "./durable-chain-compiler.ts";
 import {
+	isQualityReviewReference,
+	launchQualityReview,
+	qualityReviewPlacement,
+	qualityReviewPlanSlug,
+} from "./quality-review-launch.ts";
+import {
 	assessTaskManagerReviewGate,
 	formatReviewRoundBlockError,
 	type PlanReviewTarget,
@@ -78,6 +84,27 @@ const FALLBACK_DOMAINS_DIR = resolve(
 export async function runDurableChain(
 	config: ChainConfig,
 ): Promise<ChainResult> {
+	if (
+		qualityReviewPlacement({
+			steps: config.steps,
+			registry: config.registry,
+			domainContext: config.domainContext,
+		}) === "refused"
+	) {
+		const refusal = await launchQualityReview({
+			...config.qualityReview,
+			projectRoot: config.projectRoot,
+			planSlug: qualityReviewPlanSlug(config),
+			refusalReason: "Quality Manager must be a terminal sequential stage.",
+		});
+		return {
+			success: false,
+			stageResults: [],
+			totalDurationMs: 0,
+			errors: [refusal.stepResult.summary],
+			run: refusal.ref,
+		};
+	}
 	if (
 		shouldRunChainInline(config.steps, {
 			completionLabel: config.completionLabel,
@@ -144,6 +171,7 @@ async function executeDurableChain(
 			ref,
 			spawner,
 			signal: config.signal,
+			qualityReview: config.qualityReview,
 		});
 		const scheduler = await runStart({
 			store,
@@ -208,6 +236,7 @@ interface ChainSchedulerBackendOptions {
 	ref: RunRef;
 	spawner: AgentSpawner;
 	signal?: AbortSignal;
+	qualityReview?: ChainConfig["qualityReview"];
 }
 
 function createChainSchedulerBackend({
@@ -215,6 +244,7 @@ function createChainSchedulerBackend({
 	ref,
 	spawner,
 	signal,
+	qualityReview,
 }: ChainSchedulerBackendOptions): RunGraphSchedulerBackend {
 	return {
 		name: "cosmonauts-subagent",
@@ -246,6 +276,7 @@ function createChainSchedulerBackend({
 					spawner,
 					prepared,
 					signal,
+					qualityReview,
 				}),
 			};
 		},
@@ -258,12 +289,14 @@ async function executeChainStep({
 	spawner,
 	prepared,
 	signal,
+	qualityReview,
 }: {
 	store: RunStore;
 	ref: RunRef;
 	spawner: AgentSpawner;
 	prepared: PreparedStep<SchedulerStepInput>;
 	signal?: AbortSignal;
+	qualityReview?: ChainConfig["qualityReview"];
 }): Promise<StepResult> {
 	const spawn = readSpawnOptions(prepared.input.backendOptions);
 	const promptMetadata = readPromptMetadata(prepared.input.backendOptions);
@@ -298,6 +331,15 @@ async function executeChainStep({
 		prompt: appendBoundReviewTarget(spawn.prompt, target),
 	};
 	const stage = readStageOptions(prepared.input.backendOptions);
+	if (isQualityReviewReference(spawn.agentReference ?? stage.agentReference)) {
+		const review = await launchQualityReview({
+			...qualityReview,
+			projectRoot: spawn.cwd,
+			planSlug: spawn.planSlug,
+			signal,
+		});
+		return { ...review.stepResult, childRun: review.ref };
+	}
 	const role = materializedSpawn.role;
 	let eventWrite = Promise.resolve();
 	const enqueueAgentEvent = (
@@ -713,6 +755,10 @@ function stageResultsFromStepRecords(
 				...(success ? {} : { error: record.result.summary }),
 				...(record.result.summary !== "" && {
 					summary: record.result.summary,
+				}),
+				...(record.result.childRun && { run: record.result.childRun }),
+				...(record.result.artifacts.length > 0 && {
+					artifacts: record.result.artifacts,
 				}),
 			},
 		];

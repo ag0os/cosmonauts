@@ -115,7 +115,10 @@ function renderStatusText(
 		summary.diagnostics.length > 0
 			? `, diagnostics ${summary.diagnostics.length}`
 			: "";
-	return `${summary.scope}/${summary.runId}: ${summary.status}${source}${diagnostics}`;
+	const finalReport = summary.artifacts?.find(
+		(artifact) => artifact.id === "qm/final.md",
+	);
+	return `${summary.scope}/${summary.runId}: ${summary.status}${source}${diagnostics}${finalReport ? `; report ${finalReport.path}` : ""}`;
 }
 
 function renderWatchText(summary: RunWatchSummary): string {

@@ -21,6 +21,10 @@ import {
 	registerPlanContext,
 	removePlanContext,
 } from "../../../../lib/orchestration/plan-session-context.ts";
+import {
+	isQualityReviewReference,
+	launchQualityReview,
+} from "../../../../lib/orchestration/quality-review-launch.ts";
 import { createAgentSessionFromDefinition } from "../../../../lib/orchestration/session-factory.ts";
 import {
 	awaitNextCompletionMessages,
@@ -635,6 +639,57 @@ export function registerSpawnTool(
 			// Propagate plan context from parent session so child lineage
 			// artifacts land in the same missions/sessions/<planSlug>/ directory.
 			const planSlug = getPlanSlugForSession(parentSessionId);
+			if (isQualityReviewReference(targetResolution.reference)) {
+				void launchQualityReview({
+					projectRoot: ctx.cwd,
+					planSlug,
+					signal: _signal,
+				})
+					.then((review) => {
+						const summary = `QM run ${review.ref.runId}: ${review.stepResult.summary}`;
+						settleSpawnTracker(
+							tracker,
+							spawnId,
+							{
+								role: params.role,
+								startedAt: new Date().toISOString(),
+								outcome:
+									review.stepResult.outcome === "success"
+										? "success"
+										: "failed",
+								summary,
+							},
+							pi,
+						);
+					})
+					.catch((error: unknown) => {
+						settleSpawnTracker(
+							tracker,
+							spawnId,
+							{
+								role: params.role,
+								startedAt: new Date().toISOString(),
+								outcome: "failed",
+								summary: error instanceof Error ? error.message : String(error),
+							},
+							pi,
+						);
+					});
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Accepted spawn of ${params.role} (spawnId: ${spawnId})`,
+						},
+					],
+					details: {
+						role: params.role,
+						status: "accepted",
+						spawnId,
+						taskId,
+					} as SpawnProgressDetails,
+				};
+			}
 
 			const spawnConfig = {
 				role: params.role,

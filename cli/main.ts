@@ -43,6 +43,11 @@ import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { setSharedDomainBindings } from "../lib/interactive/domain-bindings.ts";
 import {
+	isQualityReviewReference,
+	launchQualityReview,
+	qualityReviewPlanSlug,
+} from "../lib/orchestration/quality-review-launch.ts";
+import {
 	discoverBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
 } from "../lib/packages/dev-bundled.ts";
@@ -620,6 +625,17 @@ async function handlePrintMode(
 	}
 
 	const definition = resolveCliAgent(runtime, options);
+	if (isCliQualityReview(runtime, options, definition)) {
+		const result = await launchQualityReview({
+			projectRoot: cwd,
+			planSlug: qualityReviewPlanSlug({
+				completionLabel: options.completionLabel,
+			}),
+		});
+		process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
+		if (result.stepResult.outcome !== "success") process.exitCode = 1;
+		return;
+	}
 	const printRuntime = await createSession({
 		definition,
 		cwd,
@@ -645,6 +661,17 @@ async function handleInteractiveMode(
 	cwd: string,
 ): Promise<void> {
 	const definition = resolveCliAgent(runtime, options);
+	if (isCliQualityReview(runtime, options, definition)) {
+		const result = await launchQualityReview({
+			projectRoot: cwd,
+			planSlug: qualityReviewPlanSlug({
+				completionLabel: options.completionLabel,
+			}),
+		});
+		process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
+		if (result.stepResult.outcome !== "success") process.exitCode = 1;
+		return;
+	}
 
 	// Expose the main registry to extensions via process-global slot.
 	// This ensures the /agent command validates against the same registry
@@ -686,6 +713,22 @@ function resolveCliAgent(
 	options: CliOptions,
 ): AgentDefinition {
 	return resolveDefaultLead(runtime, options);
+}
+
+function isCliQualityReview(
+	runtime: CosmonautsRuntime,
+	options: CliOptions,
+	definition: AgentDefinition,
+): boolean {
+	const requested =
+		options.agent ??
+		(definition.domain
+			? `${definition.domain}/${definition.id}`
+			: definition.id);
+	return isQualityReviewReference(
+		runtime.agentRegistry.resolveReference(requested, runtime.domainContext)
+			?.reference,
+	);
 }
 
 // ============================================================================

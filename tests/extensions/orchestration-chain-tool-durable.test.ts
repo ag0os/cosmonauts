@@ -140,15 +140,15 @@ describe("chain_run durable tool routing", () => {
 	test("routes loop-free chain_run through the durable graph and loop chains inline", async () => {
 		const durableExpressions = [
 			{
-				expression: "planner -> reviewer -> quality-manager",
+				expression: "planner -> reviewer -> reviewer",
 				expectedStepCount: 3,
 			},
 			{
-				expression: "planner -> [task-manager, reviewer] -> quality-manager",
+				expression: "planner -> [task-manager, reviewer] -> reviewer",
 				expectedStepCount: 4,
 			},
 			{
-				expression: "planner -> reviewer[2] -> quality-manager",
+				expression: "planner -> reviewer[2] -> reviewer",
 				expectedStepCount: 4,
 			},
 		];
@@ -235,8 +235,8 @@ describe("chain_run durable tool routing", () => {
 						summary: "planner persisted from durable records",
 					},
 					{
-						stage: "quality-manager",
-						summary: "quality-manager persisted from durable records",
+						stage: "reviewer",
+						summary: "reviewer persisted from durable records",
 					},
 				]),
 			);
