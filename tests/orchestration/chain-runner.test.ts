@@ -16,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import chains from "../../bundled/coding/chains.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
@@ -137,6 +138,8 @@ const defaultRegistry = new AgentRegistry([
 	makeCodingDef("quality-manager", false),
 	makeCodingDef("reviewer", false),
 	makeCodingDef("plan-reviewer", false),
+	makeCodingDef("spec-writer", false),
+	makeCodingDef("integration-verifier", false),
 	makeCodingDef("fixer", false),
 ]);
 
@@ -1835,6 +1838,56 @@ describe("runChain", () => {
 		const result = await runChain(makeConfig([makeStage("planner", false)]));
 
 		expect(result.run).toBeUndefined();
+	});
+
+	test.each(
+		chains,
+	)("$name named chain reaches a durable QM findings report", async (chain) => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "named-qm-chain-"));
+		try {
+			await initQualityReviewRepository(projectRoot);
+			await writePlanReviewTarget({ projectRoot, planSlug: "example" });
+			spawnerRef.current = reviewReportSpawner(planReviewReport("example", 1));
+			const steps = parseChain(chain.chain, defaultRegistry);
+			for (const step of steps) {
+				if (!("kind" in step) && step.name === "coordinator") {
+					step.completionCheck = async () => true;
+				}
+			}
+			const result = await runChain(
+				makeConfig(steps, {
+					projectRoot,
+					completionLabel: "plan:example",
+					qualityReview: {
+						execute: async () => ({
+							markdown: renderQualityReviewReport({
+								verdict: "not-ready",
+								reason: "assessed",
+							}),
+						}),
+					},
+				}),
+			);
+			expect(result.success).toBe(true);
+			expect(result.stageResults.at(-1)?.artifacts?.[0]?.id).toBe(
+				"qm/final.md",
+			);
+			expect(
+				await readFile(
+					join(
+						projectRoot,
+						"missions",
+						"plans",
+						"example",
+						"qm-runs",
+						`${result.run?.runId}.md`,
+					),
+					"utf8",
+				),
+			).toContain("Verdict: not-ready");
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
 	});
 
 	test("delegates a terminal QM to its own durable run before any QM session", async () => {

@@ -26,7 +26,7 @@ If scope is ambiguous, choose the narrowest interpretation that resolves the sta
 
 When the parent routes a generic capability request with human-readable finding designations, call `analysis_status`, then rerun the exact routed capability request before editing. Preserve its capability, literal base, scope, and metric exactly. Treat your own fresh, complete structured result as ground truth. The routed file:line, category, and quoted message are navigation aids, not authority to guess from a stale result.
 
-An `unbound` or `failed` rerun is `not-resolved`; make no edit for that finding and return it to the Quality Manager for re-analysis. An unsupported request or a designated finding that no longer reproduces is also `not-resolved`, never reconstructed from the routed designations.
+An `unbound` or `failed` rerun is `not-resolved`; make no edit for that finding and return it to the caller for re-analysis. An unsupported request or a designated finding that no longer reproduces is also `not-resolved`, never reconstructed from the routed designations.
 
 Trace before deletion: before removing a file, export, type, dependency, or other structural element, trace its current reachability and references. You may call the generic fix-preview capability when a preview would help evaluate a narrow remediation. `trace` and `fix-preview` return `verdict: "not-applicable"`; never read pass or fail from that verdict. Treat every proposed action as a proposal for review, not authorization to modify the repository.
 
@@ -63,14 +63,14 @@ Keep the existing `resolved` / `not-resolved` reporting contract.
 
 Account for **every** assigned finding id explicitly. For each id you were routed (`F-###`, `I-###`, `UR-###`, `QC-###`, or a named failed check), state one of:
 - `resolved` — with the exact change that addresses it (`path/to/file.ext:line`).
-- `not-resolved` — with the reason. A finding that needs more than a narrow change is `not-resolved` with that reason, flagged for the quality-manager — never silently dropped or assumed fixed.
+- `not-resolved` — with the reason. A finding that needs more than a narrow change is `not-resolved` with that reason, flagged for the caller — never silently dropped or assumed fixed.
 
-The quality-manager keeps a findings ledger keyed by id and reconciles your report against it; a finding closes as `verified-resolved` only when you report it resolved BY ID and the change is visible in the diff.
+The caller reconciles your report against the assigned findings. A resolution requires the change to be visible in the diff and an independent re-review; your report alone does not close a QM finding.
 
 ```
 Findings addressed:
 - F-001: resolved — <change> (path/to/file.ext:120-128)
-- UR-003: not-resolved — fix requires a design change beyond narrow scope; flagged for the quality-manager
+- UR-003: not-resolved — fix requires a design change beyond narrow scope; flagged for the caller
 ```
 
 Also include:

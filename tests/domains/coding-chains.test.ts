@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import chains from "../../bundled/coding/chains.ts";
+import { resolveNamedChain } from "../../lib/chains/loader.ts";
 
 function getWorkflowChain(name: string): string {
 	const chain = chains.find((candidate) => candidate.name === name);
@@ -32,10 +33,19 @@ describe("coding domain chains", () => {
 		}
 	});
 
-	it("documents the planless remediation fallback on verify", () => {
-		const verify = chains.find((candidate) => candidate.name === "verify");
-		expect(verify?.description).toContain("fixer-only remediation");
-		expect(verify?.chain).toBe("quality-manager");
+	it("ends every shipped quality chain at the review stage", async () => {
+		for (const chain of chains) {
+			const resolved = await resolveNamedChain(
+				chain.name,
+				"/tmp/cosmonauts-stage8-chain-test",
+				chains,
+			);
+			const stages = resolved.chain.split(" -> ");
+			expect(stages.at(-1)).toBe("quality-manager");
+			expect(
+				stages.filter((stage) => stage === "quality-manager"),
+			).toHaveLength(1);
+		}
 	});
 
 	it("keeps the adversarial plan-review loop before task creation in design chains", () => {

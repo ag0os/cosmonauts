@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
+import chains from "../../bundled/coding/chains.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
@@ -16,9 +17,20 @@ const registry = new AgentRegistry([
 	agent("task-manager", false),
 	agent("reviewer", false),
 	agent("quality-manager", false),
+	agent("plan-reviewer", false),
+	agent("spec-writer", false),
+	agent("integration-verifier", false),
 ]);
 
 describe("chain durable routing", () => {
+	test("routes shipped QM-ending named chains through their supported runner", () => {
+		for (const chain of chains) {
+			const steps = parseChain(chain.chain, registry);
+			expect(shouldRunChainInline(steps)).toBe(chain.name !== "verify");
+			expect(steps.at(-1)).toMatchObject({ name: "quality-manager" });
+		}
+	});
+
 	test("keeps loop and completion-check chains on the legacy inline runner", async () => {
 		const durableGraphWriter = vi.fn();
 		const runChain = vi.fn();

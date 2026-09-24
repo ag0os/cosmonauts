@@ -75,13 +75,15 @@ The primary CLI interface for multi-agent pipelines is `cosmonauts run chain`. B
 |------|-------|---------|
 | `plan-and-build` | `planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Full pipeline with adversarial plan review |
 | `implement` | `task-manager → coordinator → integration-verifier → quality-manager` | From an existing approved plan |
-| `verify` | `quality-manager` | Review + remediation on existing changes |
+| `verify` | `quality-manager` | Durable findings report on existing changes |
 | `spec-and-build` | `spec-writer → planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Interactive spec capture then reviewed build |
 | `adapt` | `planner → task-manager → coordinator → integration-verifier → quality-manager` | Planner studies a reference codebase path and adapts patterns |
 
 Test-first is the `planner`'s baseline: every plan it produces is behavior-driven and implemented test-first, so `plan-and-build` and `spec-and-build` cover what used to be a separate TDD workflow. Adaptation is likewise a `planner` mode — point it at a reference codebase path and the `adapt` named chain handles it.
 
 Every design-driven default includes `plan-reviewer` as a mandatory adversarial step before task creation. For code-time review, `quality-manager` internally triages which specialist lenses (security, performance, UX) apply to the diff and spawns the applicable ones in parallel alongside the generalist `reviewer`.
+
+All five named chains end at the QM's durable findings report. The QM reviews a private local clone and never edits code, commits, completes a plan, or guarantees a clean tree. Findings require separate remediation through tasks and Drive, followed by independent re-review. The review retains host-run project checks, direct gate resolution, panel triage, and specialist evidence. Missing base-owned `qualityReview` checks or model diversity is visible as not configured and as a human-decision item blocking `ready`.
 
 Run `cosmonauts run chain list` for the live list, including any project-level overrides.
 

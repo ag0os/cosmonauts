@@ -12,7 +12,7 @@ Use the narrowest specialist that can complete the next step.
 - Breaking an approved plan into tasks: `coding/task-manager`.
 - Running multiple ready coding tasks: `coding/coordinator` or Drive execution.
 - One atomic task with full acceptance criteria: `coding/worker`.
-- Merge-readiness verification: `coding/quality-manager`.
+- Review of current changes with a durable findings report: `coding/quality-manager`. It does not fix code or complete a plan. Route findings through tasks, Drive, and independent re-review.
 - Focused review or remediation: `coding/reviewer` or `coding/fixer`.
 
 Do not route coding work through `coding/cody`; spawn the specialist directly.

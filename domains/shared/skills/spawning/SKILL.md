@@ -34,7 +34,7 @@ Each completion triggers a new turn. Stay active — do not exit — until every
 - Designing a solution across multiple files → `planner`
 - An approved plan needs breaking into tasks → `task-manager`
 - Multiple tasks need implementing → `coordinator`, or a chain
-- A branch needs merge-readiness verification (lint/format/review/fixes) → `quality-manager`
+- Current changes need a durable findings report and verdict → `quality-manager`
 - You need a fresh-context review of current changes → `reviewer` (or a targeted lens: `security-reviewer`, `performance-reviewer`, `ux-reviewer`)
 - You need a focused remediation pass from findings → `fixer`
 - You need deep codebase exploration with a clean context → `explorer`
@@ -73,11 +73,13 @@ Safety caps are global, not per-stage: `maxTotalIterations` (default 50), `timeo
 |------|-------|------|
 | `plan-and-build` | `planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Full pipeline with adversarial plan review |
 | `implement` | `task-manager → coordinator → integration-verifier → quality-manager` | From an existing approved plan |
-| `verify` | `quality-manager` | Review + remediation on existing changes |
+| `verify` | `quality-manager` | Findings report on existing changes |
 | `spec-and-build` | `spec-writer → planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Interactive spec capture then reviewed build |
 | `adapt` | `planner → task-manager → coordinator → integration-verifier → quality-manager` | Planner studies a reference codebase path and adapts patterns |
 
 `cosmonauts run chain list` shows the live list including project-level overrides.
+
+Every named chain ending in `quality-manager` stops at its durable findings report. The QM reviews a private local clone; it does not edit code, commit, complete the plan, or guarantee a clean tree. Resolve findings separately through tasks, Drive, and independent re-review. Base-owned `qualityReview` checks and model diversity that are not configured appear as human-decision items and block `ready`. Project checks, direct gate resolution, panel triage, and specialist reviews remain part of the assessment.
 
 ## Per-role prompt patterns
 
@@ -94,7 +96,7 @@ spawn_agent(role: "explorer", prompt: "Explore the authentication module in lib/
 
 spawn_agent(role: "verifier", prompt: "Validate these claims using this repo's actual verification commands:\n1. The test suite passes\n2. The configured static-analysis step (if any) passes\n3. <any other gate the project uses>")
 
-spawn_agent(role: "quality-manager", prompt: "Run lint/format checks, review against main, and orchestrate fixes until merge-ready.")
+spawn_agent(role: "quality-manager", prompt: "Review current changes against main and produce a durable findings report and verdict.")
 ```
 
 ## Parallel-spawning protocol
@@ -123,7 +125,7 @@ Rules:
 
 ## Reading what a chain ran
 
-`chain_run` returns **stage outcomes**, not the work product — e.g. `Chain completed (…) — task-manager: ok, coordinator: ok, integration-verifier: ok, quality-manager: ok`, plus a cost summary. It does not tell you what the quality-manager changed or what a reviewer found. To learn the final state, inspect it directly: `task_list` for task statuses and ACs, `git log` / `git diff` for what landed, task notes for per-task detail. Don't re-spawn a stage because the result looked terse — verify it didn't run before assuming so.
+`chain_run` returns **stage outcomes**, not the work product — e.g. `Chain completed (…) — task-manager: ok, coordinator: ok, integration-verifier: ok, quality-manager: ok`, plus a cost summary. Read the QM report path from the result and inspect its findings and verdict. Inspect `task_list` for task statuses and ACs and `git log` / `git diff` for implementation changes. A completed chain does not mean the QM fixed findings, completed the plan, or left a clean tree. Don't re-spawn a stage because the result looked terse — verify it didn't run before assuming so.
 
 ## Related skills
 

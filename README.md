@@ -27,7 +27,7 @@ Here, you handle the creative work (requirements, design decisions, architecture
 5. **A coordinator delegates tasks to worker agents** — respecting dependencies, routing skills.
 6. **Workers implement, test, and commit** — each in a fresh context with the right tools.
 7. **An integration verifier checks plan-level contracts** — comparing the implemented changes against the approved plan.
-8. **A quality manager verifies everything** — lint, typecheck, code review, and remediation.
+8. **A quality manager reviews the result** — host-run checks and independent review produce a durable findings report. Remediation goes through tasks, Drive, and another independent review.
 
 The key insight: **the design phase is where humans add the most value.** Once the plan is solid and tasks are well-defined, execution is mechanical. Cosmonauts optimizes for great planning and reliable autonomous execution.
 
@@ -136,8 +136,8 @@ cosmonauts run chain plan-and-build "design an auth system for this project"
 # Implement an existing plan
 cosmonauts run chain implement "implement the plan in missions/plans/auth-system/"
 
-# Run quality checks and remediation on current changes
-cosmonauts run chain verify "review against main and fix findings"
+# Review current changes and get a durable findings report
+cosmonauts run chain verify "review current changes against main"
 
 # List available named chains
 cosmonauts run chain list
@@ -354,7 +354,7 @@ Every agent is a Pi session configured by a declarative definition — model, to
 | **Coordinator** | Delegates tasks to workers, monitors progress, verifies completion. |
 | **Worker** | Implements one task. Full coding tools, ephemeral session. |
 | **Integration Verifier** | Checks implemented changes against the approved plan and plan-level contracts. |
-| **Quality Manager** | Runs lint/format/typecheck, spawns reviewers and fixers, ensures merge-readiness. |
+| **Quality Manager** | Runs configured host checks, spawns reviewers, and writes a durable findings report and verdict. It does not change the reviewed checkout. |
 | **Reviewer** | Clean-context code review against main. Writes findings, does not fix. |
 | **Fixer** | Applies targeted remediation from review findings. |
 

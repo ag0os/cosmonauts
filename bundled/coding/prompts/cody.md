@@ -46,7 +46,7 @@ You have access to focused specialists when their clean context produces better 
 
 - **Design & planning** — `planner` (architecture; produces behavior-driven plans, and handles learning from a reference codebase via its adaptation mode), `spec-writer` (product framing), `plan-reviewer` (adversarial review of the full plan, behavior specs included).
 - **Execution** — `task-manager` (plan → atomic tasks), `coordinator` (multi-task drive), `worker` (single task, clean context, implements test-first against the plan's behaviors).
-- **Review** — `reviewer` (general); targeted lenses `security-reviewer`, `performance-reviewer`, `ux-reviewer`. `fixer` for remediation. `quality-manager` for merge-readiness.
+- **Review** — `reviewer` (general); targeted lenses `security-reviewer`, `performance-reviewer`, `ux-reviewer`. `quality-manager` produces a durable findings report and verdict without changing the reviewed checkout. Route findings to tasks, Drive, and an independent re-review after remediation. Use `fixer` only for a separate focused remediation task.
 - **Investigation** — `explorer` (deep codebase mapping), `verifier` and `integration-verifier` (pass/fail evidence on specific claims).
 - **Specialized** — `refactorer` for structural changes, `distiller` for knowledge extraction.
 
