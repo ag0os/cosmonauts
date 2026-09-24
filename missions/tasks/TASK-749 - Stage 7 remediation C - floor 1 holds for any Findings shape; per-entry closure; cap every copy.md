@@ -3,7 +3,7 @@ id: TASK-749
 title: >-
   Stage 7 remediation C - floor 1 holds for any Findings shape; per-entry
   closure; cap every copy
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -13,7 +13,7 @@ labels:
 dependencies:
   - TASK-748
 createdAt: '2026-09-24T17:02:31.679Z'
-updatedAt: '2026-09-24T17:02:31.679Z'
+updatedAt: '2026-09-24T17:16:31.899Z'
 ---
 
 ## Description
@@ -34,14 +34,13 @@ Every new test must fail on the current code, and the tests must kill the named 
 
 `bun run lint` has one known error, in the gitignored `.shepherd/backups/`; lint on tracked paths must pass. Run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Floor 1 holds for every Findings shape (codex 1, Claude H-1): a real finding under `## Findings` written as a numbered item, a `*` or `+` bullet, a prose paragraph, prose before the first bullet, or a trailing paragraph after a closed dismissal entry yields `not-ready` end to end through the run; only a Findings body made entirely of evidenced-closed dismissal entries (or empty) lets `ready` through; tests fail if the Findings condition in the host ready check is replaced with `false` and if ID-less entries stop blocking.
-- [ ] #2 Closure is per entry (codex 2): an evidenced dismissal of `F-1` does not close a separate open `F-1` entry in either section; the open entry blocks `ready`; tested.
-- [ ] #3 The P0/P1 cap applies to every entry sharing an unsupported performance ID in both sections (codex 3): a duplicate `PF-1 P0` in Out-of-range observations is capped or raised as a human item, and a cap that cannot be applied in place becomes a human item rather than only a Findings note; tested.
-- [ ] #4 Leading-ID recognition tolerates ordinary decoration (Claude L-1, codex LOW): leading `AC-`/`D-`/`INV-`/`B-` tokens are not finding IDs, and `**F-001**`, backticked IDs and a leading `[P2]` prefix map to their ID; the QM prompt tells the QM to start each Findings and Out-of-range entry with the reviewer finding ID; an unrecognized entry still fails safe (carried over, human item); tested.
-- [ ] #5 Capped-entry rewrites treat entry text literally (Claude L-2): an entry containing `$$`, `$&`, a backtick-dollar sequence or `$' is rewritten without duplication or expansion; tested.
-- [ ] #6 D-019 deduplication is tested for real (Claude L-3, codex AC #4 OPEN): with an implementer model present and `diverseReviewerModel` unset, the not-configured item appears exactly once in the report and plan summary, and the test fails if the deduplication is removed.
-- [ ] #7 Surviving mutations are killed (Claude L-4): tests fail when the reviewer-section `priority: P0` check is removed, when unmapped P0 detection is removed, when the unmapped check over Out-of-range observations is removed, and when other-lens `independentlySupported` closure is replaced with same-lens acceptance (the test supplies only other-lens evidence, or only same-lens evidence).
-- [ ] #8 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
+- [x] #1 Floor 1 holds for every Findings shape (codex 1, Claude H-1): a real finding under `## Findings` written as a numbered item, a `*` or `+` bullet, a prose paragraph, prose before the first bullet, or a trailing paragraph after a closed dismissal entry yields `not-ready` end to end through the run; only a Findings body made entirely of evidenced-closed dismissal entries (or empty) lets `ready` through; tests fail if the Findings condition in the host ready check is replaced with `false` and if ID-less entries stop blocking.
+- [x] #2 Closure is per entry (codex 2): an evidenced dismissal of `F-1` does not close a separate open `F-1` entry in either section; the open entry blocks `ready`; tested.
+- [x] #3 The P0/P1 cap applies to every entry sharing an unsupported performance ID in both sections (codex 3): a duplicate `PF-1 P0` in Out-of-range observations is capped or raised as a human item, and a cap that cannot be applied in place becomes a human item rather than only a Findings note; tested.
+- [x] #4 Leading-ID recognition tolerates ordinary decoration (Claude L-1, codex LOW): leading `AC-`/`D-`/`INV-`/`B-` tokens are not finding IDs, and `**F-001**`, backticked IDs and a leading `[P2]` prefix map to their ID; the QM prompt tells the QM to start each Findings and Out-of-range entry with the reviewer finding ID; an unrecognized entry still fails safe (carried over, human item); tested.
+- [x] #5 Capped-entry rewrites treat entry text literally (Claude L-2): an entry containing `$$`, `$&`, a backtick-dollar sequence or `$' is rewritten without duplication or expansion; tested.
+- [x] #6 D-019 deduplication is tested for real (Claude L-3, codex AC #4 OPEN): with an implementer model present and `diverseReviewerModel` unset, the not-configured item appears exactly once in the report and plan summary, and the test fails if the deduplication is removed.
+- [x] #7 Surviving mutations are killed (Claude L-4): tests fail when the reviewer-section `priority: P0` check is removed, when unmapped P0 detection is removed, when the unmapped check over Out-of-range observations is removed, and when other-lens `independentlySupported` closure is replaced with same-lens acceptance (the test supplies only other-lens evidence, or only same-lens evidence).
+- [x] #8 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
 <!-- AC:END -->
