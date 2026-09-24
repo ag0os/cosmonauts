@@ -15,7 +15,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileRunStore, runStatus } from "../../lib/durable-runtime/index.ts";
 import * as spawnerModule from "../../lib/orchestration/agent-spawner.ts";
 import { summarizeAssistantText } from "../../lib/orchestration/assistant-text.ts";
@@ -70,10 +70,21 @@ describe("quality review durable lifecycle", () => {
 		await removePrivateReviewWorkspace(retainedRoot);
 	});
 	const roots: string[] = [];
+	// runQualityReview reserves its workspace under tmpdir(), and a retained
+	// workspace outlives the run, so each test gets its own temp root.
+	let workspaceTmp = "";
+	beforeEach(async () => {
+		workspaceTmp = await mkdtemp(join(tmpdir(), "qm-tmp-"));
+		vi.stubEnv("TMPDIR", workspaceTmp);
+	});
 	afterEach(async () => {
 		await Promise.all(
 			roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
 		);
+		vi.unstubAllEnvs();
+		for (const entry of await readdir(workspaceTmp))
+			await removePrivateReviewWorkspace(join(workspaceTmp, entry));
+		await rm(workspaceTmp, { recursive: true, force: true });
 	});
 
 	async function root(repository = false): Promise<string> {
