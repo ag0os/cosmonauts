@@ -38,8 +38,9 @@ All tasks have label `plan:qm-chain-safety`.
 | 747 | Done | `fde1063` | From Stage 7 review 1 |
 | 748 | Done | `953d0f9` | D-031 floors, from Stage 7 review 2 |
 | 749 | Done | `3ac2e24` | From Stage 7 review 3 |
-| **750** | In Progress | — | D-032 (fail-safe Findings, dismissals only in Out-of-range), from Stage 7 review 4. Drive `run-0cc1611e` |
-| 727 | To Do | — | **Stage 8.** Depends on 750. Coordinator note added (`f17cf51`). |
+| 750 | Done | `6733eae` | D-032, from Stage 7 review 4 |
+| **751** | In Progress | — | Stage 7 review 5 closure items (duplicate headings, cap-note placement, prompt sentinels, pinned guards). Drive `run-4b47255e` |
+| 727 | To Do | — | **Stage 8.** Depends on 751. Coordinator note added (`f17cf51`). |
 | 728 | To Do | — | **Stage 9 closure.** Coordinator-run, per D-002. |
 
 **TASK-742 note.** The worker returned "partial" only because its full-suite run hit the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS` artifact. The coordinator verified all its criteria and committed the work in `0b5e7d1` and `7e75231`. Marking it Done, a coordinator regex bug left `status: Done Progress`, which the task parser reads as To Do. Fixed on 2026-09-24 in the handoff commit. It is Done.
@@ -114,7 +115,18 @@ All tasks have label `plan:qm-chain-safety`.
   - Dismissals live only in Out-of-range observations: a positive dismissal word after the ID, and other-lens evidence checked independently of order.
   - The cap applies only to Findings and Out-of-range.
   - An unknown `##` section with content blocks `ready`.
-- **TASK-750** implements D-032; Drive `run-0cc1611e-bcb2-4ca5-bfb7-01502d8fc5ba`. Next: focused review 5, from `stage7-review-4-prompt.md` with base `d58a292`.
+- **TASK-750** implements D-032; Drive `run-0cc1611e-bcb2-4ca5-bfb7-01502d8fc5ba`. TASK-750 landed as `6733eae`. Gates are green and the suite is 3358/3358.
+
+### Stage 7 review 5
+
+- **Claude: SHIP**, with LOWs.
+- **Codex: DO-NOT-SHIP-YET**, with two findings:
+  - a duplicated `## Findings` heading is not inspected;
+  - generalist performance P0 is not capped.
+- **D-032 gained two notes** (`fd9cdbe`):
+  - a duplicated section heading blocks `ready`;
+  - the host cap works by lens identity, and non-performance-lens performance claims are a recorded limit covered by prompts.
+- **TASK-751** is the final small round. Next: a focused review 6 from `stage7-review-5-prompt.md`, with base `fd9cdbe`.
 
 ### Spec-to-backlog history
 
