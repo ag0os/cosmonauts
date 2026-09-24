@@ -1,3 +1,4 @@
+import type { AgentRegistry } from "../../../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 import type { ResolvedAgentReference } from "../../../../lib/domains/bindings.ts";
 
@@ -24,4 +25,33 @@ export function isSubagentAllowed(
 	)
 		return true;
 	return false;
+}
+
+/** Resolve the same target facts for every agent-starting tool before admission. */
+export function authorizeAgentStart(options: {
+	registry: AgentRegistry;
+	domainContext?: string;
+	callerRole: string;
+	targetRole: string;
+}): string | undefined {
+	const { registry, domainContext, callerRole, targetRole } = options;
+	const caller = registry.get(callerRole, domainContext);
+	if (!caller) return `unknown caller ${callerRole} cannot start ${targetRole}`;
+
+	const target = registry.resolveReferenceResult(
+		targetRole,
+		domainContext,
+		caller.domain,
+	);
+	if (target.kind !== "found") {
+		return `${callerRole} cannot start ${targetRole}: ${target.kind === "internal" ? "internal target" : "unknown target"}`;
+	}
+	const reference =
+		target.reference ??
+		registry.resolveReference(targetRole, domainContext, caller.domain)
+			?.reference;
+	if (!reference || !isSubagentAllowed(caller, target.definition, reference)) {
+		return `${callerRole} cannot start ${targetRole}`;
+	}
+	return undefined;
 }

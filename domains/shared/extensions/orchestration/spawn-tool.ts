@@ -38,7 +38,7 @@ import {
 	writeTranscript,
 } from "../../../../lib/sessions/session-store.ts";
 import type { SessionRecord } from "../../../../lib/sessions/types.ts";
-import { isSubagentAllowed } from "./authorization.ts";
+import { authorizeAgentStart } from "./authorization.ts";
 import {
 	renderTextFallback,
 	roleLabel,
@@ -539,7 +539,12 @@ export function registerSpawnTool(
 			}
 
 			if (
-				!isSubagentAllowed(callerDef, targetDef, targetResolution.reference)
+				authorizeAgentStart({
+					registry: runtime.agentRegistry,
+					domainContext: runtime.domainContext,
+					callerRole,
+					targetRole: params.role,
+				})
 			) {
 				return {
 					content: [

@@ -39,10 +39,104 @@ const registry = new AgentRegistry([
 	agent("task-manager", false),
 	agent("reviewer", false),
 	agent("quality-manager", false),
-	agent("coordinator", true),
+	{ ...agent("coordinator", true), subagents: ["reviewer"] },
 ]);
 
 describe("chain_run durable tool routing", () => {
+	// @cosmo-behavior plan:qm-chain-safety#B-001
+	test("refuses a forbidden sequential stage before allocating a run", async () => {
+		spawnerMocks.createPiSpawner.mockReturnValue({
+			spawn: spawnerMocks.spawn,
+			dispose: spawnerMocks.dispose,
+		});
+		spawnerMocks.spawn.mockResolvedValue({
+			success: true,
+			sessionId: "unexpected",
+			messages: [],
+		});
+		const { pi } = createChainTool(temp.path);
+		const result = await callChainTool(
+			pi,
+			{
+				expression: "reviewer -> quality-manager",
+			},
+			undefined,
+			"<!-- COSMONAUTS_AGENT_ID:coordinator -->",
+		);
+		expect(result.content[0]?.text).toContain(
+			"coordinator cannot start quality-manager",
+		);
+		const store = new FileRunStore({
+			rootDir: join(temp.path, "missions", "sessions"),
+		});
+		expect(await store.listRecentRuns({ scope: "chain", limit: 10 })).toEqual(
+			[],
+		);
+	});
+
+	test.each([
+		"reviewer -> [reviewer, quality-manager]",
+		"reviewer -> quality-manager[2]",
+	])("refuses a forbidden member of %s before allocation", async (expression) => {
+		const { pi } = createChainTool(temp.path);
+		const result = await callChainTool(
+			pi,
+			{ expression },
+			undefined,
+			"<!-- COSMONAUTS_AGENT_ID:coordinator -->",
+		);
+		expect(result.content[0]?.text).toContain(
+			"coordinator cannot start quality-manager",
+		);
+		const store = new FileRunStore({
+			rootDir: join(temp.path, "missions", "sessions"),
+		});
+		expect(await store.listRecentRuns({ scope: "chain", limit: 10 })).toEqual(
+			[],
+		);
+	});
+
+	test("fails closed for unknown caller and unknown target", async () => {
+		const { pi } = createChainTool(temp.path);
+		const unknownCaller = await callChainTool(
+			pi,
+			{ expression: "reviewer" },
+			undefined,
+			"<!-- COSMONAUTS_AGENT_ID:missing -->",
+		);
+		expect(unknownCaller.content[0]?.text).toContain(
+			"unknown caller missing cannot start reviewer",
+		);
+		const unknownTarget = await callChainTool(
+			pi,
+			{ expression: "missing" },
+			undefined,
+			"<!-- COSMONAUTS_AGENT_ID:coordinator -->",
+		);
+		expect(unknownTarget.content[0]?.text).toContain(
+			"coordinator cannot start missing: unknown target",
+		);
+	});
+
+	test("allows a lead to start a listed chain stage", async () => {
+		spawnerMocks.createPiSpawner.mockReturnValue({
+			spawn: spawnerMocks.spawn,
+			dispose: spawnerMocks.dispose,
+		});
+		spawnerMocks.spawn.mockResolvedValue({
+			success: true,
+			sessionId: "allowed-reviewer",
+			messages: [],
+		});
+		const { pi } = createChainTool(temp.path);
+		const result = await callChainTool(
+			pi,
+			{ expression: "reviewer" },
+			undefined,
+			"<!-- COSMONAUTS_AGENT_ID:coordinator -->",
+		);
+		expect(result.content[0]?.text).toContain("Chain completed");
+	});
 	test("routes loop-free chain_run through the durable graph and loop chains inline", async () => {
 		const durableExpressions = [
 			{
@@ -247,6 +341,7 @@ async function callChainTool(
 		content: Array<{ type: "text"; text: string }>;
 		details: { lines: string[] };
 	}) => void,
+	systemPrompt = "",
 ): Promise<{
 	content: Array<{ type: "text"; text: string }>;
 	details: {
@@ -266,7 +361,7 @@ async function callChainTool(
 	}
 	return (await tool.execute("call-id", params, undefined, onUpdate, {
 		cwd: pi.cwd,
-		getSystemPrompt: () => "",
+		getSystemPrompt: () => systemPrompt,
 		sessionManager: { getSessionId: () => "parent-session" },
 	})) as Awaited<ReturnType<typeof callChainTool>>;
 }

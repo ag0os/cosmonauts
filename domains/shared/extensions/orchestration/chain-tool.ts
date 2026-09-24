@@ -13,6 +13,7 @@ import type {
 	ChainResult,
 } from "../../../../lib/orchestration/types.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
+import { authorizeAgentStart } from "./authorization.ts";
 import {
 	buildCostTable,
 	buildProgressText,
@@ -133,6 +134,30 @@ export function registerChainTool(
 				runtime.domainContext,
 				callerDef?.domain,
 			);
+			if (callerRole) {
+				for (const step of steps) {
+					const stages = "kind" in step ? step.stages : [step];
+					for (const stage of stages) {
+						const denial = authorizeAgentStart({
+							registry: runtime.agentRegistry,
+							domainContext: runtime.domainContext,
+							callerRole,
+							targetRole: stage.name,
+						});
+						if (denial) {
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: `chain_run denied: ${denial}`,
+									},
+								],
+								details: { lines: [] } as ChainProgressDetails,
+							};
+						}
+					}
+				}
+			}
 			injectUserPrompt(steps, params.prompt);
 			const thinking = params.thinkingLevel
 				? { default: params.thinkingLevel }

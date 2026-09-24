@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import {
 	createClaudeCliBackend,
 	readClaudeArgsFromEnv,
@@ -47,6 +48,7 @@ import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts"
 import type { SpawnAgentResolution } from "../../../../lib/orchestration/spawn-resolution.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
+import { authorizeAgentStart } from "./authorization.ts";
 
 interface ActiveDriverRun {
 	runId: string;
@@ -190,6 +192,24 @@ export function registerDriverTool(
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const callerRole = extractAgentIdFromSystemPrompt(ctx.getSystemPrompt());
+			if (callerRole) {
+				const runtime = await getRuntime(ctx.cwd);
+				const denial = authorizeAgentStart({
+					registry: runtime.agentRegistry,
+					domainContext: runtime.domainContext,
+					callerRole,
+					targetRole: "worker",
+				});
+				if (denial) {
+					return {
+						content: [
+							{ type: "text" as const, text: `run_driver denied: ${denial}` },
+						],
+						details: { error: "unauthorized", message: denial },
+					};
+				}
+			}
 			const planSlug = params.planSlug;
 			try {
 				validateDriverPlanSlug(planSlug);
