@@ -1,7 +1,7 @@
 ---
 id: TASK-761
 title: Stage 9 remediation A - QM tests leak workspaces into the system temp dir
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-760
 createdAt: '2026-09-24T21:34:08.787Z'
-updatedAt: '2026-09-24T21:34:08.787Z'
+updatedAt: '2026-09-24T21:44:17.133Z'
 ---
 
 ## Description
@@ -25,9 +25,8 @@ Fix the tests, not the production retain semantics. Either point the QM's temp r
 
 Keep the changed-scope audit against `main` passing: no new complexity, dead-code or duplication findings, no baseline change, no suppression. Lint on tracked paths must pass. Run the suite as `bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Running `tests/orchestration/quality-review-run.test.ts` (and the full suite) with an isolated `TMPDIR` leaves no `cosmonauts-qm-*` directory behind; a check or test demonstrates this.
-- [ ] #2 Production workspace retention (retained on live work, removed otherwise) is unchanged; existing retention tests still pass and still assert the production disposition.
-- [ ] #3 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
+- [x] #1 Running `tests/orchestration/quality-review-run.test.ts` (and the full suite) with an isolated `TMPDIR` leaves no `cosmonauts-qm-*` directory behind; a check or test demonstrates this.
+- [x] #2 Production workspace retention (retained on live work, removed otherwise) is unchanged; existing retention tests still pass and still assert the production disposition.
+- [x] #3 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
 <!-- AC:END -->
