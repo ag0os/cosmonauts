@@ -76,6 +76,33 @@ function formatEpisodeWarning(warning: MemoryWarning): string {
 	return `Non-fatal episode warning: ${location}${warning.message}`;
 }
 
+function chainDenial(
+	steps: ReturnType<typeof parseChain>,
+	callerRole: string,
+	runtime: CosmonautsRuntime,
+): string | undefined {
+	for (const step of steps) {
+		const stages = "kind" in step ? step.stages : [step];
+		for (const stage of stages) {
+			const denial = authorizeAgentStart({
+				registry: runtime.agentRegistry,
+				domainContext: runtime.domainContext,
+				callerRole,
+				targetRole: stage.name,
+			});
+			if (denial) return denial;
+		}
+	}
+	return undefined;
+}
+
+function deniedChainResult(message: string) {
+	return {
+		content: [{ type: "text" as const, text: `chain_run denied: ${message}` }],
+		details: { lines: [] } as ChainProgressDetails,
+	};
+}
+
 // ============================================================================
 // Tool Registration
 // ============================================================================
@@ -126,48 +153,21 @@ export function registerChainTool(
 			const runtime = await getRuntime(ctx.cwd);
 			const callerRole = extractAgentIdFromSystemPrompt(ctx.getSystemPrompt());
 			if (!callerRole)
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: "chain_run denied: caller role could not be resolved from runtime identity marker",
-						},
-					],
-					details: { lines: [] } as ChainProgressDetails,
-				};
-			const callerDef = callerRole
-				? runtime.agentRegistry.get(callerRole, runtime.domainContext)
-				: undefined;
+				return deniedChainResult(
+					"caller role could not be resolved from runtime identity marker",
+				);
+			const callerDef = runtime.agentRegistry.get(
+				callerRole,
+				runtime.domainContext,
+			);
 			const steps = parseChain(
 				params.expression,
 				runtime.agentRegistry,
 				runtime.domainContext,
 				callerDef?.domain,
 			);
-			if (callerRole) {
-				for (const step of steps) {
-					const stages = "kind" in step ? step.stages : [step];
-					for (const stage of stages) {
-						const denial = authorizeAgentStart({
-							registry: runtime.agentRegistry,
-							domainContext: runtime.domainContext,
-							callerRole,
-							targetRole: stage.name,
-						});
-						if (denial) {
-							return {
-								content: [
-									{
-										type: "text" as const,
-										text: `chain_run denied: ${denial}`,
-									},
-								],
-								details: { lines: [] } as ChainProgressDetails,
-							};
-						}
-					}
-				}
-			}
+			const denial = chainDenial(steps, callerRole, runtime);
+			if (denial) return deniedChainResult(denial);
 			injectUserPrompt(steps, params.prompt);
 			const thinking = params.thinkingLevel
 				? { default: params.thinkingLevel }

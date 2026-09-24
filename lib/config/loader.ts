@@ -197,90 +197,67 @@ export function parseQualityReviewConfig(
 	if (typeof value !== "object" || value === null || Array.isArray(value))
 		throw new Error("Invalid qualityReview config: expected object");
 	const raw = value as Record<string, unknown>;
-	for (const key of [
-		"assessmentTimeoutMs",
-		"panelTimeoutMs",
-		"qmSettleGraceMs",
-		"workspaceRemovalTimeoutMs",
-	] as const)
-		if (
-			raw[key] !== undefined &&
-			(!Number.isSafeInteger(raw[key]) || (raw[key] as number) <= 0)
-		)
-			throw new Error(
-				`Invalid qualityReview.${key}: expected positive integer`,
-			);
-	const parseCommands = (key: "analysisPrepare" | "prepare" | "checks") => {
-		if (!(key in raw)) return undefined;
-		if (!Array.isArray(raw[key]))
-			throw new Error(`Invalid qualityReview.${key}: expected steps array`);
-		const commands = raw[key].map((entry: unknown, index: number) => {
-			if (typeof entry !== "object" || entry === null || Array.isArray(entry))
-				throw new Error(`Invalid qualityReview.${key} step ${index + 1}`);
-			const step = entry as Record<string, unknown>;
-			if (
-				typeof step.id !== "string" ||
-				!/^[a-z0-9][a-z0-9-]*$/.test(step.id) ||
-				typeof step.command !== "string" ||
-				step.command.length === 0 ||
-				!Array.isArray(step.args) ||
-				!step.args.every((arg) => typeof arg === "string") ||
-				(step.timeoutMs !== undefined &&
-					(!Number.isSafeInteger(step.timeoutMs) ||
-						(step.timeoutMs as number) <= 0))
-			)
-				throw new Error(
-					`Invalid qualityReview.${key} step ${index + 1}: expected id, command, args and positive timeoutMs`,
-				);
-			return {
-				id: step.id,
-				command: step.command,
-				args: step.args as string[],
-				...(step.timeoutMs === undefined
-					? {}
-					: { timeoutMs: step.timeoutMs as number }),
-			};
-		});
-		if (new Set(commands.map((step) => step.id)).size !== commands.length)
-			throw new Error(`Invalid qualityReview.${key}: duplicate step id`);
-		return commands;
-	};
+	validateQualityReviewTimeouts(raw);
 	if (
 		raw.diverseReviewerModel !== undefined &&
 		(typeof raw.diverseReviewerModel !== "string" ||
 			!raw.diverseReviewerModel.includes("/"))
 	)
 		throw new Error("Invalid qualityReview.diverseReviewerModel");
-	const prepare = parseCommands("prepare");
-	const analysisPrepare = parseCommands("analysisPrepare");
+	const prepare = parseQualityReviewCommands(raw, "prepare");
+	const analysisPrepare = parseQualityReviewCommands(raw, "analysisPrepare");
 	for (const step of analysisPrepare ?? [])
-		if (
-			!/(?:^|\/)bun$/.test(step.command) ||
-			JSON.stringify(step.args) !==
-				JSON.stringify(["install", "--frozen-lockfile", "--ignore-scripts"])
-		)
+		if (!supportedAnalysisPrepare(step))
 			throw new Error(
 				"Invalid qualityReview.analysisPrepare: only bun install --frozen-lockfile --ignore-scripts is supported",
 			);
-	const checks = parseCommands("checks");
+	const checks = parseQualityReviewCommands(raw, "checks");
 	if (
 		raw.gateOwnedPaths !== undefined &&
 		(!Array.isArray(raw.gateOwnedPaths) ||
-			!raw.gateOwnedPaths.every(
-				(path) =>
-					typeof path === "string" &&
-					path.length > 0 &&
-					!path.startsWith("/") &&
-					!path
-						.split("/")
-						.some((part) => !part || part === "." || part === ".."),
-			))
+			!raw.gateOwnedPaths.every(validGateOwnedPath))
 	)
 		throw new Error("Invalid qualityReview.gateOwnedPaths");
+	return qualityReviewConfigFields(raw, { prepare, analysisPrepare, checks });
+}
+
+function validateQualityReviewTimeouts(raw: Record<string, unknown>): void {
+	for (const key of [
+		"assessmentTimeoutMs",
+		"panelTimeoutMs",
+		"qmSettleGraceMs",
+		"workspaceRemovalTimeoutMs",
+	] as const)
+		if (raw[key] !== undefined && !positiveInteger(raw[key]))
+			throw new Error(
+				`Invalid qualityReview.${key}: expected positive integer`,
+			);
+}
+
+function qualityReviewConfigFields(
+	raw: Record<string, unknown>,
+	commands: Pick<
+		NonNullable<ProjectConfig["qualityReview"]>,
+		"prepare" | "analysisPrepare" | "checks"
+	>,
+): ProjectConfig["qualityReview"] {
+	const { prepare, analysisPrepare, checks } = commands;
 	return {
 		...(raw.gateOwnedPaths !== undefined
 			? { gateOwnedPaths: raw.gateOwnedPaths as string[] }
 			: {}),
+		...qualityReviewTimeoutFields(raw),
+		...(prepare !== undefined ? { prepare } : {}),
+		...(analysisPrepare !== undefined ? { analysisPrepare } : {}),
+		...(checks !== undefined ? { checks } : {}),
+		...(raw.diverseReviewerModel !== undefined
+			? { diverseReviewerModel: raw.diverseReviewerModel as string }
+			: {}),
+	};
+}
+
+function qualityReviewTimeoutFields(raw: Record<string, unknown>) {
+	return {
 		...(raw.assessmentTimeoutMs !== undefined
 			? { assessmentTimeoutMs: raw.assessmentTimeoutMs as number }
 			: {}),
@@ -293,13 +270,88 @@ export function parseQualityReviewConfig(
 		...(raw.workspaceRemovalTimeoutMs !== undefined
 			? { workspaceRemovalTimeoutMs: raw.workspaceRemovalTimeoutMs as number }
 			: {}),
-		...(prepare !== undefined ? { prepare } : {}),
-		...(analysisPrepare !== undefined ? { analysisPrepare } : {}),
-		...(checks !== undefined ? { checks } : {}),
-		...(raw.diverseReviewerModel !== undefined
-			? { diverseReviewerModel: raw.diverseReviewerModel as string }
-			: {}),
 	};
+}
+
+function parseQualityReviewCommands(
+	raw: Record<string, unknown>,
+	key: "analysisPrepare" | "prepare" | "checks",
+) {
+	if (!(key in raw)) return undefined;
+	if (!Array.isArray(raw[key]))
+		throw new Error(`Invalid qualityReview.${key}: expected steps array`);
+	const commands = raw[key].map((entry: unknown, index: number) =>
+		parseQualityReviewStep(entry, key, index),
+	);
+	if (new Set(commands.map((step) => step.id)).size !== commands.length)
+		throw new Error(`Invalid qualityReview.${key}: duplicate step id`);
+	return commands;
+}
+
+function positiveInteger(value: unknown): boolean {
+	return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function parseQualityReviewStep(
+	entry: unknown,
+	key: "analysisPrepare" | "prepare" | "checks",
+	index: number,
+) {
+	if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+		throw new Error(`Invalid qualityReview.${key} step ${index + 1}`);
+	const step = entry as Record<string, unknown>;
+	if (!validQualityReviewStep(step))
+		throw new Error(
+			`Invalid qualityReview.${key} step ${index + 1}: expected id, command, args and positive timeoutMs`,
+		);
+	return {
+		id: step.id as string,
+		command: step.command as string,
+		args: step.args as string[],
+		...(step.timeoutMs === undefined
+			? {}
+			: { timeoutMs: step.timeoutMs as number }),
+	};
+}
+
+function validQualityReviewStep(step: Record<string, unknown>): boolean {
+	return (
+		validQualityReviewStepIdentity(step) &&
+		Array.isArray(step.args) &&
+		step.args.every((arg) => typeof arg === "string") &&
+		(step.timeoutMs === undefined || positiveInteger(step.timeoutMs))
+	);
+}
+
+function validQualityReviewStepIdentity(
+	step: Record<string, unknown>,
+): boolean {
+	return (
+		typeof step.id === "string" &&
+		/^[a-z0-9][a-z0-9-]*$/.test(step.id) &&
+		typeof step.command === "string" &&
+		step.command.length > 0
+	);
+}
+
+function supportedAnalysisPrepare(step: {
+	command: string;
+	args: string[];
+}): boolean {
+	return (
+		/(?:^|\/)bun$/.test(step.command) &&
+		JSON.stringify(step.args) ===
+			JSON.stringify(["install", "--frozen-lockfile", "--ignore-scripts"])
+	);
+}
+
+function validGateOwnedPath(path: unknown): boolean {
+	return (
+		typeof path === "string" &&
+		path.length > 0 &&
+		!path.startsWith("/") &&
+		!path.split("/").some((part) => !part || part === "." || part === "..")
+	);
 }
 
 export function resolveKnowledgeSurfaceConfig(
@@ -354,7 +406,15 @@ function parseEpisodicLogConfig(
 		enabled?: boolean;
 		warningThreshold?: number;
 	} = {};
+	parseEpisodicEnabled(obj, episodicLog);
+	parseEpisodicWarningThreshold(obj, episodicLog);
+	return episodicLog;
+}
 
+function parseEpisodicEnabled(
+	obj: Record<string, unknown>,
+	episodicLog: { enabled?: boolean; warningThreshold?: number },
+): void {
 	if ("enabled" in obj) {
 		if (typeof obj.enabled === "boolean") {
 			episodicLog.enabled = obj.enabled;
@@ -364,7 +424,12 @@ function parseEpisodicLogConfig(
 			);
 		}
 	}
+}
 
+function parseEpisodicWarningThreshold(
+	obj: Record<string, unknown>,
+	episodicLog: { enabled?: boolean; warningThreshold?: number },
+): void {
 	if ("warningThreshold" in obj) {
 		if (
 			typeof obj.warningThreshold === "number" &&
@@ -378,8 +443,6 @@ function parseEpisodicLogConfig(
 			);
 		}
 	}
-
-	return episodicLog;
 }
 
 function parseAnalysisConfig(
@@ -416,21 +479,7 @@ function parseArchitectureMapConfig(
 
 	const obj = value as Record<string, unknown>;
 	const architectureMap: MutableArchitectureMapConfig = {};
-
-	const sourceRoots = parseStringArrayField(
-		"architectureMap.sourceRoots",
-		obj.sourceRoots,
-	);
-	if (sourceRoots) architectureMap.sourceRoots = sourceRoots;
-
-	const moduleRoots = parseStringArrayField(
-		"architectureMap.moduleRoots",
-		obj.moduleRoots,
-	);
-	if (moduleRoots) architectureMap.moduleRoots = moduleRoots;
-
-	const exclude = parseStringArrayField("architectureMap.exclude", obj.exclude);
-	if (exclude) architectureMap.exclude = exclude;
+	parseArchitectureMapRoots(obj, architectureMap);
 
 	const injectionMaxBytes = parseOptionalFiniteNumberField(
 		"architectureMap.injectionMaxBytes",
@@ -452,6 +501,26 @@ function parseArchitectureMapConfig(
 	}
 
 	return architectureMap;
+}
+
+function parseArchitectureMapRoots(
+	obj: Record<string, unknown>,
+	architectureMap: MutableArchitectureMapConfig,
+): void {
+	const sourceRoots = parseStringArrayField(
+		"architectureMap.sourceRoots",
+		obj.sourceRoots,
+	);
+	if (sourceRoots) architectureMap.sourceRoots = sourceRoots;
+
+	const moduleRoots = parseStringArrayField(
+		"architectureMap.moduleRoots",
+		obj.moduleRoots,
+	);
+	if (moduleRoots) architectureMap.moduleRoots = moduleRoots;
+
+	const exclude = parseStringArrayField("architectureMap.exclude", obj.exclude);
+	if (exclude) architectureMap.exclude = exclude;
 }
 
 function parseOptionalFiniteNumberField(

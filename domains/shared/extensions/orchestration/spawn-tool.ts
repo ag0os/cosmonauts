@@ -87,6 +87,22 @@ interface SpawnProgressDetails {
 	taskId?: string;
 }
 
+function spawnFailureText(details: SpawnProgressDetails): string | undefined {
+	if (details.status === "failed")
+		return `✗ ${roleLabel(details.role)} failed${details.error ? `: ${details.error}` : ""}`;
+	if (details.status === "denied")
+		return `⊘ ${roleLabel(details.role)} denied${details.error ? `: ${details.error}` : ""}`;
+	if (details.status === "rejected")
+		return `⊘ ${roleLabel(details.role)} rejected${details.reason ? `: ${details.reason}` : ""}`;
+	return undefined;
+}
+
+function spawnDisplayLabel(details: SpawnProgressDetails): string {
+	return details.taskId
+		? `${roleLabel(details.role)} (${details.taskId})`
+		: roleLabel(details.role);
+}
+
 interface ChildActivityBase {
 	spawnId: string;
 	parentSessionId: string;
@@ -186,27 +202,7 @@ async function runDetachedChildSession(
 			...result,
 			stats: captureLineageStats(params, startMs),
 		};
-		if (
-			params.qualityContext &&
-			params.qualityContext.assessmentActive !== false &&
-			params.qualityContext.artifactSink.reviewersOpen()
-		) {
-			if (!params.resolvedRole || !params.resolvedModel || !result.fullText)
-				throw new Error("Missing reviewer host correlation");
-			assertQualityReviewModelIdentity(params.resolvedModel, session.model);
-			await params.qualityContext.artifactSink.writeReviewer({
-				runId: params.qualityContext.runId,
-				lens: params.resolvedRole.replace(/^coding\//, ""),
-				spawnId: params.spawnId,
-				sessionId: session.sessionId,
-				resolvedRole: params.resolvedRole,
-				resolvedModel: params.resolvedModel,
-				outcome: "success",
-				digest: createHash("sha256").update(result.fullText).digest("hex"),
-				fullText: result.fullText,
-			});
-			params.qualityContext.activeSpawns.delete(params.spawnId);
-		}
+		await recordReviewerResult(params, result);
 		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -232,6 +228,34 @@ async function runDetachedChildSession(
 			await persistChildLineage(params, result, finalMessages);
 		}
 	}
+}
+
+async function recordReviewerResult(
+	params: DetachedChildSessionParams,
+	result: ChildPromptResult,
+): Promise<void> {
+	const { qualityContext, session, resolvedRole, resolvedModel } = params;
+	if (
+		!qualityContext ||
+		qualityContext.assessmentActive === false ||
+		!qualityContext.artifactSink.reviewersOpen()
+	)
+		return;
+	if (!resolvedRole || !resolvedModel || !result.fullText)
+		throw new Error("Missing reviewer host correlation");
+	assertQualityReviewModelIdentity(resolvedModel, session.model);
+	await qualityContext.artifactSink.writeReviewer({
+		runId: qualityContext.runId,
+		lens: resolvedRole.replace(/^coding\//, ""),
+		spawnId: params.spawnId,
+		sessionId: session.sessionId,
+		resolvedRole,
+		resolvedModel,
+		outcome: "success",
+		digest: createHash("sha256").update(result.fullText).digest("hex"),
+		fullText: result.fullText,
+	});
+	qualityContext.activeSpawns.delete(params.spawnId);
 }
 
 function subscribeChildActivity(
@@ -491,153 +515,123 @@ export function registerSpawnTool(
 			if (qualityContext && !baseRuntime)
 				throw new Error("Quality review base runtime is missing");
 			const runtime = baseRuntime ?? (await getRuntime(ctx.cwd));
-			const systemPrompt = ctx.getSystemPrompt();
-			const callerRole = extractAgentIdFromSystemPrompt(systemPrompt);
-			if (!callerRole) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: "spawn_agent denied: caller role could not be resolved from runtime identity marker",
-						},
-					],
-					details: {
-						role: params.role,
-						status: "denied",
-						error: "caller role unresolved",
-					} as SpawnProgressDetails,
-				};
-			}
+			const resolved = () => {
+				const systemPrompt = ctx.getSystemPrompt();
+				const callerRole = extractAgentIdFromSystemPrompt(systemPrompt);
+				if (!callerRole) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: "spawn_agent denied: caller role could not be resolved from runtime identity marker",
+							},
+						],
+						details: {
+							role: params.role,
+							status: "denied",
+							error: "caller role unresolved",
+						} as SpawnProgressDetails,
+					};
+				}
 
-			const callerDef = runtime.agentRegistry.get(
-				callerRole,
-				runtime.domainContext,
-			);
-			if (!callerDef) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `spawn_agent denied: unknown caller role "${callerRole}"`,
-						},
-					],
-					details: {
-						role: params.role,
-						status: "denied",
-						error: `unknown caller "${callerRole}"`,
-					} as SpawnProgressDetails,
-				};
-			}
-
-			const targetResolutionResult =
-				runtime.agentRegistry.resolveReferenceResult(
-					params.role,
+				const callerDef = runtime.agentRegistry.get(
+					callerRole,
 					runtime.domainContext,
-					callerDef.domain,
 				);
-			if (targetResolutionResult.kind === "internal") {
-				const error = `Agent "${params.role}" is internal to domain "${targetResolutionResult.domain}" and is not visible from domain "${callerDef.domain}".`;
+				if (!callerDef) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `spawn_agent denied: unknown caller role "${callerRole}"`,
+							},
+						],
+						details: {
+							role: params.role,
+							status: "denied",
+							error: `unknown caller "${callerRole}"`,
+						} as SpawnProgressDetails,
+					};
+				}
+
+				const targetResolutionResult =
+					runtime.agentRegistry.resolveReferenceResult(
+						params.role,
+						runtime.domainContext,
+						callerDef.domain,
+					);
+				if (targetResolutionResult.kind === "internal") {
+					const error = `Agent "${params.role}" is internal to domain "${targetResolutionResult.domain}" and is not visible from domain "${callerDef.domain}".`;
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `spawn_agent denied: ${error}`,
+							},
+						],
+						details: {
+							role: params.role,
+							status: "denied",
+							error,
+						} as SpawnProgressDetails,
+					};
+				}
+				const targetResolution =
+					targetResolutionResult.kind === "found"
+						? {
+								definition: targetResolutionResult.definition,
+								reference:
+									targetResolutionResult.reference ??
+									runtime.agentRegistry.resolveReference(
+										params.role,
+										runtime.domainContext,
+										callerDef.domain,
+									)?.reference,
+							}
+						: undefined;
+				const targetDef = targetResolution?.definition;
+				if (!targetDef || !targetResolution?.reference) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `spawn_agent denied: unknown target role "${params.role}"`,
+							},
+						],
+						details: {
+							role: params.role,
+							status: "denied",
+							error: `unknown target "${params.role}"`,
+						} as SpawnProgressDetails,
+					};
+				}
 				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `spawn_agent denied: ${error}`,
-						},
-					],
-					details: {
-						role: params.role,
-						status: "denied",
-						error,
-					} as SpawnProgressDetails,
+					kind: "resolved" as const,
+					callerRole,
+					callerDef,
+					targetResolution: {
+						...targetResolution,
+						reference: targetResolution.reference,
+					},
+					targetDef,
 				};
-			}
-			const targetResolution =
-				targetResolutionResult.kind === "found"
-					? {
-							definition: targetResolutionResult.definition,
-							reference:
-								targetResolutionResult.reference ??
-								runtime.agentRegistry.resolveReference(
-									params.role,
-									runtime.domainContext,
-									callerDef.domain,
-								)?.reference,
-						}
-					: undefined;
-			const targetDef = targetResolution?.definition;
-			if (!targetDef || !targetResolution?.reference) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `spawn_agent denied: unknown target role "${params.role}"`,
-						},
-					],
-					details: {
-						role: params.role,
-						status: "denied",
-						error: `unknown target "${params.role}"`,
-					} as SpawnProgressDetails,
-				};
-			}
+			};
+			const authorization = resolved();
+			if (authorization.kind !== "resolved") return authorization;
+			const { callerRole, callerDef, targetResolution, targetDef } =
+				authorization;
 			const panelPrompt = qualityContext
 				? buildQualityReviewPanelPrompt(qualityContext, params.prompt)
 				: params.prompt;
 			const resolvedTargetRole =
 				targetResolution.reference.resolved.qualifiedId;
-			if (callerRole === "coding/quality-manager" && !qualityContext) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: "spawn_agent denied: quality review context missing",
-						},
-					],
-					details: {
-						role: params.role,
-						status: "denied",
-					} as SpawnProgressDetails,
-				};
-			}
-			if (
-				qualityContext &&
-				(callerRole !== "coding/quality-manager" ||
-					![
-						"coding/reviewer",
-						"coding/security-reviewer",
-						"coding/performance-reviewer",
-						"coding/ux-reviewer",
-					].includes(resolvedTargetRole) ||
-					!qualityContext.allowedLenses.has(
-						resolvedTargetRole.replace(/^coding\//, ""),
-					) ||
-					params.model !== undefined ||
-					params.thinkingLevel !== undefined)
-			) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: "spawn_agent denied: quality panel permits only configured reviewer lenses",
-						},
-					],
-					details: {
-						role: params.role,
-						status: "denied",
-					} as SpawnProgressDetails,
-				};
-			}
-			if (qualityContext) {
-				const lens = resolvedTargetRole.replace(/^coding\//, "");
-				if (qualityContext.attemptedLenses.has(lens)) {
-					qualityContext.integrityFailures.push(
-						`Duplicate reviewer spawn: ${lens}`,
-					);
+			const checkAuthorization = () => {
+				if (callerRole === "coding/quality-manager" && !qualityContext) {
 					return {
 						content: [
 							{
 								type: "text" as const,
-								text: `spawn_agent denied: duplicate reviewer ${lens}`,
+								text: "spawn_agent denied: quality review context missing",
 							},
 						],
 						details: {
@@ -646,145 +640,288 @@ export function registerSpawnTool(
 						} as SpawnProgressDetails,
 					};
 				}
-			}
+				if (
+					qualityContext &&
+					(callerRole !== "coding/quality-manager" ||
+						![
+							"coding/reviewer",
+							"coding/security-reviewer",
+							"coding/performance-reviewer",
+							"coding/ux-reviewer",
+						].includes(resolvedTargetRole) ||
+						!qualityContext.allowedLenses.has(
+							resolvedTargetRole.replace(/^coding\//, ""),
+						) ||
+						params.model !== undefined ||
+						params.thinkingLevel !== undefined)
+				) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: "spawn_agent denied: quality panel permits only configured reviewer lenses",
+							},
+						],
+						details: {
+							role: params.role,
+							status: "denied",
+						} as SpawnProgressDetails,
+					};
+				}
+				if (qualityContext) {
+					const lens = resolvedTargetRole.replace(/^coding\//, "");
+					if (qualityContext.attemptedLenses.has(lens)) {
+						qualityContext.integrityFailures.push(
+							`Duplicate reviewer spawn: ${lens}`,
+						);
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `spawn_agent denied: duplicate reviewer ${lens}`,
+								},
+							],
+							details: {
+								role: params.role,
+								status: "denied",
+							} as SpawnProgressDetails,
+						};
+					}
+				}
 
-			if (
-				authorizeAgentStart({
-					registry: runtime.agentRegistry,
-					domainContext: runtime.domainContext,
-					callerRole,
-					targetRole: params.role,
-				})
-			) {
-				return {
+				if (
+					authorizeAgentStart({
+						registry: runtime.agentRegistry,
+						domainContext: runtime.domainContext,
+						callerRole,
+						targetRole: params.role,
+					})
+				) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: formatUnauthorizedSpawnMessage({
+									callerRole: callerDef.id,
+									targetDef,
+									requestedRole: params.role,
+								}),
+							},
+						],
+						details: {
+							role: params.role,
+							status: "denied",
+							error: `${callerDef.id} cannot spawn ${targetDef.id}`,
+						} as SpawnProgressDetails,
+					};
+				}
+
+				return { kind: "authorized" as const };
+			};
+			const permission = checkAuthorization();
+			if (permission.kind !== "authorized") return permission;
+
+			const prepareSpawn = () => {
+				// Determine nesting depth: parent depth + 1
+				const parentDepth = sessionDepths.get(parentSessionId) ?? 0;
+				const childDepth = parentDepth + 1;
+
+				// Get or create the tracker for this parent session
+				const tracker = getOrCreateTracker(parentSessionId);
+
+				// Precheck before acquiring semaphore slot
+				if (!tracker.canSpawn(childDepth)) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: "spawn_agent rejected: depth or concurrency limit reached",
+							},
+						],
+						details: {
+							role: params.role,
+							status: "rejected",
+							reason: "depth or concurrency limit reached",
+						} as SpawnProgressDetails,
+					};
+				}
+
+				// Generate a unique identifier for this spawn
+				const spawnId = crypto.randomUUID();
+
+				const taskId = params.runtimeContext?.taskId;
+				const spawnLabel = taskId
+					? `${roleLabel(params.role)} (${taskId})`
+					: roleLabel(params.role);
+
+				onUpdate?.({
 					content: [
 						{
 							type: "text" as const,
-							text: formatUnauthorizedSpawnMessage({
-								callerRole: callerDef.id,
-								targetDef,
-								requestedRole: params.role,
-							}),
+							text: `⬆ Spawning ${spawnLabel}...`,
 						},
 					],
 					details: {
 						role: params.role,
-						status: "denied",
-						error: `${callerDef.id} cannot spawn ${targetDef.id}`,
+						status: "spawning",
+						taskId,
 					} as SpawnProgressDetails,
+				});
+
+				// Register before launching — acquires semaphore slot synchronously
+				const registerChild = () => {
+					try {
+						tracker.register(spawnId, params.role, childDepth);
+						qualityContext?.activeSpawns.add(spawnId);
+						qualityContext?.attemptedLenses.add(
+							resolvedTargetRole.replace(/^coding\//, ""),
+						);
+					} catch (err: unknown) {
+						const reason = err instanceof Error ? err.message : String(err);
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `spawn_agent rejected: ${reason}`,
+								},
+							],
+							details: {
+								role: params.role,
+								status: "rejected",
+								reason,
+							} as SpawnProgressDetails,
+						};
+					}
 				};
-			}
+				const registrationFailure = registerChild();
+				if (registrationFailure) return registrationFailure;
 
-			// Determine nesting depth: parent depth + 1
-			const parentDepth = sessionDepths.get(parentSessionId) ?? 0;
-			const childDepth = parentDepth + 1;
-
-			// Get or create the tracker for this parent session
-			const tracker = getOrCreateTracker(parentSessionId);
-
-			// Precheck before acquiring semaphore slot
-			if (!tracker.canSpawn(childDepth)) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: "spawn_agent rejected: depth or concurrency limit reached",
-						},
-					],
-					details: {
-						role: params.role,
-						status: "rejected",
-						reason: "depth or concurrency limit reached",
-					} as SpawnProgressDetails,
-				};
-			}
-
-			// Generate a unique identifier for this spawn
-			const spawnId = crypto.randomUUID();
-
-			const taskId = params.runtimeContext?.taskId;
-			const spawnLabel = taskId
-				? `${roleLabel(params.role)} (${taskId})`
-				: roleLabel(params.role);
-
-			onUpdate?.({
-				content: [
-					{
-						type: "text" as const,
-						text: `⬆ Spawning ${spawnLabel}...`,
-					},
-				],
-				details: {
-					role: params.role,
-					status: "spawning",
-					taskId,
-				} as SpawnProgressDetails,
-			});
-
-			// Register before launching — acquires semaphore slot synchronously
-			try {
-				tracker.register(spawnId, params.role, childDepth);
-				qualityContext?.activeSpawns.add(spawnId);
-				qualityContext?.attemptedLenses.add(
-					resolvedTargetRole.replace(/^coding\//, ""),
-				);
-			} catch (err: unknown) {
-				const reason = err instanceof Error ? err.message : String(err);
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `spawn_agent rejected: ${reason}`,
-						},
-					],
-					details: {
-						role: params.role,
-						status: "rejected",
-						reason,
-					} as SpawnProgressDetails,
-				};
-			}
+				return { kind: "ready" as const, childDepth, tracker, spawnId, taskId };
+			};
+			const prepared = prepareSpawn();
+			if (prepared.kind !== "ready") return prepared;
+			const { childDepth, tracker, spawnId, taskId } = prepared;
 
 			// Propagate plan context from parent session so child lineage
 			// artifacts land in the same missions/sessions/<planSlug>/ directory.
 			const planSlug = getPlanSlugForSession(parentSessionId);
-			if (isQualityReviewReference(targetResolution.reference)) {
-				void launchQualityReview({
-					projectRoot: ctx.cwd,
-					operatorNote: params.prompt,
-					planSlug,
-					signal: _signal,
-				})
-					.then((review) => {
-						const summary = `QM run ${review.ref.runId}: ${review.stepResult.summary}`;
-						settleSpawnTracker(
-							tracker,
-							spawnId,
-							{
-								role: params.role,
-								startedAt: new Date().toISOString(),
-								outcome:
-									review.stepResult.outcome === "success"
-										? "success"
-										: "failed",
-								summary,
-							},
-							pi,
-						);
+			const launchSpawn = () => {
+				if (isQualityReviewReference(targetResolution.reference)) {
+					void launchQualityReview({
+						projectRoot: ctx.cwd,
+						operatorNote: params.prompt,
+						planSlug,
+						signal: _signal,
 					})
-					.catch((error: unknown) => {
-						settleSpawnTracker(
-							tracker,
-							spawnId,
+						.then((review) => {
+							const summary = `QM run ${review.ref.runId}: ${review.stepResult.summary}`;
+							settleSpawnTracker(
+								tracker,
+								spawnId,
+								{
+									role: params.role,
+									startedAt: new Date().toISOString(),
+									outcome:
+										review.stepResult.outcome === "success"
+											? "success"
+											: "failed",
+									summary,
+								},
+								pi,
+							);
+						})
+						.catch((error: unknown) => {
+							settleSpawnTracker(
+								tracker,
+								spawnId,
+								{
+									role: params.role,
+									startedAt: new Date().toISOString(),
+									outcome: "failed",
+									summary:
+										error instanceof Error ? error.message : String(error),
+								},
+								pi,
+							);
+						});
+					return {
+						content: [
 							{
-								role: params.role,
-								startedAt: new Date().toISOString(),
-								outcome: "failed",
-								summary: error instanceof Error ? error.message : String(error),
+								type: "text" as const,
+								text: `Accepted spawn of ${params.role} (spawnId: ${spawnId})`,
 							},
+						],
+						details: {
+							role: params.role,
+							status: "accepted",
+							spawnId,
+							taskId,
+						} as SpawnProgressDetails,
+					};
+				}
+
+				const spawnConfig = {
+					role: params.role,
+					agentReference: targetResolution.reference,
+					domainContext: runtime.domainContext,
+					cwd: qualityContext?.workspaceRoot ?? ctx.cwd,
+					prompt: panelPrompt,
+					model: params.model,
+					thinkingLevel: params.thinkingLevel,
+					runtimeContext: params.runtimeContext,
+					projectSkills: runtime.projectSkills,
+					skillPaths: [...runtime.skillPaths],
+					spawnDepth: childDepth,
+					parentSessionId,
+					...(qualityContext
+						? { qualityReviewContext: qualityContext, qualityReviewChild: true }
+						: {}),
+					...(planSlug !== undefined && { planSlug }),
+				};
+
+				// Launch as a detached background Promise — no await
+				void createAgentSessionFromDefinition(
+					targetDef,
+					spawnConfig,
+					runtime.domainsDir,
+					runtime.domainResolver,
+				)
+					.then(({ session, sessionFilePath, resolvedModel }) =>
+						runDetachedChildSession({
+							session,
+							sessionFilePath,
+							spawnId,
+							parentSessionId,
+							childDepth,
+							role: params.role,
+							resolvedRole: resolvedTargetRole,
+							resolvedModel,
+							qualityContext,
+							prompt: panelPrompt,
+							planSlug,
+							tracker,
 							pi,
-						);
+							taskId: params.runtimeContext?.taskId,
+						}),
+					)
+					.catch((err: unknown) => {
+						// createAgentSessionFromDefinition() itself failed
+						const message = err instanceof Error ? err.message : String(err);
+						tracker.fail(spawnId, message);
+						qualityContext?.activeSpawns.delete(spawnId);
+						if (tracker.deliveryMode === "self") {
+							sendSpawnCompletion(
+								pi,
+								formatCompletionMessage(
+									spawnId,
+									params.role,
+									"failed",
+									message,
+								),
+							);
+						}
 					});
+
 				return {
 					content: [
 						{
@@ -799,79 +936,8 @@ export function registerSpawnTool(
 						taskId,
 					} as SpawnProgressDetails,
 				};
-			}
-
-			const spawnConfig = {
-				role: params.role,
-				agentReference: targetResolution.reference,
-				domainContext: runtime.domainContext,
-				cwd: qualityContext?.workspaceRoot ?? ctx.cwd,
-				prompt: panelPrompt,
-				model: params.model,
-				thinkingLevel: params.thinkingLevel,
-				runtimeContext: params.runtimeContext,
-				projectSkills: runtime.projectSkills,
-				skillPaths: [...runtime.skillPaths],
-				spawnDepth: childDepth,
-				parentSessionId,
-				...(qualityContext
-					? { qualityReviewContext: qualityContext, qualityReviewChild: true }
-					: {}),
-				...(planSlug !== undefined && { planSlug }),
 			};
-
-			// Launch as a detached background Promise — no await
-			void createAgentSessionFromDefinition(
-				targetDef,
-				spawnConfig,
-				runtime.domainsDir,
-				runtime.domainResolver,
-			)
-				.then(({ session, sessionFilePath, resolvedModel }) =>
-					runDetachedChildSession({
-						session,
-						sessionFilePath,
-						spawnId,
-						parentSessionId,
-						childDepth,
-						role: params.role,
-						resolvedRole: resolvedTargetRole,
-						resolvedModel,
-						qualityContext,
-						prompt: panelPrompt,
-						planSlug,
-						tracker,
-						pi,
-						taskId: params.runtimeContext?.taskId,
-					}),
-				)
-				.catch((err: unknown) => {
-					// createAgentSessionFromDefinition() itself failed
-					const message = err instanceof Error ? err.message : String(err);
-					tracker.fail(spawnId, message);
-					qualityContext?.activeSpawns.delete(spawnId);
-					if (tracker.deliveryMode === "self") {
-						sendSpawnCompletion(
-							pi,
-							formatCompletionMessage(spawnId, params.role, "failed", message),
-						);
-					}
-				});
-
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `Accepted spawn of ${params.role} (spawnId: ${spawnId})`,
-					},
-				],
-				details: {
-					role: params.role,
-					status: "accepted",
-					spawnId,
-					taskId,
-				} as SpawnProgressDetails,
-			};
+			return launchSpawn();
 		},
 
 		renderCall(args, theme) {
@@ -891,20 +957,22 @@ export function registerSpawnTool(
 		renderResult(result, _options, theme) {
 			const details = result.details as SpawnProgressDetails | null;
 			if (!details) return renderTextFallback(result, theme);
-
+			const failure = spawnFailureText(details);
+			if (failure) return new Text(theme.fg("error", failure), 0, 0);
 			switch (details.status) {
 				case "spawning": {
-					const label = details.taskId
-						? `${roleLabel(details.role)} (${details.taskId})`
-						: roleLabel(details.role);
-					return new Text(theme.fg("warning", `⬆ Spawning ${label}...`), 0, 0);
+					return new Text(
+						theme.fg("warning", `⬆ Spawning ${spawnDisplayLabel(details)}...`),
+						0,
+						0,
+					);
 				}
 				case "accepted": {
-					const label = details.taskId
-						? `${roleLabel(details.role)} (${details.taskId})`
-						: roleLabel(details.role);
 					return new Text(
-						theme.fg("success", `⬆ ${label} accepted (${details.spawnId})`),
+						theme.fg(
+							"success",
+							`⬆ ${spawnDisplayLabel(details)} accepted (${details.spawnId})`,
+						),
 						0,
 						0,
 					);
@@ -912,33 +980,6 @@ export function registerSpawnTool(
 				case "completed":
 					return new Text(
 						theme.fg("success", `✓ ${roleLabel(details.role)} completed`),
-						0,
-						0,
-					);
-				case "failed":
-					return new Text(
-						theme.fg(
-							"error",
-							`✗ ${roleLabel(details.role)} failed${details.error ? `: ${details.error}` : ""}`,
-						),
-						0,
-						0,
-					);
-				case "denied":
-					return new Text(
-						theme.fg(
-							"error",
-							`⊘ ${roleLabel(details.role)} denied${details.error ? `: ${details.error}` : ""}`,
-						),
-						0,
-						0,
-					);
-				case "rejected":
-					return new Text(
-						theme.fg(
-							"error",
-							`⊘ ${roleLabel(details.role)} rejected${details.reason ? `: ${details.reason}` : ""}`,
-						),
 						0,
 						0,
 					);

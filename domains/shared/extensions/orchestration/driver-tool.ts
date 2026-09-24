@@ -93,6 +93,38 @@ type DriverMode = "inline" | "detached";
 
 const activeRuns = new Map<string, ActiveDriverRun>();
 
+async function driverCallerDenial(
+	callerRole: string | undefined,
+	cwd: string,
+	getRuntime: (cwd: string) => Promise<CosmonautsRuntime>,
+) {
+	if (!callerRole)
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: "run_driver denied: caller role could not be resolved from runtime identity marker",
+				},
+			],
+			details: { error: "unauthorized", message: "caller role unresolved" },
+		};
+	const runtime = await getRuntime(cwd);
+	const denial = authorizeAgentStart({
+		registry: runtime.agentRegistry,
+		domainContext: runtime.domainContext,
+		callerRole,
+		targetRole: "worker",
+	});
+	if (denial)
+		return {
+			content: [
+				{ type: "text" as const, text: `run_driver denied: ${denial}` },
+			],
+			details: { error: "unauthorized", message: denial },
+		};
+	return undefined;
+}
+
 export function registerDriverTool(
 	pi: ExtensionAPI,
 	getRuntime: (cwd: string) => Promise<CosmonautsRuntime>,
@@ -193,33 +225,12 @@ export function registerDriverTool(
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const callerRole = extractAgentIdFromSystemPrompt(ctx.getSystemPrompt());
-			if (!callerRole)
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: "run_driver denied: caller role could not be resolved from runtime identity marker",
-						},
-					],
-					details: { error: "unauthorized", message: "caller role unresolved" },
-				};
-			if (callerRole) {
-				const runtime = await getRuntime(ctx.cwd);
-				const denial = authorizeAgentStart({
-					registry: runtime.agentRegistry,
-					domainContext: runtime.domainContext,
-					callerRole,
-					targetRole: "worker",
-				});
-				if (denial) {
-					return {
-						content: [
-							{ type: "text" as const, text: `run_driver denied: ${denial}` },
-						],
-						details: { error: "unauthorized", message: denial },
-					};
-				}
-			}
+			const callerDenial = await driverCallerDenial(
+				callerRole,
+				ctx.cwd,
+				getRuntime,
+			);
+			if (callerDenial) return callerDenial;
 			const planSlug = params.planSlug;
 			try {
 				validateDriverPlanSlug(planSlug);
@@ -259,80 +270,89 @@ export function registerDriverTool(
 			let spec: DriverRunSpec | undefined;
 
 			try {
-				const taskManager = new TaskManager(ctx.cwd);
-				await taskManager.init();
-				const taskIds = await resolveTaskIds(
-					taskManager,
-					planSlug,
-					params.taskIds,
-				);
-				await assertDriveTasksNotCancelled(taskManager, taskIds);
-				mode = mode ?? resolveDefaultMode(taskIds);
-				if (mode === "detached" && params.backend === "cosmonauts-subagent") {
-					clearActiveRun(activeKey, runId);
-					return runDriverResult({
-						error: "detached_backend_not_supported",
-						backend: params.backend,
-						mode,
-						message:
-							"Backend cosmonauts-subagent is not supported for detached mode.",
-					});
-				}
-
-				const episodeCaptureEnabled = await isDriveEpisodeCaptureEnabled(
-					ctx.cwd,
-				);
-				let runtime = mode === "inline" ? await getRuntime(ctx.cwd) : undefined;
-				if (episodeCaptureEnabled && !runtime) {
-					try {
-						runtime = await getRuntime(ctx.cwd);
-					} catch (error) {
-						reportDriveEpisodeLaunchWarning(error);
+				const launch = async () => {
+					const taskManager = new TaskManager(ctx.cwd);
+					await taskManager.init();
+					const taskIds = await resolveTaskIds(
+						taskManager,
+						planSlug,
+						params.taskIds,
+					);
+					await assertDriveTasksNotCancelled(taskManager, taskIds);
+					mode = mode ?? resolveDefaultMode(taskIds);
+					if (mode === "detached" && params.backend === "cosmonauts-subagent") {
+						clearActiveRun(activeKey, runId);
+						return runDriverResult({
+							error: "detached_backend_not_supported",
+							backend: params.backend,
+							mode,
+							message:
+								"Backend cosmonauts-subagent is not supported for detached mode.",
+						});
 					}
-				}
-				const episodeWorker =
-					episodeCaptureEnabled && runtime
-						? resolveDriveEpisodeWorker(runtime)
-						: undefined;
-				const episodeIdentity = episodeWorker
-					? mintDriveEpisodeIdentity(episodeWorker.qualifiedId)
-					: undefined;
-				spec = await createRunSpec({
-					params,
-					ctx,
-					runId,
-					planSlug,
-					taskIds,
-					frameworkRoot,
-					prepareWorkdir: mode === "inline",
-					episodeIdentity,
-				});
-				const backend = createBackend(
-					params.backend,
-					mode,
-					runtime,
-					ctx.cwd,
-					episodeWorker,
-				);
-				const deps = {
-					taskManager,
-					backend,
-					activityBus,
-					cosmonautsRoot: frameworkRoot,
-				};
-				const handle =
-					mode === "detached"
-						? startDetached(spec, deps)
-						: runInline(spec, deps);
 
-				clearActiveRunOnCompletion(activeKey, handle);
-				return runDriverResult({
-					runId: handle.runId,
-					scope: handle.planSlug,
-					planSlug: handle.planSlug,
-					workdir: handle.workdir,
-					eventLogPath: handle.eventLogPath,
-				});
+					const resolveEpisodeCapture = async () => {
+						const episodeCaptureEnabled = await isDriveEpisodeCaptureEnabled(
+							ctx.cwd,
+						);
+						let runtime =
+							mode === "inline" ? await getRuntime(ctx.cwd) : undefined;
+						if (episodeCaptureEnabled && !runtime) {
+							try {
+								runtime = await getRuntime(ctx.cwd);
+							} catch (error) {
+								reportDriveEpisodeLaunchWarning(error);
+							}
+						}
+						const episodeWorker =
+							episodeCaptureEnabled && runtime
+								? resolveDriveEpisodeWorker(runtime)
+								: undefined;
+						const episodeIdentity = episodeWorker
+							? mintDriveEpisodeIdentity(episodeWorker.qualifiedId)
+							: undefined;
+						return { runtime, episodeWorker, episodeIdentity };
+					};
+					const { runtime, episodeWorker, episodeIdentity } =
+						await resolveEpisodeCapture();
+					spec = await createRunSpec({
+						params,
+						ctx,
+						runId,
+						planSlug,
+						taskIds,
+						frameworkRoot,
+						prepareWorkdir: mode === "inline",
+						episodeIdentity,
+					});
+					const backend = createBackend(
+						params.backend,
+						mode,
+						runtime,
+						ctx.cwd,
+						episodeWorker,
+					);
+					const deps = {
+						taskManager,
+						backend,
+						activityBus,
+						cosmonautsRoot: frameworkRoot,
+					};
+					const handle =
+						mode === "detached"
+							? startDetached(spec, deps)
+							: runInline(spec, deps);
+
+					clearActiveRunOnCompletion(activeKey, handle);
+					return runDriverResult({
+						runId: handle.runId,
+						scope: handle.planSlug,
+						planSlug: handle.planSlug,
+						workdir: handle.workdir,
+						eventLogPath: handle.eventLogPath,
+					});
+				};
+				return await launch();
 			} catch (error) {
 				if (mode === "inline" && spec) {
 					await writeFallbackRunCompletion(

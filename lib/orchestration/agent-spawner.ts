@@ -366,38 +366,54 @@ async function persistPlanLinkedSpawn(
 		const transcript = generateTranscript(finalMessages, config.role);
 		await writeTranscript(planSessionsDir, transcriptBasename, transcript);
 
-		const record: SessionRecord = {
-			sessionId: prepared.session.sessionId,
-			role: config.role,
-			...(config.parentSessionId !== undefined && {
-				parentSessionId: config.parentSessionId,
-			}),
-			...(config.runtimeContext?.taskId !== undefined && {
-				taskId: config.runtimeContext.taskId,
-			}),
-			startedAt: prepared.startedAt,
-			completedAt: new Date().toISOString(),
-			outcome: execution.outcome,
-			sessionFile: sessionBasename,
-			transcriptFile: transcriptBasename,
-			...(execution.stats !== undefined && {
-				stats: {
-					tokens: {
-						input: execution.stats.tokens.input,
-						output: execution.stats.tokens.output,
-						total: execution.stats.tokens.total,
-					},
-					cost: execution.stats.cost,
-					durationMs: execution.stats.durationMs,
-					turns: execution.stats.turns,
-					toolCalls: execution.stats.toolCalls,
-				},
-			}),
-		};
+		const record = buildSpawnSessionRecord(
+			prepared,
+			execution,
+			config,
+			sessionBasename,
+			transcriptBasename,
+		);
 		await appendSession(baseSessionsDir, config.planSlug, record);
 	} catch {
 		// Lineage recording must not crash the spawn.
 	}
+}
+
+function buildSpawnSessionRecord(
+	prepared: PreparedSpawnSession,
+	execution: SpawnExecutionResult,
+	config: SpawnConfig,
+	sessionBasename: string,
+	transcriptBasename: string,
+): SessionRecord {
+	return {
+		sessionId: prepared.session.sessionId,
+		role: config.role,
+		...(config.parentSessionId !== undefined && {
+			parentSessionId: config.parentSessionId,
+		}),
+		...(config.runtimeContext?.taskId !== undefined && {
+			taskId: config.runtimeContext.taskId,
+		}),
+		startedAt: prepared.startedAt,
+		completedAt: new Date().toISOString(),
+		outcome: execution.outcome,
+		sessionFile: sessionBasename,
+		transcriptFile: transcriptBasename,
+		...(execution.stats !== undefined && {
+			stats: {
+				tokens: {
+					input: execution.stats.tokens.input,
+					output: execution.stats.tokens.output,
+					total: execution.stats.tokens.total,
+				},
+				cost: execution.stats.cost,
+				durationMs: execution.stats.durationMs,
+				turns: execution.stats.turns,
+				toolCalls: execution.stats.toolCalls,
+			},
+		}),
+	};
 }
 
 function toSpawnFailure(err: unknown): SpawnResult {
@@ -490,26 +506,32 @@ function analysisGateObservation(toolName: string, result: unknown): unknown {
 			? result.details
 			: undefined;
 	if (typeof details !== "object" || details === null) return { details: {} };
-	if (toolName === "analysis_status") {
-		const bindings =
-			"capabilities" in details && Array.isArray(details.capabilities)
-				? details.capabilities.filter(
-						(binding: unknown) =>
-							typeof binding === "object" &&
-							binding !== null &&
-							"capability" in binding &&
-							binding.capability === "changed-scope-audit",
-					)
-				: [];
-		return {
-			details: {
-				capabilities: bindings.map((binding: { state?: unknown }) => ({
-					capability: "changed-scope-audit",
-					state: binding.state,
-				})),
-			},
-		};
-	}
+	if (toolName === "analysis_status") return analysisStatusObservation(details);
+	return analysisAuditObservation(details);
+}
+
+function analysisStatusObservation(details: object): unknown {
+	const bindings =
+		"capabilities" in details && Array.isArray(details.capabilities)
+			? details.capabilities.filter(
+					(binding: unknown) =>
+						typeof binding === "object" &&
+						binding !== null &&
+						"capability" in binding &&
+						binding.capability === "changed-scope-audit",
+				)
+			: [];
+	return {
+		details: {
+			capabilities: bindings.map((binding: { state?: unknown }) => ({
+				capability: "changed-scope-audit",
+				state: binding.state,
+			})),
+		},
+	};
+}
+
+function analysisAuditObservation(details: object): unknown {
 	const scope =
 		"scope" in details &&
 		typeof details.scope === "object" &&
@@ -553,18 +575,8 @@ function mapSessionEvent(
 				toolCallId: event.toolCallId as string,
 				...(event.args !== undefined && { args: event.args }),
 			};
-		case "tool_execution_end": {
-			const observation = captureAnalysisResults
-				? analysisGateObservation(event.toolName as string, event.result)
-				: undefined;
-			return {
-				type: "tool_execution_end",
-				toolName: event.toolName as string,
-				toolCallId: event.toolCallId as string,
-				isError: event.isError as boolean,
-				...(observation === undefined ? {} : { result: observation }),
-			};
-		}
+		case "tool_execution_end":
+			return mapToolEndEvent(event, captureAnalysisResults);
 		case "compaction_start":
 			return {
 				type: "compaction_start",
@@ -583,4 +595,20 @@ function mapSessionEvent(
 		default:
 			return undefined;
 	}
+}
+
+function mapToolEndEvent(
+	event: Extract<AgentSessionEvent, { type: "tool_execution_end" }>,
+	captureAnalysisResults: boolean,
+): SpawnEventPayload {
+	const observation = captureAnalysisResults
+		? analysisGateObservation(event.toolName as string, event.result)
+		: undefined;
+	return {
+		type: "tool_execution_end",
+		toolName: event.toolName as string,
+		toolCallId: event.toolCallId as string,
+		isError: event.isError as boolean,
+		...(observation === undefined ? {} : { result: observation }),
+	};
 }

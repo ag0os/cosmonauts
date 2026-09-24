@@ -260,7 +260,7 @@ describe("session-factory planSlug validation", () => {
 		});
 	});
 
-	test("assembles panel skill locations from the base export without source or host paths", async () => {
+	test("rebases absolute and relative panel skill locations to the base export", async () => {
 		const sourceRoot = await mkdtemp(join(tmpdir(), "qm-source-skills-"));
 		const workspaceRoot = await mkdtemp(join(tmpdir(), "qm-clone-skills-"));
 		const baseProjectRoot = await mkdtemp(join(tmpdir(), "qm-base-skills-"));
@@ -289,7 +289,7 @@ describe("session-factory planSlug validation", () => {
 					role: "coding/reviewer",
 					cwd: workspaceRoot,
 					prompt: "review",
-					skillPaths: [join(sourceRoot, suffix)],
+					skillPaths: [join(sourceRoot, suffix), suffix],
 					qualityReviewChild: true,
 					qualityReviewContext: {
 						runId: "qm-skills",
@@ -314,6 +314,10 @@ describe("session-factory planSlug validation", () => {
 				additionalSkillPaths?: string[];
 			};
 			const fullSystemPrompt = `${loader.systemPrompt}\n${loader.additionalSkillPaths?.map((path) => `<location>${path}</location>`).join("\n")}`;
+			expect(loader.additionalSkillPaths).toEqual([
+				join(baseProjectRoot, suffix),
+				join(baseProjectRoot, suffix),
+			]);
 			expect(fullSystemPrompt).toContain(join(baseProjectRoot, suffix));
 			expect(fullSystemPrompt).not.toContain(join(workspaceRoot, suffix));
 			expect(fullSystemPrompt).not.toContain(sourceRoot);

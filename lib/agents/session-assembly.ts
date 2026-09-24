@@ -116,6 +116,29 @@ export interface SessionParams {
 // Builder
 // ============================================================================
 
+function qualityReviewProfileFor(
+	def: BuildSessionParamsOptions["def"],
+	qualityReviewChild: boolean | undefined,
+): QualityReviewProfile | undefined {
+	const profile =
+		qualifyAgentId(def.id, def.domain) === "coding/quality-manager"
+			? "manager"
+			: qualityReviewChild
+				? "reviewer"
+				: undefined;
+	if (
+		qualityReviewChild &&
+		![
+			"reviewer",
+			"security-reviewer",
+			"performance-reviewer",
+			"ux-reviewer",
+		].includes(def.id)
+	)
+		throw new Error(`Quality review child role is forbidden: ${def.id}`);
+	return profile;
+}
+
 /**
  * Build all Pi session parameters from an agent definition and options.
  *
@@ -145,22 +168,7 @@ export async function buildSessionParams(
 	} = options;
 
 	// Tool resolution
-	const qualityReviewProfile: QualityReviewProfile | undefined =
-		qualifyAgentId(def.id, def.domain) === "coding/quality-manager"
-			? "manager"
-			: qualityReviewChild
-				? "reviewer"
-				: undefined;
-	if (
-		qualityReviewChild &&
-		![
-			"reviewer",
-			"security-reviewer",
-			"performance-reviewer",
-			"ux-reviewer",
-		].includes(def.id)
-	)
-		throw new Error(`Quality review child role is forbidden: ${def.id}`);
+	const qualityReviewProfile = qualityReviewProfileFor(def, qualityReviewChild);
 	const tools = resolveTools(
 		qualityReviewProfile ? "readonly" : def.tools,
 		cwd,

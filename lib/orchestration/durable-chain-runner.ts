@@ -380,6 +380,47 @@ async function executeChainStep({
 	}
 
 	const assistantText = extractAssistantText(spawnResult.messages, stage.name);
+	const blockedReview = await validateDurableReview({
+		assistantText,
+		promptMetadata,
+		spawn,
+		persistedReview,
+		store,
+		ref,
+		role,
+		prepared,
+		stage,
+	});
+	if (blockedReview) return blockedReview;
+
+	return {
+		outcome: "success",
+		summary: summarizeAssistantText(assistantText, stage.name),
+		artifacts: [],
+	};
+}
+
+async function validateDurableReview({
+	assistantText,
+	promptMetadata,
+	spawn,
+	persistedReview,
+	store,
+	ref,
+	role,
+	prepared,
+	stage,
+}: {
+	assistantText: string;
+	promptMetadata: DurablePromptMetadata;
+	spawn: ReturnType<typeof readSpawnOptions>;
+	persistedReview: PersistedPlanReview | undefined;
+	store: RunStore;
+	ref: RunRef;
+	role: string;
+	prepared: PreparedStep<SchedulerStepInput>;
+	stage: ReturnType<typeof readStageOptions>;
+}): Promise<StepResult | undefined> {
 	if (promptMetadata.purpose.kind === "plan-review") {
 		const check = await validatePlanReviewReport({
 			assistantText,
@@ -424,12 +465,6 @@ async function executeChainStep({
 		});
 		if (blocked) return blocked;
 	}
-
-	return {
-		outcome: "success",
-		summary: summarizeAssistantText(assistantText, stage.name),
-		artifacts: [],
-	};
 }
 
 function shouldReadPersistedReview(metadata: DurablePromptMetadata): boolean {

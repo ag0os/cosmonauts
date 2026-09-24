@@ -50,6 +50,207 @@ export interface SessionCreateResult {
 	sessionFilePath: string | undefined;
 }
 
+function isInside(root: string, path: string): boolean {
+	const suffix = relative(root, path);
+	return (
+		suffix === "" ||
+		(suffix !== ".." && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix))
+	);
+}
+
+function qualitySkillCandidate(
+	path: string,
+	canonicalPath: string,
+	baseProjectRoot: string | undefined,
+	canonicalSourceRoot: string | undefined,
+	domainsDir: string,
+): string | undefined {
+	if (!isAbsolute(path))
+		return baseProjectRoot ? resolve(baseProjectRoot, path) : undefined;
+	if (
+		canonicalSourceRoot &&
+		baseProjectRoot &&
+		isInside(canonicalSourceRoot, canonicalPath)
+	)
+		return resolve(
+			baseProjectRoot,
+			relative(canonicalSourceRoot, canonicalPath),
+		);
+	if (baseProjectRoot && isInside(baseProjectRoot, canonicalPath))
+		return canonicalPath;
+	return isInside(resolve(domainsDir, ".."), canonicalPath)
+		? canonicalPath
+		: undefined;
+}
+
+async function resolveQualitySkillPaths(
+	config: SpawnConfig,
+	domainsDir: string,
+): Promise<string[] | undefined> {
+	const sourceRoot = config.qualityReviewContext?.sourceRoot;
+	const canonicalSourceRoot = sourceRoot
+		? await realpath(sourceRoot).catch(() => sourceRoot)
+		: undefined;
+	if (!config.qualityReviewContext || !config.skillPaths)
+		return config.skillPaths;
+	const baseProjectRoot = config.qualityReviewContext.baseProjectRoot;
+	const paths = await Promise.all(
+		config.skillPaths.map(async (path) => {
+			const canonicalPath = await realpath(path).catch(() => path);
+			const candidate = qualitySkillCandidate(
+				path,
+				canonicalPath,
+				baseProjectRoot,
+				canonicalSourceRoot,
+				domainsDir,
+			);
+			if (
+				candidate &&
+				(await stat(candidate).catch(() => undefined))?.isDirectory()
+			)
+				return candidate;
+			config.qualityReviewContext?.omittedSkillPaths?.push(path);
+			return undefined;
+		}),
+	);
+	return paths.filter((path): path is string => path !== undefined);
+}
+
+async function baseAgentFiles(
+	baseProjectRoot: string | undefined,
+	projectContext: boolean,
+) {
+	if (!baseProjectRoot || !projectContext) return [];
+	const files = await Promise.all(
+		["AGENTS.md", "CLAUDE.md"].map(async (name) => {
+			const path = join(baseProjectRoot, name);
+			const content = await readFile(path, "utf8").catch(
+				(error: NodeJS.ErrnoException) => {
+					if (error.code === "ENOENT") return undefined;
+					throw error;
+				},
+			);
+			return content === undefined ? undefined : { path, content };
+		}),
+	);
+	return files.filter(
+		(file): file is { path: string; content: string } => file !== undefined,
+	);
+}
+
+async function createSessionManager(config: SpawnConfig): Promise<{
+	sessionManager: SessionManager;
+	sessionFilePath: string | undefined;
+}> {
+	let sessionFilePath: string | undefined;
+	if (config.qualityReviewContext) {
+		const sessionsDir = join(
+			config.qualityReviewContext.hostRunStoreRoot,
+			"transcripts",
+		);
+		const uuid = crypto.randomUUID();
+		sessionFilePath = join(sessionsDir, `quality-session-${uuid}.jsonl`);
+		await mkdir(sessionsDir, { recursive: true });
+	} else if (config.planSlug) {
+		validateSlug(config.planSlug);
+		const sessionsDir = sessionsDirForPlan(config.cwd, config.planSlug);
+		const uuid = crypto.randomUUID();
+		sessionFilePath = join(sessionsDir, `${config.role}-${uuid}.jsonl`);
+		await mkdir(sessionsDir, { recursive: true });
+	}
+	return {
+		sessionManager: sessionFilePath
+			? SessionManager.open(sessionFilePath)
+			: SessionManager.inMemory(),
+		sessionFilePath,
+	};
+}
+
+async function createResourceLoader(
+	config: SpawnConfig,
+	domainsDir: string,
+	params: Awaited<ReturnType<typeof buildSessionParams>>,
+): Promise<{
+	loader: DefaultResourceLoader;
+	qualitySettings: SettingsManager | undefined;
+}> {
+	const baseProjectRoot = config.qualityReviewContext?.baseProjectRoot;
+	const baseAgentsFiles = await baseAgentFiles(
+		baseProjectRoot,
+		params.projectContext,
+	);
+	const qualitySettings = config.qualityReviewContext
+		? SettingsManager.inMemory()
+		: undefined;
+	qualitySettings?.setProjectTrusted(false);
+	const loader = new DefaultResourceLoader({
+		cwd: config.cwd,
+		agentDir: getAgentDir(),
+		...(qualitySettings && { settingsManager: qualitySettings }),
+		...(params.promptContent && { systemPrompt: params.promptContent }),
+		...(config.qualityReviewContext && { appendSystemPrompt: [] }),
+		noExtensions: true,
+		noSkills: true,
+		...resourceExtensionOptions(config, domainsDir, params),
+		...resourceSkillOptions(params, baseProjectRoot, baseAgentsFiles),
+	});
+	await loader.reload();
+	if (params.knowledgeSurfaceEnabled) assertEnabledRecallOwner(loader);
+	return { loader, qualitySettings };
+}
+
+function resourceExtensionOptions(
+	config: SpawnConfig,
+	domainsDir: string,
+	params: Awaited<ReturnType<typeof buildSessionParams>>,
+) {
+	const qualityAnalysis = config.qualityReviewContext?.analysisConsent;
+	const projectToolsPath = join(
+		domainsDir,
+		"shared",
+		"extensions",
+		"project-tools",
+	);
+	const extensionPaths = qualityAnalysis
+		? params.extensionPaths.filter((path) => path !== projectToolsPath)
+		: params.extensionPaths;
+	return {
+		...(extensionPaths.length > 0 && {
+			additionalExtensionPaths: extensionPaths,
+		}),
+		...(params.extensionFactories.length > 0 || qualityAnalysis
+			? {
+					extensionFactories: [
+						...params.extensionFactories,
+						...(qualityAnalysis
+							? [
+									createProjectToolsExtension({
+										snapshotAuthorization: qualityAnalysis,
+									}),
+								]
+							: []),
+					],
+				}
+			: {}),
+	};
+}
+
+function resourceSkillOptions(
+	params: Awaited<ReturnType<typeof buildSessionParams>>,
+	baseProjectRoot: string | undefined,
+	baseAgentsFiles: Awaited<ReturnType<typeof baseAgentFiles>>,
+) {
+	return {
+		...(params.skillsOverride && { skillsOverride: params.skillsOverride }),
+		...(params.additionalSkillPaths && {
+			additionalSkillPaths: params.additionalSkillPaths,
+		}),
+		...((!params.projectContext || baseProjectRoot) && {
+			agentsFilesOverride: () => ({ agentsFiles: baseAgentsFiles }),
+		}),
+	};
+}
+
 export async function createAgentSessionFromDefinition(
 	def: AgentDefinition,
 	config: SpawnConfig,
@@ -58,51 +259,7 @@ export async function createAgentSessionFromDefinition(
 ): Promise<SessionCreateResult> {
 	const authStorage = AuthStorage.create();
 	const modelRegistry = ModelRegistry.create(authStorage);
-	const sourceRoot = config.qualityReviewContext?.sourceRoot;
-	const canonicalSourceRoot = sourceRoot
-		? await realpath(sourceRoot).catch(() => sourceRoot)
-		: undefined;
-	const baseProjectRoot = config.qualityReviewContext?.baseProjectRoot;
-	const inside = (root: string, path: string) => {
-		const suffix = relative(root, path);
-		return (
-			suffix === "" ||
-			(suffix !== ".." && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix))
-		);
-	};
-	const skillPaths =
-		config.qualityReviewContext && config.skillPaths
-			? (
-					await Promise.all(
-						config.skillPaths.map(async (path) => {
-							const canonicalPath = await realpath(path).catch(() => path);
-							const candidate = !isAbsolute(path)
-								? baseProjectRoot
-									? resolve(baseProjectRoot, path)
-									: undefined
-								: canonicalSourceRoot &&
-										baseProjectRoot &&
-										inside(canonicalSourceRoot, canonicalPath)
-									? resolve(
-											baseProjectRoot,
-											relative(canonicalSourceRoot, canonicalPath),
-										)
-									: baseProjectRoot && inside(baseProjectRoot, canonicalPath)
-										? canonicalPath
-										: inside(resolve(domainsDir, ".."), canonicalPath)
-											? canonicalPath
-											: undefined;
-							if (
-								candidate &&
-								(await stat(candidate).catch(() => undefined))?.isDirectory()
-							)
-								return candidate;
-							config.qualityReviewContext?.omittedSkillPaths?.push(path);
-							return undefined;
-						}),
-					)
-				).filter((path): path is string => path !== undefined)
-			: config.skillPaths;
+	const skillPaths = await resolveQualitySkillPaths(config, domainsDir);
 	const params = await buildSessionParams({
 		def,
 		cwd: config.cwd,
@@ -133,78 +290,11 @@ export async function createAgentSessionFromDefinition(
 			: {}),
 	});
 
-	// Build resource loader with all definition fields.
-	const projectToolsPath = join(
+	const { loader, qualitySettings } = await createResourceLoader(
+		config,
 		domainsDir,
-		"shared",
-		"extensions",
-		"project-tools",
+		params,
 	);
-	const qualityAnalysis = config.qualityReviewContext?.analysisConsent;
-	const baseAgentsFiles =
-		baseProjectRoot && params.projectContext
-			? (
-					await Promise.all(
-						["AGENTS.md", "CLAUDE.md"].map(async (name) => {
-							const path = join(baseProjectRoot, name);
-							const content = await readFile(path, "utf8").catch(
-								(error: NodeJS.ErrnoException) => {
-									if (error.code === "ENOENT") return undefined;
-									throw error;
-								},
-							);
-							return content === undefined ? undefined : { path, content };
-						}),
-					)
-				).filter(
-					(file): file is { path: string; content: string } =>
-						file !== undefined,
-				)
-			: [];
-	const extensionPaths = qualityAnalysis
-		? params.extensionPaths.filter((path) => path !== projectToolsPath)
-		: params.extensionPaths;
-	const qualitySettings = config.qualityReviewContext
-		? SettingsManager.inMemory()
-		: undefined;
-	qualitySettings?.setProjectTrusted(false);
-	const loader = new DefaultResourceLoader({
-		cwd: config.cwd,
-		agentDir: getAgentDir(),
-		...(qualitySettings && { settingsManager: qualitySettings }),
-		...(params.promptContent && { systemPrompt: params.promptContent }),
-		...(config.qualityReviewContext && { appendSystemPrompt: [] }),
-		noExtensions: true,
-		noSkills: true,
-		...(extensionPaths.length > 0 && {
-			additionalExtensionPaths: extensionPaths,
-		}),
-		...(params.extensionFactories.length > 0 || qualityAnalysis
-			? {
-					extensionFactories: [
-						...params.extensionFactories,
-						...(qualityAnalysis
-							? [
-									createProjectToolsExtension({
-										snapshotAuthorization: qualityAnalysis,
-									}),
-								]
-							: []),
-					],
-				}
-			: {}),
-		...(params.skillsOverride && { skillsOverride: params.skillsOverride }),
-		...(params.additionalSkillPaths && {
-			additionalSkillPaths: params.additionalSkillPaths,
-		}),
-		...((!params.projectContext || baseProjectRoot) && {
-			agentsFilesOverride: () => ({ agentsFiles: baseAgentsFiles }),
-		}),
-	});
-	await loader.reload();
-	if (params.knowledgeSurfaceEnabled) {
-		assertEnabledRecallOwner(loader);
-	}
 
 	const resolvedTools = buildToolAllowlist(params.tools, loader);
 	const toolAllowlist = params.qualityReviewProfile
@@ -212,27 +302,8 @@ export async function createAgentSessionFromDefinition(
 		: resolvedTools;
 
 	// Determine session manager: file-backed when planSlug is set, in-memory otherwise.
-	let sessionFilePath: string | undefined;
-	let sessionManager: SessionManager;
-	if (config.qualityReviewContext) {
-		const sessionsDir = join(
-			config.qualityReviewContext.hostRunStoreRoot,
-			"transcripts",
-		);
-		const uuid = crypto.randomUUID();
-		sessionFilePath = join(sessionsDir, `quality-session-${uuid}.jsonl`);
-		await mkdir(sessionsDir, { recursive: true });
-		sessionManager = SessionManager.open(sessionFilePath);
-	} else if (config.planSlug) {
-		validateSlug(config.planSlug);
-		const sessionsDir = sessionsDirForPlan(config.cwd, config.planSlug);
-		const uuid = crypto.randomUUID();
-		sessionFilePath = join(sessionsDir, `${config.role}-${uuid}.jsonl`);
-		await mkdir(sessionsDir, { recursive: true });
-		sessionManager = SessionManager.open(sessionFilePath);
-	} else {
-		sessionManager = SessionManager.inMemory();
-	}
+	const { sessionManager, sessionFilePath } =
+		await createSessionManager(config);
 
 	// Build session options, conditionally adding settingsManager for compaction.
 	const sessionOptions: CreateAgentSessionOptions = {

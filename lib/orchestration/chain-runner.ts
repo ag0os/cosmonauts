@@ -131,13 +131,7 @@ async function evaluateDefaultCompletionState(
 		};
 	}
 
-	if (
-		tasks.every(
-			(task) =>
-				isTaskClosed(task.status) &&
-				(task.status === "Cancelled" || taskAcceptanceCriteriaComplete(task)),
-		)
-	) {
+	if (tasks.every(taskCompleteForChain)) {
 		return { status: "complete" };
 	}
 
@@ -168,6 +162,15 @@ async function evaluateDefaultCompletionState(
 	}
 
 	return { status: "pending" };
+}
+
+function taskCompleteForChain(
+	task: Awaited<ReturnType<TaskManager["listTasks"]>>[number],
+): boolean {
+	return (
+		isTaskClosed(task.status) &&
+		(task.status === "Cancelled" || taskAcceptanceCriteriaComplete(task))
+	);
 }
 
 /**
@@ -440,29 +443,7 @@ async function runChainStep(
 			domainContext: config.domainContext,
 		}) === "terminal"
 	) {
-		const started = Date.now();
-		const review = await launchQualityReview({
-			...config.qualityReview,
-			projectRoot: config.projectRoot,
-			operatorNote: stage.prompt,
-			planSlug: qualityReviewPlanSlug(config),
-			signal: config.signal,
-		});
-		const result: StageResult = {
-			stage,
-			success: review.stepResult.outcome === "success",
-			iterations: 1,
-			durationMs: Date.now() - started,
-			summary: review.stepResult.summary,
-			run: review.ref,
-			artifacts: review.stepResult.artifacts,
-			...(review.stepResult.outcome === "success"
-				? {}
-				: { error: review.stepResult.summary }),
-		};
-		emit(config, { type: "stage_start", stage, stageIndex: stepIndex });
-		emitStageCompletion(config, stage, result);
-		return singleStageOutcome(stage, result);
+		return runQualityReviewChainStep(stage, stepIndex, config);
 	}
 	const promptContext = stagePromptContext(
 		config.steps,
@@ -523,6 +504,36 @@ async function runChainStep(
 		promptContext,
 	);
 
+	return singleStageOutcome(stage, result);
+}
+
+async function runQualityReviewChainStep(
+	stage: ChainStage,
+	stepIndex: number,
+	config: ChainConfig,
+): Promise<ChainStepOutcome> {
+	const started = Date.now();
+	const review = await launchQualityReview({
+		...config.qualityReview,
+		projectRoot: config.projectRoot,
+		operatorNote: stage.prompt,
+		planSlug: qualityReviewPlanSlug(config),
+		signal: config.signal,
+	});
+	const result: StageResult = {
+		stage,
+		success: review.stepResult.outcome === "success",
+		iterations: 1,
+		durationMs: Date.now() - started,
+		summary: review.stepResult.summary,
+		run: review.ref,
+		artifacts: review.stepResult.artifacts,
+		...(review.stepResult.outcome === "success"
+			? {}
+			: { error: review.stepResult.summary }),
+	};
+	emit(config, { type: "stage_start", stage, stageIndex: stepIndex });
+	emitStageCompletion(config, stage, result);
 	return singleStageOutcome(stage, result);
 }
 
@@ -1320,20 +1331,7 @@ function prepareStageExecution(
 		: config.registry.has(executionRole, config.domainContext);
 
 	if (!hasExecutionTarget) {
-		let message = `Unknown agent role "${stage.name}"`;
-		const legacyCosmoStageName = "main/cosmo".slice("main/".length);
-		if (stage.name === legacyCosmoStageName) {
-			message +=
-				'\nMigration hint: use "main/cosmo" for the cross-domain orchestrator or "coding/cody" for the coding-domain lead.';
-		}
-		emit(config, { type: "error", message, stage });
-		return {
-			stage,
-			success: false,
-			iterations: 0,
-			durationMs: Date.now() - stageStart,
-			error: message,
-		};
+		return unknownStageResult(stage, config, stageStart);
 	}
 
 	const resolvedStage =
@@ -1375,6 +1373,27 @@ function prepareStageExecution(
 		hasStats: false,
 		lastSummary: undefined,
 		...(onAssistantText !== undefined && { onAssistantText }),
+	};
+}
+
+function unknownStageResult(
+	stage: ChainStage,
+	config: ChainConfig,
+	stageStart: number,
+): StageResult {
+	let message = `Unknown agent role "${stage.name}"`;
+	const legacyCosmoStageName = "main/cosmo".slice("main/".length);
+	if (stage.name === legacyCosmoStageName) {
+		message +=
+			'\nMigration hint: use "main/cosmo" for the cross-domain orchestrator or "coding/cody" for the coding-domain lead.';
+	}
+	emit(config, { type: "error", message, stage });
+	return {
+		stage,
+		success: false,
+		iterations: 0,
+		durationMs: Date.now() - stageStart,
+		error: message,
 	};
 }
 
@@ -1461,22 +1480,7 @@ async function runLoopStage(
 		if (context.config.signal?.aborted) break;
 		if (Date.now() >= deadline) break;
 
-		context.iterations = i + 1;
-		emit(context.config, {
-			type: "stage_iteration",
-			stage: context.stage,
-			iteration: context.iterations,
-		});
-
-		const spawnResult = await spawnLoopIteration(context);
-		if (!spawnResult.success) {
-			return buildLoopExitResult(context, {
-				status: "terminal",
-				error: spawnResult.error,
-			});
-		}
-
-		loopState = await evaluateLoopState(context.stage, context.config);
+		loopState = await runLoopIteration(context, i);
 		if (loopState.status !== "pending") break;
 	}
 
@@ -1486,6 +1490,22 @@ async function runLoopStage(
 			? getLoopCapState(context, deadline, iterationBudget)
 			: loopState,
 	);
+}
+
+async function runLoopIteration(
+	context: StageExecutionContext,
+	index: number,
+): Promise<LoopState> {
+	context.iterations = index + 1;
+	emit(context.config, {
+		type: "stage_iteration",
+		stage: context.stage,
+		iteration: context.iterations,
+	});
+	const spawnResult = await spawnLoopIteration(context);
+	if (!spawnResult.success)
+		return { status: "terminal", error: spawnResult.error };
+	return evaluateLoopState(context.stage, context.config);
 }
 
 async function evaluateLoopState(
