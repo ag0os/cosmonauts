@@ -46,19 +46,64 @@ export function applyReviewerCalibration(
 	markdown: string,
 	findings: readonly string[],
 	issues: readonly string[],
+	observations?: readonly string[],
+	unreplaced: string[] = [],
 ): string {
-	if (issues.length === 0) return markdown;
+	if (issues.length === 0 && !observations) return markdown;
 	const indexed = indexedQualityReviewReport(markdown);
-	if (indexed) return renderQualityReviewReport({ ...indexed, findings });
-	let amended = markdown;
-	for (const [index, original] of qualityReviewFindingLines(
+	if (
+		indexed &&
+		!hasUnexpectedQualityReviewSectionContent(markdown) &&
+		!["Findings", "Out-of-range observations"].some((heading) =>
+			/(?:^|\n)-[ \t]{2,}\S/.test(visibleSectionBody(markdown, heading) ?? ""),
+		)
+	)
+		return renderQualityReviewReport({
+			...indexed,
+			findings,
+			observations: observations ?? indexed.observations,
+		});
+	const withFindings = replaceSectionEntries(
 		markdown,
-	).entries()) {
-		const replacement = findings[index];
-		if (replacement && replacement !== original)
-			amended = amended.replace(`- ${original}`, () => `- ${replacement}`);
+		"Findings",
+		findings,
+		unreplaced,
+	);
+	return observations
+		? replaceSectionEntries(
+				withFindings,
+				"Out-of-range observations",
+				observations,
+				unreplaced,
+			)
+		: withFindings;
+}
+
+function replaceSectionEntries(
+	markdown: string,
+	heading: string,
+	replacements: readonly string[],
+	unreplaced: string[],
+): string {
+	const body = visibleSectionBody(markdown, heading);
+	if (body === undefined) return markdown;
+	const originals = qualityReviewSectionEntries(markdown, heading);
+	let updated = body;
+	for (const [index, original] of originals.entries()) {
+		const replacement = replacements[index];
+		if (!replacement || replacement === original) continue;
+		const token = `- ${original}`;
+		if (!updated.includes(token)) unreplaced.push(original);
+		else updated = updated.replace(token, () => `- ${replacement}`);
 	}
-	return amended;
+	if (replacements.length > originals.length)
+		updated = `${updated}\n${replacements
+			.slice(originals.length)
+			.map((entry) => `- ${entry}`)
+			.join("\n")}`;
+	const start = markdown.indexOf(`## ${heading}\n`) + `## ${heading}\n`.length;
+	const bodyStart = markdown.indexOf(body, start);
+	return `${markdown.slice(0, bodyStart)}${updated}${markdown.slice(bodyStart + body.length)}`;
 }
 
 export function assessQualityReviewReport(markdown: string): {
@@ -118,6 +163,7 @@ export function assessQualityReviewReport(markdown: string): {
 						(item) => typeof item === "string",
 					),
 			) &&
+			!hasUnexpectedQualityReviewSectionContent(markdown) &&
 			indexMatchesVisibleSections(markdown, parsed as Record<string, unknown>)
 		) {
 			return { verdict, indexAvailable: true };
@@ -193,7 +239,11 @@ export function hasQualityReviewSectionContent(
 	heading: "Gates" | "Findings" | "Human decisions",
 ): boolean {
 	const body = visibleSectionBody(markdown, heading);
-	return body !== undefined && body !== "" && body !== "- None recorded.";
+	return (
+		body !== undefined &&
+		body !== "" &&
+		!/^(?:-\s*)?None recorded\.$/i.test(body)
+	);
 }
 
 /** Read visible finding bullets even when the optional machine index is absent. */
@@ -201,15 +251,15 @@ export function qualityReviewFindingLines(markdown: string): string[] {
 	return qualityReviewSectionEntries(markdown, "Findings");
 }
 
-/** All visible Findings text must belong to a dash entry, with only indented continuations. */
-export function hasUnaccountedQualityReviewFindings(markdown: string): boolean {
-	const body = visibleSectionBody(markdown, "Findings");
-	if (!body || body === "- None recorded.") return false;
-	let inEntry = false;
-	for (const line of body.split("\n")) {
-		if (/^-\s+/.test(line)) inEntry = true;
-		else if (!line.trim()) inEntry = false;
-		else if (!inEntry || !/^\s+/.test(line)) return true;
+export function hasUnexpectedQualityReviewSectionContent(
+	markdown: string,
+): boolean {
+	for (const match of markdown.matchAll(/^## ([^\n]+)\n/gm)) {
+		if (!sections.includes(match[1] as (typeof sections)[number])) {
+			const tail = markdown.slice((match.index ?? 0) + match[0].length);
+			const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
+			if ((end < 0 ? tail : tail.slice(0, end)).trim()) return true;
+		}
 	}
 	return false;
 }

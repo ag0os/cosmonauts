@@ -50,7 +50,7 @@ import {
 	applyReviewerCalibration,
 	assessQualityReviewReport,
 	hasQualityReviewSectionContent,
-	hasUnaccountedQualityReviewFindings,
+	hasUnexpectedQualityReviewSectionContent,
 	indexedQualityReviewReport,
 	type QualityReviewVerdict,
 	qualityReviewFindingLines,
@@ -867,11 +867,7 @@ export async function runQualityReview(
 				reason = diversityIssue;
 			}
 			if (
-				hostBlocksReady(
-					gateState,
-					hostHumanDecisionItems,
-					calibration.openFindings,
-				) &&
+				hostBlocksReady(gateState, hostHumanDecisionItems) &&
 				verdict !== "failed"
 			) {
 				verdict = "not-ready";
@@ -890,7 +886,6 @@ export async function runQualityReview(
 		async function calibrateHostReport(): Promise<{
 			humanItems: string[];
 			findings: string[];
-			openFindings: boolean;
 		}> {
 			const reviewerTexts = await Promise.all(
 				sink
@@ -919,35 +914,40 @@ export async function runQualityReview(
 			const carriedFindings = calibration.findings.slice(
 				reportedFindings.length,
 			);
+			const unreplaced: string[] = [];
 			markdown = applyReviewerCalibration(
 				markdown,
 				calibration.findings.slice(0, reportedFindings.length),
 				calibrationFindings,
+				calibration.observations,
+				unreplaced,
 			);
+			for (const entry of unreplaced)
+				calibrationHumanItems.push(
+					`Finding ${entry} could not be capped in place; human decision required.`,
+				);
 			return {
 				humanItems: calibrationHumanItems,
 				findings: [...calibrationFindings, ...carriedFindings],
-				openFindings: calibration.openFindings,
 			};
 		}
 
 		function hostBlocksReady(
 			gateState: string | undefined,
 			hostHumanDecisionItems: readonly string[],
-			openFindings: boolean,
 		): boolean {
 			return (
 				gateState !== "completed-bound" ||
 				checkResults.length !== (baseQualityReview?.checks?.length ?? 0) ||
 				hostHumanDecisionItems.length > 0 ||
-				hostResultsBlockReady(openFindings)
+				hostResultsBlockReady()
 			);
 		}
 
-		function hostResultsBlockReady(openFindings: boolean): boolean {
+		function hostResultsBlockReady(): boolean {
 			return (
-				openFindings ||
-				hasUnaccountedQualityReviewFindings(markdown) ||
+				hasQualityReviewSectionContent(markdown, "Findings") ||
+				hasUnexpectedQualityReviewSectionContent(markdown) ||
 				hasQualityReviewSectionContent(markdown, "Human decisions") ||
 				gateOwnedFiles.length > 0 ||
 				checkResults.some((check) => check.exitCode !== 0 || check.timedOut)

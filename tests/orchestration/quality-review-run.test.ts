@@ -1295,97 +1295,108 @@ describe("quality review durable lifecycle", () => {
 	});
 
 	// @cosmo-behavior plan:qm-chain-safety#B-010
-	it("blocks ready for every Findings shape", async () => {
-		for (const [_shape, body] of [
-			["numbered", "1. F-1 P2 null input crashes"],
-			["star", "* F-1 P2 null input crashes"],
-			["plus", "+ F-1 P2 null input crashes"],
-			["prose", "F-1 P2 null input crashes"],
+	// The non-sentinel cases kill the host Findings condition -> false mutation.
+	it.each(
+		(
 			[
-				"before bullet",
-				"F-1 P2 null input crashes\n- F-2 dismissed; closureEvidence: fixed in lib/a.ts",
-			],
-			[
-				"after dismissal",
-				"- F-2 dismissed; closureEvidence: fixed in lib/a.ts\nF-1 P2 null input crashes",
-			],
-			[
-				"after blank line",
-				"- F-2 dismissed; closureEvidence: fixed in lib/a.ts\n\n  F-1 P2 null input crashes",
-			],
-			["ID-less bullet", "- P2 null input crashes"],
-		] as const) {
-			const projectRoot = await root(true);
-			await mkdir(join(projectRoot, ".cosmonauts"));
-			await writeFile(
-				join(projectRoot, ".cosmonauts", "config.json"),
-				JSON.stringify({
-					qualityReview: {
-						diverseReviewerModel: "anthropic/reviewer",
-						checks: [
-							{
-								id: "ok",
-								command: process.execPath,
-								args: ["-e", "process.exit(0)"],
-							},
-						],
-					},
-				}),
-			);
-			await commitBaseConfig(projectRoot);
-			const result = await runQualityReview({
-				projectRoot,
-				hostChecks: true,
-				execute: async ({ runId, artifactSink }) => {
-					for (const [lens, provider] of [
-						["reviewer", "anthropic"],
-						["security-reviewer", "openai-codex"],
-					] as const) {
-						const fullText = "No findings";
-						await artifactSink.writeReviewer({
-							runId,
-							lens,
-							spawnId: `spawn-${lens}`,
-							sessionId: `session-${lens}`,
-							resolvedRole: `coding/${lens}`,
-							resolvedModel: { provider, id: lens },
-							outcome: "success",
-							digest: createHash("sha256").update(fullText).digest("hex"),
-							fullText,
-						});
-					}
-					const markdown = renderQualityReviewReport({
-						verdict: "ready",
-						reason: "clear",
-						gates: ["audit passed"],
-					}).replace(
-						"## Findings\n\n- None recorded.",
-						`## Findings\n\n${body}`,
-					);
-					return {
-						markdown,
-						gateState: "completed-bound",
-						implementerModel: { provider: "openai-codex", id: "worker" },
-						requiredLenses: ["reviewer", "security-reviewer"],
-					};
+				["numbered", "1. F-1 P2 null input crashes"],
+				["star", "* F-1 P2 null input crashes"],
+				["plus", "+ F-1 P2 null input crashes"],
+				["prose", "F-1 P2 null input crashes"],
+				[
+					"before bullet",
+					"F-1 P2 null input crashes\n- F-2 dismissed; closureEvidence: fixed in lib/a.ts",
+				],
+				[
+					"after dismissal",
+					"- F-2 dismissed; closureEvidence: fixed in lib/a.ts\nF-1 P2 null input crashes",
+				],
+				[
+					"after blank line",
+					"- F-2 dismissed; closureEvidence: fixed in lib/a.ts\n\n  F-1 P2 null input crashes",
+				],
+				["ID-less bullet", "- P2 null input crashes"],
+				["dismissal", "- F-1 dismissed; closureEvidence: fixed in lib/a.ts"],
+				["sub-finding", "- F-1 dismissed\n  - F-2 P2 null input crashes"],
+				["still open", "- F-1 P2 still open, security dismissed it"],
+				["not resolved", "- F-1 P2 not resolved"],
+				["closed prematurely", "- F-1 P2 closed prematurely"],
+				["blank line", "- F-1 dismissed\n\n  F-2 P2 null input crashes"],
+				["subheading", "### F-1\n\nP2 null input crashes"],
+				["extra heading", "- None recorded.\n\n## Extra\n\nunexpected"],
+				["empty", "", "ready"],
+				["plain sentinel", "None recorded.", "ready"],
+				["case-insensitive bullet sentinel", "- nOnE ReCoRdEd.", "ready"],
+			] as const
+		).map((entry) => [entry[0], entry[1], entry.at(2) ?? "not-ready"] as const),
+	)("calibrates Findings shape %s", async (_shape, body, expected) => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "anthropic/reviewer",
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
 				},
-			});
-			const report = await readFile(
-				join(
-					projectRoot,
-					"missions",
-					"sessions",
-					"chain",
-					"runs",
-					result.ref.runId,
-					"artifacts",
-					"qm",
-					"final.md",
-				),
-				"utf8",
-			);
-			expect(report).toContain("Verdict: not-ready");
-		}
+			}),
+		);
+		await commitBaseConfig(projectRoot);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				for (const [lens, provider] of [
+					["reviewer", "anthropic"],
+					["security-reviewer", "openai-codex"],
+				] as const) {
+					const fullText = "No findings";
+					await artifactSink.writeReviewer({
+						runId,
+						lens,
+						spawnId: `spawn-${lens}`,
+						sessionId: `session-${lens}`,
+						resolvedRole: `coding/${lens}`,
+						resolvedModel: { provider, id: lens },
+						outcome: "success",
+						digest: createHash("sha256").update(fullText).digest("hex"),
+						fullText,
+					});
+				}
+				const markdown = renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					gates: ["audit passed"],
+				}).replace("## Findings\n\n- None recorded.", `## Findings\n\n${body}`);
+				return {
+					markdown,
+					gateState: "completed-bound",
+					implementerModel: { provider: "openai-codex", id: "worker" },
+					requiredLenses: ["reviewer", "security-reviewer"],
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain(`Verdict: ${expected ?? "not-ready"}`);
 	});
 
 	// @cosmo-behavior plan:qm-chain-safety#B-010
@@ -1479,7 +1490,7 @@ describe("quality review durable lifecycle", () => {
 			"utf8",
 		);
 		expect(report).toContain(
-			entry.includes("\n\n") ? "Verdict: not-ready" : "Verdict: ready",
+			inFindings ? "Verdict: not-ready" : "Verdict: ready",
 		);
 		expect(report).toContain(`- ${entry}`);
 		expect(report).not.toContain("carried forward as open");
@@ -1615,10 +1626,18 @@ describe("quality review durable lifecycle", () => {
 		],
 		["omitted", "", true, "PF-2 open", "carried forward as open", undefined],
 		[
+			"irregular bullet",
+			" PF-2 P1 slow path",
+			true,
+			"could not be capped in place",
+			"human decision required",
+			undefined,
+		],
+		[
 			"duplicate observation",
 			"PF-2 P2 main path",
 			true,
-			"- Finding PF-2 has unsupported performance priority above P2 in observations",
+			"- PF-2 unsupported performance priority capped at P2.",
 			"human decision required",
 			"PF-2 P0 older path",
 		],
@@ -1696,12 +1715,13 @@ describe("quality review durable lifecycle", () => {
 		expect(report).toContain(visible);
 		expect(report).toContain(evidence);
 		if (observation) {
-			expect(report).toContain(`- ${observation}`);
+			expect(report).toContain(`- ${observation.replace("P0", "P2")}`);
+			expect(report).toContain(
+				"Finding PF-2 has unsupported performance priority above P2 in observations; human decision required.",
+			);
 			expect(
-				report.match(
-					/## Human decisions\n\n([\s\S]*?)\n\n## Out-of-range observations/,
-				)?.[1],
-			).toContain(visible);
+				report.match(/## Findings\n\n([\s\S]*?)\n\n## Human decisions/)?.[1],
+			).not.toContain("capped at P2");
 		}
 	});
 
@@ -1784,7 +1804,7 @@ describe("quality review durable lifecycle", () => {
 		expect(report).toContain("Verdict: not-ready");
 		expect(report).toContain("PF-1 priority: P2 costly path");
 		expect(report).toContain(
-			"Finding F-1 was closed or dismissed without independent cited evidence",
+			"Finding F-1 was omitted from the QM report; carried forward as open.",
 		);
 		expect(report).toContain("Diversity: attested");
 	});

@@ -195,7 +195,8 @@ describe("quality review model policy", () => {
 					text: "- id: F-1\n  priority: P2\n  closureEvidence: fixed in lib/a.ts",
 				},
 			],
-			findings: ["F-1 dismissed by reviewer"],
+			findings: [],
+			observations: ["F-1 dismissed by reviewer"],
 		});
 		expect(result.issues.join(" ")).toContain("F-1");
 	});
@@ -309,10 +310,7 @@ describe("quality review model policy", () => {
 		expect(result.issues).toEqual([]);
 	});
 
-	it.each([
-		"findings",
-		"observations",
-	] as const)("keeps a second open entry with the same ID in %s", (section) => {
+	it("keeps a Findings entry open even beside a dismissed observation", () => {
 		const entries = [
 			"F-1 dismissed; closureEvidence: fixed in lib/a.ts",
 			"F-1 P2 still crashes",
@@ -320,13 +318,10 @@ describe("quality review model policy", () => {
 		const result = calibrateReviewerFindings({
 			materials: "fixed in lib/a.ts",
 			reviewers: [{ lens: "reviewer", text: "- id: F-1\n  priority: P2" }],
-			findings: section === "findings" ? entries : [],
-			observations: section === "observations" ? entries : [],
+			findings: [entries[1] ?? ""],
+			observations: [entries[0] ?? ""],
 		});
-		expect(
-			result.openFindings ||
-				result.issues.some((issue) => issue.includes("human decision")),
-		).toBe(true);
+		expect(result.openFindings).toBe(true);
 	});
 
 	it("raises an unsupported duplicate observation priority for a human decision", () => {
@@ -379,7 +374,10 @@ describe("quality review model policy", () => {
 					text: "- id: F-1\n  closureEvidence: fixed in lib/a.ts",
 				},
 			],
-			findings: ["[P2] F-1 dismissed after independent review"],
+			findings: [],
+			observations: [
+				"[P2] F-1 dismissed after independent review; closureEvidence: fixed in lib/a.ts",
+			],
 		});
 		expect(result.openFindings).toBe(false);
 		expect(result.issues).toEqual([]);
@@ -389,7 +387,8 @@ describe("quality review model policy", () => {
 		const decorated = calibrateReviewerFindings({
 			materials: "fixed in lib/a.ts",
 			reviewers: [{ lens: "reviewer", text: "- id: F-1\n  priority: P2" }],
-			findings: ["**F-1** dismissed; closureEvidence: fixed in lib/a.ts"],
+			findings: [],
+			observations: ["**F-1** dismissed; closureEvidence: fixed in lib/a.ts"],
 		});
 		expect(decorated.openFindings).toBe(false);
 		const idless = calibrateReviewerFindings({
@@ -398,5 +397,122 @@ describe("quality review model policy", () => {
 			findings: ["dismissed; closureEvidence: fixed in lib/a.ts"],
 		});
 		expect(idless.openFindings).toBe(true);
+	});
+
+	it.each([
+		"dismissed",
+		"resolved",
+		"closed",
+	])("accepts %s only immediately after the observation ID with other-lens evidence in either order", (word) => {
+		const raiser = { lens: "reviewer", text: "- id: F-1\n  priority: P2" };
+		const closer = {
+			lens: "security-reviewer",
+			text: "- id: F-1\n  closureEvidence: fixed in lib/a.ts",
+		};
+		for (const reviewers of [
+			[raiser, closer],
+			[closer, raiser],
+		]) {
+			const result = calibrateReviewerFindings({
+				materials: "fixed in lib/a.ts",
+				reviewers,
+				findings: [],
+				observations: [
+					`F-1 ${word}\n  closureEvidence: fixed in lib/a.ts\n  file: lib/a.ts:1`,
+				],
+			});
+			expect(result.issues).toEqual([]);
+		}
+	});
+
+	it("rejects self-closure when a second lens only echoes the ID, in either order", () => {
+		const raiser = {
+			lens: "reviewer",
+			text: "- id: F-1\n  priority: P2\n  closureEvidence: fixed in lib/a.ts",
+		};
+		const echo = {
+			lens: "security-reviewer",
+			text: "- id: F-1\n  priority: P2",
+		};
+		for (const reviewers of [
+			[raiser, echo],
+			[echo, raiser],
+		]) {
+			const result = calibrateReviewerFindings({
+				materials: "fixed in lib/a.ts",
+				reviewers,
+				findings: [],
+				observations: ["F-1 dismissed; closureEvidence: fixed in lib/a.ts"],
+			});
+			expect(result.issues.join(" ")).toContain(
+				"without independent cited evidence",
+			);
+		}
+	});
+
+	it.each([
+		"F-1 P2 dismissed after review",
+		"F-1 P2 not resolved",
+		"F-1 P2 closed prematurely",
+	])("raises a human item for a dismissal word away from the leading ID: %s", (entry) => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [{ lens: "reviewer", text: "- id: F-1\n  priority: P2" }],
+			findings: [],
+			observations: [entry],
+		});
+		expect(result.issues.join(" ")).toContain(
+			"unverified dismissal in observations",
+		);
+	});
+
+	it("does not match F-1 to F-10 in reviewer closure text", () => {
+		const result = calibrateReviewerFindings({
+			materials: "fixed in lib/a.ts",
+			reviewers: [
+				{ lens: "reviewer", text: "- id: F-1\n  priority: P2" },
+				{
+					lens: "security-reviewer",
+					text: "- id: F-10\n  closureEvidence: fixed in lib/a.ts",
+				},
+			],
+			findings: [],
+			observations: [
+				"F-1 dismissed; closureEvidence: fixed in lib/a.ts",
+				"F-10 P2 unrelated",
+			],
+		});
+		expect(result.issues.join(" ")).toContain(
+			"Finding F-1 was closed or dismissed without independent cited evidence",
+		);
+	});
+
+	it("carries a reviewer ID mentioned inside another observation instead of leading it", () => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [{ lens: "reviewer", text: "- id: F-1\n  priority: P2" }],
+			findings: [],
+			observations: ["F-10 P2 relates to F-1"],
+		});
+		expect(result.findings).toContain(
+			"F-1 open: reviewer finding omitted from QM report.",
+		);
+		expect(result.issues.join(" ")).toContain("carried forward as open");
+	});
+
+	it("caps every duplicate unsupported priority in both report sections", () => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [
+				{ lens: "performance-reviewer", text: "- id: PF-1\n  priority: P0" },
+			],
+			findings: ["PF-1 P0 first", "PF-1 P1 second"],
+			observations: ["PF-1 P0 old"],
+		});
+		expect(result.findings).toEqual(["PF-1 P2 first", "PF-1 P2 second"]);
+		expect(result.observations).toContain("PF-1 P2 old");
+		expect(result.observations).toContain(
+			"PF-1 unsupported performance priority capped at P2.",
+		);
 	});
 });

@@ -133,4 +133,43 @@ describe("quality review reports", () => {
 		expect(amended).toContain(`- PF-2 P2 costs ${token} per call`);
 		expect(amended).not.toContain(`- ${original}`);
 	});
+
+	it("caps two Findings copies and an observation without rewriting a Gates duplicate", () => {
+		const original = "PF-1 P0 slow path";
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+			gates: [original],
+			findings: [original, original],
+			observations: [original],
+		}).replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, "");
+		const amended = applyReviewerCalibration(
+			markdown,
+			["PF-1 P2 slow path", "PF-1 P2 slow path"],
+			["Performance PF-1 capped at P2."],
+			["PF-1 P2 slow path"],
+		);
+		expect(amended.match(/PF-1 P2 slow path/g)).toHaveLength(3);
+		expect(amended).toContain("## Gates\n\n- PF-1 P0 slow path");
+	});
+
+	it("reports an irregular bullet whose unsupported priority cannot be capped in place", () => {
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+			findings: ["PF-1 P1 slow"],
+		})
+			.replace("- PF-1 P1 slow", "-  PF-1 P1 slow")
+			.replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, "");
+		const unreplaced: string[] = [];
+		const amended = applyReviewerCalibration(
+			markdown,
+			["PF-1 P2 slow"],
+			["Performance PF-1 capped at P2."],
+			[],
+			unreplaced,
+		);
+		expect(unreplaced).toEqual(["PF-1 P1 slow"]);
+		expect(amended).toContain("-  PF-1 P1 slow");
+	});
 });
