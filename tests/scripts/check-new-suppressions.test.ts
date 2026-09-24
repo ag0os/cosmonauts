@@ -46,6 +46,36 @@ function run(root: string) {
 	});
 }
 
+test.each([
+	["triple-slash TypeScript", "lib/a.ts", "/// @ts-ignore\nunsafe();\n"],
+	["JSDoc TypeScript", "lib/a.ts", "/** @ts-ignore */\nunsafe();\n"],
+	["block TypeScript", "lib/a.ts", "/* @ts-expect-error */\nunsafe();\n"],
+	[
+		"JSX Biome",
+		"lib/a.tsx",
+		"const view = <div>{/* biome-ignore lint/style/noUnusedTemplateLiteral: reason */}text</div>;\n",
+	],
+	[
+		"block ESLint",
+		"lib/a.ts",
+		"/* eslint-disable no-console */\nconsole.log(1);\n",
+	],
+])("script requires base registration for a %s directive", (_name, path, source) => {
+	const root = fixture();
+	write(root, path, source);
+	const result = run(root);
+	expect(result.status).toBe(1);
+	expect(result.stdout).toContain(`${path}:1: unregistered`);
+	write(
+		root,
+		".cosmonauts/suppression-exceptions.json",
+		JSON.stringify({ version: 1, entries: scanSuppressions(path, source) }),
+	);
+	git(root, "add", ".cosmonauts/suppression-exceptions.json");
+	git(root, "commit", "-qm", "authorize");
+	expect(run(root).status).toBe(0);
+});
+
 test("script rejects a same-change exception because the base registry owns authorization", () => {
 	const root = fixture();
 	const source = "// @ts-expect-error intentional\nunsafe();\n";

@@ -6,6 +6,45 @@ import {
 
 describe("suppression policy", () => {
 	// @cosmo-behavior plan:qm-chain-safety#B-008
+	test.each([
+		[
+			"triple-slash TypeScript",
+			"lib/a.ts",
+			"/// @ts-ignore\nunsafe();\n",
+			"@ts-ignore",
+		],
+		[
+			"JSDoc TypeScript",
+			"lib/a.ts",
+			"/** @ts-ignore */\nunsafe();\n",
+			"@ts-ignore",
+		],
+		[
+			"block TypeScript",
+			"lib/a.ts",
+			"/* @ts-expect-error */\nunsafe();\n",
+			"@ts-expect-error",
+		],
+		[
+			"JSX Biome",
+			"lib/a.tsx",
+			"const view = <div>{/* biome-ignore lint/style/noUnusedTemplateLiteral: reason */}text</div>;\n",
+			"biome-ignore",
+		],
+		[
+			"block ESLint",
+			"lib/a.ts",
+			"/* eslint-disable no-console */\nconsole.log(1);\n",
+			"eslint-disable",
+		],
+	])("recognizes %s suppression directives", (_name, path, source, family) => {
+		const current = scanSuppressions(path, source);
+		expect(current).toHaveLength(1);
+		expect(current[0]?.family).toBe(family);
+		expect(checkSuppressions([], current, [])).toHaveLength(1);
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-008
 	test("rejects a new directive that is absent from the base registry", () => {
 		const current = scanSuppressions(
 			"lib/a.ts",

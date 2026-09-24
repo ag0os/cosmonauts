@@ -33,31 +33,32 @@ export function scanSuppressions(
 ): Suppression[] {
 	const lines = source.split(/\r?\n/);
 	const results: Suppression[] = [];
-	const sourceFile = ts.createSourceFile(
-		path,
-		source,
+	const scanner = ts.createScanner(
 		ts.ScriptTarget.Latest,
-		true,
+		false,
+		/\.[cm]?[jt]sx$/.test(path)
+			? ts.LanguageVariant.JSX
+			: ts.LanguageVariant.Standard,
+		source,
 	);
-	const comments = new Map<number, ts.CommentRange>();
-	function collect(node: ts.Node): void {
-		for (const position of [node.pos, node.end]) {
-			for (const range of [
-				...(ts.getLeadingCommentRanges(source, position) ?? []),
-				...(ts.getTrailingCommentRanges(source, position) ?? []),
-			])
-				comments.set(range.pos, range);
-		}
-		ts.forEachChild(node, collect);
+	const comments: Array<{ pos: number; end: number }> = [];
+	for (
+		let token = scanner.scan();
+		token !== ts.SyntaxKind.EndOfFileToken;
+		token = scanner.scan()
+	) {
+		if (
+			token === ts.SyntaxKind.SingleLineCommentTrivia ||
+			token === ts.SyntaxKind.MultiLineCommentTrivia
+		)
+			comments.push({ pos: scanner.getTokenPos(), end: scanner.getTextPos() });
 	}
-	collect(sourceFile);
-	for (const range of [...comments.values()].sort((a, b) => a.pos - b.pos)) {
+	for (const range of comments) {
 		const index = source.slice(0, range.pos).split(/\r?\n/).length - 1;
 		const line = lines[index] ?? "";
 		const comment = source
 			.slice(range.pos, range.end)
-			.replace(/^\/\//, "")
-			.replace(/^\/\*/, "")
+			.replace(/^\/\/+|^\/\*+/, "")
 			.replace(/\*\/$/, "")
 			.trim();
 		if (!comment) continue;
