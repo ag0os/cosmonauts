@@ -3,7 +3,7 @@ kind: knowledge-surface-backfill-amendment
 plan: knowledge-surface
 amendedAt: '2026-09-24'
 ratifiedBy: pending — made by the qm-chain-safety implementer, awaiting owner ratification
-configDigest: f59316030c5bd017a1eb7f2b0df0dd09121c453ef3873094bf406be768e13132
+configDigest: 91136f41b946a26813b5e9c305d5eda269c69d898325e73e796619d741c6f1a9
 ---
 
 # Knowledge surface — backfill receipt amendment 3
