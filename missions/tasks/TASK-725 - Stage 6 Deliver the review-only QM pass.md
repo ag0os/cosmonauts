@@ -13,7 +13,7 @@ dependencies:
   - TASK-724
   - TASK-722
 createdAt: '2026-09-24T03:17:23.275Z'
-updatedAt: '2026-09-24T03:17:23.275Z'
+updatedAt: '2026-09-24T04:55:37.165Z'
 ---
 
 ## Description
@@ -36,3 +36,11 @@ Binding ratified ground (not worker-adjustable; any collision requires halt-and-
 - [ ] #11 (Compliance patch, 2026-09-24) Host-observed model identity is delivered here, not in Stage 7: session creation returns the Pi-resolved provider and model, it is recorded in `ReviewerEvidence.resolvedModel`, and a mismatch is an integrity failure (Design §4). Stage 7 consumes this identity for family normalization and the diversity verdict.
 - [ ] #12 (Compliance patch, 2026-09-24) Host code writes each check's argv, exit code, duration and output to the run-owned `artifacts/qm/checks.md` through the Stage 4 sink, and the QM reads check results only from there (Design §6 step 1).
 <!-- AC:END -->
+
+## Implementation Notes
+
+task failed (first attempt, run-2ae54c4f-c658-4423-9dd6-fdef5028ee52). The worker stopped on the backfill config-digest tripwire and reverted its edits. Its draft is preserved at `/tmp/task725-stage6-wip.tar.gz` (paths relative to the repo root). Extract it and continue from it rather than restarting, after checking that it is consistent with the current HEAD.
+
+Coordinator resolution, 2026-09-24:
+- `.cosmonauts/config.json` changes are authorized for this plan. The knowledge-surface backfill config-digest tripwire is handled by `missions/reviews/knowledge-surface-backfill-amendment-3.md` (coordinator record, pending owner ratification; plan-sanctioned by Files to Change and the human-ratified D-019). Do not stop on it. If you change `.cosmonauts/config.json`, set `configDigest` in that file to the new `shasum -a 256 .cosmonauts/config.json` as your last step, and re-run `tests/scripts/knowledge-surface-backfill.test.ts`. Writing that one field is authorized.
+- Run the full suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`. The runner-injected Codex args break the detached-driver fake-CLI tests.
