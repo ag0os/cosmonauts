@@ -34,13 +34,24 @@ scopes:
   changed-scope floors. The duplication baseline exists even though the
   2026-09-10 full-project duplication scan was below its failure threshold.
 
-The three files were adopted as-is. `.fallow-baselines/manifest.json` records
-their SHA-256 digests and last-writer commits. Review never refreshes them.
+The three files were adopted as-is at their last-writer commits (dead-code
+`eb55243`; health and dupes `6b36c80`), then re-anchored once at local `main`
+`29fc0ce` under human ruling N-001 (plan D-029). The coordinator's probe found
+the adopted floors missed 3 dead-code, 15 duplication, and 217 health findings
+already on `main`; the re-anchoring keeps inherited debt from failing a
+changed-scope audit. The current committed floors record 27 unused exports,
+103 unused types, 1 unused class member, 2 duplicate-export pairs, 295 health
+finding counts, and 92 clone groups. `.fallow-baselines/manifest.json` records
+each digest, last-writer commit, and the re-anchoring reason. Review never
+refreshes these files.
 To refresh selected floors after deliberate debt work, run
 `bun run refresh:fallow-baselines -- --base <revision> --reason '<reason>' --category dead-code`
-(repeat `--category` for `health` or `dupes`). The script appends the base,
-resolved commit, reason, timestamp, and new digest to provenance. A missing or
-unreadable file fails the audit; it does not cause an unbaselined scan.
+(repeat `--category` for `health` or `dupes`). The script analyzes the resolved
+base in a private temporary checkout, writes the selected floors into the
+working repository, and appends the base, resolved commit, reason, timestamp,
+and new digest to provenance. Ahead or dirty working-tree findings cannot enter
+the refreshed floors. A missing or unreadable file fails the audit; it does
+not cause an unbaselined scan.
 
 New inline suppressions require a human-listed exception in the **base**
 revision of `.cosmonauts/suppression-exceptions.json`. Run

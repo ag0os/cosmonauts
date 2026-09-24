@@ -40,7 +40,9 @@ function fixture(): string {
 	spawnSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
 	spawnSync("git", ["config", "user.name", "Test"], { cwd: root });
 	spawnSync("git", ["add", "."], { cwd: root });
-	spawnSync("git", ["commit", "-qm", "base"], { cwd: root });
+	spawnSync("git", ["commit", "--allow-empty", "-qm", "base"], {
+		cwd: root,
+	});
 	const executable = join(root, "fallow");
 	writeFileSync(
 		executable,
@@ -105,5 +107,59 @@ test("reasoned refresh saves a requested baseline and appends provenance", () =>
 	expect(manifest.baselines["dead-code"].sha256).toMatch(/^[a-f0-9]{64}$/);
 	expect(manifest.baselines["dead-code"].provenance.at(-1).sha256).toBe(
 		manifest.baselines["dead-code"].sha256,
+	);
+});
+
+test("refresh analyzes the base commit despite ahead and dirty findings", () => {
+	const root = fixture();
+	writeFileSync(join(root, "findings.json"), '{"findings":["base"]}\n');
+	spawnSync("git", ["add", "findings.json"], { cwd: root });
+	spawnSync("git", ["commit", "-qm", "base findings"], { cwd: root });
+	const base = spawnSync("git", ["rev-parse", "HEAD"], {
+		cwd: root,
+		encoding: "utf8",
+	}).stdout.trim();
+	writeFileSync(join(root, "findings.json"), '{"findings":["base","ahead"]}\n');
+	spawnSync("git", ["add", "findings.json"], { cwd: root });
+	spawnSync("git", ["commit", "-qm", "ahead findings"], { cwd: root });
+	writeFileSync(
+		join(root, "findings.json"),
+		'{"findings":["base","ahead","dirty"]}\n',
+	);
+	mkdirSync(join(root, "node_modules"));
+	writeFileSync(join(root, "node_modules", "fixture"), "installed");
+	const executable = join(root, "fallow");
+	writeFileSync(
+		executable,
+		'#!/bin/sh\ntest -f node_modules/fixture || exit 2\ncat findings.json > "$3"\n',
+	);
+	const result = spawnSync(
+		"bun",
+		[
+			script,
+			"--root",
+			root,
+			"--category",
+			"dead-code",
+			"--base",
+			base,
+			"--reason",
+			"base only",
+			"--fallow",
+			executable,
+		],
+		{ encoding: "utf8" },
+	);
+	expect(result.status, result.stderr).toBe(0);
+	expect(
+		JSON.parse(
+			readFileSync(join(root, ".fallow-baselines", "dead-code.json"), "utf8"),
+		),
+	).toEqual({ findings: ["base"] });
+	const manifest = JSON.parse(
+		readFileSync(join(root, ".fallow-baselines", "manifest.json"), "utf8"),
+	);
+	expect(manifest.baselines["dead-code"].provenance.at(-1).baseCommit).toBe(
+		base,
 	);
 });

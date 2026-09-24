@@ -2,10 +2,12 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+	existsSync,
 	mkdtempSync,
 	readFileSync,
 	renameSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -34,8 +36,13 @@ const requested = args.flatMap((arg, index) =>
 );
 const fallow = option("--fallow") ?? join(root, "node_modules/.bin/fallow");
 
-function run(command: string, argv: string[], allowFindings = false): string {
-	const result = spawnSync(command, argv, { cwd: root, encoding: "utf8" });
+function run(
+	command: string,
+	argv: string[],
+	cwd = root,
+	allowFindings = false,
+): string {
+	const result = spawnSync(command, argv, { cwd, encoding: "utf8" });
 	if (
 		result.error ||
 		(result.status !== 0 && !(allowFindings && result.status === 1))
@@ -76,7 +83,14 @@ try {
 	if (manifest.version !== 1 || !manifest.baselines)
 		throw new Error("invalid baseline manifest");
 	const scratch = mkdtempSync(join(tmpdir(), "fallow-baseline-refresh-"));
+	const checkout = join(scratch, "base");
+	let worktreeAdded = false;
 	try {
+		run("git", ["worktree", "add", "--detach", checkout, commit]);
+		worktreeAdded = true;
+		const dependencies = join(root, "node_modules");
+		if (existsSync(dependencies))
+			symlinkSync(dependencies, join(checkout, "node_modules"), "dir");
 		const writes: Array<{ path: string; content: string }> = [];
 		for (const category of new Set(requested as Category[])) {
 			const { command, path } = categories[category];
@@ -92,6 +106,7 @@ try {
 					"--quiet",
 					"--no-cache",
 				],
+				checkout,
 				true,
 			);
 			const content = readFileSync(output, "utf8");
@@ -125,7 +140,12 @@ try {
 			`Refreshed ${requested.join(", ")} against ${base} (${commit}).`,
 		);
 	} finally {
-		rmSync(scratch, { recursive: true, force: true });
+		try {
+			if (worktreeAdded)
+				run("git", ["worktree", "remove", "--force", checkout]);
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
+		}
 	}
 } catch (error) {
 	console.error(error instanceof Error ? error.message : String(error));
