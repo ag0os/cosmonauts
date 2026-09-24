@@ -1,0 +1,25 @@
+# Stage 7 review 9 — codex
+
+The prompt is `stage7-review-9-prompt.md`. Reviewed HEAD `c3a6124` (TASK-754 at `e4ad5dd`). Final message verbatim:
+
+## Stage 7 verdict: DO-NOT-SHIP-YET
+
+The review-8 MEDIUM and LOW are **resolved**, and I found no regression caused by the one-regex change. A complete pass over the heading and section functions found remaining accidental shapes that breach D-031 or D-032. HIGH: none.
+
+### Findings
+
+- **MEDIUM — A bare CRLF duplicate still permits false `ready`.** The scan captures `\r` in an appended `## Findings\r\n`, then strips only spaces and tabs, so it treats the heading as unknown and sees no content after it ([quality-review-report.ts:268](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:268)). The original sections still satisfy the index check; calibration then renders from that index and removes the duplicate ([quality-review-report.ts:53](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:53)). A scratch pure-function probe reproduced `indexAvailable: true`, no unexpected content, and removal of the duplicate. This breaches D-032’s repeated-section rule.
+
+- **MEDIUM — A contentful empty-title `## ` section can permit false `ready`.** Section readers stop at `^## ` ([quality-review-report.ts:243](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:243)), but the unexpected-section scan requires another character after that space ([quality-review-report.ts:268](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:268)). If `## \n- F-9 crash` is accidentally appended after the index, the probe found a valid index and no unexpected content; indexed calibration removes the appended section. The scan also misses a tab-separated `##	Notes` heading. This breaches D-032’s contentful unexpected-section rule ([plan.md:670](/Users/cosmos/Projects/cosmonauts/missions/plans/qm-chain-safety/plan.md:670)).
+
+- **MEDIUM — A copied nonbreaking space can prevent reviewer-finding carryover.** The required-heading check accepts whitespace after `## Findings` ([quality-review-report.ts:116](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:116)), but `sectionBodyStart` accepts only spaces and tabs ([quality-review-report.ts:230](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:230)). With `## Findings ` and a reviewer `F-7` omitted from the report, calibration creates a carryover entry ([quality-review-models.ts:175](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-models.ts:175)); unindexed amendment skips that section ([quality-review-report.ts:329](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:329)). The probe’s final Findings section retained `- None recorded.`. A human item disclosed the omission, so this did **not** yield false `ready`, but the promised Findings or observations entry was absent, breaching floor 2.
+
+- **LOW — A clean all-CRLF report is blocked from `ready`.** The scan treats contentful CRLF headings as unexpected, while `visibleSectionBody` can read their bodies ([quality-review-report.ts:230](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:230), [quality-review-report.ts:268](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:268)). This is a pre-existing liveness issue; it fails safe.
+
+### Review-8 confirmation and regression check
+
+The new EOF duplicate lifecycle test ([quality-review-run.test.ts:2410](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-run.test.ts:2410)) **would fail on `020f89b`**: that revision’s scan misses the bare LF heading at EOF, allowing indexed calibration to remove it. The strengthened trailing-whitespace lifecycle test ([quality-review-run.test.ts:2376](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-run.test.ts:2376)) **would pass on `020f89b`**; that revision already strips spaces and tabs. Its added host checks make it test the ready gate and fail if that stripping is removed. I did not run either lifecycle test because it invokes the prohibited Quality Manager path.
+
+For ordinary LF headings, the new tail begins at `\n`, and trimming preserves the prior content decision. Pure-function probes confirmed contentful unexpected sections block, empty sections do not, trailing spaces and tabs work, a bare LF duplicate at EOF is caught, and a clean report remains `ready`. The examined replacement and unindexed amendment paths preserved a reviewer carryover under a CRLF Findings heading. No further floor-2 loss was found in this pass.
+
+**Residuals:** The recorded D-031/D-032 text-recognition limits remain as plan decisions, not findings. Hostile-only routes under D-027: deliberate materials or Git-object tampering, surviving detached writers, and deliberate process-group escape. The coordinator reports the audit, typecheck, tracked lint, and 3372/3372 suite passing; I did not rerun them. The repository remained unchanged.
