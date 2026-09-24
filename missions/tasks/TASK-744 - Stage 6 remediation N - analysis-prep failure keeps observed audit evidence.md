@@ -1,7 +1,7 @@
 ---
 id: TASK-744
 title: Stage 6 remediation N - analysis-prep failure keeps observed audit evidence
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-743
 createdAt: '2026-09-24T14:49:08.272Z'
-updatedAt: '2026-09-24T14:49:08.272Z'
+updatedAt: '2026-09-24T14:54:35.023Z'
 ---
 
 ## Description
@@ -22,10 +22,9 @@ Keep the branch's changed-scope audit against `main` passing: no new complexity,
 
 `bun run lint` has one known error, in the gitignored `.shepherd/backups/`. Do not touch it; lint on tracked paths must pass. Run the full suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 An `analysisPrepare` failure never erases an observed audit (codex MEDIUM): when the host observed a bound, completed audit (pass or fail), that observed gate state and its introduced findings are kept in the report; the prep failure is added as a separate human-decision item and forces `not-ready`; only when no bound audit was observed is the gate recorded as failed-to-run; tested with a prep failure plus an observed failing audit carrying a finding.
-- [ ] #2 Unindexed reports get the same host gate override as indexed ones (Claude LOW): the QM-written gate lines are replaced, not appended to, so `## Gates` never contains contradictory states; tested with an unindexed report after a prep failure.
-- [ ] #3 The setup settle-grace timer is cleared when setup settles first (codex LOW); a test with a large grace and a fast-settling setup asserts the run returns promptly.
-- [ ] #4 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
+- [x] #1 An `analysisPrepare` failure never erases an observed audit (codex MEDIUM): when the host observed a bound, completed audit (pass or fail), that observed gate state and its introduced findings are kept in the report; the prep failure is added as a separate human-decision item and forces `not-ready`; only when no bound audit was observed is the gate recorded as failed-to-run; tested with a prep failure plus an observed failing audit carrying a finding.
+- [x] #2 Unindexed reports get the same host gate override as indexed ones (Claude LOW): the QM-written gate lines are replaced, not appended to, so `## Gates` never contains contradictory states; tested with an unindexed report after a prep failure.
+- [x] #3 The setup settle-grace timer is cleared when setup settles first (codex LOW); a test with a large grace and a fast-settling setup asserts the run returns promptly.
+- [x] #4 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
 <!-- AC:END -->
