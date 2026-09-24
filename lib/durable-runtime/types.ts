@@ -329,6 +329,12 @@ export interface RunStatusSummary {
 	diagnostics: RuntimeDiagnostic[];
 	/** Existing host-written artifact references for read-only status clients. */
 	artifacts?: ArtifactRef[];
+	/** Last post-terminal workspace disposition reported by a run. */
+	postTerminalDisposition?: {
+		disposition: string;
+		reason?: string;
+		workspace?: string;
+	};
 }
 
 export interface CreateRunInput extends RunRef {

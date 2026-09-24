@@ -93,6 +93,7 @@ export function runQualityReviewCommand(options: {
 		const finish = (exitCode: number | null, error?: string) => {
 			if (finished) return;
 			finished = true;
+			killChildGroup();
 			child.stdout.destroy();
 			child.stderr.destroy();
 			if (child.pid) activeGroups.delete(child.pid);

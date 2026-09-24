@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -8,6 +10,26 @@ import {
 } from "../../lib/orchestration/quality-review-command.ts";
 
 describe("quality review host commands", () => {
+	it("reaps same-group children after a successful leader exit and keeps output", async () => {
+		const cwd = await mkdtemp(join(tmpdir(), "qm-group-"));
+		try {
+			const result = await runQualityReviewCommand({
+				command: "sh",
+				args: ["-c", "(sleep 2; touch marker) & echo early"],
+				cwd,
+				env: process.env,
+				timeoutMs: 5000,
+			});
+			expect(result.exitCode).toBe(0);
+			expect(result.output.toString()).toContain("early");
+			await new Promise((resolve) => setTimeout(resolve, 2200));
+			await expect(readFile(join(cwd, "marker"))).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+		} finally {
+			await rm(cwd, { recursive: true, force: true });
+		}
+	});
 	it("kills a real process group when the host signal handler runs", async () => {
 		const pending = runQualityReviewCommand({
 			command: process.execPath,

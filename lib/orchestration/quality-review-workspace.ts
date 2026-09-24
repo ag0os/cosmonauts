@@ -12,7 +12,7 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { loadProjectConfig } from "../config/loader.ts";
+import type { ProjectConfig } from "../config/types.ts";
 import { runQualityReviewCommand } from "./quality-review-command.ts";
 
 export class WorkspaceRefusal extends Error {}
@@ -396,10 +396,10 @@ export async function createPrivateReviewWorkspace(
 export async function preparePrivateReviewWorkspace(
 	workspace: PrivateReviewWorkspace,
 	signal?: AbortSignal,
+	qualityReview?: ProjectConfig["qualityReview"],
 ): Promise<readonly { id: string; durationMs: number }[]> {
-	const config = await loadProjectConfig(workspace.workspaceRoot);
 	const results: { id: string; durationMs: number }[] = [];
-	for (const [index, step] of (config.qualityReview?.prepare ?? []).entries()) {
+	for (const [index, step] of (qualityReview?.prepare ?? []).entries()) {
 		if (signal?.aborted) throw new Error("Caller cancellation");
 		const started = Date.now();
 		try {

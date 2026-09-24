@@ -173,6 +173,15 @@ describe("quality review launch policy", () => {
 		).toEqual(["reviewer"]);
 	});
 	it("triages source directories, removals and behavioral markdown", () => {
+		for (const file of [
+			"domains/coding/capabilities/reviewer.md",
+			"drivers/templates/envelope.md",
+			"AGENTS.md",
+			"CLAUDE.md",
+		])
+			expect(
+				triageReviewLenses([file], "-Never remove the read-only security rule"),
+			).toContain("security-reviewer");
 		expect(
 			triageReviewLenses(["lib/memory/store.ts"], "+writeFile(path, data)"),
 		).toContain("security-reviewer");
@@ -348,20 +357,28 @@ describe("quality review launch policy", () => {
 		git("add", ".gitignore");
 		git("commit", "-qm", "base");
 		const registry = new AgentRegistry([agent("quality-manager")]);
+		let operatorNote: string | undefined = "unexpected";
+		const chainEvents: string[] = [];
 		const result = await runDurableChain({
 			steps: parseChain("quality-manager", registry),
 			projectRoot,
 			registry,
+			onEvent: (event) => chainEvents.push(event.type),
 			qualityReview: {
-				execute: async () => ({
-					markdown: renderQualityReviewReport({
-						verdict: "ready",
-						reason: "clear",
-					}),
-				}),
+				execute: async (context) => {
+					operatorNote = context.operatorNote;
+					return {
+						markdown: renderQualityReviewReport({
+							verdict: "ready",
+							reason: "clear",
+						}),
+					};
+				},
 			},
 		});
 		expect(result.success).toBe(true);
+		expect(operatorNote).toBeUndefined();
+		expect(chainEvents).toContain("chain_end");
 		expect(result.run?.runId).toMatch(/^chain-/);
 		const child = result.stageResults[0]?.run;
 		expect(child?.runId).toMatch(/^qm-/);
@@ -382,5 +399,39 @@ describe("quality review launch policy", () => {
 		);
 		expect(report).toContain("Verdict: not-ready");
 		expect(report).toContain("Analysis audit gate state: not observed");
+		expect(report).not.toContain(
+			"Run quality gates, review the diff against main",
+		);
+		const store = new (
+			await import("../../lib/durable-runtime/index.ts")
+		).FileRunStore({ rootDir: join(projectRoot, "missions", "sessions") });
+		const childEvents = (
+			await store.readEvents({ scope: "chain", runId: child?.runId ?? "" })
+		).events;
+		expect(
+			childEvents.some(({ event }) => event.type === "run_completed"),
+		).toBe(true);
+		const callerStages = parseChain("quality-manager", registry);
+		const callerStage = callerStages[0];
+		if (!callerStage || "stages" in callerStage)
+			throw new Error("expected stage");
+		callerStage.prompt = "Review the payment boundary only.";
+		await runDurableChain({
+			steps: callerStages,
+			projectRoot,
+			registry,
+			qualityReview: {
+				execute: async ({ operatorNote: note }) => {
+					operatorNote = note;
+					return {
+						markdown: renderQualityReviewReport({
+							verdict: "not-ready",
+							reason: "finding",
+						}),
+					};
+				},
+			},
+		});
+		expect(operatorNote).toBe("Review the payment boundary only.");
 	});
 });

@@ -71,6 +71,7 @@ export function createQualityReviewArtifactSink(options: {
 			replace?: boolean;
 			metadata?: Record<string, unknown>;
 			guard?: () => void;
+			emitEvent?: boolean;
 		} = {},
 	): Promise<ArtifactRef> {
 		const persisted = await store.loadRun(ref);
@@ -140,12 +141,13 @@ export function createQualityReviewArtifactSink(options: {
 			await rm(target, { force: true });
 			throw error;
 		}
-		await store.appendEvent(ref, {
-			type: "artifact_written",
-			runId: run.runId,
-			stepId,
-			artifact,
-		});
+		if (settings.emitEvent !== false)
+			await store.appendEvent(ref, {
+				type: "artifact_written",
+				runId: run.runId,
+				stepId,
+				artifact,
+			});
 		try {
 			settings.guard?.();
 		} catch (error) {
@@ -212,6 +214,9 @@ export function createQualityReviewArtifactSink(options: {
 			const record = `# Reviewer ${lens}\n\nRun: ${evidence.runId}\nLens: ${lens}\nSpawn: ${evidence.spawnId}\nSession: ${evidence.sessionId}\nRole: ${evidence.resolvedRole}\nModel: ${evidence.resolvedModel.provider}/${evidence.resolvedModel.id}\nFinal-text SHA-256: ${evidence.digest}\n\n## Full final text\n\n${fullText}`;
 			const state = { lens, abandoned: false };
 			const pending = write(`reviewers/${lens}.md`, record, {
+				// Reviewer refs enter the completed step result. An event append cannot
+				// be abandoned safely once the store has begun persisting it.
+				emitEvent: false,
 				guard: () => {
 					if (state.abandoned)
 						throw new Error(`Reviewer write abandoned: ${lens}`);

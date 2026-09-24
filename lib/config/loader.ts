@@ -191,7 +191,7 @@ export async function loadProjectConfig(
 	return config;
 }
 
-function parseQualityReviewConfig(
+export function parseQualityReviewConfig(
 	value: unknown,
 ): ProjectConfig["qualityReview"] {
 	if (typeof value !== "object" || value === null || Array.isArray(value))

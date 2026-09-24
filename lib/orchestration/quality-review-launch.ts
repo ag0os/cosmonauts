@@ -159,7 +159,14 @@ export function qualityReviewAuditFindingLines(
 		const path = location
 			? `${location.path}:${location.line ?? 1}`
 			: "unknown:1";
-		return `${path} ${finding.category} ${finding.severity}: ${finding.message}${finding.actions[0] ? `; fix: ${finding.actions[0].description}` : ""}`;
+		// Stable report priority: error=P1, warning=P2, info/unknown=P3.
+		const priority =
+			finding.severity === "error"
+				? "P1"
+				: finding.severity === "warning"
+					? "P2"
+					: "P3";
+		return `${finding.id} ${priority} ${path} ${finding.category} ${finding.severity}: ${finding.message}; fix: ${finding.actions[0]?.description ?? `Address ${finding.category} finding.`}`;
 	});
 }
 
@@ -344,7 +351,10 @@ export function triageReviewLenses(
 	const isBehaviorFile = (file: string) =>
 		!(
 			/\.(?:md|mdx|txt|rst)$/i.test(file) &&
-			!/(?:^|\/)(?:prompts?|skills?)(?:\/|$)/i.test(file)
+			!/(?:^|\/)(?:prompts?|skills?|capabilities|templates)(?:\/|$)/i.test(
+				file,
+			) &&
+			!/(?:^|\/)(?:AGENTS|CLAUDE)\.md$/i.test(file)
 		);
 	const codeFiles = files.filter(isBehaviorFile);
 	let inBlockComment = false;

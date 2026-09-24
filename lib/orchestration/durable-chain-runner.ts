@@ -335,7 +335,7 @@ async function executeChainStep({
 		const review = await launchQualityReview({
 			...qualityReview,
 			projectRoot: spawn.cwd,
-			operatorNote: spawn.prompt,
+			operatorNote: stage.prompt,
 			planSlug: spawn.planSlug,
 			signal,
 		});

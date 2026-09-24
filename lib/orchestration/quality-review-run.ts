@@ -7,6 +7,7 @@ import {
 	mkdir,
 	open,
 	readFile,
+	realpath,
 	rename,
 	rm,
 	writeFile,
@@ -18,7 +19,8 @@ import {
 	createSnapshotAnalysisAuthorization,
 	type SnapshotAnalysisAuthorization,
 } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
-import { loadProjectConfig } from "../config/loader.ts";
+import { parseQualityReviewConfig } from "../config/loader.ts";
+import type { ProjectConfig } from "../config/types.ts";
 import {
 	FileRunStore,
 	type RunGraphSchedulerBackend,
@@ -110,6 +112,8 @@ type Phase =
 	| "finalizing"
 	| "finalized"
 	| "retained";
+
+export const DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS = 60_000;
 
 /** Allocate and finalize a one-step QM run in a private snapshot. */
 export async function runQualityReview(
@@ -219,6 +223,11 @@ export async function runQualityReview(
 		let modelConfigMissing = false;
 		let changedFiles: readonly string[] = [];
 		let capturedBase: string | undefined;
+		let baseQualityReview: ProjectConfig["qualityReview"];
+		const safeOperatorNote = await redactOperatorNote(options.operatorNote, [
+			options.projectRoot,
+			run.runDir,
+		]);
 		let gateOwnedFiles: string[] = [];
 		let liveChildIds: readonly string[] = [];
 		let qmSessionLive = false;
@@ -257,6 +266,10 @@ export async function runQualityReview(
 					materialsRoot = snapshot.materialsRoot;
 					capturedBase = snapshot.base;
 					changedFiles = snapshot.changedFiles;
+					baseQualityReview = await loadBaseQualityReviewConfig(
+						workspaceRoot,
+						capturedBase,
+					);
 					analysisConsent = await createSnapshotAnalysisAuthorization({
 						sourceRoot: snapshot.sourceRealPath,
 						snapshotRoot: snapshot.workspaceRoot,
@@ -267,6 +280,7 @@ export async function runQualityReview(
 						const preparation = await preparePrivateReviewWorkspace(
 							snapshot,
 							options.signal,
+							baseQualityReview,
 						);
 						preparationReport = `# Preparation\n\n${preparation.map((step) => `- ${step.id}: passed in ${step.durationMs} ms`).join("\n") || "- No preparation configured."}\n`;
 						await sink.write("checks.md", preparationReport);
@@ -289,28 +303,27 @@ export async function runQualityReview(
 					workspace: reservedRoot,
 					disposition: "active",
 				});
-				const config = await loadProjectConfig(workspaceRoot);
 				panelTimeoutMs =
 					options.panelTimeoutMs ??
-					config.qualityReview?.panelTimeoutMs ??
+					baseQualityReview?.panelTimeoutMs ??
 					panelTimeoutMs;
 				assessmentTimeoutMs =
 					options.assessmentTimeoutMs ??
-					config.qualityReview?.assessmentTimeoutMs ??
+					baseQualityReview?.assessmentTimeoutMs ??
 					assessmentTimeoutMs;
 				qmSettleGraceMs =
 					options.qmSettleGraceMs ??
-					config.qualityReview?.qmSettleGraceMs ??
+					baseQualityReview?.qmSettleGraceMs ??
 					qmSettleGraceMs;
 				if (options.hostChecks) {
-					checkConfigMissing = !config.qualityReview?.checks?.length;
-					modelConfigMissing = !config.qualityReview?.diverseReviewerModel;
+					checkConfigMissing = !baseQualityReview?.checks?.length;
+					modelConfigMissing = !baseQualityReview?.diverseReviewerModel;
 					checkResults = checkConfigMissing
 						? []
 						: await runQualityReviewChecks({
 								cwd: workspaceRoot,
 								base: capturedBase ?? "",
-								checks: config.qualityReview?.checks ?? [],
+								checks: baseQualityReview?.checks ?? [],
 								signal: options.signal,
 							});
 					await sink.write(
@@ -380,7 +393,7 @@ export async function runQualityReview(
 					runId: ref.runId,
 					signal: assessmentSignal.signal,
 					panelTimeoutMs,
-					operatorNote: options.operatorNote,
+					operatorNote: safeOperatorNote,
 					omittedSkillPaths,
 					workspaceRoot,
 					sourceRoot,
@@ -682,7 +695,19 @@ export async function runQualityReview(
 		if (abandonedLenses.length > 0) {
 			verdict = "failed";
 			reason = `Report integrity: reviewer writes abandoned after sealing grace: ${abandonedLenses.join(", ")}`;
-			markdown = renderQualityReviewReport({ verdict, reason });
+			const completed = indexedQualityReviewReport(markdown);
+			markdown = completed
+				? renderQualityReviewReport({ ...completed, verdict, reason })
+				: !assessQualityReviewReport(markdown).reason
+					? amendUnindexedQualityReviewReport(markdown, {
+							verdict,
+							reason,
+							checks: [],
+							humanItems: [],
+							reviewed: [],
+							reviewerModels: [],
+						})
+					: renderQualityReviewReport({ verdict, reason });
 		}
 		if (qmSessionLive)
 			markdown = `${markdown.trimEnd()}\n\nLive work: QM session did not settle after cancellation or deadline.\n`;
@@ -691,8 +716,8 @@ export async function runQualityReview(
 		markdown = `${markdown.trimEnd()}\n\nPanel completion timeout: ${panelTimeoutMs} ms.\n\nCaller-owned remediation: address findings through tasks, Drive and independent review.\n`;
 		if (omittedSkillPaths.length > 0)
 			markdown = `${markdown.trimEnd()}\n\nOmitted skill locations: ${[...new Set(omittedSkillPaths)].join(", ")}\n`;
-		if (options.operatorNote)
-			markdown = `${markdown.trimEnd()}\n\nOperator note (non-authoritative): ${JSON.stringify(options.operatorNote)}\n`;
+		if (safeOperatorNote)
+			markdown = `${markdown.trimEnd()}\n\nOperator note (non-authoritative): ${JSON.stringify(safeOperatorNote)}\n`;
 		await phase("finalizing", {
 			disposition: ownsReservedRoot ? "active" : "none",
 			...(reservedRoot ? { workspace: reservedRoot } : {}),
@@ -755,7 +780,8 @@ export async function runQualityReview(
 						new Promise<never>((_resolve, reject) => {
 							timer = setTimeout(
 								() => reject(new Error("removal-timed-out")),
-								options.workspaceRemovalTimeoutMs ?? 2000,
+								options.workspaceRemovalTimeoutMs ??
+									DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS,
 							);
 						}),
 					]);
@@ -900,6 +926,47 @@ export async function runQualityReview(
 
 function errorReason(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+async function redactOperatorNote(
+	note: string | undefined,
+	paths: readonly string[],
+): Promise<string | undefined> {
+	if (!note) return undefined;
+	const roots = new Set<string>();
+	for (const path of paths) {
+		roots.add(resolve(path));
+		roots.add(await realpath(path).catch(() => resolve(path)));
+	}
+	let redacted = note;
+	for (const root of [...roots].sort((a, b) => b.length - a.length))
+		redacted = redacted.replaceAll(root, "[private path]");
+	return redacted;
+}
+
+function loadBaseQualityReviewConfig(
+	workspaceRoot: string,
+	base: string,
+): ProjectConfig["qualityReview"] {
+	const object = `${base}:.cosmonauts/config.json`;
+	try {
+		execFileSync("git", ["cat-file", "-e", object], {
+			cwd: workspaceRoot,
+			stdio: "ignore",
+		});
+	} catch {
+		return undefined;
+	}
+	const raw = execFileSync("git", ["show", object], {
+		cwd: workspaceRoot,
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	});
+	const parsed: unknown = JSON.parse(raw);
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+		throw new Error("Invalid base config: expected object");
+	const block = (parsed as Record<string, unknown>).qualityReview;
+	return block === undefined ? undefined : parseQualityReviewConfig(block);
 }
 
 function isGateOwnedFile(path: string): boolean {

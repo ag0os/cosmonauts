@@ -26,11 +26,17 @@ import {
 	indexedQualityReviewReport,
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
-import { runQualityReview } from "../../lib/orchestration/quality-review-run.ts";
+import {
+	DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS,
+	runQualityReview,
+} from "../../lib/orchestration/quality-review-run.ts";
 import { removePrivateReviewWorkspace } from "../../lib/orchestration/quality-review-workspace.ts";
 import type { SpawnEvent } from "../../lib/orchestration/types.ts";
 
 describe("quality review durable lifecycle", () => {
+	it("allows at least a minute for default workspace removal", () => {
+		expect(DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
+	});
 	const roots: string[] = [];
 	afterEach(async () => {
 		await Promise.all(
@@ -54,6 +60,15 @@ describe("quality review durable lifecycle", () => {
 		}
 		return path;
 	}
+	async function commitBaseConfig(projectRoot: string): Promise<void> {
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", ".cosmonauts/config.json"], {
+			cwd: projectRoot,
+		});
+		execFileSync("git", ["commit", "-qm", "base quality config"], {
+			cwd: projectRoot,
+		});
+	}
 
 	it("runs host checks in the snapshot, persists output and blocks a failed check", async () => {
 		const projectRoot = await root(true);
@@ -75,6 +90,7 @@ describe("quality review durable lifecycle", () => {
 				},
 			}),
 		);
+		await commitBaseConfig(projectRoot);
 		const result = await runQualityReview({
 			projectRoot,
 			hostChecks: true,
@@ -111,6 +127,72 @@ describe("quality review durable lifecycle", () => {
 		expect(
 			(await readFile(join(artifactDir, "final.md"), "utf8")).trimEnd(),
 		).toMatch(/Caller-owned remediation:.*tasks.*Drive.*independent review\.$/);
+	});
+
+	it("runs base-owned check argv even when the reviewed config rewrites it", async () => {
+		const projectRoot = await root(true);
+		const marker = join(projectRoot, "outside-marker");
+		const configPath = join(projectRoot, ".cosmonauts", "config.json");
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		const check = (script: string) => ({
+			id: "authority",
+			command: process.execPath,
+			args: ["-e", script],
+		});
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				qualityReview: {
+					checks: [check("console.log('base check ran')")],
+					diverseReviewerModel: "test/other",
+				},
+			}),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", ".cosmonauts/config.json"], {
+			cwd: projectRoot,
+		});
+		execFileSync("git", ["commit", "-qm", "base config"], { cwd: projectRoot });
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				qualityReview: {
+					checks: [
+						check(
+							`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unsafe')`,
+						),
+					],
+					diverseReviewerModel: "test/other",
+				},
+			}),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "not-ready",
+					reason: "review",
+				}),
+			}),
+		});
+		const artifacts = join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			result.ref.runId,
+			"artifacts",
+			"qm",
+		);
+		expect(await readFile(join(artifacts, "checks.md"), "utf8")).toContain(
+			"base check ran",
+		);
+		await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
+		expect(await readFile(join(artifacts, "final.md"), "utf8")).toContain(
+			"Gate-owned file changed: .cosmonauts/config.json",
+		);
 	});
 
 	it("excludes its own plan summary from the captured change", async () => {
@@ -295,6 +377,14 @@ describe("quality review durable lifecycle", () => {
 								locations: [{ path: "lib/b.ts", line: 23 }],
 								actions: [{ description: "split branch" }],
 							},
+							{
+								id: "f3",
+								category: "dead-code",
+								severity: "warning",
+								message: "unused helper",
+								locations: [{ path: "lib/c.ts", line: 9 }],
+								actions: [],
+							},
 						],
 					},
 				},
@@ -336,8 +426,9 @@ describe("quality review durable lifecycle", () => {
 		const indexed = indexedQualityReviewReport(report);
 		expect(indexed?.verdict).toBe("not-ready");
 		expect(indexed?.findings).toEqual([
-			"lib/a.ts:17 dead-code error: unused export; fix: remove export",
-			"lib/b.ts:23 complexity warning: complex branch; fix: split branch",
+			"f1 P1 lib/a.ts:17 dead-code error: unused export; fix: remove export",
+			"f2 P2 lib/b.ts:23 complexity warning: complex branch; fix: split branch",
+			"f3 P2 lib/c.ts:9 dead-code warning: unused helper; fix: Address dead-code finding.",
 		]);
 		expect(
 			indexed?.humanItems?.some((item) => item.includes("Analysis audit")),
@@ -668,7 +759,12 @@ describe("quality review durable lifecycle", () => {
 			},
 		});
 		expect(Date.now() - started).toBeLessThan(2000);
-		expect(observedStatus).toBe("completed");
+		expect(observedStatus).toBe("running");
+		expect((await runStatus(store, result.ref))?.status).toBe("completed");
+		expect(
+			(await runStatus(store, result.ref))?.postTerminalDisposition
+				?.disposition,
+		).toBe("removal-timed-out");
 		expect(observedReport).toContain("Verdict: not-ready");
 		expect(observedSummary).toContain("Verdict: not-ready");
 		const lifecycle = (
@@ -719,6 +815,7 @@ describe("quality review durable lifecycle", () => {
 		const result = await runQualityReview({
 			projectRoot,
 			store,
+			planSlug: "example",
 			reviewerSealGraceMs: 30,
 			execute: async ({ artifactSink, runId }) => {
 				stall = true;
@@ -740,6 +837,10 @@ describe("quality review durable lifecycle", () => {
 					markdown: renderQualityReviewReport({
 						verdict: "ready",
 						reason: "clear",
+						checks: ["unit check passed"],
+						gates: ["audit passed"],
+						findings: ["F-1 P1 lib/a.ts:7 security fix the issue"],
+						humanItems: ["Approve external access"],
 					}),
 				};
 			},
@@ -761,6 +862,26 @@ describe("quality review durable lifecycle", () => {
 		expect(report).toContain(
 			"Report integrity: reviewer writes abandoned after sealing grace: security-reviewer",
 		);
+		for (const item of [
+			"unit check passed",
+			"audit passed",
+			"F-1 P1 lib/a.ts:7 security fix the issue",
+			"Approve external access",
+		])
+			expect(report).toContain(item);
+		const summary = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"plans",
+				"example",
+				"qm-runs",
+				`${result.ref.runId}.md`,
+			),
+			"utf8",
+		);
+		expect(summary).toContain("F-1 P1 lib/a.ts:7 security fix the issue");
+		expect(summary).toContain("Approve external access");
 		expect((await runStatus(store, result.ref))?.status).toBe("failed");
 	});
 
@@ -803,6 +924,7 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({ qualityReview: { qmSettleGraceMs: 40 } }),
 		);
+		await commitBaseConfig(projectRoot);
 		const started = Date.now();
 		const result = await runQualityReview({
 			projectRoot,
@@ -1957,6 +2079,7 @@ describe("quality review durable lifecycle", () => {
 				},
 			}),
 		);
+		await commitBaseConfig(projectRoot);
 		const controller = new AbortController();
 		const started = Date.now();
 		let assessmentSignalAborted = false;
@@ -2023,6 +2146,7 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({ qualityReview: { assessmentTimeoutMs: 100 } }),
 		);
+		await commitBaseConfig(projectRoot);
 		const result = await runQualityReview({
 			projectRoot,
 			execute: async ({ activeChildIds }) => {
@@ -2114,6 +2238,7 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({ qualityReview: { panelTimeoutMs: 1234 } }),
 		);
+		await commitBaseConfig(projectRoot);
 		const result = await runQualityReview({
 			projectRoot,
 			execute: async () => {
@@ -2171,6 +2296,48 @@ describe("quality review durable lifecycle", () => {
 			'Operator note (non-authoritative): "review only src/a.ts"',
 		);
 	});
+
+	it("redacts source, real source and host store paths before the quality prompt and report", async () => {
+		const source = await root(true);
+		const alias = join(tmpdir(), `qm-source-alias-${Date.now()}`);
+		await symlink(source, alias);
+		roots.push(alias);
+		const hostStore = join(alias, "missions", "sessions");
+		const note = `Review ${alias}/lib/a.ts, ${await (await import("node:fs/promises")).realpath(source)}/lib/b.ts and ${hostStore}/chain`;
+		let received = "";
+		const result = await runQualityReview({
+			projectRoot: alias,
+			operatorNote: note,
+			execute: async ({ operatorNote }) => {
+				received = operatorNote ?? "";
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "not-ready",
+						reason: "finding",
+					}),
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				alias,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		for (const path of [alias, source, hostStore]) {
+			expect(received).not.toContain(path);
+			expect(report).not.toContain(path);
+		}
+		expect(received).toContain("[private path]");
+	});
 	it("records omitted skills when the QM session fails before returning an assessment", async () => {
 		const projectRoot = await root(true);
 		const result = await runQualityReview({
@@ -2222,6 +2389,7 @@ describe("quality review durable lifecycle", () => {
 				},
 			}),
 		);
+		await commitBaseConfig(projectRoot);
 		const started = Date.now();
 		const result = await runQualityReview({
 			projectRoot,

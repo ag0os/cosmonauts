@@ -59,6 +59,26 @@ export async function runStatus(
 
 	const result = await store.readEvents(ref);
 	const summary = summarizeRunStatus(record, result.events, result.diagnostics);
+	const disposition = [...result.events].reverse().find(({ event }) => {
+		if (event.type !== "run_activity") return false;
+		const details = event.details;
+		return (
+			typeof details === "object" &&
+			details !== null &&
+			"kind" in details &&
+			details.kind === "workspace-disposition"
+		);
+	});
+	if (disposition?.event.type === "run_activity") {
+		const details = disposition.event.details as Record<string, unknown>;
+		summary.postTerminalDisposition = {
+			disposition: String(details.disposition),
+			...(typeof details.reason === "string" ? { reason: details.reason } : {}),
+			...(typeof details.workspace === "string"
+				? { workspace: details.workspace }
+				: {}),
+		};
+	}
 	const artifacts = new Map<string, import("./types.ts").ArtifactRef>();
 	for (const { event } of result.events) {
 		if (event.type === "artifact_written")
