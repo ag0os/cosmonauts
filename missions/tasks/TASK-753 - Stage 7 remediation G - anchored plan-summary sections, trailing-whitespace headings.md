@@ -3,7 +3,7 @@ id: TASK-753
 title: >-
   Stage 7 remediation G - anchored plan-summary sections, trailing-whitespace
   headings
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -13,7 +13,7 @@ labels:
 dependencies:
   - TASK-752
 createdAt: '2026-09-24T19:24:10.751Z'
-updatedAt: '2026-09-24T19:24:10.751Z'
+updatedAt: '2026-09-24T19:27:28.306Z'
 ---
 
 ## Description
@@ -28,10 +28,9 @@ Keep the changed-scope audit against `main` passing: no new complexity, dead-cod
 
 `bun run lint` has one known error, in the gitignored `.shepherd/backups/`; lint on tracked paths must pass. Run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 The plan summary reads sections through the same anchored lookup as the report: with a Checks line ending in `details under ## Findings` and a real Findings entry, the plan summary shows that entry under Findings and does not show Checks text there; the test fails on the current code.
-- [ ] #2 No unanchored `indexOf("## ` section lookup remains in `lib/orchestration/quality-review-*.ts`.
-- [ ] #3 A clean report whose defined headings carry trailing spaces or tabs is not treated as having unexpected sections and can reach `ready`; content under such a heading is still inspected as that section; tested.
-- [ ] #4 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
+- [x] #1 The plan summary reads sections through the same anchored lookup as the report: with a Checks line ending in `details under ## Findings` and a real Findings entry, the plan summary shows that entry under Findings and does not show Checks text there; the test fails on the current code.
+- [x] #2 No unanchored `indexOf("## ` section lookup remains in `lib/orchestration/quality-review-*.ts`.
+- [x] #3 A clean report whose defined headings carry trailing spaces or tabs is not treated as having unexpected sections and can reach `ready`; content under such a heading is still inspected as that section; tested.
+- [x] #4 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
 <!-- AC:END -->
