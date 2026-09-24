@@ -3,7 +3,7 @@ id: TASK-751
 title: >-
   Stage 7 remediation E - duplicated sections, cap-note placement, prompt
   sentinels, pinned guards
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -13,7 +13,7 @@ labels:
 dependencies:
   - TASK-750
 createdAt: '2026-09-24T18:32:57.832Z'
-updatedAt: '2026-09-24T18:32:57.832Z'
+updatedAt: '2026-09-24T18:42:48.562Z'
 ---
 
 ## Description
@@ -32,11 +32,10 @@ Every new test must fail on the current code or kill a named mutation.
 
 `bun run lint` has one known error, in the gitignored `.shepherd/backups/`; lint on tracked paths must pass. Run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 A defined report section heading that appears more than once (for example a second `## Findings` after `None recorded.`, or a second `## Human decisions`) yields `not-ready` end to end, and no calibration rewrite drops content from a repeated section (codex 1, Claude LOW-1); tested.
-- [ ] #2 A host cap note for an Out-of-range copy is written in Out-of-range observations, never appended to Findings, so an otherwise clean report whose only unsupported performance P1 was filed under Out-of-range stays `ready` with an empty or sentinel Findings section (Claude LOW-5, TASK-750 AC #4); tested.
-- [ ] #3 Prompts: the generalist `reviewer.md` states the performance P0 or P1 rule (codex 2, Claude LOW-4); the QM prompt says to write `None recorded.` under Human decisions when there are none and that the host accepts it, and to put closing remediation advice as a paragraph under Reviewed rather than under a new heading (Claude LOW-3); the host accepts the `None recorded.` sentinel under Human decisions; tested for the host part.
-- [ ] #4 Pinned guards (Claude LOW-2): a test fails when the `raisingLenses.length > 0` guard is removed, and a test fails when closure accepts any other-lens citation instead of the cited one.
-- [ ] #5 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
+- [x] #1 A defined report section heading that appears more than once (for example a second `## Findings` after `None recorded.`, or a second `## Human decisions`) yields `not-ready` end to end, and no calibration rewrite drops content from a repeated section (codex 1, Claude LOW-1); tested.
+- [x] #2 A host cap note for an Out-of-range copy is written in Out-of-range observations, never appended to Findings, so an otherwise clean report whose only unsupported performance P1 was filed under Out-of-range stays `ready` with an empty or sentinel Findings section (Claude LOW-5, TASK-750 AC #4); tested.
+- [x] #3 Prompts: the generalist `reviewer.md` states the performance P0 or P1 rule (codex 2, Claude LOW-4); the QM prompt says to write `None recorded.` under Human decisions when there are none and that the host accepts it, and to put closing remediation advice as a paragraph under Reviewed rather than under a new heading (Claude LOW-3); the host accepts the `None recorded.` sentinel under Human decisions; tested for the host part.
+- [x] #4 Pinned guards (Claude LOW-2): a test fails when the `raisingLenses.length > 0` guard is removed, and a test fails when closure accepts any other-lens citation instead of the cited one.
+- [x] #5 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
 <!-- AC:END -->
