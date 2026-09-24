@@ -52,7 +52,8 @@ All tasks have label `plan:qm-chain-safety`.
 | 762 | Done | `cf025d9` | Closure-review-1 HIGH-1, MEDIUM-1, LOW-3 (failed reviewer sessions are not evidence; audit findings reach the report; QM bullet format) (`claude-cli`) |
 | 763 | Done | `5dab01c` | Closure-review-1 MEDIUM-2, LOW-1, LOW-2 (suppression equivalents, renames, block comments, JSONC) (`claude-cli`) |
 | 764 | Done | `07cfed9` | Full-suite gate reliability: the heavy harness-export test gets a 60 s timeout (codex `gpt-5.6-sol`) |
-| **728** | In Progress | — | **Stage 9 closure.** Coordinator-run, per D-002/D-034. Closure review 2 is running |
+| 765 | Done | `35e3b95` | Closure-review-2 items (claude-cli) |
+| 728 | Done | this commit | **Stage 9 closure.** Closure review 3 gave SHIP on both channels |
 
 **TASK-742 note.** The worker returned "partial" only because its full-suite run hit the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS` artifact. The coordinator verified all its criteria and committed the work in `0b5e7d1` and `7e75231`. Marking it Done, a coordinator regex bug left `status: Done Progress`, which the task parser reads as To Do. Fixed on 2026-09-24 in the handoff commit. It is Done.
 
@@ -196,6 +197,37 @@ All tasks have label `plan:qm-chain-safety`.
 | Human rulings recorded | `75f4d11`, `d2b4541` |
 | Backlog (TASK-720..728) | `6c226ea` |
 | Compliance patches + plan D-024 | `4b93788` |
+
+## BRANCH VERIFIED — 2026-09-24 (session qm-implementer-2)
+
+All tasks are Done: TASK-720..728 and TASK-729..765. Implementation HEAD is `fc2f7f8`; later commits are records only. Gates at `fc2f7f8`:
+- tests 3442/3442;
+- lint 0 and typecheck 0;
+- `check:suppressions` passes;
+- the changed-scope audit against `main` with the committed baselines passes (0/0/0).
+
+The Stage 9 closure (TASK-728) received SHIP from both D-002/D-034 channels in closure review 3: Claude Opus 5.5 (`closure-review-3-claude.md`) and codex `gpt-5.6-sol` (`closure-review-3-codex.md`). A third independent channel (Kimi K2.5, `closure-review-2-kimi.md`) also said SHIP.
+
+`closure-e2e.md` records three real QM `verify` runs on a dirty checkout:
+- INV-001 held: the checkout was byte-identical before and after each run, apart from ignored run artifacts.
+- INV-003 held on every exit.
+- Workspaces were removed.
+- Closure-review-1 HIGH-1 was reproduced live (run 2) and its fix confirmed live (run 3).
+
+**Not pushed, not merged, no PR.**
+
+### Residuals and follow-ups (not blocking; for the user)
+
+- **Real QM runs here need a reachable diverse reviewer.** Pi has no Anthropic key, so the configured `anthropic/claude-sonnet-5` fails visibly. Configure a key, or change `qualityReview.diverseReviewerModel`.
+- **Whole-branch QM reviews exceed the default 900 s** `qualityReview.assessmentTimeoutMs`. Raise it in base-owned config.
+- **`external-commands/implement-plan.md` pins `gpt-5.6-sol` for all plans** (TASK-765, following D-034's "every codex use"). Decide whether the generic command should stay model-neutral.
+- **The archived-path pin test misses equivalent relative links** (closure-3 codex LOW; a proof gap, with no live link today).
+- **Recorded limits:** D-031, D-032 and D-035 (AC-008 prose fields; AC-012 doc agreement by inspection).
+- **Hostile-only routes are out of scope** (D-027).
+- **Crash-time workspace cleanup and orphaned children** belong to execution-liveness (D-023; TASK-712..719 land after this plan).
+- **Known suite flakes under load.** The heavy harness-export test now has a 60 s timeout (TASK-764). Some non-QM tests still leave temp directories (`orchestration-coding-*`, `artifact-viewer-server-*`).
+- **About 1,578 leaked `cosmonauts-qm-*` directories** from earlier test runs remain in the user's `$TMPDIR` (`/var/folders/.../T/`). TASK-761 stops new leaks. The old ones are safe to delete, but only the user should do that.
+- **Earlier follow-ups:** find what wrote `~/.cosmonauts/packages/coding` (D-030); move the Shepherd backups out of the repository so Biome stops linting them.
 
 ## Needs the user
 
