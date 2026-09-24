@@ -3,92 +3,95 @@
 Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. Not pushed, not merged.
 HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm-chain-safety/coordinator-status.md`) or a later Drive commit. Check `git status` and `git log`.
 
-## State (2026-09-24) — SUCCESSOR HANDOFF from session "qm-implementer" (implementation mid-way)
+## State (2026-09-24, late) — SUCCESSOR HANDOFF #2 from session "qm-implementer"
 
-### Where things stand
+### One-paragraph summary
 
-- **Stages 1–6** are implemented, plus seven remediation rounds.
-- **TASK-738** is the remediation from review round 6. The run order is being redesigned under D-026 ("review before execution").
-- **Stages 7–9 have not started:** TASK-726 (model diversity and calibration), TASK-727 (archive and callers), TASK-728 (independent closure, done by the coordinator per D-002).
+- **Stages 1–6 are CLOSED.** Both channels gave SHIP at `mid-review-10-{codex,claude}.md`.
+- **Stage 7 is implemented:** TASK-726, TASK-746 and TASK-747. TASK-748 (the D-031 calibration floors) is running or has just landed. Stage 7 review 3 decides Stage 7.
+- **Not started:** Stage 8 (TASK-727, archive plus callers) and Stage 9 (TASK-728, independent closure, done by the coordinator under D-002).
 - **Branch:** `feature/qm-chain-safety`. Never pushed or merged. Commit only with explicit paths.
-- **Gates at `7dd95c8`** (after TASK-738): typecheck 0, lint 0, tests 3242/3242 (baseline at `e43c238` was 3053). `check:suppressions -- --base main` passes.
+- **Human rulings:** all four (N-001..N-004) plus the threat model were ruled on 2026-09-24 and recorded as D-027..D-030. Nothing is open for the user.
+
+### Gates, last full run (after TASK-747)
+
+- typecheck 0, lint on tracked paths 0.
+- tests 3294/3295. The one failure is the known `validate-harness-exports` timeout flake, which passes in isolation.
+- `check:suppressions -- --base main` passes.
+- Changed-scope audit vs `main` with the committed baselines passes (0/0/0). Command: `npx fallow audit --base main --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json --format json`.
+- **Lint caveat:** `bun run lint` reports one error, in Shepherd's gitignored backup `.shepherd/backups/cosmonauts-packages-coding-2026-09-23/`. Lint tracked paths with `bunx biome check lib/ domains/ cli/ tests/ scripts/ bundled/`.
 
 ### Task ledger
 
-| Task | Commit | Notes |
-|---|---|---|
-| 720 authority | `ece6af2` | |
-| 722 suppression check | `a8bacae` | |
-| 721 baselines + docs | `44f0566` | R-010 probe done by the coordinator. See N-001. |
-| 723 QM lifecycle | `eb539cd` | |
-| 724 snapshot | `4cc1093` | First attempt blocked on the backfill config tripwire. Resolved by amendment-3 (N-002). |
-| 725 review-only QM | `a4d3731` | First attempt blocked on the same tripwire. |
-| 729 remediation A (isolation, consent, verdict) | `c6b3d96` | From mid-review-1. |
-| 730 remediation B (liveness) | `48435d8` | From mid-review-1. |
-| 731 remediation C (restore lenses) | `38f579e` | From mid-review-1. |
-| 732 suppression forms | `8a3351a` | From mid-review-1. |
-| 733 remediation D | `4fbf361` | From mid-review-2. |
-| 734 parser-based scanner | `e6c89ff` | From mid-review-2. |
-| 735 remediation E | `a9725bf` | From mid-review-3. |
-| 736 remediation F | `a7136e0` | From mid-review-4. |
-| 737 remediation G | `d6dd6c7` | From mid-review-5. |
-| **738 remediation H (D-026)** | `c962b94` | From mid-review-6. Done (state `7dd95c8`). The live probe showed `analysis_audit` is unbound without installed dependencies, so a base-owned `analysisPrepare` (lifecycle scripts disabled) was added. |
+All tasks have label `plan:qm-chain-safety`.
 
-TASK-726 and TASK-728 depend on TASK-729..738.
+| Task | State | Commit | Notes |
+|---|---|---|---|
+| 720–725 | Done | see git log | Stages 1–6 |
+| 729–738 | Done | | Stage 6 remediation rounds from mid-reviews 1–6 |
+| 739 | Done | `0211d79` | Refresh script analyzes `--base`; docs follow D-029 |
+| 740, 741 | Done | `351bf09`, `473178f` | Introduced-debt paydown |
+| **742** | **Done** | `0b5e7d1`, `7e75231` | See note below |
+| 743–745 | Done | `5c9ee93`, `ed9c674`, `237a3d9` | From mid-reviews 7–9 |
+| 746 | Done | `2082356` | Test hardening |
+| 726 | Done | `cdba7e1` | **Stage 7** |
+| 747 | Done | `fde1063` | From Stage 7 review 1 |
+| **748** | In Progress | — | D-031 floors, from Stage 7 review 2 |
+| 727 | To Do | — | **Stage 8.** Depends on 747, 748 and the earlier chain. |
+| 728 | To Do | — | **Stage 9 closure.** Coordinator-run, per D-002. |
 
-### Review history
+**TASK-742 note.** The worker returned "partial" only because its full-suite run hit the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS` artifact. The coordinator verified all its criteria and committed the work in `0b5e7d1` and `7e75231`. Marking it Done, a coordinator regex bug left `status: Done Progress`, which the task parser reads as To Do. Fixed on 2026-09-24 in the handoff commit. It is Done.
 
-- **Where the reviews live:** `mid-review-<n>-{codex,claude}.md` and `mid-review-<n>-prompt.md`, n = 1..6. Rounds 1–3 are verbatim; from round 4 on, the Claude files are condensed.
-- **The pattern:** every round closed the previous round's findings, and the fixes introduced new ones. Rounds 4–6 kept finding new ways for **code or files the reviewed change controls to reach the host** (argv, package scripts, project domains, object-database tampering, `.pi` settings, materials races).
-- **D-026 addresses that class structurally.** It reorders the run so that no reviewed code executes until the review evidence is sealed, and builds every quality runtime (including panel spawns) from a base export taken from the operator's source repository. The one remaining residual is N-004.
-- **Plan amendments on record:**
-  - D-025, 2026-09-24, amended three times: merge-base, checks in materials, triage floor plus QM additions, host-verified gate state (a failing audit is a gate failure with findings), summary excluded from capture, bounded assessment, dual-caller prompts, base-owned config, sanitized caller note, and "the change cannot choose what reviews it".
-  - D-026, 2026-09-24.
-- **Accepted with record** (reviewers judged these sound):
-  - JSX text false positive in the suppression scanner (fails closed).
-  - A process that deliberately leaves its process group can survive (the host wait is bounded).
-  - `StepResult.childRun` as a generic field.
-  - The `execute` port stays, and fails closed.
-  - Reviewer artifact refs are published only via the StepResult (D-025).
+### Decisions added during implementation (plan Decision Log)
 
-### Running / next
+- **D-025** (coordinator, amended four times).
+- **D-026** "review before execution" (coordinator).
+- **D-027..D-030**, human rulings:
+  - D-027: threat model is accidental damage only.
+  - D-028: INV-001 interpretation for host-run checks, plus a disclosure in every report.
+  - D-029: baselines re-anchored at `main` `29fc0ce`.
+  - D-030: amendment-3 ratified; stray catalog package.
+- **D-031** (coordinator). B-010 host calibration is defense in depth, with hard floors: no false `ready`, and no silently dropped finding. Measured-cost and closure-evidence text heuristics are recorded limits. **Do not reopen them.**
+- Spec additions beside the Intent: the D-028 INV-001 interpretation and the D-027 threat model.
 
-- **Rulings applied (2026-09-24):** D-027..D-030 recorded (`c29255c`). Baselines re-anchored at `main` (`3ca0291`). With the baselines honest, the branch's own changed-scope audit fails on **introduced** debt: 31 complexity findings (`quality-review-run.ts` `execute` is cyclomatic 209), 8 dead-code issues and 10 clone groups. The refresh script analyzes `--root`, not `--base`.
-- **TASK-739 done** (`0211d79`): the refresh script analyzes a temporary checkout of `--base`, and the docs follow D-029.
-- **TASK-740 partial** (`661f98c`, tests 3243/3243): introduced dead code is gone, but 30 complexity findings and 8 clone groups remain. It is rescoped into TASK-740 (quality-review modules), TASK-741 (tools and session plumbing) and TASK-742 (the rest; the branch audit must pass).
-- **TASK-740..742 done** (`351bf09`, `473178f`, `0b5e7d1`, `7e75231`). The coordinator verified TASK-742, whose only "partial" was the runner-args artifact. The branch's changed-scope audit vs `main` passes (0/0/0). Gates: typecheck 0, tracked lint 0, tests 3244/3244.
-- **Mid-branch review 7** (under D-027), both DO-NOT-SHIP-YET, converging with no HIGH. Files: `mid-review-7-codex.md` (verbatim) and `mid-review-7-claude.md` (condensed).
-  - **Remaining findings:** `analysisPrepare` failure aborts the review; lost prep lines; setup cancel always retains the workspace; missing D-028 report disclosure; untested user-source exclusion; a seal test that cannot fail.
-  - **Accepted:** Claude LOW-2 (the registry parser rejects array shapes; stricter, and no committed file is affected).
-- **TASK-743 done** (`5c9ee93`). Gates: typecheck 0, tracked lint 0, tests 3254/3254, audit vs `main` pass.
-- **Mid-branch review 8:** Claude says **SHIP** with one LOW; codex says DO-NOT-SHIP-YET with one MEDIUM and one LOW, all in the same code. Files: `mid-review-8-codex.md` (verbatim) and `mid-review-8-claude.md` (condensed). TASK-744 covers all three.
-- **TASK-744 done** (`ed9c674`). Gates: tests 3257/3257, audit pass.
-- **Mid-branch review 9 (focused):** all round-8 findings are RESOLVED. Both channels found the same new HIGH regression: a failed analysis prep plus a bound audit gives `ready`. Files: `mid-review-9-{codex,claude}.md`. TASK-745 fixes the class: no `ready` with any host human item.
-- **TASK-745 done** (`237a3d9`). Tests 3267/3267 after one rerun. Two new load-dependent flakes (`project-tools-fallow-fixtures` and `validate-harness-exports` timeouts) pass in isolation.
-- **Mid-branch review 10 (focused): both channels SHIP for Stages 1–6.** Files: `mid-review-10-{codex,claude}.md`. Two LOW test-only gaps go to TASK-746.
-- **STAGES 1–6 CLOSED.** Stage 7 has started.
-- **TASK-746 done** (`2082356`). **TASK-726 (Stage 7) done** (`cdba7e1`). The coordinator set `diverseReviewerModel` to `anthropic/claude-sonnet-5` in `0ffaa48`; the worker had picked `claude-sonnet-4-5`. Gates: typecheck 0, tracked lint 0, tests 3278/3278, suppressions pass, audit vs `main` pass.
-- **Stage 7 review 1**, both DO-NOT-SHIP-YET. Files: `stage7-review-1-{codex,claude}.md`. B-011 is sound, with no Stages 1–6 regressions. B-010 host enforcement can be bypassed by ordinary behavior (IDs, missing index, loose measured cost, QM-side dismissal), and the wiring tests are missing. TASK-747 covers all of it.
-- **TASK-747 done** (`fde1063`). Gates: tests 3294/3295; the one failure is the known `validate-harness-exports` timeout flake, which passes 12/12 in isolation. Audit pass.
-- **Stage 7 review 2:** Claude says **SHIP**; codex says DO-NOT-SHIP-YET (it keeps finding prose-parsing edge cases). Files: `stage7-review-2-{codex,claude}.md`.
-  - **Decision:** D-031 (amend-on-record). Host B-010 calibration is defense in depth, with two hard floors: never a false `ready`, and never a silently dropped finding. Heuristic misses in measured-cost and closure-evidence text are recorded limits.
-  - TASK-748 implements the floors: entry parsing, the out-of-range section counts as reported, and the P0 cap.
-- **Running:** Drive TASK-748, then Stage 7 review 3 (focused on the D-031 floors).
-- **Lint caveat:** `bun run lint` reports one error, in Shepherd's gitignored backup under `.shepherd/backups/`. Tracked content passes. I asked Shepherd to move the backup out of the repo.
-- **Next steps for the successor:**
-  1. Run mid-branch review 7 (after TASK-739/740). The prompt must state the D-027 threat model: hostile-change-only routes are residual limits, not findings to remediate on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
-  2. Loop through remediation tasks until both channels give SHIP for Stages 1–6.
-  3. Then Drive TASK-726, then TASK-727, each followed by a two-channel review.
-  4. Then do TASK-728 closure (needs N-001 and N-003 ruled).
-- **Reusable mechanics:**
-  - Drive: `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-6-sol -c model_reasoning_effort=medium" cosmonauts run drive --plan qm-chain-safety --task-ids <ids> --backend codex --mode detached --branch feature/qm-chain-safety --task-timeout 7200000`.
-  - Watch `events.jsonl` for `run_completed|run_aborted|task_blocked`.
-  - `--resume` of an aborted run only replays the result. Relaunch with `--task-ids` instead; the worker continues from uncommitted partial work.
-  - Codex review: `codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only "$(cat prompt)" < /dev/null > log 2>&1`. The final message follows the last line that reads exactly `codex`.
-  - Claude reviewer: a general-purpose subagent. Tell it to read the prompt file, stay read-only, keep probes in the scratchpad, and check that each test could actually fail.
-  - Task batches: `cosmonauts task create --from-file <yaml>`, with single-line ACs.
-  - Workers must run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`. With the runner's Codex args injected, two detached-driver tests fail.
-- **Blocked on:** nothing for Stages 1–8. Closure (TASK-728) needs N-001 and N-003; N-004 shapes the final INV-001 statement.
+### Review record
+
+- `mid-review-{1..10}-{codex,claude}.md` and `stage7-review-{1,2}-{codex,claude}.md`, each with its `*-prompt.md`.
+- Condensed Claude files are marked as condensed.
+- Prompts from round 7 on carry the D-027 threat model. Reuse them.
+
+### Next steps for the successor
+
+1. **Stage 7 review 3.** Its result is recorded below, if this session got that far. If it is SHIP, go to step 2. Otherwise remediate its findings through a task, respecting D-031 (floors only), then re-review focused.
+2. **Stage 8, TASK-727.** Read its task file. Update its description with a coordinator note like TASK-726's, covering D-025..D-031 and base-owned config. Then Drive it, and run a two-channel review.
+   - In particular, `external-commands/implement-plan.md` must describe the review-only QM and D-002-style substitution. Named chains end at findings.
+   - Link repair follows D-022.
+3. **Stage 9, TASK-728 closure** (coordinator, never the QM). Two channels, full outputs saved as `closure-review-<n>.md`. Execute the TASK-728 AC #6 attack list, bounded by D-027: hostile-only routes are residuals.
+   - That includes one real end-to-end QM run on a dirty checkout, with before/after hashes. N-003 is resolved: the stray package was moved, so the bundled definitions resolve.
+   - Note that `qualityReview` is base-owned. A QM review of this branch against `main` reports checks and model as "not configured", which is expected.
+4. When all tasks are Done, gates are green and the closure reviews say SHIP, reply "branch verified" to Shepherd. Do not push, merge or open a PR.
+
+### Mechanics
+
+- **Drive:** `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-6-sol -c model_reasoning_effort=medium" cosmonauts run drive --plan qm-chain-safety --task-ids <ids> --backend codex --mode detached --branch feature/qm-chain-safety --task-timeout 7200000`.
+  - Poll `missions/sessions/qm-chain-safety/runs/<runId>/events.jsonl` for `run_completed|run_aborted|task_blocked`.
+  - `--resume` only replays. Relaunch with `--task-ids`; the worker continues from uncommitted partial work.
+  - After each run, commit any stranded `missions/reviews/knowledge-surface-backfill-amendment-3.md` digest change. Check it equals `shasum -a 256 .cosmonauts/config.json`.
+  - Workers that report "partial" only because of the runner-args test artifact: verify yourself.
+- **Codex review:** `codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only "$(cat prompt)" < /dev/null > log 2>&1`. The final message follows the last line that is exactly `codex` and precedes `tokens used`.
+- **Claude review:** a general-purpose subagent, read-only, with probes in the scratchpad. Mutation-check the tests.
+- **Task batches:** `cosmonauts task create --from-file <yaml>`, with single-line ACs.
+- **Workers:** tell them to run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
+- **Known flakes:** `cross-plan-commit-lock`, `plans/archive`, `extensions/project-tools`, `validate-harness-exports` and `project-tools-fallow-fixtures`. They are timeouts under load; re-run them in isolation.
+
+### Follow-ups (not in this plan)
+
+- Find what wrote `~/.cosmonauts/packages/coding` at 2026-09-23 16:44Z. It is possibly a test writing to the real HOME (D-030).
+- Biome lints the gitignored `.shepherd/` backups. Consider moving backups outside the repository.
+
+### Stage 7 review 3
+
+Pending (see below).
 
 ### Spec-to-backlog history
 

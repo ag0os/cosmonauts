@@ -3,7 +3,7 @@ id: TASK-742
 title: >-
   Stage 6 remediation L - finish introduced-debt paydown until the branch audit
   passes
-status: Done Progress
+status: Done
 priority: high
 labels:
   - refactoring
