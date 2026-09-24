@@ -39,8 +39,12 @@ All tasks have label `plan:qm-chain-safety`.
 | 748 | Done | `953d0f9` | D-031 floors, from Stage 7 review 2 |
 | 749 | Done | `3ac2e24` | From Stage 7 review 3 |
 | 750 | Done | `6733eae` | D-032, from Stage 7 review 4 |
-| **751** | In Progress | — | Stage 7 review 5 closure items (duplicate headings, cap-note placement, prompt sentinels, pinned guards). Drive `run-4b47255e` |
-| 727 | To Do | — | **Stage 8.** Depends on 751. Coordinator note added (`f17cf51`). |
+| 751 | Done | `7ed6c05` | Review 5 closure items |
+| 752 | Done | `88f272d` | Anchored section lookup (review 6) |
+| 753 | Done | `843abeb` | Anchored plan summary, whitespace headings (review 7) |
+| 754 | Done | `e4ad5dd` | Heading scan at EOF (review 8) |
+| **755** | In Progress | — | One heading definition, normalized input (review 9). Drive `run-02f748f4` |
+| 727 | To Do | — | **Stage 8.** Depends on 755. Coordinator note added (`f17cf51`). |
 | 728 | To Do | — | **Stage 9 closure.** Coordinator-run, per D-002. |
 
 **TASK-742 note.** The worker returned "partial" only because its full-suite run hit the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS` artifact. The coordinator verified all its criteria and committed the work in `0b5e7d1` and `7e75231`. Marking it Done, a coordinator regex bug left `status: Done Progress`, which the task parser reads as To Do. Fixed on 2026-09-24 in the handoff commit. It is Done.
@@ -126,7 +130,15 @@ All tasks have label `plan:qm-chain-safety`.
 - **D-032 gained two notes** (`fd9cdbe`):
   - a duplicated section heading blocks `ready`;
   - the host cap works by lens identity, and non-performance-lens performance claims are a recorded limit covered by prompts.
-- **TASK-751** is the final small round. Next: a focused review 6 from `stage7-review-5-prompt.md`, with base `fd9cdbe`.
+- **TASK-751** is the final small round.
+
+### Stage 7 reviews 6–9 (heading-shape edge cases; each round smaller)
+
+- **Review 6.** Codex: no code findings. Claude: unanchored section lookup. → TASK-752.
+- **Review 7.** Claude: SHIP. Codex: the plan summary is still unanchored. → TASK-753.
+- **Review 8.** Claude: SHIP. Codex: duplicate heading bare at EOF. → TASK-754.
+- **Review 9.** I asked for one complete pass over the heading functions. Both channels found the same class: inconsistent heading definitions (CRLF, empty title, tab, non-breaking space, text after the index). → TASK-755 fixes it structurally, with normalized input and one heading predicate.
+- **Next:** narrow review 10. If it says SHIP, Stage 7 closes and TASK-727 follows.
 
 ### Spec-to-backlog history
 
