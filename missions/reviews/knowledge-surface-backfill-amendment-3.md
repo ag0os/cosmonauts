@@ -2,7 +2,7 @@
 kind: knowledge-surface-backfill-amendment
 plan: knowledge-surface
 amendedAt: '2026-09-24'
-ratifiedBy: pending — made by the qm-chain-safety implementer, awaiting owner ratification
+ratifiedBy: Agustin Calabrese (2026-09-24, relayed by Shepherd; plan qm-chain-safety D-030)
 configDigest: 2e50c9869693be62d418ef709d4bc9a58d9889bb2781c2d9d40a3c70a2721149
 ---
 
@@ -32,7 +32,7 @@ Every intermediate digest stays reconstructible from the task commits.
 
 ## Provenance
 
-**Not yet ratified.** The implementer made this record as the mechanical
+**Ratified by the owner on 2026-09-24** (relayed by Shepherd; plan qm-chain-safety D-030). The implementer made this record as the mechanical
 consequence of a config change that the plan and D-019 sanction. It is
 recorded here rather than absorbed silently, so the owner can ratify or
 reverse it. Reversing it means removing the `qualityReview` block, which

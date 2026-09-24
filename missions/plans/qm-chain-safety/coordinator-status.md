@@ -81,57 +81,15 @@ TASK-726 and TASK-728 depend on TASK-729..738.
 
 ## Needs the user
 
-### N-001 (open, 2026-09-24): the committed health baseline does not cover `main`, so INV-005 is not met as shipped
+Nothing open. The 2026-09-24 rulings are in `.shepherd/work/in-progress/qm-chain-safety/rulings-2026-09-24.md` (user: "all recommended"), recorded as plan D-027..D-030:
 
-**Finding.** TASK-721 wired the three committed baselines exactly per D-008 ("adopted as-is"). Fallow 2.54.2 accepts all three flags (R-010 probe done by the coordinator: `Comparing against … baseline` for each, envelope consistent). But `.fallow-baselines/health.json` records 88 findings in 38 files, while `main` has 229 complexity findings in 90 files (a fresh `--save-baseline` on `main`). `fallow audit` has no introduced-only mode, so it counts every finding in a touched file that is not in the baseline.
+- **N-001 → D-029:** baselines re-anchored once at `main` `29fc0ce`, in their own commit. The probe found gaps in all three categories: dead-code 3, dupes 15, health 217.
+- **N-002 → D-030:** amendment-3 ratified.
+- **N-003 → D-030:** the stray catalog package was moved to a `.shepherd/backups/` backup by Shepherd. **Follow-up:** find what wrote to the real HOME on 2026-09-23 16:44Z, possibly a test during framework-health work.
+- **N-004 → D-028:** INV-001 interpretation recorded beside the Intent.
+- **Threat model → D-027:** the QM guards against accidental damage, not a hostile change. Hostile-only routes are recorded as residual limits. Reviewer prompts must state this.
 
-**Reproduction (on a scratch worktree of local `main`).** Add a comment-only line at the top of `domains/shared/extensions/orchestration/driver-tool.ts` and run `fallow audit --base HEAD` with the three baseline flags. The verdict is `fail`, with one complexity finding: `execute`, cyclomatic 19, severity high. That finding already exists on `main`, and the baseline lists only one *moderate* finding for this file. So a change that only touches a file with inherited debt fails the gate.
-
-**Collision.** INV-005 (ratified) says "Findings already present in touched files never fail it." D-008 (derived) adopts the files unchanged, and TASK-721 AC #7 says no baseline is regenerated merely to make a gate pass. The mechanism must yield to the invariant, but the remedy loosens the repository's regression floor. Commit `6b36c80` records that the floor is a deliberate "regression floor, not a target", so this is escalated rather than decided here.
-
-**Drafted decision (recommended option A).**
-
-- **A. One explicit, recorded refresh at the base.** Run `bun run refresh:fallow-baselines -- --base main --reason '<INV-005: floor re-anchored to main so inherited debt in touched files does not fail the changed-scope gate>' --category health` (plus `dead-code` and `dupes` if a probe shows the same gap) as its own commit on this branch. D-008 is then amended on record: "adopted as-is, then re-anchored once at the base under N-001." The debt stays visible in the baseline, `docs/fallow-exceptions.md` and `analysis-debt-paydown`. With the gate enforced from here on, `main` stays in sync with the floor.
-  - Consequence: about 140 existing health findings become part of the floor.
-  - Consequence: the refresh itself is a gate-owned-file change, so any QM run over this range shows it as a human-decision item (D-009).
-- **B. Keep the floor as committed.** The gate keeps failing inherited debt in touched hotspots. That needs INV-005 amended, which only the human can do.
-- **C. Generate the comparison baseline from the base revision at gate time.** This conflicts with INV-005's "relative to the committed baseline".
-
-**Status.** Implementation continues on TASK-723+ (independent of this). The final closure gate (TASK-728) needs this ruling.
-
-### N-002 (open, non-blocking, 2026-09-24): ratify backfill amendment 3
-
-`missions/reviews/knowledge-surface-backfill-amendment-3.md` registers the new `.cosmonauts/config.json` digest after the plan adds the `qualityReview` block. This follows the amendment-2 precedent (implementer-made, pending ratification). The owner ratifies it or reverses it; reversing means dropping the block, which makes the QM visibly "not configured" under D-019.
-
-### N-003 (open, 2026-09-24): an installed catalog `coding` package shadows the bundled one on this machine
-
-`~/.cosmonauts/packages/coding` (installed 2026-09-23 13:44, not by this session) makes the runtime resolve `coding/quality-manager` and the reviewers to the **old** definitions and prompts. The restricted profile still enforces the tool allowlist, so safety holds. But a live QM run on this machine will not use this branch's prompts. TASK-728 #6 needs a real end-to-end QM run.
-
-The user decides one of:
-- (a) remove or reinstall that package from this branch before closure;
-- (b) run the closure end-to-end with package discovery pointed away from it, if the CLI allows that;
-- (c) accept an end-to-end run on the shadowed definitions.
-
-I will not touch `~/.cosmonauts` myself.
-
-### N-004 (open, 2026-09-24): host-run checks execute the reviewed code without an OS sandbox
-
-**Finding.** This is codex mid-review-4's structural observation, confirmed by the coordinator. The QM host runs `qualityReview.prepare` (for example `bun install`) and `checks` (for example `bun run test`) in the private clone. Those processes execute the reviewed change's own code (tests, install scripts) as ordinary host processes with the operator's filesystem authority. A reviewed test that writes to an absolute path can therefore change the operator checkout. INV-001 says a QM run cannot change the reviewed checkout "by construction". The spec excludes an OS sandbox.
-
-**Mitigation already in progress (derived, D-025 amendments).**
-- The check argv is base-owned (TASK-736).
-- The QM runtime (definitions, prompts, project domains) is base-owned (TASK-737).
-- Changes to check-referenced scripts and runner files are gate-owned human items that block `ready` (TASK-737).
-- Review materials are digest-verified before the QM reads them (TASK-737).
-
-What remains is only that the base commands execute the reviewed code (tests, install hooks) with host authority.
-
-**Options:**
-- **A (recommended).** Record an INV-001 interpretation beside the Intent, like D-021. INV-001's by-construction guarantee covers the QM, its agents and the host code. Host-run project checks execute the reviewed change's code with the operator's own authority, the same trust as the operator running those tests, and the report says so explicitly. Nothing else changes.
-- **B.** Require OS-level sandboxing for prepare and checks. This reverses a spec exclusion, is platform-specific, and is new scope.
-- **C.** Drop host-run checks from the QM, so the caller runs the checks. This amends AC-016 ("the QM's project checks keep working").
-
-**Consequence for this branch either way.** With base-owned config and `main` having no `qualityReview` block, a QM review of this branch reports checks and model as "not configured" (D-019) and cannot be `ready`. That is visible and expected until the branch merges.
+The earlier drafts of N-001..N-004 are in git history, at commit `5a9ef4a` and before.
 
 ### Earlier human decisions (all closed)
 

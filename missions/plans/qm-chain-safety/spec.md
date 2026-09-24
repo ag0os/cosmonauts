@@ -69,6 +69,22 @@ Cosmonauts command performs (loading the project's domain, agent and chain
 modules) is outside it. The snapshot is taken before any QM or panel session
 exists.
 
+Interpretation of INV-001, host-run checks (human ruling 2026-09-24, relayed
+by Shepherd, N-004 option A; plan D-028). INV-001's by-construction guarantee
+covers the QM, every agent it starts, and the host code. The host-run project
+checks and dependency preparation execute the reviewed change's own code
+(tests, install and lifecycle scripts) with the operator's own authority. That
+is the same trust as the operator running those commands, and it is not
+sandboxed. The QM report states this explicitly.
+
+Threat model (human ruling 2026-09-24, relayed by Shepherd; plan D-027). The
+QM protects the operator's work against accidental damage by careless agents
+and accidental process behavior. It does not protect against a deliberately
+hostile reviewed change. A way in which a malicious change could tamper with
+the host, the review materials, the private workspace or Git objects to
+subvert its own review is recorded as a known residual limit and is not
+remediated, unless the same outcome can also happen by accident.
+
 Provenance. The eight decisions behind these invariants were accepted by the
 human on 2026-09-23 and relayed by Shepherd (`investigation.md` §5, decisions
 1-8). The invariant wording was drafted by the coordinator and ratified by

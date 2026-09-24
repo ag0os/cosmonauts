@@ -319,6 +319,7 @@ Investigation evidence gathered before design:
   - Why: INV-005, AC-010. D-001 item 4 names "the committed baselines".
   - Decided by: coordinator, amend-on-record after review, 2026-09-23
   - Supersedes: the 2026-09-23 D-008 ("Bootstrap and then consume all three committed Fallow baselines")
+  - Amended by: D-029 (human, 2026-09-24). The files were re-anchored once at `main`.
 
 - **D-009 - Suppression authorization comes only from the comparison base, and tampering is surfaced**
   - Decision:
@@ -579,6 +580,70 @@ Investigation evidence gathered before design:
   - Why: INV-001, INV-004, INV-005, D-025. The change must not choose what reviews it or what the host loads.
   - Decided by: coordinator, amend-on-record, 2026-09-24
   - Supersedes: D-004's "prepare … before any check" placement before assessment; D-012's "check durations are the measured-cost evidence available to the performance lens"; Design §6 step 1's "check results from `checks.md`" as QM input; the TASK-737 base export built from the clone
+
+- **D-027 - Threat model: accidental damage, not a hostile change** *(human ruling)*
+  - Decision:
+    - The QM protects against accidental damage by careless agents and
+      accidental process behavior. It does not protect against a
+      deliberately hostile reviewed change.
+    - A finding of the form "a malicious change could tamper with the host,
+      the materials or the Git objects to subvert review" is recorded as a
+      known residual limit and is not remediated, unless the same outcome can
+      also happen by accident.
+    - Reviewer prompts state this bound.
+    - TASK-726..728 are finished under it.
+  - Alternatives: keep remediating hostile-change routes (mid-reviews 4–6).
+    That does not converge without an OS sandbox, which the spec excludes.
+  - Why: bounds INV-001..INV-005 to the incidents that motivated the plan
+    (spec Purpose), all of which were accidental.
+  - Decided by: human, 2026-09-24 (relayed by Shepherd; the user accepted
+    "all recommended")
+  - Residual limits recorded under it (reachable only by a hostile change):
+    - Claude mid-review-6 HIGH-2 (tampering with the clone object database).
+      Moot after D-026, since the base export comes from the source repository.
+    - Codex mid-review-6 HIGH-1 (a surviving detached process rewriting the
+      export or materials after checks).
+    - Claude mid-review-6 LOW-3 (materials edited after verification).
+    - Any change-authored code that deliberately escapes its process group.
+
+- **D-028 - INV-001 and host-run checks** *(human ruling, from N-004)*
+  - Decision: option A. INV-001's by-construction guarantee covers the QM,
+    its agents and the host code. Host-run prepare and checks execute the
+    reviewed code with the operator's own authority, and the report says so.
+    The spec records this beside the Intent.
+  - Alternatives: (B) an OS sandbox for checks, which reverses a spec
+    exclusion; (C) dropping host-run checks, which amends AC-016.
+  - Why: INV-001 as ratified, read with D-027.
+  - Decided by: human, 2026-09-24 (relayed by Shepherd)
+
+- **D-029 - The committed baselines are re-anchored once at `main`** *(human ruling, from N-001)*
+  - Decision: option A.
+    - A coordinator probe on local `main` `29fc0ce` (this plan's merge-base)
+      found findings above the adopted floors in all three categories:
+      dead-code 3, dupes 15 and health 217 unbaselined findings.
+    - All three files are refreshed once at `main`, in their own commit, with
+      the reason recorded in `.fallow-baselines/manifest.json` provenance.
+    - D-008's "adopted unchanged" is amended accordingly. Every later refresh
+      still requires the explicit, reasoned script.
+    - The refresh was run from a worktree of `main`, because the refresh script
+      analyzes its `--root` rather than `--base`. That script defect is
+      remediated by task.
+  - Why: INV-005 ("findings already present in touched files never fail it").
+  - Decided by: human, 2026-09-24 (relayed by Shepherd)
+  - Amends: D-008
+
+- **D-030 - Backfill amendment 3 ratified; the stray catalog package** *(human ruling, from N-002 and N-003)*
+  - Decision:
+    - `missions/reviews/knowledge-surface-backfill-amendment-3.md` is
+      ratified.
+    - The catalog package `~/.cosmonauts/packages/coding`, installed
+      2026-09-23 16:44Z, was not installed by the user. Shepherd moved it to
+      a backup under `.shepherd/backups/`, and `coding` now resolves to the
+      bundled domain.
+    - Its origin is recorded as a finding: possibly a test or run writing to
+      the real HOME during the framework-health work. This is a follow-up and
+      is not chased here.
+  - Decided by: human, 2026-09-24 (relayed by Shepherd)
 
 - **D-018 - AC-003 exempts exactly the host-written plan summary** *(from H-001)*
   - Decision: option A. AC-003 exempts only the host-written new file
