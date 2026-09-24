@@ -19,6 +19,8 @@ dependencies:
   - TASK-730
   - TASK-731
   - TASK-732
+  - TASK-733
+  - TASK-734
 createdAt: '2026-09-24T03:18:26.982Z'
 updatedAt: '2026-09-24T03:18:26.982Z'
 ---

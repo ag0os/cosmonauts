@@ -22,7 +22,17 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
     - Claude L8 (`StepResult.childRun`): a generic runtime field used for D-016's inline-chain QM run id. Recorded here, and re-checked at closure under R-014.
   - TASK-726 and TASK-728 now depend on TASK-729..732.
 - **Done:** Drive remediation `run-00e07810-…`: TASK-732 `8a3351a`, TASK-729 `c6b3d96`, TASK-730 `48435d8`, TASK-731 `38f579e`, state `a203b54`. Gates: typecheck 0, lint 0, tests 3198/3198, `check:suppressions --base main` passes.
-- **Running:** mid-branch review 2 (re-review of the remediation): Claude + codex.
+- **Mid-branch review 2** (re-review of TASK-729..732), both DO-NOT-SHIP-YET: `mid-review-2-codex.md` and `mid-review-2-claude.md`. Most round-1 findings are RESOLVED. New findings:
+  - codex HIGH: deadline race; missing `gateState` fails open.
+  - Claude HIGH: the suppression scanner regressed from 23 to 15 directives.
+  - MEDIUM: a late-reviewer window; source-root skill paths in panel system prompts; detached check groups outlive Ctrl-C.
+  - **Dispositions:** TASK-733 (settle, seal, hide, plus LOW L1/L3/L4/L6) and TASK-734 (parser-based scanner plus a repo-level registry-equality test).
+  - **Accepted with record:**
+    - Claude L5 (materials writable during checks): same-uid bits were never a boundary.
+    - The residual own-process-group grandchild (codex): a configured check that deliberately detaches cannot be bounded without an OS sandbox, which the spec excludes.
+    - Claude round-1 L4 remainder (caller prompt and model dropped): scope is host-determined by design, and the model is Stage 7.
+  - My earlier acceptance of round-1 L5 (the `execute` port) is withdrawn. TASK-733 #2 closes it.
+- **Running:** Drive TASK-734 → TASK-733, then mid-branch review 3.
 - **Blocked on:** N-001 (below) blocks closure only, not the next stages.
 
 ### Spec-to-backlog history
@@ -58,6 +68,17 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
 ### N-002 (open, non-blocking, 2026-09-24): ratify backfill amendment 3
 
 `missions/reviews/knowledge-surface-backfill-amendment-3.md` registers the new `.cosmonauts/config.json` digest after the plan adds the `qualityReview` block. This follows the amendment-2 precedent (implementer-made, pending ratification). The owner ratifies it or reverses it; reversing means dropping the block, which makes the QM visibly "not configured" under D-019.
+
+### N-003 (open, 2026-09-24): an installed catalog `coding` package shadows the bundled one on this machine
+
+`~/.cosmonauts/packages/coding` (installed 2026-09-23 13:44, not by this session) makes the runtime resolve `coding/quality-manager` and the reviewers to the **old** definitions and prompts. The restricted profile still enforces the tool allowlist, so safety holds. But a live QM run on this machine will not use this branch's prompts. TASK-728 #6 needs a real end-to-end QM run.
+
+The user decides one of:
+- (a) remove or reinstall that package from this branch before closure;
+- (b) run the closure end-to-end with package discovery pointed away from it, if the CLI allows that;
+- (c) accept an end-to-end run on the shadowed definitions.
+
+I will not touch `~/.cosmonauts` myself.
 
 ### Earlier human decisions (all closed)
 
