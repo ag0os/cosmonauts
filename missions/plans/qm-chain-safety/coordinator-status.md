@@ -178,6 +178,16 @@ All tasks have label `plan:qm-chain-safety`.
 
 ## Needs the user
 
+### N-005 (open, 2026-09-24): the D-002 codex closure channel is out of usage until 2026-09-30 10:29
+
+`codex exec` returns "You've hit your usage limit ... try again at Sep 30th, 2026 10:29 AM". D-002 (ratified) names that exact command as the second closure channel for TASK-728. The TASK-760 worker failure has the same cause. The Claude closure channel and the real end-to-end QM run are proceeding.
+
+Options:
+- **(A) Wait (recommended).** Run the codex closure channel after the limit resets. The branch stays unmerged and nothing else is blocked. Until then, TASK-728 sits at "Claude channel plus end-to-end evidence done; codex channel pending".
+- **(B) Top up usage now.** The user buys Codex credits, and the codex channel runs today.
+- **(C) Substitute the second channel.** For example, a second independent Claude reviewer on a different model, or `codex exec` through an API key. This amends ratified D-002 and needs a human ruling.
+
+
 Nothing open. The 2026-09-24 rulings are in `.shepherd/work/in-progress/qm-chain-safety/rulings-2026-09-24.md` (user: "all recommended"), recorded as plan D-027..D-030:
 
 - **N-001 → D-029:** baselines re-anchored once at `main` `29fc0ce`, in their own commit. The probe found gaps in all three categories: dead-code 3, dupes 15, health 217.
