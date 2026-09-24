@@ -26,6 +26,7 @@ dependencies:
   - TASK-743
   - TASK-744
   - TASK-745
+  - TASK-746
 createdAt: '2026-09-24T03:17:44.318Z'
 updatedAt: '2026-09-24T03:17:44.318Z'
 ---
@@ -52,3 +53,12 @@ Binding ratified ground (not worker-adjustable; any collision requires halt-and-
 Coordinator note, 2026-09-24:
 - `.cosmonauts/config.json` changes are authorized for this plan. The knowledge-surface backfill config-digest tripwire is handled by `missions/reviews/knowledge-surface-backfill-amendment-3.md` (coordinator record, pending owner ratification; plan-sanctioned by Files to Change and the human-ratified D-019). Do not stop on it. If you change `.cosmonauts/config.json`, set `configDigest` in that file to the new `shasum -a 256 .cosmonauts/config.json` as your last step, and re-run `tests/scripts/knowledge-surface-backfill.test.ts`. Writing that one field is authorized.
 - Run the full suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`. The runner-injected Codex args break the detached-driver fake-CLI tests.
+
+Coordinator note, 2026-09-24, after Stage 6 closed with SHIP from both channels at mid-review-10. Read plan D-025..D-030 first.
+
+- **D-026 supersedes the D-012 evidence cited in AC #1.** Prepare and checks now run *after* the panel is sealed, so reviewers never see check durations. A performance P1 therefore needs measured or reproduced cost that the reviewer can cite from the materials themselves. Without it, the finding is at most P2. Do not feed check durations back into the panel.
+- **`qualityReview` config is base-owned (D-025).** `diverseReviewerModel` and `modelFamilies` are read from the review base revision. Adding them to this repository's `.cosmonauts/config.json` takes effect only for reviews whose base contains them. Keep `configDigest` in `missions/reviews/knowledge-surface-backfill-amendment-3.md` equal to `shasum -a 256 .cosmonauts/config.json` as your last step.
+- **Model identity comes from the base-owned runtime and the host-observed session identity (TASK-725).** Never take it from reviewer prose.
+- **Threat model (D-027).** Hostile-change-only routes are out of scope.
+- **The changed-scope audit must keep passing.** `npx fallow audit --base main --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json` introduces no new complexity, dead-code or duplication. Add no suppressions and do not re-save baselines.
+- **Lint and tests.** `bun run lint` has one known error, in the gitignored `.shepherd/backups/`; lint on tracked paths must pass. Run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
