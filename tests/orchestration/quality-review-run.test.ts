@@ -195,7 +195,9 @@ describe("quality review durable lifecycle", () => {
 		expect(result.stepResult.outcome).toBe("success");
 		expect(
 			(await readFile(join(artifactDir, "final.md"), "utf8")).trimEnd(),
-		).toMatch(/Caller-owned remediation:.*tasks.*Drive.*independent review\.$/);
+		).toContain(
+			"Caller-owned remediation: address findings through tasks, Drive and independent review.",
+		);
 	});
 
 	it("runs base-owned check argv even when the reviewed config rewrites it", async () => {
@@ -2439,6 +2441,184 @@ describe("quality review durable lifecycle", () => {
 		);
 		expect(report).toContain("Verdict: not-ready");
 		expect(report.match(/^## Findings$/gm)).toHaveLength(2);
+	});
+
+	it.each([
+		[
+			"CRLF duplicate",
+			(report: string) => `${report.replace(/\n/g, "\r\n")}## Findings\r\n`,
+			"## Findings",
+		],
+		[
+			"empty title in report",
+			(report: string) =>
+				report.replace("## Gates", "## \n\n- F-9 crash\n\n## Gates"),
+			"- F-9 crash",
+		],
+		[
+			"empty title after index",
+			(report: string) => `${report}## \n\n- F-9 crash\n`,
+			"- F-9 crash",
+		],
+		[
+			"tab title",
+			(report: string) =>
+				report.replace("## Gates", "##\tNotes\n\n- F-9 crash\n\n## Gates"),
+			"- F-9 crash",
+		],
+		[
+			"text after index",
+			(report: string) => `${report}F-9 crash\n`,
+			"F-9 crash",
+		],
+	] as const)("preserves %s and blocks ready with host checks", async (_name, change, evidence) => {
+		const projectRoot = await root(true);
+		await configureCleanHostReview(projectRoot);
+		const markdown = change(
+			renderQualityReviewReport({
+				verdict: "ready",
+				reason: "clear",
+				gates: ["audit passed"],
+			}),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				await writeCleanReviewerEvidence(runId, artifactSink);
+				return { markdown, gateState: "completed-bound" };
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain(evidence);
+		if (_name === "CRLF duplicate")
+			expect(report.match(/^## Findings$/gm)).toHaveLength(2);
+	});
+
+	it.each([
+		"LF",
+		"CRLF",
+		"CR",
+	])("keeps a clean %s report ready", async (lineEnding) => {
+		const projectRoot = await root(true);
+		await configureCleanHostReview(projectRoot);
+		const base = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+			gates: ["audit passed"],
+		});
+		const markdown = base.replace(
+			/\n/g,
+			lineEnding === "CRLF" ? "\r\n" : lineEnding === "CR" ? "\r" : "\n",
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			planSlug: "example",
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				await writeCleanReviewerEvidence(runId, artifactSink);
+				return { markdown, gateState: "completed-bound" };
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: ready");
+		const summary = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"plans",
+				"example",
+				"qm-runs",
+				`${result.ref.runId}.md`,
+			),
+			"utf8",
+		);
+		expect(summary).toContain("Verdict: ready");
+		expect(summary).not.toContain("\r");
+	});
+
+	it("carries an omitted reviewer finding through a non-breaking-space Findings heading", async () => {
+		const projectRoot = await root(true);
+		await configureCleanHostReview(projectRoot);
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+			gates: ["audit passed"],
+		}).replace("## Findings\n", "## Findings\u00a0\n");
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				for (const [lens, provider, fullText] of [
+					[
+						"reviewer",
+						"anthropic",
+						"- id: F-7\n  status: open\n  description: crash",
+					],
+					["security-reviewer", "openai-codex", "No findings"],
+				] as const)
+					await artifactSink.writeReviewer({
+						runId,
+						lens,
+						spawnId: `spawn-${lens}`,
+						sessionId: `session-${lens}`,
+						resolvedRole: `coding/${lens}`,
+						resolvedModel: { provider, id: lens },
+						outcome: "success",
+						digest: createHash("sha256").update(fullText).digest("hex"),
+						fullText,
+					});
+				return { markdown, gateState: "completed-bound" };
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(
+			report.match(/## Findings\n\n([\s\S]*?)\n\n## Human decisions/)?.[1],
+		).toContain("F-7");
+		expect(report).toContain(
+			"Finding F-7 was omitted from the QM report; carried forward as open.",
+		);
 	});
 
 	it("does not accept a ready verdict with reported findings", async () => {

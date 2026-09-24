@@ -53,6 +53,7 @@ import {
 	hasQualityReviewSectionContent,
 	hasUnexpectedQualityReviewSectionContent,
 	indexedQualityReviewReport,
+	normalizeQualityReviewReport,
 	type QualityReviewVerdict,
 	qualityReviewFindingLines,
 	qualityReviewObservationLines,
@@ -687,7 +688,7 @@ export async function runQualityReview(
 		async function sealEvidenceAndRunChecks(
 			assessment: QualityReviewAssessment,
 		): Promise<void> {
-			markdown = assessment.markdown;
+			markdown = normalizeQualityReviewReport(assessment.markdown);
 			assessmentText = markdown;
 			omittedSkillPaths.push(...(assessment.omittedSkillPaths ?? []));
 			liveChildIds = [
@@ -812,7 +813,10 @@ export async function runQualityReview(
 			if (verdict === "refused") await rejectReviewerRefusal();
 			reason = assessmentReason(assessed);
 			if (!assessed.indexAvailable && !assessed.reason)
-				markdown += "\n\nIndex unavailable.\n";
+				markdown = markdown.replace(
+					/^##(?=[^\S\n]|$)/m,
+					() => "Index unavailable.\n\n##",
+				);
 			if (assessed.verdict === "failed" && assessed.reason)
 				await recordMalformedReport(assessed.reason);
 		}
@@ -1151,20 +1155,38 @@ export async function runQualityReview(
 
 		function appendFinalAnnotations(): void {
 			markdown = discloseOperatorAuthority(markdown, verdict, reason);
+			const annotations: string[] = [];
 			if (qmSessionLive)
-				markdown = `${markdown.trimEnd()}\n\nLive work: QM session did not settle after cancellation or deadline.\n`;
+				annotations.push(
+					"Live work: QM session did not settle after cancellation or deadline.",
+				);
 			if (runtimeSetupLive)
-				markdown = `${markdown.trimEnd()}\n\nLive work: base runtime setup did not settle after cancellation or deadline.\n`;
+				annotations.push(
+					"Live work: base runtime setup did not settle after cancellation or deadline.",
+				);
 			if (
 				ownsReservedRoot &&
 				(qmSessionLive || runtimeSetupLive || liveChildIds.length > 0)
 			)
-				markdown = `${markdown.trimEnd()}\n\nWorkspace retained: ${reservedRoot}. Live work may still use it.\n`;
-			markdown = `${markdown.trimEnd()}\n\nPanel completion timeout: ${panelTimeoutMs} ms.\n\nCaller-owned remediation: address findings through tasks, Drive and independent review.\n`;
+				annotations.push(
+					`Workspace retained: ${reservedRoot}. Live work may still use it.`,
+				);
+			annotations.push(
+				`Panel completion timeout: ${panelTimeoutMs} ms.`,
+				"Caller-owned remediation: address findings through tasks, Drive and independent review.",
+			);
 			if (omittedSkillPaths.length > 0)
-				markdown = `${markdown.trimEnd()}\n\nOmitted skill locations: ${[...new Set(omittedSkillPaths)].join(", ")}\n`;
+				annotations.push(
+					`Omitted skill locations: ${[...new Set(omittedSkillPaths)].join(", ")}`,
+				);
 			if (safeOperatorNote)
-				markdown = `${markdown.trimEnd()}\n\nOperator note (non-authoritative): ${JSON.stringify(safeOperatorNote)}\n`;
+				annotations.push(
+					`Operator note (non-authoritative): ${JSON.stringify(safeOperatorNote)}`,
+				);
+			markdown = markdown.replace(
+				/^##(?=[^\S\n]|$)/m,
+				() => `${annotations.join("\n\n")}\n\n##`,
+			);
 		}
 
 		async function finalizeReport(): Promise<StepResult> {

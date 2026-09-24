@@ -22,6 +22,30 @@ const sections = [
 	"Reviewer models",
 ] as const;
 
+export function normalizeQualityReviewReport(markdown: string): string {
+	return markdown.replace(/\r\n?|\u00a0/g, (match) =>
+		match === "\u00a0" ? " " : "\n",
+	);
+}
+
+function headingLines(
+	markdown: string,
+): { title: string; start: number; end: number }[] {
+	return [...markdown.matchAll(/^##(?=[^\S\n]|$)[^\n]*/gm)].map((match) => ({
+		title: match[0].slice(2).trim(),
+		start: match.index,
+		end: match.index + match[0].length,
+	}));
+}
+
+function nextSectionStart(markdown: string, start: number): number {
+	const heading =
+		headingLines(markdown).find((line) => line.start >= start)?.start ??
+		markdown.length;
+	const index = markdown.indexOf("<!-- COSMO_QM_REPORT", start);
+	return Math.min(heading, index < 0 ? markdown.length : index);
+}
+
 export function renderQualityReviewReport(report: QualityReviewReport): string {
 	const values = [
 		report.checks,
@@ -112,14 +136,9 @@ export function assessQualityReviewReport(markdown: string): {
 	indexAvailable: boolean;
 	reason?: string;
 } {
+	const headings = headingLines(markdown);
 	if (
-		sections.some(
-			(section) =>
-				!new RegExp(
-					`^## ${section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`,
-					"m",
-				).test(markdown),
-		)
+		sections.some((section) => !headings.some((line) => line.title === section))
 	) {
 		return {
 			verdict: "failed",
@@ -227,9 +246,9 @@ function sectionBodyStart(
 	markdown: string,
 	heading: string,
 ): number | undefined {
-	const match = markdown.match(new RegExp(`^## ${heading}[ \\t]*$`, "m"));
-	if (match?.index === undefined) return undefined;
-	const end = match.index + match[0].length;
+	const line = headingLines(markdown).find((item) => item.title === heading);
+	if (!line) return undefined;
+	const end = line.end;
 	return end + (markdown[end] === "\n" ? 1 : 0);
 }
 
@@ -239,9 +258,7 @@ export function visibleSectionBody(
 ): string | undefined {
 	const start = sectionBodyStart(markdown, heading);
 	if (start === undefined) return undefined;
-	const tail = markdown.slice(start);
-	const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
-	return (end < 0 ? tail : tail.slice(0, end)).trim();
+	return markdown.slice(start, nextSectionStart(markdown, start)).trim();
 }
 
 export function hasQualityReviewSectionContent(
@@ -265,18 +282,20 @@ export function hasUnexpectedQualityReviewSectionContent(
 	markdown: string,
 ): boolean {
 	const seen = new Set<string>();
-	for (const match of markdown.matchAll(/^## ([^\n]+)$/gm)) {
-		const heading = match[1]?.replace(/[ \t]+$/, "") ?? "";
+	for (const line of headingLines(markdown)) {
+		const heading = line.title;
 		if (sections.includes(heading as (typeof sections)[number])) {
 			if (seen.has(heading)) return true;
 			seen.add(heading);
 			continue;
 		}
-		const tail = markdown.slice((match.index ?? 0) + match[0].length);
-		const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
-		if ((end < 0 ? tail : tail.slice(0, end)).trim()) return true;
+		if (markdown.slice(line.end, nextSectionStart(markdown, line.end)).trim())
+			return true;
 	}
-	return false;
+	const index = markdown.match(/<!-- COSMO_QM_REPORT [\s\S]*? -->/);
+	return index
+		? markdown.slice((index.index ?? 0) + index[0].length).trim().length > 0
+		: false;
 }
 
 export function qualityReviewObservationLines(markdown: string): string[] {
@@ -328,9 +347,7 @@ export function amendUnindexedQualityReviewReport(
 		if (items.length === 0) continue;
 		const bodyStart = sectionBodyStart(amended, heading);
 		if (bodyStart === undefined) continue;
-		const rest = amended.slice(bodyStart);
-		const next = rest.search(/^## |^<!-- COSMO_QM_REPORT/m);
-		const bodyEnd = next < 0 ? amended.length : bodyStart + next;
+		const bodyEnd = nextSectionStart(amended, bodyStart);
 		const body = amended.slice(bodyStart, bodyEnd).trim();
 		const existing = replace || body === "- None recorded." ? "" : `${body}\n`;
 		amended = `${amended.slice(0, bodyStart)}\n${existing}${items.map((item) => `- ${item}`).join("\n")}\n\n${amended.slice(bodyEnd)}`;
