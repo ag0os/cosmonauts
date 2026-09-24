@@ -3,6 +3,7 @@ import { calibrateReviewerFindings } from "../../lib/orchestration/quality-revie
 import {
 	applyReviewerCalibration,
 	assessQualityReviewReport,
+	hasUnexpectedQualityReviewSectionContent,
 	indexedQualityReviewReport,
 	qualityReviewFindingLines,
 	renderQualityReviewReport,
@@ -64,6 +65,25 @@ describe("quality review reports", () => {
 			"## Findings\n\n- F-001: high, error, src/auth.ts:4; reject missing token (input: empty token).",
 		);
 		expect(indexedQualityReviewReport(changed)).toBeUndefined();
+	});
+
+	it("accepts defined headings with trailing spaces or tabs and reads their content", () => {
+		const clean = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+		}).replace("## Findings\n", "## Findings \t\n");
+		expect(hasUnexpectedQualityReviewSectionContent(clean)).toBe(false);
+		expect(assessQualityReviewReport(clean)).toMatchObject({
+			verdict: "ready",
+			indexAvailable: true,
+		});
+		const withFinding = clean.replace(
+			"## Findings \t\n\n- None recorded.",
+			"## Findings \t\n\n- F-77 P1 QM-own crash",
+		);
+		expect(qualityReviewFindingLines(withFinding)).toEqual([
+			"F-77 P1 QM-own crash",
+		]);
 	});
 
 	it.each([

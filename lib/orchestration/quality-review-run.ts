@@ -57,6 +57,7 @@ import {
 	qualityReviewFindingLines,
 	qualityReviewObservationLines,
 	renderQualityReviewReport,
+	visibleSectionBody,
 } from "./quality-review-report.ts";
 import { reviewerEvidenceModels } from "./quality-review-seal.ts";
 import {
@@ -1641,11 +1642,7 @@ function renderPlanSummary(
 		"Reviewer models",
 	];
 	const sections = headings.map((heading) => {
-		const marker = `## ${heading}\n`;
-		const start = normalized.indexOf(marker);
-		const tail = start < 0 ? "" : normalized.slice(start + marker.length);
-		const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
-		return `## ${heading}\n\n${(end < 0 ? tail : tail.slice(0, end)).trim() || "- None recorded."}`;
+		return `## ${heading}\n\n${visibleSectionBody(normalized, heading) || "- None recorded."}`;
 	});
 	return `# Quality review ${runId}\n\nVerdict: ${verdict}\n\nFull report: ${reportPath}\n\nReason: ${reason}\n\n${sections.join("\n\n")}\n`;
 }

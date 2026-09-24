@@ -233,7 +233,7 @@ function sectionBodyStart(
 	return end + (markdown[end] === "\n" ? 1 : 0);
 }
 
-function visibleSectionBody(
+export function visibleSectionBody(
 	markdown: string,
 	heading: string,
 ): string | undefined {
@@ -266,9 +266,10 @@ export function hasUnexpectedQualityReviewSectionContent(
 ): boolean {
 	const seen = new Set<string>();
 	for (const match of markdown.matchAll(/^## ([^\n]+)\n/gm)) {
-		if (sections.includes(match[1] as (typeof sections)[number])) {
-			if (seen.has(match[1] ?? "")) return true;
-			seen.add(match[1] ?? "");
+		const heading = match[1]?.replace(/[ \t]+$/, "") ?? "";
+		if (sections.includes(heading as (typeof sections)[number])) {
+			if (seen.has(heading)) return true;
+			seen.add(heading);
 			continue;
 		}
 		const tail = markdown.slice((match.index ?? 0) + match[0].length);

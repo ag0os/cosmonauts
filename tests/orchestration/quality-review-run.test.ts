@@ -2304,6 +2304,65 @@ describe("quality review durable lifecycle", () => {
 				expect(output).toContain(evidence);
 	});
 
+	it("keeps a real finding in the plan summary after a Checks heading lookalike", async () => {
+		const projectRoot = await root(true);
+		const markdown = renderQualityReviewReport({
+			verdict: "not-ready",
+			reason: "finding",
+			checks: ["pending; details under ## Findings"],
+			findings: ["F-77 P1 QM-own crash"],
+		});
+		const result = await runQualityReview({
+			projectRoot,
+			planSlug: "example",
+			execute: async () => ({ markdown }),
+		});
+		const summary = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"plans",
+				"example",
+				"qm-runs",
+				`${result.ref.runId}.md`,
+			),
+			"utf8",
+		);
+		const findings = summary.match(
+			/^## Findings\n\n([\s\S]*?)(?=^## Human decisions)/m,
+		)?.[1];
+		expect(findings).toContain("- F-77 P1 QM-own crash");
+		expect(findings).not.toContain("pending; details under");
+	});
+
+	it("keeps a clean report ready with trailing whitespace on a defined heading", async () => {
+		const projectRoot = await root(true);
+		const markdown = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+		}).replace("## Findings\n", "## Findings \t\n");
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async () => ({ markdown }),
+		});
+		expect(result.stepResult.outcome).toBe("success");
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: ready");
+	});
+
 	it("does not accept a ready verdict with reported findings", async () => {
 		const projectRoot = await root(true);
 		await mkdir(join(projectRoot, ".cosmonauts"));
