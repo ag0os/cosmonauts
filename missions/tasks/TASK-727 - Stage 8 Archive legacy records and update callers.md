@@ -8,6 +8,7 @@ labels:
   - testing
   - 'plan:qm-chain-safety'
 dependencies:
+  - TASK-749
   - TASK-748
   - TASK-747
   - TASK-725
@@ -30,3 +31,16 @@ Binding ratified ground (not worker-adjustable; any collision requires halt-and-
 - [ ] #5 The Stage 8 file seam is complete in `bundled/coding/chains.ts`, `bundled/coding/prompts/cody.md`, `domains/shared/skills/spawning/SKILL.md`, `domains/main/skills/dispatch/SKILL.md`, `docs/orchestration.md`, `README.md`, `AGENTS.md`, `external-commands/implement-plan.md`, `external-skills/cosmonauts/SKILL.md`, the eleven specified `missions/reviews/{review,security-review,ux-review}-round-{1,2,3}.md`/`performance-review-round-{1,2}.md` moves, the archive README, and every additional live-surface old-path reference found by the required exact search—without changing historical surfaces excluded by D-022.
 - [ ] #6 Code/chain delivery follows red → green → refactor with Vitest tests under `tests/` mirroring source and proof through shipped named-chain entry points; authored prompts, skills, docs, and archive navigation are reviewed semantically. R-001 and all ratified constraints are stop-and-escalate ground rather than text to route around.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Coordinator note, 2026-09-24, after Stage 7 (TASK-726, TASK-746..748). Read plan D-025..D-031 first.
+
+- **The QM is review-only (D-001, D-025).** It never edits, fixes, commits or completes a plan. It ends at a durable findings report with a verdict: `ready` only when host-verified gates, checks and model diversity are clean and there are no host human items. Callers route remediation through tasks, Drive and an independent review. Named QM-ending chains stop at that report; nothing downstream in a chain may claim a clean tree or a completed plan.
+- **`external-commands/implement-plan.md`** still describes a QM sign-off and a fix loop. Rewrite that part: the QM (or, where the QM itself is under review, the D-002-style substitution of a Claude subagent reviewer plus a read-only `codex exec`) produces findings, and remediation goes through tasks, Drive and a re-review after every remediation round. Keep the rest of the command's flow.
+- **`qualityReview` config is base-owned (D-025).** `checks`, `diverseReviewerModel` and `modelFamilies` are read from the review base revision. A review whose base lacks them reports visible "not configured" and human-decision items and cannot be `ready` (D-019). Caller guidance must describe that outcome, not treat it as an error.
+- **Link repair follows D-022 exactly.** Find old paths with an exact tracked search (`git grep -n` for each of the eleven old paths). Repair only live surfaces. Leave frozen fixtures, curated `knowledge/` records, evidence reports, `missions/archive/**` and this plan's own review files unchanged. Use `git mv` for the eleven moves, and leave the two `analysis-gate-coverage-*-round-1.md` files in place.
+- **Threat model (D-027).** Hostile-change-only routes are out of scope.
+- **The changed-scope audit must keep passing.** `npx fallow audit --base main --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json` introduces no new complexity, dead-code or duplication. Add no suppressions and do not re-save baselines.
+- **Config digest.** If you change `.cosmonauts/config.json`, set `configDigest` in `missions/reviews/knowledge-surface-backfill-amendment-3.md` to `shasum -a 256 .cosmonauts/config.json` as your last step.
+- **Lint and tests.** `bun run lint` has one known error, in the gitignored `.shepherd/backups/`; lint on tracked paths (`bunx biome check lib/ domains/ cli/ tests/ scripts/ bundled/`) must pass. Run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
