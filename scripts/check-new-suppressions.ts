@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
 	checkSuppressions,
+	isSuppressionScanPath,
 	type Suppression,
 	type SuppressionKey,
 	scanSuppressions,
@@ -42,6 +43,38 @@ function baseFile(path: string): string | undefined {
 	if (result.status === 0) return result.stdout;
 	throw new Error(
 		`unable to read ${path} from ${base}: ${result.stderr.trim()}`,
+	);
+}
+
+/** Map each path renamed since the base to its base path. */
+function renameOrigins(): Map<string, string> {
+	const fields = git(
+		"diff",
+		"--name-status",
+		"--find-renames",
+		"--diff-filter=R",
+		"--relative",
+		"--no-ext-diff",
+		"-z",
+		base as string,
+		"--",
+	).split("\0");
+	const origins = new Map<string, string>();
+	for (let index = 0; index + 2 < fields.length; index += 3) {
+		const origin = fields[index + 1] as string;
+		if (isSuppressionScanPath(origin))
+			origins.set(fields[index + 2] as string, origin);
+	}
+	return origins;
+}
+
+function previousSuppressions(
+	path: string,
+	origin: string,
+	equivalents: Readonly<Record<string, string>> | undefined,
+): Suppression[] {
+	return scanSuppressions(origin, baseFile(origin) ?? "", equivalents).map(
+		(item) => ({ ...item, path }),
 	);
 }
 
@@ -118,17 +151,18 @@ try {
 		.split("\0")
 		.filter(
 			(path) =>
-				/\.(?:[cm]?[jt]sx?)$/.test(path) &&
+				isSuppressionScanPath(path) &&
 				!isAbsolute(path) &&
 				!path.split("/").includes(".."),
 		);
+	const origins = renameOrigins();
 	const failures: Suppression[] = [];
 	for (const path of new Set(files)) {
 		const full = join(root, path);
 		if (!existsSync(full)) continue;
-		const previous = scanSuppressions(
+		const previous = previousSuppressions(
 			path,
-			baseFile(path) ?? "",
+			origins.get(path) ?? path,
 			registry.equivalents,
 		);
 		const current = scanSuppressions(

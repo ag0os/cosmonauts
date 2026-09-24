@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
 	checkSuppressions,
+	isSuppressionScanPath,
 	type SuppressionKey,
 	scanSuppressions,
 } from "../../lib/quality/suppression-policy.ts";
@@ -143,13 +144,26 @@ describe("suppression policy", () => {
 		]);
 	});
 
+	test("reads a multi-line block comment's last line the way tsc does", () => {
+		const current = scanSuppressions(
+			"lib/a.ts",
+			"/*\n * @ts-ignore\n */\nignored();\n/* why\n * @ts-ignore */\nunsafe();\n",
+		);
+		expect(current.map(({ family, line }) => ({ family, line }))).toEqual([
+			{ family: "@ts-ignore", line: 6 },
+		]);
+		expect(current[0]?.target).toBe(
+			scanSuppressions("lib/a.ts", "// @ts-ignore\nunsafe();\n")[0]?.target,
+		);
+	});
+
 	test("tracked source directives exactly match the exception registry", () => {
 		const paths = execFileSync("git", ["ls-files", "--cached", "-z"], {
 			cwd: root,
 			encoding: "utf8",
 		})
 			.split("\0")
-			.filter((path) => /\.[cm]?[jt]sx?$/.test(path));
+			.filter(isSuppressionScanPath);
 		const registry = JSON.parse(
 			readFileSync(
 				join(root, ".cosmonauts/suppression-exceptions.json"),
