@@ -279,4 +279,124 @@ describe("quality review model policy", () => {
 		});
 		expect(result.issues.join(" ")).toContain("human decision required");
 	});
+
+	it.each([
+		"AC-013",
+		"D-031",
+		"INV-001",
+		"B-010",
+	])("does not treat %s as a finding ID", (token) => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [],
+			findings: [`${token} context: F-1 P0`],
+		});
+		expect(result.issues).toEqual([]);
+		expect(result.openFindings).toBe(true);
+	});
+
+	it.each([
+		"**F-001**",
+		"`F-001`",
+		"[P2] F-001",
+	])("recognizes decorated ID %s", (prefix) => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [{ lens: "reviewer", text: "- id: F-001\n  priority: P2" }],
+			findings: [`${prefix} P2 open`],
+		});
+		expect(result.findings).toEqual([`${prefix} P2 open`]);
+		expect(result.issues).toEqual([]);
+	});
+
+	it.each([
+		"findings",
+		"observations",
+	] as const)("keeps a second open entry with the same ID in %s", (section) => {
+		const entries = [
+			"F-1 dismissed; closureEvidence: fixed in lib/a.ts",
+			"F-1 P2 still crashes",
+		];
+		const result = calibrateReviewerFindings({
+			materials: "fixed in lib/a.ts",
+			reviewers: [{ lens: "reviewer", text: "- id: F-1\n  priority: P2" }],
+			findings: section === "findings" ? entries : [],
+			observations: section === "observations" ? entries : [],
+		});
+		expect(
+			result.openFindings ||
+				result.issues.some((issue) => issue.includes("human decision")),
+		).toBe(true);
+	});
+
+	it("raises an unsupported duplicate observation priority for a human decision", () => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [
+				{ lens: "performance-reviewer", text: "- id: PF-1\n  priority: P0" },
+			],
+			findings: ["PF-1 P2 path"],
+			observations: ["PF-1 P0 older path"],
+		});
+		expect(result.issues.join(" ")).toContain("human decision required");
+	});
+
+	it.each([
+		"P0",
+		"P1",
+	])("raises unmapped decorated %s in observations", (priority) => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [],
+			findings: [],
+			observations: [`[P2] PF-99 ${priority} slow`],
+		});
+		expect(result.issues.join(" ")).toContain(`unmapped ${priority}`);
+	});
+
+	it("treats reviewer P0 as unsupported with a decorated P2 QM entry", () => {
+		const result = calibrateReviewerFindings({
+			materials: "",
+			reviewers: [
+				{ lens: "performance-reviewer", text: "- id: PF-1\n  priority: P0" },
+			],
+			findings: ["**PF-1** P2 path"],
+		});
+		expect(result.issues.join(" ")).toContain("Performance PF-1");
+		expect(result.issues.join(" ")).not.toContain("omitted");
+	});
+
+	it("accepts only other-lens closure evidence", () => {
+		const result = calibrateReviewerFindings({
+			materials: "fixed in lib/a.ts",
+			reviewers: [
+				{
+					lens: "reviewer",
+					text: "- id: F-1\n  priority: P2",
+				},
+				{
+					lens: "security-reviewer",
+					text: "- id: F-1\n  closureEvidence: fixed in lib/a.ts",
+				},
+			],
+			findings: ["[P2] F-1 dismissed after independent review"],
+		});
+		expect(result.openFindings).toBe(false);
+		expect(result.issues).toEqual([]);
+	});
+
+	it("keeps an ID-less dismissal open even when its citation appears in materials", () => {
+		const decorated = calibrateReviewerFindings({
+			materials: "fixed in lib/a.ts",
+			reviewers: [{ lens: "reviewer", text: "- id: F-1\n  priority: P2" }],
+			findings: ["**F-1** dismissed; closureEvidence: fixed in lib/a.ts"],
+		});
+		expect(decorated.openFindings).toBe(false);
+		const idless = calibrateReviewerFindings({
+			materials: "fixed in lib/a.ts",
+			reviewers: [],
+			findings: ["dismissed; closureEvidence: fixed in lib/a.ts"],
+		});
+		expect(idless.openFindings).toBe(true);
+	});
 });

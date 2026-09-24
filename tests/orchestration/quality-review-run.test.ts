@@ -1295,6 +1295,100 @@ describe("quality review durable lifecycle", () => {
 	});
 
 	// @cosmo-behavior plan:qm-chain-safety#B-010
+	it("blocks ready for every Findings shape", async () => {
+		for (const [_shape, body] of [
+			["numbered", "1. F-1 P2 null input crashes"],
+			["star", "* F-1 P2 null input crashes"],
+			["plus", "+ F-1 P2 null input crashes"],
+			["prose", "F-1 P2 null input crashes"],
+			[
+				"before bullet",
+				"F-1 P2 null input crashes\n- F-2 dismissed; closureEvidence: fixed in lib/a.ts",
+			],
+			[
+				"after dismissal",
+				"- F-2 dismissed; closureEvidence: fixed in lib/a.ts\nF-1 P2 null input crashes",
+			],
+			[
+				"after blank line",
+				"- F-2 dismissed; closureEvidence: fixed in lib/a.ts\n\n  F-1 P2 null input crashes",
+			],
+			["ID-less bullet", "- P2 null input crashes"],
+		] as const) {
+			const projectRoot = await root(true);
+			await mkdir(join(projectRoot, ".cosmonauts"));
+			await writeFile(
+				join(projectRoot, ".cosmonauts", "config.json"),
+				JSON.stringify({
+					qualityReview: {
+						diverseReviewerModel: "anthropic/reviewer",
+						checks: [
+							{
+								id: "ok",
+								command: process.execPath,
+								args: ["-e", "process.exit(0)"],
+							},
+						],
+					},
+				}),
+			);
+			await commitBaseConfig(projectRoot);
+			const result = await runQualityReview({
+				projectRoot,
+				hostChecks: true,
+				execute: async ({ runId, artifactSink }) => {
+					for (const [lens, provider] of [
+						["reviewer", "anthropic"],
+						["security-reviewer", "openai-codex"],
+					] as const) {
+						const fullText = "No findings";
+						await artifactSink.writeReviewer({
+							runId,
+							lens,
+							spawnId: `spawn-${lens}`,
+							sessionId: `session-${lens}`,
+							resolvedRole: `coding/${lens}`,
+							resolvedModel: { provider, id: lens },
+							outcome: "success",
+							digest: createHash("sha256").update(fullText).digest("hex"),
+							fullText,
+						});
+					}
+					const markdown = renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: ["audit passed"],
+					}).replace(
+						"## Findings\n\n- None recorded.",
+						`## Findings\n\n${body}`,
+					);
+					return {
+						markdown,
+						gateState: "completed-bound",
+						implementerModel: { provider: "openai-codex", id: "worker" },
+						requiredLenses: ["reviewer", "security-reviewer"],
+					};
+				},
+			});
+			const report = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.ref.runId,
+					"artifacts",
+					"qm",
+					"final.md",
+				),
+				"utf8",
+			);
+			expect(report).toContain("Verdict: not-ready");
+		}
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-010
 	it.each([
 		["out-of-range finding", "F-1 P2 pre-existing issue", false],
 		[
@@ -1307,7 +1401,12 @@ describe("quality review durable lifecycle", () => {
 			"F-1 dismissed; closureEvidence: fixed in lib/a.ts",
 			true,
 		],
-	] as const)("reaches ready with an %s", async (_case, entry, inFindings) => {
+		[
+			"dismissal with a trailing paragraph",
+			"F-1 dismissed; closureEvidence: fixed in lib/a.ts\n\n  F-2 P2 null input crashes",
+			true,
+		],
+	] as const)("calibrates %s", async (_case, entry, inFindings) => {
 		const projectRoot = await root(true);
 		await mkdir(join(projectRoot, ".cosmonauts"));
 		await writeFile(
@@ -1379,7 +1478,9 @@ describe("quality review durable lifecycle", () => {
 			),
 			"utf8",
 		);
-		expect(report).toContain("Verdict: ready");
+		expect(report).toContain(
+			entry.includes("\n\n") ? "Verdict: not-ready" : "Verdict: ready",
+		);
 		expect(report).toContain(`- ${entry}`);
 		expect(report).not.toContain("carried forward as open");
 	});
@@ -1400,6 +1501,13 @@ describe("quality review durable lifecycle", () => {
 			undefined,
 			"Default implementer model identity missing (INV-002)",
 		],
+		[
+			"unconfigured diverse reviewer",
+			{ provider: "openai-codex", id: "worker" },
+			undefined,
+			undefined,
+			"Not configured: qualityReview.diverseReviewerModel; human decision required.",
+		],
 	] as const)("enforces diversity with %s", async (_name, implementerModel, diverseReviewerModel, modelFamilies, expected) => {
 		const projectRoot = await root(true);
 		await mkdir(join(projectRoot, ".cosmonauts"));
@@ -1416,6 +1524,7 @@ describe("quality review durable lifecycle", () => {
 		await commitBaseConfig(projectRoot);
 		const result = await runQualityReview({
 			projectRoot,
+			planSlug: "example",
 			hostChecks: true,
 			execute: async ({ runId, artifactSink }) => {
 				const fullText = "No findings";
@@ -1433,12 +1542,16 @@ describe("quality review durable lifecycle", () => {
 					digest: createHash("sha256").update(fullText).digest("hex"),
 					fullText,
 				});
+				const markdown = renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					gates: ["audit passed"],
+				});
 				return {
-					markdown: renderQualityReviewReport({
-						verdict: "ready",
-						reason: "clear",
-						gates: ["audit passed"],
-					}),
+					markdown:
+						_name === "unconfigured diverse reviewer"
+							? markdown.replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, "")
+							: markdown,
 					gateState: "completed-bound",
 					implementerModel,
 					requiredLenses: ["reviewer"],
@@ -1460,6 +1573,21 @@ describe("quality review durable lifecycle", () => {
 			"utf8",
 		);
 		expect(report).toContain(expected);
+		if (_name === "unconfigured diverse reviewer") {
+			const summary = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"plans",
+					"example",
+					"qm-runs",
+					`${result.ref.runId}.md`,
+				),
+				"utf8",
+			);
+			for (const text of [report, summary])
+				expect(text.split(`- ${expected}`).length - 1).toBe(1);
+		}
 		expect(report).toContain(
 			implementerModel ? "Verdict: not-ready" : "Verdict: failed",
 		);
@@ -1467,12 +1595,34 @@ describe("quality review durable lifecycle", () => {
 
 	// @cosmo-behavior plan:qm-chain-safety#B-010
 	it.each([
-		["renumbered", "PF-99 P1 slow path", true, "PF-99 P1", "unmapped P1"],
-		["raised", "PF-2 P1 slow path", true, "PF-2 P2", "capped at P2"],
-		["P0", "PF-2 P0 slow path", true, "PF-2 P2", "capped at P2"],
-		["unindexed", "PF-2 P1 slow path", false, "PF-2 P2", "capped at P2"],
-		["omitted", "", true, "PF-2 open", "carried forward as open"],
-	] as const)("calibrates %s performance findings in the final report", async (_name, finding, indexed, visible, evidence) => {
+		[
+			"renumbered",
+			"PF-99 P1 slow path",
+			true,
+			"PF-99 P1",
+			"unmapped P1",
+			undefined,
+		],
+		["raised", "PF-2 P1 slow path", true, "PF-2 P2", "capped at P2", undefined],
+		["P0", "PF-2 P0 slow path", true, "PF-2 P2", "capped at P2", undefined],
+		[
+			"unindexed",
+			"PF-2 P1 slow path",
+			false,
+			"PF-2 P2",
+			"capped at P2",
+			undefined,
+		],
+		["omitted", "", true, "PF-2 open", "carried forward as open", undefined],
+		[
+			"duplicate observation",
+			"PF-2 P2 main path",
+			true,
+			"- Finding PF-2 has unsupported performance priority above P2 in observations",
+			"human decision required",
+			"PF-2 P0 older path",
+		],
+	] as const)("calibrates %s performance findings in the final report", async (_name, finding, indexed, visible, evidence, observation) => {
 		const projectRoot = await root(true);
 		await mkdir(join(projectRoot, ".cosmonauts"));
 		await writeFile(
@@ -1516,6 +1666,7 @@ describe("quality review durable lifecycle", () => {
 					reason: "clear",
 					gates: ["audit passed"],
 					findings: finding ? [finding] : [],
+					observations: observation ? [observation] : [],
 				});
 				return {
 					markdown: indexed
@@ -1544,6 +1695,14 @@ describe("quality review durable lifecycle", () => {
 		expect(report).toContain("Verdict: not-ready");
 		expect(report).toContain(visible);
 		expect(report).toContain(evidence);
+		if (observation) {
+			expect(report).toContain(`- ${observation}`);
+			expect(
+				report.match(
+					/## Human decisions\n\n([\s\S]*?)\n\n## Out-of-range observations/,
+				)?.[1],
+			).toContain(visible);
+		}
 	});
 
 	// @cosmo-behavior plan:qm-chain-safety#B-010

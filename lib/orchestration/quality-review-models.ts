@@ -109,10 +109,11 @@ export function calibrateReviewerFindings(options: {
 	const state = {
 		issues: [] as string[],
 		unsupported: new Set<string>(),
-		closed: new Set<string>(),
 		findings: [...options.findings],
 		reported: [...options.findings, ...(options.observations ?? [])],
+		observations: [...(options.observations ?? [])],
 		reviewerIds: new Set<string>(),
+		closureChecked: new Set<string>(),
 	};
 	for (const reviewer of options.reviewers) {
 		for (const section of reviewer.text.split(/(?=^\s*- id:\s*)/m))
@@ -135,7 +136,7 @@ export function calibrateReviewerFindings(options: {
 		issues: [...new Set(state.issues)],
 		openFindings: options.findings.some((entry) => {
 			const id = leadingFindingId(entry);
-			return !id || !state.closed.has(id);
+			return !id || !entryClosed(entry, id, options);
 		}),
 	};
 }
@@ -143,10 +144,11 @@ export function calibrateReviewerFindings(options: {
 interface CalibrationState {
 	issues: string[];
 	unsupported: Set<string>;
-	closed: Set<string>;
 	findings: string[];
 	reported: string[];
+	observations: string[];
 	reviewerIds: Set<string>;
+	closureChecked: Set<string>;
 }
 
 function calibrateSection(
@@ -161,10 +163,10 @@ function calibrateSection(
 	const id = section.match(/^\s*- id:\s*([^\s]+)/m)?.[1];
 	if (!id) return;
 	state.reviewerIds.add(id);
-	const reported = state.reported.find(
+	const reported = state.reported.filter(
 		(entry) => leadingFindingId(entry) === id,
 	);
-	if (!reported) {
+	if (reported.length === 0) {
 		state.findings.push(`${id} open: reviewer finding omitted from QM report.`);
 		state.issues.push(
 			`Finding ${id} was omitted from the QM report; carried forward as open.`,
@@ -176,27 +178,74 @@ function calibrateSection(
 		options.reviewers,
 		options.materials,
 	);
-	calibrateClosure(
+	const entriesToCheck = state.closureChecked.has(id)
+		? [undefined]
+		: reported.length
+			? reported
+			: [undefined];
+	for (const entry of entriesToCheck)
+		calibrateClosure(
+			state,
+			id,
+			section,
+			entry,
+			independentlySupported,
+			options.materials,
+		);
+	state.closureChecked.add(id);
+	recordOpenObservation(state, id, reported);
+	recordUnsupportedPerformance(
 		state,
 		id,
+		lens,
 		section,
 		reported,
-		independentlySupported,
 		options.materials,
 	);
+}
+
+function recordOpenObservation(
+	state: CalibrationState,
+	id: string,
+	reported: string[],
+): void {
+	if (
+		reported.some((entry) =>
+			/\b(?:resolved|dismissed|closed)\b/i.test(entry),
+		) &&
+		reported.some(
+			(entry) => !/\b(?:resolved|dismissed|closed)\b/i.test(entry),
+		) &&
+		state.observations.some((entry) => leadingFindingId(entry) === id)
+	)
+		state.issues.push(
+			`Finding ${id} has a separate open observation; human decision required.`,
+		);
+}
+
+function recordUnsupportedPerformance(
+	state: CalibrationState,
+	id: string,
+	lens: string,
+	section: string,
+	reported: string[],
+	materials: string,
+): void {
 	if (
 		lens === "performance-reviewer" &&
 		unsupportedHighPriority(
 			section,
-			options.materials,
-			Boolean(reported && /\bP[01]\b/.test(reported)),
+			materials,
+			reported.some((entry) => /\bP[01]\b/.test(entry)),
 		)
 	) {
 		state.unsupported.add(id);
 		state.issues.push(
-			state.findings.some((entry) => leadingFindingId(entry) === id)
-				? `Performance ${id} lacked measured or reproduced cost cited from captured materials; capped at P2.`
-				: `Finding ${id} has unsupported performance priority above P2; human decision required.`,
+			state.observations.some(
+				(entry) => leadingFindingId(entry) === id && /\bP[01]\b/.test(entry),
+			)
+				? `Finding ${id} has unsupported performance priority above P2 in observations; human decision required.`
+				: `Performance ${id} lacked measured or reproduced cost cited from captured materials; capped at P2.`,
 		);
 	}
 }
@@ -212,9 +261,7 @@ function calibrateClosure(
 	const dismissal =
 		reported && /\b(?:resolved|dismissed|closed)\b/i.test(reported);
 	if (dismissal) {
-		if (independentlySupported || citedReportClosure(reported, materials))
-			state.closed.add(id);
-		else {
+		if (!independentlySupported && !citedReportClosure(reported, materials)) {
 			state.issues.push(
 				`Finding ${id} was closed or dismissed without independent cited evidence.`,
 			);
@@ -233,7 +280,31 @@ function calibrateClosure(
 }
 
 function leadingFindingId(entry: string): string | undefined {
-	return entry.match(/^(?!TASK-)([A-Za-z]+-\d+)\b/)?.[1];
+	return entry.match(
+		/^(?:\[P[0-3]\]\s*)?(?:\*\*|`)?(?!(?:TASK|AC|D|INV|B)-)([A-Za-z]+-\d+)\b/,
+	)?.[1];
+}
+
+function entryClosed(
+	entry: string,
+	id: string,
+	options: {
+		materials: string;
+		reviewers: readonly { lens: string; text: string }[];
+	},
+): boolean {
+	if (!/\b(?:resolved|dismissed|closed)\b/i.test(entry)) return false;
+	if (citedReportClosure(entry, options.materials)) return true;
+	return options.reviewers.some(
+		(reviewer) =>
+			reviewer.text.includes(`- id: ${id}`) &&
+			independentlyClosed(
+				id,
+				reviewer.lens,
+				options.reviewers,
+				options.materials,
+			),
+	);
 }
 
 function citedReportClosure(line: string, materials: string): boolean {

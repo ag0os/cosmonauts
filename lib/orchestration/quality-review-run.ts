@@ -50,6 +50,7 @@ import {
 	applyReviewerCalibration,
 	assessQualityReviewReport,
 	hasQualityReviewSectionContent,
+	hasUnaccountedQualityReviewFindings,
 	indexedQualityReviewReport,
 	type QualityReviewVerdict,
 	qualityReviewFindingLines,
@@ -946,6 +947,7 @@ export async function runQualityReview(
 		function hostResultsBlockReady(openFindings: boolean): boolean {
 			return (
 				openFindings ||
+				hasUnaccountedQualityReviewFindings(markdown) ||
 				hasQualityReviewSectionContent(markdown, "Human decisions") ||
 				gateOwnedFiles.length > 0 ||
 				checkResults.some((check) => check.exitCode !== 0 || check.timedOut)

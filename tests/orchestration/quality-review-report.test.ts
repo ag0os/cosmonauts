@@ -112,4 +112,25 @@ describe("quality review reports", () => {
 		);
 		expect(amended).not.toContain("priority: P1");
 	});
+
+	it.each([
+		"$$",
+		"$&",
+		"$`",
+		"$'",
+	])("rewrites a capped entry with literal %s", (token) => {
+		const original = `PF-2 P1 costs ${token} per call`;
+		const markdown = renderQualityReviewReport({
+			verdict: "not-ready",
+			reason: "finding",
+			findings: [original],
+		}).replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, "");
+		const amended = applyReviewerCalibration(
+			markdown,
+			[`PF-2 P2 costs ${token} per call`],
+			["Performance PF-2 capped at P2."],
+		);
+		expect(amended).toContain(`- PF-2 P2 costs ${token} per call`);
+		expect(amended).not.toContain(`- ${original}`);
+	});
 });

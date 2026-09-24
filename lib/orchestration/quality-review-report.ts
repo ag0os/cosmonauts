@@ -56,7 +56,7 @@ export function applyReviewerCalibration(
 	).entries()) {
 		const replacement = findings[index];
 		if (replacement && replacement !== original)
-			amended = amended.replace(`- ${original}`, `- ${replacement}`);
+			amended = amended.replace(`- ${original}`, () => `- ${replacement}`);
 	}
 	return amended;
 }
@@ -199,6 +199,19 @@ export function hasQualityReviewSectionContent(
 /** Read visible finding bullets even when the optional machine index is absent. */
 export function qualityReviewFindingLines(markdown: string): string[] {
 	return qualityReviewSectionEntries(markdown, "Findings");
+}
+
+/** All visible Findings text must belong to a dash entry, with only indented continuations. */
+export function hasUnaccountedQualityReviewFindings(markdown: string): boolean {
+	const body = visibleSectionBody(markdown, "Findings");
+	if (!body || body === "- None recorded.") return false;
+	let inEntry = false;
+	for (const line of body.split("\n")) {
+		if (/^-\s+/.test(line)) inEntry = true;
+		else if (!line.trim()) inEntry = false;
+		else if (!inEntry || !/^\s+/.test(line)) return true;
+	}
+	return false;
 }
 
 export function qualityReviewObservationLines(markdown: string): string[] {
