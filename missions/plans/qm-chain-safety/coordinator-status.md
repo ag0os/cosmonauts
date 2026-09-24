@@ -21,7 +21,8 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
     - Claude L5 (test-only `execute` port): it has no production caller, so it gets another look at closure.
     - Claude L8 (`StepResult.childRun`): a generic runtime field used for D-016's inline-chain QM run id. Recorded here, and re-checked at closure under R-014.
   - TASK-726 and TASK-728 now depend on TASK-729..732.
-- **Running:** Drive remediation batch TASK-732 → 729 → 730 → 731, then a re-review of the remediation (independent Claude + codex) before TASK-726.
+- **Done:** Drive remediation `run-00e07810-…`: TASK-732 `8a3351a`, TASK-729 `c6b3d96`, TASK-730 `48435d8`, TASK-731 `38f579e`, state `a203b54`. Gates: typecheck 0, lint 0, tests 3198/3198, `check:suppressions --base main` passes.
+- **Running:** mid-branch review 2 (re-review of the remediation): Claude + codex.
 - **Blocked on:** N-001 (below) blocks closure only, not the next stages.
 
 ### Spec-to-backlog history
