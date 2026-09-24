@@ -2540,6 +2540,26 @@ describe("quality review durable lifecycle", () => {
 			(report: string) => `${report}F-9 crash\n`,
 			"F-9 crash",
 		],
+		[
+			"same-line index suffix",
+			(report: string) =>
+				report.replace(
+					/(<!-- COSMO_QM_REPORT [^\n]* -->)\n$/,
+					"$1 F-9 crash\n",
+				),
+			"--> F-9 crash",
+		],
+		[
+			"index trailing whitespace",
+			(report: string) =>
+				report.replace(/(<!-- COSMO_QM_REPORT [^\n]* -->)\n$/, "$1 \t\n"),
+			"--> \t\n",
+		],
+		[
+			"unclosed index marker",
+			(report: string) => report.replace(/ -->\n$/, "\n"),
+			"<!-- COSMO_QM_REPORT",
+		],
 	] as const)("preserves %s and blocks ready with host checks", async (_name, change, evidence) => {
 		const projectRoot = await root(true);
 		await configureCleanHostReview(projectRoot);

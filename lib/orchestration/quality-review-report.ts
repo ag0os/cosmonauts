@@ -46,7 +46,7 @@ function nextSectionStart(markdown: string, start: number): number {
 }
 
 function indexMarkerStart(markdown: string, start = 0): number {
-	const marker = /^<!-- COSMO_QM_REPORT [^\n]* -->$/gm;
+	const marker = /^<!-- COSMO_QM_REPORT/gm;
 	marker.lastIndex = start;
 	return marker.exec(markdown)?.index ?? markdown.length;
 }
@@ -298,6 +298,12 @@ export function qualityReviewFindingLines(markdown: string): string[] {
 export function hasUnexpectedQualityReviewSectionContent(
 	markdown: string,
 ): boolean {
+	if (
+		(markdown.match(/^<!-- COSMO_QM_REPORT[^\n]*/gm) ?? []).some(
+			(line) => !/^<!-- COSMO_QM_REPORT [^\n]* -->$/.test(line),
+		)
+	)
+		return true;
 	const seen = new Set<string>();
 	for (const line of headingLines(markdown)) {
 		const heading = line.title;

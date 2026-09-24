@@ -28,6 +28,24 @@ describe("quality review reports", () => {
 	});
 
 	it.each([
+		" --> F-9 crash",
+		" --> \t",
+		"",
+	])("preserves malformed index lines during calibration (%s)", (ending) => {
+		const clean = renderQualityReviewReport({
+			verdict: "ready",
+			reason: "clear",
+		});
+		const marker = `<!-- COSMO_QM_REPORT {}${ending}`;
+		const markdown = clean.replace(/^<!-- COSMO_QM_REPORT[^\n]*/m, marker);
+		expect(hasUnexpectedQualityReviewSectionContent(markdown)).toBe(true);
+		expect(assessQualityReviewReport(markdown).indexAvailable).toBe(false);
+		expect(
+			applyReviewerCalibration(markdown, [], ["Calibration issue"]),
+		).toContain(marker);
+	});
+
+	it.each([
 		true,
 		false,
 	])("inserts preamble without headings (index: %s)", (indexed) => {
