@@ -1,8 +1,15 @@
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
 	checkSuppressions,
+	type SuppressionKey,
 	scanSuppressions,
 } from "../../lib/quality/suppression-policy.ts";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("suppression policy", () => {
 	// @cosmo-behavior plan:qm-chain-safety#B-008
@@ -114,5 +121,52 @@ describe("suppression policy", () => {
 		);
 		expect(current).toHaveLength(1);
 		expect(current[0]?.family).toBe("fallow-ignore");
+	});
+
+	test("finds directives after template substitutions", () => {
+		const current = scanSuppressions(
+			"lib/a.ts",
+			`const a = \`x\${y}z\`;\n// @ts-ignore\nunsafe();\n`,
+		);
+		expect(current.map(({ family, line }) => ({ family, line }))).toEqual([
+			{ family: "@ts-ignore", line: 2 },
+		]);
+	});
+
+	test("finds directives after a regex literal containing slashes", () => {
+		const current = scanSuppressions(
+			"lib/a.ts",
+			"const url = /https?:\\/\\/example/;\n// @ts-ignore\nunsafe();\n",
+		);
+		expect(current.map(({ family, line }) => ({ family, line }))).toEqual([
+			{ family: "@ts-ignore", line: 2 },
+		]);
+	});
+
+	test("tracked source directives exactly match the exception registry", () => {
+		const paths = execFileSync("git", ["ls-files", "--cached", "-z"], {
+			cwd: root,
+			encoding: "utf8",
+		})
+			.split("\0")
+			.filter((path) => /\.[cm]?[jt]sx?$/.test(path));
+		const registry = JSON.parse(
+			readFileSync(
+				join(root, ".cosmonauts/suppression-exceptions.json"),
+				"utf8",
+			),
+		) as { entries: SuppressionKey[]; equivalents?: Record<string, string> };
+		const recognized = paths.flatMap((path) =>
+			scanSuppressions(
+				path,
+				readFileSync(join(root, path), "utf8"),
+				registry.equivalents,
+			),
+		);
+		const key = ({ family, path, directive, target }: SuppressionKey) =>
+			JSON.stringify([family, path, directive, target]);
+		expect(recognized.map(key).sort()).toEqual(
+			registry.entries.map(key).sort(),
+		);
 	});
 });
