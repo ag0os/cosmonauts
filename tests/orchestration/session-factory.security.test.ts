@@ -1,5 +1,12 @@
 import { writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -106,6 +113,74 @@ const TEST_AGENT: AgentDefinition = {
 };
 
 describe("session-factory planSlug validation", () => {
+	test("uses base project config and context files while the session cwd is the clone", async () => {
+		const root = await mkdtemp(join(tmpdir(), "qm-base-session-"));
+		const baseProjectRoot = join(root, "base");
+		const workspaceRoot = join(root, "checkout");
+		const hostRunStoreRoot = join(root, "store");
+		try {
+			await mkdir(join(baseProjectRoot, ".cosmonauts"), { recursive: true });
+			await mkdir(join(workspaceRoot, ".cosmonauts"), { recursive: true });
+			await writeFile(
+				join(baseProjectRoot, ".cosmonauts", "config.json"),
+				JSON.stringify({ skills: ["base"] }),
+			);
+			await writeFile(
+				join(workspaceRoot, ".cosmonauts", "config.json"),
+				JSON.stringify({ skills: ["changed"] }),
+			);
+			await writeFile(join(baseProjectRoot, "AGENTS.md"), "base instructions");
+			await writeFile(join(workspaceRoot, "AGENTS.md"), "changed instructions");
+			mocks.buildSessionParams.mockResolvedValue({
+				promptContent: "panel",
+				tools: ["read"],
+				extensionPaths: [],
+				extensionFactories: [],
+				knowledgeSurfaceEnabled: false,
+				projectContext: true,
+				model: { provider: "test", id: "model" },
+				qualityReviewProfile: "reviewer",
+			});
+			await createAgentSessionFromDefinition(
+				TEST_AGENT,
+				{
+					role: "coding/reviewer",
+					cwd: workspaceRoot,
+					prompt: "review",
+					qualityReviewChild: true,
+					qualityReviewContext: {
+						runId: "one",
+						workspaceRoot,
+						baseProjectRoot,
+						materialsRoot: join(root, "materials"),
+						base: "a".repeat(40),
+						changedFiles: [],
+						hostRunStoreRoot,
+						artifactSink: {} as never,
+						activeSpawns: new Set(),
+						allowedLenses: new Set(["reviewer"]),
+						attemptedLenses: new Set(),
+						integrityFailures: [],
+					},
+				},
+				"/tmp/domains",
+			);
+			const assembly = mocks.buildSessionParams.mock.calls.at(-1)?.[0];
+			expect((await assembly.loadConfig(workspaceRoot)).skills).toEqual([
+				"base",
+			]);
+			const loader = mocks.loaderOptions.mock.calls.at(-1)?.[0];
+			expect(loader.cwd).toBe(workspaceRoot);
+			expect(loader.agentsFilesOverride().agentsFiles).toEqual([
+				{
+					path: join(baseProjectRoot, "AGENTS.md"),
+					content: "base instructions",
+				},
+			]);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
 	test("replaces the QM project-tools path with its run-local authorization factory", async () => {
 		const hostRunStoreRoot = await mkdtemp(
 			join(tmpdir(), "qm-session-consent-"),

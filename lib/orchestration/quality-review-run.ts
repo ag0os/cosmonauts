@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
 	chmod,
@@ -12,7 +12,7 @@ import {
 	rm,
 	writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -224,8 +224,12 @@ export async function runQualityReview(
 		let changedFiles: readonly string[] = [];
 		let capturedBase: string | undefined;
 		let baseQualityReview: ProjectConfig["qualityReview"];
+		let materialDigests: ReadonlyMap<string, string> | undefined;
 		const safeOperatorNote = await redactOperatorNote(options.operatorNote, [
 			options.projectRoot,
+			store instanceof FileRunStore
+				? store.rootDir
+				: resolve(run.runDir, "..", "..", ".."),
 			run.runDir,
 		]);
 		let gateOwnedFiles: string[] = [];
@@ -266,6 +270,7 @@ export async function runQualityReview(
 					materialsRoot = snapshot.materialsRoot;
 					capturedBase = snapshot.base;
 					changedFiles = snapshot.changedFiles;
+					materialDigests = await digestReviewMaterials(materialsRoot);
 					baseQualityReview = await loadBaseQualityReviewConfig(
 						workspaceRoot,
 						capturedBase,
@@ -338,8 +343,26 @@ export async function runQualityReview(
 							`${preparationReport}\n${renderQualityReviewChecks(checkResults)}`,
 						);
 						await chmod(checksCopy, 0o400);
+						materialDigests = new Map(materialDigests).set(
+							"checks.md",
+							createHash("sha256")
+								.update(await readFile(checksCopy))
+								.digest("hex"),
+						);
 					}
-					gateOwnedFiles = changedFiles.filter(isGateOwnedFile);
+					gateOwnedFiles = changedFiles.filter((path) =>
+						isGateOwnedFile(path, baseQualityReview),
+					);
+					if (
+						changedFiles.includes("package.json") &&
+						capturedBase &&
+						(await configuredPackageScriptsChanged(
+							workspaceRoot,
+							capturedBase,
+							baseQualityReview,
+						))
+					)
+						gateOwnedFiles.push("package.json");
 					if (
 						changedFiles.includes(".cosmonauts/config.json") &&
 						workspaceRoot &&
@@ -358,6 +381,8 @@ export async function runQualityReview(
 			} else {
 				if (!options.execute)
 					throw new Error("Quality review assessment is not attached.");
+				if (materialsRoot && materialDigests)
+					await verifyReviewMaterials(materialsRoot, materialDigests);
 				await phase("assessing", {
 					disposition: workspaceRoot ? "active" : "none",
 					...(workspaceRoot ? { workspace: workspaceRoot } : {}),
@@ -694,7 +719,7 @@ export async function runQualityReview(
 		);
 		if (abandonedLenses.length > 0) {
 			verdict = "failed";
-			reason = `Report integrity: reviewer writes abandoned after sealing grace: ${abandonedLenses.join(", ")}`;
+			reason = `${reason}; Report integrity: reviewer writes abandoned after sealing grace: ${abandonedLenses.join(", ")}`;
 			const completed = indexedQualityReviewReport(markdown);
 			markdown = completed
 				? renderQualityReviewReport({ ...completed, verdict, reason })
@@ -781,6 +806,7 @@ export async function runQualityReview(
 							timer = setTimeout(
 								() => reject(new Error("removal-timed-out")),
 								options.workspaceRemovalTimeoutMs ??
+									baseQualityReview?.workspaceRemovalTimeoutMs ??
 									DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS,
 							);
 						}),
@@ -796,7 +822,7 @@ export async function runQualityReview(
 				}
 				await appendLifecycle({
 					at: new Date().toISOString(),
-					kind: "workspace-disposition",
+					kind: "artifact-disposition",
 					previousPhase,
 					disposition,
 					workspace: reservedRoot,
@@ -939,8 +965,15 @@ async function redactOperatorNote(
 		roots.add(await realpath(path).catch(() => resolve(path)));
 	}
 	let redacted = note;
-	for (const root of [...roots].sort((a, b) => b.length - a.length))
+	for (const root of [...roots].sort((a, b) => b.length - a.length)) {
 		redacted = redacted.replaceAll(root, "[private path]");
+		const home = homedir();
+		if (root.startsWith(`${home}/`))
+			redacted = redacted.replaceAll(
+				`~/${root.slice(home.length + 1)}`,
+				"[private path]",
+			);
+	}
 	return redacted;
 }
 
@@ -969,14 +1002,94 @@ function loadBaseQualityReviewConfig(
 	return block === undefined ? undefined : parseQualityReviewConfig(block);
 }
 
-function isGateOwnedFile(path: string): boolean {
+function isGateOwnedFile(
+	path: string,
+	config: ProjectConfig["qualityReview"],
+): boolean {
 	return (
+		(config?.gateOwnedPaths ?? []).includes(path) ||
 		path === ".cosmonauts/suppression-exceptions.json" ||
 		path === "scripts/check-new-suppressions.ts" ||
 		path === "lib/quality/suppression-policy.ts" ||
 		path === "domains/shared/extensions/project-tools/fallow-provider.ts" ||
 		path.startsWith(".fallow-baselines/")
 	);
+}
+
+async function configuredPackageScriptsChanged(
+	workspaceRoot: string,
+	base: string,
+	config: ProjectConfig["qualityReview"],
+): Promise<boolean> {
+	const names = new Set<string>();
+	for (const step of [...(config?.prepare ?? []), ...(config?.checks ?? [])]) {
+		if (!/(?:^|\/)bun$/.test(step.command)) continue;
+		const index = step.args.indexOf("run");
+		const name = step.args[index + 1];
+		if (index >= 0 && name) names.add(name);
+	}
+	if (names.size === 0) return false;
+	try {
+		const before = JSON.parse(
+			execFileSync("git", ["show", `${base}:package.json`], {
+				cwd: workspaceRoot,
+				encoding: "utf8",
+			}),
+		) as { scripts?: Record<string, unknown> };
+		const after = JSON.parse(
+			await readFile(join(workspaceRoot, "package.json"), "utf8"),
+		) as { scripts?: Record<string, unknown> };
+		return [...names].some(
+			(name) => before.scripts?.[name] !== after.scripts?.[name],
+		);
+	} catch {
+		return true;
+	}
+}
+
+async function digestReviewMaterials(
+	root: string,
+): Promise<ReadonlyMap<string, string>> {
+	const digests = new Map<string, string>();
+	const visit = async (directory: string): Promise<void> => {
+		for (const entry of await (await import("node:fs/promises")).readdir(
+			directory,
+			{ withFileTypes: true },
+		)) {
+			const path = join(directory, entry.name);
+			if (entry.isDirectory()) await visit(path);
+			else if (entry.isFile())
+				digests.set(
+					relative(root, path),
+					createHash("sha256")
+						.update(await readFile(path))
+						.digest("hex"),
+				);
+			else
+				throw new Error(
+					`Report integrity: invalid materials file ${relative(root, path)}`,
+				);
+		}
+	};
+	await visit(root);
+	return digests;
+}
+
+async function verifyReviewMaterials(
+	root: string,
+	expected: ReadonlyMap<string, string>,
+): Promise<void> {
+	const actual = await digestReviewMaterials(root);
+	for (const [file, digest] of expected)
+		if (actual.get(file) !== digest)
+			throw new Error(
+				`Report integrity: materials/${file} changed before assessment`,
+			);
+	for (const file of actual.keys())
+		if (!expected.has(file))
+			throw new Error(
+				`Report integrity: materials/${file} appeared before assessment`,
+			);
 }
 
 async function qualityReviewConfigChanged(

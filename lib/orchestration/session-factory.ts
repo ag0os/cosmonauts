@@ -4,7 +4,7 @@
  * extension loading, skill overrides, and compaction configuration.
  */
 
-import { mkdir, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	type AgentSession,
@@ -20,6 +20,7 @@ import {
 import { createProjectToolsExtension } from "../../domains/shared/extensions/project-tools/index.ts";
 import { buildSessionParams } from "../agents/session-assembly.ts";
 import type { AgentDefinition } from "../agents/types.ts";
+import { loadProjectConfig } from "../config/loader.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { sessionsDirForPlan } from "../sessions/session-store.ts";
@@ -108,6 +109,14 @@ export async function createAgentSessionFromDefinition(
 		modelRegistry,
 		thinkingLevelOverride: config.thinkingLevel,
 		qualityReviewChild: config.qualityReviewChild,
+		...(config.qualityReviewContext?.baseProjectRoot
+			? {
+					loadConfig: () =>
+						loadProjectConfig(
+							config.qualityReviewContext?.baseProjectRoot ?? "",
+						),
+				}
+			: {}),
 	});
 
 	// Build resource loader with all definition fields.
@@ -118,6 +127,27 @@ export async function createAgentSessionFromDefinition(
 		"project-tools",
 	);
 	const qualityAnalysis = config.qualityReviewContext?.analysisConsent;
+	const baseProjectRoot = config.qualityReviewContext?.baseProjectRoot;
+	const baseAgentsFiles =
+		baseProjectRoot && params.projectContext
+			? (
+					await Promise.all(
+						["AGENTS.md", "CLAUDE.md"].map(async (name) => {
+							const path = join(baseProjectRoot, name);
+							const content = await readFile(path, "utf8").catch(
+								(error: NodeJS.ErrnoException) => {
+									if (error.code === "ENOENT") return undefined;
+									throw error;
+								},
+							);
+							return content === undefined ? undefined : { path, content };
+						}),
+					)
+				).filter(
+					(file): file is { path: string; content: string } =>
+						file !== undefined,
+				)
+			: [];
 	const extensionPaths = qualityAnalysis
 		? params.extensionPaths.filter((path) => path !== projectToolsPath)
 		: params.extensionPaths;
@@ -148,8 +178,8 @@ export async function createAgentSessionFromDefinition(
 		...(params.additionalSkillPaths && {
 			additionalSkillPaths: params.additionalSkillPaths,
 		}),
-		...(!params.projectContext && {
-			agentsFilesOverride: () => ({ agentsFiles: [] }),
+		...((!params.projectContext || baseProjectRoot) && {
+			agentsFilesOverride: () => ({ agentsFiles: baseAgentsFiles }),
 		}),
 	});
 	await loader.reload();

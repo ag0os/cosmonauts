@@ -6,6 +6,7 @@ export interface QualityReviewSessionContext {
 	readonly runId: string;
 	readonly analysisConsent?: SnapshotAnalysisAuthorization;
 	readonly workspaceRoot: string;
+	readonly baseProjectRoot?: string;
 	readonly sourceRoot?: string;
 	readonly materialsRoot: string;
 	readonly base: string;

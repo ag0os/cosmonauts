@@ -22,6 +22,12 @@
 		"web-search"
 	],
 	"qualityReview": {
+		"gateOwnedPaths": [
+			"package.json",
+			"bun.lock",
+			"scripts/vitest-runner.mjs",
+			"vitest.config.ts"
+		],
 		"diverseReviewerModel": "anthropic/claude-sonnet-4-5",
 		"prepare": [
 			{

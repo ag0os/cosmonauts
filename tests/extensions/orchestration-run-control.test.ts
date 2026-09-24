@@ -44,6 +44,27 @@ describe("orchestration run control tools", () => {
 		).toContain("/artifacts/qm/final.md");
 		expect(status.content[0]?.text).toContain("report ");
 		expect(status.content[0]?.text).toContain("/artifacts/qm/final.md");
+		const store = new FileRunStore({
+			rootDir: join(temp.path, "missions", "sessions"),
+		});
+		await store.appendEvent(review.ref, {
+			type: "run_activity",
+			runId: review.ref.runId,
+			details: {
+				kind: "artifact-disposition",
+				disposition: "removal-timed-out",
+				reason: "removal-timed-out",
+				workspace: "/tmp/review-workspace",
+			},
+		});
+		const withDisposition = (await pi.callTool(
+			"run_status",
+			review.ref,
+		)) as ToolResult<RunStatusSummary>;
+		expect(withDisposition.content[0]?.text).toContain(
+			"disposition removal-timed-out",
+		);
+		expect(withDisposition.content[0]?.text).toContain("/tmp/review-workspace");
 	});
 	test("registers only read-only normalized run observation tools", async () => {
 		const rootDir = join(temp.path, "missions", "sessions");

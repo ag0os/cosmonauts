@@ -66,7 +66,7 @@ export async function runStatus(
 			typeof details === "object" &&
 			details !== null &&
 			"kind" in details &&
-			details.kind === "workspace-disposition"
+			details.kind === "artifact-disposition"
 		);
 	});
 	if (disposition?.event.type === "run_activity") {

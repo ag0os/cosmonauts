@@ -201,6 +201,7 @@ export function parseQualityReviewConfig(
 		"assessmentTimeoutMs",
 		"panelTimeoutMs",
 		"qmSettleGraceMs",
+		"workspaceRemovalTimeoutMs",
 	] as const)
 		if (
 			raw[key] !== undefined &&
@@ -252,7 +253,24 @@ export function parseQualityReviewConfig(
 		throw new Error("Invalid qualityReview.diverseReviewerModel");
 	const prepare = parseCommands("prepare");
 	const checks = parseCommands("checks");
+	if (
+		raw.gateOwnedPaths !== undefined &&
+		(!Array.isArray(raw.gateOwnedPaths) ||
+			!raw.gateOwnedPaths.every(
+				(path) =>
+					typeof path === "string" &&
+					path.length > 0 &&
+					!path.startsWith("/") &&
+					!path
+						.split("/")
+						.some((part) => !part || part === "." || part === ".."),
+			))
+	)
+		throw new Error("Invalid qualityReview.gateOwnedPaths");
 	return {
+		...(raw.gateOwnedPaths !== undefined
+			? { gateOwnedPaths: raw.gateOwnedPaths as string[] }
+			: {}),
 		...(raw.assessmentTimeoutMs !== undefined
 			? { assessmentTimeoutMs: raw.assessmentTimeoutMs as number }
 			: {}),
@@ -261,6 +279,9 @@ export function parseQualityReviewConfig(
 			: {}),
 		...(raw.qmSettleGraceMs !== undefined
 			? { qmSettleGraceMs: raw.qmSettleGraceMs as number }
+			: {}),
+		...(raw.workspaceRemovalTimeoutMs !== undefined
+			? { workspaceRemovalTimeoutMs: raw.workspaceRemovalTimeoutMs as number }
 			: {}),
 		...(prepare !== undefined ? { prepare } : {}),
 		...(checks !== undefined ? { checks } : {}),

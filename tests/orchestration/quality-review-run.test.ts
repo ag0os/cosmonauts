@@ -12,7 +12,7 @@ import {
 	utimes,
 	writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -26,16 +26,49 @@ import {
 	indexedQualityReviewReport,
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
+import { runQualityReview } from "../../lib/orchestration/quality-review-run.ts";
 import {
-	DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS,
-	runQualityReview,
-} from "../../lib/orchestration/quality-review-run.ts";
-import { removePrivateReviewWorkspace } from "../../lib/orchestration/quality-review-workspace.ts";
+	createPrivateReviewWorkspace,
+	materializeBaseReviewProject,
+	removePrivateReviewWorkspace,
+} from "../../lib/orchestration/quality-review-workspace.ts";
 import type { SpawnEvent } from "../../lib/orchestration/types.ts";
+import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
+import { CosmonautsRuntime } from "../../lib/runtime.ts";
 
 describe("quality review durable lifecycle", () => {
-	it("allows at least a minute for default workspace removal", () => {
-		expect(DEFAULT_WORKSPACE_REMOVAL_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
+	it("uses the configured workspace removal timeout on a stalled remover", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ qualityReview: { workspaceRemovalTimeoutMs: 25 } }),
+		);
+		await commitBaseConfig(projectRoot);
+		const started = Date.now();
+		let retainedRoot = "";
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async () => ({
+				markdown: renderQualityReviewReport({
+					verdict: "not-ready",
+					reason: "review",
+				}),
+			}),
+			removeWorkspace: async (path) => {
+				retainedRoot = path;
+				await new Promise(() => {});
+			},
+		});
+		expect(Date.now() - started).toBeLessThan(2000);
+		const store = new FileRunStore({
+			rootDir: join(projectRoot, "missions", "sessions"),
+		});
+		expect(
+			(await runStatus(store, result.ref))?.postTerminalDisposition
+				?.disposition,
+		).toBe("removal-timed-out");
+		await removePrivateReviewWorkspace(retainedRoot);
 	});
 	const roots: string[] = [];
 	afterEach(async () => {
@@ -797,7 +830,7 @@ describe("quality review durable lifecycle", () => {
 			lifecycle.filter((event) => event.phase === "finalized"),
 		).toHaveLength(1);
 		expect(lifecycle.at(-1)).toMatchObject({
-			kind: "workspace-disposition",
+			kind: "artifact-disposition",
 			disposition: "removal-timed-out",
 		});
 		if (removedRoot) await removePrivateReviewWorkspace(removedRoot);
@@ -2735,4 +2768,360 @@ describe("quality review durable lifecycle", () => {
 			if (reservedRoot) await removePrivateReviewWorkspace(reservedRoot);
 		}
 	}, 25_000);
+
+	it("makes a changed configured package script a human decision item", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, "package.json"),
+			JSON.stringify({ scripts: { test: "node -e \"console.log('base')\"" } }),
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "test/other",
+					checks: [{ id: "test", command: "bun", args: ["run", "test"] }],
+				},
+			}),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", "package.json", ".cosmonauts/config.json"], {
+			cwd: projectRoot,
+		});
+		execFileSync("git", ["commit", "-qm", "base scripts"], {
+			cwd: projectRoot,
+		});
+		await writeFile(
+			join(projectRoot, "package.json"),
+			JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				gateState: "completed-bound",
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					gates: ["audit passed"],
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain(
+			"Gate-owned file changed: package.json; human decision required.",
+		);
+	});
+
+	it("uses the base gateOwnedPaths when the reviewed change edits a runner", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await mkdir(join(projectRoot, "scripts"));
+		await writeFile(
+			join(projectRoot, "scripts", "runner.mjs"),
+			"console.log('base');\n",
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					gateOwnedPaths: ["scripts/runner.mjs"],
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+					diverseReviewerModel: "test/other",
+				},
+			}),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync(
+			"git",
+			["add", "scripts/runner.mjs", ".cosmonauts/config.json"],
+			{ cwd: projectRoot },
+		);
+		execFileSync("git", ["commit", "-qm", "base gate paths"], {
+			cwd: projectRoot,
+		});
+		await writeFile(
+			join(projectRoot, "scripts", "runner.mjs"),
+			"console.log('changed');\n",
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					gateOwnedPaths: [],
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
+					diverseReviewerModel: "test/other",
+				},
+			}),
+		);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => ({
+				gateState: "completed-bound",
+				markdown: renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					gates: ["audit passed"],
+				}),
+			}),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain(
+			"Gate-owned file changed: scripts/runner.mjs; human decision required.",
+		);
+	});
+
+	it("fails report integrity when a configured check rewrites full.diff", async () => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					checks: [
+						{
+							id: "rewrite",
+							command: process.execPath,
+							args: [
+								"-e",
+								"const fs = require('node:fs'); fs.chmodSync('../materials/full.diff', 0o600); fs.writeFileSync('../materials/full.diff', 'hidden')",
+							],
+						},
+					],
+				},
+			}),
+		);
+		await commitBaseConfig(projectRoot);
+		await writeFile(
+			join(projectRoot, "changed.ts"),
+			"export const changed = true;\n",
+		);
+		let assessed = false;
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => {
+				assessed = true;
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+					}),
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(assessed).toBe(false);
+		expect(report).toContain(
+			"Report integrity: materials/full.diff changed before assessment",
+		);
+	});
+
+	it("redacts tilde paths for a source and an external store root", async () => {
+		const source = await mkdtemp(join(homedir(), "qm-source-"));
+		const storeRoot = await mkdtemp(join(homedir(), "qm-store-"));
+		roots.push(source, storeRoot);
+		const { execFileSync } = await import("node:child_process");
+		for (const args of [
+			["init", "-q"],
+			["config", "user.email", "test@example.com"],
+			["config", "user.name", "Test"],
+		])
+			execFileSync("git", args, { cwd: source });
+		await writeFile(join(source, ".gitignore"), "missions/sessions/\n");
+		execFileSync("git", ["add", ".gitignore"], { cwd: source });
+		execFileSync("git", ["commit", "-qm", "base"], { cwd: source });
+		const note = `Review ~/${source.slice(homedir().length + 1)}/file and ~/${storeRoot.slice(homedir().length + 1)}/chain`;
+		let received = "";
+		await runQualityReview({
+			projectRoot: source,
+			store: new FileRunStore({ rootDir: storeRoot }),
+			operatorNote: note,
+			execute: async ({ operatorNote }) => {
+				received = operatorNote ?? "";
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "not-ready",
+						reason: "review",
+					}),
+				};
+			},
+		});
+		expect(received).not.toContain(`~/${source.slice(homedir().length + 1)}`);
+		expect(received).not.toContain(
+			`~/${storeRoot.slice(homedir().length + 1)}`,
+		);
+		expect(received).toContain("[private path]");
+	});
+
+	it("retains the deadline reason when a reviewer write is abandoned", async () => {
+		const projectRoot = await root(true);
+		const store = new FileRunStore({
+			rootDir: join(projectRoot, "missions", "sessions"),
+		});
+		let retainedRoot = "";
+		const result = await runQualityReview({
+			projectRoot,
+			store,
+			assessmentTimeoutMs: 40,
+			qmSettleGraceMs: 10,
+			reviewerSealGraceMs: 20,
+			execute: async ({ artifactSink, runId, workspaceRoot }) => {
+				if (workspaceRoot) retainedRoot = resolve(workspaceRoot, "..");
+				vi.spyOn(store, "loadRun").mockImplementationOnce(
+					() => new Promise(() => {}),
+				);
+				void artifactSink
+					.writeReviewer({
+						runId,
+						lens: "reviewer",
+						spawnId: "s",
+						sessionId: "s",
+						resolvedRole: "coding/reviewer",
+						resolvedModel: { provider: "test", id: "model" },
+						outcome: "success",
+						fullText: "review",
+						digest: createHash("sha256").update("review").digest("hex"),
+					})
+					.catch(() => {});
+				await new Promise(() => {});
+				return { markdown: "" };
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("QM assessment deadline exceeded");
+		expect(report).toContain(
+			"reviewer writes abandoned after sealing grace: reviewer",
+		);
+		await removePrivateReviewWorkspace(retainedRoot);
+	});
+
+	it("loads base project domains without importing reviewed domains", async () => {
+		const projectRoot = await root(true);
+		const securityDir = join(projectRoot, ".cosmonauts", "domains", "coding");
+		await mkdir(join(securityDir, "agents"), { recursive: true });
+		await writeFile(
+			join(securityDir, "domain.ts"),
+			"export const manifest = { id: 'coding', description: 'base coding' };\n",
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ skills: ["base-skill"] }),
+		);
+		const definition = (description: string) =>
+			`export default ${JSON.stringify({ id: "security-reviewer", description, capabilities: [], model: "test/model", tools: "none", extensions: [], skills: [], projectContext: false, session: "ephemeral", loop: false })};\n`;
+		await writeFile(
+			join(securityDir, "agents", "security-reviewer.ts"),
+			definition("BASE-OWNED"),
+		);
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", ".cosmonauts"], { cwd: projectRoot });
+		execFileSync("git", ["commit", "-qm", "base domain"], { cwd: projectRoot });
+		await writeFile(
+			join(securityDir, "agents", "security-reviewer.ts"),
+			definition("CHANGE-CHOSEN"),
+		);
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ skills: ["change-skill"] }),
+		);
+		const evilDir = join(projectRoot, ".cosmonauts", "domains", "evil");
+		await mkdir(evilDir, { recursive: true });
+		const marker = join(projectRoot, "evil-import-marker");
+		await writeFile(
+			join(evilDir, "domain.ts"),
+			`import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'imported'); export const manifest = { id: 'evil', description: 'evil' };\n`,
+		);
+		const reserved = await mkdtemp(join(tmpdir(), "qm-base-runtime-"));
+		const snapshot = await createPrivateReviewWorkspace(projectRoot, reserved);
+		const baseProject = await materializeBaseReviewProject(
+			snapshot.workspaceRoot,
+			snapshot.base,
+		);
+		const frameworkRoot = resolve(
+			fileURLToPath(import.meta.url),
+			"..",
+			"..",
+			"..",
+		);
+		const runtime = await CosmonautsRuntime.create({
+			builtinDomainsDir: join(frameworkRoot, "domains"),
+			projectRoot: baseProject,
+			bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
+		});
+		expect(
+			runtime.agentRegistry.resolve("coding/security-reviewer")?.description,
+		).toBe("BASE-OWNED");
+		expect(runtime.projectConfig.skills).toEqual(["base-skill"]);
+		await expect(stat(marker)).rejects.toMatchObject({ code: "ENOENT" });
+		await removePrivateReviewWorkspace(reserved);
+	});
 });

@@ -13,6 +13,7 @@ import {
 	type QualityReviewRunOptions,
 	runQualityReview,
 } from "./quality-review-run.ts";
+import { materializeBaseReviewProject } from "./quality-review-workspace.ts";
 import { derivePlanSlug } from "./stage-prompts.ts";
 import type { ChainStep, SpawnEvent } from "./types.ts";
 
@@ -244,6 +245,10 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 		execute: async (context) => {
 			if (!context.workspaceRoot || !context.materialsRoot || !context.base)
 				throw new Error("Quality review snapshot is incomplete");
+			const baseProjectRoot = await materializeBaseReviewProject(
+				context.workspaceRoot,
+				context.base,
+			);
 			const frameworkRoot = resolve(
 				fileURLToPath(import.meta.url),
 				"..",
@@ -252,7 +257,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 			);
 			const runtime = await CosmonautsRuntime.create({
 				builtinDomainsDir: join(frameworkRoot, "domains"),
-				projectRoot: context.workspaceRoot,
+				projectRoot: baseProjectRoot,
 				bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
 			});
 			const lenses = triageReviewLenses(
@@ -263,6 +268,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				runId: context.runId,
 				analysisConsent: context.analysisConsent,
 				workspaceRoot: context.workspaceRoot,
+				baseProjectRoot,
 				sourceRoot: context.sourceRoot,
 				materialsRoot: context.materialsRoot,
 				base: context.base,

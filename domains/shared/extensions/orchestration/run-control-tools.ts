@@ -118,7 +118,8 @@ function renderStatusText(
 	const finalReport = summary.artifacts?.find(
 		(artifact) => artifact.id === "qm/final.md",
 	);
-	return `${summary.scope}/${summary.runId}: ${summary.status}${source}${diagnostics}${finalReport ? `; report ${finalReport.path}` : ""}`;
+	const disposition = summary.postTerminalDisposition;
+	return `${summary.scope}/${summary.runId}: ${summary.status}${source}${diagnostics}${finalReport ? `; report ${finalReport.path}` : ""}${disposition ? `; disposition ${disposition.disposition}${disposition.reason ? ` (${disposition.reason})` : ""}${disposition.workspace ? ` at ${disposition.workspace}` : ""}` : ""}`;
 }
 
 function renderWatchText(summary: RunWatchSummary): string {

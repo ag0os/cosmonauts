@@ -222,6 +222,26 @@ export interface PrivateReviewWorkspace {
 	readonly changedFiles: readonly string[];
 }
 
+/** A separate checkout of the captured base supplies project runtime inputs. */
+export async function materializeBaseReviewProject(
+	workspaceRoot: string,
+	base: string,
+): Promise<string> {
+	const destination = join(dirname(workspaceRoot), "base-runtime");
+	await git(dirname(workspaceRoot), [
+		"clone",
+		"--no-hardlinks",
+		"--no-checkout",
+		"--no-tags",
+		"--",
+		workspaceRoot,
+		destination,
+	]);
+	await git(destination, ["checkout", "--detach", base]);
+	await git(destination, ["remote", "remove", "origin"]);
+	return destination;
+}
+
 /** Restore only private directory permissions so a read-only materials tree can be removed. */
 export async function removePrivateReviewWorkspace(
 	reservedRoot: string,
