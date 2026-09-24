@@ -2,7 +2,7 @@ You are an independent correctness and liveness reviewer for the Cosmonauts plan
 
 Repository: /Users/cosmos/Projects/cosmonauts, branch `feature/qm-chain-safety`.
 
-Stages 1–7 are closed; both review channels gave SHIP on Stage 7 at `stage7-review-13-*.md`. This is the Stage 8 review, of TASK-727. The diff runs from `b1cd770` to HEAD; read `missions/tasks/TASK-727*.md`, including its coordinator note.
+Stages 1–7 are closed; both review channels gave SHIP on Stage 7 at `stage7-review-13-*.md`. This is the Stage 8 review, of TASK-727. The diff runs from `b1cd770` to HEAD (`8b59412` plus the coordinator commit `2b44ee9` of the archive README and an active-plan link repair); read `missions/tasks/TASK-727*.md`, including its coordinator note.
 
 Authoritative documents:
 - `missions/plans/qm-chain-safety/spec.md`: INV-001..005 and the ACs are ratified, especially AC-015 and the amended AC-016.
