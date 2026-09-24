@@ -1,7 +1,7 @@
 ---
 id: TASK-757
 title: Stage 7 remediation K - malformed index lines fail safe
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-756
 createdAt: '2026-09-24T20:15:17.496Z'
-updatedAt: '2026-09-24T20:15:17.496Z'
+updatedAt: '2026-09-24T20:19:37.150Z'
 ---
 
 ## Description
@@ -30,9 +30,8 @@ Keep the changed-scope audit against `main` passing: no new complexity, dead-cod
 
 `bun run lint` has one known error, in the gitignored `.shepherd/backups/`; lint on tracked paths must pass. Run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 End to end with host checks, a clean report whose index line carries a same-line suffix (`<!-- COSMO_QM_REPORT {...} --> F-9 crash`) yields `not-ready`, and `F-9 crash` is still present in the final report; the test fails on the current code.
-- [ ] #2 An index line with trailing whitespace, and a marker line with no closing `-->`, each block `ready` and keep their text; a host-rendered whole-line index still reaches `ready` when clean; tested.
-- [ ] #3 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
+- [x] #1 End to end with host checks, a clean report whose index line carries a same-line suffix (`<!-- COSMO_QM_REPORT {...} --> F-9 crash`) yields `not-ready`, and `F-9 crash` is still present in the final report; the test fails on the current code.
+- [x] #2 An index line with trailing whitespace, and a marker line with no closing `-->`, each block `ready` and keep their text; a host-rendered whole-line index still reaches `ready` when clean; tested.
+- [x] #3 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
 <!-- AC:END -->
