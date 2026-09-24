@@ -161,6 +161,15 @@ All tasks have label `plan:qm-chain-safety`.
 - Review 1 (both channels DO-NOT-SHIP-YET) found stale QM caller prose and no named-chain entry-point test. TASK-759 fixed both.
 - Review 2: both channels SHIP. TASK-760 then fixed its two LOWs.
 
+### claude-cli backend findings (Drive trial, TASK-761, run-f22e320f, 2026-09-24)
+
+- **Events:** a clean transition sequence: run_started → task_started → preflight passed → spawn_started → spawn_completed → commit_made → task_status → task_done → state_commit → run_completed. No stuck `running` step, nothing uncommitted from the worker, task status Done.
+- **Commit:** `74892bc`. It changes only `tests/orchestration/quality-review-run.test.ts`, which matches the AC scope.
+- **Verification:** the coordinator confirmed with an isolated `TMPDIR` that 0 workspaces leak (153/153 tests).
+- **Minor issue:** the worker's commit subject is truncated mid-word ("…; production u"). Cosmetic.
+- **Minor issue:** the worker added no explicit leak assertion. The coordinator's isolated-`TMPDIR` measurement serves as the AC #1 check.
+- **Verdict:** usable. Keep using it with `COSMONAUTS_DRIVER_CLAUDE_ARGS="--model claude-opus-5-5"`.
+
 ### Stage 9 (TASK-728) — in progress
 
 - Closure prompt: `closure-review-prompt.md`. Two channels are running closure review 1; the outputs go to `closure-review-1-{codex,claude}.md`.
