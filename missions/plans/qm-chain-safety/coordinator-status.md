@@ -37,8 +37,9 @@ All tasks have label `plan:qm-chain-safety`.
 | 726 | Done | `cdba7e1` | **Stage 7** |
 | 747 | Done | `fde1063` | From Stage 7 review 1 |
 | 748 | Done | `953d0f9` | D-031 floors, from Stage 7 review 2 |
-| **749** | In Progress | — | From Stage 7 review 3: floor 1 for any Findings shape, per-entry closure, cap every copy. Drive `run-863ccaab` |
-| 727 | To Do | — | **Stage 8.** Depends on 749. Coordinator note added (`f17cf51`). |
+| 749 | Done | `3ac2e24` | From Stage 7 review 3 |
+| **750** | In Progress | — | D-032 (fail-safe Findings, dismissals only in Out-of-range), from Stage 7 review 4. Drive `run-0cc1611e` |
+| 727 | To Do | — | **Stage 8.** Depends on 750. Coordinator note added (`f17cf51`). |
 | 728 | To Do | — | **Stage 9 closure.** Coordinator-run, per D-002. |
 
 **TASK-742 note.** The worker returned "partial" only because its full-suite run hit the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS` artifact. The coordinator verified all its criteria and committed the work in `0b5e7d1` and `7e75231`. Marking it Done, a coordinator regex bug left `status: Done Progress`, which the task parser reads as To Do. Fixed on 2026-09-24 in the handoff commit. It is Done.
@@ -52,6 +53,7 @@ All tasks have label `plan:qm-chain-safety`.
   - D-028: INV-001 interpretation for host-run checks, plus a disclosure in every report.
   - D-029: baselines re-anchored at `main` `29fc0ce`.
   - D-030: amendment-3 ratified; stray catalog package.
+- **D-032** (coordinator, 2026-09-24). Findings is fail-safe, and dismissals live only in Out-of-range observations. Supersedes D-031's placement of dismissals.
 - **D-031** (coordinator). B-010 host calibration is defense in depth, with hard floors: no false `ready`, and no silently dropped finding. Measured-cost and closure-evidence text heuristics are recorded limits. **Do not reopen them.**
 - Spec additions beside the Intent: the D-028 INV-001 interpretation and the D-027 threat model.
 
@@ -100,7 +102,19 @@ All tasks have label `plan:qm-chain-safety`.
   - **HIGH:** the dismissal of an ID also closes an open entry with the same ID.
   - Plus a duplicate-P0 cap escape and LOWs.
   - **Test gap:** replacing the Findings condition with `false` left the full suite green.
-- **Remediation:** TASK-749, Drive `run-863ccaab-18b6-42ca-9612-527633581ae0`. Then run a focused Stage 7 review 4, reusing `stage7-review-3-prompt.md` with the base updated.
+- **Remediation:** TASK-749 (`3ac2e24`). Gates green, suite 3328/3328.
+
+### Stage 7 review 4
+
+- **Both channels: DO-NOT-SHIP-YET** (`stage7-review-4-{codex,claude}.md`).
+  - False `ready` through closure parsing inside Findings: an indented sub-finding riding a closed entry, keyword-only closure (`still open ... dismissed`), and closure that depends on reviewer order.
+  - A cap applied to Gates instead of Findings.
+- **Coordinator decision: D-032, amend-on-record** (Shepherd concurred, `d58a292`).
+  - Findings blocks `ready` on any content except `None recorded.`.
+  - Dismissals live only in Out-of-range observations: a positive dismissal word after the ID, and other-lens evidence checked independently of order.
+  - The cap applies only to Findings and Out-of-range.
+  - An unknown `##` section with content blocks `ready`.
+- **TASK-750** implements D-032; Drive `run-0cc1611e-bcb2-4ca5-bfb7-01502d8fc5ba`. Next: focused review 5, from `stage7-review-4-prompt.md` with base `d58a292`.
 
 ### Spec-to-backlog history
 
