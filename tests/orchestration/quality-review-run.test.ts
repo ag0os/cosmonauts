@@ -1328,10 +1328,10 @@ describe("quality review durable lifecycle", () => {
 					"repeated Findings",
 					"- None recorded.\n\n## Findings\n\n- F-9 P2 crashes",
 				],
-				[
-					"repeated Human decisions",
-					"- None recorded.\n\n## Human decisions\n\n- F-9 needs review",
-				],
+				["repeated Human decisions", "- None recorded."],
+				["Checks line ending in Findings", "- F-77 P1 QM-own crash"],
+				["Gates Findings subheading", "- F-77 P1 QM-own crash"],
+				["Checks Human decisions subheading", "- None recorded."],
 				["empty", "", "ready"],
 				["plain sentinel", "None recorded.", "ready"],
 				["case-insensitive bullet sentinel", "- nOnE ReCoRdEd.", "ready"],
@@ -1377,11 +1377,36 @@ describe("quality review durable lifecycle", () => {
 						fullText,
 					});
 				}
-				const markdown = renderQualityReviewReport({
+				let markdown = renderQualityReviewReport({
 					verdict: "ready",
 					reason: "clear",
 					gates: ["audit passed"],
 				}).replace("## Findings\n\n- None recorded.", `## Findings\n\n${body}`);
+				if (_shape === "Checks line ending in Findings")
+					markdown = markdown.replace(
+						"## Checks\n\n- None recorded.",
+						"## Checks\n\n- pending; details under ## Findings",
+					);
+				if (_shape === "Gates Findings subheading")
+					markdown = markdown.replace(
+						"## Gates\n\n- audit passed",
+						"## Gates\n\n- audit passed\n\n### Findings\n\nNone recorded.",
+					);
+				if (_shape === "Checks Human decisions subheading")
+					markdown = markdown
+						.replace(
+							"## Checks\n\n- None recorded.",
+							"## Checks\n\n#### Human decisions\n\nNone recorded.",
+						)
+						.replace(
+							"## Human decisions\n\n- None recorded.",
+							"## Human decisions\n\n- F-77 needs review",
+						);
+				if (_shape === "repeated Human decisions")
+					markdown = markdown.replace(
+						"## Human decisions\n\n- None recorded.",
+						"## Human decisions\n\n- None recorded.\n\n## Human decisions\n\n- F-9 needs review",
+					);
 				return {
 					markdown,
 					gateState: "completed-bound",

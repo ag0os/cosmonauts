@@ -101,7 +101,8 @@ function replaceSectionEntries(
 			.slice(originals.length)
 			.map((entry) => `- ${entry}`)
 			.join("\n")}`;
-	const start = markdown.indexOf(`## ${heading}\n`) + `## ${heading}\n`.length;
+	const start = sectionBodyStart(markdown, heading);
+	if (start === undefined) return markdown;
 	const bodyStart = markdown.indexOf(body, start);
 	return `${markdown.slice(0, bodyStart)}${updated}${markdown.slice(bodyStart + body.length)}`;
 }
@@ -222,14 +223,23 @@ function indexMatchesVisibleSections(
 	return true;
 }
 
+function sectionBodyStart(
+	markdown: string,
+	heading: string,
+): number | undefined {
+	const match = markdown.match(new RegExp(`^## ${heading}[ \\t]*$`, "m"));
+	if (match?.index === undefined) return undefined;
+	const end = match.index + match[0].length;
+	return end + (markdown[end] === "\n" ? 1 : 0);
+}
+
 function visibleSectionBody(
 	markdown: string,
 	heading: string,
 ): string | undefined {
-	const marker = `## ${heading}\n`;
-	const start = markdown.indexOf(marker);
-	if (start < 0) return undefined;
-	const tail = markdown.slice(start + marker.length);
+	const start = sectionBodyStart(markdown, heading);
+	if (start === undefined) return undefined;
+	const tail = markdown.slice(start);
 	const end = tail.search(/^## |^<!-- COSMO_QM_REPORT/m);
 	return (end < 0 ? tail : tail.slice(0, end)).trim();
 }
@@ -315,10 +325,8 @@ export function amendUnindexedQualityReviewReport(
 		["Reviewer models", options.reviewerModels, true],
 	] as const) {
 		if (items.length === 0) continue;
-		const marker = `## ${heading}\n`;
-		const start = amended.indexOf(marker);
-		if (start < 0) continue;
-		const bodyStart = start + marker.length;
+		const bodyStart = sectionBodyStart(amended, heading);
+		if (bodyStart === undefined) continue;
 		const rest = amended.slice(bodyStart);
 		const next = rest.search(/^## |^<!-- COSMO_QM_REPORT/m);
 		const bodyEnd = next < 0 ? amended.length : bodyStart + next;
