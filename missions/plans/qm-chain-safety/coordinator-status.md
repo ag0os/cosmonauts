@@ -53,9 +53,11 @@ TASK-726 and TASK-728 depend on TASK-729..738.
 
 ### Running / next
 
-- **Running:** nothing. TASK-738 finished (Drive `run-595ad64d-a3d1-41e3-ae8a-4877696f6df8`), and its amendment-3 digest is committed.
+- **Rulings applied (2026-09-24):** D-027..D-030 recorded (`c29255c`). Baselines re-anchored at `main` (`3ca0291`). With the baselines honest, the branch's own changed-scope audit fails on **introduced** debt: 31 complexity findings (`quality-review-run.ts` `execute` is cyclomatic 209), 8 dead-code issues and 10 clone groups. The refresh script analyzes `--root`, not `--base`.
+- **Running:** Drive TASK-739 (refresh script analyzes its base, docs follow D-029), then TASK-740 (behavior-preserving debt paydown until the audit passes).
+- **Lint caveat:** `bun run lint` reports one error, in Shepherd's gitignored backup under `.shepherd/backups/`. Tracked content passes. I asked Shepherd to move the backup out of the repo.
 - **Next steps for the successor:**
-  1. Run mid-branch review 7 on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
+  1. Run mid-branch review 7 (after TASK-739/740). The prompt must state the D-027 threat model: hostile-change-only routes are residual limits, not findings to remediate on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
   2. Loop through remediation tasks until both channels give SHIP for Stages 1–6.
   3. Then Drive TASK-726, then TASK-727, each followed by a two-channel review.
   4. Then do TASK-728 closure (needs N-001 and N-003 ruled).

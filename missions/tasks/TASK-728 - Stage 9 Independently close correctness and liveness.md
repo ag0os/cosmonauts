@@ -25,6 +25,8 @@ dependencies:
   - TASK-736
   - TASK-737
   - TASK-738
+  - TASK-739
+  - TASK-740
 createdAt: '2026-09-24T03:18:26.982Z'
 updatedAt: '2026-09-24T03:18:26.982Z'
 ---
