@@ -42,8 +42,25 @@ function nextSectionStart(markdown: string, start: number): number {
 	const heading =
 		headingLines(markdown).find((line) => line.start >= start)?.start ??
 		markdown.length;
-	const index = markdown.indexOf("<!-- COSMO_QM_REPORT", start);
-	return Math.min(heading, index < 0 ? markdown.length : index);
+	return Math.min(heading, indexMarkerStart(markdown, start));
+}
+
+function indexMarkerStart(markdown: string, start = 0): number {
+	const marker = /^<!-- COSMO_QM_REPORT [^\n]* -->$/gm;
+	marker.lastIndex = start;
+	return marker.exec(markdown)?.index ?? markdown.length;
+}
+
+/** Place host notices before report sections, or before the index if no section exists. */
+export function insertQualityReviewPreamble(
+	markdown: string,
+	annotation: string,
+): string {
+	const start = Math.min(
+		headingLines(markdown)[0]?.start ?? markdown.length,
+		indexMarkerStart(markdown),
+	);
+	return `${markdown.slice(0, start).trimEnd()}\n\n${annotation}\n\n${markdown.slice(start)}`;
 }
 
 export function renderQualityReviewReport(report: QualityReviewReport): string {
@@ -157,7 +174,7 @@ export function assessQualityReviewReport(markdown: string): {
 		};
 	const verdict = match[1] as QualityReviewVerdict;
 	const indexes = [
-		...markdown.matchAll(/<!-- COSMO_QM_REPORT ([\s\S]*?) -->/g),
+		...markdown.matchAll(/^<!-- COSMO_QM_REPORT ([^\n]*) -->$/gm),
 	];
 	if (indexes.length !== 1) return { verdict, indexAvailable: false };
 	try {
@@ -199,7 +216,7 @@ export function indexedQualityReviewReport(
 	markdown: string,
 ): QualityReviewReport | undefined {
 	if (!assessQualityReviewReport(markdown).indexAvailable) return undefined;
-	const match = markdown.match(/<!-- COSMO_QM_REPORT ([\s\S]*?) -->/);
+	const match = markdown.match(/^<!-- COSMO_QM_REPORT ([^\n]*) -->$/m);
 	if (!match?.[1]) return undefined;
 	const parsed: unknown = JSON.parse(match[1]);
 	if (typeof parsed !== "object" || parsed === null) return undefined;
@@ -292,7 +309,7 @@ export function hasUnexpectedQualityReviewSectionContent(
 		if (markdown.slice(line.end, nextSectionStart(markdown, line.end)).trim())
 			return true;
 	}
-	const index = markdown.match(/<!-- COSMO_QM_REPORT [\s\S]*? -->/);
+	const index = markdown.match(/^<!-- COSMO_QM_REPORT [^\n]* -->$/m);
 	return index
 		? markdown.slice((index.index ?? 0) + index[0].length).trim().length > 0
 		: false;
@@ -354,5 +371,5 @@ export function amendUnindexedQualityReviewReport(
 	}
 	return amended.includes("Index unavailable.")
 		? amended
-		: `${amended.trimEnd()}\n\nIndex unavailable.\n`;
+		: insertQualityReviewPreamble(amended, "Index unavailable.");
 }

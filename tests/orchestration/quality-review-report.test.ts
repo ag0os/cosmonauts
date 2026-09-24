@@ -5,11 +5,45 @@ import {
 	assessQualityReviewReport,
 	hasUnexpectedQualityReviewSectionContent,
 	indexedQualityReviewReport,
+	insertQualityReviewPreamble,
 	qualityReviewFindingLines,
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
 
 describe("quality review reports", () => {
+	it("keeps inline index-marker text inside a finding", () => {
+		const markdown = renderQualityReviewReport({
+			verdict: "not-ready",
+			reason: "findings",
+			findings: [
+				"QM-1 renderer emits `<!-- COSMO_QM_REPORT {} -->` unescaped",
+				"QM-2 another finding",
+			],
+		});
+		expect(qualityReviewFindingLines(markdown)).toEqual([
+			"QM-1 renderer emits `<!-- COSMO_QM_REPORT {} -->` unescaped",
+			"QM-2 another finding",
+		]);
+		expect(hasUnexpectedQualityReviewSectionContent(markdown)).toBe(false);
+	});
+
+	it.each([
+		true,
+		false,
+	])("inserts preamble without headings (index: %s)", (indexed) => {
+		const markdown = indexed
+			? "No sections\n\n<!-- COSMO_QM_REPORT {} -->\n"
+			: "No sections\n";
+		const amended = insertQualityReviewPreamble(markdown, "Host annotation.");
+		expect(amended).toContain("Host annotation.");
+		expect(amended.indexOf("Host annotation.")).toBeGreaterThan(
+			markdown.indexOf("No sections"),
+		);
+		if (indexed)
+			expect(amended.indexOf("Host annotation.")).toBeLessThan(
+				amended.indexOf("<!-- COSMO_QM_REPORT"),
+			);
+	});
 	it("preserves a verdict when only the index is missing", () => {
 		const markdown = renderQualityReviewReport({
 			verdict: "not-ready",

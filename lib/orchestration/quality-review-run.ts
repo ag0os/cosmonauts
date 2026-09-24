@@ -53,6 +53,7 @@ import {
 	hasQualityReviewSectionContent,
 	hasUnexpectedQualityReviewSectionContent,
 	indexedQualityReviewReport,
+	insertQualityReviewPreamble,
 	normalizeQualityReviewReport,
 	type QualityReviewVerdict,
 	qualityReviewFindingLines,
@@ -813,10 +814,7 @@ export async function runQualityReview(
 			if (verdict === "refused") await rejectReviewerRefusal();
 			reason = assessmentReason(assessed);
 			if (!assessed.indexAvailable && !assessed.reason)
-				markdown = markdown.replace(
-					/^##(?=[^\S\n]|$)/m,
-					() => "Index unavailable.\n\n##",
-				);
+				markdown = insertQualityReviewPreamble(markdown, "Index unavailable.");
 			if (assessed.verdict === "failed" && assessed.reason)
 				await recordMalformedReport(assessed.reason);
 		}
@@ -1183,9 +1181,9 @@ export async function runQualityReview(
 				annotations.push(
 					`Operator note (non-authoritative): ${JSON.stringify(safeOperatorNote)}`,
 				);
-			markdown = markdown.replace(
-				/^##(?=[^\S\n]|$)/m,
-				() => `${annotations.join("\n\n")}\n\n##`,
+			markdown = insertQualityReviewPreamble(
+				markdown,
+				annotations.join("\n\n"),
 			);
 		}
 
@@ -1666,7 +1664,12 @@ function renderPlanSummary(
 	const sections = headings.map((heading) => {
 		return `## ${heading}\n\n${visibleSectionBody(normalized, heading) || "- None recorded."}`;
 	});
-	return `# Quality review ${runId}\n\nVerdict: ${verdict}\n\nFull report: ${reportPath}\n\nReason: ${reason}\n\n${sections.join("\n\n")}\n`;
+	const preamble = normalized.split(/^##(?=[^\S\n]|$)/m, 1)[0] ?? "";
+	const disclosures =
+		preamble.match(
+			/^(?:Live work:|Workspace retained:|Index unavailable\.)[^\n]*$/gm,
+		) ?? [];
+	return `# Quality review ${runId}\n\nVerdict: ${verdict}\n\nFull report: ${reportPath}\n\nReason: ${reason}\n\n${disclosures.length ? `${disclosures.join("\n\n")}\n\n` : ""}${sections.join("\n\n")}\n`;
 }
 
 async function createPlanSummary(

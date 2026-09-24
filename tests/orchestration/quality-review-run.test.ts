@@ -1081,6 +1081,12 @@ describe("quality review durable lifecycle", () => {
 		expect(report).toContain(
 			"Report integrity: reviewer writes abandoned after sealing grace: security-reviewer",
 		);
+		expect(report.indexOf("Index unavailable.")).toBeLessThan(
+			report.indexOf("## Checks"),
+		);
+		expect(report.indexOf("Index unavailable.")).toBeLessThan(
+			report.indexOf("<!-- COSMO_QM_REPORT"),
+		);
 		for (const item of [
 			"unit check passed",
 			"audit passed",
@@ -1138,6 +1144,9 @@ describe("quality review durable lifecycle", () => {
 	});
 	it("uses the configured QM settle grace", async () => {
 		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, "missions", "plans", "example"), {
+			recursive: true,
+		});
 		await mkdir(join(projectRoot, ".cosmonauts"));
 		await writeFile(
 			join(projectRoot, ".cosmonauts", "config.json"),
@@ -1147,6 +1156,7 @@ describe("quality review durable lifecycle", () => {
 		const started = Date.now();
 		const result = await runQualityReview({
 			projectRoot,
+			planSlug: "example",
 			assessmentTimeoutMs: 20,
 			execute: async () => new Promise<never>(() => {}),
 		});
@@ -1166,6 +1176,19 @@ describe("quality review durable lifecycle", () => {
 			"utf8",
 		);
 		expect(report).toContain("Live work: QM session did not settle");
+		const summary = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"plans",
+				"example",
+				"qm-runs",
+				`${result.ref.runId}.md`,
+			),
+			"utf8",
+		);
+		for (const disclosure of ["Live work:", "Workspace retained:"])
+			expect(summary).toContain(disclosure);
 		const lifecycle = (
 			await readFile(
 				join(
@@ -2375,6 +2398,51 @@ describe("quality review durable lifecycle", () => {
 		expect(findings).not.toContain("pending; details under");
 	});
 
+	it("keeps findings after an inline index marker in the report and plan summary", async () => {
+		const projectRoot = await root(true);
+		const findings = [
+			"QM-1 renderer emits `<!-- COSMO_QM_REPORT {} -->` unescaped",
+			"QM-2 another finding",
+		];
+		const markdown = renderQualityReviewReport({
+			verdict: "not-ready",
+			reason: "findings",
+			findings,
+		});
+		const result = await runQualityReview({
+			projectRoot,
+			planSlug: "example",
+			execute: async () => ({ markdown }),
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		const summary = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"plans",
+				"example",
+				"qm-runs",
+				`${result.ref.runId}.md`,
+			),
+			"utf8",
+		);
+		for (const finding of findings)
+			for (const output of [report, summary]) expect(output).toContain(finding);
+	});
+
 	it("keeps a clean report ready with trailing whitespace on a defined heading", async () => {
 		const projectRoot = await root(true);
 		await configureCleanHostReview(projectRoot);
@@ -2446,7 +2514,8 @@ describe("quality review durable lifecycle", () => {
 	it.each([
 		[
 			"CRLF duplicate",
-			(report: string) => `${report.replace(/\n/g, "\r\n")}## Findings\r\n`,
+			(report: string) =>
+				`${report.replace(/^<!-- COSMO_QM_REPORT [^\n]* -->\n?/m, "").trimEnd()}\n\n## Findings\r\n`,
 			"## Findings",
 		],
 		[
@@ -3593,6 +3662,7 @@ describe("quality review durable lifecycle", () => {
 		expect(summary).toContain("Pre-existing: src/old.ts:2");
 		expect(summary).toContain("Reviewed captured diff against base");
 		expect(summary).toContain("unit: pass");
+		expect(summary).toContain("Index unavailable.");
 	});
 
 	it("preserves an unindexed report when host checks are configured", async () => {
