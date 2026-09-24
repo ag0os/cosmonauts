@@ -219,7 +219,12 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				hostRunStoreRoot: context.hostRunStoreRoot,
 				artifactSink: context.artifactSink,
 				activeSpawns: context.activeChildIds,
-				allowedLenses: new Set(lenses),
+				allowedLenses: new Set([
+					"reviewer",
+					"security-reviewer",
+					"performance-reviewer",
+					"ux-reviewer",
+				]),
 				attemptedLenses: new Set<string>(),
 				integrityFailures: [] as string[],
 				assessmentActive: true,
@@ -237,7 +242,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				const result = await spawner.spawn({
 					role: "quality-manager",
 					cwd: context.workspaceRoot,
-					prompt: `Review the captured diff at ${context.materialsRoot}/full.diff, with base ${context.base}. Read the host check results from ${context.materialsRoot}/checks.md. Spawn exactly these reviewer lenses once each: ${lenses.join(", ")}. Synthesize their full final text and direct analysis gate results into a complete final report. Do not run commands or start remediation.`,
+					prompt: `Review the captured diff at ${context.materialsRoot}/full.diff, with base ${context.base}. Read the host check results from ${context.materialsRoot}/checks.md. The host requires these reviewer lenses once each: ${lenses.join(", ")}. You may add any other applicable specialist lens once. Synthesize every started reviewer's full final text and direct analysis gate results into a complete final report. Do not run commands or start remediation.`,
 					qualityReviewContext: qualityContext,
 					signal: context.signal,
 					onEvent: (event) => {
@@ -263,7 +268,10 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 					throw new Error(qualityContext.integrityFailures.join("; "));
 				return {
 					markdown: extractAssistantText(result.messages, "quality-manager"),
-					requiredLenses: lenses,
+					requiredLenses: requiredReviewLenses(
+						lenses,
+						qualityContext.attemptedLenses,
+					),
 					liveChildIds: [...qualityContext.activeSpawns],
 					gateState,
 				};
@@ -281,12 +289,27 @@ export function triageReviewLenses(
 ): string[] {
 	const lenses = ["reviewer"];
 	const scope = `${files.join("\n")}\n${diff}`;
-	if (/auth|security|permission|secret|token|login|session/i.test(scope))
+	if (
+		/auth|security|permission|secret|token|login|session|dependenc|package\.json|lockfile|bun\.lock|spawn|exec|path|filesystem|node:fs/i.test(
+			scope,
+		)
+	)
 		lenses.push("security-reviewer");
 	if (/database|query|cache|performance|\.sql\b|fallow/i.test(scope))
 		lenses.push("performance-reviewer");
-	if (/\.(?:tsx|jsx|css|html|erb)\b|\/views\/|<form\b/i.test(scope))
+	if (
+		/\.(?:tsx|jsx|css|html|erb)\b|\/views\/|<form\b|(?:^|\/)(?:cli|api)\/|\b(?:help|usage|error|flag|user.facing|api|response|output)\b/i.test(
+			scope,
+		)
+	)
 		lenses.push("ux-reviewer");
 	return lenses;
+}
+
+export function requiredReviewLenses(
+	minimum: readonly string[],
+	started: ReadonlySet<string>,
+): string[] {
+	return [...new Set([...minimum, ...started])];
 }
 export type { QualityReviewRunOptions };

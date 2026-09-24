@@ -9,6 +9,7 @@ import { runDurableChain } from "../../lib/orchestration/durable-chain-runner.ts
 import {
 	launchQualityReview,
 	qualityReviewPlanSlug,
+	requiredReviewLenses,
 	triageReviewLenses,
 	validateQualityReviewAnalysisCalls,
 } from "../../lib/orchestration/quality-review-launch.ts";
@@ -166,6 +167,29 @@ describe("quality review launch policy", () => {
 			"performance-reviewer",
 			"ux-reviewer",
 		]);
+	});
+	it("requires UX for CLI help and security for dependency changes", () => {
+		expect(triageReviewLenses(["cli/help.ts"], "+Show command usage")).toEqual([
+			"reviewer",
+			"ux-reviewer",
+		]);
+		expect(triageReviewLenses(["package.json"], "+new-library")).toContain(
+			"security-reviewer",
+		);
+		expect(
+			triageReviewLenses(["lib/file-path.ts"], "+resolve(input)"),
+		).toContain("security-reviewer");
+		expect(
+			triageReviewLenses(["lib/api/result.ts"], "+status: success"),
+		).toContain("ux-reviewer");
+	});
+	it("keeps host-required and QM-added lenses as required evidence", () => {
+		expect(
+			requiredReviewLenses(
+				["reviewer", "security-reviewer"],
+				new Set(["reviewer", "ux-reviewer"]),
+			),
+		).toEqual(["reviewer", "security-reviewer", "ux-reviewer"]);
 	});
 	const roots: string[] = [];
 	afterEach(async () => {

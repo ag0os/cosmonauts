@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import {
 	assertQualityReviewModelIdentity,
@@ -26,6 +27,24 @@ it("binds a panel prompt to the host captured diff and base", () => {
 	expect(prompt).toContain("a".repeat(40));
 	expect(prompt).toContain("src/a.ts");
 	expect(prompt).toContain("Review this change");
+});
+
+it.each([
+	"reviewer",
+	"security-reviewer",
+	"performance-reviewer",
+	"ux-reviewer",
+])("gives %s both captured-materials and direct-spawn scope paths", (lens) => {
+	const prompt = readFileSync(
+		new URL(`../../bundled/coding/prompts/${lens}.md`, import.meta.url),
+		"utf8",
+	);
+	expect(prompt).toContain("When the Quality Manager supplies host materials");
+	expect(prompt).toContain("When spawned directly by `cody` or `cosmo`");
+	expect(prompt).toContain("git diff");
+	expect(prompt).toContain("final assistant text");
+	expect(prompt).toContain("There is no output path");
+	expect(prompt).toMatch(/no findings in scope|zero findings/);
 });
 
 it("rejects a reviewer model changed after Pi session creation", () => {

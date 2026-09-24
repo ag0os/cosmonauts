@@ -96,8 +96,14 @@ it("runs configured checks and one triaged panel in a single QM pass", async () 
 			expect([...context.allowedLenses]).toEqual([
 				"reviewer",
 				"security-reviewer",
+				"performance-reviewer",
+				"ux-reviewer",
 			]);
-			for (const lens of context.allowedLenses) {
+			expect(config.prompt).toContain(
+				"The host requires these reviewer lenses",
+			);
+			context.attemptedLenses.add("ux-reviewer");
+			for (const lens of ["reviewer", "security-reviewer", "ux-reviewer"]) {
 				const fullText = `${lens} checked captured diff`;
 				await context.artifactSink.writeReviewer({
 					runId: context.runId,
@@ -192,4 +198,5 @@ it("runs configured checks and one triaged panel in a single QM pass", async () 
 	expect(report).toContain("one: argv");
 	expect(report).toContain("reviewer: test/reviewer");
 	expect(report).toContain("security-reviewer: test/security-reviewer");
+	expect(report).toContain("ux-reviewer: test/ux-reviewer");
 });
