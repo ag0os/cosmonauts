@@ -123,7 +123,7 @@ export interface ChainConfig {
 	/** Host-only QM preparation and assessment ports attached by the domain runtime. */
 	qualityReview?: Pick<
 		import("./quality-review-run.ts").QualityReviewRunOptions,
-		"prepareWorkspace" | "execute"
+		"execute"
 	>;
 	/** Default domain context for resolving unqualified stage names. */
 	domainContext?: string;

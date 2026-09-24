@@ -6,7 +6,9 @@ import {
 	readdir,
 	readFile,
 	rm,
+	stat,
 	symlink,
+	utimes,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -17,27 +19,309 @@ import { FileRunStore, runStatus } from "../../lib/durable-runtime/index.ts";
 import { summarizeAssistantText } from "../../lib/orchestration/assistant-text.ts";
 import { renderQualityReviewReport } from "../../lib/orchestration/quality-review-report.ts";
 import { runQualityReview } from "../../lib/orchestration/quality-review-run.ts";
+import { removePrivateReviewWorkspace } from "../../lib/orchestration/quality-review-workspace.ts";
 
 describe("quality review durable lifecycle", () => {
 	const roots: string[] = [];
-	const prepareWorkspace = async ({
-		workspaceRoot,
-	}: {
-		workspaceRoot: string;
-	}) => {
-		await mkdir(workspaceRoot);
-	};
 	afterEach(async () => {
 		await Promise.all(
 			roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
 		);
 	});
 
-	async function root(): Promise<string> {
+	async function root(repository = false): Promise<string> {
 		const path = await mkdtemp(join(tmpdir(), "qm-run-"));
 		roots.push(path);
+		if (repository) {
+			const { execFileSync } = await import("node:child_process");
+			const git = (...args: string[]) =>
+				execFileSync("git", args, { cwd: path });
+			git("init", "-q");
+			git("config", "user.email", "test@example.com");
+			git("config", "user.name", "Test");
+			await writeFile(join(path, ".gitignore"), "missions/sessions/\n");
+			git("add", ".gitignore");
+			git("commit", "-qm", "base");
+		}
 		return path;
 	}
+
+	// @cosmo-behavior plan:qm-chain-safety#B-002
+	it("launches assessment from a private snapshot containing untracked work", async () => {
+		const projectRoot = await root();
+		const git = async (...args: string[]) => {
+			const { execFileSync } = await import("node:child_process");
+			return execFileSync("git", args, {
+				cwd: projectRoot,
+				encoding: "utf8",
+			}).trim();
+		};
+		await git("init", "-q");
+		await git("config", "user.email", "test@example.com");
+		await git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		await writeFile(join(projectRoot, "tracked.txt"), "base\n");
+		await git("add", "tracked.txt", ".gitignore");
+		await git("commit", "-qm", "base");
+		await writeFile(join(projectRoot, "tracked.txt"), "changed\n");
+		await writeFile(join(projectRoot, "untracked.txt"), "added\n");
+		let observed = false;
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async ({ workspaceRoot, materialsRoot }) => {
+				observed =
+					workspaceRoot !== projectRoot &&
+					materialsRoot !== workspaceRoot &&
+					((await stat(materialsRoot ?? "")).mode & 0o222) === 0 &&
+					(await readFile(join(workspaceRoot ?? "", "tracked.txt"), "utf8")) ===
+						"changed\n" &&
+					(await readFile(
+						join(workspaceRoot ?? "", "untracked.txt"),
+						"utf8",
+					)) === "added\n";
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+					}),
+				};
+			},
+		});
+		expect({ outcome: result.stepResult.outcome, observed }).toEqual({
+			outcome: "success",
+			observed: true,
+		});
+	});
+
+	it("preserves staged deletion and source index while building review materials", async () => {
+		const projectRoot = await root();
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot, encoding: "utf8" }).trim();
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		await writeFile(join(projectRoot, "gone.txt"), "original\n");
+		git("add", "gone.txt", ".gitignore");
+		git("commit", "-qm", "base");
+		await rm(join(projectRoot, "gone.txt"));
+		git("add", "-A");
+		await writeFile(join(projectRoot, "added.txt"), "new\n");
+		const indexBefore = await readFile(join(projectRoot, ".git", "index"));
+		let observed = false;
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async ({ workspaceRoot, materialsRoot }) => {
+				const diff = await readFile(
+					join(materialsRoot ?? "", "full.diff"),
+					"utf8",
+				);
+				observed =
+					diff.includes("gone.txt") &&
+					diff.includes("added.txt") &&
+					(await readFile(
+						join(materialsRoot ?? "", "base", "gone.txt"),
+						"utf8",
+					)) === "original\n";
+				await expect(
+					readFile(join(workspaceRoot ?? "", "gone.txt")),
+				).rejects.toMatchObject({ code: "ENOENT" });
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+					}),
+				};
+			},
+		});
+		expect({
+			outcome: result.stepResult.outcome,
+			observed,
+			indexUnchanged: (
+				await readFile(join(projectRoot, ".git", "index"))
+			).equals(indexBefore),
+		}).toEqual({ outcome: "success", observed: true, indexUnchanged: true });
+	});
+
+	it("captures a same-size edit with a stale Git stat cache without refreshing the source index", async () => {
+		const projectRoot = await root();
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot, encoding: "utf8" }).trim();
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		const trackedPath = join(projectRoot, "tracked.txt");
+		await writeFile(trackedPath, "before\n");
+		git("add", "tracked.txt", ".gitignore");
+		git("commit", "-qm", "base");
+		const original = await stat(trackedPath);
+		await writeFile(trackedPath, "after!\n");
+		await utimes(trackedPath, original.atime, original.mtime);
+		const indexBefore = await readFile(join(projectRoot, ".git", "index"));
+		const headBefore = git("rev-parse", "HEAD");
+		const refsBefore = git("for-each-ref", "--format=%(refname) %(objectname)");
+		let observed = false;
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async ({ workspaceRoot, materialsRoot }) => {
+				observed =
+					(await readFile(join(workspaceRoot ?? "", "tracked.txt"), "utf8")) ===
+						"after!\n" &&
+					(
+						await readFile(join(materialsRoot ?? "", "full.diff"), "utf8")
+					).includes("after!");
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+					}),
+				};
+			},
+		});
+		expect(result.stepResult.outcome).toBe("success");
+		expect(observed).toBe(true);
+		expect(await readFile(trackedPath, "utf8")).toBe("after!\n");
+		expect(await readFile(join(projectRoot, ".git", "index"))).toEqual(
+			indexBefore,
+		);
+		expect(git("rev-parse", "HEAD")).toBe(headBefore);
+		expect(git("for-each-ref", "--format=%(refname) %(objectname)")).toBe(
+			refsBefore,
+		);
+	});
+
+	it.each([
+		"exit",
+		"timeout",
+	] as const)("persists a preparation %s and removes its private workspace", async (failure) => {
+		const projectRoot = await root();
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					prepare: [
+						{
+							id: "dependencies",
+							command: process.execPath,
+							args: [
+								"-e",
+								failure === "exit"
+									? "process.exit(5)"
+									: "setInterval(() => {}, 1000)",
+							],
+							timeoutMs: failure === "timeout" ? 100 : 5000,
+						},
+					],
+				},
+			}),
+		);
+		git("add", ".cosmonauts/config.json", ".gitignore");
+		git("commit", "-qm", "base");
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async () => ({ markdown: "" }),
+		});
+		const artifactsRoot = join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			result.ref.runId,
+			"artifacts",
+			"qm",
+		);
+		const report = await readFile(join(artifactsRoot, "final.md"), "utf8");
+		const checks = await readFile(join(artifactsRoot, "checks.md"), "utf8");
+		const lifecycle = (
+			await readFile(join(artifactsRoot, "lifecycle.jsonl"), "utf8")
+		)
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { phase: string; workspace?: string });
+		const workspace = lifecycle.find(
+			(event) => event.phase === "workspace-reserved",
+		)?.workspace;
+		expect({
+			outcome: result.stepResult.outcome,
+			named: report.includes("dependencies"),
+			timeoutNamed: failure === "exit" || report.includes("timed out"),
+			checks: checks.includes("dependencies"),
+			removed:
+				typeof workspace === "string" &&
+				!(await import("node:fs")).existsSync(workspace),
+		}).toEqual({
+			outcome: "failed",
+			named: true,
+			timeoutNamed: true,
+			checks: true,
+			removed: true,
+		});
+	});
+
+	it("refuses an escaping symlink before assessment and removes the reserved path", async () => {
+		const projectRoot = await root();
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, "base.txt"), "base\n");
+		git("add", "base.txt");
+		git("commit", "-qm", "base");
+		await symlink("../outside", join(projectRoot, "escape"));
+		let executed = false;
+		const result = await runQualityReview({
+			projectRoot,
+			execute: async () => {
+				executed = true;
+				return { markdown: "" };
+			},
+		});
+		const artifactsRoot = join(
+			projectRoot,
+			"missions",
+			"sessions",
+			"chain",
+			"runs",
+			result.ref.runId,
+			"artifacts",
+			"qm",
+		);
+		const report = await readFile(join(artifactsRoot, "final.md"), "utf8");
+		const lifecycle = (
+			await readFile(join(artifactsRoot, "lifecycle.jsonl"), "utf8")
+		)
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { phase: string; workspace?: string });
+		const reserved = lifecycle.find(
+			(event) => event.phase === "workspace-reserved",
+		)?.workspace;
+		expect({
+			outcome: result.stepResult.outcome,
+			executed,
+			named: report.includes("Unsafe symlink"),
+			removed: reserved && !(await import("node:fs")).existsSync(reserved),
+		}).toEqual({
+			outcome: "blocked",
+			executed: false,
+			named: true,
+			removed: true,
+		});
+	});
 
 	it.each([
 		["ready", "completed"],
@@ -45,11 +329,10 @@ describe("quality review durable lifecycle", () => {
 		["refused", "blocked"],
 		["failed", "failed"],
 	] as const)("persists %s before the %s terminal event", async (verdict, status) => {
-		const projectRoot = await root();
+		const projectRoot = await root(true);
 		const result = await runQualityReview({
 			projectRoot,
 			planSlug: "example",
-			prepareWorkspace,
 			execute: async () => ({
 				markdown: renderQualityReviewReport({ verdict, reason: "test" }),
 			}),
@@ -59,6 +342,30 @@ describe("quality review durable lifecycle", () => {
 		});
 		const normalized = await runStatus(store, result.ref);
 		expect(normalized?.status).toBe(status);
+		const lifecycle = (
+			await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.ref.runId,
+					"artifacts",
+					"qm",
+					"lifecycle.jsonl",
+				),
+				"utf8",
+			)
+		)
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { phase: string; workspace?: string });
+		const reserved = lifecycle.find(
+			(event) => event.phase === "workspace-reserved",
+		)?.workspace;
+		expect(reserved).toBeTruthy();
+		expect((await import("node:fs")).existsSync(reserved ?? "")).toBe(false);
 		expect(
 			normalized?.artifacts?.some((artifact) => artifact.id === "qm/final.md"),
 		).toBe(true);
@@ -112,7 +419,29 @@ describe("quality review durable lifecycle", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	it("refuses an assessment callback without private workspace preparation", async () => {
+	it("persists a failed setup verdict when assessment is not attached", async () => {
+		const projectRoot = await root(true);
+		const result = await runQualityReview({ projectRoot });
+		expect(result.stepResult.outcome).toBe("failed");
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: failed");
+		expect(report).toContain("Quality review assessment is not attached.");
+	});
+
+	it("refuses an assessment callback when private workspace capture fails", async () => {
 		const projectRoot = await root();
 		let called = false;
 		const result = await runQualityReview({
@@ -162,15 +491,14 @@ describe("quality review durable lifecycle", () => {
 	});
 
 	it("retains malformed raw output and fails report integrity", async () => {
-		const projectRoot = await root();
+		const projectRoot = await root(true);
 		const result = await runQualityReview({
 			projectRoot,
-			prepareWorkspace,
 			execute: async () => ({ markdown: "Verdict: ready\nNo sections" }),
 		});
 		expect(
 			result.stepResult.artifacts.map((artifact) => artifact.id).sort(),
-		).toEqual(["qm/final.md", "qm/raw-final.md"]);
+		).toEqual(["qm/checks.md", "qm/final.md", "qm/raw-final.md"]);
 		const base = join(
 			projectRoot,
 			"missions",
@@ -190,7 +518,7 @@ describe("quality review durable lifecycle", () => {
 	});
 
 	it("keeps a ready verdict when only the index is unavailable", async () => {
-		const projectRoot = await root();
+		const projectRoot = await root(true);
 		const markdown = renderQualityReviewReport({
 			verdict: "ready",
 			reason: "clear",
@@ -199,7 +527,6 @@ describe("quality review durable lifecycle", () => {
 		const result = await runQualityReview({
 			projectRoot,
 			planSlug: "example",
-			prepareWorkspace,
 			execute: async () => ({ markdown }),
 		});
 		expect(result.stepResult.outcome).toBe("success");
@@ -236,12 +563,11 @@ describe("quality review durable lifecycle", () => {
 	});
 
 	it("isolates concurrent run IDs, reports and plan summaries", async () => {
-		const projectRoot = await root();
+		const projectRoot = await root(true);
 		const [first, second] = await Promise.all([
 			runQualityReview({
 				projectRoot,
 				planSlug: "example",
-				prepareWorkspace,
 				execute: async () => ({
 					markdown: renderQualityReviewReport({
 						verdict: "ready",
@@ -252,7 +578,6 @@ describe("quality review durable lifecycle", () => {
 			runQualityReview({
 				projectRoot,
 				planSlug: "example",
-				prepareWorkspace,
 				execute: async () => ({
 					markdown: renderQualityReviewReport({
 						verdict: "not-ready",
@@ -268,49 +593,40 @@ describe("quality review durable lifecycle", () => {
 		expect(summaries).toHaveLength(2);
 	});
 
-	it("records the reserved workspace before preparation and removes it on refusal", async () => {
+	it("records the reserved workspace before failed capture and removes it on refusal", async () => {
 		const projectRoot = await root();
-		let reserved = "";
-		const result = await runQualityReview({
-			projectRoot,
-			prepareWorkspace: async ({ workspaceRoot, runId }) => {
-				reserved = workspaceRoot;
-				const lifecycle = await readFile(
-					join(
-						projectRoot,
-						"missions",
-						"sessions",
-						"chain",
-						"runs",
-						runId,
-						"artifacts",
-						"qm",
-						"lifecycle.jsonl",
-					),
-					"utf8",
-				);
-				expect(lifecycle).toContain('"phase":"workspace-reserved"');
-				expect(lifecycle).toContain('"previousPhase":"allocated"');
-				expect(lifecycle).toContain(workspaceRoot);
-				await writeFile(workspaceRoot, "occupied");
-				throw new Error("snapshot changed");
-			},
-		});
+		const result = await runQualityReview({ projectRoot });
+		const lifecycle = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"lifecycle.jsonl",
+			),
+			"utf8",
+		);
+		const reserved = join(tmpdir(), `cosmonauts-qm-${result.ref.runId}`);
+		expect(lifecycle).toContain('"phase":"workspace-reserved"');
+		expect(lifecycle).toContain('"previousPhase":"allocated"');
+		expect(lifecycle).toContain(reserved);
 		expect(result.stepResult.outcome).toBe("blocked");
-		expect(reserved).toContain(result.ref.runId);
 		await expect(readFile(reserved, "utf8")).rejects.toMatchObject({
 			code: "ENOENT",
 		});
 	});
 
 	it("keeps the conservative report when atomic replacement cannot write", async () => {
-		const projectRoot = await root();
+		const projectRoot = await root(true);
 		let artifactDir = "";
 		try {
 			const result = await runQualityReview({
 				projectRoot,
 				planSlug: "example",
-				prepareWorkspace,
 				execute: async ({ runId }) => {
 					artifactDir = join(
 						projectRoot,
@@ -369,11 +685,11 @@ describe("quality review durable lifecycle", () => {
 	});
 
 	it("leaves the reached lifecycle phase and conservative report after host death", async () => {
-		const projectRoot = await root();
+		const projectRoot = await root(true);
 		const modulePath = fileURLToPath(
 			new URL("../../lib/orchestration/quality-review-run.ts", import.meta.url),
 		);
-		const script = `import { mkdir } from "node:fs/promises"; import { runQualityReview } from ${JSON.stringify(modulePath)}; setInterval(() => {}, 1000); await runQualityReview({ projectRoot: ${JSON.stringify(projectRoot)}, prepareWorkspace: async ({ workspaceRoot }) => { await mkdir(workspaceRoot); }, execute: async ({ runId }) => { process.stdout.write(runId + "\\n"); await new Promise(() => {}); return { markdown: "" }; } });`;
+		const script = `import { runQualityReview } from ${JSON.stringify(modulePath)}; setInterval(() => {}, 1000); await runQualityReview({ projectRoot: ${JSON.stringify(projectRoot)}, execute: async ({ runId }) => { process.stdout.write(runId + "\\n"); await new Promise(() => {}); return { markdown: "" }; } });`;
 		const child = spawn("bun", ["-e", script], {
 			cwd: projectRoot,
 			stdio: ["ignore", "pipe", "pipe"],
@@ -425,8 +741,7 @@ describe("quality review durable lifecycle", () => {
 			).toBe("qm/final.md");
 		} finally {
 			if (!child.killed) child.kill("SIGKILL");
-			if (reservedRoot)
-				await rm(reservedRoot, { recursive: true, force: true });
+			if (reservedRoot) await removePrivateReviewWorkspace(reservedRoot);
 		}
 	}, 25_000);
 });

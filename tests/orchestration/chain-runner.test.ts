@@ -48,6 +48,18 @@ import type {
 } from "../../lib/orchestration/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
+async function initQualityReviewRepository(projectRoot: string): Promise<void> {
+	const { execFileSync } = await import("node:child_process");
+	const git = (...args: string[]) =>
+		execFileSync("git", args, { cwd: projectRoot });
+	git("init", "-q");
+	git("config", "user.email", "test@example.com");
+	git("config", "user.name", "Test");
+	await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+	git("add", ".gitignore");
+	git("commit", "-qm", "base");
+}
+
 // ============================================================================
 // Mock the agent-spawner module so runChain never creates real Pi sessions.
 // Uses vi.hoisted() to make the pre-import mock reference explicit.
@@ -1935,14 +1947,12 @@ describe("runChain", () => {
 	] as const)("persists a %s QM assessment through an inline chain", async (verdict) => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-assessment-"));
 		try {
+			await initQualityReviewRepository(projectRoot);
 			const result = await runChain(
 				makeConfig(parseChain("quality-manager", defaultRegistry), {
 					projectRoot,
 					completionLabel: "plan:example",
 					qualityReview: {
-						prepareWorkspace: async ({ workspaceRoot }) => {
-							await mkdir(workspaceRoot);
-						},
 						execute: async () => ({
 							markdown: renderQualityReviewReport({
 								verdict,
@@ -1981,14 +1991,12 @@ describe("runChain", () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-terminal-"));
 		const controller = new AbortController();
 		try {
+			await initQualityReviewRepository(projectRoot);
 			const result = await runChain(
 				makeConfig(parseChain("quality-manager", defaultRegistry), {
 					projectRoot,
 					signal: controller.signal,
 					qualityReview: {
-						prepareWorkspace: async ({ workspaceRoot }) => {
-							await mkdir(workspaceRoot);
-						},
 						execute: async () => {
 							if (scenario === "cancellation") controller.abort();
 							return {

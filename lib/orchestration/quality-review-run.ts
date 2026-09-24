@@ -4,6 +4,10 @@ import { lstat, mkdir, open, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import {
+	createSnapshotAnalysisAuthorization,
+	type SnapshotAnalysisAuthorization,
+} from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
+import {
 	FileRunStore,
 	type RunGraphSchedulerBackend,
 	type RunRef,
@@ -21,6 +25,12 @@ import {
 	type QualityReviewVerdict,
 	renderQualityReviewReport,
 } from "./quality-review-report.ts";
+import {
+	createPrivateReviewWorkspace,
+	preparePrivateReviewWorkspace,
+	removePrivateReviewWorkspace,
+	WorkspacePreparationFailure,
+} from "./quality-review-workspace.ts";
 
 export interface QualityReviewAssessment {
 	markdown: string;
@@ -36,13 +46,10 @@ export interface QualityReviewRunOptions {
 		runId: string;
 		signal?: AbortSignal;
 		workspaceRoot?: string;
+		materialsRoot?: string;
+		analysisConsent?: SnapshotAnalysisAuthorization;
 		artifactSink: QualityReviewArtifactSink;
 	}) => Promise<QualityReviewAssessment>;
-	/** Stage 5 prepares the private clone through this host-only port. */
-	prepareWorkspace?: (context: {
-		runId: string;
-		workspaceRoot: string;
-	}) => Promise<void>;
 	refusalReason?: string;
 	store?: RunStore;
 }
@@ -61,7 +68,7 @@ type Phase =
 	| "finalized"
 	| "retained";
 
-/** Allocate and finalize a one-step QM run. The default fails closed until isolation is attached. */
+/** Allocate and finalize a one-step QM run in a private snapshot. */
 export async function runQualityReview(
 	options: QualityReviewRunOptions,
 ): Promise<QualityReviewRunResult> {
@@ -153,40 +160,69 @@ export async function runQualityReview(
 		let reason = "Assessment did not complete.";
 		let cancelled = options.signal?.aborted === true;
 		let workspaceRoot: string | undefined;
+		let materialsRoot: string | undefined;
+		let reservedRoot: string | undefined;
+		let ownsReservedRoot = false;
+		let analysisConsent: SnapshotAnalysisAuthorization | undefined;
 		try {
 			if (cancelled) throw new Error("Caller cancellation");
 			if (summaryInitializationError)
 				throw new Error(
 					`Plan summary initialization failed: ${errorReason(summaryInitializationError)}`,
 				);
-			if (options.prepareWorkspace && !options.refusalReason) {
-				workspaceRoot = join(tmpdir(), `cosmonauts-qm-${ref.runId}`);
+			if (!options.refusalReason) {
+				reservedRoot = join(tmpdir(), `cosmonauts-qm-${ref.runId}`);
 				await phase("workspace-reserved", {
-					workspace: workspaceRoot,
+					workspace: reservedRoot,
 					disposition: "reserved",
 				});
 				try {
-					await options.prepareWorkspace({ runId: ref.runId, workspaceRoot });
+					await mkdir(reservedRoot, { mode: 0o700 });
+					ownsReservedRoot = true;
+					const snapshot = await createPrivateReviewWorkspace(
+						options.projectRoot,
+						reservedRoot,
+					);
+					workspaceRoot = snapshot.workspaceRoot;
+					materialsRoot = snapshot.materialsRoot;
+					analysisConsent = await createSnapshotAnalysisAuthorization({
+						sourceRoot: snapshot.sourceRealPath,
+						snapshotRoot: snapshot.workspaceRoot,
+						runId: ref.runId,
+						providerId: "fallow",
+					});
+					try {
+						const preparation = await preparePrivateReviewWorkspace(snapshot);
+						await sink.write(
+							"checks.md",
+							`# Preparation\n\n${preparation.map((step) => `- ${step.id}: passed in ${step.durationMs} ms`).join("\n") || "- No preparation configured."}\n`,
+						);
+					} catch (error) {
+						if (error instanceof WorkspacePreparationFailure)
+							await sink.write(
+								"checks.md",
+								`# Preparation\n\n- ${error.message}\n`,
+							);
+						throw error;
+					}
 				} catch (error) {
+					if (error instanceof WorkspacePreparationFailure) throw error;
 					throw new QualityReviewRefusal(
 						`Private workspace preparation refused: ${errorReason(error)}`,
 					);
 				}
 				await phase("snapshot-ready", {
-					workspace: workspaceRoot,
+					workspace: reservedRoot,
 					disposition: "active",
 				});
 			}
-			if (
-				options.refusalReason ||
-				!options.prepareWorkspace ||
-				!options.execute
-			) {
+			if (options.refusalReason) {
 				verdict = "refused";
-				reason =
-					options.refusalReason ?? "Private review workspace is not available.";
+				reason = options.refusalReason;
 				markdown = renderQualityReviewReport({ verdict, reason });
 			} else {
+				if (!options.execute)
+					throw new Error("Quality review assessment is not attached.");
 				await phase("assessing", {
 					disposition: workspaceRoot ? "active" : "none",
 					...(workspaceRoot ? { workspace: workspaceRoot } : {}),
@@ -196,6 +232,8 @@ export async function runQualityReview(
 						runId: ref.runId,
 						signal: options.signal,
 						workspaceRoot,
+						materialsRoot,
+						analysisConsent,
 						artifactSink: sink,
 					})
 				).markdown;
@@ -232,14 +270,15 @@ export async function runQualityReview(
 			markdown = renderQualityReviewReport({ verdict, reason });
 		}
 		await phase("finalizing", {
-			disposition: workspaceRoot ? "active" : "none",
-			...(workspaceRoot ? { workspace: workspaceRoot } : {}),
+			disposition: ownsReservedRoot ? "active" : "none",
+			...(reservedRoot ? { workspace: reservedRoot } : {}),
 		});
 		let workspaceRemoved = false;
 		let summaryReplaced = false;
 		try {
-			if (workspaceRoot) {
-				await rm(workspaceRoot, { recursive: true, force: true });
+			analysisConsent?.dispose();
+			if (reservedRoot && ownsReservedRoot) {
+				await removePrivateReviewWorkspace(reservedRoot);
 				workspaceRemoved = true;
 			}
 			if (summaryPath) {
@@ -259,8 +298,8 @@ export async function runQualityReview(
 				replace: true,
 			});
 			await phase("finalized", {
-				disposition: workspaceRoot ? "removed" : "none",
-				...(workspaceRoot ? { workspace: workspaceRoot } : {}),
+				disposition: ownsReservedRoot ? "removed" : "none",
+				...(reservedRoot ? { workspace: reservedRoot } : {}),
 				artifactDigests: [finalRef.metadata?.sha256],
 			});
 			result = {
@@ -302,14 +341,14 @@ export async function runQualityReview(
 				}
 			}
 			await phase(
-				workspaceRoot && !workspaceRemoved ? "retained" : "finalizing",
+				ownsReservedRoot && !workspaceRemoved ? "retained" : "finalizing",
 				{
-					disposition: workspaceRoot
+					disposition: ownsReservedRoot
 						? workspaceRemoved
 							? "removed"
 							: "retained"
 						: "none",
-					...(workspaceRoot ? { workspace: workspaceRoot } : {}),
+					...(reservedRoot ? { workspace: reservedRoot } : {}),
 					reason: failure,
 				},
 			);

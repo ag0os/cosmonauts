@@ -23,6 +23,66 @@ export interface AnalysisExecutionAuthorization {
 	readonly consented: boolean;
 }
 
+/** A run-local capability. It is never serialized or installed in user state. */
+export interface SnapshotAnalysisAuthorization {
+	readonly snapshotRealPath: string;
+	readonly runId: string;
+	readonly consented: boolean;
+	authorizationFor(options: {
+		runId: string;
+		snapshotRoot: string;
+		providerId: string;
+	}): AnalysisExecutionAuthorization;
+	dispose(): void;
+}
+
+export async function createSnapshotAnalysisAuthorization(options: {
+	sourceRoot: string;
+	snapshotRoot: string;
+	runId: string;
+	providerId: string;
+	userStateRoot?: string;
+}): Promise<SnapshotAnalysisAuthorization> {
+	const sourceRealPath = await realpath(options.sourceRoot);
+	const snapshotRealPath = await realpath(options.snapshotRoot);
+	if (
+		sourceRealPath === snapshotRealPath ||
+		isPathInside(sourceRealPath, snapshotRealPath)
+	)
+		throw new Error(
+			"Snapshot analysis authorization requires a private checkout",
+		);
+	const existing = await readAnalysisExecutionAuthorization({
+		projectRoot: sourceRealPath,
+		providerId: options.providerId,
+		userStateRoot: options.userStateRoot,
+	});
+	if (existing?.canonicalProjectRoot !== sourceRealPath)
+		throw new Error("Source consent identity changed");
+	let active = true;
+	return {
+		snapshotRealPath,
+		runId: options.runId,
+		consented: existing.consented,
+		authorizationFor(request) {
+			if (
+				!active ||
+				request.runId !== options.runId ||
+				realpathSync(request.snapshotRoot) !== snapshotRealPath ||
+				request.providerId !== options.providerId
+			)
+				throw new Error("Snapshot analysis authorization scope mismatch");
+			return {
+				canonicalProjectRoot: snapshotRealPath,
+				consented: existing.consented,
+			};
+		},
+		dispose() {
+			active = false;
+		},
+	};
+}
+
 function defaultUserStateRoot(): string {
 	return join(homedir(), ".cosmonauts");
 }

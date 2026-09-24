@@ -17,6 +17,45 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("config-test-");
 
 describe("loadProjectConfig", () => {
+	test("parses and validates quality review preparation commands", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		const path = join(tmp.path, ".cosmonauts", "config.json");
+		await writeFile(
+			path,
+			JSON.stringify({
+				qualityReview: {
+					prepare: [
+						{
+							id: "dependencies",
+							command: "bun",
+							args: ["install", "--frozen-lockfile"],
+							timeoutMs: 120000,
+						},
+					],
+				},
+			}),
+		);
+		expect((await loadProjectConfig(tmp.path)).qualityReview?.prepare).toEqual([
+			{
+				id: "dependencies",
+				command: "bun",
+				args: ["install", "--frozen-lockfile"],
+				timeoutMs: 120000,
+			},
+		]);
+		await writeFile(
+			path,
+			JSON.stringify({
+				qualityReview: {
+					prepare: [{ id: "dependencies", argv: ["bun", "install"] }],
+				},
+			}),
+		);
+		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
+			"expected id, command, args",
+		);
+	});
+
 	test("enables the knowledge surface only for literal true", async () => {
 		for (const [value, expected] of [
 			[true, true],

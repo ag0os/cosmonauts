@@ -31,8 +31,32 @@ describe("standalone Quality Manager CLI", () => {
 			const result = await runCli(projectRoot);
 			expect(result.code).toBe(1);
 			expect(result.stdout).toMatch(
-				/^qm-[a-f0-9-]+: Private review workspace is not available\./,
+				/^qm-[a-f0-9-]+: Private workspace preparation refused: ENOENT: no such file or directory, lstat /,
 			);
+			const runId = result.stdout.match(/^(qm-[a-f0-9-]+):/)?.[1];
+			const lifecycle = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					runId ?? "",
+					"artifacts",
+					"qm",
+					"lifecycle.jsonl",
+				),
+				"utf8",
+			);
+			const reserved = lifecycle
+				.trim()
+				.split("\n")
+				.map(
+					(line) => JSON.parse(line) as { phase: string; workspace?: string },
+				)
+				.find((event) => event.phase === "workspace-reserved")?.workspace;
+			expect(reserved).toBeTruthy();
+			expect((await import("node:fs")).existsSync(reserved ?? "")).toBe(false);
 			expect(await snapshot(planRoot)).toEqual(before);
 		} finally {
 			await rm(projectRoot, { recursive: true, force: true });

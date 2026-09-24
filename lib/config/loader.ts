@@ -108,6 +108,7 @@ export async function loadProjectConfig(
 		episodicLog?: ProjectConfig["episodicLog"];
 		analysis?: ProjectConfig["analysis"];
 		knowledgeSurface?: ProjectConfig["knowledgeSurface"];
+		qualityReview?: ProjectConfig["qualityReview"];
 	} = {};
 
 	if (typeof obj.domain === "string") {
@@ -183,8 +184,52 @@ export async function loadProjectConfig(
 	if ("knowledgeSurface" in obj) {
 		config.knowledgeSurface = parseKnowledgeSurfaceConfig(obj.knowledgeSurface);
 	}
+	if ("qualityReview" in obj) {
+		config.qualityReview = parseQualityReviewConfig(obj.qualityReview);
+	}
 
 	return config;
+}
+
+function parseQualityReviewConfig(
+	value: unknown,
+): ProjectConfig["qualityReview"] {
+	if (typeof value !== "object" || value === null || Array.isArray(value))
+		throw new Error("Invalid qualityReview config: expected object");
+	const raw = value as Record<string, unknown>;
+	if (!("prepare" in raw)) return {};
+	if (!Array.isArray(raw.prepare))
+		throw new Error("Invalid qualityReview.prepare: expected steps array");
+	const prepare = raw.prepare.map((entry: unknown, index: number) => {
+		if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+			throw new Error(`Invalid qualityReview.prepare step ${index + 1}`);
+		const step = entry as Record<string, unknown>;
+		if (
+			typeof step.id !== "string" ||
+			!/^[a-z0-9][a-z0-9-]*$/.test(step.id) ||
+			typeof step.command !== "string" ||
+			step.command.length === 0 ||
+			!Array.isArray(step.args) ||
+			!step.args.every((arg) => typeof arg === "string") ||
+			(step.timeoutMs !== undefined &&
+				(!Number.isSafeInteger(step.timeoutMs) ||
+					(step.timeoutMs as number) <= 0))
+		)
+			throw new Error(
+				`Invalid qualityReview.prepare step ${index + 1}: expected id, command, args and positive timeoutMs`,
+			);
+		return {
+			id: step.id,
+			command: step.command,
+			args: step.args as string[],
+			...(step.timeoutMs === undefined
+				? {}
+				: { timeoutMs: step.timeoutMs as number }),
+		};
+	});
+	if (new Set(prepare.map((step) => step.id)).size !== prepare.length)
+		throw new Error("Invalid qualityReview.prepare: duplicate step id");
+	return { prepare };
 }
 
 export function resolveKnowledgeSurfaceConfig(

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -80,15 +80,21 @@ describe("quality review launch policy", () => {
 	it("delegates a durable terminal QM into a child run with a complete report", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "qm-durable-terminal-"));
 		roots.push(projectRoot);
+		const { execFileSync } = await import("node:child_process");
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: projectRoot });
+		git("init", "-q");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		await writeFile(join(projectRoot, ".gitignore"), "missions/sessions/\n");
+		git("add", ".gitignore");
+		git("commit", "-qm", "base");
 		const registry = new AgentRegistry([agent("quality-manager")]);
 		const result = await runDurableChain({
 			steps: parseChain("quality-manager", registry),
 			projectRoot,
 			registry,
 			qualityReview: {
-				prepareWorkspace: async ({ workspaceRoot }) => {
-					await mkdir(workspaceRoot);
-				},
 				execute: async () => ({
 					markdown: renderQualityReviewReport({
 						verdict: "ready",

@@ -1,4 +1,14 @@
 {
+	"qualityReview": {
+		"prepare": [
+			{
+				"id": "dependencies",
+				"command": "bun",
+				"args": ["install", "--frozen-lockfile"],
+				"timeoutMs": 120000
+			}
+		]
+	},
 	"knowledgeSurface": {
 		"enabled": false
 	},
