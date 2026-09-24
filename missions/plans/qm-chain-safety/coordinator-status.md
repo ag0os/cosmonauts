@@ -67,7 +67,8 @@ TASK-726 and TASK-728 depend on TASK-729..738.
 - **TASK-745 done** (`237a3d9`). Tests 3267/3267 after one rerun. Two new load-dependent flakes (`project-tools-fallow-fixtures` and `validate-harness-exports` timeouts) pass in isolation.
 - **Mid-branch review 10 (focused): both channels SHIP for Stages 1–6.** Files: `mid-review-10-{codex,claude}.md`. Two LOW test-only gaps go to TASK-746.
 - **STAGES 1–6 CLOSED.** Stage 7 has started.
-- **Running:** Drive TASK-746 (test hardening), then TASK-726 (Stage 7), then a two-channel review of Stage 7.
+- **TASK-746 done** (`2082356`). **TASK-726 (Stage 7) done** (`cdba7e1`). The coordinator set `diverseReviewerModel` to `anthropic/claude-sonnet-5` in `0ffaa48`; the worker had picked `claude-sonnet-4-5`. Gates: typecheck 0, tracked lint 0, tests 3278/3278, suppressions pass, audit vs `main` pass.
+- **Running:** Stage 7 review 1 (two channels).
 - **Lint caveat:** `bun run lint` reports one error, in Shepherd's gitignored backup under `.shepherd/backups/`. Tracked content passes. I asked Shepherd to move the backup out of the repo.
 - **Next steps for the successor:**
   1. Run mid-branch review 7 (after TASK-739/740). The prompt must state the D-027 threat model: hostile-change-only routes are residual limits, not findings to remediate on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
