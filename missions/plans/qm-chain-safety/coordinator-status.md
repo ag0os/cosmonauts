@@ -48,7 +48,11 @@ All tasks have label `plan:qm-chain-safety`.
 | 757 | Done | `4ceb768` | Malformed index lines fail safe (review 11) |
 | 758 | Done | `9a45d1c` | Single-line Reason/Verdict rewrite, indented marker (review 12) |
 | 727 | To Do | — | **Stage 8.** Depends on 758 (all done). **Next.** Coordinator note added (`f17cf51`). |
-| **728** | In Progress | — | **Stage 9 closure.** Coordinator-run, per D-002 |
+| 761 | Done | `74892bc` | Closure: QM tests leak temp workspaces (Drive `claude-cli` trial) |
+| 762 | Done | `cf025d9` | Closure-review-1 HIGH-1, MEDIUM-1, LOW-3 (failed reviewer sessions are not evidence; audit findings reach the report; QM bullet format) (`claude-cli`) |
+| 763 | Done | `5dab01c` | Closure-review-1 MEDIUM-2, LOW-1, LOW-2 (suppression equivalents, renames, block comments, JSONC) (`claude-cli`) |
+| 764 | Done | `07cfed9` | Full-suite gate reliability: the heavy harness-export test gets a 60 s timeout (codex `gpt-5.6-sol`) |
+| **728** | In Progress | — | **Stage 9 closure.** Coordinator-run, per D-002/D-034. Closure review 2 is running |
 
 **TASK-742 note.** The worker returned "partial" only because its full-suite run hit the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS` artifact. The coordinator verified all its criteria and committed the work in `0b5e7d1` and `7e75231`. Marking it Done, a coordinator regex bug left `status: Done Progress`, which the task parser reads as To Do. Fixed on 2026-09-24 in the handoff commit. It is Done.
 
@@ -172,7 +176,15 @@ All tasks have label `plan:qm-chain-safety`.
 
 ### Stage 9 (TASK-728) — in progress
 
-- Closure prompt: `closure-review-prompt.md`. Two channels are running closure review 1; the outputs go to `closure-review-1-{codex,claude}.md`.
+- **Closure review 1:**
+  - Claude: DO-NOT-SHIP-YET (`closure-review-1-claude.md`). It found HIGH-1: a failed reviewer session was accepted as evidence.
+  - Codex failed on usage (D-033/D-034).
+  - Remediated by TASK-761..764.
+- **Real end-to-end QM runs:** see `closure-e2e.md`. INV-001 held on both runs (byte-identical checkout). Run 2 reproduced HIGH-1 on real models.
+- **Closure review 2**, at HEAD `fc2d047`:
+  - Gates are green: 3432/3432, audit pass, suppressions pass, typecheck and lint 0.
+  - Channel A: Claude Opus, attack execution (`closure-review-2a-prompt.md`).
+  - Channel B: codex `gpt-5.6-sol`, spec-conformance audit (`closure-review-2b-prompt.md`).
 - The real end-to-end QM runs in a dirty scratch clone at `cca8f7d` with before/after snapshots. Script: `scratchpad/e2e/snapshot.sh`. Evidence goes to `closure-e2e.md`.
 
 ### Spec-to-backlog history
