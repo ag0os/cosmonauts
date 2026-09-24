@@ -69,7 +69,8 @@ TASK-726 and TASK-728 depend on TASK-729..738.
 - **STAGES 1–6 CLOSED.** Stage 7 has started.
 - **TASK-746 done** (`2082356`). **TASK-726 (Stage 7) done** (`cdba7e1`). The coordinator set `diverseReviewerModel` to `anthropic/claude-sonnet-5` in `0ffaa48`; the worker had picked `claude-sonnet-4-5`. Gates: typecheck 0, tracked lint 0, tests 3278/3278, suppressions pass, audit vs `main` pass.
 - **Stage 7 review 1**, both DO-NOT-SHIP-YET. Files: `stage7-review-1-{codex,claude}.md`. B-011 is sound, with no Stages 1–6 regressions. B-010 host enforcement can be bypassed by ordinary behavior (IDs, missing index, loose measured cost, QM-side dismissal), and the wiring tests are missing. TASK-747 covers all of it.
-- **Running:** Drive TASK-747, then Stage 7 review 2.
+- **TASK-747 done** (`fde1063`). Gates: tests 3294/3295; the one failure is the known `validate-harness-exports` timeout flake, which passes 12/12 in isolation. Audit pass.
+- **Running:** Stage 7 review 2 (focused, two channels).
 - **Lint caveat:** `bun run lint` reports one error, in Shepherd's gitignored backup under `.shepherd/backups/`. Tracked content passes. I asked Shepherd to move the backup out of the repo.
 - **Next steps for the successor:**
   1. Run mid-branch review 7 (after TASK-739/740). The prompt must state the D-027 threat model: hostile-change-only routes are residual limits, not findings to remediate on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
