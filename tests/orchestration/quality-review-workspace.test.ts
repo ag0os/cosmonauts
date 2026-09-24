@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createPrivateReviewWorkspace } from "../../lib/orchestration/quality-review-workspace.ts";
+import {
+	createPrivateReviewWorkspace,
+	removePrivateReviewWorkspace,
+} from "../../lib/orchestration/quality-review-workspace.ts";
 
 describe("private review workspace capture", () => {
 	const roots: string[] = [];
@@ -71,5 +74,36 @@ describe("private review workspace capture", () => {
 				readFile(join(root, "reserved", "checkout", "tracked.txt")),
 			).rejects.toMatchObject({ code: "ENOENT" });
 		}
+	});
+
+	it("uses the fork merge-base when the base branch advances", async () => {
+		const { root, source, git } = await repository();
+		git("branch", "-M", "main");
+		const fork = git("rev-parse", "HEAD");
+		git("checkout", "-qb", "feature");
+		await writeFile(join(source, "tracked.txt"), "feature\n");
+		git("add", "tracked.txt");
+		git("commit", "-qm", "feature");
+		git("checkout", "main");
+		await mkdir(join(source, ".fallow-baselines"));
+		await writeFile(
+			join(source, ".fallow-baselines", "dupes.json"),
+			"base-side only\n",
+		);
+		git("add", ".fallow-baselines/dupes.json");
+		git("commit", "-qm", "base advanced");
+		git("checkout", "feature");
+		const reserved = join(root, "reserved");
+		await mkdir(reserved);
+		const snapshot = await createPrivateReviewWorkspace(source, reserved);
+		expect(snapshot.base).toBe(fork);
+		expect(snapshot.changedFiles).toEqual(["tracked.txt"]);
+		expect(
+			await readFile(join(snapshot.materialsRoot, "base-sha.txt"), "utf8"),
+		).toBe(`${fork}\n`);
+		expect(
+			await readFile(join(snapshot.materialsRoot, "full.diff"), "utf8"),
+		).not.toContain("dupes.json");
+		await removePrivateReviewWorkspace(reserved);
 	});
 });

@@ -186,7 +186,10 @@ async function runDetachedChildSession(
 			...result,
 			stats: captureLineageStats(params, startMs),
 		};
-		if (params.qualityContext) {
+		if (
+			params.qualityContext &&
+			params.qualityContext.assessmentActive !== false
+		) {
 			if (!params.resolvedRole || !params.resolvedModel || !result.fullText)
 				throw new Error("Missing reviewer host correlation");
 			assertQualityReviewModelIdentity(params.resolvedModel, session.model);

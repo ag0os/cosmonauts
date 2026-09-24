@@ -181,6 +181,18 @@ describe("agent-switch extension", () => {
 	});
 
 	describe("/agent with valid ID", () => {
+		test("refuses an interactive quality-manager switch", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			setupSharedRegistry(["coding/quality-manager"], "coding");
+			const ctx = createMockCtx();
+			await getCommand(pi, "agent").handler("quality-manager", ctx);
+			expect(ctx.newSession).not.toHaveBeenCalled();
+			expect(ctx.ui.notify).toHaveBeenCalledWith(
+				expect.stringContaining("quality review launcher"),
+				"error",
+			);
+		});
 		test("validates ID and calls newSession without setup", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);

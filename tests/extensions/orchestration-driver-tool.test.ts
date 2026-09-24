@@ -44,7 +44,11 @@ import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import type { TaskUpdateInput } from "../../lib/tasks/task-types.ts";
 import { useTempDir } from "../helpers/fs.ts";
-import { createMockPi } from "./orchestration-helpers.ts";
+import {
+	authorizedToolRegistry,
+	createMockPi,
+	TEST_CALLER_MARKER,
+} from "./orchestration-helpers.ts";
 
 type BackendRun = (invocation: BackendInvocation) => Promise<BackendRunResult>;
 
@@ -253,8 +257,17 @@ describe("driver e2e run_driver integration", () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const pi = createMockPi(fixture.projectRoot, {
 			sessionId: PARENT_SESSION_ID,
+			systemPrompt: TEST_CALLER_MARKER,
 		});
-		registerDriverTool(pi as never, vi.fn(), fixture.projectRoot);
+		registerDriverTool(
+			pi as never,
+			async () =>
+				({
+					agentRegistry: authorizedToolRegistry(),
+					domainContext: "coding",
+				}) as never,
+			fixture.projectRoot,
+		);
 
 		await expect(
 			pi.callTool("run_driver", {
@@ -396,7 +409,7 @@ describe("driver e2e run_driver integration", () => {
 		}
 	});
 
-	test("warns and omits episode identity when the enabled worker does not resolve", async () => {
+	test("denies a missing worker before starting an enabled run", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		await writeEpisodicConfig(fixture.projectRoot, true);
 		backendMocks.run.mockResolvedValue(successResult());
@@ -408,16 +421,11 @@ describe("driver e2e run_driver integration", () => {
 			agentRegistry: new AgentRegistry([]),
 		};
 
-		const result = await runDriver(fixture, { runtime });
-		await waitForCompletion(result.workdir);
-		const spec = await readSpec(result.workdir);
-
-		expect(spec).not.toHaveProperty("episodeSource");
-		expect(spec).not.toHaveProperty("episodeAttemptId");
-		expect(stderr).toHaveBeenCalledWith(
-			expect.stringContaining("Drive episode capture skipped"),
-		);
-		expect(backendMocks.run).toHaveBeenCalledTimes(1);
+		expect(await launchDriver(fixture, { runtime })).toMatchObject({
+			error: "unauthorized",
+		});
+		expect(backendMocks.run).not.toHaveBeenCalled();
+		stderr.mockRestore();
 	});
 
 	test("keeps absent and false-config inline specs completions layout and result exact", async () => {
@@ -767,13 +775,14 @@ async function launchDriver(
 ): Promise<DriverResultDetails | DriverDeclinedDetails> {
 	const pi = createMockPi(fixture.projectRoot, {
 		sessionId: PARENT_SESSION_ID,
+		systemPrompt: TEST_CALLER_MARKER,
 	});
 	registerDriverTool(
 		pi as never,
 		async () =>
 			(overrides.runtime ??
 				({
-					agentRegistry: {},
+					agentRegistry: authorizedToolRegistry(),
 					domainResolver: {},
 					domainsDir: fixture.projectRoot,
 					domainContext: "coding",
@@ -839,6 +848,12 @@ function workerRuntime(
 		["coding", targetDomain].filter((value): value is string => Boolean(value)),
 	);
 	const definitions = [...domains].map(workerDefinition);
+	definitions.push({
+		...workerDefinition(targetDomain ?? "coding"),
+		id: "lead",
+		subagents: ["worker"],
+	});
+	if (domainContext === "main") definitions.push(workerDefinition("main"));
 	const bindingResolver = {
 		resolveAgentReference(qualifiedId: string) {
 			const [role, agentId] = qualifiedId.split("/");

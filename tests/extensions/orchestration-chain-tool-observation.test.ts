@@ -7,7 +7,14 @@ import type {
 	ChainResult,
 	ChainStep,
 } from "../../lib/orchestration/types.ts";
-import { createMockPi } from "./orchestration-helpers.ts";
+import {
+	authorizedToolRegistry,
+	createMockPi as baseCreateMockPi,
+	TEST_CALLER_MARKER,
+} from "./orchestration-helpers.ts";
+
+const createMockPi = (cwd: string) =>
+	baseCreateMockPi(cwd, { systemPrompt: TEST_CALLER_MARKER });
 
 const chainMocks = vi.hoisted(() => ({
 	parseChain: vi.fn(),
@@ -192,7 +199,7 @@ describe("chain_run observation surface", () => {
 function runtimeFor() {
 	return async () =>
 		({
-			agentRegistry: {},
+			agentRegistry: authorizedToolRegistry(["planner", "coordinator"]),
 			domainResolver: {},
 			domainsDir: PROJECT_ROOT,
 			domainContext: "coding",

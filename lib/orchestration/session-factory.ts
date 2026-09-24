@@ -17,6 +17,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { createProjectToolsExtension } from "../../domains/shared/extensions/project-tools/index.ts";
 import { buildSessionParams } from "../agents/session-assembly.ts";
 import type { AgentDefinition } from "../agents/types.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
@@ -79,18 +80,39 @@ export async function createAgentSessionFromDefinition(
 	});
 
 	// Build resource loader with all definition fields.
+	const projectToolsPath = join(
+		domainsDir,
+		"shared",
+		"extensions",
+		"project-tools",
+	);
+	const qualityAnalysis = config.qualityReviewContext?.analysisConsent;
+	const extensionPaths = qualityAnalysis
+		? params.extensionPaths.filter((path) => path !== projectToolsPath)
+		: params.extensionPaths;
 	const loader = new DefaultResourceLoader({
 		cwd: config.cwd,
 		agentDir: getAgentDir(),
 		...(params.promptContent && { systemPrompt: params.promptContent }),
 		noExtensions: true,
 		noSkills: true,
-		...(params.extensionPaths.length > 0 && {
-			additionalExtensionPaths: params.extensionPaths,
+		...(extensionPaths.length > 0 && {
+			additionalExtensionPaths: extensionPaths,
 		}),
-		...(params.extensionFactories?.length > 0 && {
-			extensionFactories: params.extensionFactories,
-		}),
+		...(params.extensionFactories.length > 0 || qualityAnalysis
+			? {
+					extensionFactories: [
+						...params.extensionFactories,
+						...(qualityAnalysis
+							? [
+									createProjectToolsExtension({
+										snapshotAuthorization: qualityAnalysis,
+									}),
+								]
+							: []),
+					],
+				}
+			: {}),
 		...(params.skillsOverride && { skillsOverride: params.skillsOverride }),
 		...(params.additionalSkillPaths && {
 			additionalSkillPaths: params.additionalSkillPaths,

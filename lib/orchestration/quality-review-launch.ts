@@ -50,6 +50,74 @@ export function validateQualityReviewAnalysisCalls(
 		throw new Error("analysis_audit must complete exactly once");
 	for (const [name, count] of counts)
 		if (count > 1) throw new Error(`${name} ran more than once`);
+	if (base) {
+		const status = events.find(
+			(event) =>
+				event.type === "tool_execution_end" &&
+				event.toolName === "analysis_status",
+		);
+		const statusResult =
+			status?.type === "tool_execution_end" ? status.result : undefined;
+		const statusDetails =
+			typeof statusResult === "object" &&
+			statusResult !== null &&
+			"details" in statusResult
+				? statusResult.details
+				: undefined;
+		const auditBinding =
+			typeof statusDetails === "object" &&
+			statusDetails !== null &&
+			"capabilities" in statusDetails &&
+			Array.isArray(statusDetails.capabilities)
+				? statusDetails.capabilities.find(
+						(binding: unknown) =>
+							typeof binding === "object" &&
+							binding !== null &&
+							"capability" in binding &&
+							binding.capability === "changed-scope-audit",
+					)
+				: undefined;
+		if (
+			typeof auditBinding !== "object" ||
+			auditBinding === null ||
+			!("state" in auditBinding) ||
+			auditBinding.state !== "bound"
+		)
+			throw new Error(
+				`Analysis audit binding state: ${typeof auditBinding === "object" && auditBinding !== null && "state" in auditBinding ? String(auditBinding.state) : "missing"}`,
+			);
+		const audit = events.find(
+			(event) =>
+				event.type === "tool_execution_end" &&
+				event.toolName === "analysis_audit",
+		);
+		const result =
+			audit?.type === "tool_execution_end" ? audit.result : undefined;
+		const details =
+			typeof result === "object" && result !== null && "details" in result
+				? result.details
+				: undefined;
+		if (
+			typeof details !== "object" ||
+			details === null ||
+			!("kind" in details) ||
+			details.kind !== "findings" ||
+			!("capability" in details) ||
+			details.capability !== "changed-scope-audit" ||
+			!("scope" in details) ||
+			typeof details.scope !== "object" ||
+			details.scope === null ||
+			!("base" in details.scope) ||
+			details.scope.base !== base
+		)
+			throw new Error(
+				`Analysis audit gate state: ${typeof details === "object" && details !== null && "kind" in details ? String(details.kind) : "missing"}`,
+			);
+		if (!("verdict" in details) || details.verdict !== "pass")
+			throw new Error(
+				`Analysis audit gate state: ${"verdict" in details ? String(details.verdict) : "missing verdict"}`,
+			);
+	}
 }
 
 /** A conflicting or malformed context cannot own a tracked plan summary. */
@@ -143,6 +211,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 			);
 			const qualityContext = {
 				runId: context.runId,
+				analysisConsent: context.analysisConsent,
 				workspaceRoot: context.workspaceRoot,
 				materialsRoot: context.materialsRoot,
 				base: context.base,
@@ -153,6 +222,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				allowedLenses: new Set(lenses),
 				attemptedLenses: new Set<string>(),
 				integrityFailures: [] as string[],
+				assessmentActive: true,
 			};
 			const spawner = createPiSpawner(
 				runtime.agentRegistry,
@@ -164,7 +234,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				const result = await spawner.spawn({
 					role: "quality-manager",
 					cwd: context.workspaceRoot,
-					prompt: `Review the captured diff at ${context.materialsRoot}/full.diff, with base ${context.base}. Read the host check results from ${context.hostRunStoreRoot}/artifacts/qm/checks.md. Spawn exactly these reviewer lenses once each: ${lenses.join(", ")}. Synthesize their full final text and direct analysis gate results into a complete final report. Do not run commands or start remediation.`,
+					prompt: `Review the captured diff at ${context.materialsRoot}/full.diff, with base ${context.base}. Read the host check results from ${context.materialsRoot}/checks.md. Spawn exactly these reviewer lenses once each: ${lenses.join(", ")}. Synthesize their full final text and direct analysis gate results into a complete final report. Do not run commands or start remediation.`,
 					qualityReviewContext: qualityContext,
 					onEvent: (event) => {
 						if (
@@ -174,20 +244,27 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 						)
 							analysisEvents.push(event);
 					},
-					projectSkills: runtime.projectSkills,
-					skillPaths: [...runtime.skillPaths],
+					projectSkills: [],
+					skillPaths: [],
 				});
 				if (!result.success)
 					throw new Error(result.error ?? "Quality Manager session failed");
-				validateQualityReviewAnalysisCalls(analysisEvents, context.base);
+				let gateState = "completed-bound";
+				try {
+					validateQualityReviewAnalysisCalls(analysisEvents, context.base);
+				} catch (error) {
+					gateState = error instanceof Error ? error.message : String(error);
+				}
 				if (qualityContext.integrityFailures.length > 0)
 					throw new Error(qualityContext.integrityFailures.join("; "));
 				return {
 					markdown: extractAssistantText(result.messages, "quality-manager"),
 					requiredLenses: lenses,
 					liveChildIds: [...qualityContext.activeSpawns],
+					gateState,
 				};
 			} finally {
+				qualityContext.assessmentActive = false;
 				spawner.dispose();
 			}
 		},

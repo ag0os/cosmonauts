@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { renameSync, rmSync } from "node:fs";
 import {
 	chmod,
+	cp,
 	mkdir,
 	mkdtemp,
 	readdir,
@@ -18,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
+	createSnapshotAnalysisAuthorization,
 	hasAnalysisExecutionConsent,
 	readAnalysisExecutionAuthorizationSync,
 } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
@@ -98,6 +100,82 @@ const CAPABILITY_REQUESTS = [
 	},
 	{ capability: "fix-preview", scope: { kind: "project" } },
 ] as const satisfies readonly AnalysisRequest[];
+
+test("a run-local authorization binds the real project-tools extension in a snapshot", async () => {
+	await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+	await recordConsent();
+	const snapshotRoot = join(fixtureRoot, "snapshot");
+	await cp(projectRoot, snapshotRoot, { recursive: true });
+	const authorization = await createSnapshotAnalysisAuthorization({
+		sourceRoot: projectRoot,
+		snapshotRoot,
+		runId: "qm-test",
+		providerId: "fallow",
+		userStateRoot,
+	});
+	const executable = await createExecutable(
+		join(fixtureRoot, "injected", "fallow"),
+	);
+	const fixture = await loadCapabilityFixture("changed-scope-audit");
+	const invocations: ProviderProcessInvocation[] = [];
+	const executeProcess: ProviderProcessExecutor = async (invocation) => {
+		invocations.push(invocation);
+		if (invocation.args.includes("--version"))
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+				stderr: "",
+			};
+		if (invocation.args[0] === "config")
+			return {
+				kind: "code-exit",
+				code: 3,
+				stdout: "no config file found, using defaults\n",
+				stderr: "",
+			};
+		return {
+			kind: "code-exit",
+			code: fixture.envelope.code,
+			stdout: fixture.envelope.stdout,
+			stderr: fixture.envelope.stderr,
+		};
+	};
+	const pi = createMockPi({ cwd: snapshotRoot });
+	createProjectToolsExtension({
+		snapshotAuthorization: authorization,
+		userStateRoot,
+		injectedExecutablePath: executable,
+		executeProcess,
+	})(pi as never);
+	const status = resultDetails(await pi.callTool("analysis_status", {}));
+	expect(
+		(status.capabilities as readonly { state: string }[]).find(
+			(capability) => capability.state === "bound",
+		),
+	).toBeDefined();
+	expect(
+		resultDetails(await pi.callTool("analysis_audit", { base: "HEAD" })),
+	).toMatchObject({
+		kind: "findings",
+		capability: "changed-scope-audit",
+		scope: { base: "HEAD" },
+	});
+	expect(invocations.some((invocation) => invocation.args[0] === "audit")).toBe(
+		true,
+	);
+	authorization.dispose();
+	expect(() =>
+		authorization.authorizationFor({
+			runId: "qm-test",
+			snapshotRoot,
+			providerId: "fallow",
+		}),
+	).toThrow(/scope mismatch/);
+	await expect(
+		readFile(join(snapshotRoot, "analysis-execution-consent.json")),
+	).rejects.toMatchObject({ code: "ENOENT" });
+});
 
 function resultDetails(result: unknown): Record<string, unknown> {
 	return (result as ToolResult).details as Record<string, unknown>;

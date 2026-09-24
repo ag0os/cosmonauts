@@ -110,7 +110,7 @@ function safeLink(root: string, path: string, target: string): void {
 	if (isAbsolute(target) || !inside(root, resolve(root, dirname(path), target)))
 		throw new WorkspaceRefusal(`Unsafe symlink: ${path}`);
 }
-async function sample(root: string): Promise<Sample> {
+async function sample(root: string, excludePath?: string): Promise<Sample> {
 	const [head, refs, indexBytes, staged, others, headPaths] = await Promise.all(
 		[
 			git(root, ["rev-parse", "HEAD"], true),
@@ -140,7 +140,9 @@ async function sample(root: string): Promise<Sample> {
 			...headTree,
 			...others.toString("utf8").split("\0").filter(Boolean),
 		]),
-	].sort();
+	]
+		.filter((path) => path !== excludePath)
+		.sort();
 	const entries: Entry[] = [];
 	for (const path of paths) {
 		safePath(path);
@@ -259,15 +261,18 @@ export async function removePrivateReviewWorkspace(
 export async function createPrivateReviewWorkspace(
 	projectRoot: string,
 	workspaceRoot: string,
-	ports: { afterFirstSample?: (attempt: number) => Promise<void> } = {},
+	ports: {
+		afterFirstSample?: (attempt: number) => Promise<void>;
+		excludePath?: string;
+	} = {},
 ): Promise<PrivateReviewWorkspace> {
 	const sourceRealPath = await realpath(projectRoot);
 	await verifyLayout(sourceRealPath);
 	let captured: Sample | undefined;
 	for (let attempt = 0; attempt < 3; attempt++) {
-		const first = await sample(sourceRealPath);
+		const first = await sample(sourceRealPath, ports.excludePath);
 		await ports.afterFirstSample?.(attempt);
-		const second = await sample(sourceRealPath);
+		const second = await sample(sourceRealPath, ports.excludePath);
 		if (first.digest === second.digest) {
 			captured = first;
 			break;
@@ -291,7 +296,9 @@ export async function createPrivateReviewWorkspace(
 		],
 		true,
 	);
-	if ((await sample(sourceRealPath)).digest !== snapshot.digest)
+	if (
+		(await sample(sourceRealPath, ports.excludePath)).digest !== snapshot.digest
+	)
 		throw new WorkspaceRefusal("Source changed during private clone");
 	const candidates = [
 		"refs/heads/main",
@@ -310,6 +317,9 @@ export async function createPrivateReviewWorkspace(
 	}
 	if (!base) throw new WorkspaceRefusal("Review base ref is unavailable");
 	await git(checkout, ["update-ref", "refs/heads/qm-review-base", base]);
+	base = (await git(checkout, ["merge-base", snapshot.head, base]))
+		.toString("utf8")
+		.trim();
 	await git(checkout, ["remote", "remove", "origin"]);
 	await git(checkout, ["checkout", "--detach", snapshot.head]);
 	await rm(join(checkout, ".git", "logs"), { recursive: true, force: true });
@@ -388,7 +398,7 @@ export async function createPrivateReviewWorkspace(
 		});
 	}
 	await chmod(join(materialsRoot, "base"), 0o500);
-	await chmod(materialsRoot, 0o500);
+	// The host adds checks.md after preparation and checks, then seals this directory.
 	return {
 		workspaceRoot: checkout,
 		materialsRoot,

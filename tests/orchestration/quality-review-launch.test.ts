@@ -81,6 +81,79 @@ describe("quality review launch policy", () => {
 			/captured base/,
 		);
 	});
+	it("rejects an unbound audit completion despite a non-error tool event", () => {
+		const base = "a".repeat(40);
+		const end = {
+			type: "tool_execution_end" as const,
+			sessionId: "manager",
+			toolCallId: "call",
+			isError: false,
+		};
+		expect(() =>
+			validateQualityReviewAnalysisCalls(
+				[
+					{
+						...end,
+						toolName: "analysis_status",
+						result: {
+							details: {
+								capabilities: [
+									{ capability: "changed-scope-audit", state: "bound" },
+								],
+							},
+						},
+					},
+					{
+						...end,
+						toolName: "analysis_audit",
+						result: {
+							details: { kind: "unbound", reason: "execution-not-consented" },
+						},
+					},
+				],
+				base,
+			),
+		).toThrow(/unbound/);
+	});
+	it("rejects a completed audit with a failing verdict", () => {
+		const base = "a".repeat(40);
+		const end = {
+			type: "tool_execution_end" as const,
+			sessionId: "manager",
+			toolCallId: "call",
+			isError: false,
+		};
+		expect(() =>
+			validateQualityReviewAnalysisCalls(
+				[
+					{
+						...end,
+						toolName: "analysis_status",
+						result: {
+							details: {
+								capabilities: [
+									{ capability: "changed-scope-audit", state: "bound" },
+								],
+							},
+						},
+					},
+					{
+						...end,
+						toolName: "analysis_audit",
+						result: {
+							details: {
+								kind: "findings",
+								capability: "changed-scope-audit",
+								scope: { base },
+								verdict: "fail",
+							},
+						},
+					},
+				],
+				base,
+			),
+		).toThrow(/fail/);
+	});
 	it("triages applicable lenses from the captured diff as well as filenames", () => {
 		expect(
 			triageReviewLenses(

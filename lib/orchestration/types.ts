@@ -299,6 +299,7 @@ export type SpawnEvent =
 			toolName: string;
 			toolCallId: string;
 			isError: boolean;
+			result?: unknown;
 	  })
 	| (SpawnEventBase & {
 			type: "compaction_start";

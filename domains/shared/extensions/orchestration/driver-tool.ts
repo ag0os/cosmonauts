@@ -193,6 +193,16 @@ export function registerDriverTool(
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const callerRole = extractAgentIdFromSystemPrompt(ctx.getSystemPrompt());
+			if (!callerRole)
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "run_driver denied: caller role could not be resolved from runtime identity marker",
+						},
+					],
+					details: { error: "unauthorized", message: "caller role unresolved" },
+				};
 			if (callerRole) {
 				const runtime = await getRuntime(ctx.cwd);
 				const denial = authorizeAgentStart({

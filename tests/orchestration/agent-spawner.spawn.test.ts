@@ -501,6 +501,58 @@ describe("createPiSpawner", () => {
 			]);
 		});
 
+		test("forwards only compact analysis gate observations", async () => {
+			let listener: ((event: unknown) => void) | undefined;
+			const session = createMockSession({
+				subscribe: vi.fn((callback: (event: unknown) => void) => {
+					listener = callback;
+					return vi.fn();
+				}),
+				prompt: vi.fn(async () => {
+					listener?.({
+						type: "tool_execution_end",
+						toolCallId: "audit",
+						toolName: "analysis_audit",
+						isError: false,
+						result: {
+							details: {
+								kind: "findings",
+								capability: "changed-scope-audit",
+								scope: { kind: "changed", base: "abc" },
+								verdict: "pass",
+								native: { secret: "not forwarded" },
+							},
+						},
+					});
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session });
+			const received: unknown[] = [];
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				resolver: realResolver,
+			});
+			await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan",
+				onEvent: (event) => received.push(event),
+			});
+			expect(JSON.stringify(received)).not.toContain("not forwarded");
+			expect(received).toContainEqual(
+				expect.objectContaining({
+					type: "tool_execution_end",
+					result: {
+						details: {
+							kind: "findings",
+							capability: "changed-scope-audit",
+							scope: { base: "abc" },
+							verdict: "pass",
+						},
+					},
+				}),
+			);
+		});
+
 		test("forwards compaction_start/end events through onEvent", async () => {
 			let subscribeListener: ((event: unknown) => void) | undefined;
 			const mockSession = createMockSession({

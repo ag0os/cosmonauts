@@ -35,6 +35,16 @@ vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 
 const temp = useTempDir("chain-tool-durable-");
 const registry = new AgentRegistry([
+	{
+		...agent("lead", false),
+		subagents: [
+			"planner",
+			"task-manager",
+			"reviewer",
+			"quality-manager",
+			"coordinator",
+		],
+	},
 	agent("planner", false),
 	agent("task-manager", false),
 	agent("reviewer", false),
@@ -43,6 +53,24 @@ const registry = new AgentRegistry([
 ]);
 
 describe("chain_run durable tool routing", () => {
+	test("denies a markerless caller before allocating a run", async () => {
+		const { pi } = createChainTool(temp.path);
+		const result = await callChainTool(
+			pi,
+			{ expression: "planner" },
+			undefined,
+			"no identity marker",
+		);
+		expect(result.content[0]?.text).toContain(
+			"caller role could not be resolved",
+		);
+		const store = new FileRunStore({
+			rootDir: join(temp.path, "missions", "sessions"),
+		});
+		expect(await store.listRecentRuns({ scope: "chain", limit: 10 })).toEqual(
+			[],
+		);
+	});
 	// @cosmo-behavior plan:qm-chain-safety#B-001
 	test("refuses a forbidden sequential stage before allocating a run", async () => {
 		spawnerMocks.createPiSpawner.mockReturnValue({
@@ -341,7 +369,7 @@ async function callChainTool(
 		content: Array<{ type: "text"; text: string }>;
 		details: { lines: string[] };
 	}) => void,
-	systemPrompt = "",
+	systemPrompt = "<!-- COSMONAUTS_AGENT_ID:coding/lead -->",
 ): Promise<{
 	content: Array<{ type: "text"; text: string }>;
 	details: {

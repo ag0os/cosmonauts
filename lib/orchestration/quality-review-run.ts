@@ -1,8 +1,19 @@
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, rename, rm, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	lstat,
+	mkdir,
+	open,
+	readFile,
+	rename,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
 	createSnapshotAnalysisAuthorization,
 	type SnapshotAnalysisAuthorization,
@@ -43,6 +54,7 @@ import {
 
 export interface QualityReviewAssessment {
 	markdown: string;
+	gateState?: string;
 	requiredLenses?: readonly string[];
 	liveChildIds?: readonly string[];
 }
@@ -70,6 +82,7 @@ export interface QualityReviewRunOptions {
 	}) => Promise<QualityReviewAssessment>;
 	refusalReason?: string;
 	store?: RunStore;
+	removeWorkspace?: typeof removePrivateReviewWorkspace;
 }
 
 export interface QualityReviewRunResult {
@@ -210,6 +223,11 @@ export async function runQualityReview(
 					const snapshot = await createPrivateReviewWorkspace(
 						options.projectRoot,
 						reservedRoot,
+						{
+							excludePath: options.planSlug
+								? `missions/plans/${options.planSlug}/qm-runs/${ref.runId}.md`
+								: undefined,
+						},
 					);
 					workspaceRoot = snapshot.workspaceRoot;
 					materialsRoot = snapshot.materialsRoot;
@@ -259,9 +277,25 @@ export async function runQualityReview(
 						`${preparationReport}\n${renderQualityReviewChecks(checkResults)}`,
 						{ replace: true },
 					);
+					if (materialsRoot) {
+						const checksCopy = join(materialsRoot, "checks.md");
+						await writeFile(
+							checksCopy,
+							`${preparationReport}\n${renderQualityReviewChecks(checkResults)}`,
+						);
+						await chmod(checksCopy, 0o400);
+					}
 					gateOwnedFiles = changedFiles.filter(isGateOwnedFile);
+					if (
+						changedFiles.includes(".cosmonauts/config.json") &&
+						workspaceRoot &&
+						capturedBase &&
+						(await qualityReviewConfigChanged(workspaceRoot, capturedBase))
+					)
+						gateOwnedFiles.push(".cosmonauts/config.json");
 				}
 			}
+			if (materialsRoot) await chmod(materialsRoot, 0o500);
 			if (options.refusalReason) {
 				verdict = "refused";
 				reason = options.refusalReason;
@@ -287,6 +321,7 @@ export async function runQualityReview(
 					activeChildIds,
 				});
 				markdown = assessment.markdown;
+				const gateState = assessment.gateState;
 				liveChildIds = [
 					...new Set([...activeChildIds, ...(assessment.liveChildIds ?? [])]),
 				];
@@ -340,6 +375,12 @@ export async function runQualityReview(
 				if (cancelled) throw new Error("Caller cancellation");
 				const assessed = assessQualityReviewReport(markdown);
 				verdict = assessed.verdict;
+				if (verdict === "refused") {
+					await sink.write("raw-final.md", markdown);
+					throw new Error(
+						"Report integrity: only the host may produce refused",
+					);
+				}
 				reason =
 					assessed.reason ??
 					(assessed.indexAvailable
@@ -354,7 +395,7 @@ export async function runQualityReview(
 						reason: `Report integrity: ${assessed.reason}`,
 					});
 				}
-				if (options.hostChecks && verdict !== "refused") {
+				if (options.hostChecks) {
 					if (!(assessed.verdict === "failed" && assessed.reason))
 						await sink.write("raw-final.md", markdown, { replace: true });
 					const reported = indexedQualityReviewReport(markdown);
@@ -363,6 +404,7 @@ export async function runQualityReview(
 						"Gates",
 					);
 					const hostBlocksReady =
+						(gateState !== undefined && gateState !== "completed-bound") ||
 						checkConfigMissing ||
 						modelConfigMissing ||
 						gateEvidenceMissing ||
@@ -381,6 +423,11 @@ export async function runQualityReview(
 							`${check.id}: argv ${JSON.stringify(check.argv)}, exit ${check.exitCode ?? "unavailable"}, duration ${check.durationMs} ms, output ${JSON.stringify(check.output.slice(0, 2000))}`,
 					);
 					const hostHumanItems = [
+						...(gateState !== undefined && gateState !== "completed-bound"
+							? [
+									`Analysis audit gate state: ${gateState}; human decision required.`,
+								]
+							: []),
 						...(gateEvidenceMissing
 							? ["Gate evidence missing; human decision required."]
 							: []),
@@ -472,7 +519,9 @@ export async function runQualityReview(
 				? assessQualityReviewReport(markdown)
 				: undefined;
 			markdown =
-				assessmentStructure && !assessmentStructure.reason
+				assessmentStructure &&
+				!assessmentStructure.reason &&
+				!reason.startsWith("Report integrity:")
 					? amendUnindexedQualityReviewReport(markdown, {
 							verdict,
 							reason,
@@ -513,10 +562,6 @@ export async function runQualityReview(
 		let summaryReplaced = false;
 		try {
 			analysisConsent?.dispose();
-			if (reservedRoot && ownsReservedRoot && liveChildIds.length === 0) {
-				await removePrivateReviewWorkspace(reservedRoot);
-				workspaceRemoved = true;
-			}
 			if (summaryPath) {
 				await replacePlanSummary(
 					summaryPath,
@@ -538,12 +583,39 @@ export async function runQualityReview(
 					liveChildIds.length > 0
 						? "retained"
 						: ownsReservedRoot
-							? "removed"
+							? "pending-removal"
 							: "none",
 				activeChildIds: liveChildIds,
 				...(reservedRoot ? { workspace: reservedRoot } : {}),
 				artifactDigests: [finalRef.metadata?.sha256],
 			});
+			if (reservedRoot && ownsReservedRoot && liveChildIds.length === 0) {
+				try {
+					await (options.removeWorkspace ?? removePrivateReviewWorkspace)(
+						reservedRoot,
+					);
+					workspaceRemoved = true;
+				} catch (error) {
+					const retained = `${markdown.trimEnd()}\n\nWorkspace retained: ${reservedRoot}. Removal failed: ${errorReason(error)}\n`;
+					await sink.write("final.md", retained, { replace: true });
+					if (summaryPath)
+						await replacePlanSummary(
+							summaryPath,
+							renderPlanSummary(
+								ref.runId,
+								verdict,
+								provisionalRef.path,
+								reason,
+								retained,
+							),
+						);
+					await phase("retained", {
+						disposition: "retained",
+						workspace: reservedRoot,
+						reason: `Workspace removal failed: ${errorReason(error)}`,
+					});
+				}
+			}
 			result = {
 				outcome: cancelled
 					? "cancelled"
@@ -665,12 +737,43 @@ function errorReason(error: unknown): string {
 function isGateOwnedFile(path: string): boolean {
 	return (
 		path === ".cosmonauts/suppression-exceptions.json" ||
-		path === ".cosmonauts/config.json" ||
 		path === "scripts/check-new-suppressions.ts" ||
 		path === "lib/quality/suppression-policy.ts" ||
 		path === "domains/shared/extensions/project-tools/fallow-provider.ts" ||
 		path.startsWith(".fallow-baselines/")
 	);
+}
+
+async function qualityReviewConfigChanged(
+	workspaceRoot: string,
+	base: string,
+): Promise<boolean> {
+	const parseBlock = (contents: string) => {
+		const parsed: unknown = JSON.parse(contents);
+		return typeof parsed === "object" &&
+			parsed !== null &&
+			!Array.isArray(parsed)
+			? (parsed as Record<string, unknown>).qualityReview
+			: undefined;
+	};
+	try {
+		const before = execFileSync(
+			"git",
+			["show", `${base}:.cosmonauts/config.json`],
+			{
+				cwd: workspaceRoot,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+			},
+		);
+		const after = await readFile(
+			join(workspaceRoot, ".cosmonauts", "config.json"),
+			"utf8",
+		);
+		return !isDeepStrictEqual(parseBlock(before), parseBlock(after));
+	} catch {
+		return true;
+	}
 }
 
 class QualityReviewRefusal extends Error {}

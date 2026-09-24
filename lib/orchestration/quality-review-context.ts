@@ -1,8 +1,10 @@
 import { join } from "node:path";
+import type { SnapshotAnalysisAuthorization } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
 import type { QualityReviewArtifactSink } from "./quality-review-artifacts.ts";
 
 export interface QualityReviewSessionContext {
 	readonly runId: string;
+	readonly analysisConsent?: SnapshotAnalysisAuthorization;
 	readonly workspaceRoot: string;
 	readonly materialsRoot: string;
 	readonly base: string;
@@ -13,6 +15,7 @@ export interface QualityReviewSessionContext {
 	readonly allowedLenses: ReadonlySet<string>;
 	readonly attemptedLenses: Set<string>;
 	readonly integrityFailures: string[];
+	assessmentActive?: boolean;
 }
 
 export function buildQualityReviewPanelPrompt(

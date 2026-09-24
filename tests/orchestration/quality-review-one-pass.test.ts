@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { buildQualityReviewPanelPrompt } from "../../lib/orchestration/quality-review-context.ts";
 import type { SpawnConfig } from "../../lib/orchestration/types.ts";
 
 const mocks = vi.hoisted(() => ({
@@ -84,6 +85,13 @@ it("runs configured checks and one triaged panel in a single QM pass", async () 
 			spawns.push(config.role);
 			const context = config.qualityReviewContext;
 			if (!context) throw new Error("missing quality context");
+			const exposed = `${config.prompt}\n${buildQualityReviewPanelPrompt(context, "Review the scope")}`;
+			expect(exposed).not.toContain(projectRoot);
+			expect(exposed).not.toContain(context.hostRunStoreRoot);
+			expect(exposed).toContain(join(context.materialsRoot, "checks.md"));
+			expect(
+				await readFile(join(context.materialsRoot, "checks.md"), "utf8"),
+			).toContain("one");
 			expect(await readFile(join(config.cwd, "check-count"), "utf8")).toBe("x");
 			expect([...context.allowedLenses]).toEqual([
 				"reviewer",
@@ -116,6 +124,14 @@ it("runs configured checks and one triaged panel in a single QM pass", async () 
 				toolName: "analysis_audit",
 				toolCallId: "audit",
 				isError: false,
+				result: {
+					details: {
+						kind: "findings",
+						capability: "changed-scope-audit",
+						scope: { kind: "changed", base: context.base },
+						verdict: "pass",
+					},
+				},
 			});
 			config.onEvent?.({
 				type: "tool_execution_end",
@@ -123,6 +139,14 @@ it("runs configured checks and one triaged panel in a single QM pass", async () 
 				toolName: "analysis_status",
 				toolCallId: "status",
 				isError: false,
+				result: {
+					details: {
+						kind: "status",
+						capabilities: [
+							{ capability: "changed-scope-audit", state: "bound" },
+						],
+					},
+				},
 			});
 			return {
 				success: true,
@@ -148,7 +172,6 @@ it("runs configured checks and one triaged panel in a single QM pass", async () 
 		dispose: vi.fn(),
 	});
 	const result = await launchQualityReview({ projectRoot });
-	expect(result.stepResult.outcome).toBe("success");
 	expect(spawns).toEqual(["quality-manager"]);
 	const report = await readFile(
 		join(
@@ -164,6 +187,7 @@ it("runs configured checks and one triaged panel in a single QM pass", async () 
 		),
 		"utf8",
 	);
+	expect(result.stepResult.outcome, report).toBe("success");
 	expect(report).toContain("Verdict: ready");
 	expect(report).toContain("one: argv");
 	expect(report).toContain("reviewer: test/reviewer");

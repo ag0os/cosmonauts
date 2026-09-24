@@ -237,6 +237,7 @@ interface DiscoverFallowProviderOptions {
 	) => Promise<FallowExecutableIdentity>;
 	/** Injectable synchronous consent reader for final-validation race tests. */
 	readonly readExecutionAuthorizationSync?: typeof readAnalysisExecutionAuthorizationSync;
+	readonly readExecutionAuthorization?: typeof readAnalysisExecutionAuthorization;
 	/** Session-owned cancellation for version/config discovery subprocesses. */
 	readonly signal?: AbortSignal;
 }
@@ -1506,7 +1507,9 @@ export async function discoverFallowProvider(
 		);
 	}
 
-	const authorization = await readAnalysisExecutionAuthorization({
+	const authorization = await (
+		options.readExecutionAuthorization ?? readAnalysisExecutionAuthorization
+	)({
 		projectRoot: options.projectRoot,
 		providerId: FALLOW_PROVIDER_ID,
 		userStateRoot: options.userStateRoot,

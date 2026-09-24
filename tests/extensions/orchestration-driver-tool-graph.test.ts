@@ -14,7 +14,11 @@ import type { DriverEvent } from "../../lib/driver/types.ts";
 import type { StoredOrchestrationEvent } from "../../lib/durable-runtime/index.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
-import { createMockPi } from "./orchestration-helpers.ts";
+import {
+	authorizedToolRegistry,
+	createMockPi,
+	TEST_CALLER_MARKER,
+} from "./orchestration-helpers.ts";
 
 const backendMocks = vi.hoisted(() => {
 	const run =
@@ -77,6 +81,7 @@ describe("run_driver graph compatibility", () => {
 		const fixture = await setupFixture();
 		const pi = createMockPi(fixture.projectRoot, {
 			sessionId: PARENT_SESSION_ID,
+			systemPrompt: TEST_CALLER_MARKER,
 		});
 		registerDriverTool(pi as never, runtimeFor(fixture), fixture.projectRoot);
 		registerWatchEventsTool(pi as never);
@@ -200,7 +205,7 @@ async function setupFixture(): Promise<Fixture> {
 function runtimeFor(fixture: Fixture) {
 	return async () =>
 		({
-			agentRegistry: {},
+			agentRegistry: authorizedToolRegistry(),
 			domainResolver: {},
 			domainsDir: fixture.projectRoot,
 			domainContext: "coding",

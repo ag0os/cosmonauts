@@ -92,7 +92,7 @@ describe("run_driver caller authority", () => {
 		}
 	});
 
-	test("allows a listed lead and a top-level invocation to reach normal validation", async () => {
+	test("allows a listed lead and denies a markerless tool invocation", async () => {
 		const runtime = {
 			agentRegistry: new AgentRegistry([
 				agent("lead", ["worker"]),
@@ -110,7 +110,9 @@ describe("run_driver caller authority", () => {
 				planSlug: "chain",
 				backend: "codex",
 			});
-			expect(result).toMatchObject({ details: { error: "reserved_scope" } });
+			expect(result).toMatchObject({
+				details: { error: systemPrompt ? "reserved_scope" : "unauthorized" },
+			});
 		}
 	});
 });

@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { vi } from "vitest";
-import type { AgentRegistry } from "../../lib/agents/index.ts";
-import { createRegistryFromDomains } from "../../lib/agents/index.ts";
+import {
+	AgentRegistry,
+	createRegistryFromDomains,
+} from "../../lib/agents/index.ts";
 import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { writeSyntheticDomainPackage } from "../helpers/domain-package-fixture.ts";
@@ -18,6 +20,31 @@ export const testDomainsDir = resolve(
 );
 
 export const testBundledAlphaDir = "/framework/bundled/alpha";
+
+export const TEST_CALLER_MARKER = "<!-- COSMONAUTS_AGENT_ID:coding/lead -->";
+
+export function authorizedToolRegistry(
+	targets: readonly string[] = ["worker"],
+): AgentRegistry {
+	const agent = (id: string, subagents: readonly string[] = []) => ({
+		id,
+		domain: "coding",
+		description: id,
+		capabilities: [],
+		model: "test/model",
+		tools: "none" as const,
+		extensions: [],
+		skills: [],
+		projectContext: false,
+		session: "ephemeral" as const,
+		loop: false,
+		subagents: [...subagents],
+	});
+	return new AgentRegistry([
+		agent("lead", targets),
+		...targets.map((target) => agent(target)),
+	]);
+}
 
 interface OrchestrationDomainFixtures {
 	agentRegistry: AgentRegistry;
@@ -42,7 +69,14 @@ export async function loadOrchestrationDomainFixtures(
 		agents: [
 			{
 				id: "cody",
-				subagents: ["worker", "explorer", "quality-manager", "verifier"],
+				subagents: [
+					"worker",
+					"explorer",
+					"quality-manager",
+					"verifier",
+					"coordinator",
+					"planner",
+				],
 			},
 			{ id: "coordinator", loop: true },
 			{ id: "explorer" },

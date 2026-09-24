@@ -93,7 +93,10 @@ describe("orchestration extension", () => {
 		cwd = "/tmp/project",
 		options?: Parameters<typeof createMockPi>[1],
 	) {
-		const pi = createMockPi(cwd, options);
+		const pi = createMockPi(cwd, {
+			defaultSystemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
+			...options,
+		});
 		orchestrationExtension(pi as never);
 		return { cwd, pi };
 	}
@@ -235,7 +238,7 @@ describe("orchestration extension", () => {
 				has: expect.any(Function),
 			}),
 			"alpha",
-			undefined,
+			"alpha",
 		);
 	});
 
@@ -342,7 +345,7 @@ describe("orchestration extension", () => {
 			undefined,
 			{
 				cwd,
-				getSystemPrompt: () => "",
+				getSystemPrompt: () => "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
 				sessionManager: { getSessionId: () => "test-session" },
 			},
 		);
@@ -1163,6 +1166,67 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 				},
 			],
 		});
+	});
+
+	test("discards a panel completion that arrives after assessment", async () => {
+		mockRuntime({
+			domainContext: "coding",
+			agentRegistry: new AgentRegistry([
+				makeAgent("quality-manager", "coding", { subagents: ["reviewer"] }),
+				makeAgent("reviewer", "coding"),
+			]),
+		});
+		const sessionId = "late-panel-parent";
+		const { pi } = createExtensionPi("/private/snapshot", {
+			sessionId,
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/quality-manager -->",
+		});
+		const writeReviewer = vi.fn();
+		const qualityContext = {
+			runId: "qm-late",
+			workspaceRoot: "/private/snapshot",
+			materialsRoot: "/private/materials",
+			base: "a".repeat(40),
+			changedFiles: [],
+			hostRunStoreRoot: "/operator/run-store",
+			artifactSink: { writeReviewer } as never,
+			activeSpawns: new Set<string>(),
+			allowedLenses: new Set(["reviewer"]),
+			attemptedLenses: new Set<string>(),
+			integrityFailures: [] as string[],
+			assessmentActive: true,
+		};
+		let settlePrompt: (() => void) | undefined;
+		const pending = new Promise<void>((resolve) => {
+			settlePrompt = resolve;
+		});
+		mockChildSession(
+			createIdleChildSession("late-reviewer", {
+				prompt: vi.fn(() => pending),
+				messages: [
+					{
+						role: "assistant",
+						content: [{ type: "text", text: "late full review" }],
+					},
+				],
+			}),
+		);
+		registerQualityReviewSession(sessionId, qualityContext);
+		try {
+			const accepted = (await pi.callTool("spawn_agent", {
+				role: "reviewer",
+				prompt: "review",
+			})) as { details: { status: string } };
+			expect(accepted.details.status, JSON.stringify(accepted)).toBe(
+				"accepted",
+			);
+			qualityContext.assessmentActive = false;
+			settlePrompt?.();
+			await flushAsync(10);
+			expect(writeReviewer).not.toHaveBeenCalled();
+		} finally {
+			removeQualityReviewSession(sessionId);
+		}
 	});
 
 	test("chain_run renderer falls back to result text when details are missing", () => {

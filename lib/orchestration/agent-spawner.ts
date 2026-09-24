@@ -459,6 +459,7 @@ type SpawnEventPayload =
 			toolName: string;
 			toolCallId: string;
 			isError: boolean;
+			result?: unknown;
 	  }
 	| { type: "compaction_start"; reason: CompactionReason }
 	| {
@@ -468,6 +469,50 @@ type SpawnEventPayload =
 			willRetry: boolean;
 			errorMessage?: string;
 	  };
+
+function analysisGateObservation(toolName: string, result: unknown): unknown {
+	if (toolName !== "analysis_status" && toolName !== "analysis_audit")
+		return undefined;
+	const details =
+		typeof result === "object" && result !== null && "details" in result
+			? result.details
+			: undefined;
+	if (typeof details !== "object" || details === null) return { details: {} };
+	if (toolName === "analysis_status") {
+		const bindings =
+			"capabilities" in details && Array.isArray(details.capabilities)
+				? details.capabilities.filter(
+						(binding: unknown) =>
+							typeof binding === "object" &&
+							binding !== null &&
+							"capability" in binding &&
+							binding.capability === "changed-scope-audit",
+					)
+				: [];
+		return {
+			details: {
+				capabilities: bindings.map((binding: { state?: unknown }) => ({
+					capability: "changed-scope-audit",
+					state: binding.state,
+				})),
+			},
+		};
+	}
+	const scope =
+		"scope" in details &&
+		typeof details.scope === "object" &&
+		details.scope !== null
+			? details.scope
+			: undefined;
+	return {
+		details: {
+			kind: "kind" in details ? details.kind : undefined,
+			capability: "capability" in details ? details.capability : undefined,
+			scope: { base: scope && "base" in scope ? scope.base : undefined },
+			verdict: "verdict" in details ? details.verdict : undefined,
+		},
+	};
+}
 
 function attachSessionId(
 	event: SpawnEventPayload,
@@ -495,13 +540,19 @@ function mapSessionEvent(
 				toolCallId: event.toolCallId as string,
 				...(event.args !== undefined && { args: event.args }),
 			};
-		case "tool_execution_end":
+		case "tool_execution_end": {
+			const observation = analysisGateObservation(
+				event.toolName as string,
+				event.result,
+			);
 			return {
 				type: "tool_execution_end",
 				toolName: event.toolName as string,
 				toolCallId: event.toolCallId as string,
 				isError: event.isError as boolean,
+				...(observation === undefined ? {} : { result: observation }),
 			};
+		}
 		case "compaction_start":
 			return {
 				type: "compaction_start",

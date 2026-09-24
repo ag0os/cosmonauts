@@ -16,7 +16,28 @@ import type {
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
-import { createMockPi } from "./orchestration-helpers.ts";
+import {
+	authorizedToolRegistry,
+	createMockPi as baseCreateMockPi,
+	TEST_CALLER_MARKER,
+} from "./orchestration-helpers.ts";
+
+const createMockPi = (
+	cwd: string,
+	options?: Parameters<typeof baseCreateMockPi>[1],
+) =>
+	baseCreateMockPi(cwd, {
+		defaultSystemPrompt: TEST_CALLER_MARKER,
+		...options,
+	});
+const authorizedRuntime = () => ({
+	agentRegistry: authorizedToolRegistry(),
+	domainContext: "coding",
+	domainResolver: {},
+	domainsDir: "/tmp",
+	projectSkills: [],
+	skillPaths: [],
+});
 
 const driverMocks = vi.hoisted(() => ({
 	runInline: vi.fn(),
@@ -79,7 +100,7 @@ describe("run_driver detached mode", () => {
 		const pi = createMockPi(fixture.projectRoot, {
 			sessionId: PARENT_SESSION_ID,
 		});
-		const getRuntime = vi.fn();
+		const getRuntime = vi.fn(async () => authorizedRuntime());
 		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
 
 		const response = (await pi.callTool("run_driver", {
@@ -102,7 +123,7 @@ describe("run_driver detached mode", () => {
 		);
 		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(getRuntime).not.toHaveBeenCalled();
+		expect(getRuntime).toHaveBeenCalled();
 
 		const [spec, deps] = driverMocks.startDetached.mock.calls[0] as [
 			DriverRunSpec,
@@ -130,7 +151,7 @@ describe("run_driver detached mode", () => {
 		const pi = createMockPi(fixture.projectRoot, {
 			sessionId: PARENT_SESSION_ID,
 		});
-		const getRuntime = vi.fn();
+		const getRuntime = vi.fn(async () => authorizedRuntime());
 		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
 
 		const response = await pi.callTool("run_driver", {
@@ -165,7 +186,7 @@ describe("run_driver detached mode", () => {
 		});
 		expect(spec).not.toHaveProperty("episodeSource");
 		expect(spec).not.toHaveProperty("episodeAttemptId");
-		expect(getRuntime).not.toHaveBeenCalled();
+		expect(getRuntime).toHaveBeenCalled();
 		expect(existsSync(spec.workdir)).toBe(false);
 		expect(existsSync(join(fixture.projectRoot, "memory", "agent"))).toBe(
 			false,
@@ -231,7 +252,7 @@ describe("run_driver detached mode", () => {
 				`${testCase.targetDomain}/worker`,
 			);
 			expect(spec?.episodeAttemptId, testCase.name).toMatch(/^attempt-/u);
-			expect(getRuntime, testCase.name).toHaveBeenCalledTimes(1);
+			expect(getRuntime, testCase.name).toHaveBeenCalledTimes(2);
 		}
 	});
 
@@ -240,7 +261,7 @@ describe("run_driver detached mode", () => {
 		const pi = createMockPi(fixture.projectRoot, {
 			sessionId: PARENT_SESSION_ID,
 		});
-		const getRuntime = vi.fn();
+		const getRuntime = vi.fn(async () => authorizedRuntime());
 		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
 
 		const response = (await pi.callTool("run_driver", {
@@ -261,7 +282,7 @@ describe("run_driver detached mode", () => {
 		});
 		expect(driverMocks.startDetached).not.toHaveBeenCalled();
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(getRuntime).not.toHaveBeenCalled();
+		expect(getRuntime).toHaveBeenCalled();
 		expect(
 			existsSync(join(fixture.projectRoot, "missions", "sessions", "chain")),
 		).toBe(false);
@@ -272,7 +293,7 @@ describe("run_driver detached mode", () => {
 		const pi = createMockPi(fixture.projectRoot, {
 			sessionId: PARENT_SESSION_ID,
 		});
-		const getRuntime = vi.fn();
+		const getRuntime = vi.fn(async () => authorizedRuntime());
 		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
 
 		const response = (await pi.callTool("run_driver", {
@@ -286,7 +307,7 @@ describe("run_driver detached mode", () => {
 		expect(response.details.runId).toMatch(/^run-/);
 		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(getRuntime).not.toHaveBeenCalled();
+		expect(getRuntime).toHaveBeenCalled();
 
 		const [spec] = driverMocks.startDetached.mock.calls[0] as [
 			DriverRunSpec,
@@ -302,7 +323,7 @@ describe("run_driver detached mode", () => {
 			sessionId: PARENT_SESSION_ID,
 		});
 		const getRuntime = vi.fn(async () => ({
-			agentRegistry: {},
+			agentRegistry: authorizedToolRegistry(),
 			domainResolver: {},
 			domainsDir: fixture.projectRoot,
 			domainContext: "coding",
@@ -340,13 +361,13 @@ describe("run_driver detached mode", () => {
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 		expect(driverMocks.startDetached).not.toHaveBeenCalled();
-		expect(getRuntime).toHaveBeenCalledTimes(1);
+		expect(getRuntime).toHaveBeenCalledTimes(2);
 	});
 
 	test("rejects cosmonauts-subagent detached runs before startDetached", async () => {
 		const fixture = await setupFixture("unsupported");
 		const pi = createMockPi(fixture.projectRoot);
-		const getRuntime = vi.fn();
+		const getRuntime = vi.fn(async () => authorizedRuntime());
 		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
 
 		const response = (await pi.callTool("run_driver", {
@@ -366,7 +387,7 @@ describe("run_driver detached mode", () => {
 		});
 		expect(driverMocks.startDetached).not.toHaveBeenCalled();
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(getRuntime).not.toHaveBeenCalled();
+		expect(getRuntime).toHaveBeenCalled();
 		expect(
 			existsSync(
 				join(
@@ -385,7 +406,7 @@ describe("run_driver detached mode", () => {
 			taskCount: 4,
 		});
 		const pi = createMockPi(fixture.projectRoot);
-		const getRuntime = vi.fn();
+		const getRuntime = vi.fn(async () => authorizedRuntime());
 		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
 
 		const response = (await pi.callTool("run_driver", {
@@ -404,7 +425,7 @@ describe("run_driver detached mode", () => {
 		});
 		expect(driverMocks.startDetached).not.toHaveBeenCalled();
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(getRuntime).not.toHaveBeenCalled();
+		expect(getRuntime).toHaveBeenCalled();
 	});
 });
 
@@ -484,6 +505,12 @@ function workerRuntime(
 	const definitions = [...new Set(["coding", targetDomain])].map(
 		workerDefinition,
 	);
+	definitions.push({
+		...workerDefinition(targetDomain),
+		id: "lead",
+		subagents: ["worker"],
+	});
+	if (domainContext === "main") definitions.push(workerDefinition("main"));
 	const bindingResolver = {
 		resolveAgentReference(qualifiedId: string) {
 			const [role, agentId] = qualifiedId.split("/");

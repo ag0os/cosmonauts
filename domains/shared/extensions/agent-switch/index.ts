@@ -54,7 +54,17 @@ function resolveAgentOrNotify(
 	const shared = getRegistryOrNotify(ctx);
 	if (!shared) return false;
 	try {
-		shared.registry.resolve(agentId, shared.domainContext);
+		const resolved = shared.registry.resolve(agentId, shared.domainContext);
+		if (
+			resolved.id === "coding/quality-manager" ||
+			(resolved.id === "quality-manager" && resolved.domain === "coding")
+		) {
+			ctx.ui.notify(
+				"Interactive /agent quality-manager is unavailable: use the quality review launcher to create a private snapshot.",
+				"error",
+			);
+			return false;
+		}
 		return true;
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -69,7 +79,12 @@ async function selectAgentOrNotify(
 	const shared = getRegistryOrNotify(ctx);
 	if (!shared) return undefined;
 	const ids = shared.registry.listIds();
-	const selected = await ctx.ui.select("Select agent", ids);
+	const selected = await ctx.ui.select(
+		"Select agent",
+		ids.filter(
+			(id) => id !== "quality-manager" && id !== "coding/quality-manager",
+		),
+	);
 	return selected ?? undefined;
 }
 

@@ -19,7 +19,11 @@ import type {
 } from "../../lib/orchestration/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
-import { createMockPi } from "./orchestration-helpers.ts";
+import {
+	authorizedToolRegistry,
+	createMockPi,
+	TEST_CALLER_MARKER,
+} from "./orchestration-helpers.ts";
 
 const spawnerMocks = vi.hoisted(() => ({
 	createPiSpawner: vi.fn(),
@@ -101,7 +105,10 @@ describe("orchestration run control surface", () => {
 		const chainRun = requireRun(chainResult);
 
 		const fixture = await setupDriveFixture(projectRoot);
-		const pi = createMockPi(projectRoot, { sessionId: PARENT_SESSION_ID });
+		const pi = createMockPi(projectRoot, {
+			sessionId: PARENT_SESSION_ID,
+			systemPrompt: TEST_CALLER_MARKER,
+		});
 		registerDriverTool(pi as never, runtimeFor(projectRoot), projectRoot);
 		registerRunControlTools(pi as never);
 
@@ -185,7 +192,7 @@ async function setupDriveFixture(projectRoot: string) {
 function runtimeFor(projectRoot: string) {
 	return async () =>
 		({
-			agentRegistry: registry,
+			agentRegistry: authorizedToolRegistry(),
 			domainResolver: {},
 			domainsDir: projectRoot,
 			domainContext: "coding",

@@ -106,6 +106,61 @@ const TEST_AGENT: AgentDefinition = {
 };
 
 describe("session-factory planSlug validation", () => {
+	test("replaces the QM project-tools path with its run-local authorization factory", async () => {
+		const hostRunStoreRoot = await mkdtemp(
+			join(tmpdir(), "qm-session-consent-"),
+		);
+		try {
+			mocks.buildSessionParams.mockResolvedValue({
+				promptContent: "manager",
+				tools: ["analysis_status", "analysis_audit"],
+				extensionPaths: ["/tmp/domains/shared/extensions/project-tools"],
+				extensionFactories: [],
+				knowledgeSurfaceEnabled: false,
+				projectContext: false,
+				model: { provider: "test", id: "model" },
+				qualityReviewProfile: "manager",
+			});
+			const authorization = {
+				runId: "one",
+				snapshotRealPath: "/tmp/review-clone",
+				consented: true,
+				authorizationFor: vi.fn(),
+				dispose: vi.fn(),
+			};
+			await createAgentSessionFromDefinition(
+				TEST_AGENT,
+				{
+					role: "coding/quality-manager",
+					cwd: "/tmp/review-clone",
+					prompt: "review",
+					qualityReviewContext: {
+						hostRunStoreRoot,
+						workspaceRoot: "/tmp/review-clone",
+						materialsRoot: "/tmp/materials",
+						base: "a".repeat(40),
+						changedFiles: [],
+						runId: "one",
+						analysisConsent: authorization,
+						artifactSink: {} as never,
+						activeSpawns: new Set(),
+						allowedLenses: new Set(["reviewer"]),
+						attemptedLenses: new Set(),
+						integrityFailures: [],
+					},
+				},
+				"/tmp/domains",
+			);
+			const options = mocks.loaderOptions.mock.calls.at(-1)?.[0] as {
+				additionalExtensionPaths?: string[];
+				extensionFactories?: unknown[];
+			};
+			expect(options.additionalExtensionPaths).toBeUndefined();
+			expect(options.extensionFactories).toHaveLength(1);
+		} finally {
+			await rm(hostRunStoreRoot, { recursive: true, force: true });
+		}
+	});
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.buildSessionParams.mockResolvedValue({

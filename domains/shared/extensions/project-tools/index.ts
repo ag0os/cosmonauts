@@ -15,6 +15,7 @@ import {
 	resolveAnalysisRequest,
 } from "../../../../lib/analysis/index.ts";
 import { loadProjectConfig } from "../../../../lib/config/index.ts";
+import type { SnapshotAnalysisAuthorization } from "./analysis-consent.ts";
 import { AnalysisProviderError } from "./analysis-provider-error.ts";
 import {
 	discoverFallowProvider,
@@ -64,6 +65,7 @@ class AnalysisDiscoveryAbortedError extends Error {
 }
 
 export interface ProjectToolsExtensionDeps {
+	readonly snapshotAuthorization?: SnapshotAnalysisAuthorization;
 	readonly userStateRoot?: string;
 	readonly configuredExecutablePath?: string;
 	readonly injectedExecutablePath?: string;
@@ -553,6 +555,22 @@ export function createProjectToolsExtension(
 
 			const discovery = await discoverProvider({
 				projectRoot: cwd,
+				...(deps.snapshotAuthorization
+					? {
+							readExecutionAuthorization: async ({ projectRoot, providerId }) =>
+								deps.snapshotAuthorization?.authorizationFor({
+									runId: deps.snapshotAuthorization.runId,
+									snapshotRoot: projectRoot,
+									providerId,
+								}) ?? null,
+							readExecutionAuthorizationSync: ({ projectRoot, providerId }) =>
+								deps.snapshotAuthorization?.authorizationFor({
+									runId: deps.snapshotAuthorization.runId,
+									snapshotRoot: projectRoot,
+									providerId,
+								}) ?? null,
+						}
+					: {}),
 				configuredExecutablePath: deps.configuredExecutablePath,
 				injectedExecutablePath: deps.injectedExecutablePath,
 				userStateRoot: deps.userStateRoot,

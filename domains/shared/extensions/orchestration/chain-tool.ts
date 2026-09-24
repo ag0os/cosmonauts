@@ -125,6 +125,16 @@ export function registerChainTool(
 		execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
 			const runtime = await getRuntime(ctx.cwd);
 			const callerRole = extractAgentIdFromSystemPrompt(ctx.getSystemPrompt());
+			if (!callerRole)
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "chain_run denied: caller role could not be resolved from runtime identity marker",
+						},
+					],
+					details: { lines: [] } as ChainProgressDetails,
+				};
 			const callerDef = callerRole
 				? runtime.agentRegistry.get(callerRole, runtime.domainContext)
 				: undefined;
