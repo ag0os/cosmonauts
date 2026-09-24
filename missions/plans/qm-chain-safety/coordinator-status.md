@@ -11,7 +11,7 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
 - **TASK-738** is the remediation from review round 6. The run order is being redesigned under D-026 ("review before execution").
 - **Stages 7–9 have not started:** TASK-726 (model diversity and calibration), TASK-727 (archive and callers), TASK-728 (independent closure, done by the coordinator per D-002).
 - **Branch:** `feature/qm-chain-safety`. Never pushed or merged. Commit only with explicit paths.
-- **Gates at `cabfd08`** (after TASK-737): typecheck 0, lint 0, tests 3233/3233 (baseline at `e43c238` was 3053). `check:suppressions -- --base main` passes.
+- **Gates at `7dd95c8`** (after TASK-738): typecheck 0, lint 0, tests 3242/3242 (baseline at `e43c238` was 3053). `check:suppressions -- --base main` passes.
 
 ### Task ledger
 
@@ -32,7 +32,7 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
 | 735 remediation E | `a9725bf` | From mid-review-3. |
 | 736 remediation F | `a7136e0` | From mid-review-4. |
 | 737 remediation G | `d6dd6c7` | From mid-review-5. |
-| **738 remediation H (D-026)** | — | From mid-review-6. Status: see "Running" below. |
+| **738 remediation H (D-026)** | `c962b94` | From mid-review-6. Done (state `7dd95c8`). The live probe showed `analysis_audit` is unbound without installed dependencies, so a base-owned `analysisPrepare` (lifecycle scripts disabled) was added. |
 
 TASK-726 and TASK-728 depend on TASK-729..738.
 
@@ -53,14 +53,12 @@ TASK-726 and TASK-728 depend on TASK-729..738.
 
 ### Running / next
 
-- **Running:** Drive TASK-738 (see the run id in the last commit of this file, or `ls -t missions/sessions/qm-chain-safety/runs | head -1`).
+- **Running:** nothing. TASK-738 finished (Drive `run-595ad64d-a3d1-41e3-ae8a-4877696f6df8`), and its amendment-3 digest is committed.
 - **Next steps for the successor:**
-  1. When TASK-738 finishes, run the gates yourself.
-  2. Commit any stranded `missions/reviews/knowledge-surface-backfill-amendment-3.md` digest change, after checking it equals `shasum -a 256 .cosmonauts/config.json`.
-  3. Run mid-branch review 7 on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
-  4. Loop through remediation tasks until both channels give SHIP for Stages 1–6.
-  5. Then Drive TASK-726, then TASK-727, each followed by a two-channel review.
-  6. Then do TASK-728 closure (needs N-001 and N-003 ruled).
+  1. Run mid-branch review 7 on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.
+  2. Loop through remediation tasks until both channels give SHIP for Stages 1–6.
+  3. Then Drive TASK-726, then TASK-727, each followed by a two-channel review.
+  4. Then do TASK-728 closure (needs N-001 and N-003 ruled).
 - **Reusable mechanics:**
   - Drive: `COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-6-sol -c model_reasoning_effort=medium" cosmonauts run drive --plan qm-chain-safety --task-ids <ids> --backend codex --mode detached --branch feature/qm-chain-safety --task-timeout 7200000`.
   - Watch `events.jsonl` for `run_completed|run_aborted|task_blocked`.
