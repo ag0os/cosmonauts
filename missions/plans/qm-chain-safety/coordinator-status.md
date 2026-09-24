@@ -32,7 +32,14 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
     - The residual own-process-group grandchild (codex): a configured check that deliberately detaches cannot be bounded without an OS sandbox, which the spec excludes.
     - Claude round-1 L4 remainder (caller prompt and model dropped): scope is host-determined by design, and the model is Stage 7.
   - My earlier acceptance of round-1 L5 (the `execute` port) is withdrawn. TASK-733 #2 closes it.
-- **Running:** Drive TASK-734 → TASK-733, then mid-branch review 3.
+- **Done:** TASK-734 `e6c89ff`, TASK-733 `4fbf361` (state `8ef7a8f`). Gates: typecheck 0, lint 0, tests 3206/3206, suppressions pass.
+- **Mid-branch review 3**, both DO-NOT-SHIP-YET; the Claude channel says "close". Files: `mid-review-3-codex.md`, `mid-review-3-claude.md`. Every round-2 finding is RESOLVED.
+  - **New findings:**
+    - codex HIGH: unbounded seal wait; workspace removal runs before the terminal event.
+    - MEDIUM: SIGINT/SIGTERM swallowed; the triage floor drops `lib/memory`, deletions and prompts; failed-audit reporting vs D-025.
+    - Both channels reject my grandchild acceptance: bound the wait on exit, not on close. codex also rejects the prompt-drop acceptance.
+  - **Dispositions:** D-025 amended on record (a bound failing audit is a gate failure with findings, not a human item). TASK-735 covers all of it. Accepted with record: Claude NEW-L3 (JSX text false positive errs toward safety) and round-2 L5 (both channels agree it is sound).
+- **Running:** Drive TASK-735, then mid-branch review 4.
 - **Blocked on:** N-001 (below) blocks closure only, not the next stages.
 
 ### Spec-to-backlog history

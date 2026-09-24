@@ -509,8 +509,13 @@ Investigation evidence gathered before design:
       QM cannot drop a host-required lens.
     - **Gate state is host-verified.** `ready` requires the host to observe a
       completed, bound `analysis_audit` result for the literal base. An
-      unbound, unconsented or failed audit is recorded as that state and is a
-      human-decision item that blocks `ready`, whatever the model writes.
+      unbound, unconsented, unobserved or failed-to-run audit is recorded as
+      that state and is a human-decision item that blocks `ready`, whatever
+      the model writes. *(Amended on record 2026-09-24 after mid-review-3:)*
+      A bound, completed audit whose verdict fails is a gate failure, not a
+      human decision. It forces `not-ready`, and each introduced audit finding
+      is reported as a finding with its `file:line`, category and severity,
+      taken from the audit envelope.
     - **The plan summary is not part of the reviewed state.** The capture
       excludes `missions/plans/<slug>/qm-runs/<runId>.md` for the run's own
       id.
