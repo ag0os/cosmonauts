@@ -36,8 +36,9 @@ All tasks have label `plan:qm-chain-safety`.
 | 746 | Done | `2082356` | Test hardening |
 | 726 | Done | `cdba7e1` | **Stage 7** |
 | 747 | Done | `fde1063` | From Stage 7 review 1 |
-| **748** | In Progress | — | D-031 floors, from Stage 7 review 2 |
-| 727 | To Do | — | **Stage 8.** Depends on 747, 748 and the earlier chain. |
+| 748 | Done | `953d0f9` | D-031 floors, from Stage 7 review 2 |
+| **749** | In Progress | — | From Stage 7 review 3: floor 1 for any Findings shape, per-entry closure, cap every copy. Drive `run-863ccaab` |
+| 727 | To Do | — | **Stage 8.** Depends on 749. Coordinator note added (`f17cf51`). |
 | 728 | To Do | — | **Stage 9 closure.** Coordinator-run, per D-002. |
 
 **TASK-742 note.** The worker returned "partial" only because its full-suite run hit the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS` artifact. The coordinator verified all its criteria and committed the work in `0b5e7d1` and `7e75231`. Marking it Done, a coordinator regex bug left `status: Done Progress`, which the task parser reads as To Do. Fixed on 2026-09-24 in the handoff commit. It is Done.
@@ -89,9 +90,17 @@ All tasks have label `plan:qm-chain-safety`.
 - Find what wrote `~/.cosmonauts/packages/coding` at 2026-09-23 16:44Z. It is possibly a test writing to the real HOME (D-030).
 - Biome lints the gitignored `.shepherd/` backups. Consider moving backups outside the repository.
 
-### Stage 7 review 3
+### Stage 7 review 3 (session qm-implementer-2)
 
-Pending (see below).
+- **Gates after TASK-748:** all green.
+  - typecheck 0, tracked lint 0, suppressions pass, audit vs `main` passes.
+  - Suite 3305/3305.
+- **Both channels: DO-NOT-SHIP-YET** (`stage7-review-3-{codex,claude}.md`).
+  - **HIGH:** TASK-748 made only `- ` bullets block `ready`. A finding written as a numbered item, a `*` bullet or prose now reaches `ready`. That breaks D-031 floor 1.
+  - **HIGH:** the dismissal of an ID also closes an open entry with the same ID.
+  - Plus a duplicate-P0 cap escape and LOWs.
+  - **Test gap:** replacing the Findings condition with `false` left the full suite green.
+- **Remediation:** TASK-749, Drive `run-863ccaab-18b6-42ca-9612-527633581ae0`. Then run a focused Stage 7 review 4, reusing `stage7-review-3-prompt.md` with the base updated.
 
 ### Spec-to-backlog history
 
