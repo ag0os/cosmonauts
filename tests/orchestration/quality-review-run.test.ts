@@ -310,6 +310,153 @@ describe("quality review durable lifecycle", () => {
 		).toEqual(["Analysis audit gate state: unbound; human decision required."]);
 	});
 
+	async function hostHumanItemProject(source: string): Promise<string> {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		const check = {
+			id: "ok",
+			command: process.execPath,
+			args: ["-e", "process.exit(0)"],
+		};
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					checks: source === "checks not configured" ? [] : [check],
+					...(source === "model not configured"
+						? {}
+						: { diverseReviewerModel: "test/other" }),
+					...(source === "gate-owned change"
+						? { gateOwnedPaths: ["policy.txt"] }
+						: {}),
+					...(source === "check preparation failure"
+						? {
+								prepare: [
+									{
+										id: "regular",
+										command: process.execPath,
+										args: ["-e", "process.exit(5)"],
+									},
+								],
+							}
+						: {}),
+					...(source === "analysis preparation failure"
+						? {
+								analysisPrepare: [
+									{
+										id: "analysis",
+										command: "bun",
+										args: ["install", "--frozen-lockfile", "--ignore-scripts"],
+									},
+								],
+							}
+						: {}),
+				},
+			}),
+		);
+		if (source === "gate-owned change")
+			await writeFile(join(projectRoot, "policy.txt"), "base");
+		const { execFileSync } = await import("node:child_process");
+		execFileSync("git", ["add", "."], { cwd: projectRoot });
+		execFileSync("git", ["commit", "-qm", "base config"], { cwd: projectRoot });
+		if (source === "gate-owned change")
+			await writeFile(join(projectRoot, "policy.txt"), "changed");
+		return projectRoot;
+	}
+
+	it.each([
+		[
+			"checks not configured",
+			"Not configured: qualityReview.checks; human decision required.",
+		],
+		[
+			"model not configured",
+			"Not configured: qualityReview.diverseReviewerModel; human decision required.",
+		],
+		[
+			"gate-owned change",
+			"Gate-owned file changed: policy.txt; human decision required.",
+		],
+		[
+			"unbound audit",
+			"Analysis audit gate state: unbound; human decision required.",
+		],
+		[
+			"unobserved audit",
+			"Analysis audit gate state: not observed; human decision required.",
+		],
+		[
+			"failed-to-run audit",
+			"Analysis audit gate state: failed-to-run; human decision required.",
+		],
+		[
+			"missing gate evidence",
+			"Gate evidence missing; human decision required.",
+		],
+		[
+			"check preparation failure",
+			"Check preparation failed; human decision required.",
+		],
+		[
+			"analysis preparation failure",
+			"Analysis preparation failed; human decision required.",
+		],
+	] as const)("never reports ready with a host human item from %s", async (source, item) => {
+		const projectRoot = await hostHumanItemProject(source);
+		const prepare =
+			source === "analysis preparation failure"
+				? vi
+						.spyOn(workspaceModule, "preparePrivateReviewWorkspace")
+						.mockRejectedValue(
+							new workspaceModule.WorkspacePreparationFailure(
+								"frozen lockfile mismatch",
+								[],
+							),
+						)
+				: undefined;
+		try {
+			const gateState =
+				source === "unobserved audit"
+					? undefined
+					: source === "unbound audit"
+						? "unbound"
+						: source === "failed-to-run audit"
+							? "failed-to-run"
+							: "completed-bound";
+			const result = await runQualityReview({
+				projectRoot,
+				hostChecks: true,
+				execute: async () => ({
+					gateState,
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: source === "missing gate evidence" ? [] : ["audit passed"],
+					}),
+				}),
+			});
+			const report = await readFile(
+				join(
+					projectRoot,
+					"missions",
+					"sessions",
+					"chain",
+					"runs",
+					result.ref.runId,
+					"artifacts",
+					"qm",
+					"final.md",
+				),
+				"utf8",
+			);
+			expect(report).toContain(item);
+			expect(report).toContain("Verdict: not-ready");
+			expect(indexedQualityReviewReport(report)?.verdict).toBe("not-ready");
+		} finally {
+			prepare?.mockRestore();
+		}
+	});
+
 	it("reports a bound failing audit under gates and findings without a human item", async () => {
 		const projectRoot = await root(true);
 		await mkdir(join(projectRoot, ".cosmonauts"));

@@ -710,7 +710,10 @@ describe("quality review launch policy", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	it("assesses a frozen-lockfile mismatch and records the failed analysis preparation", async () => {
+	it.each([
+		true,
+		false,
+	])("blocks ready when analysis preparation is the only blocker (indexed: %s)", async (indexed) => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "qm-stale-lock-"));
 		roots.push(projectRoot);
 		const { execFileSync } = await import("node:child_process");
@@ -754,7 +757,6 @@ describe("quality review launch policy", () => {
 							args: ["install", "--frozen-lockfile", "--ignore-scripts"],
 						},
 					],
-					gateOwnedPaths: ["package.json"],
 					diverseReviewerModel: "test/other",
 					checks: [
 						{
@@ -787,7 +789,7 @@ describe("quality review launch policy", () => {
 						verdict: "ready",
 						reason: "clear",
 						gates: ["audit passed"],
-					}),
+					}).replace(indexed ? /$^/ : /<!-- COSMO_QM_REPORT[\s\S]*?-->/, ""),
 				};
 			},
 		});
@@ -807,13 +809,16 @@ describe("quality review launch policy", () => {
 		expect(report).toContain("Analysis preparation dependencies: failed");
 		expect(report).toMatch(/lockfile/i);
 		expect(report).toContain("Analysis audit gate state: completed-bound");
+		expect(report).toContain("ok: argv");
+		expect(report).toContain("exit 0");
 		expect(report).toContain(
 			"Analysis preparation failed; human decision required.",
 		);
-		expect(indexedQualityReviewReport(report)?.gates).toEqual([
-			"Analysis audit gate state: completed-bound",
-		]);
-		expect(report).toContain("Gate-owned file changed: package.json");
+		if (indexed)
+			expect(indexedQualityReviewReport(report)?.gates).toEqual([
+				"Analysis audit gate state: completed-bound",
+			]);
+		expect(report).not.toContain("Gate-owned file changed:");
 		expect(await readFile(join(artifacts, "checks.md"), "utf8")).toContain(
 			"Analysis preparation dependencies: failed",
 		);

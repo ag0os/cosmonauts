@@ -812,8 +812,12 @@ export async function runQualityReview(
 				markdown,
 				"Gates",
 			);
+			const hostHumanDecisionItems = [
+				...hostHumanItems(gateState, gateEvidenceMissing),
+				...preparationHumanItems(),
+			];
 			if (
-				hostBlocksReady(gateState, gateEvidenceMissing) &&
+				hostBlocksReady(gateState, hostHumanDecisionItems) &&
 				verdict !== "failed"
 			) {
 				verdict = "not-ready";
@@ -825,24 +829,18 @@ export async function runQualityReview(
 				checks: hostCheckLines(),
 				gates: hostGateLines,
 				findings: hostFindingLines,
-				humanItems: [
-					...hostHumanItems(gateState, gateEvidenceMissing),
-					...analysisPreparationHumanItems(),
-				],
+				humanItems: hostHumanDecisionItems,
 			});
 		}
 
 		function hostBlocksReady(
 			gateState: string | undefined,
-			gateEvidenceMissing: boolean,
+			hostHumanDecisionItems: readonly string[],
 		): boolean {
 			return (
 				gateState !== "completed-bound" ||
-				checkConfigMissing ||
 				checkResults.length !== (baseQualityReview?.checks?.length ?? 0) ||
-				preparationFailed ||
-				modelConfigMissing ||
-				gateEvidenceMissing ||
+				hostHumanDecisionItems.length > 0 ||
 				hostResultsBlockReady()
 			);
 		}
@@ -902,10 +900,15 @@ export async function runQualityReview(
 			];
 		}
 
-		function analysisPreparationHumanItems(): string[] {
-			return analysisPreparationFailed
-				? ["Analysis preparation failed; human decision required."]
-				: [];
+		function preparationHumanItems(): string[] {
+			return [
+				...(preparationFailed
+					? ["Check preparation failed; human decision required."]
+					: []),
+				...(analysisPreparationFailed
+					? ["Analysis preparation failed; human decision required."]
+					: []),
+			];
 		}
 
 		function mergeHostReport(host: {
