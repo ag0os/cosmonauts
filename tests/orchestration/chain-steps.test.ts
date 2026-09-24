@@ -252,7 +252,7 @@ describe("deriveStagePromptPurpose", () => {
 			["worker", "Pick up the next ready task and implement it."],
 			[
 				"quality-manager",
-				"Run quality gates, review the diff against main, and orchestrate fixes until merge-ready.",
+				"Assess quality gates and the reviewed diff; produce a durable findings report. Review only: no fixes, commits, or plan completion.",
 			],
 			[
 				"integration-verifier",
