@@ -1,0 +1,39 @@
+# Stage 7 review 5 — codex
+
+The prompt is `stage7-review-5-prompt.md`. Reviewed HEAD `5606790` (TASK-750 at `6733eae`). Final message verbatim:
+
+## Stage 7 verdict: **DO-NOT-SHIP-YET**
+
+At HEAD `5606790`, TASK-750 fixes the named Stage 7 review 4 cases, but two ordinary report paths still violate D-031. The changed-scope audit passes; that does not offset the false-`ready` path.
+
+### Findings
+
+1. **HIGH — A second `## Findings` section can disappear while `ready` survives.** The parser reads only the first matching section ([report.ts:225](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:225)); the extra-section check accepts any heading with a defined name ([report.ts:254](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:254)). For a report with `None recorded.` in its first Findings section and `F-9 P2 crashes` in a second, the probe returned `verdict: ready`, `indexAvailable: true`, and no detected Findings content. The indexed calibration rewrite then **removed F-9** ([report.ts:54](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:54)). This breaks D-031 hard floor 1. The parser gap also existed at `9117af1`; TASK-750’s extra-heading guard does not close it.
+
+2. **MEDIUM — Unsupported performance P0 from a non-performance lens is neither capped nor raised.** Calibration calls the cap only when `lens === "performance-reviewer"` ([models.ts:252](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-models.ts:252)). A generalist artifact with `id: F-1`, `priority: P0`, and a performance description but no `measuredCost`, paired with `F-1 P0 ...` under Out-of-range observations, returned unchanged P0, no issue, and no open Findings. This breaks D-031’s P0/P1 cap and permits the unsupported P0 in a clean `ready` report. The generalist prompt still states the cost rule only for P1 ([reviewer.md:162](/Users/cosmos/Projects/cosmonauts/bundled/coding/prompts/reviewer.md:162)); the security and UX prompt corrections cover their own lenses.
+
+### Stage 7 review 4 dispositions
+
+| Item | Status | Evidence and test distinction |
+|---|---|---|
+| Codex 1, indented subfinding in Findings | **RESOLVED** | Any non-sentinel Findings body blocks at [run.ts:947](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-run.ts:947). The new shape test at [run.test.ts:1298](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-run.test.ts:1298) kills the Findings-condition-to-`false` mutation. |
+| Codex 2, cap rewrites Gates | **RESOLVED** | Rewrites are section-scoped at [report.ts:66](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:66); the Gates duplicate test at [report.test.ts:137](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-report.test.ts:137) fails against `9117af1`. |
+| Codex 3, multiline dismissal liveness | **RESOLVED** | Dismissals now close only in observations, with evidence on any line ([models.ts:192](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-models.ts:192), [models.ts:295](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-models.ts:295)). The both-orders unit case at [models.test.ts:401](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-models.test.ts:401) fails against `9117af1`. |
+| Claude H-1, keyword and reviewer-order false `ready` | **RESOLVED for the named shapes** | Findings no longer parses closure; observation closure checks every raising lens ([models.ts:210](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-models.ts:210)). The first-raising-lens mutation was killed by the self-closure case at [models.test.ts:427](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-models.test.ts:427). |
+| Claude L-1, cap cannot rewrite irregular bullet | **RESOLVED** | Failed in-place rewrites become human items ([run.ts:925](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-run.ts:925)); [report.test.ts:156](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-report.test.ts:156) fails on pre-TASK-750 behavior. |
+| Claude L-2, surviving mutations | **RESOLVED for the named mutations** | Findings closure parsing was removed; bounded reviewer IDs and all-copy capping have tests at [models.test.ts:472](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-models.test.ts:472) and [report.test.ts:137](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-report.test.ts:137). Both requested mutations produced the expected failing assertion in isolated probes. |
+| Claude L-3, sentinel and formatting liveness | **RESOLVED under D-032** | Empty and case-insensitive `None recorded.` bodies allow `ready` ([report.ts:237](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:237)); blank lines and subheadings accompanying Findings content block as D-032 requires. The sentinel cases are at [run.test.ts:1327](/Users/cosmos/Projects/cosmonauts/tests/orchestration/quality-review-run.test.ts:1327). |
+| Extra `##` heading residual | **PARTIAL** | Content under an unknown heading blocks ([report.ts:254](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-report.ts:254)); a repeated *defined* heading remains Finding 1. |
+| QM, security and UX prompt residuals | **RESOLVED for the named text** | The QM names the sentinel and observation-only dismissals ([quality-manager.md:35](/Users/cosmos/Projects/cosmonauts/bundled/coding/prompts/quality-manager.md:35)); security and UX now say P0 or P1 ([security-reviewer.md:170](/Users/cosmos/Projects/cosmonauts/bundled/coding/prompts/security-reviewer.md:170), [ux-reviewer.md:167](/Users/cosmos/Projects/cosmonauts/bundled/coding/prompts/ux-reviewer.md:167)). Finding 2 covers the remaining generalist route. |
+
+The isolated host-predicate probe returned `true` for a nonempty Findings section and `false` after replacing that condition with `false`; its “Findings must block” assertion failed on the mutation. The first-raising-lens mutation returned no issue for a self-closure that HEAD correctly rejects. These probes did not run the QM lifecycle.
+
+A normal clean report, and one whose reviewer IDs are all in observations or an independently evidenced dismissal, produced no calibration issues and no Findings block. Carry-over still uses a leading ID, so an ID mentioned only inside another entry is carried with a human item ([models.ts:172](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-models.ts:172)). Host gates, check results, and human items still block `ready` ([run.ts:935](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-run.ts:935)); assessment still precedes sealed evidence and checks ([run.ts:1345](/Users/cosmos/Projects/cosmonauts/lib/orchestration/quality-review-run.ts:1345)). I found no changed-path regression to D-019 or base-owned runtime/config.
+
+Verification: pure model/report tests **60/60 passed**; typecheck, tracked-file Biome, and `git diff --check` passed. The changed-scope Fallow audit against the merge-base with `main`, using all three committed baselines, returned **pass with zero introduced issues**. QM lifecycle tests and the full suite were not run under the stated prohibition. The repository was not modified.
+
+Residuals: D-031’s recorded heuristic limits remain the measurement-looking code line and a QM repetition of same-lens evidence.
+
+Residuals: D-032 leaves placement of an in-range reviewer finding under Out-of-range observations to QM judgment; the QM Assess prompt also still offers self-verification although the host requires another lens for an observation dismissal.
+
+Residuals: Hostile-only fabrication or tampering with review evidence, materials, reviewed-code checks, or Git objects remains outside D-027, unranked.
