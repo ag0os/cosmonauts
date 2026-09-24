@@ -459,7 +459,7 @@ describe("quality review launch policy", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "test/other",
+					diverseReviewerModel: "anthropic/reviewer",
 					checks: [
 						{
 							id: "order",
@@ -485,7 +485,7 @@ describe("quality review launch policy", () => {
 					spawnId: "spawn-one",
 					sessionId: "panel-one",
 					resolvedRole: "coding/reviewer",
-					resolvedModel: { provider: "test", id: "other" },
+					resolvedModel: { provider: "anthropic", id: "reviewer" },
 					outcome: "success",
 					digest: createHash("sha256").update(fullText).digest("hex"),
 					fullText,
@@ -502,6 +502,7 @@ describe("quality review launch policy", () => {
 						gates: ["audit pass"],
 					}),
 					gateState: "completed-bound",
+					implementerModel: { provider: "openai-codex", id: "worker" },
 					requiredLenses: ["reviewer"],
 				};
 			},

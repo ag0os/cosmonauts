@@ -11,6 +11,10 @@ import {
 	registerPlanContext,
 	removePlanContext,
 } from "../../lib/orchestration/plan-session-context.ts";
+import {
+	registerQualityReviewSession,
+	removeQualityReviewSession,
+} from "../../lib/orchestration/quality-review-context.ts";
 import { removeTracker } from "../../lib/orchestration/spawn-tracker.ts";
 import {
 	createMockPi,
@@ -24,6 +28,69 @@ const mocks = getOrchestrationMocks();
 const PLAN_SLUG = "orchestration-surface-consolidation";
 
 describe("spawn_agent inline compiler boundary", () => {
+	test("uses the configured diverse model only for the quality panel generalist", async () => {
+		const fixtures = await loadOrchestrationDomainFixtures({
+			includeReviewers: true,
+		});
+		const resolver = new DomainResolver(fixtures.domainRegistry);
+		mocks.runtimeCreate.mockResolvedValue({
+			agentRegistry: fixtures.agentRegistry,
+			domainContext: "coding",
+			projectSkills: [],
+			skillPaths: [],
+			domainRegistry: fixtures.domainRegistry,
+			domainResolver: resolver,
+			domainsDir: testDomainsDir,
+		});
+		const sessionId = "qm-model-wiring";
+		const pi = createMockPi("/tmp/qm-panel", {
+			sessionId,
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/quality-manager -->",
+		});
+		orchestrationExtension(pi as never);
+		registerQualityReviewSession(sessionId, {
+			runId: "qm-test",
+			workspaceRoot: "/tmp/qm-panel",
+			materialsRoot: "/tmp/qm-panel/materials",
+			base: "base",
+			changedFiles: [],
+			hostRunStoreRoot: "/tmp/qm-host",
+			artifactSink: {} as never,
+			activeSpawns: new Set(),
+			allowedLenses: new Set(["reviewer", "security-reviewer"]),
+			attemptedLenses: new Set(),
+			integrityFailures: [],
+			diverseReviewerModel: "anthropic/claude-sonnet-5",
+			baseRuntime: {
+				agentRegistry: fixtures.agentRegistry,
+				domainContext: "coding",
+				projectSkills: [],
+				skillPaths: [],
+				domainRegistry: fixtures.domainRegistry,
+				domainResolver: resolver,
+				domainsDir: testDomainsDir,
+			} as never,
+		});
+		const configs: Array<{ role: string; model?: string }> = [];
+		mocks.createAgentSessionFromDefinition.mockImplementation(
+			async (_definition, config) => {
+				configs.push({ role: config.role, model: config.model });
+				throw new Error("captured configuration");
+			},
+		);
+		try {
+			for (const role of ["coding/reviewer", "coding/security-reviewer"])
+				await pi.callTool("spawn_agent", { role, prompt: "Review" });
+			await flushAsync();
+			expect(configs).toEqual([
+				{ role: "coding/reviewer", model: "anthropic/claude-sonnet-5" },
+				{ role: "coding/security-reviewer", model: undefined },
+			]);
+		} finally {
+			removeQualityReviewSession(sessionId);
+			removeTracker(sessionId);
+		}
+	});
 	let realRegistry: AgentRegistry;
 	let realDomainRegistry: DomainRegistry;
 

@@ -1295,6 +1295,210 @@ describe("quality review durable lifecycle", () => {
 	});
 
 	// @cosmo-behavior plan:qm-chain-safety#B-010
+	it.each([
+		true,
+		false,
+	])("reports unconfigured diversity once (indexed: %s)", async (indexed) => {
+		const projectRoot = await hostHumanItemProject("model not configured");
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async () => {
+				const report = renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					gates: ["audit passed"],
+				});
+				return {
+					markdown: indexed
+						? report
+						: report.replace(/<!-- COSMO_QM_REPORT [\s\S]*? -->/, ""),
+					gateState: "completed-bound",
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		const visible =
+			report.split("## Human decisions\n")[1]?.split("\n## ")[0] ?? "";
+		expect(
+			visible.match(/Not configured: qualityReview\.diverseReviewerModel/g),
+		).toHaveLength(1);
+	});
+
+	it.each([
+		[
+			"base alias",
+			{ provider: "openai-codex", id: "worker" },
+			"custom/reviewer",
+			{ anthropic: ["custom"] },
+			"Diversity: attested",
+		],
+		[
+			"missing implementer",
+			undefined,
+			"anthropic/reviewer",
+			undefined,
+			"Default implementer model identity missing (INV-002)",
+		],
+	] as const)("enforces diversity with %s", async (_name, implementerModel, diverseReviewerModel, modelFamilies, expected) => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel,
+					checks: [],
+					...(modelFamilies ? { modelFamilies } : {}),
+				},
+			}),
+		);
+		await commitBaseConfig(projectRoot);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				const fullText = "No findings";
+				await artifactSink.writeReviewer({
+					runId,
+					lens: "reviewer",
+					spawnId: "spawn-reviewer",
+					sessionId: "session-reviewer",
+					resolvedRole: "coding/reviewer",
+					resolvedModel: {
+						provider: modelFamilies ? "custom" : "anthropic",
+						id: "reviewer",
+					},
+					outcome: "success",
+					digest: createHash("sha256").update(fullText).digest("hex"),
+					fullText,
+				});
+				return {
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: ["audit passed"],
+					}),
+					gateState: "completed-bound",
+					implementerModel,
+					requiredLenses: ["reviewer"],
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain(expected);
+		expect(report).toContain(
+			implementerModel ? "Verdict: not-ready" : "Verdict: failed",
+		);
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-010
+	it.each([
+		["renumbered", "PF-99 P1 slow path", true, "PF-99 P1", "unmapped P1"],
+		["raised", "PF-2 P1 slow path", true, "PF-2 P2", "capped at P2"],
+		["unindexed", "PF-2 P1 slow path", false, "PF-2 P2", "capped at P2"],
+		["omitted", "", true, "PF-2 open", "carried forward as open"],
+	] as const)("calibrates %s performance findings in the final report", async (_name, finding, indexed, visible, evidence) => {
+		const projectRoot = await root(true);
+		await mkdir(join(projectRoot, ".cosmonauts"));
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					diverseReviewerModel: "anthropic/reviewer",
+					checks: [],
+				},
+			}),
+		);
+		await commitBaseConfig(projectRoot);
+		const result = await runQualityReview({
+			projectRoot,
+			hostChecks: true,
+			execute: async ({ runId, artifactSink }) => {
+				for (const [lens, fullText, provider] of [
+					["reviewer", "No findings", "anthropic"],
+					[
+						"performance-reviewer",
+						"- id: PF-2\n  priority: P2",
+						"openai-codex",
+					],
+				] as const)
+					await artifactSink.writeReviewer({
+						runId,
+						lens,
+						spawnId: `spawn-${lens}`,
+						sessionId: `session-${lens}`,
+						resolvedRole: `coding/${lens}`,
+						resolvedModel: {
+							provider,
+							id: lens === "reviewer" ? "reviewer" : "performance",
+						},
+						outcome: "success",
+						digest: createHash("sha256").update(fullText).digest("hex"),
+						fullText,
+					});
+				const report = renderQualityReviewReport({
+					verdict: "ready",
+					reason: "clear",
+					gates: ["audit passed"],
+					findings: finding ? [finding] : [],
+				});
+				return {
+					markdown: indexed
+						? report
+						: report.replace(/<!-- COSMO_QM_REPORT [\s\S]*? -->/, ""),
+					gateState: "completed-bound",
+					implementerModel: { provider: "openai-codex", id: "worker" },
+					requiredLenses: ["reviewer", "performance-reviewer"],
+				};
+			},
+		});
+		const report = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"chain",
+				"runs",
+				result.ref.runId,
+				"artifacts",
+				"qm",
+				"final.md",
+			),
+			"utf8",
+		);
+		expect(report).toContain("Verdict: not-ready");
+		expect(report).toContain(visible);
+		expect(report).toContain(evidence);
+	});
+
+	// @cosmo-behavior plan:qm-chain-safety#B-010
 	it("caps unsupported performance P1 and blocks lens-only closure in the completed report", async () => {
 		const projectRoot = await root(true);
 		await mkdir(join(projectRoot, ".cosmonauts"));
@@ -4000,7 +4204,7 @@ describe("quality review durable lifecycle", () => {
 			JSON.stringify({
 				skills: ["base-skill"],
 				qualityReview: {
-					diverseReviewerModel: "test/other",
+					diverseReviewerModel: "anthropic/reviewer",
 					checks: [
 						{
 							id: "tamper",
@@ -4042,6 +4246,7 @@ describe("quality review durable lifecycle", () => {
 					spawn: async (config) => {
 						const context = config.qualityReviewContext;
 						if (!context) throw new Error("missing quality context");
+						expect(context.diverseReviewerModel).toBe("anthropic/reviewer");
 						for (const lens of ["reviewer", "security-reviewer"]) {
 							const fullText = `${lens} completed`;
 							context.attemptedLenses.add(lens);
@@ -4051,7 +4256,10 @@ describe("quality review durable lifecycle", () => {
 								spawnId: `spawn-${lens}`,
 								sessionId: `session-${lens}`,
 								resolvedRole: `coding/${lens}`,
-								resolvedModel: { provider: "test", id: "other" },
+								resolvedModel:
+									lens === "reviewer"
+										? { provider: "anthropic", id: "reviewer" }
+										: { provider: "openai-codex", id: "security" },
 								outcome: "success",
 								digest: createHash("sha256").update(fullText).digest("hex"),
 								fullText,
@@ -4105,8 +4313,7 @@ describe("quality review durable lifecycle", () => {
 				"utf8",
 			);
 			expect(report).toContain("tamper: argv");
-			expect(report).toContain("Verdict: failed");
-			expect(report).toContain("Reviewer model family unresolvable");
+			expect(report).toContain("Diversity: attested");
 			expect(report).not.toContain("Report integrity: materials/full.diff");
 			await expect(stat(marker)).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(stat(lateMarker)).rejects.toMatchObject({ code: "ENOENT" });

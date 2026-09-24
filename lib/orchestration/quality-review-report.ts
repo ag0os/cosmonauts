@@ -54,9 +54,14 @@ export function applyReviewerCalibration(
 	for (const issue of issues) {
 		const id = issue.match(/^Performance (\S+)/)?.[1];
 		if (!id) continue;
+		const exactId = new RegExp(
+			`\\b${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+		);
 		amended = amended
 			.split("\n")
-			.map((line) => (line.includes(id) ? line.replace(/\bP1\b/g, "P2") : line))
+			.map((line) =>
+				exactId.test(line) ? line.replace(/\bP1\b/g, "P2") : line,
+			)
 			.join("\n");
 	}
 	return amended;
@@ -195,6 +200,16 @@ export function hasQualityReviewSectionContent(
 ): boolean {
 	const body = visibleSectionBody(markdown, heading);
 	return body !== undefined && body !== "" && body !== "- None recorded.";
+}
+
+/** Read visible finding bullets even when the optional machine index is absent. */
+export function qualityReviewFindingLines(markdown: string): string[] {
+	const body = visibleSectionBody(markdown, "Findings");
+	if (!body || body === "- None recorded.") return [];
+	return body
+		.split("\n")
+		.filter((line) => /^-\s+/.test(line))
+		.map((line) => line.replace(/^-\s+/, ""));
 }
 
 /** Keep section prose intact when the optional machine index is unavailable. */

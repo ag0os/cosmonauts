@@ -52,6 +52,7 @@ import {
 	hasQualityReviewSectionContent,
 	indexedQualityReviewReport,
 	type QualityReviewVerdict,
+	qualityReviewFindingLines,
 	renderQualityReviewReport,
 } from "./quality-review-report.ts";
 import { reviewerEvidenceModels } from "./quality-review-seal.ts";
@@ -719,7 +720,19 @@ export async function runQualityReview(
 		function attestReviewerDiversity(
 			assessment: QualityReviewAssessment,
 		): void {
-			if (!assessment.implementerModel) return;
+			if (!assessment.implementerModel) {
+				if (
+					!assessment.requiredLenses?.includes("reviewer") &&
+					observedReviewerModels.length === 0
+				)
+					return;
+				diversityIssue = "Default implementer model identity missing (INV-002)";
+				observedReviewerModels = [
+					...observedReviewerModels,
+					`Diversity: ${diversityIssue}.`,
+				];
+				return;
+			}
 			const diversity = assessReviewerDiversity({
 				implementer: assessment.implementerModel,
 				configured: baseQualityReview?.diverseReviewerModel,
@@ -840,10 +853,12 @@ export async function runQualityReview(
 				"Gates",
 			);
 			const hostHumanDecisionItems = [
-				...hostHumanItems(gateState, gateEvidenceMissing),
-				...(diversityHumanItem ? [diversityHumanItem] : []),
-				...calibration.humanItems,
-				...preparationHumanItems(),
+				...new Set([
+					...hostHumanItems(gateState, gateEvidenceMissing),
+					...(diversityHumanItem ? [diversityHumanItem] : []),
+					...calibration.humanItems,
+					...preparationHumanItems(),
+				]),
 			];
 			if (diversityIssue && verdict !== "failed") {
 				verdict = "failed";
@@ -879,8 +894,7 @@ export async function runQualityReview(
 						text: await readFile(artifact.path, "utf8"),
 					})),
 			);
-			const reportedFindings =
-				indexedQualityReviewReport(markdown)?.findings ?? [];
+			const reportedFindings = qualityReviewFindingLines(markdown);
 			const calibration = calibrateReviewerFindings({
 				materials: materialsRoot
 					? await readFile(join(materialsRoot, "full.diff"), "utf8")
@@ -894,14 +908,17 @@ export async function runQualityReview(
 			const calibrationFindings = calibration.issues.filter((issue) =>
 				issue.startsWith("Performance "),
 			);
+			const carriedFindings = calibration.findings.slice(
+				reportedFindings.length,
+			);
 			markdown = applyReviewerCalibration(
 				markdown,
-				calibration.findings,
+				calibration.findings.slice(0, reportedFindings.length),
 				calibrationFindings,
 			);
 			return {
 				humanItems: calibrationHumanItems,
-				findings: calibrationFindings,
+				findings: [...calibrationFindings, ...carriedFindings],
 			};
 		}
 

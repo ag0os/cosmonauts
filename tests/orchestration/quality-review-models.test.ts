@@ -37,7 +37,6 @@ describe("quality review model policy", () => {
 	});
 
 	it.each([
-		["same family", { provider: "openai", id: "reviewer" }],
 		["substituted", { provider: "anthropic", id: "other" }],
 		["unresolvable", { provider: "unknown", id: "reviewer" }],
 	])("rejects %s generalist", (_name, model) => {
@@ -48,6 +47,28 @@ describe("quality review model policy", () => {
 				reviewers: [{ lens: "reviewer", model }],
 			}).issue,
 		).toBeDefined();
+	});
+
+	it("rejects an observed generalist that matches its configured model but shares the implementer family", () => {
+		expect(
+			assessReviewerDiversity({
+				implementer: { provider: "openai-codex", id: "worker" },
+				configured: "openai/reviewer",
+				reviewers: [
+					{ lens: "reviewer", model: { provider: "openai", id: "reviewer" } },
+				],
+			}).issue,
+		).toContain("share family openai");
+	});
+
+	it("reports an absent generalist as missing", () => {
+		expect(
+			assessReviewerDiversity({
+				implementer: { provider: "openai", id: "worker" },
+				configured: "anthropic/reviewer",
+				reviewers: [],
+			}).issue,
+		).toContain("missing");
 	});
 
 	it("reports an unconfigured reviewer model as a human decision", () => {
@@ -99,5 +120,79 @@ describe("quality review model policy", () => {
 			findings: [],
 		});
 		expect(result.issues[0]).toContain("F-1");
+	});
+
+	it("keeps finding IDs distinct when capping priority", () => {
+		const result = calibrateReviewerFindings({
+			materials: "Input 100 items measured 20 ms in benchmark run.",
+			reviewers: [
+				{ lens: "performance-reviewer", text: "- id: PF-1\n  priority: P1" },
+				{
+					lens: "performance-reviewer",
+					text: "- id: PF-10\n  priority: P1\n  measuredCost: Input 100 items measured 20 ms in benchmark run.",
+				},
+			],
+			findings: ["PF-1 P1 slow", "PF-10 P1 measured"],
+		});
+		expect(result.findings).toContain("PF-10 P1 measured");
+		expect(result.findings).toContain("PF-1 P2 slow");
+	});
+
+	it.each([
+		"for (let i = 0; i < 10; i++)",
+		"const BATCH_SIZE = 100000;",
+	])("rejects a numeric code quote as measured cost: %s", (quote) => {
+		const result = calibrateReviewerFindings({
+			materials: quote,
+			reviewers: [
+				{
+					lens: "performance-reviewer",
+					text: `- id: PF-1\n  priority: P1\n  measuredCost: ${quote}`,
+				},
+			],
+			findings: ["PF-1 P1 costly"],
+		});
+		expect(result.findings).toContain("PF-1 P2 costly");
+	});
+
+	it("accepts a measured quantity and cost unit cited from materials", () => {
+		const quote = "At 100 items, benchmark measured 20 ms per operation.";
+		const result = calibrateReviewerFindings({
+			materials: quote,
+			reviewers: [
+				{
+					lens: "performance-reviewer",
+					text: `- id: PF-1\n  priority: P1\n  measuredCost: ${quote}`,
+				},
+			],
+			findings: ["PF-1 P1 costly"],
+		});
+		expect(result.findings).toContain("PF-1 P1 costly");
+	});
+
+	it("blocks an unrecognized P1 and carries an omitted reviewer finding", () => {
+		const result = calibrateReviewerFindings({
+			materials: "no measurement",
+			reviewers: [
+				{ lens: "performance-reviewer", text: "- id: PF-2\n  priority: P2" },
+			],
+			findings: ["PF-99 P1 renamed"],
+		});
+		expect(result.issues.join(" ")).toContain("PF-99");
+		expect(result.findings.join(" ")).toContain("PF-2");
+	});
+
+	it("does not accept a same-lens dismissal in QM synthesis", () => {
+		const result = calibrateReviewerFindings({
+			materials: "fixed in lib/a.ts",
+			reviewers: [
+				{
+					lens: "reviewer",
+					text: "- id: F-1\n  priority: P2\n  closureEvidence: fixed in lib/a.ts",
+				},
+			],
+			findings: ["F-1 dismissed by reviewer"],
+		});
+		expect(result.issues.join(" ")).toContain("F-1");
 	});
 });

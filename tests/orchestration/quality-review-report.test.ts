@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	applyReviewerCalibration,
 	assessQualityReviewReport,
 	indexedQualityReviewReport,
 	renderQualityReviewReport,
@@ -61,5 +62,20 @@ describe("quality review reports", () => {
 			"## Findings\n\n- F-001: high, error, src/auth.ts:4; reject missing token (input: empty token).",
 		);
 		expect(indexedQualityReviewReport(changed)).toBeUndefined();
+	});
+
+	it("caps PF-1 in an unindexed report without changing PF-10", () => {
+		const markdown = renderQualityReviewReport({
+			verdict: "not-ready",
+			reason: "findings",
+			findings: ["PF-1 P1 unsupported", "PF-10 P1 measured"],
+		}).replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, "");
+		const result = applyReviewerCalibration(
+			markdown,
+			["PF-1 P2 unsupported", "PF-10 P1 measured"],
+			["Performance PF-1 lacked measured cost; capped at P2."],
+		);
+		expect(result).toContain("PF-1 P2 unsupported");
+		expect(result).toContain("PF-10 P1 measured");
 	});
 });

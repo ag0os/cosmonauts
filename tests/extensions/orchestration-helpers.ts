@@ -53,6 +53,7 @@ interface OrchestrationDomainFixtures {
 
 interface LoadOrchestrationDomainFixtureOptions {
 	domainId?: string;
+	includeReviewers?: boolean;
 }
 
 export async function loadOrchestrationDomainFixtures(
@@ -83,7 +84,15 @@ export async function loadOrchestrationDomainFixtures(
 			{ id: "planner" },
 			{ id: "verifier" },
 			{ id: "worker" },
-			{ id: "quality-manager", subagents: ["verifier"] },
+			{
+				id: "quality-manager",
+				subagents: options.includeReviewers
+					? ["reviewer", "security-reviewer"]
+					: ["verifier"],
+			},
+			...(options.includeReviewers
+				? [{ id: "reviewer" }, { id: "security-reviewer" }]
+				: []),
 		],
 		prompts: {
 			cody: `Synthetic ${domainId} cody persona.`,
@@ -93,6 +102,9 @@ export async function loadOrchestrationDomainFixtures(
 			verifier: `Synthetic ${domainId} verifier persona.`,
 			worker: `Synthetic ${domainId} worker persona.`,
 			"quality-manager": `Synthetic ${domainId} quality manager persona.`,
+			...(options.includeReviewers
+				? { reviewer: "Review", "security-reviewer": "Security review" }
+				: {}),
 		},
 	});
 	const domains = await loadDomainsFromSources([
