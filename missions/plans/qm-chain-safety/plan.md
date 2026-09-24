@@ -650,12 +650,30 @@ Investigation evidence gathered before design:
     - AC-013 (ratified) requires reviewer *guidance*: a performance P1 needs a measured or reproduced cost, and no lens is the only judge that closes its own finding. The reviewer and QM prompts deliver that guidance.
     - The host calibration added in TASK-726 and TASK-747 is defense in depth over free-form markdown written by models. It must meet two hard floors:
       1. It never produces or permits a false `ready`.
-      2. It never silently drops a reviewer finding. Every reviewer finding ID ends up as its own entry in Findings or in Out-of-range observations, or as a dismissal with evidence from a different lens, or the host carries it over.
+      2. It never silently drops a reviewer finding. Every reviewer finding ID ends up as its own entry in Findings or in Out-of-range observations, or as a dismissal with evidence from a different lens, or the host carries it over. *(Placement of dismissals superseded by D-032, 2026-09-24: evidenced dismissals live only in Out-of-range observations, and any Findings content blocks `ready`.)*
     - Unsupported performance priorities above P2 (P0 and P1) are capped or raised as human items.
     - Recognizing whether a quoted `measuredCost` or `closureEvidence` string is a genuine measurement, or evidence from a different lens, remains a heuristic. Its known misses are recorded limits, not blockers: a measurement-looking code line, or a same-lens evidence quote repeated by the QM. The accidental threat model (D-027) bounds them. The ratified guidance and the independent panel are the primary control.
   - Alternatives: keep hardening the text parsing for each new phrasing (Stage 7 reviews 1–2). That does not converge on free-form prose.
   - Why: AC-013 read with D-027, INV-003 and B-005.
   - Decided by: coordinator, amend-on-record, 2026-09-24
+
+- **D-032 - Findings is fail-safe; dismissals live only in Out-of-range observations** *(Added 2026-09-24 after Stage 7 review 4)*
+  - Decision:
+    - **Findings blocks `ready` whenever it has content.** Any content except the no-findings sentinel blocks `ready`, whatever its shape: bullets, numbered items, prose, sub-bullets or subheadings. The sentinel is `None recorded.`, with or without a bullet, and matching is case-insensitive. The host does not parse dismissals or closures in Findings. A dismissal written there is simply content, and it blocks. The QM prompt names the sentinel.
+    - **Evidenced dismissals are recorded only under Out-of-range observations.**
+      - An entry counts as a dismissal only when the dismissal is stated positively right after its leading ID: `dismissed`, `resolved` or `closed`.
+      - It is closed only by a cited `closureEvidence` from a lens other than *every* lens that raised that ID. The check is independent of reviewer completion order, and the evidence may sit on any line of the entry.
+      - A dismissal-worded entry that fails this check raises a human item.
+      - Other Out-of-range entries are observations and do not block `ready`.
+    - **Floor 2 is unchanged.** Every reviewer finding ID must appear as the leading ID of an entry in Findings or Out-of-range observations; otherwise the host carries it over with a human item.
+    - **The P0/P1 cap applies to every copy of an ID inside Findings and Out-of-range observations, and only there.** It never rewrites Gates or any other section. A cap that cannot be applied in place becomes a human item.
+    - **A `##` section outside the defined report sections that has content blocks `ready`.** This fails safe.
+    - **Recorded limit.** Placing an in-range reviewer finding under Out-of-range observations is QM judgment. The ratified prompt guidance and the independent panel are the primary control, bounded by D-027.
+  - Alternatives:
+    - Keep D-031's placement: dismissals recognized in either section, and Findings blocking only on unaccounted or open entries. Stage 7 reviews 3 and 4 each found a new false-`ready` shape: non-bullet text, an indented sub-finding riding a closed entry, keyword-only closure, and closure that depended on reviewer order. Parsing closure inside Findings does not converge on free-form prose, which is the same reason D-031 gives.
+  - Why: D-031 floor 1, which carries INV-003 and the D-025 host-verified `ready`, needs a check that fails safe by construction. AC-013's independent-closure guidance still applies, and the host enforces it where dismissals now live.
+  - Decided by: coordinator, amend-on-record, 2026-09-24 (supervisor concurred)
+  - Supersedes: D-031 floor 2's allowance of dismissals in Findings; TASK-748 AC #2 and TASK-749 AC #1 as to dismissals in Findings.
 
 - **D-018 - AC-003 exempts exactly the host-written plan summary** *(from H-001)*
   - Decision: option A. AC-003 exempts only the host-written new file
