@@ -1022,8 +1022,7 @@ removed only in the stage that delivers its replacement (SCOPE-SEQUENCING-001).
    script, and reconcile the docs and the roadmap. Independent of D-018..D-022. This
    lands early so later stages are judged on introduced debt only.
 3. **Base-owned suppression check — B-008 (check part).** Add the registry,
-   policy and project check, and seed the current directives. Independent of
-   H-*.
+   policy and project check, and seed the current directives. Independent of D-018..D-022.
 4. **QM run allocation, lifecycle and host artifacts — B-003 (sink), B-004.**
    Allocate the durable QM run (including D-016 for inline chains), write the
    conservative report first, add the lifecycle, path-safe sink, finalization
