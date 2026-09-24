@@ -9,6 +9,10 @@ labels:
   - 'plan:qm-chain-safety'
 dependencies:
   - TASK-725
+  - TASK-729
+  - TASK-730
+  - TASK-731
+  - TASK-732
 createdAt: '2026-09-24T03:17:44.318Z'
 updatedAt: '2026-09-24T03:17:44.318Z'
 ---

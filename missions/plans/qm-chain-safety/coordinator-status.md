@@ -10,8 +10,18 @@ HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm
 - **Done:** Drive batch 2 `run-45abf529-0210-43c6-9a3b-52809bc6197f` — TASK-723 `eb539cd` (state `3df0145`). Gates: typecheck 0, lint 0, tests 3110/3110. Until TASK-724/725 supply the workspace and assessment ports, every QM launch refuses (expected mid-branch).
 - **TASK-724 first attempt** `run-3161f58f-…` blocked. The knowledge-surface backfill config-digest tripwire fired on the plan-sanctioned `.cosmonauts/config.json` change. Resolved by precedent in amendment-3 (`624c813`), pending owner ratification (N-002).
 - **Done:** TASK-724 retry `run-d43e663f-…` — `4cc1093` (state `93bed5e`). Gates: typecheck 0, lint 0, tests 3121/3121. The amendment-3 digest was updated to the Stage 5 config.
-- **Running:** TASK-725 (Stage 6).
-- **Next:** gates → batch TASK-723 → TASK-724 → TASK-725 → TASK-726 → TASK-727, gates at each boundary; TASK-728 is done by the coordinator (D-002: Claude subagent + read-only codex, never the QM).
+- **TASK-725:** the first attempt `run-2ae54c4f-…` blocked on the same config-digest tripwire and was resolved by note (`c6bfe5f`). The retry `run-3ab35870-…` finished it: `a4d3731`, state `7213f3d`, amendment digest in `b437cd1`. Gates: typecheck 0, lint 0, tests 3159/3159.
+- **Mid-branch review 1 (Stages 1–6)**, both channels DO-NOT-SHIP-YET: `mid-review-1-codex.md` (7 findings) and `mid-review-1-claude.md` (3 HIGH, 6 MEDIUM, 8 LOW). The prompt is in `mid-review-prompt.md`. My spot-check findings (a)–(c) were all confirmed.
+  - **Dispositions:** plan D-025 amend-on-record (merge-base review base, checks in materials, D-025 triage, host-verified gate state, summary excluded from capture, bounded assessment, dual-caller reviewer prompts). Remediation tasks:
+    - TASK-729: consent, path exposure, unbound gate, merge-base, finalization order, L1/L2/L3/L7, fail-closed markerless caller, L6.
+    - TASK-730: cancellation, process-group kill, QM deadline, panel timeout.
+    - TASK-731: restore specialist prompts and QM triage.
+    - TASK-732: suppression directive forms.
+  - **Accepted without a task:**
+    - Claude L5 (test-only `execute` port): it has no production caller, so it gets another look at closure.
+    - Claude L8 (`StepResult.childRun`): a generic runtime field used for D-016's inline-chain QM run id. Recorded here, and re-checked at closure under R-014.
+  - TASK-726 and TASK-728 now depend on TASK-729..732.
+- **Running:** Drive remediation batch TASK-732 → 729 → 730 → 731, then a re-review of the remediation (independent Claude + codex) before TASK-726.
 - **Blocked on:** N-001 (below) blocks closure only, not the next stages.
 
 ### Spec-to-backlog history

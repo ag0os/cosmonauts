@@ -490,6 +490,47 @@ Investigation evidence gathered before design:
   - Supersedes: Implementation Order item 7's "host-observed model recording";
     the independence of stages 2 and 3
 
+- **D-025 - Clarifications forced by the Stage 1–6 mid-branch review** *(Added 2026-09-24 after review)*
+  - Decision:
+    - **Review base.** The review base is the merge-base of the captured HEAD
+      and the resolved base ref (local `main`, then `master`, then
+      `origin/main`), not that ref's tip. The literal base SHA in the
+      materials, the `{base}` for checks and the `analysis_audit` base are all
+      that merge-base. This matches the pre-plan QM prompt, which D-004's
+      "same order as today's QM prompt" refers to.
+    - **Check evidence reaches the QM as review material.** Host code writes a
+      copy of `checks.md` under `materialsRoot` before the materials are made
+      read-only. No prompt, tool argument or system-prompt content given to a
+      quality session names the source root or the host run store (D-004,
+      D-006, R-012).
+    - **Panel triage.** The host computes a minimum required lens set. The QM
+      may add any other of the four lenses it judges applicable, once each
+      (Design §6 step 3). Every lens that is started is required evidence. The
+      QM cannot drop a host-required lens.
+    - **Gate state is host-verified.** `ready` requires the host to observe a
+      completed, bound `analysis_audit` result for the literal base. An
+      unbound, unconsented or failed audit is recorded as that state and is a
+      human-decision item that blocks `ready`, whatever the model writes.
+    - **The plan summary is not part of the reviewed state.** The capture
+      excludes `missions/plans/<slug>/qm-runs/<runId>.md` for the run's own
+      id.
+    - **Bounded assessment.** A configurable QM assessment deadline, and a
+      caller cancellation that propagates to the QM session, prepare and
+      checks, both finalize the run (`failed` or `cancelled`). Host-run
+      prepare and check processes are killed as a process group on timeout.
+      Timed-out panel children are still never cancelled (D-011; execution-
+      liveness AC-015).
+    - **Reviewer prompts serve both callers.** The specialist prompts keep
+      their review dimensions. When host materials are present, they read
+      scope from the materials. When spawned directly (`cody`, `cosmo`), they
+      establish scope as they did before this plan.
+  - Alternatives: keep the Stage 6 behavior. The two independent reviews
+    rejected that (`mid-review-1-codex.md`, `mid-review-1-claude.md`).
+  - Why: INV-001, INV-003, INV-005, AC-016.
+  - Decided by: coordinator, amend-on-record, 2026-09-24
+  - Supersedes: the Stage 6 host-only lens triage, and the implicit
+    "base = resolved ref tip"
+
 - **D-018 - AC-003 exempts exactly the host-written plan summary** *(from H-001)*
   - Decision: option A. AC-003 exempts only the host-written new file
     `missions/plans/<slug>/qm-runs/<runId>.md`, which never overwrites and is

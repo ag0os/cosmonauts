@@ -15,6 +15,10 @@ dependencies:
   - TASK-725
   - TASK-726
   - TASK-727
+  - TASK-729
+  - TASK-730
+  - TASK-731
+  - TASK-732
 createdAt: '2026-09-24T03:18:26.982Z'
 updatedAt: '2026-09-24T03:18:26.982Z'
 ---
