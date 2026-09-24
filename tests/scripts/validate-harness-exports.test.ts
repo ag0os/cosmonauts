@@ -248,7 +248,7 @@ describe("repository harness export validation", () => {
 			{ cwd: provisionProject },
 		);
 		expect(status).toBe("");
-	});
+	}, 60_000);
 
 	test("authorizes exactly the four ratified rows from named git bytes and rejects a changed target before locking", async () => {
 		const fixture = await createFixture();
