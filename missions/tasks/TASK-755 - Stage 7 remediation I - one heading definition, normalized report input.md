@@ -1,7 +1,7 @@
 ---
 id: TASK-755
 title: 'Stage 7 remediation I - one heading definition, normalized report input'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-754
 createdAt: '2026-09-24T19:46:09.807Z'
-updatedAt: '2026-09-24T19:46:09.807Z'
+updatedAt: '2026-09-24T19:53:09.773Z'
 ---
 
 ## Description
@@ -37,11 +37,10 @@ Keep the changed-scope audit against `main` passing: no new complexity, dead-cod
 
 `bun run lint` has one known error, in the gitignored `.shepherd/backups/`; lint on tracked paths must pass. Run the suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Every heading and section function in `quality-review-report.ts` uses one shared heading predicate and title parser, and the host normalizes CRLF, lone CR and non-breaking spaces once before any of them run (including the plan summary).
-- [ ] #2 End to end with host checks, each of these yields `not-ready` and loses no content: an appended bare `## Findings` duplicate with CRLF; a `## ` empty-title heading with content (mid-report and after the index); a `##<tab>Notes` heading with content; content appended after the report-index comment; the tests fail on the current code.
-- [ ] #3 With a non-breaking space after `## Findings` and a reviewer finding omitted from the report, the carryover entry appears under Findings in the final report and a human item is raised (floor 2); tested.
-- [ ] #4 A clean all-CRLF report reaches `ready`; a clean LF report still reaches `ready`; tested.
-- [ ] #5 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
+- [x] #1 Every heading and section function in `quality-review-report.ts` uses one shared heading predicate and title parser, and the host normalizes CRLF, lone CR and non-breaking spaces once before any of them run (including the plan summary).
+- [x] #2 End to end with host checks, each of these yields `not-ready` and loses no content: an appended bare `## Findings` duplicate with CRLF; a `## ` empty-title heading with content (mid-report and after the index); a `##<tab>Notes` heading with content; content appended after the report-index comment; the tests fail on the current code.
+- [x] #3 With a non-breaking space after `## Findings` and a reviewer finding omitted from the report, the carryover entry appears under Findings in the final report and a human item is raised (floor 2); tested.
+- [x] #4 A clean all-CRLF report reaches `ready`; a clean LF report still reaches `ready`; tested.
+- [x] #5 The changed-scope audit against `main` with committed baselines still passes; typecheck, tracked lint and the full suite pass.
 <!-- AC:END -->
