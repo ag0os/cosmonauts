@@ -6,49 +6,146 @@
       },
       "crap_critical": {
         "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
       }
     },
     "cli/harness/subcommand.ts": {
       "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "cli/main.ts": {
+      "crap_moderate": {
         "count": 1
       }
     },
     "cli/memory/judgment-provider.ts": {
       "complexity_moderate": {
         "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "cli/run/subcommand.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "cli/session.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "cli/sessions/subcommand.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "cli/skills/subcommand.ts": {
+      "crap_moderate": {
+        "count": 1
       }
     },
     "cli/tasks/commands/create.ts": {
-      "complexity_high": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "cli/update/subcommand.ts": {
+      "crap_moderate": {
         "count": 1
       }
     },
     "domains/shared/extensions/orchestration/driver-tool.ts": {
-      "complexity_moderate": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "domains/shared/extensions/orchestration/spawn-tool.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
         "count": 1
       }
     },
     "domains/shared/extensions/orchestration/watch-events-tool.ts": {
-      "complexity_high": {
+      "complexity_critical": {
         "count": 1
       },
-      "crap_high": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "domains/shared/extensions/plans/index.ts": {
+      "crap_moderate": {
         "count": 1
       }
     },
     "domains/shared/extensions/project-tools/fallow-provider.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
       "complexity_high": {
         "count": 1
       },
       "complexity_moderate": {
-        "count": 2
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
       },
       "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "domains/shared/extensions/project-tools/index.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "domains/shared/extensions/tasks/index.ts": {
+      "crap_moderate": {
         "count": 1
       }
     },
     "lib/agent-packages/codex-cli.ts": {
       "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/agent-packages/definition.ts": {
+      "crap_moderate": {
         "count": 1
       }
     },
@@ -57,8 +154,56 @@
         "count": 1
       }
     },
+    "lib/architecture-map/config.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/architecture-map/freshness.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/architecture-map/generator.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/architecture-map/retrieval.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/architecture-map/store.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/artifacts/plan-conformance.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/config/loader.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/domains/loader.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/domains/registry.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
     "lib/driver/backends/env-args.ts": {
       "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
         "count": 1
       }
     },
@@ -68,22 +213,69 @@
       }
     },
     "lib/driver/drive-graph-runner.ts": {
-      "complexity_moderate": {
+      "complexity_high": {
         "count": 2
+      },
+      "crap_high": {
+        "count": 3
+      }
+    },
+    "lib/driver/drive-scheduler-backend.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/driver/durable-steps.ts": {
+      "crap_high": {
+        "count": 3
       }
     },
     "lib/driver/event-stream.ts": {
       "complexity_high": {
         "count": 1
+      },
+      "crap_high": {
+        "count": 1
       }
     },
-    "lib/driver/run-run-loop.ts": {
-      "complexity_moderate": {
+    "lib/driver/report-parser.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/driver/run-one-task.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/driver/run-state.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/driver/shell-command-finalizer.ts": {
+      "crap_moderate": {
         "count": 1
       }
     },
     "lib/durable-runtime/controller.ts": {
-      "complexity_moderate": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/durable-runtime/file-store.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/durable-runtime/scheduler-state.ts": {
+      "crap_critical": {
         "count": 1
       }
     },
@@ -93,56 +285,128 @@
       },
       "crap_critical": {
         "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
       }
     },
     "lib/extensions/agent-memory/index.ts": {
-      "complexity_high": {
-        "count": 1
-      },
-      "complexity_moderate": {
-        "count": 1
-      }
-    },
-    "lib/harness-adapters/provenance.ts": {
-      "complexity_high": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 1
-      }
-    },
-    "lib/harness-adapters/sync.ts": {
-      "complexity_high": {
-        "count": 5
-      },
-      "complexity_moderate": {
-        "count": 6
-      },
-      "crap_high": {
-        "count": 1
-      }
-    },
-    "lib/memory/consolidation-proposals.ts": {
-      "complexity_high": {
-        "count": 1
-      }
-    },
-    "lib/memory/consolidation-sources.ts": {
       "complexity_critical": {
         "count": 1
       },
       "complexity_high": {
         "count": 1
       },
-      "complexity_moderate": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/extensions/architecture-memory/index.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/extensions/knowledge-surface/knowledge-tools.ts": {
+      "crap_moderate": {
         "count": 2
+      }
+    },
+    "lib/harness-adapters/inventory.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/harness-adapters/provenance.ts": {
+      "complexity_critical": {
+        "count": 1
       },
       "crap_critical": {
         "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/harness-adapters/render.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/harness-adapters/sync.ts": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "complexity_high": {
+        "count": 3
+      },
+      "complexity_moderate": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 17
+      }
+    },
+    "lib/memory/consolidation-proposals.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/memory/consolidation-receipts.ts": {
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "lib/memory/consolidation-sources.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
       }
     },
     "lib/memory/durable-files.ts": {
       "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/memory/episodic-records.ts": {
+      "crap_high": {
         "count": 1
       }
     },
@@ -159,6 +423,9 @@
         "count": 2
       },
       "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
         "count": 1
       }
     },
@@ -166,8 +433,17 @@
       "complexity_critical": {
         "count": 1
       },
-      "complexity_moderate": {
+      "complexity_high": {
         "count": 2
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
       }
     },
     "lib/memory/living-memory.ts": {
@@ -175,18 +451,38 @@
         "count": 2
       },
       "complexity_high": {
-        "count": 1
-      },
-      "complexity_moderate": {
         "count": 3
       },
-      "crap_critical": {
+      "complexity_moderate": {
         "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 7
       }
     },
     "lib/memory/markdown-store.ts": {
+      "complexity_high": {
+        "count": 1
+      },
       "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
         "count": 2
+      }
+    },
+    "lib/memory/okf.ts": {
+      "crap_moderate": {
+        "count": 1
       }
     },
     "lib/memory/retirement-receipts.ts": {
@@ -195,35 +491,144 @@
       },
       "crap_critical": {
         "count": 1
+      },
+      "crap_high": {
+        "count": 1
       }
     },
     "lib/memory/retirement-store.ts": {
-      "complexity_high": {
+      "complexity_critical": {
         "count": 1
       },
-      "complexity_moderate": {
+      "complexity_high": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
         "count": 2
       }
     },
     "lib/orchestration/chain-event-adapter.ts": {
-      "complexity_moderate": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/orchestration/chain-parser.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/orchestration/chain-profiler.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/orchestration/chain-runner.ts": {
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "lib/orchestration/durable-chain-runner.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/plans/plan-manager.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/plans/review-rounds.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/runtime.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/sessions/session-store.ts": {
+      "crap_moderate": {
         "count": 1
       }
     },
     "lib/skills/exporter.ts": {
       "complexity_critical": {
-        "count": 2
+        "count": 3
       },
       "complexity_high": {
         "count": 1
       },
       "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
         "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/tasks/task-parser.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/check-reachability.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
       }
     },
     "scripts/knowledge-surface-backfill.ts": {
+      "complexity_high": {
+        "count": 1
+      },
       "complexity_moderate": {
-        "count": 2
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/probe-census.ts": {
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 4
       }
     },
     "scripts/validate-harness-exports.ts": {
@@ -235,10 +640,28 @@
       },
       "crap_critical": {
         "count": 2
+      },
+      "crap_moderate": {
+        "count": 5
       }
     },
-    "tests/episodic/pre-w3-disabled-baselines.test.ts": {
-      "complexity_moderate": {
+    "tests/cli/drive/run.test.ts": {
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "tests/driver/driver-durable-steps.test.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "tests/extensions/project-tools-fallow.test.ts": {
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "tests/harness-adapters/provenance.test.ts": {
+      "crap_moderate": {
         "count": 1
       }
     },
@@ -251,20 +674,64 @@
       },
       "crap_critical": {
         "count": 1
-      }
-    },
-    "tests/memory/interface.test.ts": {
-      "complexity_high": {
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
         "count": 1
       }
     },
+    "tests/helpers/domain-package-fixture.test.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "tests/helpers/packages.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "tests/memory/interface.test.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "tests/memory/living-memory.test.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
     "tests/memory/markdown-store.test.ts": {
-      "complexity_high": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
         "count": 1
       }
     },
     "tests/orchestration/chain-runner.test.ts": {
-      "complexity_high": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "tests/tasks/task-manager-concurrency.test.ts": {
+      "crap_moderate": {
         "count": 1
       }
     }
@@ -272,8 +739,8 @@
   "runtime_coverage_findings": [],
   "target_keys": [
     "lib/driver/backends/claude-cli.ts:dead code",
-    "lib/harness-adapters/sync.ts:complexity",
     "cli/drive/subcommand.ts:complexity",
+    "lib/harness-adapters/sync.ts:complexity",
     "lib/memory/living-memory.ts:complexity",
     "lib/config/loader.ts:complexity",
     "lib/driver/event-stream.ts:complexity",
@@ -282,8 +749,9 @@
     "lib/memory/knowledge-records.ts:complexity",
     "lib/skills/exporter.ts:complexity",
     "lib/memory/knowledge-store.ts:complexity",
-    "scripts/validate-harness-exports.ts:complexity",
     "tests/memory/interface.test.ts:complexity",
+    "scripts/validate-harness-exports.ts:complexity",
+    "scripts/probe-census.ts:untested risk",
     "lib/extensions/agent-memory/index.ts:complexity",
     "lib/durable-runtime/scheduler.ts:complexity",
     "lib/memory/retirement-receipts.ts:complexity",

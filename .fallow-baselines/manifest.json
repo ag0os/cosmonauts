@@ -3,31 +3,55 @@
   "baselines": {
     "dead-code": {
       "path": ".fallow-baselines/dead-code.json",
-      "sha256": "95286861d9e19e408326b230aeb0229b36649b7e7c0817e66315697a6b9640c5",
+      "sha256": "ba9311b507cf396e77d193dcdc50590fc935e4e4821de6e42f6d8a43fa610be6",
       "provenance": [
         {
           "action": "adopted as-is",
           "commit": "eb55243bf5582b6a8a88c128f7be66473ffaebf3"
+        },
+        {
+          "action": "refresh",
+          "base": "main",
+          "baseCommit": "29fc0ce81457dc165cdb045b33772984e5289724",
+          "sha256": "ba9311b507cf396e77d193dcdc50590fc935e4e4821de6e42f6d8a43fa610be6",
+          "reason": "N-001 (human ruling 2026-09-24, relayed by Shepherd): re-anchor all three changed-scope floors at local main 29fc0ce, this plan's merge-base, so inherited debt in touched files never fails the gate (INV-005). main exceeded the adopted floors: dead-code 3, dupes 15, health 217 unbaselined findings.",
+          "recordedAt": "2026-09-24T13:24:33.575Z"
         }
       ]
     },
     "health": {
       "path": ".fallow-baselines/health.json",
-      "sha256": "61f914dfbdada51f0738de68f779cf3a2e2b2087c6a253b75c8cf88738f51487",
+      "sha256": "39e566a1cdc918640eaaac0174e64b4e1cc19a724dca4e291fdfd9e647b9e39b",
       "provenance": [
         {
           "action": "adopted as-is",
           "commit": "6b36c8089d8e721484cd6f32fe22bf8935b2c08a"
+        },
+        {
+          "action": "refresh",
+          "base": "main",
+          "baseCommit": "29fc0ce81457dc165cdb045b33772984e5289724",
+          "sha256": "39e566a1cdc918640eaaac0174e64b4e1cc19a724dca4e291fdfd9e647b9e39b",
+          "reason": "N-001 (human ruling 2026-09-24, relayed by Shepherd): re-anchor all three changed-scope floors at local main 29fc0ce, this plan's merge-base, so inherited debt in touched files never fails the gate (INV-005). main exceeded the adopted floors: dead-code 3, dupes 15, health 217 unbaselined findings.",
+          "recordedAt": "2026-09-24T13:24:33.445Z"
         }
       ]
     },
     "dupes": {
       "path": ".fallow-baselines/dupes.json",
-      "sha256": "3ce29f4e9dd6769a7d9a75c0fe2398d66578591c8c68c07ca48fa6b2efbe122f",
+      "sha256": "d0ed95beaba70c76f222f77d8876c51624d7528686d26f41217862ed9a1bdc96",
       "provenance": [
         {
           "action": "adopted as-is",
           "commit": "6b36c8089d8e721484cd6f32fe22bf8935b2c08a"
+        },
+        {
+          "action": "refresh",
+          "base": "main",
+          "baseCommit": "29fc0ce81457dc165cdb045b33772984e5289724",
+          "sha256": "d0ed95beaba70c76f222f77d8876c51624d7528686d26f41217862ed9a1bdc96",
+          "reason": "N-001 (human ruling 2026-09-24, relayed by Shepherd): re-anchor all three changed-scope floors at local main 29fc0ce, this plan's merge-base, so inherited debt in touched files never fails the gate (INV-005). main exceeded the adopted floors: dead-code 3, dupes 15, health 217 unbaselined findings.",
+          "recordedAt": "2026-09-24T13:24:33.716Z"
         }
       ]
     }

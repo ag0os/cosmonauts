@@ -21,6 +21,7 @@
     "lib/driver/drive-graph-runner.ts:buildDriveTerminalEpisode",
     "lib/driver/run-state.ts:createInlineRunState",
     "lib/driver/shell-command-finalizer.ts:DRIVE_SHELL_COMMAND_CAPABILITIES",
+    "lib/driver/state-commit.ts:skipStateCommit",
     "lib/harness-adapters/inventory.ts:COSMONAUTS_GENERATED_INVENTORY_PATH",
     "lib/harness-adapters/provenance.ts:EMPTY_HARNESS_MANIFEST",
     "lib/harness-adapters/sync.ts:resolveHarnessSyncMode",
@@ -111,6 +112,7 @@
     "lib/process/process-group.ts:ReapProcessGroupOutcome",
     "lib/skills/discovery.ts:StrictSkillDiscoveryResult",
     "lib/tasks/task-manager.ts:TaskManagerEpisodeContext",
+    "lib/tasks/task-manager.ts:TaskDependencyStatusSnapshot",
     "scripts/knowledge-surface-backfill.ts:BackfillConfigIO",
     "scripts/knowledge-surface-backfill.ts:KnowledgeSurfaceBackfillOptions",
     "scripts/knowledge-surface-backfill.ts:BackfillSourceInput",
@@ -137,7 +139,9 @@
   "circular_dependencies": [],
   "unused_optional_dependencies": [],
   "unused_enum_members": [],
-  "unused_class_members": [],
+  "unused_class_members": [
+    "lib/tasks/task-manager.ts:TaskManager.getTaskDependencyStatusSnapshot"
+  ],
   "unresolved_imports": [],
   "unlisted_dependencies": [],
   "duplicate_exports": [
