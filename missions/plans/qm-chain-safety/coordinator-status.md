@@ -54,7 +54,9 @@ TASK-726 and TASK-728 depend on TASK-729..738.
 ### Running / next
 
 - **Rulings applied (2026-09-24):** D-027..D-030 recorded (`c29255c`). Baselines re-anchored at `main` (`3ca0291`). With the baselines honest, the branch's own changed-scope audit fails on **introduced** debt: 31 complexity findings (`quality-review-run.ts` `execute` is cyclomatic 209), 8 dead-code issues and 10 clone groups. The refresh script analyzes `--root`, not `--base`.
-- **Running:** Drive TASK-739 (refresh script analyzes its base, docs follow D-029), then TASK-740 (behavior-preserving debt paydown until the audit passes).
+- **TASK-739 done** (`0211d79`): the refresh script analyzes a temporary checkout of `--base`, and the docs follow D-029.
+- **TASK-740 partial** (`661f98c`, tests 3243/3243): introduced dead code is gone, but 30 complexity findings and 8 clone groups remain. It is rescoped into TASK-740 (quality-review modules), TASK-741 (tools and session plumbing) and TASK-742 (the rest; the branch audit must pass).
+- **Running:** Drive TASK-740 → TASK-741 → TASK-742.
 - **Lint caveat:** `bun run lint` reports one error, in Shepherd's gitignored backup under `.shepherd/backups/`. Tracked content passes. I asked Shepherd to move the backup out of the repo.
 - **Next steps for the successor:**
   1. Run mid-branch review 7 (after TASK-739/740). The prompt must state the D-027 threat model: hostile-change-only routes are residual limits, not findings to remediate on both channels, over `<TASK-738 commit>^..HEAD` plus the resolution of mid-review-6. Build the prompt from `mid-review-6-prompt.md`, and tell the reviewers N-004 is with the human.

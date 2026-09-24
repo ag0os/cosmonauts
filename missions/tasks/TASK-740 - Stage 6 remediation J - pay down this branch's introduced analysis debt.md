@@ -1,7 +1,7 @@
 ---
 id: TASK-740
 title: Stage 6 remediation J - pay down this branch's introduced analysis debt
-status: To Do
+status: In Progress
 priority: high
 labels:
   - refactoring
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-739
 createdAt: '2026-09-24T13:27:18.038Z'
-updatedAt: '2026-09-24T13:27:18.038Z'
+updatedAt: '2026-09-24T13:38:04.401Z'
 ---
 
 ## Description
@@ -47,14 +47,12 @@ Do not re-save any baseline, and do not add suppression directives (INV-005, D-0
 
 Run the full suite as `env -u COSMONAUTS_DRIVER_CODEX_ARGS bun run test`.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 The changed-scope audit above against `main` returns verdict `pass` with zero introduced dead-code, complexity and duplication findings; no baseline file changed and no suppression directive added (`bun run check:suppressions -- --base main` passes).
-- [ ] #2 QM run orchestration is decomposed into focused, named phases (snapshot and export, runtime, assessment, seal, checks, finalization, lifecycle) in `lib/orchestration/quality-review-*` modules, each under the project complexity thresholds, without changing D-026 ordering, D-025 guarantees, or any report, lifecycle or event output; the pre-refactor test suite passes unchanged.
-- [ ] #3 Dead code introduced on this branch is removed or wired (no unused exports or types left); duplicated blocks are consolidated into shared helpers.
-- [ ] #4 Typecheck, lint (on tracked files) and the full suite pass.
+- [ ] #1 (Rescoped 2026-09-24 by the coordinator after a partial first pass; the original whole-branch criteria moved to TASK-742) The changed-scope audit reports no complexity finding in `lib/orchestration/quality-review-run.ts`, `quality-review-launch.ts`, `quality-review-artifacts.ts`, `quality-review-workspace.ts`, `quality-review-report.ts`, `quality-review-seal.ts`, `quality-review-chain.ts`, `quality-review-command.ts` or `quality-review-checks.ts`.
+- [ ] #2 QM run orchestration is decomposed into focused, named phases (snapshot and export, runtime, assessment, seal, checks, finalization, lifecycle) in `lib/orchestration/quality-review-*` modules, each under the project complexity thresholds (cyclomatic 20, cognitive 15). D-026 ordering, D-025 guarantees, and all report, lifecycle and event output are unchanged. The pre-refactor test suite passes unchanged.
+- [ ] #3 No baseline changed, no suppression directive added (`bun run check:suppressions -- --base main` passes), typecheck and the full suite pass.
 <!-- AC:END -->
 
 ## Implementation Notes
 
-Coordinator note, 2026-09-24: `bun run lint` currently reports one error, in `.shepherd/backups/cosmonauts-packages-coding-2026-09-23/.cosmonauts-meta.json`. That is Shepherd's gitignored backup of a stray package, not project code. Do not edit or delete anything under `.shepherd/`, and do not change the Biome config to hide it. Judge lint as passing when that is its only error.
+partial (first pass `661f98c`: introduced dead code removed, `quality-review-chain.ts` and `quality-review-seal.ts` extracted). The coordinator rescoped the task to the quality-review modules, with the rest in TASK-741 and TASK-742. Continue from `661f98c`.
