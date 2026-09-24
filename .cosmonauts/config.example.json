@@ -1,6 +1,6 @@
 {
 	"qualityReview": {
-		"diverseReviewerModel": "anthropic/claude-sonnet-4-5",
+		"diverseReviewerModel": "anthropic/claude-sonnet-5",
 		"modelFamilies": { "openai": ["openai-codex"] },
 		"prepare": [
 			{

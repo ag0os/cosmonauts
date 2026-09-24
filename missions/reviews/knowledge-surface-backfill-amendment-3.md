@@ -3,7 +3,7 @@ kind: knowledge-surface-backfill-amendment
 plan: knowledge-surface
 amendedAt: '2026-09-24'
 ratifiedBy: Agustin Calabrese (2026-09-24, relayed by Shepherd; plan qm-chain-safety D-030)
-configDigest: 2e50c9869693be62d418ef709d4bc9a58d9889bb2781c2d9d40a3c70a2721149
+configDigest: b94f37103364aab1e42cd2672d1f13815ed2c7050f0481771fc653d811ac3f42
 ---
 
 # Knowledge surface — backfill receipt amendment 3
