@@ -411,7 +411,7 @@ contract; nothing in Stage 3 depends on which side computes it. Added
   - Supersedes: D-006 and D-024 in part (2026-09-23)
 - **D-040 - The deleted spawn compiler stays deleted; the architecture record is amended**
   - Decision: `lib/orchestration/spawn-compiler.ts` (`compileSpawnToGraph`), deleted as an orphan by TASK-709, stays deleted. `missions/architecture/durable-orchestration-runtime.md` D-012 and D-014 each gain a dated amendment line saying so. The minimal-compiler decision stands, and the compiler is re-created when spawn moves onto the graph substrate.
-  - Why: the QM (`missions/reviews/review-round-3.md` F-002) found that the deletion contradicted D-012/D-014 as written, which is ratified ground. The human chose to amend the record over restoring the compiler as staged code (A) or unstaged (C).
+  - Why: the QM (`missions/archive/reviews/qm/shared-rounds/review-round-3.md` F-002) found that the deletion contradicted D-012/D-014 as written, which is ratified ground. The human chose to amend the record over restoring the compiler as staged code (A) or unstaged (C).
   - Decided by: human, 2026-09-23, relayed by the supervising session (Q1, option B).
 
 ## Behaviors
