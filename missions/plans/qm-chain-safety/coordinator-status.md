@@ -43,8 +43,11 @@ All tasks have label `plan:qm-chain-safety`.
 | 752 | Done | `88f272d` | Anchored section lookup (review 6) |
 | 753 | Done | `843abeb` | Anchored plan summary, whitespace headings (review 7) |
 | 754 | Done | `e4ad5dd` | Heading scan at EOF (review 8) |
-| **755** | In Progress | — | One heading definition, normalized input (review 9). Drive `run-02f748f4` |
-| 727 | To Do | — | **Stage 8.** Depends on 755. Coordinator note added (`f17cf51`). |
+| 755 | Done | `cf68b25` | One heading definition, normalized input (review 9) |
+| 756 | Done | `9f3340c` | Plan-summary fidelity, anchored index marker (review 10) |
+| 757 | Done | `4ceb768` | Malformed index lines fail safe (review 11) |
+| 758 | Done | `9a45d1c` | Single-line Reason/Verdict rewrite, indented marker (review 12) |
+| 727 | To Do | — | **Stage 8.** Depends on 758 (all done). **Next.** Coordinator note added (`f17cf51`). |
 | 728 | To Do | — | **Stage 9 closure.** Coordinator-run, per D-002. |
 
 **TASK-742 note.** The worker returned "partial" only because its full-suite run hit the runner-injected `COSMONAUTS_DRIVER_CODEX_ARGS` artifact. The coordinator verified all its criteria and committed the work in `0b5e7d1` and `7e75231`. Marking it Done, a coordinator regex bug left `status: Done Progress`, which the task parser reads as To Do. Fixed on 2026-09-24 in the handoff commit. It is Done.
@@ -138,7 +141,20 @@ All tasks have label `plan:qm-chain-safety`.
 - **Review 7.** Claude: SHIP. Codex: the plan summary is still unanchored. → TASK-753.
 - **Review 8.** Claude: SHIP. Codex: duplicate heading bare at EOF. → TASK-754.
 - **Review 9.** I asked for one complete pass over the heading functions. Both channels found the same class: inconsistent heading definitions (CRLF, empty title, tab, non-breaking space, text after the index). → TASK-755 fixes it structurally, with normalized input and one heading predicate.
-- **Next:** narrow review 10. If it says SHIP, Stage 7 closes and TASK-727 follows.
+- **Reviews 10–12:** each found one smaller edge case, fixed by TASK-756..758.
+
+### Stage 7 CLOSED: review 13, both channels SHIP (HEAD `20b0311`)
+
+- **Gates:** all green.
+  - Suite 3400/3400.
+  - Audit vs `main`: pass.
+  - Typecheck 0, tracked lint 0, suppressions pass.
+- **Residuals recorded:**
+  - the D-031/D-032 text limits, plus the host-owned Reviewer models section;
+  - the public `runQualityReview` port without `hostChecks`, where the production launcher enables them;
+  - the generic reason given for a malformed marker;
+  - three end-to-end "empty Reason" tests that are shielded, with unit tests guarding instead.
+- **Next:** Stage 8, TASK-727.
 
 ### Spec-to-backlog history
 
