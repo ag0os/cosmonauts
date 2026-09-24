@@ -645,6 +645,18 @@ Investigation evidence gathered before design:
       is not chased here.
   - Decided by: human, 2026-09-24 (relayed by Shepherd)
 
+- **D-031 - B-010 host calibration is defense in depth over model prose** *(Added 2026-09-24 after Stage 7 review 2)*
+  - Decision:
+    - AC-013 (ratified) requires reviewer *guidance*: a performance P1 needs a measured or reproduced cost, and no lens is the only judge that closes its own finding. The reviewer and QM prompts deliver that guidance.
+    - The host calibration added in TASK-726 and TASK-747 is defense in depth over free-form markdown written by models. It must meet two hard floors:
+      1. It never produces or permits a false `ready`.
+      2. It never silently drops a reviewer finding. Every reviewer finding ID ends up as its own entry in Findings or in Out-of-range observations, or as a dismissal with evidence from a different lens, or the host carries it over.
+    - Unsupported performance priorities above P2 (P0 and P1) are capped or raised as human items.
+    - Recognizing whether a quoted `measuredCost` or `closureEvidence` string is a genuine measurement, or evidence from a different lens, remains a heuristic. Its known misses are recorded limits, not blockers: a measurement-looking code line, or a same-lens evidence quote repeated by the QM. The accidental threat model (D-027) bounds them. The ratified guidance and the independent panel are the primary control.
+  - Alternatives: keep hardening the text parsing for each new phrasing (Stage 7 reviews 1–2). That does not converge on free-form prose.
+  - Why: AC-013 read with D-027, INV-003 and B-005.
+  - Decided by: coordinator, amend-on-record, 2026-09-24
+
 - **D-018 - AC-003 exempts exactly the host-written plan summary** *(from H-001)*
   - Decision: option A. AC-003 exempts only the host-written new file
     `missions/plans/<slug>/qm-runs/<runId>.md`, which never overwrites and is
