@@ -3,27 +3,45 @@
 Branch `feature/qm-chain-safety`, off local `main` at `29fc0ce`. Not pushed, not merged.
 HEAD is the commit that last touched this file (`git log -1 -- missions/plans/qm-chain-safety/coordinator-status.md`). The worktree is clean at that commit.
 
-## State (2026-09-24) — HANDOFF: backlog ready, implementation not started
+## State (2026-09-24) — IMPLEMENTING (`/implement-plan`, session "qm-implementer")
 
-- **Done:**
-  - Spec with Intent INV-001..INV-005, ratified by the human on 2026-09-23 (`1930dda`).
-  - `/spec-to-backlog`, all phases:
+- **Done:** spec ratified; `/spec-to-backlog` complete (see history below). Baseline gates at `e43c238`: typecheck 0, lint 0, tests 3053/3053 green.
+- **Done (implementation):** Drive batch 1 `run-cc1c22ad-1847-4133-9daa-814c1b8cbb83` — TASK-720 `ece6af2`, TASK-722 `a8bacae`, TASK-721 `44f0566`, state `9b48a09`. Gates after batch 1: typecheck 0, lint 0, tests 3075/3075; `check:suppressions --base main` passes.
+- **Running:** Drive batch 2 (TASK-723).
+- **Next:** gates → batch TASK-723 → TASK-724 → TASK-725 → TASK-726 → TASK-727, gates at each boundary; TASK-728 is done by the coordinator (D-002: Claude subagent + read-only codex, never the QM).
+- **Blocked on:** N-001 (below) blocks closure only, not the next stages.
 
-    | Step | Commit |
-    |---|---|
-    | Phase 1 planner chain | `37ad121` |
-    | Phases 2–3: independent review and revision | `ad7c3e1` |
-    | Human rulings recorded | `75f4d11`, `d2b4541` |
-    | Backlog (TASK-720..728) | `6c226ea` |
-    | Compliance patches + plan D-024 | `4b93788` |
+### Spec-to-backlog history
 
-- **Running:** nothing. No chain, workflow or Drive process is alive.
-- **Blocked on:** nothing.
-- **Stopped by user direction** (2026-09-24, relayed). A fresh session runs `/implement-plan qm-chain-safety`. Do not start it from this session.
+| Step | Commit |
+|---|---|
+| Phase 1 planner chain | `37ad121` |
+| Phases 2–3: independent review and revision | `ad7c3e1` |
+| Human rulings recorded | `75f4d11`, `d2b4541` |
+| Backlog (TASK-720..728) | `6c226ea` |
+| Compliance patches + plan D-024 | `4b93788` |
 
 ## Needs the user
 
-Nothing open. Every human decision so far:
+### N-001 (open, 2026-09-24): the committed health baseline does not cover `main`, so INV-005 is not met as shipped
+
+**Finding.** TASK-721 wired the three committed baselines exactly per D-008 ("adopted as-is"). Fallow 2.54.2 accepts all three flags (R-010 probe done by the coordinator: `Comparing against … baseline` for each, envelope consistent). But `.fallow-baselines/health.json` records 88 findings in 38 files, while `main` has 229 complexity findings in 90 files (a fresh `--save-baseline` on `main`). `fallow audit` has no introduced-only mode, so it counts every finding in a touched file that is not in the baseline.
+
+**Reproduction (on a scratch worktree of local `main`).** Add a comment-only line at the top of `domains/shared/extensions/orchestration/driver-tool.ts` and run `fallow audit --base HEAD` with the three baseline flags. The verdict is `fail`, with one complexity finding: `execute`, cyclomatic 19, severity high. That finding already exists on `main`, and the baseline lists only one *moderate* finding for this file. So a change that only touches a file with inherited debt fails the gate.
+
+**Collision.** INV-005 (ratified) says "Findings already present in touched files never fail it." D-008 (derived) adopts the files unchanged, and TASK-721 AC #7 says no baseline is regenerated merely to make a gate pass. The mechanism must yield to the invariant, but the remedy loosens the repository's regression floor. Commit `6b36c80` records that the floor is a deliberate "regression floor, not a target", so this is escalated rather than decided here.
+
+**Drafted decision (recommended option A).**
+
+- **A. One explicit, recorded refresh at the base.** Run `bun run refresh:fallow-baselines -- --base main --reason '<INV-005: floor re-anchored to main so inherited debt in touched files does not fail the changed-scope gate>' --category health` (plus `dead-code` and `dupes` if a probe shows the same gap) as its own commit on this branch. D-008 is then amended on record: "adopted as-is, then re-anchored once at the base under N-001." The debt stays visible in the baseline, `docs/fallow-exceptions.md` and `analysis-debt-paydown`. With the gate enforced from here on, `main` stays in sync with the floor.
+  - Consequence: about 140 existing health findings become part of the floor.
+  - Consequence: the refresh itself is a gate-owned-file change, so any QM run over this range shows it as a human-decision item (D-009).
+- **B. Keep the floor as committed.** The gate keeps failing inherited debt in touched hotspots. That needs INV-005 amended, which only the human can do.
+- **C. Generate the comparison baseline from the base revision at gate time.** This conflicts with INV-005's "relative to the committed baseline".
+
+**Status.** Implementation continues on TASK-723+ (independent of this). The final closure gate (TASK-728) needs this ruling.
+
+### Earlier human decisions (all closed)
 
 - **Intent:** ratified 2026-09-23.
 - **Consequences of decision 1:** acknowledged. The named chains end at a findings report, and `execution-liveness` lands after this plan.
