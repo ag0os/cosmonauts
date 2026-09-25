@@ -24,24 +24,23 @@ Active plans are not roadmap items: `execution-liveness`,
 `living-memory-structural-hardening`, `autonomy-host`, `coding-extraction`, and
 `superplanning-integration` (plus the deferred `web-research` spec) live under
 `missions/plans/`. `chain-stage-context`, `harness-adapters`, `living-memory`,
-and `living-memory-fidelity` shipped and are archived; their knowledge is in
+`living-memory-fidelity`, `framework-health` and `qm-chain-safety` shipped and
+are archived; their knowledge is in
 `knowledge/` and `memory/agent/proposals/`. `execution-liveness` owns the shared
 scheduler attempt/lease/cancellation seam; do not implement the overlapping
 `autonomy-host` lifecycle seam ahead of that contract.
 
-Quality pause, human-prioritized **2026-09-14**, reshaped **2026-09-20**: before
-continuing active-plan or new feature development, complete `framework-health`
-(`missions/plans/framework-health/plan.md`), then `project-health-audit`.
-`framework-health` supersedes `test-health-audit`: that audit graded tests
-against the plan statements that ordered them and reasoned about
-fault-sensitivity instead of probing it, so it reproduced the defect it was
-built to find. The new plan fixes the planning format first, then the tests,
-then unreachable code. Stages 1 and 2 are done (2026-09-23): a 75-declaration
-mutation probe sample is recorded in `missions/plans/framework-health/stage2-probes.md`,
-the old audit tooling is deleted, and `test-health-audit` is re-specified to the
-probe method and marked superseded. Stage 3 (reachability, orphans, the `Cancelled` status) is
-TASK-708..710. Once both items establish trustworthy baselines, resume
-the existing dependency order.
+Quality pause, human-prioritized **2026-09-14**, reshaped **2026-09-20**:
+`framework-health` is complete and archived (2026-09-25,
+`missions/archive/plans/framework-health/`). It replaced the planning format's
+Seam/Test/Marker fields with observer/entry-point/outcome behaviors, sorted
+prose-pinning tests out of the suite, probed a 75-declaration mutation sample
+(`missions/archive/plans/framework-health/stage2-probes.md`), shipped
+`check:reachability` with `missions/architecture/staged-code.toml`, deleted the
+orphans, and added the `Cancelled` task status; it superseded
+`test-health-audit`. Next in the pause: `project-health-audit`. Once it
+establishes a trustworthy static-health baseline, resume the existing
+dependency order.
 
 ### `plain-listing-pipe-defect`: `--plain` Rows Corrupt on a Pipe in a Title
 
