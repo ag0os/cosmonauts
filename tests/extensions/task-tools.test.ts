@@ -8,7 +8,11 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Tool, validateToolArguments } from "@earendil-works/pi-ai";
+import {
+	type JsonObject,
+	type Tool,
+	validateToolArguments,
+} from "@earendil-works/pi-ai";
 import { beforeEach, describe, expect, test } from "vitest";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import {
@@ -423,7 +427,7 @@ describe("task_search", () => {
 // ── Cancelled status ─────────────────────────────────────────────────────
 
 /** Validate arguments the way Pi does before a model's tool call executes. */
-function validatedArgs(name: string, args: Record<string, unknown>): unknown {
+function validatedArgs(name: string, args: JsonObject): unknown {
 	const tool = pi.tools.get(name) as unknown as Tool;
 	return validateToolArguments(tool, {
 		type: "toolCall",

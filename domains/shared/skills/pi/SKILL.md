@@ -121,12 +121,13 @@ await session.sendUserMessage("Do this next", {
 ### State Access
 
 ```typescript
-session.messages          // AgentMessage[] — all messages including custom types
+session.messages          // AgentMessage[] — the provider-context projection, including custom types
+                          // and (since v0.86) `role: "system"` prompt/tool-state messages
 session.sessionId         // Current session ID
 session.isStreaming       // Whether agent is currently streaming
 session.model             // Current Model (may be undefined)
 session.thinkingLevel     // Current ThinkingLevel
-session.systemPrompt      // Current effective system prompt
+session.systemPrompt      // Current effective system prompt (rendered from prompt options)
 session.state             // Full AgentState
 session.pendingMessageCount  // Queued steering + follow-up count
 session.sessionFile       // Session file path (undefined if in-memory)
@@ -265,8 +266,8 @@ export default function myExtension(pi: ExtensionAPI) {
 | `pi.registerShortcut(key, opts)` | Register a keyboard shortcut |
 | `pi.registerFlag(name, opts)` | Register a CLI flag |
 | `pi.getFlag(name)` | Get CLI flag value |
-| `pi.on(event, handler)` | Subscribe to lifecycle events |
-| `pi.sendMessage(msg, opts?)` | Send custom message to session |
+| `pi.on(event, handler)` | Subscribe to lifecycle events; returns an unsubscribe function |
+| `pi.sendMessage(msg, opts?)` | Send custom message to session (`triggerTurn: false` only records it; it never steers an active run) |
 | `pi.sendUserMessage(content, opts?)` | Send user message, triggers turn |
 | `pi.appendEntry(type, data?)` | Persist extension state (not sent to LLM) |
 | `pi.setSessionName(name)` | Set session display name |
@@ -283,12 +284,17 @@ export default function myExtension(pi: ExtensionAPI) {
 | `pi.registerProvider(name, config)` | Register/override model provider |
 | `pi.unregisterProvider(name)` | Remove a registered provider |
 | `pi.registerMessageRenderer(type, renderer)` | Custom message rendering |
+| `pi.registerEntryRenderer(type, renderer)` | Custom session-entry rendering |
+| `pi.registerMarkdownTransformer(fn)` | Display-only Markdown transforms (chainable) |
 | `pi.events` | Cross-extension `EventBus` |
 
 ### Tool Registration
 
 ```typescript
 import { Type } from "typebox";   // typebox v1 — the codebase's schema package
+// Pi 0.87.1 itself depends on typebox 1.3.x; this repo pins its own typebox.
+// Tool-call `arguments` and tool-result `details` must be JSON-compatible
+// (`JsonObject` / `JsonValue` from pi-ai) since v0.86.
 
 pi.registerTool({
   name: "my_tool",
@@ -326,7 +332,10 @@ Events are subscribed via `pi.on(eventName, handler)`. Handlers receive `(event,
 |-------|------|-------------|----------|
 | `input` | Raw user input received | `InputEventResult` | Preprocessing, transforms |
 | `before_agent_start` | After prompt, before agent loop | `BeforeAgentStartEventResult` | Context injection, system prompt modification |
-| `context` | Before every LLM call | `ContextEventResult` | Message pruning, injection |
+| `context` | Before every LLM call | `ContextEventResult` | Message pruning, injection. Receives messages **without** system messages; Pi restores prompt and tool state afterwards |
+| `context_with_system` | After all `context` handlers | `ContextEventResult` | Full transcript incl. system messages; the result is sent verbatim, so the handler owns the prompt and tools |
+| `before_provider_headers` | After request headers are assembled | — (mutate `event.headers`; `null` deletes) | Tracing/session headers |
+| `cache_warming_decision` | Prompt-cache warmer considers a refresh | `CacheWarmingDecisionEventResult` | Veto or allow cache warming |
 | `before_provider_request` | Before provider HTTP call | `BeforeProviderRequestEventResult` | Payload inspection/replacement |
 | `after_provider_response` | After provider HTTP response | — | Response inspection, logging |
 
@@ -336,8 +345,11 @@ Events are subscribed via `pi.on(eventName, handler)`. Handlers receive `(event,
 |-------|------|----------|
 | `agent_start` | Agent loop begins | Logging |
 | `agent_end` | Agent loop ends | Cleanup, aggregation |
+| `agent_before_settle` | Before the session settles (actionable boundary) | Return `{ entries, continue: true }` to persist entries and force one more provider request |
+| `agent_settled` | Session is idle after a run | Post-run work; runs requested here are deferred until all settled handlers finish |
 | `turn_start` | Each agent turn begins | Progress tracking |
-| `turn_end` | Each agent turn ends | Turn-level metrics |
+| `turn_end` | Each agent turn ends (actionable boundary since v0.87) | Turn-level metrics; may return `{ entries: [...event.entries, draft], continue: true }`. Event carries `messageEntryId`, `toolResultEntryIds`, `outcome` |
+| `ui_prompt_start` / `ui_prompt_end` | Pi starts/stops waiting on a blocking `ctx.ui` prompt | Distinguish agent work from waiting on the user |
 
 **Message Events:**
 
@@ -366,6 +378,9 @@ Events are subscribed via `pi.on(eventName, handler)`. Handlers receive `(event,
 | `session_before_fork` | Before fork | Can cancel | State management |
 | `session_before_compact` | Before compaction | Can modify | Custom compaction |
 | `session_compact` | After compaction | — | Post-compact updates |
+| `session_compact_failed` | Compaction failed or aborted | — | Surface reason, retry state, source |
+| `session_info_changed` | Session name/info changed | — | UI updates |
+| `project_trust` | Project trust decision | — | Trust-gated setup |
 | `session_before_tree` | Before tree navigation | Can cancel | State management |
 | `session_tree` | After tree navigation | — | Post-navigate setup |
 | `session_shutdown` | Process exit | — | Cleanup, saving |
@@ -377,7 +392,7 @@ Events are subscribed via `pi.on(eventName, handler)`. Handlers receive `(event,
 |-------|------|----------|
 | `model_select` | Model changes | Model routing |
 | `thinking_level_select` | Thinking level changes | Thinking-level routing |
-| `user_bash` | User runs `!` or `!!` command | Audit, logging |
+| `user_bash` | User runs `!` or `!!` command | Audit, logging. Fails closed since v0.86: return `undefined` to pass through, else `{ operations }` or `{ result }`; a throw or invalid result aborts the command |
 
 ### before_agent_start Detail
 
@@ -400,6 +415,8 @@ pi.on("before_agent_start", async (event, ctx) => {
 ```
 
 Multiple extensions chain: messages accumulate, system prompt modifications apply sequentially.
+
+Since v0.86 the base prompt and tool loadout live in the transcript as `role: "system"` messages, so prompt/tool changes survive resume and branch navigation. `event.systemPromptOptions` holds mutable prompt sections (later handlers see earlier edits). A returned `systemPrompt` is a *forced* override: it is sent as the provider's leading system prompt for that run but is **not** recorded in the transcript.
 
 ## System Prompt Composition
 
@@ -556,6 +573,12 @@ settings.setCompactionEnabled(true);
 settings.getCompactionSettings();
 // { enabled: boolean, reserveTokens: number, keepRecentTokens: number }
 ```
+
+Since v0.86, `compaction.modelOverrides` sets per-model `reserveTokens` / `keepRecentTokens`, falling back to the ordinary values.
+
+### Context Edits (v0.87)
+
+`SessionManager` is canonical for provider context. Assigning `session.agent.state.messages` no longer changes future requests. To change context without rewriting history, append a context edit: `sessionManager.appendContextEdit(entryId, null)` omits one message from future provider context (a string/content replacement swaps it), then call `session.refreshContext()`. Raw history, usage, and UI history are untouched. Restore external entries with `SessionManager.inMemory(cwd, { id }, entries)`. Exhaustive `SessionEntry` switches must handle `context_edit`.
 
 ### Compaction Events
 
@@ -765,7 +788,7 @@ catalog rather than assuming a bare family alias.
 
 ## Lightweight LLM Calls (`pi-ai`)
 
-For one-off classification/routing without spinning up a full `AgentSession`, use a `Models` collection. The stream helpers take a `Context` object (`{ systemPrompt?, messages, tools? }`) plus options:
+For one-off classification/routing without spinning up a full `AgentSession`, use a `Models` collection. The stream helpers take a `Context` object (`{ systemPrompt?, messages, tools? }`) plus options. (Provider implementations and `pi-agent-core`'s `AgentContext` instead receive a normalized `TranscriptContext` whose prompt and tools are `role: "system"` messages — use `normalizeContext()`, `getCurrentSystemPrompt()`, `getCurrentTools()`.) Inside an extension, `ctx.modelRegistry.stream()` / `streamSimple()` make the same call through the session's configured providers and resolved auth:
 
 ```typescript
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
