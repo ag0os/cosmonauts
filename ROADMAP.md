@@ -213,14 +213,6 @@ Domains are composable agentic bundles (agents, prompts, capabilities, skills, t
 
 Unordered candidates — pick only when directed. Several are full capability tracks with their own source-of-truth doc under `missions/architecture/`; the entry links to it.
 
-### `pi-lockstep-bump`: Pi Lockstep Bump Toward Current
-
-*Added 2026-09-01 (ratified with the living-memory slate — OM spike D-2). Deliberately not a rider on memory work: nothing in the memory queue needs it (`agent_settled` shipped in 0.80.4; OM verified working at the pinned 0.80.6).*
-
-Bump all four `@earendil-works/pi-*` packages (lockstep) from 0.80.6 toward current — a migration project sized at three breaking clusters (spike §1.3): auth (`modelRuntime` replaces `authStorage`/`modelRegistry`; 61 references across 6 files), the bundled TypeBox major, and the 0.84 lane-based session API that removes the JSONL/in-memory repository APIs our session factory is built on. The mandated full API re-audit and the `domains/shared/skills/pi/SKILL.md` update ride in the same change.
-
-- Source of truth: `missions/architecture/spikes/observational-memory.md` §1.3
-
 ### `agent-tools`: Native Agent Tools (Web Research + Browser) — ⏸ PARKED
 
 **⏸ PARKED (2026-07-01; moved to Ideas 2026-08-25.)** S1 (native web research) is deferred — the warm spec lives at `missions/plans/web-research/` (status `deferred`), parked in favor of a cheaper *research-delegation* direction (delegate research to codex/claude-cli via the driver seam — now naturally part of the `harness-adapters`/`drive-envelope` direction). Browser (S2) is not started. Revive the native web-research slice when fully-autonomous chain runs need grounded/cited, machine-consumable facts.
