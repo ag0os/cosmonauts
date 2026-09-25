@@ -218,30 +218,11 @@ export function parseQualityReviewConfig(
 
 function validateQualityReviewModels(raw: Record<string, unknown>): void {
 	if (
-		raw.diverseReviewerModel !== undefined &&
-		(typeof raw.diverseReviewerModel !== "string" ||
-			!/^[^/\s]+\/[^/\s]+$/.test(raw.diverseReviewerModel))
+		raw.reviewerModel !== undefined &&
+		(typeof raw.reviewerModel !== "string" ||
+			!/^[^/\s]+\/[^/\s]+$/.test(raw.reviewerModel))
 	)
-		throw new Error("Invalid qualityReview.diverseReviewerModel");
-	if (raw.modelFamilies !== undefined) {
-		if (
-			typeof raw.modelFamilies !== "object" ||
-			raw.modelFamilies === null ||
-			Array.isArray(raw.modelFamilies)
-		)
-			throw new Error("Invalid qualityReview.modelFamilies");
-		for (const [family, aliases] of Object.entries(raw.modelFamilies))
-			if (
-				!/^[a-z0-9][a-z0-9-]*$/.test(family) ||
-				!Array.isArray(aliases) ||
-				aliases.length === 0 ||
-				!aliases.every(
-					(alias) =>
-						typeof alias === "string" && /^[a-z0-9][a-z0-9-]*$/.test(alias),
-				)
-			)
-				throw new Error("Invalid qualityReview.modelFamilies");
-	}
+		throw new Error("Invalid qualityReview.reviewerModel");
 }
 
 function validateQualityReviewTimeouts(raw: Record<string, unknown>): void {
@@ -273,11 +254,8 @@ function qualityReviewConfigFields(
 		...(prepare !== undefined ? { prepare } : {}),
 		...(analysisPrepare !== undefined ? { analysisPrepare } : {}),
 		...(checks !== undefined ? { checks } : {}),
-		...(raw.diverseReviewerModel !== undefined
-			? { diverseReviewerModel: raw.diverseReviewerModel as string }
-			: {}),
-		...(raw.modelFamilies !== undefined
-			? { modelFamilies: raw.modelFamilies as Record<string, string[]> }
+		...(raw.reviewerModel !== undefined
+			? { reviewerModel: raw.reviewerModel as string }
 			: {}),
 	};
 }

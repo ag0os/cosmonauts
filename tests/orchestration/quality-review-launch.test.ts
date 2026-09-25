@@ -401,7 +401,6 @@ describe("quality review launch policy", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "test/other",
 					checks: [
 						{
 							id: "ok",
@@ -459,7 +458,6 @@ describe("quality review launch policy", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "anthropic/reviewer",
 					checks: [
 						{
 							id: "order",
@@ -502,7 +500,6 @@ describe("quality review launch policy", () => {
 						gates: ["audit pass"],
 					}),
 					gateState: "completed-bound",
-					implementerModel: { provider: "openai-codex", id: "worker" },
 					requiredLenses: ["reviewer"],
 				};
 			},
@@ -545,7 +542,6 @@ describe("quality review launch policy", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "test/other",
 					prepare: [
 						{
 							id: "dependencies",
@@ -647,7 +643,6 @@ describe("quality review launch policy", () => {
 							args: ["install", "--frozen-lockfile", "--ignore-scripts"],
 						},
 					],
-					diverseReviewerModel: "test/other",
 					checks: [
 						{
 							id: "ok",
@@ -758,7 +753,6 @@ describe("quality review launch policy", () => {
 							args: ["install", "--frozen-lockfile", "--ignore-scripts"],
 						},
 					],
-					diverseReviewerModel: "test/other",
 					checks: [
 						{
 							id: "ok",

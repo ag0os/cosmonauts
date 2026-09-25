@@ -875,7 +875,7 @@ export function registerSpawnTool(
 					model: qualityContext
 						? qualityReviewPanelModel(
 								resolvedTargetRole,
-								qualityContext.diverseReviewerModel,
+								qualityContext.reviewerModel,
 							)
 						: params.model,
 					thinkingLevel: params.thinkingLevel,

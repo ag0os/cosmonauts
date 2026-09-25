@@ -66,7 +66,7 @@ cosmonauts run chain <chain-name> "design an auth system with email and OAuth"
 
 Named chains run end-to-end non-interactively. If the user expects a review gate before code is written, split the workflow into separate invocations. See `cosmonauts-chains` for the chain DSL syntax and the split-pipeline recipe.
 
-The built-in coding chains that end in `quality-manager` stop at a durable findings report. QM reviews a private local clone; it does not fix code, commit, complete a plan, or promise a clean tree. Read the report and route findings through tasks, Drive, and independent re-review. Its assessment includes configured project checks, direct gate resolution, panel triage, and specialist reviews. Missing base-owned `qualityReview` checks or model diversity appears as not configured and a human-decision item that blocks `ready`.
+The built-in coding chains that end in `quality-manager` stop at a durable findings report. QM reviews a private local clone; it does not fix code, commit, complete a plan, or promise a clean tree. Read the report and route findings through tasks, Drive, and independent re-review. Its assessment includes configured project checks, direct gate resolution, panel triage, and specialist reviews. Missing base-owned `qualityReview` checks appear as not configured and a human-decision item that blocks `ready`.
 
 ### Recipe 2 — Run a known plan through an external backend (drive)
 

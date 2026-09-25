@@ -313,9 +313,9 @@ evidence is open, so the host works in this order:
    check forces `not-ready`.
 
 The durable findings report carries the verdict, gate status, structured
-results, panel triage, and specialist reviews. A missing base-owned check or
-model-diversity configuration is a visible human-decision item that blocks a
-`ready` verdict.
+results, panel triage, and specialist reviews. A missing base-owned check is a
+visible human-decision item that blocks a `ready` verdict. Model choice never
+affects the verdict.
 
 The QM does not fix code, commit, complete a plan, or promise a clean tree.
 Callers turn actionable findings into tasks, run remediation through Drive, and

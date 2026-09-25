@@ -119,7 +119,6 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "anthropic/reviewer",
 					checks: [{ id: "ok", command: process.execPath, args: ["-e", ""] }],
 				},
 			}),
@@ -226,7 +225,6 @@ describe("quality review durable lifecycle", () => {
 			JSON.stringify({
 				qualityReview: {
 					checks: [check("console.log('base check ran')")],
-					diverseReviewerModel: "test/other",
 				},
 			}),
 		);
@@ -244,7 +242,6 @@ describe("quality review durable lifecycle", () => {
 							`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unsafe')`,
 						),
 					],
-					diverseReviewerModel: "test/other",
 				},
 			}),
 		);
@@ -317,7 +314,6 @@ describe("quality review durable lifecycle", () => {
 							args: ["-e", "process.exit(0)"],
 						},
 					],
-					diverseReviewerModel: "test/model",
 				},
 			}),
 		);
@@ -374,9 +370,6 @@ describe("quality review durable lifecycle", () => {
 			JSON.stringify({
 				qualityReview: {
 					checks: source === "checks not configured" ? [] : [check],
-					...(source === "model not configured"
-						? {}
-						: { diverseReviewerModel: "test/other" }),
 					...(source === "gate-owned change"
 						? { gateOwnedPaths: ["policy.txt"] }
 						: {}),
@@ -419,10 +412,6 @@ describe("quality review durable lifecycle", () => {
 		[
 			"checks not configured",
 			"Not configured: qualityReview.checks; human decision required.",
-		],
-		[
-			"model not configured",
-			"Not configured: qualityReview.diverseReviewerModel; human decision required.",
 		],
 		[
 			"gate-owned change",
@@ -515,7 +504,6 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "test/other",
 					checks: [
 						{
 							id: "ok",
@@ -763,7 +751,6 @@ describe("quality review durable lifecycle", () => {
 					args: ["-e", "process.exit(0)"],
 				},
 			],
-			diverseReviewerModel: "test/model",
 		};
 		await writeFile(
 			join(projectRoot, ".cosmonauts", "config.json"),
@@ -825,7 +812,6 @@ describe("quality review durable lifecycle", () => {
 							args: ["-e", "process.exit(0)"],
 						},
 					],
-					diverseReviewerModel: "test/model",
 				},
 			}),
 		);
@@ -1315,9 +1301,6 @@ describe("quality review durable lifecycle", () => {
 		expect(report).toContain("ok: argv");
 		expect(report).toContain("exit 0");
 		expect(report).toContain("passed");
-		expect(report).toContain(
-			"Not configured: qualityReview.diverseReviewerModel",
-		);
 		expect(report).toContain("Gate evidence missing; human decision required.");
 		expect(report).toContain("Verdict: not-ready");
 	});
@@ -1418,7 +1401,6 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "anthropic/reviewer",
 					checks: [
 						{
 							id: "ok",
@@ -1484,7 +1466,6 @@ describe("quality review durable lifecycle", () => {
 				return {
 					markdown,
 					gateState: "completed-bound",
-					implementerModel: { provider: "openai-codex", id: "worker" },
 					requiredLenses: ["reviewer", "security-reviewer"],
 				};
 			},
@@ -1533,7 +1514,6 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "anthropic/reviewer",
 					checks: [
 						{
 							id: "ok",
@@ -1579,7 +1559,6 @@ describe("quality review durable lifecycle", () => {
 						observations: inFindings ? [] : [entry],
 					}),
 					gateState: "completed-bound",
-					implementerModel: { provider: "openai-codex", id: "worker" },
 					requiredLenses: ["reviewer", "security-reviewer"],
 				};
 			},
@@ -1605,43 +1584,39 @@ describe("quality review durable lifecycle", () => {
 		expect(report).not.toContain("carried forward as open");
 	});
 
-	// @cosmo-behavior plan:qm-chain-safety#B-010
+	// @cosmo-behavior plan:qm-chain-safety#B-011
 	it.each([
+		["an unset reviewer model", undefined, "openai-codex/worker"],
 		[
-			"base alias",
-			{ provider: "openai-codex", id: "worker" },
-			"custom/reviewer",
-			{ anthropic: ["custom"] },
-			"Diversity: attested",
+			"a reviewer model on the QM's provider",
+			"openai-codex/other",
+			"openai-codex/other",
 		],
 		[
-			"missing implementer",
-			undefined,
+			"a reviewer model on any other provider",
 			"anthropic/reviewer",
-			undefined,
-			"Default implementer model identity missing (INV-002)",
+			"anthropic/reviewer",
 		],
-		[
-			"unconfigured diverse reviewer",
-			{ provider: "openai-codex", id: "worker" },
-			undefined,
-			undefined,
-			"Not configured: qualityReview.diverseReviewerModel; human decision required.",
-		],
-	] as const)("enforces diversity with %s", async (_name, implementerModel, diverseReviewerModel, modelFamilies, expected) => {
+	] as const)("reaches ready with %s and records the model only", async (_name, reviewerModel, observed) => {
 		const projectRoot = await root(true);
 		await mkdir(join(projectRoot, ".cosmonauts"));
 		await writeFile(
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel,
-					checks: [],
-					...(modelFamilies ? { modelFamilies } : {}),
+					...(reviewerModel ? { reviewerModel } : {}),
+					checks: [
+						{
+							id: "ok",
+							command: process.execPath,
+							args: ["-e", "process.exit(0)"],
+						},
+					],
 				},
 			}),
 		);
 		await commitBaseConfig(projectRoot);
+		const [provider, id] = observed.split("/") as [string, string];
 		const result = await runQualityReview({
 			projectRoot,
 			planSlug: "example",
@@ -1654,26 +1629,18 @@ describe("quality review durable lifecycle", () => {
 					spawnId: "spawn-reviewer",
 					sessionId: "session-reviewer",
 					resolvedRole: "coding/reviewer",
-					resolvedModel: {
-						provider: modelFamilies ? "custom" : "anthropic",
-						id: "reviewer",
-					},
+					resolvedModel: { provider, id },
 					outcome: "success",
 					digest: createHash("sha256").update(fullText).digest("hex"),
 					fullText,
 				});
-				const markdown = renderQualityReviewReport({
-					verdict: "ready",
-					reason: "clear",
-					gates: ["audit passed"],
-				});
 				return {
-					markdown:
-						_name === "unconfigured diverse reviewer"
-							? markdown.replace(/<!-- COSMO_QM_REPORT[\s\S]*?-->/, "")
-							: markdown,
+					markdown: renderQualityReviewReport({
+						verdict: "ready",
+						reason: "clear",
+						gates: ["audit passed"],
+					}),
 					gateState: "completed-bound",
-					implementerModel,
 					requiredLenses: ["reviewer"],
 				};
 			},
@@ -1692,25 +1659,23 @@ describe("quality review durable lifecycle", () => {
 			),
 			"utf8",
 		);
-		expect(report).toContain(expected);
-		if (_name === "unconfigured diverse reviewer") {
-			const summary = await readFile(
-				join(
-					projectRoot,
-					"missions",
-					"plans",
-					"example",
-					"qm-runs",
-					`${result.ref.runId}.md`,
-				),
-				"utf8",
-			);
-			for (const text of [report, summary])
-				expect(text.split(`- ${expected}`).length - 1).toBe(1);
-		}
-		expect(report).toContain(
-			implementerModel ? "Verdict: not-ready" : "Verdict: failed",
+		const summary = await readFile(
+			join(
+				projectRoot,
+				"missions",
+				"plans",
+				"example",
+				"qm-runs",
+				`${result.ref.runId}.md`,
+			),
+			"utf8",
 		);
+		expect(report).toContain("Verdict: ready");
+		expect(report).toContain(`- reviewer: ${observed}`);
+		for (const text of [report, summary])
+			expect(text).not.toMatch(
+				/Diversity|family|implementer|diverseReviewerModel|qualityReview\.reviewerModel|Not configured/i,
+			);
 	});
 
 	// @cosmo-behavior plan:qm-chain-safety#B-010
@@ -1765,7 +1730,6 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "anthropic/reviewer",
 					checks:
 						_name === "observation-only P2"
 							? [
@@ -1818,7 +1782,6 @@ describe("quality review durable lifecycle", () => {
 						? report
 						: report.replace(/<!-- COSMO_QM_REPORT [\s\S]*? -->/, ""),
 					gateState: "completed-bound",
-					implementerModel: { provider: "openai-codex", id: "worker" },
 					requiredLenses: ["reviewer", "performance-reviewer"],
 				};
 			},
@@ -1872,7 +1835,6 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "anthropic/reviewer",
 					checks: [
 						{
 							id: "ok",
@@ -1921,7 +1883,6 @@ describe("quality review durable lifecycle", () => {
 						findings: ["PF-1 priority: P1 costly path"],
 					}),
 					gateState: "completed-bound",
-					implementerModel: { provider: "openai-codex", id: "worker" },
 					requiredLenses: ["reviewer", "performance-reviewer"],
 				};
 			},
@@ -1945,7 +1906,6 @@ describe("quality review durable lifecycle", () => {
 		expect(report).toContain(
 			"Finding F-1 was omitted from the QM report; carried forward as open.",
 		);
-		expect(report).toContain("Diversity: attested");
 	});
 
 	// @cosmo-behavior plan:qm-chain-safety#B-008
@@ -2779,7 +2739,6 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "test/other",
 					checks: [{ id: "ok", command: process.execPath, args: ["-e", ""] }],
 				},
 			}),
@@ -3754,7 +3713,6 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "test/other",
 					checks: [
 						{
 							id: "ok",
@@ -3998,7 +3956,6 @@ describe("quality review durable lifecycle", () => {
 			join(projectRoot, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				qualityReview: {
-					diverseReviewerModel: "test/other",
 					checks: [{ id: "test", command: "bun", args: ["run", "test"] }],
 				},
 			}),
@@ -4071,7 +4028,6 @@ describe("quality review durable lifecycle", () => {
 							args: ["-e", "process.exit(0)"],
 						},
 					],
-					diverseReviewerModel: "test/other",
 				},
 			}),
 		);
@@ -4100,7 +4056,6 @@ describe("quality review durable lifecycle", () => {
 							args: ["-e", "process.exit(0)"],
 						},
 					],
-					diverseReviewerModel: "test/other",
 				},
 			}),
 		);
@@ -4157,7 +4112,6 @@ describe("quality review durable lifecycle", () => {
 			JSON.stringify({
 				qualityReview: {
 					gateOwnedPaths: configured.qualityReview.gateOwnedPaths,
-					diverseReviewerModel: "test/other",
 					checks: [
 						{
 							id: "ok",
@@ -4226,7 +4180,6 @@ describe("quality review durable lifecycle", () => {
 			JSON.stringify({
 				qualityReview: {
 					gateOwnedPaths: ["package.json"],
-					diverseReviewerModel: "test/other",
 					checks: [{ id: "test", command: "bun", args: ["run", "test"] }],
 				},
 			}),
@@ -4442,7 +4395,6 @@ describe("quality review durable lifecycle", () => {
 							args: ["install", "--frozen-lockfile", "--ignore-scripts"],
 						},
 					],
-					diverseReviewerModel: "test/other",
 					checks: [
 						{
 							id: "ok",
@@ -4493,7 +4445,6 @@ describe("quality review durable lifecycle", () => {
 						command: "bun",
 						args: ["install", "--frozen-lockfile", "--ignore-scripts"],
 					})),
-					diverseReviewerModel: "test/other",
 					checks: [
 						{
 							id: "ok",
@@ -4570,7 +4521,6 @@ describe("quality review durable lifecycle", () => {
 							args: ["install", "--frozen-lockfile", "--ignore-scripts"],
 						},
 					],
-					diverseReviewerModel: "test/other",
 					checks: [
 						{
 							id: "ok",
@@ -4965,7 +4915,7 @@ describe("quality review durable lifecycle", () => {
 			JSON.stringify({
 				skills: ["base-skill"],
 				qualityReview: {
-					diverseReviewerModel: "anthropic/reviewer",
+					reviewerModel: "anthropic/reviewer",
 					checks: [
 						{
 							id: "tamper",
@@ -5007,7 +4957,7 @@ describe("quality review durable lifecycle", () => {
 					spawn: async (config) => {
 						const context = config.qualityReviewContext;
 						if (!context) throw new Error("missing quality context");
-						expect(context.diverseReviewerModel).toBe("anthropic/reviewer");
+						expect(context.reviewerModel).toBe("anthropic/reviewer");
 						for (const lens of ["reviewer", "security-reviewer"]) {
 							const fullText = `${lens} completed`;
 							context.attemptedLenses.add(lens);
@@ -5074,7 +5024,6 @@ describe("quality review durable lifecycle", () => {
 				"utf8",
 			);
 			expect(report).toContain("tamper: argv");
-			expect(report).toContain("Diversity: attested");
 			expect(report).not.toContain("Report integrity: materials/full.diff");
 			await expect(stat(marker)).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(stat(lateMarker)).rejects.toMatchObject({ code: "ENOENT" });

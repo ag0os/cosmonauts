@@ -28,7 +28,7 @@ const mocks = getOrchestrationMocks();
 const PLAN_SLUG = "orchestration-surface-consolidation";
 
 describe("spawn_agent inline compiler boundary", () => {
-	test("uses the configured diverse model only for the quality panel generalist", async () => {
+	test("uses the configured reviewer model only for the quality panel generalist", async () => {
 		const fixtures = await loadOrchestrationDomainFixtures({
 			includeReviewers: true,
 		});
@@ -60,7 +60,7 @@ describe("spawn_agent inline compiler boundary", () => {
 			allowedLenses: new Set(["reviewer", "security-reviewer"]),
 			attemptedLenses: new Set(),
 			integrityFailures: [],
-			diverseReviewerModel: "anthropic/claude-sonnet-5",
+			reviewerModel: "anthropic/claude-sonnet-5",
 			baseRuntime: {
 				agentRegistry: fixtures.agentRegistry,
 				domainContext: "coding",

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-	assessReviewerDiversity,
 	calibrateReviewerFindings,
-	modelFamily,
 	qualityReviewPanelModel,
 } from "../../lib/orchestration/quality-review-models.ts";
 import {
@@ -10,12 +8,7 @@ import {
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
 
-describe("quality review model policy", () => {
-	it("normalizes shipped aliases and project extensions", () => {
-		expect(modelFamily("openai-codex")).toBe("openai");
-		expect(modelFamily("custom", { anthropic: ["custom"] })).toBe("anthropic");
-	});
-
+describe("quality review model override and calibration", () => {
 	it("overrides only the always-present generalist", () => {
 		expect(qualityReviewPanelModel("coding/reviewer", "anthropic/model")).toBe(
 			"anthropic/model",
@@ -23,86 +16,6 @@ describe("quality review model policy", () => {
 		expect(
 			qualityReviewPanelModel("coding/security-reviewer", "anthropic/model"),
 		).toBeUndefined();
-	});
-
-	it("accepts a different observed generalist family", () => {
-		expect(
-			assessReviewerDiversity({
-				implementer: { provider: "openai-codex", id: "worker" },
-				configured: "anthropic/reviewer",
-				reviewers: [
-					{
-						lens: "reviewer",
-						model: { provider: "anthropic", id: "reviewer" },
-					},
-				],
-			}).issue,
-		).toBeUndefined();
-	});
-
-	it.each([
-		["substituted", { provider: "anthropic", id: "other" }],
-		["unresolvable", { provider: "unknown", id: "reviewer" }],
-	])("rejects %s generalist", (_name, model) => {
-		expect(
-			assessReviewerDiversity({
-				implementer: { provider: "openai-codex", id: "worker" },
-				configured: "anthropic/reviewer",
-				reviewers: [{ lens: "reviewer", model }],
-			}).issue,
-		).toBeDefined();
-	});
-
-	it.each([
-		[
-			"reviewer",
-			{ provider: "openai-codex", id: "worker" },
-			{ provider: "mystery", id: "reviewer" },
-		],
-		[
-			"implementer",
-			{ provider: "mystery", id: "worker" },
-			{ provider: "anthropic", id: "reviewer" },
-		],
-	])("rejects a configured, observed generalist when the %s family is unresolvable", (_side, implementer, generalist) => {
-		expect(
-			assessReviewerDiversity({
-				implementer,
-				configured: `${generalist.provider}/${generalist.id}`,
-				reviewers: [{ lens: "reviewer", model: generalist }],
-			}).issue,
-		).toBe("Reviewer model family unresolvable");
-	});
-
-	it("rejects an observed generalist that matches its configured model but shares the implementer family", () => {
-		expect(
-			assessReviewerDiversity({
-				implementer: { provider: "openai-codex", id: "worker" },
-				configured: "openai/reviewer",
-				reviewers: [
-					{ lens: "reviewer", model: { provider: "openai", id: "reviewer" } },
-				],
-			}).issue,
-		).toContain("share family openai");
-	});
-
-	it("reports an absent generalist as missing", () => {
-		expect(
-			assessReviewerDiversity({
-				implementer: { provider: "openai", id: "worker" },
-				configured: "anthropic/reviewer",
-				reviewers: [],
-			}).issue,
-		).toContain("missing");
-	});
-
-	it("reports an unconfigured reviewer model as a human decision", () => {
-		expect(
-			assessReviewerDiversity({
-				implementer: { provider: "openai", id: "worker" },
-				reviewers: [],
-			}).humanItem,
-		).toContain("qualityReview.diverseReviewerModel");
 	});
 
 	it("demotes a performance P1 without cost cited from materials", () => {

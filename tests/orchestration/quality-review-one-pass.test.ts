@@ -52,7 +52,7 @@ it("assesses one triaged panel before running one configured check", async () =>
 		join(projectRoot, ".cosmonauts", "config.json"),
 		JSON.stringify({
 			qualityReview: {
-				diverseReviewerModel: "anthropic/claude-sonnet-4-5",
+				reviewerModel: "anthropic/claude-sonnet-4-5",
 				checks: [
 					{
 						id: "one",
@@ -203,7 +203,6 @@ it("assesses one triaged panel before running one configured check", async () =>
 	expect(report).toContain("one: argv");
 	expect(report).toContain('output "ok"');
 	expect(report).toContain("reviewer: anthropic/claude-sonnet-4-5");
-	expect(report).toContain("Diversity: attested");
 	expect(report).toContain("security-reviewer: test/security-reviewer");
 	expect(report).toContain("ux-reviewer: test/ux-reviewer");
 });

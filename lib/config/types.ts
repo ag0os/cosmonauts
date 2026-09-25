@@ -50,8 +50,7 @@ interface ProjectQualityReviewConfig {
 	readonly prepare?: readonly QualityReviewCommand[];
 	readonly checks?: readonly QualityReviewCommand[];
 	readonly gateOwnedPaths?: readonly string[];
-	readonly diverseReviewerModel?: string;
-	readonly modelFamilies?: Readonly<Record<string, readonly string[]>>;
+	readonly reviewerModel?: string;
 	readonly assessmentTimeoutMs?: number;
 	readonly panelTimeoutMs?: number;
 	readonly qmSettleGraceMs?: number;

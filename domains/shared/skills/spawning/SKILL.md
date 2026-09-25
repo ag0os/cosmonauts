@@ -79,7 +79,7 @@ Safety caps are global, not per-stage: `maxTotalIterations` (default 50), `timeo
 
 `cosmonauts run chain list` shows the live list including project-level overrides.
 
-Every named chain ending in `quality-manager` stops at its durable findings report. The QM reviews a private local clone; it does not edit code, commit, complete the plan, or guarantee a clean tree. Resolve findings separately through tasks, Drive, and independent re-review. Base-owned `qualityReview` checks and model diversity that are not configured appear as human-decision items and block `ready`. Project checks, direct gate resolution, panel triage, and specialist reviews remain part of the assessment.
+Every named chain ending in `quality-manager` stops at its durable findings report. The QM reviews a private local clone; it does not edit code, commit, complete the plan, or guarantee a clean tree. Resolve findings separately through tasks, Drive, and independent re-review. Base-owned `qualityReview` checks that are not configured appear as human-decision items and block `ready`. Project checks, direct gate resolution, panel triage, and specialist reviews remain part of the assessment.
 
 ## Per-role prompt patterns
 

@@ -65,15 +65,13 @@ describe("loadProjectConfig", () => {
 			JSON.stringify({
 				qualityReview: {
 					checks: [check],
-					diverseReviewerModel: "anthropic/test-model",
-					modelFamilies: { anthropic: ["my-provider"] },
+					reviewerModel: "anthropic/test-model",
 				},
 			}),
 		);
 		expect((await loadProjectConfig(tmp.path)).qualityReview).toMatchObject({
 			checks: [check],
-			diverseReviewerModel: "anthropic/test-model",
-			modelFamilies: { anthropic: ["my-provider"] },
+			reviewerModel: "anthropic/test-model",
 		});
 		await writeFile(
 			path,
@@ -103,6 +101,17 @@ describe("loadProjectConfig", () => {
 		);
 		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
 			"Invalid qualityReview.panelTimeoutMs",
+		);
+	});
+
+	test("rejects a reviewer model that is not provider/id", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ qualityReview: { reviewerModel: "no-provider" } }),
+		);
+		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
+			"Invalid qualityReview.reviewerModel",
 		);
 	});
 

@@ -40,11 +40,8 @@ import {
 	runQualityReviewChecks,
 } from "./quality-review-checks.ts";
 import {
-	assessReviewerDiversity,
 	calibrateReviewerFindings,
 	leadingFindingId,
-	type ObservedModel,
-	reviewerEvidenceFromLines,
 } from "./quality-review-models.ts";
 import {
 	amendUnindexedQualityReviewReport,
@@ -72,7 +69,6 @@ import {
 
 interface QualityReviewAssessment {
 	markdown: string;
-	implementerModel?: ObservedModel;
 	gateState?: string;
 	auditFindings?: readonly string[];
 	omittedSkillPaths?: readonly string[];
@@ -277,7 +273,6 @@ export async function runQualityReview(
 		let analysisPreparationFailed = false;
 		let preparationFailed = false;
 		let checkConfigMissing = false;
-		let modelConfigMissing = false;
 		let changedFiles: readonly string[] = [];
 		let capturedBase: string | undefined;
 		let baseQualityReview: ProjectConfig["qualityReview"];
@@ -295,8 +290,6 @@ export async function runQualityReview(
 		let runtimeSetupLive = false;
 		const activeChildIds = new Set<string>();
 		let observedReviewerModels: string[] = [];
-		let diversityIssue: string | undefined;
-		let diversityHumanItem: string | undefined;
 		const omittedSkillPaths: string[] = [];
 		let panelTimeoutMs = options.panelTimeoutMs ?? 300_000;
 		let assessmentTimeoutMs = options.assessmentTimeoutMs ?? 900_000;
@@ -511,7 +504,6 @@ export async function runQualityReview(
 			await prepareAnalysisWorkspace();
 			if (options.hostChecks) {
 				checkConfigMissing = !baseQualityReview?.checks?.length;
-				modelConfigMissing = !baseQualityReview?.diverseReviewerModel;
 				await collectGateOwnedFiles();
 			}
 		}
@@ -711,7 +703,6 @@ export async function runQualityReview(
 				sink,
 				assessment.requiredLenses ?? [],
 			);
-			attestReviewerDiversity(assessment);
 			const abandonedBeforeChecks = await sink.sealReviewers(
 				options.reviewerSealGraceMs ?? 1000,
 			);
@@ -721,33 +712,6 @@ export async function runQualityReview(
 				);
 			if (materialsRoot && materialDigests)
 				await verifyReviewMaterials(materialsRoot, materialDigests);
-		}
-
-		function attestReviewerDiversity(
-			assessment: QualityReviewAssessment,
-		): void {
-			if (!assessment.implementerModel) {
-				if (
-					!assessment.requiredLenses?.includes("reviewer") &&
-					observedReviewerModels.length === 0
-				)
-					return;
-				diversityIssue = "Default implementer model identity missing (INV-002)";
-				observedReviewerModels = [
-					...observedReviewerModels,
-					`Diversity: ${diversityIssue}.`,
-				];
-				return;
-			}
-			const diversity = assessReviewerDiversity({
-				implementer: assessment.implementerModel,
-				configured: baseQualityReview?.diverseReviewerModel,
-				modelFamilies: baseQualityReview?.modelFamilies,
-				reviewers: reviewerEvidenceFromLines(observedReviewerModels),
-			});
-			observedReviewerModels = diversity.lines;
-			diversityIssue = diversity.issue;
-			diversityHumanItem = diversity.humanItem;
 		}
 
 		async function verifySealedArtifacts(): Promise<void> {
@@ -861,15 +825,10 @@ export async function runQualityReview(
 			const hostHumanDecisionItems = [
 				...new Set([
 					...hostHumanItems(gateState, gateEvidenceMissing),
-					...(diversityHumanItem ? [diversityHumanItem] : []),
 					...calibration.humanItems,
 					...preparationHumanItems(),
 				]),
 			];
-			if (diversityIssue && verdict !== "failed") {
-				verdict = "failed";
-				reason = diversityIssue;
-			}
 			if (
 				hostBlocksReady(gateState, hostHumanDecisionItems) &&
 				verdict !== "failed"
@@ -998,11 +957,6 @@ export async function runQualityReview(
 				...(checkConfigMissing
 					? ["Not configured: qualityReview.checks; human decision required."]
 					: []),
-				...(modelConfigMissing
-					? [
-							"Not configured: qualityReview.diverseReviewerModel; human decision required.",
-						]
-					: []),
 				...gateOwnedFiles.map(
 					(file) =>
 						`Gate-owned file changed: ${file}; human decision required.`,
@@ -1100,11 +1054,6 @@ export async function runQualityReview(
 				humanItems: [
 					...(checkConfigMissing
 						? ["Not configured: qualityReview.checks; human decision required."]
-						: []),
-					...(modelConfigMissing
-						? [
-								"Not configured: qualityReview.diverseReviewerModel; human decision required.",
-							]
 						: []),
 					...gateOwnedFiles.map(
 						(file) =>

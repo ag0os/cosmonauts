@@ -83,7 +83,7 @@ Test-first is the `planner`'s baseline: every plan it produces is behavior-drive
 
 Every design-driven default includes `plan-reviewer` as a mandatory adversarial step before task creation. For code-time review, `quality-manager` internally triages which specialist lenses (security, performance, UX) apply to the diff and spawns the applicable ones in parallel alongside the generalist `reviewer`.
 
-All five named chains end at the QM's durable findings report. The QM reviews a private local clone and never edits code, commits, completes a plan, or guarantees a clean tree. Findings require separate remediation through tasks and Drive, followed by independent re-review. The review retains host-run project checks, direct gate resolution, panel triage, and specialist evidence. Missing base-owned `qualityReview` checks or model diversity is visible as not configured and as a human-decision item blocking `ready`.
+All five named chains end at the QM's durable findings report. The QM reviews a private local clone and never edits code, commits, completes a plan, or guarantees a clean tree. Findings require separate remediation through tasks and Drive, followed by independent re-review. The review retains host-run project checks, direct gate resolution, panel triage, and specialist evidence. Missing base-owned `qualityReview` checks are visible as not configured and as a human-decision item blocking `ready`. The optional `qualityReview.reviewerModel` runs the generalist reviewer on any model Pi can reach; the report records which models reviewed, and model choice never affects the verdict.
 
 Run `cosmonauts run chain list` for the live list, including any project-level overrides.
 

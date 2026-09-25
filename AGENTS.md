@@ -66,7 +66,7 @@ Work flows: **roadmap → plan → tasks → sessions → archive → proposals/
 - For non-trivial features (multi-file or design decisions), scope into tasks before implementing — see `/skill:plan` and `/skill:task`.
 - For small, self-contained changes, skip the task system.
 
-The Quality Manager reviews a private local clone and ends with a durable findings report. It does not fix code, commit, complete plans, or promise a clean tree. Route findings through tasks, Drive, and independent re-review. Review-base `qualityReview` checks and model diversity must be configured for a `ready` verdict; missing configuration is reported visibly as a human-decision item.
+The Quality Manager reviews a private local clone and ends with a durable findings report. It does not fix code, commit, complete plans, or promise a clean tree. Route findings through tasks, Drive, and independent re-review. Review-base `qualityReview` checks must be configured for a `ready` verdict; missing checks are reported visibly as a human-decision item. The QM and its reviewers may run on any model Pi can reach; model choice never affects the verdict.
 
 ## Key Directories
 

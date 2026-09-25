@@ -3,7 +3,7 @@ kind: knowledge-surface-backfill-amendment
 plan: knowledge-surface
 amendedAt: '2026-09-24'
 ratifiedBy: Agustin Calabrese (2026-09-24, relayed by Shepherd; plan qm-chain-safety D-030)
-configDigest: b94f37103364aab1e42cd2672d1f13815ed2c7050f0481771fc653d811ac3f42
+configDigest: 6a103986e12f5f33f052e58ef95d20d2265a3255b9e087dc2b114ac523828015
 ---
 
 # Knowledge surface — backfill receipt amendment 3
@@ -12,7 +12,11 @@ configDigest: b94f37103364aab1e42cd2672d1f13815ed2c7050f0481771fc653d811ac3f42
 
 Plan `qm-chain-safety` adds a `qualityReview` block to `.cosmonauts/config.json`.
 The block holds the dependency `prepare` step, the host-run `checks`, and the
-`diverseReviewerModel`. The plan's Files to Change lists this file. D-019 is
+`diverseReviewerModel`. The plan's Files to Change lists this file. *(2026-09-24,
+plan qm-chain-safety D-036, human ruling: the reviewer model and
+`modelFamilies` entries were removed from the block, and `configDigest` above
+was updated to the resulting file's SHA-256. The ratified digest before that
+change was `b94f37103364aab1e42cd2672d1f13815ed2c7050f0481771fc653d811ac3f42`.)* D-019 is
 human-ratified on 2026-09-23 and says "This repository configures both", so the
 config change is sanctioned ground.
 
