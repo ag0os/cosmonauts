@@ -22,10 +22,12 @@ import { AnalysisProviderError } from "../../domains/shared/extensions/project-t
 // version bump that shifts the behavior fails loudly instead of silently
 // breaking agent memory. See missions/plans/memory-hardening/plan.md.
 //
-// pi-coding-agent's session-level wiring (the `context` extension event,
-// before_agent_start message merging and prompt overrides) is pinned against a
-// real createAgentSession in pi-session-contract.test.ts. The frozen tool
-// allowlist is still not covered; re-audit it by hand on each Pi bump.
+// pi-session-contract.test.ts pins part of pi-coding-agent's session-level
+// wiring against a real createAgentSession: `context` pruning with system
+// prompt restore, a single before_agent_start custom message, and prompt
+// overrides. Not covered there: merging messages from several
+// before_agent_start handlers and the frozen tool allowlist; re-audit those by
+// hand on each Pi bump.
 
 const CAPTURE_ONLY = "capture-only client: request intentionally not sent";
 

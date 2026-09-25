@@ -25,8 +25,10 @@ import { useTempDir } from "../helpers/fs.ts";
 // the pi-coding-agent wiring our extensions compose on, which Pi 0.86/0.87
 // reworked around transcript system messages:
 // - before_agent_start still exposes the rendered prompt (identity marker),
-// - custom messages it returns reach the provider, and `context` handlers can
-//   prune earlier ones without seeing or dropping the system prompt,
+// - custom messages it returns reach the provider alongside earlier turns, and
+//   a `context` handler can prune earlier ones without seeing system messages,
+// - when a `context` handler prunes, Pi restores the system prompt it hid (run
+//   without a prompt override, which would otherwise rebuild the head itself),
 // - a returned `systemPrompt` override is sent once per request and is not
 //   recorded in session.messages,
 // - session.messages ends on the assistant reply our readers extract.
@@ -39,6 +41,7 @@ const MEMORY_TYPE = "contract-memory";
 interface ProviderRequest {
 	systemPrompt: string;
 	memoryTexts: string[];
+	transcript: string;
 }
 
 interface Probe {
@@ -57,7 +60,14 @@ function memoryTexts(messages: readonly unknown[]): string[] {
 	);
 }
 
-function probeExtensions(probe: Probe): ExtensionFactory[] {
+function newProbe(): Probe {
+	return { promptsSeenByHook: [], contextHandlerRoles: [], requests: [] };
+}
+
+function probeExtensions(
+	probe: Probe,
+	forcePrompt: boolean,
+): ExtensionFactory[] {
 	const memory: ExtensionFactory = (pi) => {
 		pi.on("before_agent_start", async (event) => {
 			probe.promptsSeenByHook.push(event.systemPrompt);
@@ -88,16 +98,21 @@ function probeExtensions(probe: Probe): ExtensionFactory[] {
 			systemPrompt: `${event.systemPrompt}\n\n${FORCED_BLOCK}`,
 		}));
 	};
-	return [memory, forcedPrompt];
+	return forcePrompt ? [memory, forcedPrompt] : [memory];
 }
 
-async function runTwoPrompts(root: string, probe: Probe) {
+async function runTwoPrompts(
+	root: string,
+	probe: Probe,
+	{ forcePrompt = true }: { forcePrompt?: boolean } = {},
+) {
 	const agentDir = join(root, "agent");
 	const faux = fauxProvider({ provider: "contract-faux" });
 	const respond = (context: TranscriptContext) => {
 		probe.requests.push({
 			systemPrompt: getCurrentSystemPrompt(context.messages),
 			memoryTexts: memoryTexts(context.messages),
+			transcript: JSON.stringify(context.messages),
 		});
 		return fauxAssistantMessage(`reply ${probe.requests.length}`);
 	};
@@ -120,7 +135,7 @@ async function runTwoPrompts(root: string, probe: Probe) {
 		noPromptTemplates: true,
 		noThemes: true,
 		systemPrompt: BASE_PROMPT,
-		extensionFactories: probeExtensions(probe),
+		extensionFactories: probeExtensions(probe, forcePrompt),
 	});
 	await resourceLoader.reload();
 
@@ -147,11 +162,7 @@ describe("pi contract: session-level extension wiring", () => {
 	const tmp = useTempDir("pi-session-contract-");
 
 	test("before_agent_start sees the rendered prompt with the identity marker", async () => {
-		const probe: Probe = {
-			promptsSeenByHook: [],
-			contextHandlerRoles: [],
-			requests: [],
-		};
+		const probe = newProbe();
 		await runTwoPrompts(tmp.path, probe);
 
 		expect(probe.promptsSeenByHook).toHaveLength(2);
@@ -160,44 +171,43 @@ describe("pi contract: session-level extension wiring", () => {
 		}
 	});
 
-	test("context handlers never receive system messages yet the prompt still reaches the provider", async () => {
-		const probe: Probe = {
-			promptsSeenByHook: [],
-			contextHandlerRoles: [],
-			requests: [],
-		};
-		await runTwoPrompts(tmp.path, probe);
+	test("context handlers never receive system messages", async () => {
+		const probe = newProbe();
+		await runTwoPrompts(tmp.path, probe, { forcePrompt: false });
 
 		expect(probe.contextHandlerRoles.length).toBeGreaterThanOrEqual(2);
 		for (const roles of probe.contextHandlerRoles) {
 			expect(roles).not.toContain("system");
 		}
+	});
+
+	test("the base prompt reaches the provider after a context handler prunes", async () => {
+		const probe = newProbe();
+		await runTwoPrompts(tmp.path, probe, { forcePrompt: false });
+
 		expect(probe.requests).toHaveLength(2);
 		for (const request of probe.requests) {
-			expect(request.systemPrompt).toContain("Base prompt.");
+			expect(extractAgentIdFromSystemPrompt(request.systemPrompt)).toBe(
+				AGENT_ID,
+			);
+			expect(request.systemPrompt).not.toContain(FORCED_BLOCK);
 		}
 	});
 
 	test("injected custom messages reach the provider and a context handler can prune older ones", async () => {
-		const probe: Probe = {
-			promptsSeenByHook: [],
-			contextHandlerRoles: [],
-			requests: [],
-		};
+		const probe = newProbe();
 		await runTwoPrompts(tmp.path, probe);
 
 		expect(probe.requests.map((request) => request.memoryTexts)).toEqual([
 			["memory 1"],
 			["memory 2"],
 		]);
+		expect(probe.requests[1]?.transcript).toContain("first");
+		expect(probe.requests[1]?.transcript).toContain("reply 1");
 	});
 
 	test("a returned systemPrompt override is sent once per request and not recorded", async () => {
-		const probe: Probe = {
-			promptsSeenByHook: [],
-			contextHandlerRoles: [],
-			requests: [],
-		};
+		const probe = newProbe();
 		const messages = await runTwoPrompts(tmp.path, probe);
 
 		for (const request of probe.requests) {
@@ -209,11 +219,7 @@ describe("pi contract: session-level extension wiring", () => {
 	});
 
 	test("session.messages ends on the assistant reply", async () => {
-		const probe: Probe = {
-			promptsSeenByHook: [],
-			contextHandlerRoles: [],
-			requests: [],
-		};
+		const probe = newProbe();
 		const messages = await runTwoPrompts(tmp.path, probe);
 
 		expect(messages.at(-1)?.role).toBe("assistant");
