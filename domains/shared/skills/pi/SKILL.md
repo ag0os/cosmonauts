@@ -614,6 +614,8 @@ const stats: SessionStats = session.getSessionStats();
 // stats.cost               — number (USD)
 ```
 
+Since v0.86 these totals include prompt-cache warming: with the default `cacheWarming: "streaming"` (global setting; `off | streaming | idle`), Pi may send small cache-refresh requests during long tool runs when it estimates they avoid a costlier cache miss. Refreshes count toward session usage but never enter model context. Cosmonauts keeps the default; `SettingsManager.inMemory()` sessions ignore the user's settings file and always get it.
+
 Context usage for the current model:
 
 ```typescript

@@ -67,6 +67,8 @@ interface StageStats { stageName: string; iterations: number; stats: SpawnStats 
 interface ChainStats { stages: StageStats[]; totalCost: number; totalTokens: number; totalDurationMs: number }
 ```
 
+`SpawnStats` come from Pi's `session.getSessionStats()`, so they include Pi's prompt-cache warming (default `cacheWarming: "streaming"` since Pi 0.86): while a session waits in a long tool call — a parent blocked on `spawn_agent`, a chain, `run_driver`, or a slow test run — Pi may send small cache-refresh requests when it estimates they save more than they cost. They add tokens and cost to that session's stats (and use subscription quota), not model context. Cosmonauts keeps Pi's default. It is a global Pi setting (`cacheWarming: off | streaming | idle` in `~/.pi/agent/settings.json`); spawns built with in-memory settings (compaction config, quality review) do not read that file and always use the default.
+
 ## Named Chains
 
 The primary CLI interface for multi-agent pipelines is `cosmonauts run chain`. Built-in defaults live in `bundled/coding/chains.ts` and are inherited automatically. Add a `chains` block to `.cosmonauts/config.json` only to override a chain by name or define a new one; project entries take precedence over domain entries on name collision.
