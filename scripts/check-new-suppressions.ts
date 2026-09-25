@@ -2,14 +2,14 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import { cliOption } from "./cli-option.ts";
 import {
 	checkSuppressions,
 	isSuppressionScanPath,
 	type Suppression,
 	type SuppressionKey,
 	scanSuppressions,
-} from "../lib/quality/suppression-policy.ts";
-import { cliOption } from "./cli-option.ts";
+} from "./suppression-policy.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string) => cliOption(args, name);

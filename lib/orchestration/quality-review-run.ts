@@ -1523,7 +1523,7 @@ function loadBaseQualityReviewConfig(
 export const HOST_GATE_OWNED_PATHS: readonly string[] = [
 	".cosmonauts/suppression-exceptions.json",
 	"scripts/check-new-suppressions.ts",
-	"lib/quality/suppression-policy.ts",
+	"scripts/suppression-policy.ts",
 	"domains/shared/extensions/project-tools/fallow-provider.ts",
 ];
 export const HOST_GATE_OWNED_DIRECTORY = ".fallow-baselines/";

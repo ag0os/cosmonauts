@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { scanSuppressions } from "../../lib/quality/suppression-policy.ts";
+import { scanSuppressions } from "../../scripts/suppression-policy.ts";
 
 const script = resolve("scripts/check-new-suppressions.ts");
 const roots: string[] = [];

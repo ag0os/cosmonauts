@@ -8,7 +8,7 @@ import {
 	isSuppressionScanPath,
 	type SuppressionKey,
 	scanSuppressions,
-} from "../../lib/quality/suppression-policy.ts";
+} from "../../scripts/suppression-policy.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 

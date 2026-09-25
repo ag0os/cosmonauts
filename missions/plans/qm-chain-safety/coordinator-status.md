@@ -214,6 +214,12 @@ The Stage 9 closure (TASK-728) received SHIP from both D-002/D-034 channels in c
 - Workspaces were removed.
 - Closure-review-1 HIGH-1 was reproduced live (run 2) and its fix confirmed live (run 3).
 
+**Reachability fix (2026-09-24, after a Shepherd gate run):** `bun run check:reachability` failed on `lib/quality/suppression-policy.ts`, which has no runtime importer; its only consumer is `scripts/check-new-suppressions.ts`. The module moved next to its consumer:
+- `scripts/suppression-policy.ts`, with its test now at `tests/scripts/suppression-policy.test.ts`;
+- `HOST_GATE_OWNED_PATHS` updated to the new path.
+
+Plan and spec text naming the old path are historical design text. **The gate list is now:** typecheck, tracked lint, `check:reachability`, `plan check-artifacts qm-chain-safety`, `check:suppressions -- --base main`, the changed-scope Fallow audit, and the full suite. All are green: reachability 198/198, tests 3442/3442.
+
 **Not pushed, not merged, no PR.**
 
 ### Residuals and follow-ups (not blocking; for the user)
