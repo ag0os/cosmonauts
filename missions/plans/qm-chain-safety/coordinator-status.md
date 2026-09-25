@@ -235,6 +235,41 @@ Plan and spec text naming the old path are historical design text. **The gate li
 - **About 1,578 leaked `cosmonauts-qm-*` directories** from earlier test runs remain in the user's `$TMPDIR` (`/var/folders/.../T/`). TASK-761 stops new leaks. The old ones are safe to delete, but only the user should do that.
 - **Earlier follow-ups:** find what wrote `~/.cosmonauts/packages/coding` (D-030); move the Shepherd backups out of the repository so Biome stops linting them.
 
+## D-036 model freedom — BRANCH VERIFIED 2026-09-25 (session qm-implementer-3)
+
+**Ruling.** "I want to freely set whatever model is available to Pi. No constraint, no advisory, nothing." (human, 2026-09-24, relayed by Shepherd). Recorded as plan D-036 (`e06ab41`). Amended in place, with dated notes:
+- spec: AC-014, AC-016, the Reviewers outcome, Scope, Assumptions, Open Questions, and the decision-7 provenance line;
+- plan: D-001 item 7, D-005, D-019 (its reviewer-model half only), D-024, B-011, Design §4 and §6, Files to Change, and Implementation Order 7 and 9.
+
+**TASK-766 (`03c4ba2`).** Implemented test-first by the coordinator acting as the Claude worker.
+- Deleted: the family alias table, `modelFamilies`, the default-implementer lookup and comparison, and every model human item and verdict branch, along with their tests.
+- `diverseReviewerModel` is now the optional `reviewerModel`, which overrides the generalist only.
+- The `## Reviewer models` record and `assertQualityReviewModelIdentity` are kept, as evidence integrity.
+- This repository's config sets no reviewer model.
+- The amendment-3 `configDigest` was re-pinned, with a dated note keeping the old digest.
+
+**TASK-767 (`6692fb4`).** Fixes from d036-review-1, where both channels found F-1: `reviewerModel` now accepts slash-bearing Pi ids. It also pins that a configured/observed model mismatch leaves the verdict unchanged, and makes the error text name the expected format (QM run 4, UR-003).
+
+**Reviews.**
+- `d036-review-1-{claude,codex}.md`: DO-NOT-SHIP-YET on both channels (F-1).
+- `d036-review-2-{claude,codex}.md`: **SHIP on both channels.**
+
+**Real QM run 4** (`closure-e2e.md`) ran on default models, with every lens on `openai-codex/gpt-5.6-sol`. It **reached a verdict** (`not-ready`, driven by findings, analysis consent and the gate-owned config change). The report had no model item. INV-001 held, and the workspace was removed.
+
+**Gates at `6692fb4`:**
+- tests 3435/3435;
+- lint 0 and typecheck 0;
+- reachability 198/198;
+- suppressions pass;
+- check-artifacts 0 issues;
+- the changed-scope audit against `main` passes.
+
+**Residuals.**
+- Only the generalist has a model knob; the QM and the specialists use their shipped definitions' models. This is D-036's scope, and a broader reading is the user's call.
+- The legacy keys are ignored silently. They never reached `main`.
+- A well-formed but unresolvable `reviewerModel` fails at spawn, not at config load.
+- The loader's negative tests cover only the no-slash case (LOW).
+
 ## Needs the user
 
 ### N-005 (RULED 2026-09-24 → D-033): the D-002 codex closure channel is out of usage until 2026-09-30 10:29
