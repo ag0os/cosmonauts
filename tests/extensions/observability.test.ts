@@ -3,6 +3,11 @@
  * Verifies handler registration and structured log output for each event type.
  */
 
+import {
+	fauxAssistantMessage,
+	type ToolResultMessage,
+} from "@earendil-works/pi-ai";
+import type { TurnEndEvent } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "vitest";
 import observabilityExtension from "../../domains/shared/extensions/observability/index.ts";
 
@@ -81,12 +86,32 @@ describe("observability extension", () => {
 		const pi = createMockPi();
 		observabilityExtension(pi as never);
 
+		const toolResult = {
+			role: "toolResult",
+			toolCallId: "tc-1",
+			toolName: "bash",
+			content: [],
+			isError: false,
+			timestamp: 0,
+		} as ToolResultMessage;
 		await pi.getHandler("turn_end")({
 			type: "turn_end",
 			turnIndex: 1,
-			message: {},
-			toolResults: [{}, {}],
-		});
+			message: fauxAssistantMessage("done"),
+			toolResults: [toolResult, toolResult],
+			messageEntryId: "entry-assistant",
+			toolResultEntryIds: ["entry-result-1", "entry-result-2"],
+			entries: [],
+			continue: false,
+			outcome: "completed",
+			context: {
+				contextEntries: [],
+				contextMessages: [],
+				llmMessages: [],
+				pendingMessages: [],
+				canContinue: true,
+			},
+		} satisfies TurnEndEvent);
 
 		const entry = findEntry(pi.getEntries(), "turn_end");
 		expect(entry.data).toEqual({
