@@ -1,8 +1,10 @@
 ---
-title: 'Framework Health: plans that describe outcomes, tests that can fail, code that is reachable'
-status: active
+title: >-
+  Framework Health: plans that describe outcomes, tests that can fail, code that
+  is reachable
+status: completed
 createdAt: '2026-09-20T00:00:00.000Z'
-updatedAt: '2026-09-20T00:00:00.000Z'
+updatedAt: '2026-09-25T14:11:18.991Z'
 ---
 
 ## Overview

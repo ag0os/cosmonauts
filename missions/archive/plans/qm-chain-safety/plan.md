@@ -2,9 +2,9 @@
 title: >-
   QM chain safety: a review-only Quality Manager that cannot damage what it
   reviews
-status: active
+status: completed
 createdAt: '2026-09-23T20:56:11.879Z'
-updatedAt: '2026-09-24T03:23:43.000Z'
+updatedAt: '2026-09-25T14:11:19.467Z'
 ---
 
 ## Overview
