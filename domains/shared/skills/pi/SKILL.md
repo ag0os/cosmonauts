@@ -121,8 +121,9 @@ await session.sendUserMessage("Do this next", {
 ### State Access
 
 ```typescript
-session.messages          // AgentMessage[] — the provider-context projection, including custom types
-                          // and (since v0.86) `role: "system"` prompt/tool-state messages
+session.messages          // AgentMessage[] — the session's context messages, including custom types
+                          // and (since v0.86) `role: "system"` prompt/tool-state messages; `context`
+                          // handlers may still prune these before a request
 session.sessionId         // Current session ID
 session.isStreaming       // Whether agent is currently streaming
 session.model             // Current Model (may be undefined)
@@ -380,7 +381,7 @@ Events are subscribed via `pi.on(eventName, handler)`. Handlers receive `(event,
 | `session_compact` | After compaction | — | Post-compact updates |
 | `session_compact_failed` | Compaction failed or aborted | — | Surface reason, retry state, source |
 | `session_info_changed` | Session name/info changed | — | UI updates |
-| `project_trust` | Project trust decision | — | Trust-gated setup |
+| `project_trust` | Project trust decision | `{ trusted: "yes" \| "no" \| "undecided", remember? }` (required) | Trust-gated setup |
 | `session_before_tree` | Before tree navigation | Can cancel | State management |
 | `session_tree` | After tree navigation | — | Post-navigate setup |
 | `session_shutdown` | Process exit | — | Cleanup, saving |
@@ -578,7 +579,7 @@ Since v0.86, `compaction.modelOverrides` sets per-model `reserveTokens` / `keepR
 
 ### Context Edits (v0.87)
 
-`SessionManager` is canonical for provider context. Assigning `session.agent.state.messages` no longer changes future requests. To change context without rewriting history, append a context edit: `sessionManager.appendContextEdit(entryId, null)` omits one message from future provider context (a string/content replacement swaps it), then call `session.refreshContext()`. Raw history, usage, and UI history are untouched. Restore external entries with `SessionManager.inMemory(cwd, { id }, entries)`. Exhaustive `SessionEntry` switches must handle `context_edit`.
+`SessionManager` is canonical for provider context. Assigning `session.agent.state.messages` no longer changes future requests. To change context without rewriting history, append a context edit: `sessionManager.appendContextEdit(entryId, null)` omits one message from future provider context (`appendContextEdit(entryId, { content })` swaps its content instead), then call `session.refreshContext()`. Raw history, usage, and UI history are untouched. Restore external entries with `SessionManager.inMemory(cwd, { id }, entries)`. Exhaustive `SessionEntry` switches must handle `context_edit`.
 
 ### Compaction Events
 
