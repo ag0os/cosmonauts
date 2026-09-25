@@ -1597,6 +1597,11 @@ describe("quality review durable lifecycle", () => {
 			"anthropic/reviewer",
 			"anthropic/reviewer",
 		],
+		[
+			"a configured reviewer model the session did not use",
+			"anthropic/reviewer",
+			"openai-codex/worker",
+		],
 	] as const)("reaches ready with %s and records the model only", async (_name, reviewerModel, observed) => {
 		const projectRoot = await root(true);
 		await mkdir(join(projectRoot, ".cosmonauts"));

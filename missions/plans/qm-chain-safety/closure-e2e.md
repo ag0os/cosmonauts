@@ -74,3 +74,27 @@ The QM run was `qm-c3626a6e`. The same dirty state was re-applied: an unstaged e
 - configure an Anthropic key in Pi, or a reachable `diverseReviewerModel`, before relying on real QM runs here;
 - set a larger `qualityReview.assessmentTimeoutMs` for whole-branch reviews of this repository;
 - the known suite flakes make a host `test` check fail under load.
+
+## Run 4: after D-036 (TASK-766), default models, narrow range, base `34a8db7`
+
+Added 2026-09-25 by coordinator session qm-implementer-3. The QM run was `qm-38034b30`, and the chain run was `chain-84bb088d`. The clone was checked out at `03c4ba2`, the TASK-766 commit, with local `main` set to `HEAD~1`. The same dirty state was applied: an unstaged edit, a staged edit and an untracked file. `bun bin/cosmonauts run chain verify` ran for 782 s.
+
+- **Models:** no reviewer model was in effect. The base config still carried the legacy `diverseReviewerModel` key, which the new loader ignores. Every lens ran on its shipped model, and the report's `## Reviewer models` section reads:
+  - reviewer: `openai-codex/gpt-5.6-sol`
+  - security-reviewer: `openai-codex/gpt-5.6-sol`
+  - ux-reviewer: `openai-codex/gpt-5.6-sol`
+
+  There was no family line, no Diversity line and no model-related human item.
+- **Verdict: not-ready. It reached a verdict**, unlike runs 1–3.
+  - The reasons were findings, an unbound analysis audit (`execution-not-consented`, since the scratch clone has no consent), and a human item for the gate-owned `.cosmonauts/config.json` change.
+  - Nothing in the verdict depended on models, which is D-036 confirmed on live models.
+- **Host checks** ran after the panel was sealed, as D-026 orders: suppressions exit 0, test exit 0 (132 s), lint exit 0, typecheck exit 0.
+- **QM findings:**
+  - UR-002/F-001, slash-bearing model ids rejected. The same issue as d036-review-1 F-1, fixed by TASK-767.
+  - UR-003, the invalid-model error omits the format. Fixed by TASK-767.
+  - UR-001, legacy keys ignored silently. Dispositioned: the keys never reached `main`, so no project outside this branch carries them, and ignoring them is safe under D-036.
+  - UR-004/F-002, the e2e sentinels. Expected, since they are this run's deliberate dirty state.
+- **Lifecycle:** allocated → workspace-reserved → snapshot-ready → assessing → finalizing → finalized. The workspace disposition was **removed**.
+- **Checkout before vs after:** HEAD, refs, `.git/index`, the stash and all 33,6xx file hashes were identical. The only change was 28 added files under the gitignored `missions/sessions/chain/runs/`.
+
+**Conclusion:** with the default models and no reviewer-model configuration, a real QM run completes and reaches a verdict. INV-001 and INV-003 held, and the verdict is independent of the models used.

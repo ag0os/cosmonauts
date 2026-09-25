@@ -224,7 +224,7 @@ Plan and spec text naming the old path are historical design text. **The gate li
 
 ### Residuals and follow-ups (not blocking; for the user)
 
-- **Real QM runs here need a reachable diverse reviewer.** Pi has no Anthropic key, so the configured `anthropic/claude-sonnet-5` fails visibly. Configure a key, or change `qualityReview.diverseReviewerModel`.
+- ~~Real QM runs here need a reachable diverse reviewer.~~ *(Void after D-036, 2026-09-25: no reviewer model is configured and model choice is free. Real run 4 reached a verdict on the default models.)*
 - **Whole-branch QM reviews exceed the default 900 s** `qualityReview.assessmentTimeoutMs`. Raise it in base-owned config.
 - **`external-commands/implement-plan.md` pins `gpt-5.6-sol` for all plans** (TASK-765, following D-034's "every codex use"). Decide whether the generic command should stay model-neutral.
 - **The archived-path pin test misses equivalent relative links** (closure-3 codex LOW; a proof gap, with no live link today).

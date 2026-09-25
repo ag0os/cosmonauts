@@ -220,9 +220,11 @@ function validateQualityReviewModels(raw: Record<string, unknown>): void {
 	if (
 		raw.reviewerModel !== undefined &&
 		(typeof raw.reviewerModel !== "string" ||
-			!/^[^/\s]+\/[^/\s]+$/.test(raw.reviewerModel))
+			!/^[^/\s]+\/\S+$/.test(raw.reviewerModel))
 	)
-		throw new Error("Invalid qualityReview.reviewerModel");
+		throw new Error(
+			"Invalid qualityReview.reviewerModel: expected <provider>/<model-id>",
+		);
 }
 
 function validateQualityReviewTimeouts(raw: Record<string, unknown>): void {

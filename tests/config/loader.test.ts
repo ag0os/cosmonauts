@@ -104,6 +104,21 @@ describe("loadProjectConfig", () => {
 		);
 	});
 
+	test("accepts a reviewer model id that contains slashes", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				qualityReview: {
+					reviewerModel: "openrouter/anthropic/claude-sonnet-4.5",
+				},
+			}),
+		);
+		expect((await loadProjectConfig(tmp.path)).qualityReview).toEqual({
+			reviewerModel: "openrouter/anthropic/claude-sonnet-4.5",
+		});
+	});
+
 	test("rejects a reviewer model that is not provider/id", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
@@ -111,7 +126,7 @@ describe("loadProjectConfig", () => {
 			JSON.stringify({ qualityReview: { reviewerModel: "no-provider" } }),
 		);
 		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
-			"Invalid qualityReview.reviewerModel",
+			"Invalid qualityReview.reviewerModel: expected <provider>/<model-id>",
 		);
 	});
 
