@@ -41,7 +41,7 @@ const MEMORY_TYPE = "contract-memory";
 interface ProviderRequest {
 	systemPrompt: string;
 	memoryTexts: string[];
-	transcript: string;
+	turns: string[];
 }
 
 interface Probe {
@@ -58,6 +58,22 @@ function memoryTexts(messages: readonly unknown[]): string[] {
 			(match) => match[0],
 		),
 	);
+}
+
+// "role:text" for each user and assistant message, so history checks match
+// message structure rather than any substring of the request (e.g. a cwd).
+function turnTexts(messages: readonly unknown[]): string[] {
+	return messages.flatMap((message) => {
+		const { role, content } = message as { role?: string; content?: unknown };
+		if ((role !== "user" && role !== "assistant") || !Array.isArray(content))
+			return [];
+		const text = content
+			.flatMap((part: { type?: string; text?: string }) =>
+				part.type === "text" && part.text ? [part.text] : [],
+			)
+			.join("");
+		return [`${role}:${text}`];
+	});
 }
 
 function newProbe(): Probe {
@@ -112,7 +128,7 @@ async function runTwoPrompts(
 		probe.requests.push({
 			systemPrompt: getCurrentSystemPrompt(context.messages),
 			memoryTexts: memoryTexts(context.messages),
-			transcript: JSON.stringify(context.messages),
+			turns: turnTexts(context.messages),
 		});
 		return fauxAssistantMessage(`reply ${probe.requests.length}`);
 	};
@@ -186,6 +202,8 @@ describe("pi contract: session-level extension wiring", () => {
 		await runTwoPrompts(tmp.path, probe, { forcePrompt: false });
 
 		expect(probe.requests).toHaveLength(2);
+		// The restore is only exercised if this run's handler actually pruned.
+		expect(probe.requests[1]?.memoryTexts).toEqual(["memory 2"]);
 		for (const request of probe.requests) {
 			expect(extractAgentIdFromSystemPrompt(request.systemPrompt)).toBe(
 				AGENT_ID,
@@ -202,8 +220,9 @@ describe("pi contract: session-level extension wiring", () => {
 			["memory 1"],
 			["memory 2"],
 		]);
-		expect(probe.requests[1]?.transcript).toContain("first");
-		expect(probe.requests[1]?.transcript).toContain("reply 1");
+		expect(probe.requests[1]?.turns).toEqual(
+			expect.arrayContaining(["user:first", "assistant:reply 1"]),
+		);
 	});
 
 	test("a returned systemPrompt override is sent once per request and not recorded", async () => {
