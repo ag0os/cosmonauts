@@ -93,7 +93,9 @@ INV-001..INV-005 are ratified ground and change only by human decision. The
 human also acknowledged two consequences of decision 1. First, the named chains
 ending in the QM end at a findings report. Second, `execution-liveness` lands
 after this plan. Decisions 6 and 7 stay as AC-013 and AC-014, by human
-direction.
+direction. *(Amended by the human 2026-09-24, plan D-036: decision 7 is
+withdrawn. AC-014 now only records which models reviewed; model choice is free
+and never affects the verdict.)*
 
 ## Users
 
@@ -166,8 +168,9 @@ remediation is a separate, explicit invocation.
 - A performance finding is rated P1 only with a measured or reproduced cost;
   otherwise it is at most P2.
 - A finding is never closed by the lens that raised it alone.
-- The final review panel includes at least one reviewer on a different model
-  family from the default implementer.
+- The report records which models reviewed. Any model Pi can reach may be set
+  freely for the QM and every reviewer; model choice never affects the
+  verdict. *(Amended by the human 2026-09-24, plan D-036: model-family diversity is removed from the product; the previous text is in git history.)*
 
 ## Acceptance Criteria
 
@@ -223,9 +226,10 @@ remediation is a separate, explicit invocation.
 - [ ] AC-013 - Performance-lens guidance rates a finding P1 only when it
   carries a measured or reproduced cost. Reviewer guidance does not let the
   lens that raised a finding be the only judge that closes it.
-- [ ] AC-014 - The QM's final review panel includes at least one reviewer on
-  a different model family from the default implementer, and the report
-  records which models reviewed.
+- [ ] AC-014 - The report records which models reviewed. The QM and its
+  reviewers may use any model Pi can reach, set freely; there is no
+  model-family check, no model-related human-decision or not-configured item,
+  and the verdict never depends on which models are used. *(Amended by the human 2026-09-24, plan D-036: model-family diversity is removed from the product; the previous text is in git history.)*
 - [ ] AC-015 - The eleven legacy `missions/reviews/*-round-N.md` files are in
   an archive location with their git history reachable, and no live surface
   links to their old paths: prompts, skills, docs, code, tests other than
@@ -240,10 +244,12 @@ remediation is a separate, explicit invocation.
   dispatch skills, `docs/orchestration.md`, the external `implement-plan`
   command). The callers describe the review-only contract and route
   remediation to tasks. In a project without the `qualityReview` config for
-  checks or the diverse reviewer model, the report shows a visible "not
-  configured" item and a human-decision item naming the missing key, and the
-  verdict cannot be `ready`. Nothing is skipped silently and nothing is
-  refused. *(Amended by the human 2026-09-23, plan H-003 option A.)*
+  checks, the report shows a visible "not configured" item and a
+  human-decision item naming the missing key, and the verdict cannot be
+  `ready`. Nothing is skipped silently and nothing is refused. *(Amended by
+  the human 2026-09-23, plan H-003 option A.)* *(Amended by the human
+  2026-09-24, plan D-036: the reviewer model is no longer a required key; an
+  unset reviewer model means the shipped models are used, with no item.)*
 
 ## Scope
 
@@ -256,7 +262,7 @@ Included:
 - persisting the full final report and the plan-scoped summary;
 - baseline-aware changed-scope gating and a gate against new suppressions;
 - reviewer severity and closure guidance;
-- model diversity in the final panel;
+- recording which models reviewed (model choice is free; D-036, 2026-09-24);
 - relocating the legacy review files;
 - updating documentation and callers for the review-only contract.
 
@@ -297,9 +303,9 @@ Excluded (named non-goals, deferred):
   The pinned `fallow` supports per-analysis baselines on `audit`
   (`--dead-code-baseline`, `--health-baseline`, `--dupes-baseline`; precedent
   `TASK-676` AC #8).
-- A reviewer on a different model family is reachable through a provider Pi
-  already supports. Usage limits on that provider are an operational risk,
-  not a design constraint.
+- ~~A reviewer on a different model family is reachable through a provider Pi
+  already supports.~~ *(Withdrawn 2026-09-24, plan D-036: there is no
+  model-family requirement.)*
 - `execution-liveness` (TASK-712..719, all To Do) has not started. This plan
   lands first, and that plan rebases onto it.
 
@@ -310,9 +316,10 @@ Excluded (named non-goals, deferred):
   more general but overlaps `execution-liveness`'s launch and store seams, and
   that spec excludes worktrees from its own scope. The planner proposes; if
   the choice moves scope, it comes back to the human.
-- Which reviewer takes the different model family, and how is its model
-  chosen without hard-coding a provider into a shipped definition? The planner
-  proposes.
+- ~~Which reviewer takes the different model family, and how is its model
+  chosen without hard-coding a provider into a shipped definition?~~
+  *(Closed 2026-09-24, plan D-036: no family requirement; an optional
+  `qualityReview.reviewerModel` sets the generalist's model.)*
 - Where does the full final report live: in the run's gitignored artifacts
   directory with a tracked plan summary, or in a tracked run directory under
   `missions/reviews/qm/<plan>/<runId>/`? Decision 2 chose run artifacts plus

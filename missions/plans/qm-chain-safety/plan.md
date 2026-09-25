@@ -113,9 +113,8 @@ Pi-First findings:
   `lib/orchestration/spawn-tracker.ts`, populated by detached `spawn_agent`. The
   durable chain path returns only messages plus the 200-character summary, which
   is why D-011 limits the QM's panel to `spawn_agent`.
-- Pi does not create Git snapshots, enforce Cosmonauts authority, keep QM
-  lifecycle state, or define model families. Those are the narrow Cosmonauts
-  responsibilities here.
+- Pi does not create Git snapshots, enforce Cosmonauts authority or keep QM
+  lifecycle state. Those are the narrow Cosmonauts responsibilities here.
 - An OS sandbox and a generic `tool_call` write guard stay excluded by the spec.
   The QM and its panel instead receive no shell, edit or write tool at all (see
   D-012).
@@ -143,7 +142,7 @@ Investigation evidence gathered before design:
     4. Changed-scope gates fail only on introduced findings, using the committed baselines. The doc conflict between `docs/fallow-exceptions.md` and `analysis-debt-paydown` gets resolved.
     5. A new suppression directive needs an exception-registry entry, and only a human adds one.
     6. A performance P1 needs a measured or reproduced cost. A lens is never the only judge that closes its own finding.
-    7. The final review includes a reviewer on a different model family from the implementer.
+    7. ~~The final review includes a reviewer on a different model family from the implementer.~~ *(Withdrawn by the human 2026-09-24, D-036: model choice is free and never affects the verdict.)*
     8. `chain_run` enforces the caller's `subagents` allowlist.
   - Alternatives: the incident report's ranked recommendations as written (a pure-code triage filter, protected-test replay, an edit-range diff gate), rejected for the reasons in `investigation.md` §2. Keeping QM remediation behind added gates was also rejected: on 2026-09-23 only 1 of 6 fixer runs was clean.
   - Why: INV-001..INV-005 (spec `## Intent`).
@@ -231,7 +230,7 @@ Investigation evidence gathered before design:
     PR-006), 2026-09-23. Replacing the decided "detached worktree" mechanism
     is D-020.
 
-- **D-005 - The generalist runs on a configured model of a different family**
+- **D-005 - The generalist runs on a configured model of a different family** *(Superseded 2026-09-24 by D-036, human ruling: no family check, no alias table, no implementer comparison. What survives: an optional `qualityReview.reviewerModel` sets the generalist's model, and the host records every reviewer's observed model. The text below is historical.)*
   - Decision:
     - `qualityReview.diverseReviewerModel` in project config overrides only
       the always-present general reviewer's model. Shipped definitions keep
@@ -479,7 +478,8 @@ Investigation evidence gathered before design:
       `ReviewerEvidence.resolvedModel`) is delivered in Stage 6 (TASK-725),
       because Stage 6's reviewer evidence needs it. Stage 7 (TASK-726) keeps
       family normalization, the override, config validation and the diversity
-      verdict.
+      verdict. *(D-036, 2026-09-24: family normalization and the diversity
+      verdict were later removed; the override survives as `reviewerModel`.)*
     - Stage 2 (TASK-721) depends on Stage 3 (TASK-722), so the B-009 docs
       describe the suppression registry that actually shipped.
   - Alternatives: leave the model seam in Stage 7, which makes Stage 6 unable
@@ -690,6 +690,22 @@ Investigation evidence gathered before design:
   - Decided by: coordinator, amend-on-record, 2026-09-24
   - Supersedes: none (an interpretation of AC-008's per-finding field bullet for QM-written prose).
 
+- **D-036 - Model choice is free: model-family diversity is removed from the QM product** *(human ruling, 2026-09-24; supersedes D-001 item 7 as implemented)*
+  - Decision:
+    - The user's words (relayed by Shepherd): "I want to freely set whatever model is available to Pi. No constraint, no advisory, nothing."
+    - The QM and every reviewer lens may use any model Pi can reach. There is no family check, no provider-to-family alias table (`modelFamilies` is removed), no default-implementer comparison, and no "not configured", "same-family", "unresolvable" or "substituted" item about models. The verdict never depends on which models are used.
+    - `qualityReview.diverseReviewerModel` is renamed to the neutral, optional `qualityReview.reviewerModel`. It means only "run the generalist on this model". When it is unset, every lens runs on its shipped definition's model and nothing is reported about it.
+    - The report keeps its host-owned `## Reviewer models` section, which records the host-observed `lens: provider/id` of every reviewer that ran (AC-014's remaining half). It is a record, not a check.
+    - Unchanged, because it is evidence integrity rather than a model constraint: a session whose model changes after the host resolved it is a report-integrity failure, so the recorded identities stay true (`assertQualityReviewModelIdentity`).
+    - This repository's `.cosmonauts/config.json` sets no reviewer model; the agents' shipped models apply.
+    - Amended in place with dated notes: spec Intent provenance (decision 7), the Reviewers outcome, AC-014, AC-016, Scope, Assumptions and Open Questions; plan D-001 item 7, D-005, D-019 (its reviewer-model half only; the `checks` half stays), D-024's Stage 7 note, B-011, Design §4 and §6, Files to Change and Implementation Order 7 and 9.
+    - The diversity code and its tests are deleted, not left dormant (TASK-766).
+    - Not affected: this plan's own coordination practice of cross-model review channels (D-002, D-033, D-034). That is process, not product.
+  - Alternatives: keep the check as an advisory report line (rejected by the ruling: "no advisory"); keep `diverseReviewerModel` under its old name (the name implies a constraint).
+  - Why: the user's ruling. INV-001..INV-005 are unaffected: none of them names models.
+  - Decided by: human, 2026-09-24 (relayed by Shepherd)
+  - Supersedes: D-001 item 7; D-005; D-019's reviewer-model half; B-011 as written; the model-diversity halves of spec AC-014 and AC-016.
+
 - **D-034 - Codex is back through the work account on `gpt-5.6-sol`; the cross-family closure runs now** *(human ruling, amends D-033)*
   - Decision:
     - Codex is available again through the user's work account. GPT-6 models are not available there, so every codex use runs on `gpt-5.6-sol`:
@@ -727,6 +743,7 @@ Investigation evidence gathered before design:
   - Supersedes: AC-003 letter without exception; the H-001 draft
 
 - **D-019 - Unconfigured `qualityReview` produces visible not-configured items** *(from H-003)*
+  - *(Amended 2026-09-24 by D-036, human ruling: the reviewer-model half is withdrawn. Only unconfigured `checks` yields the not-configured and human-decision items. An unset `reviewerModel` produces no item. The text below is historical.)*
   - Decision: option A. Unconfigured `checks` or `diverseReviewerModel` yields
     a visible "not configured" item plus a human-decision item naming the
     missing key, and the verdict cannot be `ready`. Nothing is silent and
@@ -925,17 +942,17 @@ Investigation evidence gathered before design:
   - No finding is closed or dismissed on the evidence of the lens that raised
     it alone.
 
-### B-011 - Every completed panel records model-family diversity
+### B-011 - Every completed panel records which models reviewed
+
+*(Amended 2026-09-24 by D-036, human ruling. The previous outcome, a different-family generalist that failed visibly otherwise, is in git history.)*
 
 - Source: AC-014
 - Observer: an operator reading a completed, failed or refused QM report
 - Entry point: the QM report's reviewer-models section
 - Outcome:
-  - A completed assessment includes one generalist whose host-observed model
-    is from a different family than the default implementer, and records every
-    reviewer's model.
-  - A same-family, unresolvable or substituted model fails visibly.
-  - Unconfigured diversity follows D-019.
+  - A completed assessment records every reviewer's host-observed model as `lens: provider/id`.
+  - When `qualityReview.reviewerModel` is set, the generalist runs on it. When it is unset, every lens runs on its shipped model and the report has no model-related item.
+  - The verdict is the same whichever models ran, including when every lens shares one provider.
 
 ### B-012 - Legacy records are archived and callers describe the review-only contract
 
@@ -975,7 +992,7 @@ interface QualityReviewSessionProfile {
   readonly hostRunStoreRoot: string;   // operator-side run store; never exposed to sessions
   readonly planSlug?: string;
   readonly allowedPanelRoles: readonly ReviewLens[];
-  readonly diverseReviewerModel?: string;
+  readonly reviewerModel?: string; // D-036: optional, neutral override of the generalist's model
 }
 ```
 
@@ -1096,8 +1113,8 @@ The QM prompt becomes Setup → Assess → Report:
    the literal base SHA.
 3. Triage which specialists apply, from the changed-file list and the diff.
 4. Start the generalist and the applicable specialists once through
-   `spawn_agent`. The host overrides the generalist's model with
-   `diverseReviewerModel`.
+   `spawn_agent`. When `reviewerModel` is set, the host runs the generalist
+   on it (D-036).
 5. Read the correlated completion texts, synthesize the report, and stop.
 
 Reviewer prompts:
@@ -1112,13 +1129,12 @@ Config, validated in `lib/config`:
 interface QualityReviewConfig {
   readonly prepare?: readonly QualityReviewCommand[];
   readonly checks?: readonly QualityReviewCommand[];
-  readonly diverseReviewerModel?: string;
-  readonly modelFamilies?: Readonly<Record<string, readonly string[]>>; // extends the shipped provider-alias table
+  readonly reviewerModel?: string; // D-036: optional; replaces diverseReviewerModel and modelFamilies
 }
 interface QualityReviewCommand { readonly id: string; readonly command: string; readonly args: readonly string[] }
 ```
 
-Unconfigured `checks` or `diverseReviewerModel` follow D-019 option A.
+Unconfigured `checks` follow D-019 option A. An unset `reviewerModel` produces no item (D-036).
 
 ### 7. Baseline-aware changed-scope audit
 
@@ -1181,12 +1197,12 @@ in `scripts/check-new-suppressions.ts` implement D-009:
 - `lib/orchestration/quality-review-artifacts.ts` (new) — path-safe sink, lifecycle, reviewer evidence, workspace removal.
 - `lib/orchestration/quality-review-report.ts` (new) — report validation and generation, plan summaries, gate-owned-file items.
 - `lib/orchestration/quality-review-run.ts` (new) — the executor composing allocation, snapshot, checks, the restricted QM session and finalization.
-- `lib/orchestration/quality-review-models.ts` (new) — the family alias table, config extension and diversity check.
+- `lib/orchestration/quality-review-models.ts` (new) — the generalist model override and reviewer calibration. *(D-036: the family table and diversity check were removed.)*
 - `domains/shared/extensions/project-tools/analysis-consent.ts` — accept an explicit in-memory authorization for a verified snapshot of a consented root; never write consent.
 - `domains/shared/extensions/project-tools/fallow-provider.ts` — pass the three baselines for changed-scope audit only.
 - `lib/durable-runtime/types.ts`, `lib/durable-runtime/controller.ts` — expose existing step artifact refs in normalized status; no lease, attempt or settlement changes.
 - `lib/config/types.ts`, `lib/config/loader.ts` — validate the `qualityReview` block.
-- `.cosmonauts/config.json`, `.cosmonauts/config.example.json` — this repository's `prepare`, `checks`, `diverseReviewerModel`; documented example.
+- `.cosmonauts/config.json`, `.cosmonauts/config.example.json` — this repository's `prepare` and `checks`; documented example. *(D-036: no reviewer model is set here.)*
 - `bundled/coding/agents/quality-manager.ts` — subagents limited to the four lenses; description is review-only.
 - `bundled/coding/prompts/quality-manager.md` — Setup → Assess → Report.
 - `bundled/coding/prompts/reviewer.md`, `security-reviewer.md`, `performance-reviewer.md`, `ux-reviewer.md` — scope from materials, final-text reports, P1 and closure rules.
@@ -1276,7 +1292,9 @@ removed only in the stage that delivers its replacement (SCOPE-SEQUENCING-001).
    host-run checks, `spawn_agent`-only panel capture, the one-pass QM and
    reviewer prompts, gate-owned-file items, and removal of fixer, coordinator,
    verifier and integration-verifier. The unconfigured path follows D-019.
-7. **Model diversity and calibration — B-010, B-011.** The family table and
+7. *(D-036, 2026-09-24: the family table and diversity verdict were removed
+   afterwards by TASK-766; B-011 now records models only.)*
+   **Model diversity and calibration — B-010, B-011.** The family table and
    config, the generalist override, the diversity verdict over the model identity
    Stage 6 records (D-024), and the P1
    and closure guidance. The unconfigured path follows D-019.
@@ -1286,7 +1304,7 @@ removed only in the stage that delivers its replacement (SCOPE-SEQUENCING-001).
 9. **Independent closure under D-002 — B-001 through B-012.** A Claude subagent
    reviewer plus read-only codex (`gpt-6-sol`, high), framed as
    correctness/liveness. Attack every refusal, producer, lifecycle, authority,
-   baseline, suppression and model-family negative. Any remediation goes
+   baseline, suppression and model-family negative (the model-family negative is void after D-036). Any remediation goes
    through ordinary tasks and Drive and gets another independent review.
 
 If a stage surfaces unexpected complexity, stop at the stage boundary and
