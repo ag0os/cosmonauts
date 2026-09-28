@@ -1,7 +1,7 @@
 ---
 id: TASK-770
 title: 'Stage 3: Extract core runtime and driver clones'
-status: Blocked
+status: To Do
 priority: medium
 assignee: worker
 labels:
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-769
 createdAt: '2026-09-28T15:22:47.494Z'
-updatedAt: '2026-09-28T18:10:07.026Z'
+updatedAt: '2026-09-28T18:17:51.150Z'
 ---
 
 ## Description
@@ -69,3 +69,9 @@ Decision needed: authorize a narrowly reviewed update to the source-hash expecta
   "notes": "Blocked under Q-002: extracting the owned architecture-map retrieval clone changes a source hash asserted by tests/memory/interface.test.ts. Updating that expectation requires human approval. The retrieval source was restored byte-for-byte, evidence was recorded, and TASK-770 was marked Blocked."
 }
 outcome: failure
+
+### Coordinator note before attempt 2 (2026-09-28): Q-008 ruled (a)
+
+Human ruling, relayed by Shepherd (plan D-022; spec Q-008; rulings file round 3): **authorize the narrow expectation update.** In `tests/memory/interface.test.ts` only the SHA-256 literal for `lib/architecture-map/retrieval.ts` (currently `ab64b61e95f6393db8e1edeec56e3d9994cb4e8d3a2fc525962f1b7ff04454d7`, at the `architectureAdapterSource` assertion) changes to the hash of the refactored file; every other assertion in that test, including the `types.ts` hash and the `registry|backend|plugin|dispatch` blacklist, stays untouched. Citation for the D-015 record: this modification pins finding `dupes	lib/architecture-map/retrieval.ts:198:213;lib/architecture-map/retrieval.ts:237:251` (family `family-e85de5923f89360e`), extracted in this task under Q-003; test expectation change authorized by human ruling Q-008 (a). This is the task's one pre-declared existing-test modification; the D-015 output must list no other M/D/R test path.
+
+Worktree state: attempt 1's extraction of every other owned family is present, uncommitted (22 modified + 7 new source files) and passed all five Drive postflight gates on the restored `retrieval.ts`. Do not redo or revert it. Steps: (1) `analysis_status`; trace the retrieval.ts group again immediately before editing; (2) re-apply the same-file extraction in `lib/architecture-map/retrieval.ts`; (3) compute the new SHA-256 of the file and update only that literal; (4) run the stage gate and the fresh duplication diagnostic pair; (5) record the D-015 in-session check against `C = d17a497` verbatim (expect exactly `M tests/memory/interface.test.ts`), the new hash, and the citation above in these notes via `task_edit` (append); (6) tick every satisfied AC with `checkAc` (D-020 applies to the freeze AC); (7) report `outcome: success`.

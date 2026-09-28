@@ -251,3 +251,11 @@ The rulings are ratified ground:
 The coordinator's derived decisions stand (human, 2026-09-28): `scripts/`
 critical functions in scope, `tests/` critical functions baselined, static
 coverage tier as the characterization trigger, no `fallow.toml` edits.
+
+Ruled during implementation (human, 2026-09-28, typed to Shepherd, relayed;
+rulings file round 3):
+
+- Q-008 - Q-002 hard stop in stage 3: extracting the `lib/architecture-map/retrieval.ts`
+  same-file clone changes the source hash pinned by
+  `tests/memory/interface.test.ts`. **(a)**: only that one hash literal changes,
+  citing the finding per D-015; adjacent assertions stay. Recorded as plan D-022.

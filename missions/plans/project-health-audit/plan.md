@@ -167,6 +167,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - *(Amended 2026-09-28 after the third worker attempt, which declined the change as an "ignore" under the task's AC #4 wording and proposed a per-path Biome formatter override instead: the coordinator tested that override (`overrides: [{ includes: ["missions/reviews/project-health-audit.json"], formatter: { indentStyle: "space", indentWidth: 2 } }]`) and Biome still rewrites the file, collapsing short arrays such as `"scopes": ["target"]` onto one line, so no formatter setting reproduces `JSON.stringify(value, null, 2)`. The file-include rule is therefore the only Biome-side option that keeps D-004's canonical form. Ruling on record: this rule is a build-tooling scope decision for a machine-written artifact, not a lint or Fallow suppression, ignore pattern, threshold, or entry change against any finding, so neither INV-004 nor the AC #4 sentence that restates it is engaged; with `biome.json` at `6ecb2a5` the stage-gate `bun run lint` result is admissible for AC #7, and the record file's canonical form is verified by the schema validator in `tests/helpers/project-health-record.ts` rather than by Biome. `biome.json` is coordinator-owned; no worker edits it.)*
   - Decided by: coordinator, derived, 2026-09-28
 
+- **D-022 - Q-008: the `retrieval.ts` source-hash pin is updated narrowly** *(Added 2026-09-28 during slice 3)*
+  - Decision: "Q-008 = (a). Only the one hash literal changes, citing the finding per D-015; adjacent assertions stay." Extracting the same-file clone `family-e85de5923f89360e` (`lib/architecture-map/retrieval.ts:198-213` / `237-251`) changes the file's bytes, and `tests/memory/interface.test.ts:657-658` pins the SHA-256 of that source as a memory-interface seam guard. The Q-002 hard stop fired; the human authorized updating that single hash expectation. The `types.ts` hash and the `registry|backend|plugin|dispatch` blacklist in the same test stay unchanged; the citation goes in TASK-770's `## Implementation Notes`; the coordinator reviews the hunk (D-018 (1)).
+  - Alternatives: (b) remove the family from stage 3 and baseline it with a reason (amends Q-003).
+  - Why: the pin is a change detector that makes adapter edits deliberate; the extraction is behavior-preserving and covered by the memory suites.
+  - Decided by: human, 2026-09-28 (typed to Shepherd, relayed; rulings file round 3)
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible

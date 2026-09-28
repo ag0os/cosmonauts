@@ -6,23 +6,9 @@ Implementation started 2026-09-28.
 
 ## Needs the user
 
-**Q-008 (Q-002 hard stop, slice 3 / TASK-770).** Extracting the same-file clone
-`family-e85de5923f89360e` (`lib/architecture-map/retrieval.ts:198-213` vs
-`237-251`, the only group in that family) changes the file's bytes, and
-`tests/memory/interface.test.ts:657-658` pins the SHA-256 of that exact source
-(`ab64b61e…`) as a memory-interface seam guard, beside a `types.ts` hash and a
-word-blacklist (`registry|backend|plugin|dispatch`). The worker observed the
-refactored hash `97adca73…`, restored the file byte-for-byte, and stopped.
-Options: (a) authorize the narrow expectation update (only the one hash literal,
-citation in TASK-770 notes per D-015; the other seam assertions in that test
-stay and still pass), or (b) remove this family from stage-3 ownership and
-baseline it with a reason (amends the Q-003 "all one-/two-file families"
-scope). Coordinator recommendation: **(a)** — the pin is a change detector
-whose job is to make adapter edits deliberate, the extraction is behavior-
-preserving and covered by the memory suites, and (b) leaves an extractable
-clone in the record for a reason unrelated to the code. All rulings recorded: Q-001..003 (round 1) in `spec.md`; Q-004..007
-(round 2, all option (a)) in `plan.md` D-010/D-012/D-013/D-017. Rulings file:
-`.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`.
+Nothing. Q-008 ruled (a) 2026-09-28 (human, relayed; plan D-022, spec Q-008,
+rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
+`plan.md` D-010/D-012/D-013/D-017.
 
 ## Done
 
@@ -55,10 +41,9 @@ clone in the record for a reason unrelated to the code. All rulings recorded: Q-
 
 ## Running
 
-Nothing. Slice 3 is blocked on Q-008; slice 4 (TASK-771) is not dispatched
-because TASK-770's uncommitted extraction (22 modified + 7 new source files,
-all five gates green per Drive postflight on the restored state) sits in the
-worktree and a Drive commit for another task would sweep it in.
+- Slice 3 / TASK-770 attempt 2 (after Q-008 (a)): re-applies the retrieval.ts
+  extraction and updates the single hash literal; slice-start `S` = `ab78192`,
+  `C` = `d17a497`. Expect exactly `M tests/memory/interface.test.ts` in the freeze diff.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -87,7 +72,9 @@ worktree and a Drive commit for another task would sweep it in.
 
 ## Blocked
 
-- Slice 3 / TASK-770 `Blocked` (run `run-d744cc20`, 18:09Z): Q-008 above. Worker
+Nothing (TASK-770 was blocked on Q-008 from 18:09Z until the ruling).
+
+- History: slice 3 / TASK-770 attempt 1 (run `run-d744cc20`) blocked on Q-008. Worker
   evidence restored into the task notes. Worktree holds its partial extraction
   (diagnostic went 85 → 48 groups with retrieval.ts included; retrieval.ts
   restored). Resume: relaunch TASK-770 after the ruling; the worker re-applies
