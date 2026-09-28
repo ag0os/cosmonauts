@@ -29,6 +29,9 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
   Freeze diff from `C = d17a497`: exactly the Q-008 (a) hash literal. Five gates
   passed. Diagnostic duplication 85 → 48 groups. Three attempts: Q-008 hard
   stop (ruled (a)), then the `warn` audit self-block (D-023).
+- **Slice 4 / TASK-771 Done** (18:54Z, first attempt): Drive commit `ac8dbc1`,
+  state `c359aa6`. No test changes; four new helper modules; five gates passed;
+  task-close audit `pass`.
 - Branch `feature/project-health-audit` off local `main` `64dca3c`; roadmap
   item removed; plan + spec created; Intent ratified.
 - `/spec-to-backlog` complete: planner→plan-reviewer chain (review-1, review-2,
@@ -45,8 +48,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-- Slice 4 / TASK-771 (extension, harness, validation clones): launched after the
-  slice-3 record-only commit; slice-start `S` = that commit.
+- Slice 5 / TASK-772 (memory, skills, tasks clones + three-file dispositions):
+  launched after the slice-4 record-only commit; slice-start `S` = that commit.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
