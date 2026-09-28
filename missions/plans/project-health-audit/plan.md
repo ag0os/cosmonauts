@@ -198,6 +198,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: a hash-of-source test blocks every behavior-preserving refactor the plan exists to make; see also the project rule that source-byte pins are removed, never updated.
   - Decided by: human, 2026-09-28 (typed to Shepherd, relayed; rulings file round 4)
 
+- **D-027 - Q-011: the worker and cosmo pins move to DeepSeek via OpenRouter; D-025's Anthropic pins are superseded** *(Added 2026-09-28 by the implementing coordinator, successor #2, after the D-025 probe failed)*
+  - Decision: no Claude model is reachable (claude.ai OAuth out of extra usage; OpenRouter holds about $8, not enough for Claude rates). Under human ruling Q-011 (rulings file round 5) the branch repins `bundled/coding/agents/worker.ts` to `openrouter/deepseek/deepseek-v4-pro` and `domains/main/agents/cosmo.ts` to `openrouter/deepseek/deepseek-v4-flash` (launcher only); the `cosmonauts-subagent` inline backend and the five postflight gates are unchanged. Spend guard: after every slice the coordinator records OpenRouter `total_usage` from `GET /api/v1/credits` in `coordinator-status.md` and stops and escalates when remaining credit drops below $2. A weaker worker means the coordinator watches the freeze check and gates harder and expects more attempts per slice; Q-002 characterization plus the gates remain the safety net. Revert condition unchanged from D-025: both pins return to `openai-codex/gpt-5.6-sol` when the Codex cap lifts.
+  - Alternatives: wait for the claude.ai window (unbounded); Claude via OpenRouter (credit insufficient); an external backend (loses the INV-003 tool surface).
+  - Why: the user's direction ("cosmonauts can be used with deepseek interactively if needed") and Shepherd's live probe that `openrouter/deepseek/deepseek-v4-pro` answers through cosmo.
+  - Decided by: coordinator, derived under human rulings Q-010/Q-011, 2026-09-28 (Shepherd relayed)
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible

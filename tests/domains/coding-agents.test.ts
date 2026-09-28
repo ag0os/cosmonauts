@@ -98,7 +98,7 @@ describe("coding domain agent invariants", () => {
 
 	it("uses provider/model-id format for model fields", () => {
 		for (const def of allDefinitions) {
-			expect(def.model).toMatch(/^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9.-]*$/);
+			expect(def.model).toMatch(/^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9./-]*$/);
 		}
 	});
 

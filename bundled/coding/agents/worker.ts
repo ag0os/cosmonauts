@@ -10,7 +10,7 @@ const definition: AgentDefinition = {
 		"coding-readwrite",
 		"tasks",
 	],
-	model: "anthropic/claude-opus-5-5",
+	model: "openrouter/deepseek/deepseek-v4-pro",
 	tools: "coding",
 	extensions: ["tasks", "project-tools", "architecture-memory"],
 	skills: ["*"],
