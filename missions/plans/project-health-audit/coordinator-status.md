@@ -1,8 +1,8 @@
 # project-health-audit — coordinator status
 
-Coordinator: Claude (Herdr pane `pha-coordinator`), briefed by Shepherd via
-`.shepherd/work/in-progress/project-health-audit/brief-coordinator.md`.
-Handed off 2026-09-28 at ~38% context, before `/implement-plan`.
+Coordinator: Claude (Herdr pane `pha-implementer`), successor to `pha-coordinator`,
+briefed by Shepherd via `.shepherd/work/in-progress/project-health-audit/brief-implementer.md`.
+Implementation started 2026-09-28.
 
 ## Needs the user
 
@@ -12,6 +12,15 @@ Nothing. All rulings recorded: Q-001..003 (round 1) in `spec.md`; Q-004..007
 
 ## Done
 
+- **Slice 1 / TASK-768 Done** (2026-09-28 17:06Z): Drive commit `8b366a0`, state
+  commit `8a768c7`, record-only commit follows. Freeze check clean (two declared
+  test edits, two new test files). Five postflight gates passed in the event log.
+  Launch path trial passed (INV-003 tools used, commit parent as expected,
+  postflight ran). Lessons: Drive clobbers worker notes on block
+  (`run-one-task.ts:800`); Drive retries the worker in-run after a postflight
+  failure; `run-step.test.ts` episode-capture flake under full-suite load.
+  Four worker attempts were needed (unchecked ACs; Biome vs canonical JSON,
+  D-021; flake).
 - Branch `feature/project-health-audit` off local `main` `64dca3c`; roadmap
   item removed; plan + spec created; Intent ratified.
 - `/spec-to-backlog` complete: planner→plan-reviewer chain (review-1, review-2,
@@ -28,7 +37,7 @@ Nothing. All rulings recorded: Q-001..003 (round 1) in `spec.md`; Q-004..007
 
 ## Running
 
-Nothing. No Drive run has been started.
+Nothing at the moment of this write; slice 2 (TASK-769) is launched next.
 
 ## Blocked
 
@@ -36,8 +45,9 @@ Nothing.
 
 ## HEAD
 
-`feature/project-health-audit` at `716519d`, ten commits ahead of local
-`main` `64dca3c`. Worktree clean.
+`feature/project-health-audit` at the record-only commit after `8a768c7`
+(TASK-768 Drive commit `8b366a0`), sixteen+ commits ahead of local `main`
+`64dca3c`.
 
 ## Successor handoff — implement
 
