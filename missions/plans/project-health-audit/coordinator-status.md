@@ -57,8 +57,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-- Slice 7 / TASK-774 (refactor harness and validation criticals): launched after
-  the slice-6 record-only commit; `S` = that commit, `C` = `48ecb5c`.
+- Slice 7 / TASK-774 attempt 2: attempt 1 (`run-54bf130a`) looped on compaction
+  (three ~100 KB `analysis_complexity` results per turn) and was killed at 20:27Z
+  with a partial `provenance.ts` refactor left in the worktree; attempt 2 carries a
+  context-budget rule (one metric per turn, diagnostic for iteration).
+  `S` = `493f607`, `C` = `48ecb5c`.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -94,7 +97,12 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
    re-merges from the committed task file at verdict time.
 10. Second suite flake: `tests/orchestration/quality-review-run.test.ts`
    "uses the configured QM settle grace" (20 ms grace) under full-suite load.
-11. Launching Drive through a print-mode cosmo session works but the launcher
+11. Each `analysis_complexity` surface result is ~100 KB (all 219 findings, no
+   path scope); three in one turn overflow the worker's context and Pi's
+   compaction summary sends it back to the same step → infinite loop
+   (TASK-774 attempt 1, 21 compactions in 30 min). The surface needs a path
+   or file scope, or a compact rendering.
+12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
 

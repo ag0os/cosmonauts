@@ -3,6 +3,7 @@ id: TASK-774
 title: 'Stage 7: Refactor harness and validation criticals'
 status: To Do
 priority: medium
+assignee: worker
 labels:
   - backend
   - testing
@@ -10,7 +11,7 @@ labels:
 dependencies:
   - TASK-773
 createdAt: '2026-09-28T15:24:13.239Z'
-updatedAt: '2026-09-28T19:31:58.493Z'
+updatedAt: '2026-09-28T20:28:57.261Z'
 ---
 
 ## Description
@@ -37,3 +38,23 @@ Drive commits this task only when **every** acceptance criterion is checked; an 
 Addendum (2026-09-28, plan D-023): a task-close `analysis_audit` that returns `failed` (e.g. `invalid-output` because Fallow answered `warn`) is recorded in these notes with its failure class, the verbatim direct diagnostic `fallow audit --base <sha> --format json --quiet --no-cache --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json`, and the owning slice of each flagged finding; it is not a completion blocker when the five stage-gate commands pass and every owned finding is dispositioned. Do not edit `fallow-provider.ts` for it.
 
 Addendum (2026-09-28, plan D-024): for critical-complexity functions the INV-003 pre-edit confirmation is the fresh project-scope `analysis_complexity` run per metric that still lists the function row; a symbol `analysis_trace` exit 2 for a non-exported function is a recorded provider limitation (`fallow dead-code --trace` resolves exports only), not a D-013 hard stop. If the surface complexity output is truncated, record its state/count/digest and confirm your owned rows with the direct diagnostic `fallow health --complexity --format json --quiet --no-cache` filtered locally by path and name, recorded verbatim as diagnosis.
+
+### Worker pre-edit record (2026-09-28)
+
+- Slice-start `S`: `493f6077c7adfed7f22c261f9990d803661f862b`. Characterization base `C`: `48ecb5c5` (TASK-773 Drive commit).
+- Analysis surface: `analysis_status` reports Fallow 2.54.2 bound for complexity, dead-code, duplication, changed-scope audit, trace, and fix preview; boundary conformance alone is unbound (`provider-not-configured`). Fresh project-scope cyclomatic, cognitive, and CRAP runs all completed with broad pre-existing project failures. Owned rows were reconfirmed from `fallow health --complexity --format json --quiet --no-cache`: `isManifestEntry` 46/26/503.1; `syncHarnessAssetCore` 27/33/184.5; `prepareClaudeCommandPair` 23/27/137.3; `validateCommandEvidenceIdentity` 29/8/210.7; `recoverOwnerRootJournal` 23/29/137.3; `runRepositoryExportValidation` 45/58/51.8; `runPersonalBundleValidation` 44/56/50.5 (cyclomatic/cognitive/CRAP).
+- Exact TASK-773 characterization cases relied on: provenance: “accepts each provenance variant through the persisted manifest reader” and “rejects every manifest-entry return-site family without changing persisted bytes”; sync: “reports missing, current, source drift, local edits, missing baselines, mode conversion, and pending journals without check-mode writes”, “distinguishes untraceable bytes from another project's manifest claim”, “creates both native sources and completes one durable command-pair transaction”, “rejects partial native sources and missing lock-held native sources without moving live commands”, “rejects every reachable command-evidence identity predicate before locking”, “applies installed-only final-byte and backup identity predicates”, and “returns none, restored-old, committed-new, evidence-required, and ambiguous through the transaction entry point”; validation: all 12 cases in `tests/scripts/validate-harness-exports.test.ts`, from “validates evidence-held recovery for four repo exports before the personal bundle” through “never removes a personal path nominated by external-bundle evidence”, including authorization, installed resume, rollback, release uncertainty, both cleanup-crash resumes, absent/changed project backups, and protected same-user paths.
+- Planned decomposition: 41 private helpers total across the seven criticals, grouped as cohesive shape/identity/path decisions and transaction preparation/recovery/installation/finalization phases. Targets: every private original and helper cyclomatic <=9 and cognitive <=14 because all three owning files are test-reachable; exported `runRepositoryExportValidation` and `runPersonalBundleValidation` target cyclomatic <=27 (high tier) and cognitive <=14. `validateCommandEvidenceIdentity` will split fixed evidence identity, per-command static identity, byte identity, installed identity, manifest identity, and resolved path identity into units each cyclomatic <=9, rather than only flattening cognition. No helper will be exported.
+- Identity/ownership/boundaries: before and after identities remain the same seven named functions in `provenance.ts`, `sync.ts`, and `validate-harness-exports.ts`; extracted helpers remain private in the same owning file. Public signatures are unchanged. Manifest parsing stays in provenance; sync classification, command evidence, transaction journaling, and recovery stay in sync; repository/personal validation composition stays in the validation script. Entry points remain composition roots; transaction locks, durability, filesystem consistency, validation ownership, command-evidence identity, and high-tier validation boundaries are preserved.
+- Trace evidence: file traces report all three owning files reachable and not entry points. `provenance.ts` exports are consumed by render/sync and other production callers; `syncHarnessAsset` has eight production/validation/test references; the validation script exports are test-reachable from `tests/scripts/validate-harness-exports.test.ts`. Private-symbol trace for `syncHarnessAssetCore` returned provider exit 2 with empty stderr, recorded as the D-024 private-export trace limitation. Fresh duplication analysis found no group involving `scripts/validate-harness-exports.ts`; therefore there are **no moved families** from TASK-771.
+- Test freeze declaration: no test additions, expectation changes, fixture changes, skip/only/todo additions, or mechanical identifier updates are planned.
+
+### Coordinator note before attempt 2 (2026-09-28): context budget for complexity evidence
+
+Attempt 1 (`run-54bf130a`, killed by the coordinator at 20:27Z) fell into a compaction loop: every turn it re-issued the three project-scope `analysis_complexity` calls in parallel, each result is about 100 KB, the turn overflowed the context, Pi compacted, and the summary sent it back to the same step (21 compactions, three edits to `lib/harness-adapters/provenance.ts` between 20:12Z and 20:17Z that are still in the worktree, uncommitted; keep or redo them as you see fit, they are yours). No test file changed.
+
+Rules for this attempt (plan D-024 already allows the diagnostic path):
+1. Call `analysis_complexity` **one metric per turn, never in parallel**, and at most twice per metric in the whole attempt: once before your first edit (the INV-003 fresh run) and once at the end (the post-refactor proof). Immediately after each call write the outcome (state, count, and your owned rows: name, path, line, metric value, severity, coverage tier) into these notes with `task_edit`, then move on. After any compaction, do **not** re-run them; read these notes.
+2. For every other confirmation or iteration use the direct diagnostic, recorded verbatim as diagnosis: `bunx fallow health --complexity --format json --quiet --no-cache | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps([f for f in d["findings"] if f["path"] in ("lib/harness-adapters/provenance.ts","lib/harness-adapters/sync.ts","scripts/validate-harness-exports.ts")], indent=1))'` (adjust the path list to your owned files).
+3. Do not re-read the whole task file or re-run `analysis_status` more than once; your prompt already carries the task.
+4. Freeze base for your in-session check is `C = 48ecb5c5582f40af971082995ecd6fafa0014086` (the TASK-773 characterization commit); existing tests stay unmodified; only the stage gate, D-015 output, AC ticks, and `outcome: success` close the task.
