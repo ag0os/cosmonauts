@@ -37,6 +37,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
   functions; both three-file baseline reasons recorded; five gates passed.
   Health record files untouched since stage 1 — dispositions live in task
   notes and are folded into the record at stage 16 (Design §1 / D-015).
+- **Slice 6 / TASK-773 Done** (19:54Z): Drive commit `48ecb5c`, state `65762d3`.
+  Two new characterization files, nothing else; five gates passed after one
+  in-run retry (quality-review settle-grace timing flake, passes in isolation).
+  Attempt 1 stopped on export-only symbol traces → D-024.
 - Branch `feature/project-health-audit` off local `main` `64dca3c`; roadmap
   item removed; plan + spec created; Intent ratified.
 - `/spec-to-backlog` complete: planner→plan-reviewer chain (review-1, review-2,
@@ -53,11 +57,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-- Slice 6 / TASK-773 attempt 2 (after D-024): attempt 1 (`run-f5761c18`) stopped
-  without edits because symbol traces for the five non-exported owned functions
-  exit 2 (`fallow dead-code --trace` resolves exports only) and it read D-013 as
-  a hard stop; D-024 restates INV-003's per-category confirmation (fresh
-  complexity run) and is appended to TASK-774..782. Slice-start `S` = `26aa451`.
+- Slice 7 / TASK-774 (refactor harness and validation criticals): launched after
+  the slice-6 record-only commit; `S` = that commit, `C` = `48ecb5c`.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -88,7 +89,12 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
    `dead-code --trace` is export-based, exit 2); the plan's overview sentence
    generalized D-013 to "any finding", which stopped slice 6 (D-024). The
    surface complexity output also overflows the tool result; no path scope.
-9. Launching Drive through a print-mode cosmo session works but the launcher
+9. The Pi `task_edit` tool has only replace-mode `implementationNotes`; workers
+   cannot append, so each attempt overwrites the task notes. Coordinator
+   re-merges from the committed task file at verdict time.
+10. Second suite flake: `tests/orchestration/quality-review-run.test.ts`
+   "uses the configured QM settle grace" (20 ms grace) under full-suite load.
+11. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
 
