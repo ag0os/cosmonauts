@@ -72,8 +72,8 @@ Nothing. Stopped after step 2 of the brief, awaiting ratification.
 
 ## HEAD
 
-See the latest commit on `feature/project-health-audit` (updated at each
-commit below).
+`feature/project-health-audit` at `7158284` (plan + spec + roadmap removal),
+one commit ahead of local `main` `64dca3c`. Worktree clean.
 
 ## Successor handoff
 
