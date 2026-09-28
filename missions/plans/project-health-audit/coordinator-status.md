@@ -109,17 +109,17 @@ Nothing. TASK-774 attempt 3 could not start (see Blocked).
 
 ## Blocked
 
-- **No usable provider for the Pi worker (successor #2, 20:11Z).** Q-010 applied:
-  `worker` → `anthropic/claude-opus-5-5`, `cosmo` → `anthropic/claude-sonnet-5`
-  (plan D-025, committed). The verification probe failed on both: the anthropic
-  credential is a claude.ai OAuth login and answers HTTP 400 `You're out of
-  extra usage`. The same probe via `-m openrouter/anthropic/claude-sonnet-4.5`
-  answers `ok` (OpenRouter key present, pay-per-token; catalog has
-  `openrouter/anthropic/claude-opus-5.5` and `openrouter/anthropic/claude-sonnet-5`).
-  Escalated to Shepherd as a broken launch path: options are (1) wait for the
-  claude.ai window / add extra usage, or (2) repin to the OpenRouter route for
-  the same models (a cost decision the ruling did not cover). Q-009 is done
-  regardless (D-026, committed). TASK-774 attempt 3 not launched.
+Nothing. Q-011 (human, relayed; rulings round 5; plan D-027) resolved the
+provider: worker `openrouter/deepseek/deepseek-v4-pro`, cosmo
+`openrouter/deepseek/deepseek-v4-flash`, commit `b1adbb7a`; probe `ok`.
+The D-025 Anthropic pins (`1bce4ac2`) failed their probe (claude.ai OAuth
+out of extra usage) and are superseded.
+
+## Spend guard (Q-011: stop and escalate below $2 remaining)
+
+| when | total_credits | total_usage | remaining |
+|---|---|---|---|
+| 2026-09-28 20:20Z, before slice 7 attempt 3 | 10 | 1.9529 | 8.05 |
 
 - History (predecessor): **Codex usage limit reached (20:45Z).** The print-mode cosmo launcher and the
   `coding/worker` role both pin `openai-codex/gpt-5.6-sol`; the relaunch of

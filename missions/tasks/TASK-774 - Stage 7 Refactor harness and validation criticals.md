@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-773
 createdAt: '2026-09-28T15:24:13.239Z'
-updatedAt: '2026-09-28T20:42:45.855Z'
+updatedAt: '2026-09-28T23:20:59.231Z'
 ---
 
 ## Description
@@ -30,7 +30,6 @@ Refactor all seven harness and validation critical functions after characterizat
 <!-- AC:END -->
 
 ## Implementation Notes
-
 
 ### Standing coordinator note (2026-09-28, applies to every attempt)
 
@@ -76,3 +75,8 @@ Measured state of the worktree by the coordinator (direct diagnostic `bunx fallo
 - `bun run lint` fails only on formatting of the three edited files: run `bunx biome format --write lib/harness-adapters/provenance.ts lib/harness-adapters/sync.ts scripts/validate-harness-exports.ts` (or `bun run lint:fix`) before the stage gate.
 
 Then: stage gate (five commands), D-015 in-session check against `C = 48ecb5c5582f40af971082995ecd6fafa0014086` (expect no M/D/R under `tests/`, existing suites unmodified), the end-of-task `analysis_complexity` runs (one metric per turn, at most once each; otherwise the diagnostic), notes via `task_edit` (it replaces: paste this whole notes body back plus your additions), tick every AC, `outcome: success`. The context-budget rules of the attempt-2 note still apply.
+
+
+### Coordinator note before attempt 3, addendum (2026-09-28, successor #2): model change
+
+Codex is unavailable (workspace spend cap) and no Claude model is reachable; under human rulings Q-010/Q-011 (plan D-025..D-027) this attempt runs on `openrouter/deepseek/deepseek-v4-pro` (worker) launched by cosmo on `openrouter/deepseek/deepseek-v4-flash`. Nothing about the task changes: same ACs, same stage gate, same D-015 base `C = 48ecb5c5582f40af971082995ecd6fafa0014086`, same context-budget rules (one `analysis_complexity` metric per turn, at most twice per metric; otherwise the direct diagnostic). Q-002 stays a hard stop: if any existing test expectation would have to change, stop `blocked` and report it; never edit a test. Coordinator model-switch commits `1bce4ac2`, `e857065b`, `b1adbb7a` sit between `S` and your work; the slice-start commit for this attempt is `b1adbb7a`.
