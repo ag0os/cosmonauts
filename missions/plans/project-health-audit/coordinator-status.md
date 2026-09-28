@@ -41,9 +41,12 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-- Slice 3 / TASK-770 attempt 2 (after Q-008 (a)): re-applies the retrieval.ts
-  extraction and updates the single hash literal; slice-start `S` = `ab78192`,
-  `C` = `d17a497`. Expect exactly `M tests/memory/interface.test.ts` in the freeze diff.
+- Slice 3 / TASK-770 attempt 3: after attempt 2 completed the work (7/7 ACs
+  checked, five gates green, D-015 shows exactly `M tests/memory/interface.test.ts`
+  = the Q-008 hash literal, reviewed: `ab64b61e…` → `500f512d…`, matches the
+  refactored file) but self-blocked on a `failed/invalid-output` task-close
+  `analysis_audit` (Fallow verdict `warn` rejected by the adapter). D-023 rules
+  the failed audit is recorded, not blocking. `S` = `ab78192`, `C` = `d17a497`.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -66,7 +69,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
    (`episode_capture_failed` diagnostic); passes in isolation.
 6. `run_driver` result does not expose `eventLogPath` (cosmo reported "not
    exposed by the tool response").
-7. Launching Drive through a print-mode cosmo session works but the launcher
+7. `fallow-provider.ts` `auditFindings` accepts only `pass`/`fail`, but Fallow's
+   documented audit verdicts are pass/warn/fail; a `warn` audit surfaces as
+   `invalid-output` and the worker protocol then self-blocks (D-023). Gate-owned;
+   human sign-off item (R-013) with a Q-006-shaped narrow fix recommended.
+8. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
 

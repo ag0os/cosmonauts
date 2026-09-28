@@ -173,6 +173,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: the pin is a change detector that makes adapter edits deliberate; the extraction is behavior-preserving and covered by the memory suites.
   - Decided by: human, 2026-09-28 (typed to Shepherd, relayed; rulings file round 3)
 
+- **D-023 - A failed changed-scope-audit surface invocation is recorded, not a completion blocker** *(Added 2026-09-28 during slice 3, attempt 2)*
+  - Decision: the worker protocol's task-close changed-scope audit (`analysis_audit` with the literal task-start base) is evidence, and the plan's stage gate is the five commands in Implementation Order. When the surface returns `failed` (here `invalid-output`: `fallow audit` exits 0 with the documented verdict `warn`, 0 dead-code issues, 0 complexity findings, 4 pre-existing clone groups owned by later slices, and `fallow-provider.ts` accepts only `pass`/`fail`), the worker records the failed invocation with its failure class, the verbatim direct diagnostic, and the flagged findings' owning slices in the task notes and the record rows (INV-001: named as failed, never counted as passing, never widened), then completes the task if the five gates are green and every owned finding is dispositioned. The adapter's missing `warn` mapping is a gate-owned-file defect (R-013) reported to the human in the closeout sign-off packet as a recommended narrow fix in the Q-006 shape; this plan does not edit `fallow-provider.ts` for it. If the stage-16 `analysis_audit` from `main` cannot return `pass` because of the same contract gap, AC-008 is reported as blocked on that human decision, not as satisfied.
+  - Alternatives: patch `fallow-provider.ts` now to map `warn` (gate-owned, outside every task's ownership and the plan's "no richer rule sets" scope line); treat the failed audit as blocking (every later slice would self-block on a provider contract gap unrelated to its work).
+  - Why: INV-001 and INV-003 want failed evidence visible and traced, not silently repaired or silently blocking; the human decides gate-owned changes.
+  - Decided by: coordinator, derived, 2026-09-28
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
