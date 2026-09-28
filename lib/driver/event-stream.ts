@@ -14,6 +14,7 @@ import {
 	createDriveStepProjector,
 	type DriveStepProjector,
 } from "./durable-steps.ts";
+import { splitJsonLines } from "./json-lines.ts";
 import type {
 	BackendName,
 	DriverEvent,
@@ -894,14 +895,6 @@ function parseDriverEventLine(
 		);
 		return undefined;
 	}
-}
-
-function splitJsonLines(content: string): string[] {
-	const lines = content.split("\n");
-	if (content.endsWith("\n")) {
-		lines.pop();
-	}
-	return lines.map((line) => line.replace(/\r$/, ""));
 }
 
 function reportDurableDiagnostic(diagnostic: RuntimeDiagnostic): void {

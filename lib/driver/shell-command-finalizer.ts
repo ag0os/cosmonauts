@@ -27,6 +27,7 @@ import {
 	uniqueArtifacts,
 } from "./drive-finalization.ts";
 import { writePendingFinalization } from "./run-state.ts";
+import { authoritativeDriveTaskIds } from "./runtime-helpers.ts";
 import type { DriverRunSpec, EventSink } from "./types.ts";
 import { resolveStateCommitPolicy } from "./types.ts";
 
@@ -397,15 +398,4 @@ function stepResultWithOptionalCommit(
 		commit.sha,
 		commit.subject,
 	);
-}
-
-function authoritativeDriveTaskIds(
-	metadata: Record<string, unknown> | undefined,
-	spec: DriverRunSpec,
-): readonly string[] {
-	const value = metadata?.driveTaskIds;
-	if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-		return value;
-	}
-	return spec.taskIds;
 }

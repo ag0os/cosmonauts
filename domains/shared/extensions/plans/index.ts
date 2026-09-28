@@ -1,43 +1,21 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
-import type { MemoryWarning } from "../../../../lib/memory/types.ts";
 import { archivePlan } from "../../../../lib/plans/archive.ts";
 import { PlanManager } from "../../../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
+import {
+	appendEpisodeWarning,
+	createEpisodeCapture,
+} from "../episode-capture.ts";
 
 const PlanStatusLiterals = [Type.Literal("active"), Type.Literal("completed")];
 
-function createPlanCaptureEdge(
-	cwd: string,
-	systemPrompt: string,
-): {
-	readonly manager: PlanManager;
-	readonly warnings: MemoryWarning[];
-} {
-	const warnings: MemoryWarning[] = [];
-	const episodeSource = extractAgentIdFromSystemPrompt(systemPrompt);
-	if (!episodeSource) return { manager: new PlanManager(cwd), warnings };
-
-	return {
-		manager: new PlanManager(cwd, {
-			episodeSource,
-			reportEpisodeWarning: async (warning) => {
-				if (warnings.length === 0) warnings.push(warning);
-			},
-		}),
-		warnings,
-	};
-}
-
-function appendEpisodeWarning(
-	text: string,
-	warnings: readonly MemoryWarning[],
-): string {
-	const warning = warnings[0];
-	if (!warning) return text;
-	const location = warning.path ? `${warning.path}: ` : "";
-	return `${text}\nWarning: ${location}${warning.message}`;
+function createPlanCaptureEdge(cwd: string, systemPrompt: string) {
+	return createEpisodeCapture({
+		cwd,
+		systemPrompt,
+		createManager: (root, options) => new PlanManager(root, options),
+	});
 }
 
 function createPlanManagers(cwd: string): {

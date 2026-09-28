@@ -18,6 +18,7 @@ import {
 	readPendingFinalization,
 	writePendingFinalization,
 } from "./run-state.ts";
+import { reportSummary } from "./runtime-helpers.ts";
 import type {
 	ContradictedBlockAnnotation,
 	DriverEvent,
@@ -757,24 +758,6 @@ function isGenericCommitSummary(summary: string, taskId: string): boolean {
 		normalized === "drive task completed." ||
 		normalized === `${taskId.toLowerCase()}: driver task update`
 	);
-}
-
-function reportSummary(report: ParsedReport): string | undefined {
-	const text = report.outcome === "unknown" ? report.raw : report.notes;
-	if (!text) {
-		return undefined;
-	}
-
-	const line = text
-		.split(/\r?\n/)
-		.map((item) => item.trim())
-		.find((item) => item.length > 0);
-	if (!line) {
-		return undefined;
-	}
-
-	const withoutPrefix = line.replace(/^(implemented|status|summary):\s*/i, "");
-	return withoutPrefix.slice(0, 80).trim() || undefined;
 }
 
 async function hasCommittableChanges(

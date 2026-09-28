@@ -5,6 +5,7 @@ import {
 	type RuntimeDiagnostic,
 } from "../durable-runtime/index.ts";
 import { tailEvents } from "./event-stream.ts";
+import { splitJsonLines } from "./json-lines.ts";
 import type { DriverEvent } from "./types.ts";
 
 export const WATCH_EVENTS_COMPAT_DEGRADED_MARKER = "compat-degraded.json";
@@ -165,14 +166,6 @@ async function readCompatDegradedMarker(path: string): Promise<unknown> {
 		}
 		return { unreadable: true, error: formatJsonError(error) };
 	}
-}
-
-function splitJsonLines(content: string): string[] {
-	const lines = content.split("\n");
-	if (content.endsWith("\n")) {
-		lines.pop();
-	}
-	return lines.map((line) => line.replace(/\r$/, ""));
 }
 
 function isDriverEvent(value: unknown): value is DriverEvent {

@@ -258,7 +258,7 @@ function sameRecord(
 	);
 }
 
-function newestHeartbeat(
+export function newestHeartbeat(
 	heartbeats: readonly (StepHeartbeat | undefined)[],
 ): StepHeartbeat | undefined {
 	const present = heartbeats.filter(

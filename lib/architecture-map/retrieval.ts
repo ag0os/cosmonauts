@@ -201,21 +201,18 @@ async function retrieveArchitectureMap(options: {
 			};
 		}
 
-		return {
-			records: matchesQuery(record, options.query)
-				? [record].slice(0, options.query.limit ?? 1)
-				: [],
-			searchedScopes: ["project"],
+		return retrieveMatchingRecord({
+			record,
+			query: options.query,
 			skippedScopes,
-			warnings: [],
 			details: {
 				kind: "architecture-map",
 				status: "module",
 				freshness: options.freshness,
 				resource,
 				path: record.path,
-			} satisfies ArchitectureMapRetrievalDetails,
-		};
+			},
+		});
 	}
 
 	const record = await readIndexRecord({
@@ -239,20 +236,34 @@ async function retrieveArchitectureMap(options: {
 		};
 	}
 
-	return {
-		records: matchesQuery(record, options.query)
-			? [record].slice(0, options.query.limit ?? 1)
-			: [],
-		searchedScopes: ["project"],
+	return retrieveMatchingRecord({
+		record,
+		query: options.query,
 		skippedScopes,
-		warnings: [],
 		details: {
 			kind: "architecture-map",
 			status: "index",
 			freshness: options.freshness,
 			resource: "memory/architecture/index.md",
 			path: record.path,
-		} satisfies ArchitectureMapRetrievalDetails,
+		},
+	});
+}
+
+function retrieveMatchingRecord(options: {
+	readonly record: RetrievedMemoryRecord;
+	readonly query: MemoryQuery;
+	readonly skippedScopes: MemoryRetrieveResult["skippedScopes"];
+	readonly details: ArchitectureMapRetrievalDetails;
+}): MemoryRetrieveResult {
+	return {
+		records: matchesQuery(options.record, options.query)
+			? [options.record].slice(0, options.query.limit ?? 1)
+			: [],
+		searchedScopes: ["project"],
+		skippedScopes: options.skippedScopes,
+		warnings: [],
+		details: options.details,
 	};
 }
 

@@ -6,13 +6,7 @@ export async function writeFileAtomically(
 	path: string,
 	content: string,
 ): Promise<void> {
-	const dir = dirname(path);
-	await mkdir(dir, { recursive: true });
-	const tempPath = join(
-		dir,
-		`.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
-	);
-
+	const tempPath = await prepareAtomicWrite(path);
 	try {
 		await writeFile(tempPath, content, "utf-8");
 		await rename(tempPath, path);
@@ -20,4 +14,10 @@ export async function writeFileAtomically(
 		await unlink(tempPath).catch(() => undefined);
 		throw error;
 	}
+}
+
+export async function prepareAtomicWrite(path: string): Promise<string> {
+	const dir = dirname(path);
+	await mkdir(dir, { recursive: true });
+	return join(dir, `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
 }

@@ -371,17 +371,21 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				})();
 			};
 
-			const terminationError = (
-				initiated: InitiatedTermination,
-				message: string,
-			): void => {
-				runnerStderr = appendRunnerError(runnerStderr, message);
+			const closeOutputStreams = (): void => {
 				child.stdout?.unpipe(stdoutSink);
 				child.stderr?.unpipe(stderrSink);
 				child.stdout?.destroy();
 				child.stderr?.destroy();
 				if (!stdoutSink.writableEnded) stdoutSink.end();
 				if (!stderrSink.writableEnded) stderrSink.end();
+			};
+
+			const terminationError = (
+				initiated: InitiatedTermination,
+				message: string,
+			): void => {
+				runnerStderr = appendRunnerError(runnerStderr, message);
+				closeOutputStreams();
 				settle((stdout, stderr) => ({
 					kind: "termination-error",
 					initiated,
@@ -400,12 +404,7 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 					return;
 				}
 				runnerStderr = appendRunnerError(runnerStderr, message);
-				child.stdout?.unpipe(stdoutSink);
-				child.stderr?.unpipe(stderrSink);
-				child.stdout?.destroy();
-				child.stderr?.destroy();
-				if (!stdoutSink.writableEnded) stdoutSink.end();
-				if (!stderrSink.writableEnded) stderrSink.end();
+				closeOutputStreams();
 				settle((stdout, stderr) => ({
 					kind: "spawn-error",
 					error: Object.assign(new Error(message), {

@@ -1,11 +1,3 @@
-import {
-	createAgentSession,
-	DefaultResourceLoader,
-	getAgentDir,
-	ModelRegistry,
-	ModelRuntime,
-	SessionManager,
-} from "@earendil-works/pi-coding-agent";
 import type {
 	CorpusJudgmentInput,
 	CorpusJudgmentOutput,
@@ -13,10 +5,8 @@ import type {
 	JudgedProposal,
 	ProposedMemoryRecord,
 } from "../../lib/memory/index.ts";
-import {
-	FALLBACK_MODEL,
-	resolveModel,
-} from "../../lib/orchestration/model-resolution.ts";
+import { FALLBACK_MODEL } from "../../lib/orchestration/model-resolution.ts";
+import { createToollessPiSession } from "../pi-session.ts";
 
 const OBSERVATION_KINDS = new Set([
 	"duplicate",
@@ -128,30 +118,7 @@ export function createPiCorpusJudgmentProvider(
 async function createJudgmentSession(
 	options: PiCorpusJudgmentProviderOptions,
 ): Promise<PiJudgmentSession> {
-	const modelRuntime = await ModelRuntime.create();
-	const modelRegistry = new ModelRegistry(modelRuntime);
-	const agentDir = getAgentDir();
-	const resourceLoader = new DefaultResourceLoader({
-		cwd: options.projectRoot,
-		agentDir,
-		noExtensions: true,
-		noSkills: true,
-		noPromptTemplates: true,
-		noThemes: true,
-		noContextFiles: true,
-		systemPrompt: SYSTEM_PROMPT,
-	});
-	await resourceLoader.reload();
-	const { session } = await createAgentSession({
-		cwd: options.projectRoot,
-		agentDir,
-		modelRuntime,
-		model: resolveModel(options.model ?? FALLBACK_MODEL, modelRegistry),
-		noTools: "all",
-		resourceLoader,
-		sessionManager: SessionManager.inMemory(),
-	});
-	return session;
+	return createToollessPiSession({ ...options, systemPrompt: SYSTEM_PROMPT });
 }
 
 function buildJudgmentPrompt(input: CorpusJudgmentInput): string {

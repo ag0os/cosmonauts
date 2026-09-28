@@ -1,12 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
-import type { MemoryWarning } from "../../../../lib/memory/types.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 import type {
 	AcceptanceCriterion,
 	TaskUpdateInput,
 } from "../../../../lib/tasks/task-types.ts";
+import {
+	appendEpisodeWarning,
+	createEpisodeCapture,
+} from "../episode-capture.ts";
 
 const PriorityLiterals = [
 	Type.Literal("high"),
@@ -40,36 +42,12 @@ function textResult(
 	};
 }
 
-function createTaskCaptureEdge(
-	cwd: string,
-	systemPrompt: string,
-): {
-	readonly manager: TaskManager;
-	readonly warnings: MemoryWarning[];
-} {
-	const warnings: MemoryWarning[] = [];
-	const episodeSource = extractAgentIdFromSystemPrompt(systemPrompt);
-	if (!episodeSource) return { manager: new TaskManager(cwd), warnings };
-
-	return {
-		manager: new TaskManager(cwd, {
-			episodeSource,
-			reportEpisodeWarning: async (warning) => {
-				if (warnings.length === 0) warnings.push(warning);
-			},
-		}),
-		warnings,
-	};
-}
-
-function appendEpisodeWarning(
-	text: string,
-	warnings: readonly MemoryWarning[],
-): string {
-	const warning = warnings[0];
-	if (!warning) return text;
-	const location = warning.path ? `${warning.path}: ` : "";
-	return `${text}\nWarning: ${location}${warning.message}`;
+function createTaskCaptureEdge(cwd: string, systemPrompt: string) {
+	return createEpisodeCapture({
+		cwd,
+		systemPrompt,
+		createManager: (root, options) => new TaskManager(root, options),
+	});
 }
 
 function definedFilter<T extends Record<string, unknown>>(

@@ -88,19 +88,11 @@ async function discoverCandidates(
 	skillPath: string,
 ): Promise<SkillCandidate[]> {
 	const candidates: SkillCandidate[] = [];
-	let entries: Dirent[];
-	try {
-		entries = await readdir(skillPath, { withFileTypes: true });
-	} catch (error: unknown) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-		throw error;
-	}
+	const entries = await readSkillDirectory(skillPath);
+	if (!entries) return [];
 
-	if (entries.some((entry) => entry.isFile() && entry.name === "SKILL.md")) {
-		return [
-			{ name: basename(skillPath), sourcePath: join(skillPath, "SKILL.md") },
-		];
-	}
+	const manifest = skillManifestCandidate(skillPath, entries);
+	if (manifest) return [manifest];
 
 	for (const entry of entries) {
 		const entryPath = join(skillPath, entry.name);
@@ -121,17 +113,11 @@ async function discoverCandidates(
 
 async function discoverDirectorySkills(dir: string): Promise<SkillCandidate[]> {
 	const candidates: SkillCandidate[] = [];
-	let entries: Dirent[];
-	try {
-		entries = await readdir(dir, { withFileTypes: true });
-	} catch (error: unknown) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-		throw error;
-	}
+	const entries = await readSkillDirectory(dir);
+	if (!entries) return [];
 
-	if (entries.some((entry) => entry.isFile() && entry.name === "SKILL.md")) {
-		return [{ name: basename(dir), sourcePath: join(dir, "SKILL.md") }];
-	}
+	const manifest = skillManifestCandidate(dir, entries);
+	if (manifest) return [manifest];
 
 	for (const entry of entries) {
 		if (entry.isDirectory()) {
@@ -146,6 +132,25 @@ async function discoverDirectorySkills(dir: string): Promise<SkillCandidate[]> {
 			relative(dir, right.sourcePath),
 		),
 	);
+}
+
+async function readSkillDirectory(path: string): Promise<Dirent[] | undefined> {
+	try {
+		return await readdir(path, { withFileTypes: true });
+	} catch (error: unknown) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
+function skillManifestCandidate(
+	path: string,
+	entries: readonly Dirent[],
+): SkillCandidate | undefined {
+	if (!entries.some((entry) => entry.isFile() && entry.name === "SKILL.md")) {
+		return undefined;
+	}
+	return { name: basename(path), sourcePath: join(path, "SKILL.md") };
 }
 
 async function readPackagedSkill(

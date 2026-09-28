@@ -7,16 +7,14 @@
  */
 
 import { randomUUID } from "node:crypto";
-import {
-	link,
-	mkdir,
-	readFile,
-	rename,
-	unlink,
-	writeFile,
-} from "node:fs/promises";
-import { dirname } from "node:path";
+import { link, rename, unlink } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
+import {
+	attemptFileLock,
+	type FileLockHandle,
+	isProcessAlive,
+	readFileLock,
+} from "./fs/lock-file.ts";
 
 const DEFAULT_RETRY_DELAY_MS = 25;
 const RELEASE_ATTEMPTS = 3;
@@ -57,9 +55,7 @@ interface LockFileContent {
 	startedAt: string;
 }
 
-interface LockHandle {
-	release(): Promise<void>;
-}
+type LockHandle = FileLockHandle;
 
 /** Run `fn` while holding the entity lock at `lockPath`. */
 export async function withEntityFileLock<T>(
@@ -85,15 +81,10 @@ async function acquireEntityFileLock(
 
 	while (true) {
 		const content = createLockContent();
-		const attempt = await tryCreateLock(lockPath, content);
-		if (attempt !== "exists") {
-			return attempt;
-		}
-
-		const existing = await readLockFile(lockPath);
-		if (!existing) {
-			continue;
-		}
+		const attempt = await attemptLock(lockPath, content);
+		if (attempt.status === "acquired") return attempt.handle;
+		if (attempt.status === "vacant") continue;
+		const existing = attempt.owner;
 
 		// A declined reclamation makes no progress, so it must fall through to the
 		// bounded backoff below rather than retry immediately — this loop is the
@@ -144,46 +135,18 @@ function createLockContent(): LockFileContent {
 	};
 }
 
-async function tryCreateLock(
-	lockPath: string,
-	content: LockFileContent,
-): Promise<LockHandle | "exists"> {
-	await mkdir(dirname(lockPath), { recursive: true });
-
-	// Acquisition is observable between the write and hard-link syscalls. Keep
-	// that temporary sibling inside the same `*.lock` ignore contract as the
-	// owned slot and stale-removal files so concurrent git/archive inspection
-	// never mistakes lock machinery for project state.
-	const tempPath = `${lockPath}.${process.pid}.${content.uuid}.acquiring.lock`;
-	try {
-		await writeFile(tempPath, `${JSON.stringify(content)}\n`, {
-			encoding: "utf-8",
-			mode: 0o600,
-		});
-		await link(tempPath, lockPath);
-		await unlink(tempPath).catch(() => undefined);
-		return createHandle(lockPath, content);
-	} catch (error) {
-		await unlink(tempPath).catch(() => undefined);
-		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-			return "exists";
-		}
-		throw error;
-	}
+function attemptLock(lockPath: string, content: LockFileContent) {
+	return attemptFileLock({
+		lockPath,
+		content,
+		tempPath: `${lockPath}.${process.pid}.${content.uuid}.acquiring.lock`,
+		parse: parseLockContent,
+		sameOwner: sameLock,
+	});
 }
 
-async function readLockFile(
-	lockPath: string,
-): Promise<LockFileContent | undefined> {
-	try {
-		const raw = await readFile(lockPath, "utf-8");
-		return parseLockContent(raw);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			return undefined;
-		}
-		throw error;
-	}
+function readLockFile(lockPath: string): Promise<LockFileContent | undefined> {
+	return readFileLock(lockPath, parseLockContent);
 }
 
 function parseLockContent(raw: string): LockFileContent {
@@ -197,19 +160,6 @@ function parseLockContent(raw: string): LockFileContent {
 		};
 	} catch {
 		return { pid: Number.NaN, uuid: "unknown", startedAt: "unknown" };
-	}
-}
-
-function isProcessAlive(pid: number): boolean {
-	if (!Number.isInteger(pid) || pid <= 0) {
-		return false;
-	}
-
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return (error as NodeJS.ErrnoException).code !== "ESRCH";
 	}
 }
 
@@ -394,31 +344,6 @@ async function settleRelease(
 			clearTimeout(timer);
 		}
 	}
-}
-
-function createHandle(lockPath: string, expected: LockFileContent): LockHandle {
-	let released = false;
-
-	return {
-		async release(): Promise<void> {
-			if (released) {
-				return;
-			}
-
-			const existing = await readLockFile(lockPath);
-			if (!existing || !sameLock(existing, expected)) {
-				released = true;
-				return;
-			}
-
-			await unlink(lockPath).catch((error: NodeJS.ErrnoException) => {
-				if (error.code !== "ENOENT") {
-					throw error;
-				}
-			});
-			released = true;
-		},
-	};
 }
 
 function sameLock(a: LockFileContent, b: LockFileContent): boolean {

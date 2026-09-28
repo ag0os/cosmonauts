@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { link, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { attemptFileLock, isProcessAlive } from "../fs/lock-file.ts";
 import type { LockHandle } from "./types.ts";
 
 export type { LockHandle } from "./types.ts";
@@ -53,28 +54,17 @@ export async function acquirePlanLock(
 ): Promise<LockHandle | ActivePlanLock> {
 	const lockPath = getPlanLockPath(planSlug, cosmonautsRoot);
 	const content = createLockContent(runId);
-	const firstAttempt = await tryCreateLock(lockPath, content);
-	if (firstAttempt !== "exists") {
-		return firstAttempt;
+	const firstAttempt = await attemptLock(lockPath, content);
+	if (firstAttempt.status === "acquired") return firstAttempt.handle;
+	if (firstAttempt.status === "vacant") {
+		return planLockRetry(lockPath, content);
+	}
+	if (isProcessAlive(firstAttempt.owner.pid)) {
+		return activePlanLock(firstAttempt.owner);
 	}
 
-	const existing = await readLockFile(lockPath);
-	if (!existing) {
-		const retry = await tryCreateLock(lockPath, content);
-		return retry === "exists"
-			? activePlanLock(await readLockFile(lockPath))
-			: retry;
-	}
-
-	if (isProcessAlive(existing.pid)) {
-		return activePlanLock(existing);
-	}
-
-	await breakStaleLock(lockPath, existing, options);
-	const retry = await tryCreateLock(lockPath, content);
-	return retry === "exists"
-		? activePlanLock(await readLockFile(lockPath))
-		: retry;
+	await breakStaleLock(lockPath, firstAttempt.owner, options);
+	return planLockRetry(lockPath, content);
 }
 
 export async function acquireRepoCommitLock(
@@ -86,18 +76,12 @@ export async function acquireRepoCommitLock(
 
 	while (true) {
 		const content = createLockContent("repo-commit");
-		const attempt = await tryCreateLock(lockPath, content);
-		if (attempt !== "exists") {
-			return attempt;
-		}
+		const attempt = await attemptLock(lockPath, content);
+		if (attempt.status === "acquired") return attempt.handle;
+		if (attempt.status === "vacant") continue;
 
-		const existing = await readLockFile(lockPath);
-		if (!existing) {
-			continue;
-		}
-
-		if (!isProcessAlive(existing.pid)) {
-			await breakStaleLock(lockPath, existing, options);
+		if (!isProcessAlive(attempt.owner.pid)) {
+			await breakStaleLock(lockPath, attempt.owner, options);
 			continue;
 		}
 
@@ -105,18 +89,7 @@ export async function acquireRepoCommitLock(
 	}
 }
 
-export function isProcessAlive(pid: number): boolean {
-	if (!Number.isInteger(pid) || pid <= 0) {
-		return false;
-	}
-
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return (error as NodeJS.ErrnoException).code !== "ESRCH";
-	}
-}
+export { isProcessAlive } from "../fs/lock-file.ts";
 
 function createLockContent(runId: string): LockFileContent {
 	return {
@@ -126,42 +99,24 @@ function createLockContent(runId: string): LockFileContent {
 	};
 }
 
-async function tryCreateLock(
-	lockPath: string,
-	content: LockFileContent,
-): Promise<LockHandle | "exists"> {
-	await mkdir(dirname(lockPath), { recursive: true });
-
-	const tempPath = `${lockPath}.${process.pid}.${randomUUID()}.tmp`;
-	try {
-		await writeFile(tempPath, `${JSON.stringify(content)}\n`, {
-			encoding: "utf-8",
-			mode: 0o600,
-		});
-		await link(tempPath, lockPath);
-		await unlink(tempPath).catch(() => undefined);
-		return createHandle(lockPath, content);
-	} catch (error) {
-		await unlink(tempPath).catch(() => undefined);
-		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-			return "exists";
-		}
-		throw error;
-	}
+function attemptLock(lockPath: string, content: LockFileContent) {
+	return attemptFileLock({
+		lockPath,
+		content,
+		tempPath: `${lockPath}.${process.pid}.${randomUUID()}.tmp`,
+		parse: parseLockContent,
+		sameOwner: sameLock,
+	});
 }
 
-async function readLockFile(
+async function planLockRetry(
 	lockPath: string,
-): Promise<LockFileContent | undefined> {
-	try {
-		const raw = await readFile(lockPath, "utf-8");
-		return parseLockContent(raw);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			return undefined;
-		}
-		throw error;
-	}
+	content: LockFileContent,
+): Promise<LockHandle | ActivePlanLock> {
+	const retry = await attemptLock(lockPath, content);
+	return retry.status === "acquired"
+		? retry.handle
+		: activePlanLock(retry.status === "occupied" ? retry.owner : undefined);
 }
 
 function parseLockContent(raw: string): LockFileContent {
@@ -204,31 +159,6 @@ async function breakStaleLock(
 			previousPid: Number.isFinite(existing.pid) ? existing.pid : undefined,
 		},
 	});
-}
-
-function createHandle(lockPath: string, expected: LockFileContent): LockHandle {
-	let released = false;
-
-	return {
-		async release(): Promise<void> {
-			if (released) {
-				return;
-			}
-
-			const existing = await readLockFile(lockPath);
-			if (!existing || !sameLock(existing, expected)) {
-				released = true;
-				return;
-			}
-
-			await unlink(lockPath).catch((error: NodeJS.ErrnoException) => {
-				if (error.code !== "ENOENT") {
-					throw error;
-				}
-			});
-			released = true;
-		},
-	};
 }
 
 function sameLock(a: LockFileContent, b: LockFileContent): boolean {

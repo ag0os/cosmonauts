@@ -1,29 +1,21 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
-import {
-	createAgentSession,
-	DefaultResourceLoader,
-	getAgentDir,
-	ModelRegistry,
-	ModelRuntime,
-	SessionManager,
-} from "@earendil-works/pi-coding-agent";
 import type {
 	GeneratedNarrative,
 	NarrativeInput,
 	NarrativeProvider,
 } from "../../lib/architecture-map/index.ts";
 import {
-	FALLBACK_MODEL,
-	resolveModel,
-} from "../../lib/orchestration/model-resolution.ts";
+	createToollessPiSession,
+	type ToollessPiSession,
+} from "../pi-session.ts";
 
 interface PiArchitectureNarrativeProviderOptions {
 	readonly projectRoot: string;
 	readonly model?: string;
 }
 
-type PiSession = Awaited<ReturnType<typeof createAgentSession>>["session"];
+type PiSession = ToollessPiSession;
 
 const SYSTEM_PROMPT = [
 	"You write concise architecture-map narratives for TypeScript modules.",
@@ -65,31 +57,7 @@ class PiArchitectureNarrativeProvider implements NarrativeProvider {
 async function createNarrativeSession(
 	options: PiArchitectureNarrativeProviderOptions,
 ): Promise<PiSession> {
-	const modelRuntime = await ModelRuntime.create();
-	const modelRegistry = new ModelRegistry(modelRuntime);
-	const agentDir = getAgentDir();
-	const resourceLoader = new DefaultResourceLoader({
-		cwd: options.projectRoot,
-		agentDir,
-		noExtensions: true,
-		noSkills: true,
-		noPromptTemplates: true,
-		noThemes: true,
-		noContextFiles: true,
-		systemPrompt: SYSTEM_PROMPT,
-	});
-	await resourceLoader.reload();
-
-	const { session } = await createAgentSession({
-		cwd: options.projectRoot,
-		agentDir,
-		modelRuntime,
-		model: resolveModel(options.model ?? FALLBACK_MODEL, modelRegistry),
-		noTools: "all",
-		resourceLoader,
-		sessionManager: SessionManager.inMemory(),
-	});
-	return session;
+	return createToollessPiSession({ ...options, systemPrompt: SYSTEM_PROMPT });
 }
 
 function buildNarrativePrompt(input: NarrativeInput): string {

@@ -1,5 +1,5 @@
 import type { BackendHandle, RunGraphSchedulerBackend } from "./backends.ts";
-import { reconcileSchedulerState } from "./scheduler-state.ts";
+import { newestHeartbeat, reconcileSchedulerState } from "./scheduler-state.ts";
 import { isTerminalStatus, isTerminalStepStatus } from "./status.ts";
 import type {
 	BackendName,
@@ -109,20 +109,12 @@ export async function runDurableGraphScheduler({
 	});
 	if (committedWorkBlock.changed) {
 		diagnostics.push(...committedWorkBlock.diagnostics);
-		const finalized = await finalizeRun({
+		return finalizeSchedulerResult({
 			store,
 			ref,
+			run,
 			diagnostics,
-		});
-		return schedulerResult({
-			store,
-			ref,
-			run: finalized ?? run,
-			diagnostics,
-			exitReason:
-				finalized && isTerminalStatus(finalized.status)
-					? "terminal"
-					: "blocked",
+			fallbackExitReason: "blocked",
 		});
 	}
 	const staleTransition = await markPersistedStaleRunningSteps({
@@ -134,20 +126,12 @@ export async function runDurableGraphScheduler({
 		steps: reconciliation.steps,
 	});
 	if (staleTransition.changed) {
-		const finalized = await finalizeRun({
+		return finalizeSchedulerResult({
 			store,
 			ref,
+			run,
 			diagnostics,
-		});
-		return schedulerResult({
-			store,
-			ref,
-			run: finalized ?? run,
-			diagnostics,
-			exitReason:
-				finalized && isTerminalStatus(finalized.status)
-					? "terminal"
-					: "drained",
+			fallbackExitReason: "drained",
 		});
 	}
 
@@ -158,16 +142,12 @@ export async function runDurableGraphScheduler({
 	});
 	if (backendBlock.changed) {
 		diagnostics.push(...backendBlock.diagnostics);
-		const finalized = await finalizeRun({ store, ref, diagnostics });
-		return schedulerResult({
+		return finalizeSchedulerResult({
 			store,
 			ref,
-			run: finalized ?? run,
+			run,
 			diagnostics,
-			exitReason:
-				finalized && isTerminalStatus(finalized.status)
-					? "terminal"
-					: "drained",
+			fallbackExitReason: "drained",
 		});
 	}
 
@@ -289,6 +269,24 @@ export async function runDurableGraphScheduler({
 			: finalized && isTerminalStatus(finalized.status)
 				? "terminal"
 				: "drained",
+	});
+}
+
+async function finalizeSchedulerResult(options: {
+	readonly store: RunStore;
+	readonly ref: RunRef;
+	readonly run: RunRecord;
+	readonly diagnostics: RuntimeDiagnostic[];
+	readonly fallbackExitReason: RunGraphSchedulerResult["exitReason"];
+}): Promise<RunGraphSchedulerResult> {
+	const finalized = await finalizeRun(options);
+	return schedulerResult({
+		...options,
+		run: finalized ?? options.run,
+		exitReason:
+			finalized && isTerminalStatus(finalized.status)
+				? "terminal"
+				: options.fallbackExitReason,
 	});
 }
 
@@ -827,28 +825,6 @@ async function persistedHeartbeatForStep(
 		step.heartbeat,
 		state.heartbeatsByStepId[step.id],
 	]);
-}
-
-function newestHeartbeat(
-	heartbeats: readonly (StepHeartbeat | undefined)[],
-): StepHeartbeat | undefined {
-	const present = heartbeats.filter(
-		(heartbeat): heartbeat is StepHeartbeat => heartbeat !== undefined,
-	);
-	if (present.length === 0) {
-		return undefined;
-	}
-
-	const dated = present
-		.map((heartbeat) => ({ heartbeat, time: Date.parse(heartbeat.at) }))
-		.filter(({ time }) => Number.isFinite(time));
-	if (dated.length === 0) {
-		return present[0];
-	}
-
-	return dated.reduce((latest, candidate) =>
-		candidate.time > latest.time ? candidate : latest,
-	).heartbeat;
 }
 
 function explicitStaleHeartbeatMs(run: RunRecord): number | undefined {

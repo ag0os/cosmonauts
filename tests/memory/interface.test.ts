@@ -655,7 +655,7 @@ describe("memory interface", () => {
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
-		).toBe("ab64b61e95f6393db8e1edeec56e3d9994cb4e8d3a2fc525962f1b7ff04454d7");
+		).toBe("500f512de933f10150864467721a121bdcfca7addd8209f6cf7e9f316b6c715d");
 		expect(typesSource).toContain("readonly type: string;");
 		expect(typesSource).toContain("readonly recordTypes?: readonly string[];");
 		expect(typesSource).toContain("readonly proposalIdentity?:");

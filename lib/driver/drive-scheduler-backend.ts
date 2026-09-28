@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import type {
 	ArtifactRef,
 	BackendContext,
@@ -14,11 +13,7 @@ import type {
 } from "../durable-runtime/index.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import { DRIVE_BACKEND_ORCHESTRATION_CAPABILITIES } from "./backends/orchestration-adapter.ts";
-import type {
-	Backend,
-	BackendInvocation,
-	BackendRunResult,
-} from "./backends/types.ts";
+import type { Backend, BackendInvocation } from "./backends/types.ts";
 import { DRIVE_PARTIAL_CONTINUE_ARTIFACT_KIND } from "./drive-finalization.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
 import { formatPartialReport } from "./report-format.ts";
@@ -32,18 +27,25 @@ import {
 	findContradictedPath,
 	type PostVerifyResult,
 	type RunOneTaskCtx,
-	retryOnContradictedBlockEnabled,
 } from "./run-one-task.ts";
-import { createDriveShellCommandBackend } from "./shell-command-finalizer.ts";
 import {
-	type ContradictedBlockAnnotation,
-	type DriverEvent,
-	type DriverRunSpec,
-	type EventSink,
-	type ParsedReport,
-	type PromptLayers,
-	type Report,
-	resolveStateCommitPolicy,
+	authoritativeDriveTaskIds,
+	checkDrivePreflight,
+	driveRunExpectations,
+	uncheckedAcceptanceCriteriaReason as findUncheckedAcceptanceCriteriaReason,
+	type RetriableTaskAttempt,
+	runContradictedAttempts,
+	runShellCommand,
+	runBackendWithTimeout as runWithTimeout,
+} from "./runtime-helpers.ts";
+import { createDriveShellCommandBackend } from "./shell-command-finalizer.ts";
+import type {
+	DriverEvent,
+	DriverRunSpec,
+	EventSink,
+	ParsedReport,
+	PromptLayers,
+	Report,
 } from "./types.ts";
 
 interface DriveSchedulerBackendContext {
@@ -65,38 +67,11 @@ type DriverEventInput = DriverEvent extends infer Event
 		: never
 	: never;
 
-interface CommandResult {
-	exitCode: number;
-	stdout: string;
-	stderr: string;
-}
-
-interface SpawnSuccess {
-	status: "success";
-	result: BackendRunResult;
-}
-
-interface SpawnFailure {
-	status: "failure";
-	error: string;
-	exitCode?: number;
-}
-
-interface DriveTaskStepOutcome {
-	kind: "step-result";
-	result: StepResult;
-}
-
-interface DriveTaskBlockCandidate {
-	kind: "block-candidate";
-	reason: string;
-	finalize(
-		contradicted: ContradictedBlockAnnotation | undefined,
-		options?: { skipTaskUpdate?: boolean },
-	): Promise<StepResult>;
-}
-
-type DriveTaskAttemptResult = DriveTaskStepOutcome | DriveTaskBlockCandidate;
+type DriveTaskAttemptResult = RetriableTaskAttempt<StepResult>;
+type DriveTaskBlockCandidate = Extract<
+	DriveTaskAttemptResult,
+	{ kind: "block-candidate" }
+>;
 
 const DRIVE_TASK_OUTPUT_ARTIFACT_KIND = "drive-task-output";
 
@@ -127,16 +102,7 @@ export function createDriveSchedulerBackend(
 				promptLayers,
 				context.taskManager,
 				{
-					runExpectations: {
-						backendName: context.spec.backendName,
-						commitPolicy: context.spec.commitPolicy,
-						stateCommitPolicy: resolveStateCommitPolicy(context.spec),
-						preflightCommands: context.spec.preflightCommands,
-						postflightCommands: context.spec.postflightCommands,
-						projectRoot: context.spec.projectRoot,
-						workdir: context.spec.workdir,
-						branch: context.spec.branch,
-					},
+					runExpectations: driveRunExpectations(context.spec),
 				},
 			);
 
@@ -213,31 +179,19 @@ async function runDriveTaskStep(
 		backend: context.backend.name,
 	});
 
-	let appendedNote: string | undefined;
-	let retried = false;
-	while (true) {
-		const attempt = await runDriveTaskAttempt(context, prepared, appendedNote);
-		if (attempt.kind === "step-result") {
-			return attempt.result;
-		}
-
-		const contradicted =
-			!retried && retryOnContradictedBlockEnabled(spec)
-				? findContradictedPath(attempt.reason, spec.projectRoot)
-				: undefined;
-		if (!contradicted) {
-			return attempt.finalize(undefined);
-		}
-
-		retried = true;
-		await attempt.finalize(contradicted.annotation, { skipTaskUpdate: true });
-		appendedNote = buildContradictionNote(contradicted);
-		await emit(context, {
-			type: "spawn_started",
-			taskId,
-			backend: context.backend.name,
-		});
-	}
+	return runContradictedAttempts({
+		spec,
+		attempt: (appendedNote) =>
+			runDriveTaskAttempt(context, prepared, appendedNote),
+		find: findContradictedPath,
+		buildNote: buildContradictionNote,
+		onRetry: () =>
+			emit(context, {
+				type: "spawn_started",
+				taskId,
+				backend: context.backend.name,
+			}),
+	});
 }
 
 async function runDriveTaskAttempt(
@@ -314,8 +268,8 @@ async function runDriveTaskAttempt(
 
 	if (effectiveOutcome === "success") {
 		return {
-			kind: "step-result",
-			result: successStepResult(taskId, prepared.attemptId, effectiveReport),
+			kind: "outcome",
+			outcome: successStepResult(taskId, prepared.attemptId, effectiveReport),
 		};
 	}
 
@@ -387,16 +341,7 @@ async function invocationForAttempt(
 		context.taskManager,
 		{
 			appendedNote,
-			runExpectations: {
-				backendName: context.spec.backendName,
-				commitPolicy: context.spec.commitPolicy,
-				stateCommitPolicy: resolveStateCommitPolicy(context.spec),
-				preflightCommands: context.spec.preflightCommands,
-				postflightCommands: context.spec.postflightCommands,
-				projectRoot: context.spec.projectRoot,
-				workdir: context.spec.workdir,
-				branch: context.spec.branch,
-			},
+			runExpectations: driveRunExpectations(context.spec),
 		},
 	);
 	return { ...prepared.invocation, promptPath };
@@ -455,17 +400,6 @@ function validateDriveTaskStep(
 	}
 }
 
-function authoritativeDriveTaskIds(
-	metadata: Record<string, unknown> | undefined,
-	spec: DriverRunSpec,
-): readonly string[] {
-	const value = metadata?.driveTaskIds;
-	if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-		return value;
-	}
-	return spec.taskIds;
-}
-
 function toDrivePreparedStep(
 	prepared: PreparedStep<SchedulerStepInput>,
 ): DrivePreparedStep {
@@ -482,59 +416,19 @@ async function runPreflight(
 	taskId: string,
 	signal: AbortSignal,
 ): Promise<{ passed: true } | { passed: false; reason: string }> {
-	const { spec } = context;
 	await emit(context, { type: "preflight", taskId, status: "started" });
-
-	if (spec.branch) {
-		const branch = await runCommand(
-			"git",
-			["rev-parse", "--abbrev-ref", "HEAD"],
-			spec.projectRoot,
-			signal,
-		);
-		if (branch.exitCode !== 0) {
-			const reason = branch.stderr || "failed to determine git branch";
-			await emit(context, {
-				type: "preflight",
-				taskId,
-				status: "failed",
-				details: {
-					command: "git rev-parse --abbrev-ref HEAD",
-					stderr: reason,
-				},
-			});
-			return { passed: false, reason };
-		}
-
-		const actualBranch = branch.stdout.trim();
-		if (actualBranch !== spec.branch) {
-			const reason = `branch mismatch: expected ${spec.branch}, got ${actualBranch}`;
-			await emit(context, {
-				type: "preflight",
-				taskId,
-				status: "failed",
-				details: { branch: actualBranch, stderr: reason },
-			});
-			return { passed: false, reason };
-		}
+	const result = await checkDrivePreflight(context.spec, signal);
+	if (!result.passed) {
+		await emit(context, {
+			type: "preflight",
+			taskId,
+			status: "failed",
+			details: result.details,
+		});
+		return result;
 	}
-
-	for (const command of spec.preflightCommands) {
-		const result = await runShellCommand(command, spec.projectRoot, signal);
-		if (result.exitCode !== 0) {
-			const reason = result.stderr || `preflight failed: ${command}`;
-			await emit(context, {
-				type: "preflight",
-				taskId,
-				status: "failed",
-				details: { command, stderr: reason },
-			});
-			return { passed: false, reason };
-		}
-	}
-
 	await emit(context, { type: "preflight", taskId, status: "passed" });
-	return { passed: true };
+	return result;
 }
 
 async function runPostVerify(
@@ -586,67 +480,12 @@ function runBackendWithTimeout(
 	invocation: BackendInvocation,
 	timeoutMs: number,
 	parentSignal: AbortSignal,
-): Promise<SpawnSuccess | SpawnFailure> {
-	const controller = new AbortController();
-	let timedOut = false;
-	let timeout: NodeJS.Timeout | undefined;
-
-	const abortFromParent = () => controller.abort(parentSignal.reason);
-	if (parentSignal.aborted) {
-		abortFromParent();
-	} else {
-		parentSignal.addEventListener("abort", abortFromParent, { once: true });
-	}
-
-	const timeoutPromise = new Promise<SpawnFailure>((resolve) => {
-		timeout = setTimeout(() => {
-			timedOut = true;
-			controller.abort();
-			resolve({
-				status: "failure",
-				error: `task timed out after ${timeoutMs}ms`,
-				exitCode: 124,
-			});
-		}, timeoutMs);
-	});
-
-	const runPromise: Promise<SpawnSuccess | SpawnFailure> = backend
-		.run({ ...invocation, signal: controller.signal })
-		.then(
-			(result): SpawnSuccess => ({ status: "success", result }),
-			(error: unknown): SpawnFailure => ({
-				status: "failure",
-				error: formatError(error),
-				exitCode: timedOut ? 124 : undefined,
-			}),
-		);
-
-	return Promise.race([runPromise, timeoutPromise]).finally(() => {
-		if (timeout) {
-			clearTimeout(timeout);
-		}
-		parentSignal.removeEventListener("abort", abortFromParent);
-	});
-}
-
-async function findUncheckedAcceptanceCriteriaReason(
-	taskManager: TaskManager,
-	taskId: string,
-): Promise<string | undefined> {
-	const task = await taskManager.getTask(taskId);
-	if (!task) {
-		return `task not found during acceptance-criteria verification: ${taskId}`;
-	}
-
-	const unchecked = task.acceptanceCriteria.filter(
-		(criterion) => !criterion.checked,
+) {
+	return runWithTimeout(
+		(signal) => backend.run({ ...invocation, signal }),
+		timeoutMs,
+		parentSignal,
 	);
-	if (unchecked.length === 0) {
-		return undefined;
-	}
-
-	const ids = unchecked.map((criterion) => `#${criterion.index}`).join(", ");
-	return `acceptance criteria still unchecked: ${ids}`;
 }
 
 /**
@@ -821,54 +660,6 @@ function toRunOneTaskCtx(
 	};
 }
 
-function runShellCommand(
-	command: string,
-	cwd: string,
-	signal: AbortSignal,
-): Promise<CommandResult> {
-	return runCommand(command, [], cwd, signal, true);
-}
-
-function runCommand(
-	command: string,
-	args: string[],
-	cwd: string,
-	signal: AbortSignal,
-	shell = false,
-): Promise<CommandResult> {
-	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, {
-			cwd,
-			shell,
-			signal,
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-		const stdout: Buffer[] = [];
-		const stderr: Buffer[] = [];
-
-		child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
-		child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-		child.on("error", (error) => {
-			if ((error as NodeJS.ErrnoException).name === "AbortError") {
-				resolve({
-					exitCode: 124,
-					stdout: Buffer.concat(stdout).toString(),
-					stderr: Buffer.concat(stderr).toString() || formatError(error),
-				});
-				return;
-			}
-			reject(error);
-		});
-		child.on("close", (code) => {
-			resolve({
-				exitCode: code ?? 1,
-				stdout: Buffer.concat(stdout).toString(),
-				stderr: Buffer.concat(stderr).toString(),
-			});
-		});
-	});
-}
-
 async function emit(
 	context: DriveSchedulerBackendContext,
 	event: DriverEventInput,
@@ -879,8 +670,4 @@ async function emit(
 		parentSessionId: context.spec.parentSessionId,
 		timestamp: new Date().toISOString(),
 	} as DriverEvent);
-}
-
-function formatError(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }

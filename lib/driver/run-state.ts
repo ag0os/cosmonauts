@@ -1,6 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
-import { link, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { link, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { prepareAtomicWrite } from "../fs/atomic-file.ts";
 import { writeFileAtomically } from "./atomic-file.ts";
 import type {
 	DriverResult,
@@ -195,12 +196,7 @@ export async function claimDriveTerminalIntent(
 		state: record.state,
 	};
 	const path = driveTerminalRecordPath(workdir, record.attemptId);
-	const dir = dirname(path);
-	await mkdir(dir, { recursive: true });
-	const tempPath = join(
-		dir,
-		`.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
-	);
+	const tempPath = await prepareAtomicWrite(path);
 	try {
 		await writeFile(
 			tempPath,

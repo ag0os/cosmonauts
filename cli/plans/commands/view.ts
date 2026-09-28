@@ -1,7 +1,6 @@
 import type { Command } from "commander";
-import { PlanManager } from "../../../lib/plans/plan-manager.ts";
 import type { Plan } from "../../../lib/plans/plan-types.ts";
-import { TaskManager } from "../../../lib/tasks/task-manager.ts";
+import { createPlanManagers, failPlanCommand } from "./support.ts";
 
 function formatDate(date: Date): string {
 	const datePart = date.toISOString().split("T")[0];
@@ -61,31 +60,26 @@ export function registerViewCommand(program: Command): void {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
 
-			const planManager = new PlanManager(projectRoot);
-			const taskManager = new TaskManager(projectRoot);
+			const { planManager, taskManager } = createPlanManagers(projectRoot);
 
 			try {
 				const summary = await planManager.getPlanSummary(slug, taskManager);
 
 				if (!summary) {
-					const errorMsg = `Plan not found: ${slug}`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(`Error: ${errorMsg}`);
-					}
-					process.exit(1);
+					failPlanCommand({
+						message: `Plan not found: ${slug}`,
+						json: globalOptions.json,
+						consolePrefix: "Error: ",
+					});
 				}
 
 				const plan = await planManager.getPlan(slug);
 				if (!plan) {
-					const errorMsg = `Plan not found: ${slug}`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(`Error: ${errorMsg}`);
-					}
-					process.exit(1);
+					failPlanCommand({
+						message: `Plan not found: ${slug}`,
+						json: globalOptions.json,
+						consolePrefix: "Error: ",
+					});
 				}
 
 				if (globalOptions.json) {
@@ -98,13 +92,10 @@ export function registerViewCommand(program: Command): void {
 					outputFormatted(plan, summary.taskCount);
 				}
 			} catch (error) {
-				const errorMsg = `Error viewing plan: ${error}`;
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: errorMsg }, null, 2));
-				} else {
-					console.error(errorMsg);
-				}
-				process.exit(1);
+				failPlanCommand({
+					message: `Error viewing plan: ${error}`,
+					json: globalOptions.json,
+				});
 			}
 		});
 }

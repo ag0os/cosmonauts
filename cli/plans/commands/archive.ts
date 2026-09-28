@@ -1,7 +1,6 @@
 import type { Command } from "commander";
 import { archivePlan } from "../../../lib/plans/archive.ts";
-import { PlanManager } from "../../../lib/plans/plan-manager.ts";
-import { TaskManager } from "../../../lib/tasks/task-manager.ts";
+import { createPlanManagers, failPlanCommand } from "./support.ts";
 
 export function registerArchiveCommand(program: Command): void {
 	program
@@ -12,8 +11,7 @@ export function registerArchiveCommand(program: Command): void {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
 
-			const planManager = new PlanManager(projectRoot);
-			const taskManager = new TaskManager(projectRoot);
+			const { planManager, taskManager } = createPlanManagers(projectRoot);
 
 			try {
 				const result = await archivePlan(
@@ -39,13 +37,10 @@ export function registerArchiveCommand(program: Command): void {
 					}
 				}
 			} catch (error) {
-				const errorMsg = `Error archiving plan: ${error}`;
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: errorMsg }, null, 2));
-				} else {
-					console.error(errorMsg);
-				}
-				process.exit(1);
+				failPlanCommand({
+					message: `Error archiving plan: ${error}`,
+					json: globalOptions.json,
+				});
 			}
 		});
 }
