@@ -5,9 +5,11 @@ Coordinator: Claude (Herdr pane `pha-coordinator`), briefed by Shepherd via
 
 ## Needs the user
 
-Four rulings from the plan review (both channels; synthesis in `review-3.md`).
-Each collides with ratified ground or moves scope, so the coordinator did not
-decide it. Task creation waits on all four because they change task shape.
+Nothing. Q-004..Q-007 all ruled (a) by the human on 2026-09-28, round 2
+("All recommended is fine", relayed by Shepherd; rulings file round 2).
+Recorded in plan.md D-010/D-012/D-013/D-017. Original packet kept below.
+
+### Ruled 2026-09-28, round 2
 
 **Q-004 — AC-008 "at the branch's final commit".** The baseline refresh
 analyzes a commit in a detached worktree and then writes the floors into the
@@ -123,11 +125,11 @@ trigger, `fallow.toml` untouched.
 
 ## Running
 
-Nothing.
+- 2026-09-28: `/spec-to-backlog` Phase 4, task-manager chain.
 
 ## Blocked
 
-- `/spec-to-backlog` Phase 4 (task creation) waits on Q-004..Q-007 above.
+Nothing.
 
 ## HEAD
 
