@@ -9,7 +9,8 @@
 			"**",
 			"!missions/tasks/config.json",
 			"!.fallow-baselines",
-			"!.shepherd"
+			"!.shepherd",
+			"!missions/reviews/project-health-audit.json"
 		]
 	},
 	"formatter": {

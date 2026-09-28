@@ -154,6 +154,18 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: keeps the stage gate honest (a red gate for a non-source reason would mask real regressions) without touching supplied evidence or analysis configuration.
   - Decided by: coordinator, derived, 2026-09-28
 
+- **D-020 - Coordinator-verdict acceptance criteria are checked by the worker at the in-session half** *(Added 2026-09-28 by the implementing coordinator after the first TASK-768 run)*
+  - Decision: Drive under `driver-commits` commits a task only when every acceptance criterion is checked, and a task with an unchecked criterion ends `task_blocked` with nothing committed. Criteria whose verdict belongs to the coordinator after the Drive commit (the D-015/D-018 freeze check, AC #6 in TASK-768 and its analogues in later tasks) are therefore checked by the worker once its in-session half is recorded verbatim in the task notes; the coordinator's post-commit re-run and verdict are appended to the same notes, and any disagreement, wrong base, or undeclared test change re-opens the task as `blocked` before the next slice is dispatched. The observer stays the coordinator; only the checkbox timing moves. The first TASK-768 run ended blocked for exactly this reason, with its work complete in the worktree and all five gates green.
+  - Alternatives: leave such criteria unchecked and commit by hand (loses Drive's postflight and the one-source-commit-per-task shape); remove the criteria from the tasks (loses the D-015 wording); run Drive with `no-commit` (same loss).
+  - Why: keeps D-015's independent observer and Drive's commit machinery both intact.
+  - Decided by: coordinator, derived, 2026-09-28
+
+- **D-021 - Biome ignores the canonical health-record JSON** *(Added 2026-09-28 by the implementing coordinator after the second TASK-768 run)*
+  - Decision: `biome.json` `files.includes` gains `!missions/reviews/project-health-audit.json`. D-004 fixes the machine record as canonical two-space LF JSON so its digest is stable, while Biome's formatter (tab indentation) rewrites it, and the record's presence alone failed `bun run lint` in the stage gate. The worker stopped and escalated rather than editing tooling itself. The exclusion follows the existing `!missions/tasks/config.json` precedent for machine-written JSON, touches no analysis configuration, suppression, threshold, or entry point (INV-004 not engaged), and keeps the digest contract of D-004/D-005 intact.
+  - Alternatives: change D-004 to Biome's output format (invalidates the worker's validator and the two-space contract in the tasks); commit the record without lint coverage by hand (breaks the stage gate as the single measure); format the JSON with tabs and hash that (a formatter-defined canonical form).
+  - Why: a machine-canonical artifact should not be subject to a source formatter; the repository already makes that exception for task state.
+  - Decided by: coordinator, derived, 2026-09-28
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
