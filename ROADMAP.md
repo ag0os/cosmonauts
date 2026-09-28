@@ -38,9 +38,10 @@ prose-pinning tests out of the suite, probed a 75-declaration mutation sample
 (`missions/archive/plans/framework-health/stage2-probes.md`), shipped
 `check:reachability` with `missions/architecture/staged-code.toml`, deleted the
 orphans, and added the `Cancelled` task status; it superseded
-`test-health-audit`. Next in the pause: `project-health-audit`. Once it
-establishes a trustworthy static-health baseline, resume the existing
-dependency order.
+`test-health-audit`. Next in the pause: `project-health-audit`, picked up
+2026-09-28 as plan `missions/plans/project-health-audit/` (human-ruled to run
+ahead of `execution-liveness`). Once it establishes a trustworthy
+static-health baseline, resume the existing dependency order.
 
 ### `plain-listing-pipe-defect`: `--plain` Rows Corrupt on a Pipe in a Title
 
@@ -52,14 +53,6 @@ output gets silently shifted columns. Ruled 2026-09-19 (Q-003, recorded in
 renderers and correct the three skill documents that describe the format.
 Nothing blocks it: the original deferral ("moves the counted-guardrail set")
 was an artifact of the discarded audit's counting method.
-
-### `project-health-audit`: Establish a Clean Static-Health Baseline
-
-After `framework-health`, use the shipped static-analysis capabilities to assess and remediate the whole repository before feature development resumes.
-
-- Run every bound project-scope gate-facing capability—dead code, duplication, complexity, and boundary conformance—and report unbound, unsupported, or failed capabilities explicitly rather than treating missing evidence as clean
-- Trace and confirm findings before remediation, resolve real defects or record narrowly justified baselines, and rerun the supported analyses plus the full test, lint, and typecheck gates
-- Produce a reproducible whole-project health record that future work can compare against; consume the existing analysis surface without expanding providers or duplicating the separate `analysis-tools` and `worker-inloop-analysis` roadmap scopes
 
 ### `observational-memory-adoption`: OM as a Switch, Shipped Off
 
