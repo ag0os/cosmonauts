@@ -5,9 +5,58 @@ Coordinator: Claude (Herdr pane `pha-coordinator`), briefed by Shepherd via
 
 ## Needs the user
 
-Nothing. Q-001..003 ruled 2026-09-28 (ratify / (a) / confirm; see
-`.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`),
-recorded in `spec.md`. The original questions are kept below for the record.
+Four rulings from the plan review (both channels; synthesis in `review-3.md`).
+Each collides with ratified ground or moves scope, so the coordinator did not
+decide it. Task creation waits on all four because they change task shape.
+
+**Q-004 — AC-008 "at the branch's final commit".** The baseline refresh
+analyzes a commit in a detached worktree and then writes the floors into the
+working tree, so the commit that contains the refreshed floors can never be the
+commit they were computed against. Options: (a) accept plan D-010: refresh
+against the final *source* commit, then one artifact-only closeout commit
+(`.fallow-baselines/`, `docs/fallow-exceptions.md`, the two record files), with
+the record proving the tip differs only by those paths; (b) some other reading
+you prefer. Recommendation: (a). It is the only reproducible interpretation.
+
+**Q-005 — the single unused-class-member finding.** Fallow reports
+`TaskManager.getTaskDependencyStatusSnapshot` unused, but the surface cannot
+symbol-trace a class member (provider exit 2) and the method has a live call at
+`lib/driver/drive-graph-runner.ts:593`. INV-003 requires a trace before acting;
+AC-002 requires zero findings; INV-004 forbids a suppression. Options:
+(a) disposition it `false-positive` with the reference evidence recorded, no
+edit, AC-002 read as "zero findings except provider false positives recorded
+with contradicting evidence"; (b) treat AC-002 as unmet by one row and escalate
+at closeout. Recommendation: (a).
+
+**Q-006 — the duplication capability is structurally broken.** The surface runs
+`fallow dupes` with no threshold, Fallow exits 0 whenever duplication is under
+threshold, and `reconcileVerdictEvidence` in `fallow-provider.ts` rejects
+exit 0 with findings, so `analysis_duplication` fails with `invalid-output`
+whenever any clone exists, including after this plan (two three-file families
+stay by ruling). Options: (a) fix the defect narrowly in stage 1 (exit 0 with
+findings is a completed `fail` for duplication; regression test; the file is
+gate-owned so the QM will flag it for your sign-off either way); (b) leave it,
+record AC-004 as `unmet: capability failed` with the direct-provider diagnostic
+inventory beside it. Recommendation: (a). The record would otherwise carry a
+permanently failed gate-facing capability that a ten-line fix resolves.
+
+**Q-007 — execution backend.** The brief said Drive with Codex. Codex and
+Claude CLI workers have no Pi tools, so they cannot call `analysis_status`,
+the capability tools, or `analysis_trace`, which INV-003 requires immediately
+before every edit. Options: (a) run the implementation slices with Drive's
+`cosmonauts-subagent` backend inline (Pi `coding/worker`/`refactorer` with
+`project-tools`), one slice per run; (b) Codex workers, with a Pi-hosted trace
+step spawned before each slice and its evidence handed to the worker (weaker:
+"immediately before the edit" becomes "before the slice"); (c) a thin
+`cosmonauts analysis` CLI wrapper so external workers can call the surface
+(new code, out of this plan's scope). Recommendation: (a), noting the known
+Opus-out-of-usage stall risk for Pi-hosted agents; pick a GPT model for the
+worker if that recurs.
+
+Also for the record, no ruling needed: the spec's "five" tests/ critical
+functions was a counting error (four); corrected in place. Sixteen tasks
+instead of the skill's usual 3-12 is accepted on record (D-016) rather than
+splitting the plan.
 
 ### Ruled 2026-09-28
 
@@ -64,14 +113,21 @@ trigger, `fallow.toml` untouched.
   (Intent INV-001..005, AC-001..011, scope rulings, Q-001..003).
 - 2026-09-28: roadmap item removed; pause paragraph points at the plan.
 
+- 2026-09-28: `/spec-to-backlog` Phase 1 done: planner → plan-reviewer chain
+  (40 min) wrote plan.md, review-1.md, review-2.md; planner did not revise
+  after review (mtimes checked). Phase 2 done: independent four-lens workflow,
+  24 findings verified (28 agents). Phase 3 done: plan revised by the
+  coordinator (D-011..D-017, B-011, Design §1/§3/§4/§5, R-001 replaced,
+  R-013..R-015, sixteen-stage order); synthesis in review-3.md;
+  `plan check-artifacts` clean.
+
 ## Running
 
-- 2026-09-28: `/spec-to-backlog project-health-audit` (after the ratification
-  commit).
+Nothing.
 
 ## Blocked
 
-Nothing.
+- `/spec-to-backlog` Phase 4 (task creation) waits on Q-004..Q-007 above.
 
 ## HEAD
 

@@ -28,8 +28,10 @@ Ground truth at the start (Shepherd, 2026-09-28, Fallow 2.54.2 on `main`
 | score | 90.5 (A) |
 
 Of the 34 critical functions, 23 are in `lib/`, 2 in `cli/`, 2 in `domains/`,
-3 in `scripts/`, and 4 are anonymous `describe`/`it` callbacks in `tests/`
-(a fifth `tests/` entry, `auditMigratedSeed`, is a named test helper). The
+3 in `scripts/`, and 4 in `tests/`: three anonymous `describe`/`it` callbacks
+and the named test helper `auditMigratedSeed`. *(Corrected 2026-09-28 by the
+coordinator: the first draft said five; the evidence has four. The count is
+factual, and the tests/ ruling below is count-independent.)* The
 largest is `runPass` in `lib/memory/living-memory.ts`: cyclomatic 104,
 cognitive 133, 886 lines, coverage tier `partial`. Of the 43 clone families, 14
 live in one file, 27 in two files, and 2 in three files.
@@ -189,10 +191,11 @@ Decided by the coordinator (derived, override freely):
   contract), two of the three carry `high` static coverage, and the third
   (`visit`, coverage `none`) gets characterization tests first.
 - `tests/` critical functions are out of scope for refactoring and are
-  baselined. Four are anonymous `describe`/`it` callbacks whose complexity is
+  baselined. Three are anonymous `describe`/`it` callbacks whose complexity is
   the number of cases they hold; splitting them changes suite structure, not
   behavior. `auditMigratedSeed` is a test helper whose branches are the
-  assertion set it encodes. All five get a written reason in the baseline.
+  assertion set it encodes. All four get a written reason in the baseline.
+  *(Count corrected 2026-09-28, see Purpose.)*
 - Coverage tiers come from Fallow's `static_estimated` model. Where a
   characterization decision hinges on the tier, the plan may confirm it against
   the test runner's coverage report, but the static tier is the trigger.
