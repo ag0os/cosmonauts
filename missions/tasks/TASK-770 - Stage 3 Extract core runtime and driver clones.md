@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-769
 createdAt: '2026-09-28T15:22:47.494Z'
-updatedAt: '2026-09-28T18:41:01.087Z'
+updatedAt: '2026-09-28T23:12:20.609Z'
 ---
 
 ## Description
@@ -116,3 +116,8 @@ Attempt 3 steps: the worktree still holds the complete attempt-2 state (source e
 - Drive commit `1fa36787b5e43a0c9df9a53bf09e6735ab5d1751` (run `run-2e981f81-3b61-4bc5-9d3e-86fbc34b4174`, attempt 3), parent `b8178c73` (coordinator record-only commits `816077c1`, `1baa4325`, `b8178c73` sit between `S = ab78192d` and the Drive commit; they touch only `missions/**`). State commit `457ecf30`. `C = d17a4972`.
 - `git diff --name-status --diff-filter=MDR d17a4972 1fa36787 -- tests/` → `M tests/memory/interface.test.ts` only (same from `S`). No added test files. `git status --porcelain -- tests/` → empty. skip/only/todo grep → none. The single hunk changes the `architectureAdapterSource` SHA-256 literal `ab64b61e…` → `500f512d…`, which equals the SHA-256 of the committed `lib/architecture-map/retrieval.ts`; pre-declared, authorized by human ruling Q-008 (a) (plan D-022), citing finding `dupes	lib/architecture-map/retrieval.ts:198:213;lib/architecture-map/retrieval.ts:237:251` (`family-e85de5923f89360e`). **Verdict: freeze check clean; not blocked.**
 - Postflight (`verify` phase `post`): all five gates `passed`. Task-close `analysis_audit`: `failed / invalid-output` (Fallow verdict `warn`), recorded per D-023 with the direct diagnostic; not blocking.
+
+
+### Coordinator freeze-verdict addendum under Q-009 (2026-09-28, successor #2)
+
+Human ruling Q-009 (rulings file round 4; plan D-026) supersedes Q-008 (a) / D-022: source-byte pins are defects. The coordinator deleted both SHA-256 source-hash assertions in `tests/memory/interface.test.ts` (the `lib/memory/types.ts` hash and the `lib/architecture-map/retrieval.ts` hash whose literal this task's Drive commit `1fa3678` had updated); the behavioral `toContain` assertions and the `registry|backend|plugin|dispatch` blacklist stay. `tests/memory/interface.test.ts` passes (21 cases); Biome clean. The change is a permitted expectation change under INV-002 citing Q-009 and is the coordinator's own record-only-adjacent commit with explicit paths, not a Drive commit. The slice-3 freeze verdict above stands as recorded for `d17a497..1fa3678`; this addendum records the later, separately committed removal so the retrieval.ts hash literal no longer exists to be maintained.

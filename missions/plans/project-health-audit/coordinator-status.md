@@ -1,7 +1,8 @@
 # project-health-audit — coordinator status
 
-Coordinator: Claude (Herdr pane `pha-implementer`), successor to `pha-coordinator`,
-briefed by Shepherd via `.shepherd/work/in-progress/project-health-audit/brief-implementer.md`.
+Coordinator: Claude, implementing coordinator successor #2 (predecessor
+`pha-implementer`, retired at the Codex cap), briefed by Shepherd via
+`.shepherd/work/in-progress/project-health-audit/brief-implementer-2.md`.
 Implementation started 2026-09-28.
 
 ## Needs the user
@@ -41,6 +42,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
   Two new characterization files, nothing else; five gates passed after one
   in-run retry (quality-review settle-grace timing flake, passes in isolation).
   Attempt 1 stopped on export-only symbol traces → D-024.
+- **Q-010 + Q-009 applied** (successor #2, 20:12Z): model repins (D-025) and
+  the two source-hash pins removed from `tests/memory/interface.test.ts`
+  (D-026; TASK-770 addendum). No test pinned the agent defaults;
+  `tests/{agents,domains,main,cli,bundled}` and the memory interface suite green.
 - Branch `feature/project-health-audit` off local `main` `64dca3c`; roadmap
   item removed; plan + spec created; Intent ratified.
 - `/spec-to-backlog` complete: planner→plan-reviewer chain (review-1, review-2,
@@ -104,7 +109,19 @@ Nothing. TASK-774 attempt 3 could not start (see Blocked).
 
 ## Blocked
 
-- **Codex usage limit reached (20:45Z).** The print-mode cosmo launcher and the
+- **No usable provider for the Pi worker (successor #2, 20:11Z).** Q-010 applied:
+  `worker` → `anthropic/claude-opus-5-5`, `cosmo` → `anthropic/claude-sonnet-5`
+  (plan D-025, committed). The verification probe failed on both: the anthropic
+  credential is a claude.ai OAuth login and answers HTTP 400 `You're out of
+  extra usage`. The same probe via `-m openrouter/anthropic/claude-sonnet-4.5`
+  answers `ok` (OpenRouter key present, pay-per-token; catalog has
+  `openrouter/anthropic/claude-opus-5.5` and `openrouter/anthropic/claude-sonnet-5`).
+  Escalated to Shepherd as a broken launch path: options are (1) wait for the
+  claude.ai window / add extra usage, or (2) repin to the OpenRouter route for
+  the same models (a cost decision the ruling did not cover). Q-009 is done
+  regardless (D-026, committed). TASK-774 attempt 3 not launched.
+
+- History (predecessor): **Codex usage limit reached (20:45Z).** The print-mode cosmo launcher and the
   `coding/worker` role both pin `openai-codex/gpt-5.6-sol`; the relaunch of
   TASK-774 attempt 3 exited with `Codex error: The usage limit has been reached`
   before any run started. Worktree holds attempt 2's refactor (three owned

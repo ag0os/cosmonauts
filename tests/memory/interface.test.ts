@@ -650,12 +650,6 @@ describe("memory interface", () => {
 
 		// Knowledge proposals extend the shared seam only with optional fields, so
 		// existing stores and minimal human records remain source-compatible.
-		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"08593a2c9f4d7311fe3b374872cd54ede2b7e6aeda376b79429797ad45a3c38d",
-		);
-		expect(
-			createHash("sha256").update(architectureAdapterSource).digest("hex"),
-		).toBe("500f512de933f10150864467721a121bdcfca7addd8209f6cf7e9f316b6c715d");
 		expect(typesSource).toContain("readonly type: string;");
 		expect(typesSource).toContain("readonly recordTypes?: readonly string[];");
 		expect(typesSource).toContain("readonly proposalIdentity?:");
