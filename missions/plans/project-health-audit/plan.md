@@ -148,6 +148,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Supersedes: the affected sentences in D-010, D-014, D-015, Design §4 step 4, Files to Change (test files), and Implementation Order stage 15; each is marked in place.
   - Decided by: coordinator, amend-on-record, 2026-09-28
 
+- **D-019 - Biome ignores the local Shepherd working directory** *(Added 2026-09-28 by the implementing coordinator before the first Drive slice)*
+  - Decision: `biome.json` `files.includes` gains `!.shepherd`. The `.shepherd/` directory is Shepherd's local working state, excluded from git through `.git/info/exclude`, which Biome's `useIgnoreFile` does not read; its raw Fallow evidence JSON failed `bun run lint` at the slice-start commit, which would have failed the lint postflight gate of every Drive slice. The exclusion is an editor-tooling scope rule for an untracked directory, not a suppression, threshold, ignore pattern, or entry-point change against any analysis finding, so INV-004 is not engaged; the evidence files themselves stay byte-identical.
+  - Alternatives: reformat the evidence files (changes the supplied evidence bytes TASK-768 reconciles against); add `.shepherd/` to `.gitignore` (Shepherd chose `info/exclude` deliberately); leave lint red and have every slice fail postflight.
+  - Why: keeps the stage gate honest (a red gate for a non-source reason would mask real regressions) without touching supplied evidence or analysis configuration.
+  - Decided by: coordinator, derived, 2026-09-28
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
