@@ -32,6 +32,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 - **Slice 4 / TASK-771 Done** (18:54Z, first attempt): Drive commit `ac8dbc1`,
   state `c359aa6`. No test changes; four new helper modules; five gates passed;
   task-close audit `pass`.
+- **Slice 5 / TASK-772 Done** (19:24Z, first attempt): Drive commit `3346fa9`,
+  state `f53b552`. No test changes; living-memory.ts hunks outside the critical
+  functions; both three-file baseline reasons recorded; five gates passed.
+  Health record files untouched since stage 1 — dispositions live in task
+  notes and are folded into the record at stage 16 (Design §1 / D-015).
 - Branch `feature/project-health-audit` off local `main` `64dca3c`; roadmap
   item removed; plan + spec created; Intent ratified.
 - `/spec-to-backlog` complete: planner→plan-reviewer chain (review-1, review-2,
@@ -48,8 +53,9 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-- Slice 5 / TASK-772 (memory, skills, tasks clones + three-file dispositions):
-  launched after the slice-4 record-only commit; slice-start `S` = that commit.
+- Slice 6 / TASK-773 (characterize harness and validation criticals): launched
+  after the slice-5 record-only commit; slice-start `S` = that commit.
+  Remaining ready after it: TASK-775, 777, 779 (all depend only on 772).
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
