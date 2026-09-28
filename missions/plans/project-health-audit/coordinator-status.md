@@ -25,6 +25,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
   Two new characterization files (27 cases), nothing else changed; freeze
   clean; five gates passed. Attempt 1 blocked on unchecked ACs (prompt-template
   gap, observation 1).
+- **Slice 3 / TASK-770 Done** (18:40Z): Drive commit `1fa3678`, state `457ecf3`.
+  Freeze diff from `C = d17a497`: exactly the Q-008 (a) hash literal. Five gates
+  passed. Diagnostic duplication 85 → 48 groups. Three attempts: Q-008 hard
+  stop (ruled (a)), then the `warn` audit self-block (D-023).
 - Branch `feature/project-health-audit` off local `main` `64dca3c`; roadmap
   item removed; plan + spec created; Intent ratified.
 - `/spec-to-backlog` complete: planner→plan-reviewer chain (review-1, review-2,
@@ -41,12 +45,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-- Slice 3 / TASK-770 attempt 3: after attempt 2 completed the work (7/7 ACs
-  checked, five gates green, D-015 shows exactly `M tests/memory/interface.test.ts`
-  = the Q-008 hash literal, reviewed: `ab64b61e…` → `500f512d…`, matches the
-  refactored file) but self-blocked on a `failed/invalid-output` task-close
-  `analysis_audit` (Fallow verdict `warn` rejected by the adapter). D-023 rules
-  the failed audit is recorded, not blocking. `S` = `ab78192`, `C` = `d17a497`.
+- Slice 4 / TASK-771 (extension, harness, validation clones): launched after the
+  slice-3 record-only commit; slice-start `S` = that commit.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
