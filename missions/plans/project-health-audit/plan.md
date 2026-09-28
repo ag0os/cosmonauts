@@ -179,6 +179,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: INV-001 and INV-003 want failed evidence visible and traced, not silently repaired or silently blocking; the human decides gate-owned changes.
   - Decided by: coordinator, derived, 2026-09-28
 
+- **D-024 - Complexity findings are confirmed by a fresh capability run; symbol trace is not required for them** *(Added 2026-09-28 during slice 6, attempt 1)*
+  - Decision: INV-003 (ratified) names the confirmation per category verbatim: "reachability and references for dead code, clone location for duplication, a fresh capability run for complexity". For a critical-complexity function the pre-edit trace is therefore the fresh project-scope `analysis_complexity` run (each configured metric) that still lists the function's row (metric, path, line, column, name, severity, coverage tier). D-013's escalate-on-failed-symbol-trace rule governs dead-code rows; it is not extended to complexity rows. The provider's symbol trace is `fallow dead-code --trace <path>:<symbol>`, which resolves exported symbols only, so a non-exported function exits 2 by construction; that exit is recorded as a provider limitation beside the successful file trace and the repository reference search, not as an untraceable finding. Where the surface complexity output is too large for the tool result, the worker records the surface run's outcome (state, count, digest) and confirms its owned rows through the direct diagnostic `fallow health --complexity --format json --quiet --no-cache` filtered locally by path/name, recorded verbatim as diagnosis and never promoted over the surface state. Characterization tasks (stages 6, 8, 10, 12, 14) and refactor tasks (7, 9, 11, 13, 15a) apply this; the first slice-6 attempt stopped on the exit-2 traces without editing anything, which was the safe reading of the plan text and is superseded here.
+  - Alternatives: escalate every non-exported critical function to the human (five to ten escalations that INV-003 does not ask for); export the functions to make them traceable (a production-scope change, INV-004).
+  - Why: the ratified invariant is specific and the plan's overview sentence generalized it; D-001 says mechanism yields to the invariant text.
+  - Decided by: coordinator, derived, 2026-09-28
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible

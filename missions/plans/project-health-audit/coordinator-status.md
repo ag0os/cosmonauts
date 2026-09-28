@@ -53,9 +53,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-- Slice 6 / TASK-773 (characterize harness and validation criticals): launched
-  after the slice-5 record-only commit; slice-start `S` = that commit.
-  Remaining ready after it: TASK-775, 777, 779 (all depend only on 772).
+- Slice 6 / TASK-773 attempt 2 (after D-024): attempt 1 (`run-f5761c18`) stopped
+  without edits because symbol traces for the five non-exported owned functions
+  exit 2 (`fallow dead-code --trace` resolves exports only) and it read D-013 as
+  a hard stop; D-024 restates INV-003's per-category confirmation (fresh
+  complexity run) and is appended to TASK-774..782. Slice-start `S` = `26aa451`.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -82,7 +84,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
    documented audit verdicts are pass/warn/fail; a `warn` audit surfaces as
    `invalid-output` and the worker protocol then self-blocks (D-023). Gate-owned;
    human sign-off item (R-013) with a Q-006-shaped narrow fix recommended.
-8. Launching Drive through a print-mode cosmo session works but the launcher
+8. Symbol `analysis_trace` cannot resolve non-exported functions (Fallow
+   `dead-code --trace` is export-based, exit 2); the plan's overview sentence
+   generalized D-013 to "any finding", which stopped slice 6 (D-024). The
+   surface complexity output also overflows the tool result; no path scope.
+9. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
 

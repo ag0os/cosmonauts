@@ -3,6 +3,7 @@ id: TASK-773
 title: 'Stage 6: Characterize harness and validation criticals'
 status: To Do
 priority: medium
+assignee: worker
 labels:
   - backend
   - testing
@@ -10,7 +11,7 @@ labels:
 dependencies:
   - TASK-772
 createdAt: '2026-09-28T15:23:52.540Z'
-updatedAt: '2026-09-28T18:33:24.597Z'
+updatedAt: '2026-09-28T19:32:01.905Z'
 ---
 
 ## Description
@@ -35,3 +36,20 @@ Land characterization-only coverage for the below-high harness and validation cr
 Drive commits this task only when **every** acceptance criterion is checked; an unchecked criterion ends the run `task_blocked` with nothing committed and Drive then overwrites these notes with its block reason. The in-process worker prompt does not say this, so: before your final report, (1) record your evidence (analysis_status output, traces, the D-015 in-session check verbatim against the slice-start commit, stage-gate exit codes and result lines) with `task_edit` `implementationNotes` (append, never drop earlier sections); (2) tick every satisfied criterion with `task_edit` `checkAc`; for a coordinator-verdict freeze criterion, plan D-020 applies: tick it once your in-session half is recorded and the coordinator appends the post-commit verdict; (3) report `outcome: success` only then. Leave source and test files uncommitted; the driver commits. Never run git operations on `missions/reviews/`; write record rows to the record files and copy them here.
 
 Addendum (2026-09-28, plan D-023): a task-close `analysis_audit` that returns `failed` (e.g. `invalid-output` because Fallow answered `warn`) is recorded in these notes with its failure class, the verbatim direct diagnostic `fallow audit --base <sha> --format json --quiet --no-cache --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json`, and the owning slice of each flagged finding; it is not a completion blocker when the five stage-gate commands pass and every owned finding is dispositioned. Do not edit `fallow-provider.ts` for it.
+
+### Blocked attempt: owned function traces failed
+
+- Slice-start commit `S`: `ff75711e2a20a9e74acde9603d173a8d06844399`.
+- `analysis_status` from the execution root reported `trace` bound to `fallow@2.54.2` with target scope; project-level `complexity` was also bound for cyclomatic, cognitive, and CRAP. `boundary-conformance` alone was unbound (`provider-not-configured`).
+- Fresh project-scope cyclomatic, cognitive, and CRAP capability runs each completed with `verdict: fail`, reconfirming complexity findings. The surface output was too large and truncated before the owned rows could be extracted.
+- Exact symbol traces were attempted for `isManifestEntry` (`lib/harness-adapters/provenance.ts`) and `syncHarnessAssetCore`, `prepareClaudeCommandPair`, `validateCommandEvidenceIdentity`, and `recoverOwnerRootJournal` (`lib/harness-adapters/sync.ts`). Every symbol trace failed identically: `Analysis failed to run. Capability: trace. Provider: fallow@2.54.2. Failure class: provider-exit. Process evidence: exit=2; signal=none; reason=Fallow trace exited with code 2.; stderr=`.
+- The narrowest successful traces were file traces. `lib/harness-adapters/provenance.ts` and `lib/harness-adapters/sync.ts` both returned reachable (`is_reachable: true`, `is_entry_point: false`) and listed their shipped importers. This establishes file reachability but cannot replace the failed symbol traces.
+- Repository-wide reference search across `lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`, `tests/`, and `docs/` found only internal definitions/call sites: `isManifestEntry` at `provenance.ts:353,373`; `syncHarnessAssetCore` at `sync.ts:145,152,185,386`; `prepareClaudeCommandPair` at `sync.ts:1220,1261,1384`; `validateCommandEvidenceIdentity` at `sync.ts:1175,1655,1873,1917`; and `recoverOwnerRootJournal` at `sync.ts:2148,2477`.
+- D-013 and AC #4 require a reproduced finding whose symbol trace fails to stop for human review. No source or test file was edited, no acceptance criterion was checked, and no stage-gate or D-015 closeout evidence was run because implementation did not begin.
+- Unblock requirement: human/coordinator disposition of the failed symbol traces (or restoration of successful symbol tracing) before characterization edits may proceed.
+
+### Coordinator note before attempt 2 (2026-09-28): D-024
+
+Addendum (2026-09-28, plan D-024): for critical-complexity functions the INV-003 pre-edit confirmation is the fresh project-scope `analysis_complexity` run per metric that still lists the function row; a symbol `analysis_trace` exit 2 for a non-exported function is a recorded provider limitation (`fallow dead-code --trace` resolves exports only), not a D-013 hard stop. If the surface complexity output is truncated, record its state/count/digest and confirm your owned rows with the direct diagnostic `fallow health --complexity --format json --quiet --no-cache` filtered locally by path and name, recorded verbatim as diagnosis.
+
+Attempt 1 edited nothing; the worktree is clean at the slice start `S` (parent of your Drive commit; `ff75711` was the record-only commit, `26aa451` a missions-only handoff commit on top). Proceed with the characterization as specified in the ACs: fresh `analysis_status`; fresh per-metric complexity runs (record outcome; confirm owned rows via the diagnostic if truncated); file traces + reference search for the five owned functions (already recorded above, reuse them); write the new characterization test files only (owned function bodies byte-identical; existing suites unmodified); map every enumerated result variant to a case or list it unreachable with a reason; run the stage gate; record the D-015 in-session check against `S`; tick all ACs; report `outcome: success`.
