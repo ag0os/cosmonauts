@@ -2,130 +2,33 @@
 
 Coordinator: Claude (Herdr pane `pha-coordinator`), briefed by Shepherd via
 `.shepherd/work/in-progress/project-health-audit/brief-coordinator.md`.
+Handed off 2026-09-28 at ~38% context, before `/implement-plan`.
 
 ## Needs the user
 
-Nothing. Q-004..Q-007 all ruled (a) by the human on 2026-09-28, round 2
-("All recommended is fine", relayed by Shepherd; rulings file round 2).
-Recorded in plan.md D-010/D-012/D-013/D-017. Original packet kept below.
-
-### Ruled 2026-09-28, round 2
-
-**Q-004 — AC-008 "at the branch's final commit".** The baseline refresh
-analyzes a commit in a detached worktree and then writes the floors into the
-working tree, so the commit that contains the refreshed floors can never be the
-commit they were computed against. Options: (a) accept plan D-010: refresh
-against the final *source* commit, then one artifact-only closeout commit
-(`.fallow-baselines/`, `docs/fallow-exceptions.md`, the two record files), with
-the record proving the tip differs only by those paths; (b) some other reading
-you prefer. Recommendation: (a). It is the only reproducible interpretation.
-
-**Q-005 — the single unused-class-member finding.** Fallow reports
-`TaskManager.getTaskDependencyStatusSnapshot` unused, but the surface cannot
-symbol-trace a class member (provider exit 2) and the method has a live call at
-`lib/driver/drive-graph-runner.ts:593`. INV-003 requires a trace before acting;
-AC-002 requires zero findings; INV-004 forbids a suppression. Options:
-(a) disposition it `false-positive` with the reference evidence recorded, no
-edit, AC-002 read as "zero findings except provider false positives recorded
-with contradicting evidence"; (b) treat AC-002 as unmet by one row and escalate
-at closeout. Recommendation: (a).
-
-**Q-006 — the duplication capability is structurally broken.** The surface runs
-`fallow dupes` with no threshold, Fallow exits 0 whenever duplication is under
-threshold, and `reconcileVerdictEvidence` in `fallow-provider.ts` rejects
-exit 0 with findings, so `analysis_duplication` fails with `invalid-output`
-whenever any clone exists, including after this plan (two three-file families
-stay by ruling). Options: (a) fix the defect narrowly in stage 1 (exit 0 with
-findings is a completed `fail` for duplication; regression test; the file is
-gate-owned so the QM will flag it for your sign-off either way); (b) leave it,
-record AC-004 as `unmet: capability failed` with the direct-provider diagnostic
-inventory beside it. Recommendation: (a). The record would otherwise carry a
-permanently failed gate-facing capability that a ten-line fix resolves.
-
-**Q-007 — execution backend.** The brief said Drive with Codex. Codex and
-Claude CLI workers have no Pi tools, so they cannot call `analysis_status`,
-the capability tools, or `analysis_trace`, which INV-003 requires immediately
-before every edit. Options: (a) run the implementation slices with Drive's
-`cosmonauts-subagent` backend inline (Pi `coding/worker`/`refactorer` with
-`project-tools`), one slice per run; (b) Codex workers, with a Pi-hosted trace
-step spawned before each slice and its evidence handed to the worker (weaker:
-"immediately before the edit" becomes "before the slice"); (c) a thin
-`cosmonauts analysis` CLI wrapper so external workers can call the surface
-(new code, out of this plan's scope). Recommendation: (a), noting the known
-Opus-out-of-usage stall risk for Pi-hosted agents; pick a GPT model for the
-worker if that recurs.
-
-Also for the record, no ruling needed: the spec's "five" tests/ critical
-functions was a counting error (four); corrected in place. Sixteen tasks
-instead of the skill's usual 3-12 is accepted on record (D-016) rather than
-splitting the plan.
-
-### Ruled 2026-09-28
-
-**Q-001 — Ratify the Intent** (`spec.md` `## Intent`). Goal: every
-whole-project static-health finding on `main` is either fixed with behavior
-preserved or carried in a recorded, reasoned baseline, and the record that says
-so can be regenerated and compared by any later run.
-
-- INV-001 - Missing evidence is never clean. Every project-scope gate-facing
-  capability appears in the record with its binding state; unbound,
-  unsupported, or failed is named as such and never counts as passing.
-- INV-002 - Remediation preserves observable behavior. Critical functions below
-  `high` coverage get committed characterization tests before the first edit;
-  a test expectation changes only when it pinned the removed defect, citing
-  the finding.
-- INV-003 - A finding is confirmed before it is acted on: trace through the
-  analysis surface immediately before the edit; a finding that no longer
-  reproduces is reported unresolved, not fixed.
-- INV-004 - Nothing is silenced: no new suppression, threshold change, ignore
-  pattern, entry point, or production-scope change to clear a finding; what is
-  not fixed is baselined with a written reason through the provenance path.
-- INV-005 - The record is reproducible: commit, provider identity/version,
-  config digest, exact invocations, result digests; same commit reproduces the
-  same finding identities and counts.
-- Ranking: INV-002 over remediation scope; INV-001 and INV-004 over any clean
-  verdict; INV-003 over throughput.
-
-**Q-002 — Risk bound for critical refactors.** For a critical function that
-cannot be characterized to a reasonable bound (`runPass`: 886 lines, 104 paths,
-`partial` coverage): (a) refactor with the best characterization tests writable
-plus the full suite, hard stop if any test expectation would have to change; or
-(b) baseline it as a recorded exception to the critical ruling and defer.
-Recommendation: (a).
-
-**Q-003 — Duplication ruling consequence.** 41 of 43 clone families (85 of 87
-groups, ~1,730 duplicated lines) are one- or two-file families, so "extract
-one- or two-file families" extracts almost everything and baselines only two
-three-file families (30 lines). Confirm, or set a narrower bound (minimum
-family size, same-directory only, ...).
-
-Decided by the coordinator as derived (override if you disagree, no question
-needed otherwise): `scripts/` critical functions in scope (3), `tests/`
-critical functions baselined (5), static coverage tier is the characterization
-trigger, `fallow.toml` untouched.
+Nothing. All rulings recorded: Q-001..003 (round 1) in `spec.md`; Q-004..007
+(round 2, all option (a)) in `plan.md` D-010/D-012/D-013/D-017. Rulings file:
+`.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`.
 
 ## Done
 
-- 2026-09-28: branch `feature/project-health-audit` off local `main` `64dca3c`.
-- 2026-09-28: read Shepherd evidence (`dead.json`, `dupes.json`,
-  `health.json`), the analysis surface (`docs/analysis-capabilities.md`,
-  `docs/fallow.md`, `docs/fallow-exceptions.md`, `fallow-provider.ts`
-  capability table), baseline manifest, suppression registry, consent file.
-- 2026-09-28: plan created via `cosmonauts plan create`; `spec.md` written
-  (Intent INV-001..005, AC-001..011, scope rulings, Q-001..003).
-- 2026-09-28: roadmap item removed; pause paragraph points at the plan.
-
-- 2026-09-28: `/spec-to-backlog` Phase 1 done: planner → plan-reviewer chain
-  (40 min) wrote plan.md, review-1.md, review-2.md; planner did not revise
-  after review (mtimes checked). Phase 2 done: independent four-lens workflow,
-  24 findings verified (28 agents). Phase 3 done: plan revised by the
-  coordinator (D-011..D-017, B-011, Design §1/§3/§4/§5, R-001 replaced,
-  R-013..R-015, sixteen-stage order); synthesis in review-3.md;
-  `plan check-artifacts` clean.
+- Branch `feature/project-health-audit` off local `main` `64dca3c`; roadmap
+  item removed; plan + spec created; Intent ratified.
+- `/spec-to-backlog` complete: planner→plan-reviewer chain (review-1, review-2,
+  planner did not revise); coordinator four-lens plan review (24 verified
+  findings); synthesis `review-3.md`; plan revised (D-011..D-017); round-2
+  rulings; task-manager chain (16 tasks); coverage matrix; coordinator
+  three-lens task compliance review (18 verified findings); plan amended
+  (D-018) and tasks patched; Stage 15 split into TASK-782 (15a) and TASK-784
+  (15b). `cosmonauts plan check-artifacts project-health-audit` passes.
+- Backlog: TASK-768..784, 17 tasks, all `To Do`, DAG mirrors the plan's
+  Implementation Order (768 → 769 → 770; 771 ← 768; 772 ← 770,771; 773/775/
+  777/779 ← 772; 774/776/778/780 ← their characterization task; 781 ← 780;
+  782 ← 781,774,776,778,780; 784 ← 782; 783 ← 784).
 
 ## Running
 
-- 2026-09-28: `/spec-to-backlog` Phase 4, task-manager chain.
+Nothing. No Drive run has been started.
 
 ## Blocked
 
@@ -133,17 +36,73 @@ Nothing.
 
 ## HEAD
 
-`feature/project-health-audit` at `c03c7d9` (revised plan after review), five
-commits ahead of local `main` `64dca3c`. Worktree clean. Context use ~20%.
+`feature/project-health-audit` at `716519d`, ten commits ahead of local
+`main` `64dca3c`. Worktree clean.
 
-## Successor handoff
+## Successor handoff — implement
 
-If a fresh session takes over: read the brief, this file, and `spec.md`. The
-evidence JSON is Shepherd's direct Fallow run; AC-001 requires re-deriving it
-through the analysis surface (`analysis_status` then the four project-scope
-tools) and reconciling before any remediation. Nothing in `lib/`, `cli/`,
-`domains/`, `scripts/`, or `tests/` has been edited. Next step once Shepherd
-relays ratification: `/spec-to-backlog project-health-audit`, then
-`/implement-plan project-health-audit` with
-`COSMONAUTS_DRIVER_CODEX_ARGS="-m gpt-5.6-sol -c model_reasoning_effort=medium"`,
-commit before any QM run, explicit paths only, no push.
+Start with `/implement-plan project-health-audit`, but the procedure's Phase 1
+launch line does not apply: human ruling Q-007 (a) requires the
+`cosmonauts-subagent` inline backend, and the `cosmonauts run drive` CLI
+passes no postflight commands (only the Pi-side `run_driver` tool takes
+them; see `cli/drive/subcommand.ts` around line 1100). Launch each slice
+through a Pi session instead:
+
+1. Precondition: `analysis_status` from the execution root must show Fallow
+   bound with consent (`~/.cosmonauts/analysis-execution-consent.json` already
+   lists this project path). TASK-768 AC #4 owns this.
+2. One slice per run, in dependency order (`cosmonauts task list --label
+   plan:project-health-audit --ready`). For each ready task, run in the
+   background with stderr to a log, from the repo root:
+   `cosmonauts -p -a cosmo "Call run_driver with planSlug 'project-health-audit', taskIds ['TASK-7NN'], backend 'cosmonauts-subagent', mode 'inline', branch 'feature/project-health-audit', commitPolicy 'driver-commits', postflightCommands ['bun run test','bun run lint','bun run typecheck','bun run check:reachability','bun run check:suppressions -- --base main'], taskTimeoutMs 5400000. Then call run_status until terminal and report the runId, eventLogPath, and final status. Do nothing else."`
+   `cosmo` and the `worker` role both default to `openai-codex/gpt-5.6-sol`
+   (Q-007 GPT preference satisfied; no Opus stall risk). Monitor
+   `missions/sessions/project-health-audit/runs/<runId>/events.jsonl`.
+3. Between slices (D-015/D-018): confirm the Drive commit's parent is the
+   slice-start commit; re-run the freeze commands from that base to the Drive
+   commit (`git diff --name-status --diff-filter=MDR <base> <commit> -- tests/`
+   and the skip/only/todo grep); record output + SHAs in the task's
+   `## Implementation Notes`; review TASK-768's two pre-declared test edits
+   (AC #8) and any pre-declared mechanical rename; then make the record-only
+   commit of `missions/reviews/project-health-audit.{md,json}` and the task
+   notes with explicit paths. Never `git add -A`. Anything undeclared under
+   `tests/` → leave the task `blocked`, escalate to Shepherd.
+4. Escalate to Shepherd (human) only: a Q-002 hard stop (test expectation
+   change), a refactor task that stops `blocked` needing a seam, an
+   `escalated` dead-code row (D-013), a clone family that cannot be extracted
+   without violating an invariant (R-006), or QM gate-owned sign-off at the
+   end (R-013: `fallow-provider.ts`, `.fallow-baselines/*`, suppression
+   registry are gate-owned; QM cannot return `ready`, report "pending
+   sign-off").
+5. Stage 16 closeout shape is D-018 (4): Drive's TASK-783 commit carries the
+   floors + `docs/fallow-exceptions.md`; the coordinator's record-only commit
+   carries the two record files; diff from `analyzedCommit` to tip = exactly
+   seven paths. Record the closeout SHAs and the `main`-based changed-scope
+   audit in TASK-783 notes.
+6. Then `/implement-plan` Phases 2–4 as written: ground-truth gates, Quality
+   Manager (commit first; reconcile against local `main`; expect gate-owned
+   human items), `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only < /dev/null`
+   framed as correctness/liveness, improvement pass, report. No push, merge,
+   or PR.
+
+Known facts the successor should not rediscover: the duplication capability
+fails with `invalid-output` until TASK-768's `reconcileVerdictEvidence` fix
+lands (exit 0 with findings); `TaskManager.getTaskDependencyStatusSnapshot`
+is a provider false positive (live call `lib/driver/drive-graph-runner.ts:593`);
+Fallow `static_estimated` coverage caps private helpers at cyclomatic 9
+(partial) / 4 (none) via CRAP 30 (plan Design §4); Drive commits exclude
+`missions/**`; `check:reachability` is not a configured qualityReview check
+so it must be in postflight explicitly.
+
+### Ruled 2026-09-28, round 2
+
+Q-004 (a) analyzed-source-commit + artifact-only closeout; Q-005 (a) class
+member `false-positive` with reference; Q-006 (a) narrow duplication
+reconciliation fix in stage 1; Q-007 (a) `cosmonauts-subagent` inline, GPT
+worker. Coordinator-derived decisions stand.
+
+### Ruled 2026-09-28, round 1
+
+Q-001 Intent ratified; Q-002 (a) refactor with best characterization, hard
+stop on expectation change; Q-003 confirmed (41 one-/two-file families
+extracted, two three-file families baselined).
