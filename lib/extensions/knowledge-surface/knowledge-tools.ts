@@ -17,9 +17,8 @@ import {
 	type MemoryStore,
 	type MemoryWriteResult,
 } from "../../memory/index.ts";
+import { normalizeRecallLimit } from "./recall-limit.ts";
 
-const DEFAULT_RECALL_LIMIT = 5;
-const MAX_RECALL_LIMIT = 20;
 const QUALIFIED_DISTILLER_ID = "coding/distiller";
 const KnowledgeTypeLiterals = KNOWLEDGE_RECORD_TYPES.map((type) =>
 	Type.Literal(type),
@@ -205,7 +204,7 @@ export function registerKnowledgeRecallTool(
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
 			recallKnowledge({
 				query: normalizeQuery((params as { query?: unknown }).query),
-				limit: normalizeLimit((params as { limit?: unknown }).limit),
+				limit: normalizeRecallLimit((params as { limit?: unknown }).limit),
 				projectRoot: ctx.cwd,
 				...((params as { includeRetired?: unknown }).includeRetired === true
 					? { includeRetired: true }
@@ -382,11 +381,4 @@ function textResult(
 
 function normalizeQuery(value: unknown): string {
 	return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizeLimit(value: unknown): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) {
-		return DEFAULT_RECALL_LIMIT;
-	}
-	return Math.max(1, Math.min(MAX_RECALL_LIMIT, Math.trunc(value)));
 }

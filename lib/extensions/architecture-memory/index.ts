@@ -15,6 +15,12 @@ import {
 	typescriptSourceAnalyzer,
 } from "../../architecture-map/index.ts";
 import type { MemoryRetrieveResult, MemoryStore } from "../../memory/index.ts";
+import {
+	byteLength,
+	getMessages,
+	getSystemPrompt,
+	valueFromObject,
+} from "../context-values.ts";
 
 const ARCHITECTURE_CONTEXT_TYPE = "architecture-map-context";
 const ARCHITECTURE_DIR = "memory/architecture";
@@ -357,22 +363,10 @@ function isConsumingAgent(
 	return agentId !== undefined && authorizedAgentIds.has(agentId);
 }
 
-function getSystemPrompt(event: unknown): string {
-	return valueFromObject(event, "systemPrompt") ?? "";
-}
-
 function getCwd(ctx: unknown): string {
 	const cwd = valueFromObject(ctx, "cwd");
 	if (!cwd) throw new Error("Architecture memory extension requires ctx.cwd.");
 	return cwd;
-}
-
-function getMessages(event: unknown): unknown[] {
-	if (event && typeof event === "object" && "messages" in event) {
-		const messages = (event as { messages?: unknown }).messages;
-		if (Array.isArray(messages)) return messages;
-	}
-	return [];
 }
 
 function normalizeRequestedModule(params: unknown): string | undefined {
@@ -406,18 +400,6 @@ function architectureDetails(
 		return undefined;
 	}
 	return candidate as ArchitectureMapRetrievalDetails;
-}
-
-function valueFromObject(value: unknown, key: string): string | undefined {
-	if (value && typeof value === "object" && key in value) {
-		const field = (value as Record<string, unknown>)[key];
-		return typeof field === "string" ? field : undefined;
-	}
-	return undefined;
-}
-
-function byteLength(value: string): number {
-	return Buffer.byteLength(value, "utf-8");
 }
 
 function truncateBytes(value: string, maxBytes: number): string {

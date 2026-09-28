@@ -3,7 +3,6 @@ import {
 	lstat,
 	mkdir,
 	mkdtemp,
-	open,
 	readdir,
 	readFile,
 	readlink,
@@ -28,6 +27,8 @@ import {
 	EntityFileLockTimeoutError,
 	withEntityFileLock,
 } from "../entity-file-lock.ts";
+import { syncDirectory, writeDurableFile } from "./durable-file.ts";
+import { isPathInsideRoot } from "./path-safety.ts";
 import type {
 	HarnessProvenanceManifest,
 	MaterializedHarnessManifestEntry,
@@ -887,15 +888,7 @@ async function pathState(path: string): Promise<"absent" | "present"> {
 }
 
 function assertContained(root: string, candidate: string, label: string): void {
-	const relativePath = relative(resolve(root), resolve(candidate));
-	if (
-		relativePath === "" ||
-		(!relativePath.startsWith(`..${sep}`) &&
-			relativePath !== ".." &&
-			!isAbsolute(relativePath))
-	) {
-		return;
-	}
+	if (isPathInsideRoot(root, candidate)) return;
 	throw new Error(`${label} escapes harness owner root: ${candidate}.`);
 }
 
@@ -1210,12 +1203,8 @@ export async function runClaudeCommandPairBootstrap(
 					"committed:evidence-required",
 					(options.now ?? (() => new Date()))().toISOString(),
 				);
-				await persistAndReadCommandEvidence(evidencePath, installed);
-				if (options.stopAfter === "installed") {
-					throw new Error("injected stop after installed");
-				}
-				return finishClaudeCommandEvidence({
-					...options,
+				return continueInstalledCommandEvidence({
+					options,
 					projectRoot,
 					homeRoot,
 					evidencePath,
@@ -1334,16 +1323,32 @@ export async function runClaudeCommandPairBootstrap(
 		recoveryOutcome ?? describeOwnerRootRecovery(transactionResult.recovery),
 		(options.now ?? (() => new Date()))().toISOString(),
 	);
-	await persistAndReadCommandEvidence(evidencePath, installed);
-	if (options.stopAfter === "installed") {
-		throw new Error("injected stop after installed");
-	}
-	return finishClaudeCommandEvidence({
-		...options,
+	return continueInstalledCommandEvidence({
+		options,
 		projectRoot,
 		homeRoot,
 		evidencePath,
 		evidence: installed,
+	});
+}
+
+async function continueInstalledCommandEvidence(options: {
+	readonly options: RunClaudeCommandPairBootstrapOptions;
+	readonly projectRoot: string;
+	readonly homeRoot: string;
+	readonly evidencePath: string;
+	readonly evidence: ClaudeCommandMigrationEvidence;
+}): Promise<ClaudeCommandMigrationEvidence> {
+	await persistAndReadCommandEvidence(options.evidencePath, options.evidence);
+	if (options.options.stopAfter === "installed") {
+		throw new Error("injected stop after installed");
+	}
+	return finishClaudeCommandEvidence({
+		...options.options,
+		projectRoot: options.projectRoot,
+		homeRoot: options.homeRoot,
+		evidencePath: options.evidencePath,
+		evidence: options.evidence,
 	});
 }
 
@@ -2284,19 +2289,7 @@ export async function applySyncPlanInTransaction(
 			reason: "old-manifest-mismatch",
 		};
 	}
-	const changedTargetPaths = (
-		await Promise.all(
-			members.map(async (member) => ({
-				member,
-				matches: nodeSnapshotsEqual(
-					await observeHarnessNodeSnapshot(member.targetPath),
-					member.oldState,
-				),
-			})),
-		)
-	)
-		.filter(({ matches }) => !matches)
-		.map(({ member }) => member.targetPath);
+	const changedTargetPaths = await changedTransactionTargets(members);
 	if (changedTargetPaths.length > 0) {
 		return {
 			state: "local-edit-conflict",
@@ -2330,19 +2323,7 @@ export async function applySyncPlanInTransaction(
 		journal = { ...journal, phase: "installing" };
 		await persistJournal(transaction, journal);
 		await options.onPhasePersisted?.("installing", journal);
-		const changedBeforeInstall = (
-			await Promise.all(
-				members.map(async (member) => ({
-					member,
-					matches: nodeSnapshotsEqual(
-						await observeHarnessNodeSnapshot(member.targetPath),
-						member.oldState,
-					),
-				})),
-			)
-		)
-			.filter(({ matches }) => !matches)
-			.map(({ member }) => member.targetPath);
+		const changedBeforeInstall = await changedTransactionTargets(members);
 		if (changedBeforeInstall.length > 0) {
 			await cleanupPrepared(transaction, journal);
 			return {
@@ -3092,6 +3073,23 @@ function nodeSnapshotsEqual(
 	);
 }
 
+async function changedTransactionTargets(
+	members: readonly OwnerRootJournalMember[],
+): Promise<readonly string[]> {
+	const observations = await Promise.all(
+		members.map(async (member) => ({
+			member,
+			matches: nodeSnapshotsEqual(
+				await observeHarnessNodeSnapshot(member.targetPath),
+				member.oldState,
+			),
+		})),
+	);
+	return observations
+		.filter(({ matches }) => !matches)
+		.map(({ member }) => member.targetPath);
+}
+
 async function persistJournal(
 	transaction: OwnerRootTransaction,
 	journal: OwnerRootTransactionJournal,
@@ -3118,45 +3116,6 @@ async function writeManifestSnapshot(
 		return;
 	}
 	await writeDurableFile(transaction.manifestPath, snapshot.contents);
-}
-
-async function writeDurableFile(
-	path: string,
-	contents: string | Uint8Array,
-): Promise<void> {
-	const directory = dirname(path);
-	await mkdir(directory, { recursive: true });
-	const temporary = join(
-		directory,
-		`.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
-	);
-	const handle = await open(temporary, "wx", 0o600);
-	try {
-		if (typeof contents === "string") {
-			await handle.writeFile(contents, "utf8");
-		} else {
-			await handle.writeFile(contents);
-		}
-		await handle.sync();
-	} finally {
-		await handle.close();
-	}
-	try {
-		await rename(temporary, path);
-		await syncDirectory(directory);
-	} catch (error) {
-		await unlink(temporary).catch(() => undefined);
-		throw error;
-	}
-}
-
-async function syncDirectory(path: string): Promise<void> {
-	const handle = await open(path, "r");
-	try {
-		await handle.sync();
-	} finally {
-		await handle.close();
-	}
 }
 
 async function verifyEvidenceReceipt(

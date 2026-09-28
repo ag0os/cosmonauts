@@ -24,13 +24,18 @@ import {
 	parseEpisodeRecord,
 	recordEpisode,
 } from "../../memory/index.ts";
+import {
+	byteLength,
+	getMessages,
+	getSystemPrompt,
+	valueFromObject,
+} from "../context-values.ts";
 import type { KnowledgeRecallHandler } from "../knowledge-surface/knowledge-tools.ts";
+import { normalizeRecallLimit } from "../knowledge-surface/recall-limit.ts";
 
 const COSMO_AGENT_ID = "main/cosmo";
 const AGENT_MEMORY_CONTEXT_TYPE = "agent-memory-context";
 const SOURCE = COSMO_AGENT_ID;
-const DEFAULT_RECALL_LIMIT = 5;
-const MAX_RECALL_LIMIT = 20;
 const INDEX_RETRIEVAL_LIMIT = 50;
 const INDEX_INJECTION_MAX_BYTES = 12_000;
 // Record bodies are bounded on write, but human-edited frontmatter values are not.
@@ -285,7 +290,7 @@ export function createAgentMemoryExtension(
 					const recallParams = params as RecallParams;
 					return deps.knowledgeRecall({
 						query: normalizeString(recallParams.query) ?? "",
-						limit: normalizeLimit(recallParams.limit),
+						limit: normalizeRecallLimit(recallParams.limit),
 						projectRoot,
 						...(recallParams.includeRetired === true
 							? { includeRetired: true }
@@ -525,7 +530,7 @@ async function recall(options: {
 		});
 	}
 
-	const limit = normalizeLimit(options.params.limit);
+	const limit = normalizeRecallLimit(options.params.limit);
 	const result = await options.store.retrieve(
 		{ projectRoot: options.projectRoot, scopes: ["project", "user"] },
 		{ text: query, recordTypes: options.recordTypes },
@@ -1226,13 +1231,6 @@ function normalizeKind(value: unknown): MemoryKind {
 	return "semantic";
 }
 
-function normalizeLimit(value: unknown): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) {
-		return DEFAULT_RECALL_LIMIT;
-	}
-	return Math.max(1, Math.min(MAX_RECALL_LIMIT, Math.trunc(value)));
-}
-
 function defaultTitleFromContent(content: string): string {
 	return content.trim().split(/\r?\n/, 1)[0]?.trim().slice(0, 60) || "Untitled";
 }
@@ -1265,10 +1263,6 @@ function normalizePath(path: string): string {
 	return path.split(sep).join("/");
 }
 
-function getSystemPrompt(event: unknown): string {
-	return valueFromObject(event, "systemPrompt") ?? "";
-}
-
 function getCwd(ctx: unknown): string {
 	const cwd = valueFromObject(ctx, "cwd");
 	if (!cwd) throw new Error("Agent memory extension requires ctx.cwd.");
@@ -1277,26 +1271,6 @@ function getCwd(ctx: unknown): string {
 
 function getOptionalCwd(ctx: unknown): string | undefined {
 	return valueFromObject(ctx, "cwd");
-}
-
-function getMessages(event: unknown): unknown[] {
-	if (event && typeof event === "object" && "messages" in event) {
-		const messages = (event as { messages?: unknown }).messages;
-		if (Array.isArray(messages)) return messages;
-	}
-	return [];
-}
-
-function valueFromObject(value: unknown, key: string): string | undefined {
-	if (value && typeof value === "object" && key in value) {
-		const field = (value as Record<string, unknown>)[key];
-		return typeof field === "string" ? field : undefined;
-	}
-	return undefined;
-}
-
-function byteLength(value: string): number {
-	return Buffer.byteLength(value, "utf-8");
 }
 
 function truncateWithFooter(options: {

@@ -8,7 +8,8 @@ import {
 	symlink,
 	writeFile,
 } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
+import { isPathInsideRoot } from "./path-safety.ts";
 import type {
 	HarnessAuthoredLink,
 	HarnessGeneratedNodeProvenance,
@@ -522,11 +523,7 @@ async function writeCopyTarget(
 		return;
 	}
 	await mkdir(targetPath, { recursive: true });
-	for (const node of prepared.copyNodes) {
-		const output = join(targetPath, ...node.relativePath.split("/"));
-		await mkdir(join(output, ".."), { recursive: true });
-		await writeFile(output, node.bytes);
-	}
+	await writeFileNodes(targetPath, prepared.copyNodes);
 }
 
 async function writeGeneratedWrapper(
@@ -539,7 +536,14 @@ async function writeGeneratedWrapper(
 		await mkdir(join(output, ".."), { recursive: true });
 		await symlink(link.expectedCanonicalSource, output, "file");
 	}
-	for (const node of prepared.generatedNodes) {
+	await writeFileNodes(targetPath, prepared.generatedNodes);
+}
+
+async function writeFileNodes(
+	targetPath: string,
+	nodes: readonly { readonly relativePath: string; readonly bytes: Buffer }[],
+): Promise<void> {
+	for (const node of nodes) {
 		const output = join(targetPath, ...node.relativePath.split("/"));
 		await mkdir(join(output, ".."), { recursive: true });
 		await writeFile(output, node.bytes);
@@ -602,15 +606,7 @@ function assertContainedPath(
 	candidate: string,
 	label: string,
 ): void {
-	const relativePath = relative(resolve(root), resolve(candidate));
-	if (
-		relativePath === "" ||
-		(!relativePath.startsWith(`..${sep}`) &&
-			relativePath !== ".." &&
-			!isAbsolute(relativePath))
-	) {
-		return;
-	}
+	if (isPathInsideRoot(root, candidate)) return;
 	throw new Error(`${label} escapes its registered root: ${candidate}.`);
 }
 

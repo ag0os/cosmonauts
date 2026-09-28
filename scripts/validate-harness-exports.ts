@@ -2,13 +2,10 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
 	lstat,
-	mkdir,
 	mkdtemp,
-	open,
 	readdir,
 	readFile,
 	realpath,
-	rename,
 	rm,
 	unlink,
 } from "node:fs/promises";
@@ -16,6 +13,10 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+	syncDirectory,
+	writeDurableFile,
+} from "../lib/harness-adapters/durable-file.ts";
 import { createCosmonautsInventoryGeneratedNode } from "../lib/harness-adapters/inventory.ts";
 import type {
 	HarnessProvenanceManifest,
@@ -1999,18 +2000,7 @@ const runFreshSelectedCheck: RepositorySelectedCheck = async ({
 	];
 	for (const row of rows) args.push("--asset", row.assetId);
 	args.push("--check");
-	try {
-		const { stdout } = await execFileAsync("cosmonauts", args, {
-			cwd: projectRoot,
-			maxBuffer: 10 * 1024 * 1024,
-		});
-		return parseSelectedCheck(stdout, 0);
-	} catch (error) {
-		if (isRecord(error) && typeof error.stdout === "string") {
-			return parseSelectedCheck(error.stdout, 1);
-		}
-		throw error;
-	}
+	return runHarnessCheck(projectRoot, args);
 };
 
 const runFreshExternalBundleCheck: RepositorySelectedCheck = async ({
@@ -2030,6 +2020,13 @@ const runFreshExternalBundleCheck: RepositorySelectedCheck = async ({
 		EXTERNAL_BUNDLE_ASSET_ID,
 		"--check",
 	];
+	return runHarnessCheck(projectRoot, args);
+};
+
+async function runHarnessCheck(
+	projectRoot: string,
+	args: readonly string[],
+): Promise<Awaited<ReturnType<RepositorySelectedCheck>>> {
 	try {
 		const { stdout } = await execFileAsync("cosmonauts", args, {
 			cwd: projectRoot,
@@ -2042,7 +2039,7 @@ const runFreshExternalBundleCheck: RepositorySelectedCheck = async ({
 		}
 		throw error;
 	}
-};
+}
 
 function parseSelectedCheck(
 	stdout: string,
@@ -2384,43 +2381,6 @@ function validateEvidenceIdentity(
 			index,
 		);
 		assertEvidenceBackupIdentity(row.backupPath, backupPath, row.assetId);
-	}
-}
-
-async function writeDurableFile(path: string, contents: string): Promise<void> {
-	const directory = dirname(path);
-	await mkdir(directory, { recursive: true });
-	const temporary = join(
-		directory,
-		`.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
-	);
-	const handle = await open(temporary, "wx", 0o600);
-	try {
-		await handle.writeFile(contents, "utf8");
-		await handle.sync();
-	} finally {
-		await handle.close();
-	}
-	try {
-		await rename(temporary, path);
-		const directoryHandle = await open(directory, "r");
-		try {
-			await directoryHandle.sync();
-		} finally {
-			await directoryHandle.close();
-		}
-	} catch (error) {
-		await unlink(temporary).catch(() => undefined);
-		throw error;
-	}
-}
-
-async function syncDirectory(path: string): Promise<void> {
-	const handle = await open(path, "r");
-	try {
-		await handle.sync();
-	} finally {
-		await handle.close();
 	}
 }
 
