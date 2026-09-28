@@ -13,7 +13,7 @@ import {
 	applyTaskDependencyEdits,
 	applyTaskLabelEdits,
 	buildTaskUpdate,
-	registerEditCommand,
+	registerTaskEditCommand,
 	renderTaskEditSuccess,
 } from "../../../../cli/tasks/commands/edit.ts";
 import {
@@ -524,7 +524,7 @@ describe("task edit command", () => {
 });
 
 function createProgram() {
-	return createCommandProgram(registerEditCommand);
+	return createCommandProgram(registerTaskEditCommand);
 }
 
 async function expectEditToExit(args: string[]): Promise<void> {

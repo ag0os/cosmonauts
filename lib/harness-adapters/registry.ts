@@ -61,7 +61,7 @@ const STATIC_HARNESS_ASSETS = [
 	},
 ] as const satisfies readonly HarnessAsset[];
 
-export interface RuntimeSkillDescriptorOptions {
+interface RuntimeSkillDescriptorOptions {
 	readonly name: string;
 	readonly sourceRootId: string;
 	readonly sourceRoot: string;
@@ -69,14 +69,14 @@ export interface RuntimeSkillDescriptorOptions {
 	readonly logicalPath: string;
 }
 
-export interface ResolveHarnessTargetDirectoryOptions {
+interface ResolveHarnessTargetDirectoryOptions {
 	readonly targetId: HarnessTargetId;
 	readonly scope: HarnessScope;
 	readonly kind: MaterializedAssetKind;
 	readonly roots: ScopeRoots;
 }
 
-export interface ResolveHarnessAssetTargetOptions {
+interface ResolveHarnessAssetTargetOptions {
 	readonly targetId: HarnessTargetId;
 	readonly asset: HarnessAsset;
 	readonly roots: ScopeRoots;

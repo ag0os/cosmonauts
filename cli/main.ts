@@ -275,7 +275,7 @@ type CliRunMode =
 	| "print"
 	| "interactive";
 
-export interface SelectRunModeInput {
+interface SelectRunModeInput {
 	options: CliOptions;
 	hasRunnableDefault: boolean;
 	/**

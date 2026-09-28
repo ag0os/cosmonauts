@@ -30,7 +30,7 @@ import type {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-export interface PlanManagerEpisodeContext {
+interface PlanManagerEpisodeContext {
 	readonly episodeSource: string;
 	readonly reportEpisodeWarning?: EpisodeWarningReporter;
 }

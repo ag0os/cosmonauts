@@ -11,6 +11,7 @@ import type {
 } from "../durable-runtime/index.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import { acquireRepoCommitLock } from "./lock.ts";
+import { formatPartialReport } from "./report-format.ts";
 import {
 	type PendingFinalizationState,
 	pendingFinalizationPath,
@@ -37,10 +38,9 @@ export const PENDING_FINALIZATION_ARTIFACT: ArtifactRef = {
 	kind: "pending-finalization",
 };
 export const DRIVE_PARTIAL_CONTINUE_ARTIFACT_KIND = "drive-partial-continue";
-export const DRIVE_TASK_STATUS_PARTIAL_ARTIFACT_KIND =
-	"drive-task-status-partial";
+const DRIVE_TASK_STATUS_PARTIAL_ARTIFACT_KIND = "drive-task-status-partial";
 
-export interface DriveFinalizationCtx {
+interface DriveFinalizationCtx {
 	taskManager: TaskManager;
 	eventSink: EventSink;
 	abortSignal: AbortSignal;
@@ -52,14 +52,14 @@ type DriverEventInput = DriverEvent extends infer Event
 		: never
 	: never;
 
-export type DriveSourceCommitResult =
+type DriveSourceCommitResult =
 	| { status: "not_applicable" }
 	| { status: "skipped"; reason: "no_changes"; subject: string }
 	| { status: "committed"; sha: string; subject: string }
 	| { status: "blocked"; reason: string }
 	| { status: "finalization_failed"; outcome: TaskOutcome; reason: string };
 
-export interface DriveSourceCommitOptions {
+interface DriveSourceCommitOptions {
 	spec: DriverRunSpec;
 	ctx: DriveFinalizationCtx;
 	taskId: string;
@@ -155,7 +155,7 @@ export async function finalizeDriveSourceCommit({
 	return { status: "committed", sha: commitSha, subject };
 }
 
-export interface TransitionDriveTaskStatusOptions {
+interface TransitionDriveTaskStatusOptions {
 	spec: DriverRunSpec;
 	ctx: DriveFinalizationCtx;
 	taskId: string;
@@ -206,7 +206,7 @@ export async function transitionDriveTaskStatus({
 		}
 
 		if (outcome === "partial") {
-			const reason = partialReason(parsedReport);
+			const reason = formatPartialReport(parsedReport);
 			if (!skipTaskUpdate) {
 				await ctx.taskManager.updateTask(taskId, {
 					status: "In Progress",
@@ -251,7 +251,7 @@ export async function transitionDriveTaskStatus({
 	}
 }
 
-export async function recordCommitFinalizationFailure({
+async function recordCommitFinalizationFailure({
 	spec,
 	ctx,
 	taskId,
@@ -306,7 +306,7 @@ export async function recordCommitFinalizationFailure({
 	};
 }
 
-export async function recordTaskStatusFinalizationFailure({
+async function recordTaskStatusFinalizationFailure({
 	spec,
 	ctx,
 	taskId,
@@ -481,7 +481,7 @@ export async function commitDriveFinalState(
 	}
 }
 
-export interface RetryableDriveFinalizerFailureMapping {
+interface RetryableDriveFinalizerFailureMapping {
 	outcome: "finalization_failed";
 	finalizationPhase: "commit" | "task_status" | "state_commit";
 	finalizationReason: string;
@@ -694,15 +694,6 @@ function isPartialTaskStatusResult(
 			(artifact) => artifact.kind === DRIVE_TASK_STATUS_PARTIAL_ARTIFACT_KIND,
 		) ?? false
 	);
-}
-
-export function partialReason(report: ParsedReport): string {
-	if (report.outcome === "partial") {
-		const progress = progressText(report);
-		const notes = report.notes ? `: ${report.notes}` : "";
-		return `partial${progress}${notes}`;
-	}
-	return "partial";
 }
 
 async function blockTask(
@@ -1015,17 +1006,6 @@ function runCommand(
 		);
 		child.stdin?.end();
 	});
-}
-
-function progressText(report: Report): string {
-	if (!report.progress) {
-		return "";
-	}
-
-	const remaining = report.progress.remaining
-		? `; remaining: ${report.progress.remaining}`
-		: "";
-	return `: phase ${report.progress.phase}/${report.progress.of}${remaining}`;
 }
 
 function reportProgress(report: ParsedReport): Report["progress"] | undefined {

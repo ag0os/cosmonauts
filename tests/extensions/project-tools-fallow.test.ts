@@ -2308,11 +2308,18 @@ describe("Fallow capability execution", () => {
 					stderr: `${contradiction.name} detail`,
 				},
 			});
+			const result = runtime.execute(contradiction.request);
 
-			await expect(
-				runtime.execute(contradiction.request),
-				contradiction.name,
-			).rejects.toThrow(
+			if (contradiction.name === "exit zero with findings") {
+				await expect(result, contradiction.name).resolves.toMatchObject({
+					kind: "findings",
+					capability: "duplication",
+					verdict: "fail",
+				});
+				continue;
+			}
+
+			await expect(result, contradiction.name).rejects.toThrow(
 				/Failure class: invalid-output[\s\S]*Process evidence: exit=[01]/u,
 			);
 		}

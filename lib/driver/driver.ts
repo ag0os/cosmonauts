@@ -60,7 +60,7 @@ export interface DriverDeps {
 	cosmonautsRoot: string;
 }
 
-export interface DetachedLaunchHandle {
+interface DetachedLaunchHandle {
 	runId: string;
 	planSlug: string;
 	workdir: string;

@@ -14,7 +14,7 @@ const DEFAULT_LOCK_WAIT_TIMEOUT_MS = 1_000;
 const MAX_WARNING_MESSAGE_LENGTH = 500;
 const MAX_WARNING_PATH_LENGTH = 500;
 
-export interface EpisodeTransitionLockDependencies {
+interface EpisodeTransitionLockDependencies {
 	readonly loadConfig: typeof loadProjectConfig;
 	readonly withEntityFileLock: typeof runWithEntityFileLock;
 	readonly lockRetryDelayMs: number;
@@ -22,7 +22,7 @@ export interface EpisodeTransitionLockDependencies {
 	readonly writeStderr: (message: string) => void;
 }
 
-export interface EpisodeTransitionLockOptions<T> {
+interface EpisodeTransitionLockOptions<T> {
 	readonly projectRoot: string;
 	readonly lockPath: string;
 	readonly hasEpisodeContext: boolean;

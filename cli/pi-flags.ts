@@ -154,7 +154,7 @@ interface DisabledPiFlagContext {
 	remaining: readonly string[];
 }
 
-export interface PiFlagParseOptions {
+interface PiFlagParseOptions {
 	preserveDisabledFlag?: (context: DisabledPiFlagContext) => boolean;
 }
 

@@ -93,7 +93,7 @@ export function renderSkillsList(
  * `cosmonauts export`, then discover every skill it can see — domain skill
  * dirs plus user-configured `skillPaths`.
  */
-export async function discoverAllRuntimeSkills(
+async function discoverAllRuntimeSkills(
 	options: SkillsProgramOptions,
 	projectRoot = process.cwd(),
 ): Promise<DiscoveredSkill[]> {

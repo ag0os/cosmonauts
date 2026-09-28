@@ -29,7 +29,7 @@ interface TaskCreateCliOptions {
  * Field names mirror the on-disk Task representation (`labels`, `dependencies`)
  * rather than the CLI flag aliases (`-l`, `--depends-on`).
  */
-export interface TaskBatchRow {
+interface TaskBatchRow {
 	title?: unknown;
 	description?: unknown;
 	priority?: unknown;

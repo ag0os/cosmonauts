@@ -39,13 +39,13 @@ const PROPOSALS_RESOURCE = join("memory", "agent", "proposals");
 const REVIEW_INDEX_RESOURCE = join(PROPOSALS_RESOURCE, "backfill-review.json");
 const QUALIFIED_DISTILLER_ID = "coding/distiller";
 
-export interface BackfillConfigIO {
+interface BackfillConfigIO {
 	read(path: string): Promise<Buffer>;
 	writeAtomic(path: string, bytes: Buffer): Promise<void>;
 	remove(path: string): Promise<void>;
 }
 
-export interface KnowledgeSurfaceBackfillOptions {
+interface KnowledgeSurfaceBackfillOptions {
 	readonly projectRoot: string;
 	readonly distillSlug: (
 		slug: string,
@@ -56,20 +56,20 @@ export interface KnowledgeSurfaceBackfillOptions {
 	readonly configIO?: BackfillConfigIO;
 }
 
-export interface BackfillSourceInput {
+interface BackfillSourceInput {
 	readonly planSlug: string;
 	readonly path: string;
 	readonly sha256: string;
 	readonly verified: boolean;
 }
 
-export interface InspectedKnowledgeSurfaceBackfill {
+interface InspectedKnowledgeSurfaceBackfill {
 	readonly missingSlugs: readonly string[];
 	readonly sourceInputs: readonly BackfillSourceInput[];
 	readonly scanCostVerdict: string;
 }
 
-export interface KnowledgeSurfaceBackfillResult {
+interface KnowledgeSurfaceBackfillResult {
 	readonly reviewIndexPath: string;
 	readonly missingSlugs: readonly string[];
 	readonly proposalCount: number;
@@ -116,7 +116,7 @@ interface BackfillSnapshotFile {
 	readonly bytes: string;
 }
 
-export interface BackfillSnapshot {
+interface BackfillSnapshot {
 	readonly configPath: string;
 	readonly sha256: string;
 	readonly configBytes: Buffer;

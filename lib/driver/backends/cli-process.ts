@@ -12,13 +12,13 @@ declare const Bun: BunRuntime;
  */
 const CAN_REAP_PROCESS_GROUP = process.platform !== "win32";
 
-export interface CliBackendProcessOptions {
+interface CliBackendProcessOptions {
 	readonly argv: readonly string[];
 	readonly invocation: BackendInvocation;
 	readonly backendName: string;
 }
 
-export interface CliBackendProcessResult {
+interface CliBackendProcessResult {
 	readonly exitCode: number;
 	readonly stdout: string;
 	readonly processMetrics?: {

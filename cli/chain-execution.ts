@@ -14,7 +14,7 @@ import { sessionsDirForPlan } from "../lib/sessions/session-store.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import type { CliRuntimeOptions } from "./runtime-bootstrap.ts";
 
-export interface ChainExecutionOptions extends CliRuntimeOptions {
+interface ChainExecutionOptions extends CliRuntimeOptions {
 	prompt?: string;
 }
 

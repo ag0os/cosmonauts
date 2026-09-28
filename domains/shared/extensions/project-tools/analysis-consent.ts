@@ -18,7 +18,7 @@ interface AnalysisExecutionConsentState {
 	>;
 }
 
-export interface AnalysisExecutionAuthorization {
+interface AnalysisExecutionAuthorization {
 	readonly canonicalProjectRoot: string;
 	readonly consented: boolean;
 }

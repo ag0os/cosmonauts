@@ -29,7 +29,7 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 
 const DEFAULT_PROMPT = "Execute your assigned role.";
 
-export interface StagePromptOptions {
+interface StagePromptOptions {
 	completionLabel?: string;
 	purpose?: StagePromptPurpose;
 }
@@ -154,7 +154,7 @@ function isReviewerRole(role: string): boolean {
 	return role === "reviewer" || role.endsWith("-reviewer");
 }
 
-export interface PlanSlugOptions {
+interface PlanSlugOptions {
 	completionLabel?: string;
 	planSlug?: string;
 }

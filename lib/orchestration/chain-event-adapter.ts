@@ -60,13 +60,13 @@ export interface ChainPlanReviewBlockActivityDetails {
 	block: ReviewRoundBlock;
 }
 
-export interface DurableChainEventAdapterOptions {
+interface DurableChainEventAdapterOptions {
 	runId: string;
 	steps: readonly ChainCompilerStepMetadata[];
 	events: readonly StoredOrchestrationEvent[];
 }
 
-export interface DurableChainEventAdapterResult {
+interface DurableChainEventAdapterResult {
 	events: ChainEvent[];
 	diagnostics: RuntimeDiagnostic[];
 }

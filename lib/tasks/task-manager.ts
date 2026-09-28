@@ -55,7 +55,7 @@ const TASK_STATUS_OUTCOMES = {
 	Cancelled: "cancelled",
 } as const satisfies Record<TaskStatus, string>;
 
-export interface TaskManagerEpisodeContext {
+interface TaskManagerEpisodeContext {
 	readonly episodeSource: string;
 	readonly reportEpisodeWarning?: EpisodeWarningReporter;
 }
@@ -65,7 +65,7 @@ interface TaskUpdateExecution {
 	readonly previousStatus?: TaskStatus;
 }
 
-export interface TaskDependencyStatusSnapshot {
+interface TaskDependencyStatusSnapshot {
 	readonly tasks: readonly Task[];
 	readonly statuses: ReadonlyMap<string, TaskStatus>;
 }

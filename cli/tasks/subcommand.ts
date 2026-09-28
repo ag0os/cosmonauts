@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { scaffoldMissions } from "../scaffold/commands/missions.ts";
 import { registerCreateCommand } from "./commands/create.ts";
 import { registerDeleteCommand } from "./commands/delete.ts";
-import { registerEditCommand } from "./commands/edit.ts";
+import { registerTaskEditCommand } from "./commands/edit.ts";
 import { registerListCommand } from "./commands/list.ts";
 import { registerSearchCommand } from "./commands/search.ts";
 import { registerViewCommand } from "./commands/view.ts";
@@ -23,7 +23,7 @@ export function createTaskProgram(): Command {
 	registerCreateCommand(program);
 	registerListCommand(program);
 	registerViewCommand(program);
-	registerEditCommand(program);
+	registerTaskEditCommand(program);
 	registerDeleteCommand(program);
 	registerSearchCommand(program);
 

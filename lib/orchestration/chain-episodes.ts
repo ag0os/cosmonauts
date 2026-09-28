@@ -3,13 +3,9 @@ import { recordEpisode } from "../memory/episode.ts";
 import { getFirstExecutableStages } from "./chain-steps.ts";
 import type { ChainConfig, ChainResult } from "./types.ts";
 
-export type ChainEpisodeOutcome =
-	| "started"
-	| "succeeded"
-	| "failed"
-	| "aborted";
+type ChainEpisodeOutcome = "started" | "succeeded" | "failed" | "aborted";
 
-export interface ChainEpisodeLifecycle {
+interface ChainEpisodeLifecycle {
 	readonly projectRoot: string;
 	readonly source: string;
 	readonly subjectId: string;

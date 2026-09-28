@@ -21,6 +21,7 @@ import type {
 } from "./backends/types.ts";
 import { DRIVE_PARTIAL_CONTINUE_ARTIFACT_KIND } from "./drive-finalization.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
+import { formatPartialReport } from "./report-format.ts";
 import { parseReport } from "./report-parser.ts";
 import {
 	buildContradictionNote,
@@ -30,7 +31,6 @@ import {
 	deriveOutcome,
 	findContradictedPath,
 	type PostVerifyResult,
-	partialReason,
 	type RunOneTaskCtx,
 	retryOnContradictedBlockEnabled,
 } from "./run-one-task.ts";
@@ -46,7 +46,7 @@ import {
 	resolveStateCommitPolicy,
 } from "./types.ts";
 
-export interface DriveSchedulerBackendContext {
+interface DriveSchedulerBackendContext {
 	spec: DriverRunSpec;
 	taskManager: TaskManager;
 	backend: Backend;
@@ -320,7 +320,7 @@ async function runDriveTaskAttempt(
 	}
 
 	if (effectiveOutcome === "partial") {
-		const reason = partialReason(effectiveReport);
+		const reason = formatPartialReport(effectiveReport);
 		return {
 			kind: "block-candidate",
 			reason,

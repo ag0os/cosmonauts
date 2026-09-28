@@ -9,7 +9,7 @@ import type {
 	MaterializedAssetKind,
 } from "./types.ts";
 
-export interface ResolveRegisteredHarnessAssetPathOptions {
+interface ResolveRegisteredHarnessAssetPathOptions {
 	readonly ownerRoot: string;
 	readonly targetId: HarnessTargetId;
 	readonly kind: MaterializedAssetKind;
@@ -114,15 +114,13 @@ type ImplementedRegistryEntry = Extract<
 export type HarnessPackageTargetLabel =
 	ImplementedRegistryEntry["packageCompatibility"]["serializedTarget"];
 
-export interface ResolveHarnessPackageDefinitionTargetOptions<
-	T extends object,
-> {
+interface ResolveHarnessPackageDefinitionTargetOptions<T extends object> {
 	readonly definitionId: string;
 	readonly targets: Readonly<Partial<Record<string, T>>>;
 	readonly target: string;
 }
 
-export interface ResolvedHarnessPackageDefinitionTarget<T extends object> {
+interface ResolvedHarnessPackageDefinitionTarget<T extends object> {
 	readonly targetId: ImplementedHarnessTargetId;
 	readonly definitionKey: string;
 	readonly serializedTarget: HarnessPackageCompatibility["serializedTarget"];

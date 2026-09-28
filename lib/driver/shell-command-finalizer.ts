@@ -30,7 +30,7 @@ import { writePendingFinalization } from "./run-state.ts";
 import type { DriverRunSpec, EventSink } from "./types.ts";
 import { resolveStateCommitPolicy } from "./types.ts";
 
-export const DRIVE_SHELL_COMMAND_CAPABILITIES: BackendCapabilities = {
+const DRIVE_SHELL_COMMAND_CAPABILITIES: BackendCapabilities = {
 	canResume: false,
 	canCancel: false,
 	canCommit: true,
@@ -40,7 +40,7 @@ export const DRIVE_SHELL_COMMAND_CAPABILITIES: BackendCapabilities = {
 
 const SHELL_COMMAND_BACKEND_SPEC: BackendSpec = { name: "shell-command" };
 
-export interface DriveShellCommandBackendContext {
+interface DriveShellCommandBackendContext {
 	spec: DriverRunSpec;
 	taskManager: TaskManager;
 	eventSink: EventSink;

@@ -96,7 +96,7 @@ function formatChange(change: FieldChange): string {
 	}
 }
 
-export function registerEditCommand(program: Command): void {
+export function registerTaskEditCommand(program: Command): void {
 	program
 		.command("edit")
 		.alias("update")

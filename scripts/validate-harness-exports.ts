@@ -98,14 +98,13 @@ export const PROJECT_EXPORT_ROWS = [
 	},
 ] as const;
 
-export type RepositoryExportAssetId =
-	(typeof PROJECT_EXPORT_ROWS)[number]["assetId"];
-export type RepositoryEvidencePhase =
+type RepositoryExportAssetId = (typeof PROJECT_EXPORT_ROWS)[number]["assetId"];
+type RepositoryEvidencePhase =
 	| "authorized"
 	| "installed"
 	| "checked"
 	| "complete";
-export type RepositoryValidationStop =
+type RepositoryValidationStop =
 	| "prepared"
 	| "installing"
 	| "rolling-back"
@@ -114,7 +113,7 @@ export type RepositoryValidationStop =
 	| "first-backup-deletion"
 	| "backup-cleanup";
 
-export interface RepositorySelectedCheckRow {
+interface RepositorySelectedCheckRow {
 	readonly asset: string;
 	readonly targetPath: string;
 	readonly before: string;
@@ -136,7 +135,7 @@ export type RepositorySelectedCheck = (options: {
 	readonly rows: readonly RepositorySelectedCheckRow[];
 }>;
 
-export interface RepositoryMigrationProof {
+interface RepositoryMigrationProof {
 	readonly row: (typeof PROJECT_EXPORT_ROWS)[number];
 	readonly authorization: LegacyMigrationAuthorization;
 	readonly historicalDigest: string;
@@ -145,7 +144,7 @@ export interface RepositoryMigrationProof {
 	readonly nodeShape: readonly LegacyCopiedNodeShape[];
 }
 
-export interface RepositoryPreparedRow {
+interface RepositoryPreparedRow {
 	readonly name: string;
 	readonly assetId: RepositoryExportAssetId;
 	readonly sourceRelativePath: string;
@@ -164,7 +163,7 @@ export interface RepositoryPreparedRow {
 	readonly writeStage: (stagePath: string) => Promise<void>;
 }
 
-export interface RepositoryEvidenceRow {
+interface RepositoryEvidenceRow {
 	readonly authorizationKind: "legacy-copied-target";
 	readonly consumption: "one-time";
 	readonly revision: string;
@@ -188,7 +187,7 @@ export interface RepositoryEvidenceRow {
 	readonly timestamp: string;
 }
 
-export interface RepositoryBackupCleanupIntent {
+interface RepositoryBackupCleanupIntent {
 	readonly schemaVersion: 1;
 	readonly transactionId: string;
 	readonly memberIndex: number;
@@ -199,13 +198,13 @@ export interface RepositoryBackupCleanupIntent {
 	};
 }
 
-export interface RepositoryEvidenceReceipt {
+interface RepositoryEvidenceReceipt {
 	readonly transactionId: string;
 	readonly evidencePath: string;
 	readonly evidenceDigest: string;
 }
 
-export interface RepositoryExportValidationEvidence {
+interface RepositoryExportValidationEvidence {
 	readonly schemaVersion: 1;
 	readonly kind: "repository-harness-export-validation";
 	readonly phase: RepositoryEvidencePhase;
@@ -235,7 +234,7 @@ export interface RepositoryExportValidationEvidence {
 	readonly externalBundle?: ExternalBundleEvidence;
 }
 
-export interface ExternalBundleEvidence {
+interface ExternalBundleEvidence {
 	readonly authorizationKind: "legacy-copied-target";
 	readonly consumption: "one-time";
 	readonly phase: RepositoryEvidencePhase;
@@ -267,7 +266,7 @@ export interface ExternalBundleEvidence {
 	readonly completedAt?: string;
 }
 
-export interface ExternalBundleMigrationProof {
+interface ExternalBundleMigrationProof {
 	readonly asset: HarnessAsset;
 	readonly target: ResolvedHarnessAssetTarget;
 	readonly authorization: LegacyMigrationAuthorization;
@@ -302,7 +301,7 @@ interface ProtectedAssetEvidence {
 	readonly snapshot: HarnessNodeSnapshot;
 }
 
-export interface RunRepositoryExportValidationOptions {
+interface RunRepositoryExportValidationOptions {
 	readonly projectRoot: string;
 	readonly homeRoot?: string;
 	readonly evidencePath?: string;
@@ -316,7 +315,7 @@ export interface RunRepositoryExportValidationOptions {
 	>;
 }
 
-export interface RunPersonalBundleValidationOptions {
+interface RunPersonalBundleValidationOptions {
 	readonly projectRoot: string;
 	readonly homeRoot?: string;
 	readonly evidencePath?: string;

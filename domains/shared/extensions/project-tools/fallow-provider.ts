@@ -59,7 +59,7 @@ import {
 
 const FALLOW_PROVIDER_ID = "fallow";
 export const FALLOW_VALIDATED_ENGINE_VERSION = "2.54.2";
-export const FALLOW_MAX_CONCURRENT_ANALYSES = 1;
+const FALLOW_MAX_CONCURRENT_ANALYSES = 1;
 
 const FALLOW_VALIDATED_SCHEMA_VERSIONS = {
 	"dead-code": [4],
@@ -435,7 +435,7 @@ export async function resolveInstalledFallowExecutable(
 		: null;
 }
 
-export async function detectFallowSignal(
+async function detectFallowSignal(
 	projectRoot: string,
 ): Promise<FallowDetectionSignal | null> {
 	for (const signal of FALLOW_CANONICAL_SIGNALS) {
@@ -2189,6 +2189,7 @@ export function assertFallowFindingsCovered(
 }
 
 function reconcileVerdictEvidence(
+	capability: AnalysisRequest["capability"],
 	outcome: CompletedFallowOutcome,
 	payload: Readonly<Record<string, unknown>>,
 	normalized: NormalizedAnalysisFindings,
@@ -2211,7 +2212,14 @@ function reconcileVerdictEvidence(
 		}
 	}
 	const exitVerdict = outcome.code === 0 ? "pass" : "fail";
-	if (exitVerdict !== findingsVerdict) {
+	const duplicationFindingsWithSuccessfulExit =
+		capability === "duplication" &&
+		outcome.code === 0 &&
+		findingsVerdict === "fail";
+	if (
+		exitVerdict !== findingsVerdict &&
+		!duplicationFindingsWithSuccessfulExit
+	) {
 		throw new Error(
 			`provider exit ${outcome.code} contradicts ${normalized.findings.length} normalized findings`,
 		);
@@ -2571,7 +2579,12 @@ function normalizedCapabilityResult(
 						normalizeComplexityFindings(envelope.record, "fallow:complexity"),
 					)
 				: normalized;
-		reconcileVerdictEvidence(outcome, envelope.record, completeEvidence);
+		reconcileVerdictEvidence(
+			request.capability,
+			outcome,
+			envelope.record,
+			completeEvidence,
+		);
 		if (request.capability === "complexity") {
 			return {
 				kind: "findings",

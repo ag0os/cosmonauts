@@ -5,7 +5,6 @@ export type HarnessTargetId = "claude" | "codex" | "open-code";
 export type ImplementedHarnessTargetId = "claude" | "codex";
 
 export type HarnessScope = "project" | "personal";
-export type HarnessAssetKind = "skill" | "command" | "agent-package";
 export type MaterializedAssetKind = "skill" | "command";
 export type SyncMode = "copy" | "link";
 export type HarnessLinkShape = "directory" | "flat-skill" | "generated-wrapper";
@@ -27,7 +26,7 @@ export type OwnerIdentity =
 			readonly authorityId: "cosmonauts/core";
 	  };
 
-export type AssetOwnership =
+type AssetOwnership =
 	| { readonly kind: "project" }
 	| { readonly kind: "authority"; readonly authorityId: "cosmonauts/core" };
 
@@ -95,13 +94,13 @@ export interface SourceHealthRow {
 	readonly issues: readonly SourceHealthIssue[];
 }
 
-export interface ChainInventoryRow {
+interface ChainInventoryRow {
 	readonly name: string;
 	readonly description: string;
 	readonly expression: string;
 }
 
-export interface SkillInventoryRow {
+interface SkillInventoryRow {
 	readonly name: string;
 	readonly domain: string;
 	readonly description: string;
@@ -122,7 +121,7 @@ export interface RuntimeInventorySnapshot {
 	readonly paths: readonly HarnessPathRow[];
 }
 
-export type HarnessTransform = "identity" | "claude-command";
+type HarnessTransform = "identity" | "claude-command";
 
 export interface HarnessAssetAdapter {
 	readonly kind: MaterializedAssetKind;
@@ -147,7 +146,7 @@ export interface ImplementedHarnessTarget {
 	readonly packageCompatibility: HarnessPackageCompatibility;
 }
 
-export interface DeclaredHarnessTarget {
+interface DeclaredHarnessTarget {
 	readonly id: Exclude<HarnessTargetId, ImplementedHarnessTargetId>;
 	readonly status: "declared";
 	readonly adapters: readonly [];
@@ -191,7 +190,7 @@ export interface SyncRequest {
 	};
 }
 
-export interface ProvenanceBase {
+interface ProvenanceBase {
 	readonly schemaVersion: 1;
 	readonly owner: OwnerIdentity;
 	readonly assetId: string;

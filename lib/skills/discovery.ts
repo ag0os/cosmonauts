@@ -48,7 +48,7 @@ interface DiscoverSkillsOptions {
 	readonly domainContext?: string;
 }
 
-export interface StrictSkillDiscoveryResult {
+interface StrictSkillDiscoveryResult {
 	readonly candidates: readonly SkillCandidate[];
 	readonly sourceHealth: readonly SourceHealthRow[];
 }

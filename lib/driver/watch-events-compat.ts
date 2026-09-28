@@ -9,14 +9,14 @@ import type { DriverEvent } from "./types.ts";
 
 export const WATCH_EVENTS_COMPAT_DEGRADED_MARKER = "compat-degraded.json";
 
-export interface WatchEventsCompatResult {
+interface WatchEventsCompatResult {
 	events: DriverEvent[];
 	cursor: number;
 	source: "normalized" | "legacy_fallback";
 	diagnostics: RuntimeDiagnostic[];
 }
 
-export interface WatchEventsCompatOptions {
+interface WatchEventsCompatOptions {
 	rootDir: string;
 	scope: string;
 	runId: string;

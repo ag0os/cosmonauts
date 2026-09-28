@@ -12,7 +12,7 @@ import {
 	type ExtraSkillSource,
 } from "./skills/discovery.ts";
 
-export interface ComposeHarnessRuntimeInventoryOptions {
+interface ComposeHarnessRuntimeInventoryOptions {
 	readonly projectRoot: string;
 	readonly runtime: CosmonautsRuntime;
 }

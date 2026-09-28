@@ -58,11 +58,11 @@ export interface DriverEventBridgeOptions {
 	bridgeDriverDiagnostics?: boolean;
 }
 
-export type DurableDriverEventSinkMode =
+type DurableDriverEventSinkMode =
 	| "legacy-loop-projector"
 	| "graph-activity-only";
 
-export interface DurableDriverEventSinkOptions {
+interface DurableDriverEventSinkOptions {
 	rootDir: string;
 	scope: string;
 	runId: string;

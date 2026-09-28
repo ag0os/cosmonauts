@@ -36,7 +36,7 @@ export interface CliRuntimeContext {
 	runtime: CosmonautsRuntime;
 }
 
-export interface CliRuntimeOptionParseResult {
+interface CliRuntimeOptionParseResult {
 	options: CliRuntimeOptions;
 	remaining: string[];
 	warnings: PiFlagParseResult["warnings"];

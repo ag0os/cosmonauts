@@ -14,10 +14,7 @@ import { withEntityFileLock } from "../entity-file-lock.ts";
 export const TASK_CREATE_LOCK_WAIT_TIMEOUT_MS = 10_000;
 
 export type { EntityFileLockOptions } from "../entity-file-lock.ts";
-export {
-	EntityFileLockTimeoutError,
-	withEntityFileLock,
-} from "../entity-file-lock.ts";
+export { withEntityFileLock } from "../entity-file-lock.ts";
 
 /**
  * Path to the task-create lock file. Lives under `.cosmonauts/` (alongside

@@ -8,6 +8,7 @@ import {
 	transitionDriveTaskStatus,
 } from "./drive-finalization.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
+import { formatPartialReport } from "./report-format.ts";
 import { parseReport } from "./report-parser.ts";
 import {
 	type ContradictedBlockAnnotation,
@@ -256,7 +257,7 @@ async function runTaskAttempt(
 
 	const reason =
 		effectiveOutcome === "partial"
-			? partialReason(effectiveReport)
+			? formatPartialReport(effectiveReport)
 			: failureReason;
 	return {
 		kind: "block-candidate",
@@ -326,7 +327,7 @@ export function retryOnContradictedBlockEnabled(spec: DriverRunSpec): boolean {
 	return spec.retryOnContradictedBlock ?? true;
 }
 
-export interface ContradictedPath {
+interface ContradictedPath {
 	token: string;
 	absolutePath: string;
 	isDirectory: boolean;
@@ -822,26 +823,6 @@ export function deriveFailureReason(
 	return report.outcome === "unknown"
 		? "report outcome unknown"
 		: "task failed";
-}
-
-export function partialReason(report: ParsedReport): string {
-	if (report.outcome === "partial") {
-		const progress = progressText(report);
-		const notes = report.notes ? `: ${report.notes}` : "";
-		return `partial${progress}${notes}`;
-	}
-	return "partial";
-}
-
-function progressText(report: Report): string {
-	if (!report.progress) {
-		return "";
-	}
-
-	const remaining = report.progress.remaining
-		? `; remaining: ${report.progress.remaining}`
-		: "";
-	return `: phase ${report.progress.phase}/${report.progress.of}${remaining}`;
 }
 
 async function runShellCommand(
