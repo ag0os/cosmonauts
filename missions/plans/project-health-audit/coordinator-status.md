@@ -131,8 +131,8 @@ Nothing.
 
 ## HEAD
 
-`feature/project-health-audit` at `7158284` (plan + spec + roadmap removal),
-one commit ahead of local `main` `64dca3c`. Worktree clean.
+`feature/project-health-audit` at `c03c7d9` (revised plan after review), five
+commits ahead of local `main` `64dca3c`. Worktree clean. Context use ~20%.
 
 ## Successor handoff
 
