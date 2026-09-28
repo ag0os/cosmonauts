@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-773
 createdAt: '2026-09-28T15:24:13.239Z'
-updatedAt: '2026-09-28T20:28:57.261Z'
+updatedAt: '2026-09-28T20:42:45.855Z'
 ---
 
 ## Description
@@ -30,6 +30,7 @@ Refactor all seven harness and validation critical functions after characterizat
 <!-- AC:END -->
 
 ## Implementation Notes
+
 
 ### Standing coordinator note (2026-09-28, applies to every attempt)
 
@@ -58,3 +59,20 @@ Rules for this attempt (plan D-024 already allows the diagnostic path):
 2. For every other confirmation or iteration use the direct diagnostic, recorded verbatim as diagnosis: `bunx fallow health --complexity --format json --quiet --no-cache | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps([f for f in d["findings"] if f["path"] in ("lib/harness-adapters/provenance.ts","lib/harness-adapters/sync.ts","scripts/validate-harness-exports.ts")], indent=1))'` (adjust the path list to your owned files).
 3. Do not re-read the whole task file or re-run `analysis_status` more than once; your prompt already carries the task.
 4. Freeze base for your in-session check is `C = 48ecb5c5582f40af971082995ecd6fafa0014086` (the TASK-773 characterization commit); existing tests stay unmodified; only the stage gate, D-015 output, AC ticks, and `outcome: success` close the task.
+
+### Worker attempt-2 log (run-94fe8d62, restored by the coordinator from the transcript)
+
+Attempt 2 pre-edit complexity evidence (literal HEAD 18bc6cf3b9ad0fc6c3135cc3cab377da701918ea; tools run project-scope, one metric per call): cyclomatic state=findings verdict=fail count=222; cognitive state=findings verdict=fail count=222; CRAP state=findings verdict=fail count=222. Owned rows (cyclomatic/cognitive/CRAP): isManifestEntry absent after inherited uncommitted decomposition (historical 46/26/503.1); runRepositoryExportValidation 45/58/51.8; runPersonalBundleValidation 44/56/50.5; validateCommandEvidenceIdentity 29/8/210.7; syncHarnessAssetCore 27/33/184.5; prepareClaudeCommandPair 23/27/137.3; recoverOwnerRootJournal 23/29/137.3. NOTE: task_edit replaces implementation notes; final evidence record must restore the prior HEAD notes plus this Attempt 2 log before completion.
+
+
+### Coordinator note before attempt 3 (2026-09-28): progress state and what remains
+
+Attempt 2 (`run-94fe8d62`) did most of the refactor and then ended its session with an empty final message (Drive saw "worker completed", no ACs ticked); the coordinator stopped the run before postflight could hand a note-less retry back. The worktree holds attempt 2's edits, uncommitted: `lib/harness-adapters/provenance.ts`, `lib/harness-adapters/sync.ts`, `scripts/validate-harness-exports.ts` (about 1,015 insertions / 587 deletions). Keep them; they are yours.
+
+Measured state of the worktree by the coordinator (direct diagnostic `bunx fallow health --complexity --format json --quiet --no-cache`, filtered to the three owned files; `bun run typecheck` exit 0):
+- Below every threshold now: `isManifestEntry`, `validateCommandEvidenceIdentity`, `syncHarnessAssetCore`, `prepareClaudeCommandPair`, `recoverOwnerRootJournal`, `runRepositoryExportValidation` (none of them appears in the findings any more).
+- Still **critical**: `runPersonalBundleValidation` (`scripts/validate-harness-exports.ts:889`, cyclomatic 44, cognitive 56, CRAP 50.5, coverage `high`) — the one owned function left to decompose.
+- New helpers you introduced that currently sit at `high` (all in `sync.ts`): `applySyncPlanInTransaction` (31/34), `runClaudeCommandPairBootstrap` (27/29), `classifyInventoryRow`, `desiredDifference`, `isOwnerRootJournal` (cyclomatic 14-15, CRAP > 30 because of static coverage). Check the task's helper ceiling in the ACs / Design §4: helpers must land below the configured thresholds where the AC says so; if a `high` helper is acceptable under the AC, say so in the notes with its metrics, otherwise split it.
+- `bun run lint` fails only on formatting of the three edited files: run `bunx biome format --write lib/harness-adapters/provenance.ts lib/harness-adapters/sync.ts scripts/validate-harness-exports.ts` (or `bun run lint:fix`) before the stage gate.
+
+Then: stage gate (five commands), D-015 in-session check against `C = 48ecb5c5582f40af971082995ecd6fafa0014086` (expect no M/D/R under `tests/`, existing suites unmodified), the end-of-task `analysis_complexity` runs (one metric per turn, at most once each; otherwise the diagnostic), notes via `task_edit` (it replaces: paste this whole notes body back plus your additions), tick every AC, `outcome: success`. The context-budget rules of the attempt-2 note still apply.

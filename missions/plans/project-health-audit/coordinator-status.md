@@ -57,11 +57,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-- Slice 7 / TASK-774 attempt 2: attempt 1 (`run-54bf130a`) looped on compaction
-  (three ~100 KB `analysis_complexity` results per turn) and was killed at 20:27Z
-  with a partial `provenance.ts` refactor left in the worktree; attempt 2 carries a
-  context-budget rule (one metric per turn, diagnostic for iteration).
-  `S` = `493f607`, `C` = `48ecb5c`.
+- Slice 7 / TASK-774 attempt 3: attempt 2 (`run-94fe8d62`) refactored six of the
+  seven owned criticals (only `runPersonalBundleValidation` remains critical;
+  five new `sync.ts` helpers sit at `high`) then ended with an empty report and
+  no ACs ticked; killed before the note-less in-run retry. Notes restored with
+  the measured state. `S` = `18bc6cf`, `C` = `48ecb5c`.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
