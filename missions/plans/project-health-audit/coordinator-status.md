@@ -103,7 +103,54 @@ Nothing (TASK-770 was blocked on Q-008 from 18:09Z until the ruling).
 TASK-768 Drive commit `8b366a0` and state commit `8a768c7`), seventeen commits
 ahead of local `main` `64dca3c`. Worktree clean at launch of slice 2.
 
-## Successor handoff — implement
+## Successor handoff — continue implementation (kept current by pha-implementer)
+
+The loop that has closed slices 1-5 (repeat per ready task, one slice per run,
+dependency order from `cosmonauts task list --label plan:project-health-audit --ready`):
+
+1. Worktree must be clean and HEAD = last record-only commit. Launch detached
+   (never inside a tool timeout; macOS has no `setsid`):
+   `nohup bash -c 'cosmonauts -p -a cosmo "Call run_driver with planSlug '"'"'project-health-audit'"'"', taskIds ['"'"'TASK-NNN'"'"'], backend '"'"'cosmonauts-subagent'"'"', mode '"'"'inline'"'"', branch '"'"'feature/project-health-audit'"'"', commitPolicy '"'"'driver-commits'"'"', postflightCommands ['"'"'bun run test'"'"','"'"'bun run lint'"'"','"'"'bun run typecheck'"'"','"'"'bun run check:reachability'"'"','"'"'bun run check:suppressions -- --base main'"'"'], taskTimeoutMs 5400000. Then call run_status until terminal and report the runId, eventLogPath, and final status. Do nothing else."' > <log> 2>&1 < /dev/null & disown`
+   The runId/pid land in `missions/sessions/project-health-audit/driver.lock`;
+   events in `missions/sessions/project-health-audit/runs/<runId>/events.jsonl`.
+   Poll the events file every 30 s for `task_done|task_blocked|run_completed|run_aborted`
+   and the pid with `kill -0`.
+2. On `run_completed`: freeze check with base `S` (= the record-only commit the
+   slice started from; for refactor slices also `C` = the characterization
+   task's Drive commit): `git diff --name-status --diff-filter=MDR <base> <driveCommit> -- tests/`,
+   `git status --porcelain -- tests/`, `git diff -U0 <base> <driveCommit> -- tests/ | grep -E '^\+.*\.(skip|only|todo)\('`;
+   confirm the Drive commit's parent; confirm five `verify` `passed` events;
+   confirm `analysis_*` tool use in the events; for refactor slices confirm no
+   hunk lands inside an uncharacterized critical function. Append a
+   `### Coordinator D-015 verdict` section to the task notes
+   (`cosmonauts task edit TASK-NNN --append-notes`), update this file, commit
+   with explicit paths (`missions/plans/project-health-audit/coordinator-status.md`
+   plus the task file(s)); never `git add -A`.
+3. On `task_blocked`: Drive has overwritten the task notes with its reason.
+   Recover the worker's notes/report from the newest
+   `missions/sessions/project-health-audit/worker-*.jsonl` (`task_edit`
+   `implementationNotes` arguments and the last assistant text), write them
+   back with `--notes`, append a `### Coordinator note before attempt N`
+   telling the worker what remains, set `--status todo`, relaunch. Known
+   block causes so far: unchecked ACs (standing note now on every task),
+   a Q-002 hard stop (escalate to Shepherd), the `warn` audit self-block
+   (D-023; addendum on every task), a postflight flake (`run-step.test.ts`;
+   rerun the suite yourself before believing it).
+4. Escalate only: Q-002 hard stop, refactor blocked on a seam, `escalated`
+   dead-code row, unextractable clone family, undeclared `tests/` change,
+   broken launch path.
+5. After TASK-783: `/implement-plan` Phases 2-4 (gates, QM with commit-first and
+   local-`main` reconciliation, `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only < /dev/null`
+   framed as correctness/liveness, improvement pass using the observations
+   below, final report). No push/merge/PR. Closeout human items: gate-owned
+   files (R-013) incl. the `fallow-provider.ts` `warn` verdict gap (D-023).
+
+Scratch helpers (session-local, recreate if missing): `freeze-check.sh <base> <commit>`
+prints steps 2's commands plus the non-test path list.
+
+### Original handoff (pha-coordinator → implementer), superseded where the above differs
+
+### Successor handoff — implement (original)
 
 Start with `/implement-plan project-health-audit`, but the procedure's Phase 1
 launch line does not apply: human ruling Q-007 (a) requires the
