@@ -57,11 +57,7 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-- Slice 7 / TASK-774 attempt 3: attempt 2 (`run-94fe8d62`) refactored six of the
-  seven owned criticals (only `runPersonalBundleValidation` remains critical;
-  five new `sync.ts` helpers sit at `high`) then ended with an empty report and
-  no ACs ticked; killed before the note-less in-run retry. Notes restored with
-  the measured state. `S` = `18bc6cf`, `C` = `48ecb5c`.
+Nothing. TASK-774 attempt 3 could not start (see Blocked).
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -108,7 +104,20 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Blocked
 
-Nothing (TASK-770 was blocked on Q-008 from 18:09Z until the ruling).
+- **Codex usage limit reached (20:45Z).** The print-mode cosmo launcher and the
+  `coding/worker` role both pin `openai-codex/gpt-5.6-sol`; the relaunch of
+  TASK-774 attempt 3 exited with `Codex error: The usage limit has been reached`
+  before any run started. Worktree holds attempt 2's refactor (three owned
+  files, uncommitted; typecheck green, lint = formatting only, one owned
+  function still critical). No run is live; `driver.lock` is stale (dead pid).
+  A direct `codex exec` probe says: "You hit your spend cap set by the owner
+  of your workspace" — a workspace spend cap, not a rolling window, so it
+  does not reset on its own. Options for the human: raise the cap, or switch
+  the `coding/worker` and `main/cosmo` model pins (`bundled/coding/agents/worker.ts:13`,
+  `domains/main/agents/cosmo.ts:8`, both `openai-codex/gpt-5.6-sol`; auth
+  exists for `anthropic` and `openrouter`; Q-007 (a) only *prefers* GPT; no
+  per-run model override exists in `run_driver` or the subagent backend).
+  Phase 3 (`codex exec` review) is blocked by the same cap.
 
 - History: slice 3 / TASK-770 attempt 1 (run `run-d744cc20`) blocked on Q-008. Worker
   evidence restored into the task notes. Worktree holds its partial extraction
