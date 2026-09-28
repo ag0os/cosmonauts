@@ -21,6 +21,10 @@ Nothing. All rulings recorded: Q-001..003 (round 1) in `spec.md`; Q-004..007
   failure; `run-step.test.ts` episode-capture flake under full-suite load.
   Four worker attempts were needed (unchecked ACs; Biome vs canonical JSON,
   D-021; flake).
+- **Slice 2 / TASK-769 Done** (17:36Z): Drive commit `d17a497`, state `df9d39e8`.
+  Two new characterization files (27 cases), nothing else changed; freeze
+  clean; five gates passed. Attempt 1 blocked on unchecked ACs (prompt-template
+  gap, observation 1).
 - Branch `feature/project-health-audit` off local `main` `64dca3c`; roadmap
   item removed; plan + spec created; Intent ratified.
 - `/spec-to-backlog` complete: planner→plan-reviewer chain (review-1, review-2,
@@ -37,7 +41,33 @@ Nothing. All rulings recorded: Q-001..003 (round 1) in `spec.md`; Q-004..007
 
 ## Running
 
-Nothing at the moment of this write; slice 2 (TASK-769) is launched next.
+- Slice 3 / TASK-770 (extract core runtime, CLI, domain, driver clones): launched
+  after the slice-2 record-only commit; slice-start `S` = that commit.
+
+## Improvement observations (for the Phase-4 pass; keep adding)
+
+1. `lib/driver/prompt-template.ts:136-158`: the "mark each acceptance criterion
+   before reporting" block is injected only for external backends; the
+   `cosmonauts-subagent` worker never sees it and Drive then blocks every task
+   with unchecked ACs (TASK-768 attempt 1, TASK-769 attempt 1). Workaround:
+   standing note in every task's Implementation Notes.
+2. `lib/driver/run-one-task.ts:800`: on `task_blocked` Drive sets
+   `implementationNotes` to the block reason, destroying the worker's notes.
+   Durable copy survives only in the run's `prompts/TASK-NNN.md` (from the
+   next run's prompt render) or the worker transcript.
+3. Drive retries the worker in-run after a postflight failure without an
+   event that names the retry (only a second `spawn_started`), and the retry
+   worker starts with the block reason as its notes.
+4. `bun run lint` includes untracked, `info/exclude`-ignored paths (Biome does
+   not read `.git/info/exclude`) and formats machine-canonical JSON under
+   `missions/reviews/`; D-019/D-021 config exclusions were needed.
+5. `tests/driver/run-step.test.ts` episode-capture flake under full-suite load
+   (`episode_capture_failed` diagnostic); passes in isolation.
+6. `run_driver` result does not expose `eventLogPath` (cosmo reported "not
+   exposed by the tool response").
+7. Launching Drive through a print-mode cosmo session works but the launcher
+   must be detached from the coordinator's tool timeout (`nohup … & disown`);
+   killing it mid-run leaves a stale `running` record and an In-Progress task.
 
 ## Blocked
 
@@ -45,9 +75,9 @@ Nothing.
 
 ## HEAD
 
-`feature/project-health-audit` at the record-only commit after `8a768c7`
-(TASK-768 Drive commit `8b366a0`), sixteen+ commits ahead of local `main`
-`64dca3c`.
+`feature/project-health-audit` at `a0b89e9` (record-only commit after the
+TASK-768 Drive commit `8b366a0` and state commit `8a768c7`), seventeen commits
+ahead of local `main` `64dca3c`. Worktree clean at launch of slice 2.
 
 ## Successor handoff — implement
 

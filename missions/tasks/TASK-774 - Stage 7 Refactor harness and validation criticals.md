@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-773
 createdAt: '2026-09-28T15:24:13.239Z'
-updatedAt: '2026-09-28T15:24:13.239Z'
+updatedAt: '2026-09-28T17:27:18.881Z'
 ---
 
 ## Description
@@ -27,3 +27,9 @@ Refactor all seven harness and validation critical functions after characterizat
 - [ ] #7 Stage gate: `bun run test`, `bun run lint`, `bun run typecheck`, `bun run check:reachability`, and `bun run check:suppressions -- --base main` all exit 0; project-scope cyclomatic, cognitive, and CRAP capabilities are re-run and recorded with all seven owned functions and every new helper below applicable thresholds.
 - [ ] #8 Every clone family that TASK-771 recorded as moved to this stage by the D-009 overlap check is extracted here, after the TASK-773 characterization commit. The stage gate then re-runs project-scope duplication with its D-012 diagnostic pair and shows each moved family absent. If no family moved, the task records "no moved families".
 <!-- AC:END -->
+
+## Implementation Notes
+
+### Standing coordinator note (2026-09-28, applies to every attempt)
+
+Drive commits this task only when **every** acceptance criterion is checked; an unchecked criterion ends the run `task_blocked` with nothing committed and Drive then overwrites these notes with its block reason. The in-process worker prompt does not say this, so: before your final report, (1) record your evidence (analysis_status output, traces, the D-015 in-session check verbatim against the slice-start commit, stage-gate exit codes and result lines) with `task_edit` `implementationNotes` (append, never drop earlier sections); (2) tick every satisfied criterion with `task_edit` `checkAc`; for a coordinator-verdict freeze criterion, plan D-020 applies: tick it once your in-session half is recorded and the coordinator appends the post-commit verdict; (3) report `outcome: success` only then. Leave source and test files uncommitted; the driver commits. Never run git operations on `missions/reviews/`; write record rows to the record files and copy them here.

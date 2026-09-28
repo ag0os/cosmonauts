@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-777
 createdAt: '2026-09-28T15:25:33.131Z'
-updatedAt: '2026-09-28T15:25:33.131Z'
+updatedAt: '2026-09-28T17:27:20.335Z'
 ---
 
 ## Description
@@ -26,3 +26,9 @@ Refactor skills/reachability criticals and extract the exporter clone family aft
 - [ ] #6 D-015 freeze check. The base is `C`, the Drive commit of characterization task TASK-777; the slice-start commit `S` is also recorded. Under driver-commits HEAD does not include the worker's edits, so the worker's in-session check compares the working tree with the base and records the base SHA and the exact outputs of `git diff --name-status --diff-filter=MDR C -- tests/`, `git status --porcelain -- tests/`, and `git diff -U0 C -- tests/ | grep -E '^\+.*\.(skip|only|todo)\('`. Allowed without a human stop: (a) newly added test files; (b) pre-declared mechanical reference updates in existing tests for a symbol this task renames or moves, where every changed hunk contains only that identifier change and no assertion, fixture, or expectation change, named in this task before editing and reviewed and recorded by the coordinator. Test additions belong in `C` only, so this task adds no test file. Anything else blocks for human review. The freeze verdict comes from the coordinator, not the worker: after Drive commits this task, the coordinator confirms the base (`S` is the parent of this task's Drive commit and `C` is TASK-777's Drive commit), re-runs the same diff commands from that base to this task's Drive commit, and records its output and both SHAs under `## Implementation Notes` beside the worker's. Finding citations go in this task's notes, not in a commit message. Any disagreement, wrong base, or undeclared modified/deleted/renamed test or added skip/only/todo leaves the task `blocked` and the next slice is not dispatched. Worker-recorded output alone never satisfies this AC. Rows are copied to `## Implementation Notes`; the worker performs no git operation on `missions/reviews/`, and the coordinator owns record-only custody.
 - [ ] #7 Stage gate: `bun run test`, `bun run lint`, `bun run typecheck`, `bun run check:reachability`, and `bun run check:suppressions -- --base main` all exit 0; cyclomatic/cognitive/CRAP and project-scope duplication with D-012 diagnostic pairing are re-run and recorded, with all four functions/helpers below ceilings and the exporter family absent. The post-edit surface duplication outcome is completed with `verdict: "fail"`; any other state is recorded as it is and fails this stage (Design §3).
 <!-- AC:END -->
+
+## Implementation Notes
+
+### Standing coordinator note (2026-09-28, applies to every attempt)
+
+Drive commits this task only when **every** acceptance criterion is checked; an unchecked criterion ends the run `task_blocked` with nothing committed and Drive then overwrites these notes with its block reason. The in-process worker prompt does not say this, so: before your final report, (1) record your evidence (analysis_status output, traces, the D-015 in-session check verbatim against the slice-start commit, stage-gate exit codes and result lines) with `task_edit` `implementationNotes` (append, never drop earlier sections); (2) tick every satisfied criterion with `task_edit` `checkAc`; for a coordinator-verdict freeze criterion, plan D-020 applies: tick it once your in-session half is recorded and the coordinator appends the post-commit verdict; (3) report `outcome: success` only then. Leave source and test files uncommitted; the driver commits. Never run git operations on `missions/reviews/`; write record rows to the record files and copy them here.

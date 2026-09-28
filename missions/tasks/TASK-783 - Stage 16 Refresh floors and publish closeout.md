@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-784
 createdAt: '2026-09-28T15:27:29.964Z'
-updatedAt: '2026-09-28T15:43:21.586Z'
+updatedAt: '2026-09-28T17:27:22.124Z'
 ---
 
 ## Description
@@ -29,3 +29,9 @@ Freeze the analyzed source commit, refresh all changed-scope floors, reproduce t
 - [ ] #8 The after snapshot and the same-commit reproduction record project-scope `duplication` through the surface as completed with `verdict: "fail"`, and the only groups left are the two ratified three-file families (D-012, Q-006 (a)). Any other surface state (failed, invalid-output, unbound, unsupported) blocks closeout and returns to TASK-768's reconciliation fix. The record marks AC-004 satisfied only when this completed run exists, and otherwise records `unmet: capability failed`.
 - [ ] #9 In Drive's TASK-783 commit, `docs/fallow-exceptions.md` no longer states the pre-audit floor counts or the `29fc0ce`/N-001 re-anchoring as current state. It states the refreshed dead-code, dupes, and health floor counts with the manifest provenance at `analyzedCommit`, those counts equal the committed `.fallow-baselines/*.json` contents, and it links `missions/reviews/project-health-audit.md` as the whole-project health record.
 <!-- AC:END -->
+
+## Implementation Notes
+
+### Standing coordinator note (2026-09-28, applies to every attempt)
+
+Drive commits this task only when **every** acceptance criterion is checked; an unchecked criterion ends the run `task_blocked` with nothing committed and Drive then overwrites these notes with its block reason. The in-process worker prompt does not say this, so: before your final report, (1) record your evidence (analysis_status output, traces, the D-015 in-session check verbatim against the slice-start commit, stage-gate exit codes and result lines) with `task_edit` `implementationNotes` (append, never drop earlier sections); (2) tick every satisfied criterion with `task_edit` `checkAc`; for a coordinator-verdict freeze criterion, plan D-020 applies: tick it once your in-session half is recorded and the coordinator appends the post-commit verdict; (3) report `outcome: success` only then. Leave source and test files uncommitted; the driver commits. Never run git operations on `missions/reviews/`; write record rows to the record files and copy them here.
