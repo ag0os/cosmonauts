@@ -1,15 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { lstat, open, readdir, readFile, realpath } from "node:fs/promises";
-import {
-	basename,
-	dirname,
-	isAbsolute,
-	join,
-	relative,
-	resolve,
-	sep,
-} from "node:path";
+import { lstat, readdir, readFile, realpath } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import {
 	EntityFileLockTimeoutError,
 	withEntityFileLock,
@@ -21,8 +12,11 @@ import {
 } from "./durable-files.ts";
 import {
 	consolidationEvidenceKey,
+	isContainedPath as isContained,
+	isContainedOrEqualPath as isContainedOrEqual,
 	isSafePosixRelativePath,
 } from "./path-safety.ts";
+import { readOptionalNoFollowRegularFile } from "./regular-files.ts";
 import {
 	type RetirementReceiptInventory,
 	readRetirementReceiptInventory,
@@ -1431,16 +1425,11 @@ async function readRegularBytes(
 		if (!isContained(realRoot, realPath)) {
 			throw new Error(`Retirement path escapes the project root: ${path}.`);
 		}
-		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-		try {
-			const metadata = await handle.stat();
-			if (!metadata.isFile()) {
-				throw new Error(`Retirement path is not a regular file: ${path}.`);
-			}
-			return await handle.readFile();
-		} finally {
-			await handle.close();
-		}
+		return await readOptionalNoFollowRegularFile({
+			path,
+			notRegularMessage: `Retirement path is not a regular file: ${path}.`,
+			read: (handle) => handle.readFile(),
+		});
 	} catch (error: unknown) {
 		if (errorCode(error) === "ENOENT") return undefined;
 		throw error;
@@ -1642,20 +1631,6 @@ function absolutePath(projectRoot: string, relativePath: string): string {
 	return path;
 }
 
-function isContained(parent: string, child: string): boolean {
-	const path = relative(parent, child);
-	return (
-		path.length > 0 &&
-		!path.startsWith(`..${sep}`) &&
-		path !== ".." &&
-		!isAbsolute(path)
-	);
-}
-
-function isContainedOrEqual(parent: string, child: string): boolean {
-	return parent === child || isContained(parent, child);
-}
-
 function sha256(value: string | Buffer): string {
 	return createHash("sha256").update(value).digest("hex");
 }
@@ -1696,11 +1671,10 @@ function hasExactKeys(
 	value: Record<string, unknown>,
 	keys: readonly string[],
 ): boolean {
-	const actual = Object.keys(value).sort();
-	const expected = [...keys].sort();
+	const actual = Object.keys(value);
 	return (
-		actual.length === expected.length &&
-		actual.every((key, index) => key === expected[index])
+		actual.length === keys.length &&
+		keys.every((key) => Object.hasOwn(value, key))
 	);
 }
 

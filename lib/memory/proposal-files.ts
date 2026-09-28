@@ -1,8 +1,12 @@
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import type { DurableMachineFiles } from "./durable-files.ts";
-import { isSafePosixRelativePath } from "./path-safety.ts";
+import {
+	isContainedPath as isContained,
+	isContainedOrEqualPath as isContainedOrEqual,
+	isSafePosixRelativePath,
+} from "./path-safety.ts";
 
 export async function ensureSafeContainedDirectory(options: {
 	readonly root: string;
@@ -126,20 +130,6 @@ async function ensureRealDirectory(path: string, label: string): Promise<void> {
 		if (errorCode(error) !== "EEXIST") throw error;
 	}
 	await assertRealDirectory(path, label);
-}
-
-function isContained(parent: string, child: string): boolean {
-	const path = relative(parent, child);
-	return (
-		path.length > 0 &&
-		!path.startsWith(`..${sep}`) &&
-		path !== ".." &&
-		!isAbsolute(path)
-	);
-}
-
-function isContainedOrEqual(parent: string, child: string): boolean {
-	return parent === child || isContained(parent, child);
 }
 
 function errorCode(error: unknown): string | undefined {

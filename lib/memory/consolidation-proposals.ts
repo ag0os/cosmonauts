@@ -329,8 +329,7 @@ function parseResolutionHistory(
 		});
 	}
 	if (
-		!isRecord(value) ||
-		!hasExactKeys(value, [
+		!isExactObject(value, [
 			"history",
 			"kind",
 			"proposalPath",
@@ -539,28 +538,6 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 	throw new DOMException(
 		"Living-memory improve resolution was cancelled.",
 		"AbortError",
-	);
-}
-
-function isNonEmpty(value: unknown): value is string {
-	return (
-		typeof value === "string" && value.trim() === value && value.length > 0
-	);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-	value: Record<string, unknown>,
-	keys: readonly string[],
-): boolean {
-	const actual = Object.keys(value).sort();
-	const expected = [...keys].sort();
-	return (
-		actual.length === expected.length &&
-		actual.every((key, index) => key === expected[index])
 	);
 }
 
@@ -821,4 +798,33 @@ function errorCode(error: unknown): string | undefined {
 	return error !== null && typeof error === "object" && "code" in error
 		? String((error as NodeJS.ErrnoException).code)
 		: undefined;
+}
+
+function isNonEmpty(value: unknown): value is string {
+	return (
+		typeof value === "string" && value.trim() === value && value.length > 0
+	);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isExactObject<const Keys extends readonly string[]>(
+	value: unknown,
+	keys: Keys,
+): value is Record<Keys[number], unknown> {
+	return isRecord(value) && hasExactKeys(value, keys);
+}
+
+function hasExactKeys(
+	value: Record<string, unknown>,
+	keys: readonly string[],
+): boolean {
+	const actual = Object.keys(value).sort();
+	const expected = [...keys].sort();
+	return (
+		actual.length === expected.length &&
+		actual.every((key, index) => key === expected[index])
+	);
 }

@@ -376,15 +376,7 @@ export class TaskManager {
 		await this.ensureInitialized();
 
 		const tasks = await this.loadAllTasks();
-
-		if (!filter) {
-			return tasks;
-		}
-
-		const dependencyStatuses = await this.resolveDependencyStatuses(filter);
-		return tasks.filter((task) =>
-			this.matchesFilter(task, filter, dependencyStatuses),
-		);
+		return this.filterTasks(tasks, filter);
 	}
 
 	/**
@@ -399,15 +391,7 @@ export class TaskManager {
 		const tasks = filter?.label
 			? await this.loadTasksMatchingLabelReadOnly(filter.label)
 			: await this.loadAllTasks();
-
-		if (!filter) {
-			return tasks;
-		}
-
-		const dependencyStatuses = await this.resolveDependencyStatuses(filter);
-		return tasks.filter((task) =>
-			this.matchesFilter(task, filter, dependencyStatuses),
-		);
+		return this.filterTasks(tasks, filter);
 	}
 
 	/**
@@ -437,13 +421,16 @@ export class TaskManager {
 			);
 		});
 
-		// Apply additional filter if provided
-		if (!filter) {
-			return matchingTasks;
-		}
+		return this.filterTasks(matchingTasks, filter);
+	}
 
+	private async filterTasks(
+		tasks: Task[],
+		filter: TaskListFilter | undefined,
+	): Promise<Task[]> {
+		if (!filter) return tasks;
 		const dependencyStatuses = await this.resolveDependencyStatuses(filter);
-		return matchingTasks.filter((task) =>
+		return tasks.filter((task) =>
 			this.matchesFilter(task, filter, dependencyStatuses),
 		);
 	}

@@ -10,6 +10,7 @@ import {
 	unlink,
 } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { readOptionalNoFollowRegularFile } from "./regular-files.ts";
 import type { LivingMemoryDurableFiles } from "./types.ts";
 
 export interface DurableMachineFiles extends LivingMemoryDurableFiles {
@@ -458,21 +459,11 @@ async function writeSyncedTemp(options: {
 }
 
 async function readRegularFile(path: string): Promise<string | undefined> {
-	try {
-		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-		try {
-			const metadata = await handle.stat();
-			if (!metadata.isFile()) {
-				throw new Error(`Durable file occupant is not a regular file: ${path}`);
-			}
-			return await handle.readFile("utf-8");
-		} finally {
-			await handle.close();
-		}
-	} catch (error: unknown) {
-		if (errorCode(error) === "ENOENT") return undefined;
-		throw error;
-	}
+	return readOptionalNoFollowRegularFile({
+		path,
+		notRegularMessage: `Durable file occupant is not a regular file: ${path}`,
+		read: (handle) => handle.readFile("utf-8"),
+	});
 }
 
 async function syncDirectory(path: string): Promise<void> {

@@ -37,6 +37,7 @@ import {
 	playbookResource,
 	resolveAgentMemoryStorePaths,
 } from "./paths.ts";
+import { matchesMemoryQuery } from "./query.ts";
 import type {
 	MemoryQuery,
 	MemoryRecordDraft,
@@ -813,26 +814,17 @@ function matchesQuery(
 	record: RetrievedMemoryRecord,
 	query: MemoryQuery,
 ): boolean {
-	if (
-		query.recordTypes &&
-		query.recordTypes.length > 0 &&
-		!query.recordTypes.includes(record.type)
-	) {
-		return false;
-	}
-	if (query.resource && query.resource !== record.resource) return false;
-	const text = query.text?.trim().toLowerCase();
-	if (!text) return true;
-	return [
-		record.title,
-		record.description,
-		record.content,
-		record.resource,
-		record.tags.join(" "),
-	]
-		.join("\n")
-		.toLowerCase()
-		.includes(text);
+	return matchesMemoryQuery({
+		record,
+		query,
+		searchableText: [
+			record.title,
+			record.description,
+			record.content,
+			record.resource,
+			record.tags.join(" "),
+		].join("\n"),
+	});
 }
 
 function sortRecords(records: RetrievedMemoryRecord[]): void {
@@ -942,22 +934,7 @@ function episodeFileName(options: {
 	const action = options.record.tags
 		.find((tag) => tag.startsWith("action:"))
 		?.slice("action:".length);
-	const hash = createHash("sha256")
-		.update(
-			JSON.stringify({
-				type: "episode",
-				title: options.record.title,
-				description: options.record.description,
-				content: options.record.content,
-				tags: options.record.tags,
-				timestamp: options.timestamp,
-				scope: options.record.scope,
-				kind: options.record.kind,
-				source: options.record.source,
-			}),
-		)
-		.digest("hex")
-		.slice(0, 8);
+	const hash = recordFileHash({ ...options, type: "episode" });
 	return `${timestampForFile(options.timestamp)}-${slugify(action ?? "episode")}-${hash}.md`;
 }
 
@@ -971,10 +948,19 @@ function noteFileName(options: {
 	readonly timestamp: string;
 }): string {
 	const slug = slugify(options.record.title);
-	const hash = createHash("sha256")
+	const hash = recordFileHash({ ...options, type: "note" });
+	return `${timestampForFile(options.timestamp)}-${slug}-${hash}.md`;
+}
+
+function recordFileHash(options: {
+	readonly record: MemoryRecordDraft;
+	readonly timestamp: string;
+	readonly type: "episode" | "note";
+}): string {
+	return createHash("sha256")
 		.update(
 			JSON.stringify({
-				type: "note",
+				type: options.type,
 				title: options.record.title,
 				description: options.record.description,
 				content: options.record.content,
@@ -987,7 +973,6 @@ function noteFileName(options: {
 		)
 		.digest("hex")
 		.slice(0, 8);
-	return `${timestampForFile(options.timestamp)}-${slug}-${hash}.md`;
 }
 
 function timestampForFile(timestamp: string): string {

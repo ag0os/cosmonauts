@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
-import { lstat, open, readdir, realpath } from "node:fs/promises";
+import {
+	type FileHandle,
+	lstat,
+	open,
+	readdir,
+	realpath,
+} from "node:fs/promises";
 import { isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
 import { EntityFileLockTimeoutError } from "../entity-file-lock.ts";
@@ -1622,15 +1628,9 @@ async function readInventoryFile(
 				};
 			}
 			const size = Number(metadata.size);
-			const buffer = Buffer.alloc(size);
-			let offset = 0;
-			while (offset < size) {
-				const read = await handle.read(buffer, offset, size - offset, offset);
-				if (read.bytesRead === 0) break;
-				offset += read.bytesRead;
-			}
+			const { buffer, bytesRead } = await readExactBytes(handle, size);
 			const confirmed = await handle.stat({ bigint: true });
-			if (offset !== size || confirmed.size !== metadata.size) {
+			if (bytesRead !== size || confirmed.size !== metadata.size) {
 				return {
 					ok: false,
 					message: "Citation source changed during its bounded read.",
@@ -2455,4 +2455,23 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 			? signal.reason
 			: new Error("Living-memory consolidation was cancelled.");
 	}
+}
+
+async function readExactBytes(
+	handle: FileHandle,
+	size: number,
+): Promise<{ readonly buffer: Buffer; readonly bytesRead: number }> {
+	const buffer = Buffer.alloc(size);
+	let bytesRead = 0;
+	while (bytesRead < size) {
+		const read = await handle.read(
+			buffer,
+			bytesRead,
+			size - bytesRead,
+			bytesRead,
+		);
+		if (read.bytesRead === 0) break;
+		bytesRead += read.bytesRead;
+	}
+	return { buffer, bytesRead };
 }

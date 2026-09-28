@@ -4,6 +4,7 @@ import {
 	canonicalizePlaybookName,
 } from "./authored-records.ts";
 import { parseEpisodeTagEnvelope } from "./episodic-records.ts";
+import { hasRequiredOkfFields } from "./okf-fields.ts";
 import {
 	MEMORY_KINDS,
 	type MemoryKind,
@@ -181,15 +182,7 @@ function parseOkfRecordFields(options: {
 	| { readonly ok: false; readonly message: string } {
 	const parsed = matter(options.raw);
 	const data = parsed.data;
-	if (
-		typeof data.type !== "string" ||
-		typeof data.title !== "string" ||
-		typeof data.description !== "string" ||
-		typeof data.resource !== "string" ||
-		!Array.isArray(data.tags) ||
-		!data.tags.every((tag: unknown) => typeof tag === "string") ||
-		typeof data.timestamp !== "string"
-	) {
+	if (!hasRequiredOkfFields(data)) {
 		return {
 			ok: false,
 			message: "Memory record is missing required OKF frontmatter.",
@@ -232,7 +225,7 @@ function parseOkfRecordFields(options: {
 			resource: data.resource,
 			tags: data.tags,
 			timestamp: data.timestamp,
-			scope: data.scope,
+			scope: options.expectedScope,
 			kind: data.kind,
 			source: data.source,
 			content: parsed.content.trim(),

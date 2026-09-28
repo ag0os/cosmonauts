@@ -1,3 +1,7 @@
+import {
+	assertTextByteCeiling,
+	formatBytes,
+} from "../../lib/memory/byte-ceiling.ts";
 import type {
 	CorpusJudgmentInput,
 	CorpusJudgmentOutput,
@@ -300,23 +304,6 @@ function abortError(): DOMException {
 	return new DOMException("Pi corpus judgment was cancelled.", "AbortError");
 }
 
-function assertTextByteCeiling(options: {
-	readonly label: string;
-	readonly value: string;
-	readonly ceiling: number;
-}): void {
-	const bytes = Buffer.byteLength(options.value, "utf-8");
-	if (bytes > options.ceiling) {
-		throw new Error(
-			`${options.label} exceeds the serialized byte ceiling (${bytes.toLocaleString("en-US")} > ${formatBytes(options.ceiling)}).`,
-		);
-	}
-}
-
-function formatBytes(value: number): string {
-	return `${value.toLocaleString("en-US")} ${value === 1 ? "byte" : "bytes"}`;
-}
-
 function isNonEmpty(value: unknown): value is string {
 	return (
 		typeof value === "string" && value.trim() === value && value.length > 0
@@ -327,10 +314,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isExactObject(
+function isExactObject<const Keys extends readonly string[]>(
 	value: unknown,
-	keys: readonly string[],
-): value is Record<string, unknown> {
+	keys: Keys,
+): value is Record<Keys[number], unknown> {
 	return isRecord(value) && hasExactKeys(value, keys);
 }
 

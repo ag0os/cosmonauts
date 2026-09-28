@@ -7,6 +7,10 @@ import {
 	withEntityFileLock as runWithEntityFileLock,
 } from "../entity-file-lock.ts";
 import type { EpisodeWarningReporter } from "./episode.ts";
+import {
+	clampEpisodeWarning as clamp,
+	episodeWarningReason as errorReason,
+} from "./episode-warning.ts";
 import type { MemoryWarning } from "./types.ts";
 
 const DEFAULT_LOCK_RETRY_DELAY_MS = 25;
@@ -174,14 +178,4 @@ async function reportTransitionWarning<T>(
 	} catch {
 		// Episode warning delivery is non-load-bearing.
 	}
-}
-
-function errorReason(error: unknown): string {
-	if (error instanceof Error) return error.message;
-	return String(error);
-}
-
-function clamp(value: string, maxLength: number): string {
-	if (value.length <= maxLength) return value;
-	return `${value.slice(0, maxLength - 1)}…`;
 }

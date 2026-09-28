@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import matter from "gray-matter";
+import { hasRequiredOkfFields } from "./okf-fields.ts";
 import { isSafePosixRelativePath } from "./path-safety.ts";
 import type {
 	KnowledgeIndexRenderInput,
@@ -458,12 +459,7 @@ export function parseKnowledgeProposalOccupant(options: {
 	const data = parsed.data;
 	if (
 		!isKnowledgeRecordType(data.type) ||
-		typeof data.title !== "string" ||
-		typeof data.description !== "string" ||
-		typeof data.resource !== "string" ||
-		!Array.isArray(data.tags) ||
-		!data.tags.every((tag: unknown) => typeof tag === "string") ||
-		typeof data.timestamp !== "string" ||
+		!hasRequiredOkfFields(data) ||
 		data.scope !== "project" ||
 		data.kind !== "semantic" ||
 		typeof data.writer !== "string" ||

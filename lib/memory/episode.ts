@@ -4,6 +4,10 @@ import {
 	resolveEpisodicLogConfig,
 } from "../config/loader.ts";
 import type { ProjectConfig } from "../config/types.ts";
+import {
+	clampEpisodeWarning as clamp,
+	episodeWarningReason as errorReason,
+} from "./episode-warning.ts";
 import { createEpisodeRecord, type EpisodeEvent } from "./episodic-records.ts";
 import { createMarkdownMemoryStore } from "./markdown-store.ts";
 import type { MemoryStore, MemoryWarning } from "./types.ts";
@@ -141,14 +145,4 @@ async function reportCaptureWarning(options: {
 		// Capture and warning delivery are both non-load-bearing.
 	}
 	return { kind: "warning", warning };
-}
-
-function errorReason(error: unknown): string {
-	if (error instanceof Error) return error.message;
-	return String(error);
-}
-
-function clamp(value: string, maxLength: number): string {
-	if (value.length <= maxLength) return value;
-	return `${value.slice(0, maxLength - 1)}…`;
 }

@@ -1035,41 +1035,13 @@ function immutableValidatedInventoryRecord(
 	candidate: ConsolidationSourceInventoryRecord,
 	sourceId: string,
 ): ConsolidationSourceInventoryRecord {
-	assertNonEmptyString(candidate.id, "Inventory record id");
-	if (candidate.sourceId !== sourceId) {
-		throw new ConsolidationSourceContractError(
-			`Inventory record ${candidate.id} source-id mismatch: expected ${sourceId}.`,
-		);
-	}
-	if (!CONSOLIDATION_SOURCE_SCOPES.includes(candidate.scope)) {
-		throw new ConsolidationSourceContractError(
-			`Inventory record ${candidate.id} has unsupported scopes data: ${String(candidate.scope)}.`,
-		);
-	}
-	if (!CONSOLIDATION_SOURCE_KINDS.includes(candidate.kind)) {
-		throw new ConsolidationSourceContractError(
-			`Inventory record ${candidate.id} has an unsupported kind: ${String(candidate.kind)}.`,
-		);
-	}
-	if (!isSafePosixRelativePath(candidate.path)) {
-		throw new ConsolidationSourceContractError(
-			`Inventory record ${candidate.id} has unsafe paths data: ${candidate.path}.`,
-		);
-	}
+	assertSourceRecordFields(candidate, sourceId, "Inventory record");
 	if (!/^[a-f0-9]{64}$/.test(candidate.digest)) {
 		throw new ConsolidationSourceContractError(
 			`Inventory record ${candidate.id} has invalid digests data.`,
 		);
 	}
-	if (
-		typeof candidate.metadata !== "object" ||
-		candidate.metadata === null ||
-		Array.isArray(candidate.metadata)
-	) {
-		throw new ConsolidationSourceContractError(
-			`Inventory record ${candidate.id} has invalid metadata.`,
-		);
-	}
+	assertSourceRecordMetadata(candidate, "Inventory record");
 	return Object.freeze({
 		...candidate,
 		metadata: deepFreeze(structuredClone(candidate.metadata)),
@@ -1080,27 +1052,7 @@ function immutableValidatedRecord(
 	candidate: ConsolidationSourceRecord,
 	sourceId: string,
 ): ConsolidationSourceRecord {
-	assertNonEmptyString(candidate.id, "Record id");
-	if (candidate.sourceId !== sourceId) {
-		throw new ConsolidationSourceContractError(
-			`Record ${candidate.id} source-id mismatch: expected ${sourceId}.`,
-		);
-	}
-	if (!CONSOLIDATION_SOURCE_SCOPES.includes(candidate.scope)) {
-		throw new ConsolidationSourceContractError(
-			`Record ${candidate.id} has unsupported scopes data: ${String(candidate.scope)}.`,
-		);
-	}
-	if (!CONSOLIDATION_SOURCE_KINDS.includes(candidate.kind)) {
-		throw new ConsolidationSourceContractError(
-			`Record ${candidate.id} has an unsupported kind: ${String(candidate.kind)}.`,
-		);
-	}
-	if (!isSafePosixRelativePath(candidate.path)) {
-		throw new ConsolidationSourceContractError(
-			`Record ${candidate.id} has unsafe paths data: ${candidate.path}.`,
-		);
-	}
+	assertSourceRecordFields(candidate, sourceId, "Record");
 	if (
 		!/^[a-f0-9]{64}$/.test(candidate.digest) ||
 		sha256(candidate.content) !== candidate.digest
@@ -1109,15 +1061,7 @@ function immutableValidatedRecord(
 			`Record ${candidate.id} has invalid digests data.`,
 		);
 	}
-	if (
-		typeof candidate.metadata !== "object" ||
-		candidate.metadata === null ||
-		Array.isArray(candidate.metadata)
-	) {
-		throw new ConsolidationSourceContractError(
-			`Record ${candidate.id} has invalid metadata.`,
-		);
-	}
+	assertSourceRecordMetadata(candidate, "Record");
 
 	let metadata: Readonly<Record<string, unknown>>;
 	try {
@@ -1146,6 +1090,49 @@ function immutableValidatedRecord(
 					),
 				}),
 	});
+}
+
+function assertSourceRecordFields(
+	candidate: ConsolidationSourceInventoryRecord,
+	sourceId: string,
+	label: "Inventory record" | "Record",
+): void {
+	assertNonEmptyString(candidate.id, `${label} id`);
+	if (candidate.sourceId !== sourceId) {
+		throw new ConsolidationSourceContractError(
+			`${label} ${candidate.id} source-id mismatch: expected ${sourceId}.`,
+		);
+	}
+	if (!CONSOLIDATION_SOURCE_SCOPES.includes(candidate.scope)) {
+		throw new ConsolidationSourceContractError(
+			`${label} ${candidate.id} has unsupported scopes data: ${String(candidate.scope)}.`,
+		);
+	}
+	if (!CONSOLIDATION_SOURCE_KINDS.includes(candidate.kind)) {
+		throw new ConsolidationSourceContractError(
+			`${label} ${candidate.id} has an unsupported kind: ${String(candidate.kind)}.`,
+		);
+	}
+	if (!isSafePosixRelativePath(candidate.path)) {
+		throw new ConsolidationSourceContractError(
+			`${label} ${candidate.id} has unsafe paths data: ${candidate.path}.`,
+		);
+	}
+}
+
+function assertSourceRecordMetadata(
+	candidate: ConsolidationSourceInventoryRecord,
+	label: "Inventory record" | "Record",
+): void {
+	if (
+		typeof candidate.metadata !== "object" ||
+		candidate.metadata === null ||
+		Array.isArray(candidate.metadata)
+	) {
+		throw new ConsolidationSourceContractError(
+			`${label} ${candidate.id} has invalid metadata.`,
+		);
+	}
 }
 
 function validatedFileIdentity(
@@ -1316,23 +1303,14 @@ async function readBoundedEpisodeSnapshot(options: {
 				digest,
 			};
 		}
-		const size = Number(before.size);
-		const buffer = Buffer.alloc(size);
-		let offset = 0;
-		while (offset < size) {
-			const read = await handle.read(buffer, offset, size - offset, offset);
-			if (read.bytesRead === 0) break;
-			offset += read.bytesRead;
-		}
-		const after = await handle.stat({ bigint: true });
-		if (offset !== size || after.size !== before.size) {
-			throw new ConsolidationSourceContractError(
-				`Episode changed during its bounded read: ${options.path}.`,
-			);
-		}
+		const buffer = await readStableEpisodeBytes({
+			handle,
+			expectedSize: before.size,
+			path: options.path,
+		});
 		return {
 			ok: true,
-			bytesRead: size,
+			bytesRead: Number(before.size),
 			snapshot: Object.freeze({
 				content: buffer.toString("utf-8"),
 				identity: Object.freeze({
@@ -1344,6 +1322,22 @@ async function readBoundedEpisodeSnapshot(options: {
 	} finally {
 		await handle.close();
 	}
+}
+
+async function readStableEpisodeBytes(options: {
+	readonly handle: FileHandle;
+	readonly expectedSize: bigint;
+	readonly path: string;
+}): Promise<Buffer> {
+	const size = Number(options.expectedSize);
+	const { buffer, bytesRead } = await readExactBytes(options.handle, size);
+	const after = await options.handle.stat({ bigint: true });
+	if (bytesRead !== size || after.size !== options.expectedSize) {
+		throw new ConsolidationSourceContractError(
+			`Episode changed during its bounded read: ${options.path}.`,
+		);
+	}
+	return buffer;
 }
 
 function episodeInventoryRecord(
@@ -1469,6 +1463,25 @@ function assertNonEmptyString(value: string, label: string): void {
 
 function sha256(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
+}
+
+async function readExactBytes(
+	handle: FileHandle,
+	size: number,
+): Promise<{ readonly buffer: Buffer; readonly bytesRead: number }> {
+	const buffer = Buffer.alloc(size);
+	let bytesRead = 0;
+	while (bytesRead < size) {
+		const read = await handle.read(
+			buffer,
+			bytesRead,
+			size - bytesRead,
+			bytesRead,
+		);
+		if (read.bytesRead === 0) break;
+		bytesRead += read.bytesRead;
+	}
+	return { buffer, bytesRead };
 }
 
 function deepFreeze<T>(value: T): T {

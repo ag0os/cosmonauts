@@ -16,6 +16,8 @@ import {
 } from "./knowledge-records.ts";
 import { assertBoundProjectRoot } from "./paths.ts";
 import { ensureSafeContainedDirectory } from "./proposal-files.ts";
+import { matchesMemoryQuery } from "./query.ts";
+import { readOptionalNoFollowRegularFile } from "./regular-files.ts";
 import type {
 	KnowledgeConsolidator,
 	KnowledgeProposalIdentity,
@@ -513,15 +515,9 @@ async function scanKnowledgeFile(options: {
 				};
 			}
 			const size = Number(before.size);
-			const buffer = Buffer.alloc(size);
-			let offset = 0;
-			while (offset < size) {
-				const read = await handle.read(buffer, offset, size - offset, offset);
-				if (read.bytesRead === 0) break;
-				offset += read.bytesRead;
-			}
+			const { buffer, bytesRead } = await readExactBytes(handle, size);
 			const after = await handle.stat({ bigint: true });
-			if (offset !== size || after.size !== before.size) {
+			if (bytesRead !== size || after.size !== before.size) {
 				throw new Error(
 					`Knowledge record changed during bounded read: ${options.path}`,
 				);
@@ -743,47 +739,30 @@ function assertReadOptions(options: KnowledgeReadOptions | undefined): void {
 async function readExistingRegularFile(
 	path: string,
 ): Promise<ScannedFile | undefined> {
-	try {
-		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-		try {
-			const metadata = await handle.stat();
-			if (!metadata.isFile()) {
-				throw new Error(`Proposal occupant is not a regular file: ${path}`);
-			}
+	return readOptionalNoFollowRegularFile({
+		path,
+		notRegularMessage: `Proposal occupant is not a regular file: ${path}`,
+		async read(handle, metadata) {
 			return { raw: await handle.readFile("utf-8"), mtime: metadata.mtime };
-		} finally {
-			await handle.close();
-		}
-	} catch (error: unknown) {
-		if (isMissingPath(error)) return undefined;
-		throw error;
-	}
+		},
+	});
 }
 
 function matchesQuery(
 	record: RetrievedMemoryRecord,
 	query: MemoryQuery,
 ): boolean {
-	if (
-		query.recordTypes &&
-		query.recordTypes.length > 0 &&
-		!query.recordTypes.includes(record.type)
-	) {
-		return false;
-	}
-	if (query.resource && query.resource !== record.resource) return false;
-	const text = query.text?.trim().toLowerCase();
-	if (!text) return true;
-	return [
-		record.title,
-		record.description,
-		record.tags.join(" "),
-		record.resource,
-		record.content,
-	]
-		.join("\n")
-		.toLowerCase()
-		.includes(text);
+	return matchesMemoryQuery({
+		record,
+		query,
+		searchableText: [
+			record.title,
+			record.description,
+			record.tags.join(" "),
+			record.resource,
+			record.content,
+		].join("\n"),
+	});
 }
 
 function knowledgeRoot(
@@ -834,4 +813,23 @@ function errorCode(error: unknown): string | undefined {
 	return error !== null && typeof error === "object" && "code" in error
 		? String((error as NodeJS.ErrnoException).code)
 		: undefined;
+}
+
+async function readExactBytes(
+	handle: FileHandle,
+	size: number,
+): Promise<{ readonly buffer: Buffer; readonly bytesRead: number }> {
+	const buffer = Buffer.alloc(size);
+	let bytesRead = 0;
+	while (bytesRead < size) {
+		const read = await handle.read(
+			buffer,
+			bytesRead,
+			size - bytesRead,
+			bytesRead,
+		);
+		if (read.bytesRead === 0) break;
+		bytesRead += read.bytesRead;
+	}
+	return { buffer, bytesRead };
 }
