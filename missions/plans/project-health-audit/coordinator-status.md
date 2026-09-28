@@ -5,8 +5,11 @@ Coordinator: Claude (Herdr pane `pha-coordinator`), briefed by Shepherd via
 
 ## Needs the user
 
-Answer via Shepherd. Q-001 blocks everything downstream; Q-002 and Q-003 shape
-the backlog and are cheapest to rule now.
+Nothing. Q-001..003 ruled 2026-09-28 (ratify / (a) / confirm; see
+`.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`),
+recorded in `spec.md`. The original questions are kept below for the record.
+
+### Ruled 2026-09-28
 
 **Q-001 — Ratify the Intent** (`spec.md` `## Intent`). Goal: every
 whole-project static-health finding on `main` is either fixed with behavior
@@ -63,12 +66,12 @@ trigger, `fallow.toml` untouched.
 
 ## Running
 
-Nothing. Stopped after step 2 of the brief, awaiting ratification.
+- 2026-09-28: `/spec-to-backlog project-health-audit` (after the ratification
+  commit).
 
 ## Blocked
 
-- `/spec-to-backlog` and `/implement-plan` wait on Q-001 (and Q-002/Q-003
-  rulings, which change task shape).
+Nothing.
 
 ## HEAD
 

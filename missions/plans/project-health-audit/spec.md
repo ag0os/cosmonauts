@@ -78,9 +78,11 @@ wins over throughput: a stale finding costs a re-run, never a guess.
 
 Provenance. The remediation tiers in Scope are direct human rulings typed to
 Shepherd on 2026-09-28 and relayed to the coordinator. The invariant wording
-was drafted by the coordinator session on 2026-09-28 and awaits human
-ratification (Q-001); until ratified, nothing downstream of this spec is
-implemented.
+was drafted by the coordinator session on 2026-09-28 and **ratified as drafted
+by the human on 2026-09-28** (typed to Shepherd, relayed; recorded in
+`.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`,
+Q-001). These invariants and their ranking are ratified ground and change only
+by human decision.
 
 ## Users
 
@@ -227,25 +229,22 @@ Out of scope:
 
 ## Open Questions
 
-For the human (via Shepherd):
+None open. All three were ruled by the human on 2026-09-28 (typed to
+Shepherd, relayed; `.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`).
+The rulings are ratified ground:
 
-- Q-001 - Ratify the five invariants in `## Intent` and their ranking as
-  written, or amend.
-- Q-002 - Risk bound for critical refactors. For a critical function that
+- Q-001 - Intent INV-001..005 and the ranking: **ratified as drafted**.
+- Q-002 - Risk bound for critical refactors: **(a)**. A critical function that
   cannot be characterized to a reasonable bound (`runPass`: 886 lines, 104
-  paths, `partial` coverage), which outcome is allowed: (a) refactor with the
-  best characterization tests writable plus the full suite, accepting residual
-  risk, with a hard stop if any test expectation would have to change; or (b)
-  baseline it as a recorded exception to the critical ruling and defer to a
-  dedicated plan. Recommendation: (a), because a function nobody can
-  characterize is the one most worth characterizing before `execution-liveness`
-  touches the memory path.
-- Q-003 - Consequence of the duplication ruling. 41 of the 43 clone families
-  (85 of 87 groups, about 1,730 duplicated lines) live in one or two files, so
-  the ruling as worded extracts almost everything and baselines only the two
-  three-file families. Confirm that is intended, or set a narrower bound (for
-  example a minimum family size in lines, or same-directory families only).
+  paths, `partial` coverage) is refactored with the best characterization
+  tests writable plus the full suite, accepting residual risk. Hard stop and
+  escalate if any test expectation would have to change. Rejected: (b)
+  baselining it as an exception to the critical ruling.
+- Q-003 - Duplication ruling consequence: **confirmed**. 41 of the 43 clone
+  families (85 of 87 groups, about 1,730 duplicated lines) live in one or two
+  files and are all extracted; the two three-file families are baselined with
+  reasons.
 
-Decided by the coordinator and recorded above as derived: `scripts/` in,
-`tests/` out, static coverage tier as the characterization trigger, no
-`fallow.toml` edits.
+The coordinator's derived decisions stand (human, 2026-09-28): `scripts/`
+critical functions in scope, `tests/` critical functions baselined, static
+coverage tier as the characterization trigger, no `fallow.toml` edits.
