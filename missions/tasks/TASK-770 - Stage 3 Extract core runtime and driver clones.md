@@ -1,7 +1,7 @@
 ---
 id: TASK-770
 title: 'Stage 3: Extract core runtime and driver clones'
-status: To Do
+status: Done
 priority: medium
 assignee: worker
 labels:
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-769
 createdAt: '2026-09-28T15:22:47.494Z'
-updatedAt: '2026-09-28T18:33:55.891Z'
+updatedAt: '2026-09-28T18:40:08.842Z'
 ---
 
 ## Description
@@ -99,3 +99,14 @@ The mandatory worker close audit cannot be represented by the analysis surface. 
 Attempt 2 completed the work: all seven ACs checked, the five stage-gate commands green, D-015 in-session check shows exactly `M tests/memory/interface.test.ts` (the Q-008 (a) hash literal `ab64b61e…` → `500f512d…`; the coordinator reviewed the hunk: one literal, nothing else, and it equals the SHA-256 of the refactored `lib/architecture-map/retrieval.ts`). The only reason it did not complete was the task-close `analysis_audit` returning `failed / invalid-output` because Fallow answered the documented verdict `warn` (4 pre-existing clone groups owned by later slices, 0 dead code, 0 complexity) and `fallow-provider.ts` accepts only `pass`/`fail`. Plan **D-023** (coordinator, derived) rules: record the failed invocation with its failure class, the verbatim direct diagnostic (already above), and the owning slice of each flagged finding; it is not a completion blocker. The adapter gap is reported to the human at closeout; nobody edits `fallow-provider.ts` for it in this plan.
 
 Attempt 3 steps: the worktree still holds the complete attempt-2 state (source extraction, new helpers, the one test-literal change), uncommitted; do not redo or revert it. (1) `analysis_status`; (2) confirm the stage gate is still green by running the five commands once; (3) re-record the D-015 in-session check against `C = d17a497` (expect exactly `M tests/memory/interface.test.ts`); (4) list the four audit-flagged clone groups with their owning slice per the plan's Design §3 / stage file lists; (5) make sure all seven ACs remain checked (`checkAc` again if Drive reset them); (6) report `outcome: success`.
+
+### Worker completion evidence (attempt 3)
+
+- Attempt-3 pre-commit changed-scope audit base (literal task-start `HEAD`): `b8178c7349ef2a32e14deb2ff07f2c417c30a24a`.
+- `analysis_status`: package-native Fallow 2.54.2; dead-code, duplication, complexity, changed-scope-audit, trace, and fix-preview are bound; boundary-conformance is unbound with reason `provider-not-configured`.
+- Stage gates re-run once and green: `bun run test` exit 0 — `Test Files 266 passed (266)`, `Tests 3475 passed (3475)`; `bun run lint` exit 0 — `Checked 613 files in 343ms. No fixes applied.`; `bun run typecheck` exit 0 — `tsc --noEmit`; `bun run check:reachability` exit 0 — `reachability: 203/203 runtime lib modules reached; 13 type-only lib modules exempt; 0 staged`; `bun run check:suppressions -- --base main` exit 0 — `suppression check passed`.
+- D-015 worker check against `C` (verbatim output): `git diff --name-status --diff-filter=MDR d17a49724709c37e09abb2d535c5a3db9fcaed0f -- tests/` => `M\ttests/memory/interface.test.ts` (exit 0); `git status --porcelain -- tests/` => ` M tests/memory/interface.test.ts` (exit 0); `git diff -U0 d17a49724709c37e09abb2d535c5a3db9fcaed0f -- tests/ | grep -E '^\+.*\.(skip|only|todo)\('` => no output, grep exit 1 meaning no matches. This remains exactly the pre-declared Q-008(a) source-hash literal update; no other test path changed.
+- Task-close surface audit: `analysis_audit(base="b8178c7349ef2a32e14deb2ff07f2c417c30a24a")` returned failed, capability `changed-scope-audit`, provider `fallow@2.54.2`, failure class `invalid-output`, process exit 0, reason `expected audit verdict to be pass or fail`, empty stderr. Under D-023 this is recorded and does not block completion.
+- Paired direct diagnostic command: `./node_modules/.bin/fallow audit --format json --quiet --no-cache --changed-since b8178c7349ef2a32e14deb2ff07f2c417c30a24a --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json` exited 0 with `verdict: "warn"`, `changed_files_count: 32`, 0 dead-code issues, 0 complexity findings, and 4 duplication clone groups (9 instances, 118 duplicated lines, 0.12778445577899786%). This direct result remains diagnostic and is not promoted to a surface pass.
+- The four audit-flagged groups and owners are: (1) `cli/memory/judgment-provider.ts:308-324` / `lib/memory/living-memory.ts:2227-2259`, 33 lines — TASK-772 stage 5, judgment-provider/living-memory byte formatting; (2) `cli/memory/judgment-provider.ts:320-330` / `lib/memory/retirement-receipts.ts:580-590`, 11 lines — TASK-772 stage 5, judgment-provider/retirement-receipt exact-object helpers; (3) `cli/memory/judgment-provider.ts:320-335` / `lib/memory/consolidation-proposals.ts:545-565` / `lib/memory/retirement-receipts.ts:580-595`, 21 lines — TASK-772 stage 5, the ratified three-file baseline family whose CLI model-output and persisted-record trust/error ownership remain distinct; (4) `cli/memory/judgment-provider.ts:333-345` / `lib/memory/retirement-receipts.ts:593-605`, 13 lines — TASK-772 stage 5, judgment-provider/retirement-receipt exact-object helpers.
+- All seven ACs remain checked. Source/test changes remain uncommitted for `driver-commits`; no git operation was run on `missions/reviews/`.
