@@ -34,6 +34,69 @@ const PARENT_SESSION_ID = "drive-scheduler-parent";
 
 describe("Drive scheduler backend", () => {
 	test.each([
+		"blocked",
+		"success",
+	] as const)("snapshots dirty tracked and untracked bytes for external backend and %s cleanup", async (result) => {
+		const fixture = await setupFixture(`snapshot-${result}`);
+		await fixture.taskManager.createTask({ title: "Snapshot" });
+		const git = (args: string[]) =>
+			execFileSync("git", args, { cwd: fixture.projectRoot, encoding: "utf8" });
+		git(["init", "-b", "main"]);
+		git(["config", "user.email", "driver@example.com"]);
+		git(["config", "user.name", "Driver Test"]);
+		git(["add", "."]);
+		git(["commit", "-m", "initial"]);
+		await writeFile(
+			join(fixture.projectRoot, "envelope.md"),
+			"changed\n\u0000bytes",
+		);
+		await writeFile(
+			join(fixture.projectRoot, "new.txt"),
+			"untracked\n\u0000bytes",
+		);
+		const events: DriverEvent[] = [];
+		const spec = createSpec(fixture);
+		const prepared = await prepareTaskStep({
+			fixture,
+			spec,
+			events,
+			backendRun: async () => {
+				git(["checkout", "--", "."]);
+				git(["clean", "-fd"]);
+				return result === "blocked"
+					? { exitCode: 0, stdout: "outcome: blocked", durationMs: 1 }
+					: successfulBackendResult();
+			},
+		});
+		const step = await (await prepared.backend.start(prepared.step)).result;
+		const ref = "refs/cosmonauts/drive/run-drive-scheduler/TASK-1/attempt-1";
+		expect(
+			events.find((event) => event.type === "spawn_started"),
+		).toMatchObject({ worktreeSnapshot: ref });
+		expect(
+			(await fixture.taskManager.getTask("TASK-1"))?.implementationNotes,
+		).toContain(ref);
+		if (result === "blocked") {
+			expect(git(["show", `${ref}:envelope.md`])).toBe("changed\n\u0000bytes");
+			expect(git(["show", `${ref}:new.txt`])).toBe("untracked\n\u0000bytes");
+		} else {
+			await transitionDriveTaskStatus({
+				spec,
+				ctx: {
+					taskManager: fixture.taskManager,
+					eventSink: async () => {},
+					abortSignal: new AbortController().signal,
+				},
+				taskId: "TASK-1",
+				outcome: "success",
+				parsedReport: { outcome: "success", files: [], verification: [] },
+				failureReason: "",
+			});
+			expect(() => git(["rev-parse", "--verify", ref])).toThrow();
+		}
+		expect(step.outcome).toBe(result === "blocked" ? "blocked" : "success");
+	});
+	test.each([
 		"preflight",
 		"postflight",
 		"during-postflight",

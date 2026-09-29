@@ -33,6 +33,58 @@ const execFileAsync = promisify(execFile);
 
 describe("run-one-task", () => {
 	test.each([
+		"blocked",
+		"success",
+	] as const)("snapshots tracked and untracked bytes before spawn and %s retains only unfinished refs", async (result) => {
+		const fixture = await setupGitFixture();
+		await git(fixture.projectRoot, ["add", "missions"]);
+		await git(fixture.projectRoot, ["commit", "-m", "track tasks"]);
+		await writeProjectFile(fixture, "README.md", "changed\n\u0000bytes");
+		await writeProjectFile(fixture, "new.txt", "untracked\n\u0000bytes");
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => {
+			await git(fixture.projectRoot, ["checkout", "--", "."]);
+			await git(fixture.projectRoot, ["clean", "-fd"]);
+			return result === "blocked"
+				? { exitCode: 0, stdout: "outcome: blocked", durationMs: 1 }
+				: successfulResult();
+		});
+		await runOneTask(
+			createSpec(fixture),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+		const ref = `refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1`;
+		expect(
+			events.find((event) => event.type === "spawn_started"),
+		).toMatchObject({ worktreeSnapshot: ref });
+		expect(
+			(await fixture.taskManager.getTask(fixture.taskId))?.implementationNotes,
+		).toContain(ref);
+		if (result === "blocked") {
+			await git(fixture.projectRoot, [
+				"restore",
+				"--source",
+				ref,
+				"--",
+				"README.md",
+			]);
+			await git(fixture.projectRoot, ["show", `${ref}:new.txt`]).then((bytes) =>
+				writeProjectFile(fixture, "new.txt", bytes),
+			);
+			expect(
+				await readFile(join(fixture.projectRoot, "README.md"), "utf8"),
+			).toBe("changed\n\u0000bytes");
+			expect(await readFile(join(fixture.projectRoot, "new.txt"), "utf8")).toBe(
+				"untracked\n\u0000bytes",
+			);
+		} else {
+			await expect(
+				git(fixture.projectRoot, ["rev-parse", "--verify", ref]),
+			).rejects.toThrow();
+		}
+	});
+	test.each([
 		"preflight",
 		"postflight",
 		"during-postflight",
@@ -137,7 +189,7 @@ describe("run-one-task", () => {
 		expect(outcome).toEqual({ status: "blocked", reason });
 		expect(task?.status).toBe("Blocked");
 		expect(task?.implementationNotes).toContain(
-			`worker sentinel  \n\n### Drive — outcome blocked — attempt 1 — run run-255\n\n${reason}`,
+			`worker sentinel  \n\nDrive worktree snapshot (attempt 1): refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1\n\n### Drive — outcome blocked — attempt 1 — run run-255\n\n${reason}`,
 		);
 		expect(
 			task?.implementationNotes?.match(/### Drive — outcome blocked/g),

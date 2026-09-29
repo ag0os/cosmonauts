@@ -15,6 +15,12 @@ Execution-probe journals live in the OS temporary directory, in a mode-0700 dire
 
 The probe's destructive-Git classifier recognizes executable-position Git commands after shell separators, `env`/`command` prefixes, Git global options, and `sh -c`/`bash -c`/`eval` arguments. It rejects checkout of paths, discard switch, restore, reset, destructive stash, clean, rm, read-tree, checkout-index, update-index and reverse apply. Quoted prose and read-only Git are not rejected. Command substitution, aliases and redirect-overwrite are syntactic residuals; review a test command before confirming project execution. Drive's worktree snapshots protect previous attempt work against such residual bypasses.
 
+## Drive Git protection and recovery
+
+Only Pi workers launched with `parentRole: "driver"` have the blocking Bash `tool_call` Git guard. It rejects destructive Git in executable position and explains the safety rule, the latest task snapshot (or that none exists), and a non-destructive alternative. Read-only Git and add/commit are unaffected; non-Drive Pi sessions and external backends are not guarded. Command substitution, aliases, and redirect-overwrite are classifier residuals, **not** safe command forms.
+
+Before every dirty-worktree spawn, including retries on external backends and both Drive paths, Drive writes tracked modifications and non-ignored untracked files to a commit using a temporary Git index. It excludes Drive's own run artifacts under `missions/sessions/` (including frozen runner binaries), which are normally gitignored; it does not stash/apply or change the real index/worktree. The ref `refs/cosmonauts/drive/<runId>/<taskId>/attempt-<n>` is in the attempt's task note and `spawn_started.worktreeSnapshot`. Refs remain for blocked, partial, and aborted tasks; only a Done transition removes refs for that run/task. To recover after a destructive operation, inspect the snapshot with `git show <ref>:<path>` or `git diff HEAD <ref>`; restore only the paths you intend (for example, `git restore --source=<ref> -- <path>` for tracked files and `git show <ref>:<new-path> > <new-path>` for previously untracked files). Do not blindly reset or clean the worktree; refs are not an automatic restore and cannot preserve ignored files or changes after the last snapshot.
+
 ## Prompt Rendering
 
 For each queued work item (currently a task ID), Drive writes

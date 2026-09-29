@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -119,6 +120,40 @@ export function isDestructiveGitCommand(command: string): boolean {
 		words = [];
 	}
 	return false;
+}
+
+export function latestDriveSnapshot(
+	projectRoot: string,
+	taskId: string | undefined,
+): string | undefined {
+	if (!taskId) return undefined;
+	try {
+		const refs = execFileSync(
+			"git",
+			[
+				"for-each-ref",
+				"--sort=-refname",
+				"--sort=-creatordate",
+				"--format=%(refname)",
+				"refs/cosmonauts/drive",
+			],
+			{
+				cwd: projectRoot,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+			},
+		);
+		return refs.split("\n").find((ref) => {
+			const parts = ref.split("/");
+			return (
+				parts.length === 6 &&
+				parts[4] === taskId &&
+				/^attempt-\d+$/.test(parts[5] ?? "")
+			);
+		});
+	} catch {
+		return undefined;
+	}
 }
 
 /** Journals are keyed to the canonical project root, never the caller's spelling. */

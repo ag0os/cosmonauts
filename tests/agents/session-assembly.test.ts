@@ -5,6 +5,7 @@
  * skill overrides, model resolution, thinking level, and extraExtensionPaths.
  */
 
+import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -144,6 +145,90 @@ function makeOptions(
 // ============================================================================
 
 describe("buildSessionParams", () => {
+	it("names the latest task snapshot rather than a different task's ref", async () => {
+		await setupMinimalDomains(tmp.path);
+		await setupFiles(tmp.path, {
+			"framework/runtime/sub-agent.md": "Subagent",
+		});
+		const cwd = join(tmp.path, "git-project");
+		await mkdir(cwd);
+		const git = (args: string[]) =>
+			execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+		git(["init", "-b", "main"]);
+		git(["config", "user.email", "driver@example.com"]);
+		git(["config", "user.name", "Driver Test"]);
+		await writeFile(join(cwd, "file.txt"), "initial");
+		git(["add", "."]);
+		git(["commit", "-m", "initial"]);
+		const sha = git(["rev-parse", "HEAD"]);
+		git(["update-ref", "refs/cosmonauts/drive/run-a/TASK-1/attempt-1", sha]);
+		git(["update-ref", "refs/cosmonauts/drive/run-a/TASK-1/attempt-2", sha]);
+		git(["update-ref", "refs/cosmonauts/drive/run-b/TASK-2/attempt-1", sha]);
+		const params = await buildSessionParams(
+			makeOptions({
+				cwd,
+				runtimeContext: {
+					mode: "sub-agent",
+					parentRole: "driver",
+					taskId: "TASK-1",
+				},
+			}),
+		);
+		let handler: ((event: unknown) => unknown) | undefined;
+		const extension = params.extensionFactories.at(-1);
+		const factory =
+			typeof extension === "function" ? extension : extension?.factory;
+		factory?.({
+			on: (_name: string, fn: (event: unknown) => unknown) => {
+				handler = fn;
+			},
+		} as never);
+		expect(
+			handler?.({ toolName: "bash", input: { command: "git clean -fd" } }),
+		).toMatchObject({
+			block: true,
+			reason: expect.stringContaining(
+				"refs/cosmonauts/drive/run-a/TASK-1/attempt-2",
+			),
+		});
+	});
+
+	it("blocks destructive Bash only for a Drive worker while preserving ordinary Git", async () => {
+		await setupMinimalDomains(tmp.path);
+		await setupFiles(tmp.path, {
+			"framework/runtime/sub-agent.md": "Subagent",
+		});
+		const drive = await buildSessionParams(
+			makeOptions({
+				runtimeContext: {
+					mode: "sub-agent",
+					parentRole: "driver",
+					taskId: "TASK-1",
+				},
+			}),
+		);
+		const ordinary = await buildSessionParams(makeOptions());
+		expect(drive.extensionFactories).toHaveLength(
+			ordinary.extensionFactories.length + 1,
+		);
+		const handlers: Record<string, (event: unknown) => unknown> = {};
+		const extension = drive.extensionFactories.at(-1);
+		const factory =
+			typeof extension === "function" ? extension : extension?.factory;
+		factory?.({
+			on: (name: string, handler: (event: unknown) => unknown) => {
+				handlers[name] = handler;
+			},
+		} as never);
+		const call = (command: string) =>
+			handlers.tool_call?.({ toolName: "bash", input: { command } });
+		expect(call("git reset --hard")).toMatchObject({
+			block: true,
+			reason: expect.stringContaining("no snapshot"),
+		});
+		expect(call("printf 'git reset --hard' && git status")).toBeUndefined();
+		expect(call("git add . && git commit -m ok")).toBeUndefined();
+	});
 	describe("prompt assembly and identity marker", () => {
 		it("loads main prompt resources for domainless definitions without a coding directory", async () => {
 			await setupMinimalDomains(tmp.path);

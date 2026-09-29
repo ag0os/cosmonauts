@@ -19,6 +19,7 @@ import {
 	uncheckedAcceptanceCriteriaReason as findUncheckedAcceptanceCriteriaReason,
 	headBeforeSpawn,
 	type RetriableTaskAttempt,
+	recordWorktreeSnapshot,
 	reportSummary,
 	runBackendWithTimeout,
 	runCommand,
@@ -26,6 +27,7 @@ import {
 	runShellCommand,
 	type SpawnFailure,
 	type SpawnSuccess,
+	snapshotWorktree,
 } from "./runtime-helpers.ts";
 import type {
 	ContradictedBlockAnnotation,
@@ -133,13 +135,27 @@ async function runTaskAttempt(
 	);
 
 	const headBefore = await headBeforeSpawn(spec.projectRoot, ctx.abortSignal);
+	const worktreeSnapshot = await snapshotWorktree({
+		projectRoot: spec.projectRoot,
+		runId: spec.runId,
+		taskId,
+		attemptNumber,
+		taskManager: ctx.taskManager,
+	});
 	await emit(ctx, spec, {
 		type: "spawn_started",
 		taskId,
 		backend: ctx.backend.name,
+		...(worktreeSnapshot ? { worktreeSnapshot } : {}),
 	});
 
 	const spawnResult = await runTaskBackend(spec, ctx, taskId, promptPath);
+	await recordWorktreeSnapshot(
+		ctx.taskManager,
+		taskId,
+		attemptNumber,
+		worktreeSnapshot,
+	);
 	if (spawnResult.status === "failure") {
 		return spawnFailureCandidate(
 			ctx,

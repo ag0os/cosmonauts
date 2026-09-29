@@ -1,4 +1,7 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { BackendRunResult } from "./backends/types.ts";
 import {
@@ -268,6 +271,111 @@ export async function blockedReportEvidence(options: {
 				? `Dirty paths:\n${status.stdout.trimEnd()}`
 				: "",
 	};
+}
+
+export async function snapshotWorktree(options: {
+	projectRoot: string;
+	runId: string;
+	taskId: string;
+	attemptNumber: number;
+	taskManager: TaskManager;
+}): Promise<string | undefined> {
+	const { projectRoot, runId, taskId, attemptNumber, taskManager } = options;
+	const git = (args: string[], env?: NodeJS.ProcessEnv) => {
+		try {
+			return execFileSync("git", args, {
+				cwd: projectRoot,
+				encoding: "utf8",
+				env: env ? { ...process.env, ...env } : process.env,
+				stdio: ["ignore", "pipe", "pipe"],
+			}).trim();
+		} catch (error) {
+			const stderr = (error as { stderr?: Buffer }).stderr?.toString().trim();
+			throw new Error(
+				`git ${args.join(" ")} failed: ${stderr || (error as { signal?: string }).signal || String(error)}`,
+			);
+		}
+	};
+	try {
+		if (git(["rev-parse", "--is-inside-work-tree"]) !== "true")
+			return undefined;
+	} catch {
+		return undefined;
+	}
+	if (!git(["status", "--porcelain", "--untracked-files=all"]))
+		return undefined;
+	const ref = `refs/cosmonauts/drive/${runId}/${taskId}/attempt-${attemptNumber}`;
+	const directory = mkdtempSync(join(tmpdir(), "cosmonauts-drive-index-"));
+	try {
+		const env = { GIT_INDEX_FILE: join(directory, "index") };
+		git(["read-tree", "HEAD"], env);
+		git(
+			[
+				"add",
+				"-A",
+				"--",
+				".",
+				":(exclude)missions/sessions",
+				":(exclude)missions/archive/sessions",
+			],
+			env,
+		);
+		const tree = git(["write-tree"], env);
+		const sha = git(
+			[
+				"commit-tree",
+				tree,
+				"-p",
+				git(["rev-parse", "HEAD"]),
+				"-m",
+				`Drive snapshot ${runId}/${taskId}/attempt-${attemptNumber}`,
+			],
+			env,
+		);
+		git(["update-ref", ref, sha]);
+		await recordWorktreeSnapshot(taskManager, taskId, attemptNumber, ref);
+		return ref;
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+}
+
+export async function recordWorktreeSnapshot(
+	taskManager: TaskManager,
+	taskId: string,
+	attemptNumber: number,
+	ref: string | undefined,
+): Promise<void> {
+	if (ref)
+		await taskManager.updateTask(taskId, {
+			appendImplementationNotes: `Drive worktree snapshot (attempt ${attemptNumber}): ${ref}`,
+		});
+}
+
+export function removeDoneTaskSnapshots(
+	projectRoot: string,
+	runId: string,
+	taskId: string,
+): void {
+	try {
+		execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+			cwd: projectRoot,
+			stdio: "ignore",
+		});
+	} catch {
+		return;
+	}
+	const prefix = `refs/cosmonauts/drive/${runId}/${taskId}/`;
+	const refs = execFileSync(
+		"git",
+		["for-each-ref", "--format=%(refname)", prefix],
+		{ cwd: projectRoot, encoding: "utf8" },
+	);
+	for (const ref of refs
+		.split("\n")
+		.filter((item) => item.startsWith(prefix))) {
+		execFileSync("git", ["update-ref", "-d", ref], { cwd: projectRoot });
+	}
 }
 
 export async function headBeforeSpawn(

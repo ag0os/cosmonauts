@@ -8,9 +8,10 @@
 import { join, resolve } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type {
-	InlineExtension,
-	ModelRegistry,
+import {
+	type InlineExtension,
+	isToolCallEventType,
+	type ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
 import {
 	loadProjectConfig,
@@ -31,6 +32,10 @@ import {
 	resolveModel,
 } from "../orchestration/model-resolution.ts";
 import type { QualityReviewProfile } from "../orchestration/quality-review-profile.ts";
+import {
+	isDestructiveGitCommand,
+	latestDriveSnapshot,
+} from "./drive-worker-tool-guard.ts";
 import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
@@ -250,6 +255,23 @@ export async function buildSessionParams(
 				}),
 			]
 		: [];
+
+	if (runtimeContext?.parentRole === "driver") {
+		extensionFactories.push((pi) => {
+			pi.on("tool_call", (event) => {
+				if (
+					!isToolCallEventType("bash", event) ||
+					!isDestructiveGitCommand(event.input.command)
+				)
+					return;
+				const ref = latestDriveSnapshot(cwd, runtimeContext.taskId);
+				return {
+					block: true,
+					reason: `Drive safety rule: destructive Git is blocked to protect uncommitted work. ${ref ? `Recover the previous attempt from ${ref}.` : "There is no snapshot available for this task."} Use git status/diff and targeted edits instead.`,
+				};
+			});
+		});
+	}
 
 	// Skill override construction
 	const effectiveProjectSkills = ignoreProjectSkills

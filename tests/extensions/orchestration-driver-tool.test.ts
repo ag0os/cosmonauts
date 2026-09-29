@@ -627,13 +627,15 @@ describe("driver e2e run_driver integration", () => {
 			task?.status,
 			`${specDebug}\n${events.map((event) => JSON.stringify(event)).join("\n")}`,
 		).toBe("Blocked");
-		// AC-020: unknown raw output is recorded before postflight; the finalizer is status-only.
+		// AC-014 snapshot notes add two append-only updates; AC-020 still keeps the finalizer status-only.
 		expect(task?.implementationNotes).toContain(
 			"### Drive — outcome unknown — attempt 1",
 		);
 		expect(task?.implementationNotes).toContain("no structured report");
 		expect(updateStatuses(updateSpy)).toEqual([
 			"In Progress",
+			undefined,
+			undefined,
 			undefined,
 			"Blocked",
 		]);

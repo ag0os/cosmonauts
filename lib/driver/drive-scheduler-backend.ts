@@ -39,9 +39,11 @@ import {
 	uncheckedAcceptanceCriteriaReason as findUncheckedAcceptanceCriteriaReason,
 	headBeforeSpawn,
 	type RetriableTaskAttempt,
+	recordWorktreeSnapshot,
 	runContradictedAttempts,
 	runShellCommand,
 	runBackendWithTimeout as runWithTimeout,
+	snapshotWorktree,
 } from "./runtime-helpers.ts";
 import { createDriveShellCommandBackend } from "./shell-command-finalizer.ts";
 import type {
@@ -212,16 +214,30 @@ async function runDriveTaskAttempt(
 		spec.projectRoot,
 		prepared.abortSignal,
 	);
+	const worktreeSnapshot = await snapshotWorktree({
+		projectRoot: spec.projectRoot,
+		runId: spec.runId,
+		taskId,
+		attemptNumber,
+		taskManager,
+	});
 	await emit(context, {
 		type: "spawn_started",
 		taskId,
 		backend: context.backend.name,
+		...(worktreeSnapshot ? { worktreeSnapshot } : {}),
 	});
 	const spawnResult = await runBackendWithTimeout(
 		context.backend,
 		invocation,
 		spec.taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS,
 		prepared.abortSignal,
+	);
+	await recordWorktreeSnapshot(
+		taskManager,
+		taskId,
+		attemptNumber,
+		worktreeSnapshot,
 	);
 	if (spawnResult.status === "failure") {
 		return spawnFailureCandidate(

@@ -154,6 +154,7 @@ export type DriverEvent =
 			type: "spawn_started";
 			taskId: string;
 			backend: string;
+			worktreeSnapshot?: string;
 	  })
 	| (DriverEventBase & {
 			type: "task_retry";

@@ -18,7 +18,7 @@ import {
 	readPendingFinalization,
 	writePendingFinalization,
 } from "./run-state.ts";
-import { reportSummary } from "./runtime-helpers.ts";
+import { removeDoneTaskSnapshots, reportSummary } from "./runtime-helpers.ts";
 import type {
 	ContradictedBlockAnnotation,
 	DriverEvent,
@@ -197,6 +197,7 @@ export async function transitionDriveTaskStatus({
 				});
 			}
 			await ctx.taskManager.updateTask(taskId, { status: "Done" });
+			removeDoneTaskSnapshots(spec.projectRoot, spec.runId, taskId);
 			if (spec.commitPolicy === "driver-commits") {
 				await emit(spec, ctx, {
 					type: "finalize",
