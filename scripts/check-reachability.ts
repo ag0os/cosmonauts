@@ -126,6 +126,99 @@ function resolveImport(from: string, specifier: string): string | undefined {
 	return undefined;
 }
 
+function runtimeImportClause(clause: ts.ImportClause | undefined): boolean {
+	if (!clause) return true;
+	if (clause.isTypeOnly) return false;
+	return runtimeNamedBindings(clause);
+}
+
+function runtimeNamedBindings(clause: ts.ImportClause): boolean {
+	if (!clause.namedBindings || !ts.isNamedImports(clause.namedBindings))
+		return true;
+	if (clause.name) return true;
+	return clause.namedBindings.elements.some((element) => !element.isTypeOnly);
+}
+
+function runtimeExportDeclaration(node: ts.ExportDeclaration): boolean {
+	if (node.isTypeOnly) return false;
+	if (!node.exportClause || !ts.isNamedExports(node.exportClause)) return true;
+	return node.exportClause.elements.some((element) => !element.isTypeOnly);
+}
+
+function literalImportCall(
+	node: ts.Node,
+	source: ts.SourceFile,
+): string | undefined {
+	if (!ts.isCallExpression(node)) return undefined;
+	return isImportCallee(node.expression, source)
+		? literalCallArgument(node)
+		: undefined;
+}
+
+function literalCallArgument(node: ts.CallExpression): string | undefined {
+	if (node.arguments.length !== 1) return undefined;
+	const argument = node.arguments[0];
+	if (!argument || !ts.isStringLiteral(argument)) return undefined;
+	return argument.text;
+}
+
+function isImportCallee(
+	expression: ts.LeftHandSideExpression,
+	source: ts.SourceFile,
+): boolean {
+	return (
+		expression.kind === ts.SyntaxKind.ImportKeyword ||
+		expression.getText(source) === "require"
+	);
+}
+
+function addRunnerModule(
+	node: ts.Node,
+	source: ts.SourceFile,
+	add: (specifier: string) => void,
+): void {
+	if (
+		ts.isPropertyAssignment(node) &&
+		node.name.getText(source) === "runnerModule" &&
+		ts.isStringLiteral(node.initializer)
+	) {
+		add(node.initializer.text);
+	}
+}
+
+function addImportDeclaration(
+	node: ts.Node,
+	add: (specifier: string) => void,
+): void {
+	if (
+		ts.isImportDeclaration(node) &&
+		ts.isStringLiteral(node.moduleSpecifier) &&
+		runtimeImportClause(node.importClause)
+	) {
+		add(node.moduleSpecifier.text);
+	}
+}
+
+function addExportDeclaration(
+	node: ts.Node,
+	add: (specifier: string) => void,
+): void {
+	if (ts.isExportDeclaration(node)) addExportModule(node, add);
+}
+
+function addExportModule(
+	node: ts.ExportDeclaration,
+	add: (specifier: string) => void,
+): void {
+	if (
+		node.moduleSpecifier &&
+		ts.isStringLiteral(node.moduleSpecifier) &&
+		runtimeExportDeclaration(node)
+	) {
+		add(node.moduleSpecifier.text);
+	}
+}
+
 function runtimeImports(path: string): string[] {
 	const source = ts.createSourceFile(
 		path,
@@ -139,47 +232,11 @@ function runtimeImports(path: string): string[] {
 		if (target) imports.push(target);
 	}
 	function visit(node: ts.Node): void {
-		if (
-			ts.isPropertyAssignment(node) &&
-			node.name.getText(source) === "runnerModule" &&
-			ts.isStringLiteral(node.initializer)
-		)
-			add(node.initializer.text);
-		if (
-			ts.isImportDeclaration(node) &&
-			ts.isStringLiteral(node.moduleSpecifier)
-		) {
-			const clause = node.importClause;
-			if (
-				!clause?.isTypeOnly &&
-				(!clause?.namedBindings ||
-					!ts.isNamedImports(clause.namedBindings) ||
-					clause.name ||
-					clause.namedBindings.elements.some((element) => !element.isTypeOnly))
-			)
-				add(node.moduleSpecifier.text);
-		} else if (
-			ts.isExportDeclaration(node) &&
-			node.moduleSpecifier &&
-			ts.isStringLiteral(node.moduleSpecifier)
-		) {
-			if (
-				!node.isTypeOnly &&
-				(!node.exportClause ||
-					!ts.isNamedExports(node.exportClause) ||
-					node.exportClause.elements.some((element) => !element.isTypeOnly))
-			)
-				add(node.moduleSpecifier.text);
-		} else if (
-			ts.isCallExpression(node) &&
-			node.arguments.length === 1 &&
-			node.arguments[0] &&
-			ts.isStringLiteral(node.arguments[0]) &&
-			(node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-				node.expression.getText(source) === "require")
-		) {
-			add(node.arguments[0].text);
-		}
+		addRunnerModule(node, source, add);
+		addImportDeclaration(node, add);
+		addExportDeclaration(node, add);
+		const call = literalImportCall(node, source);
+		if (call !== undefined) add(call);
 		ts.forEachChild(node, visit);
 	}
 	visit(source);

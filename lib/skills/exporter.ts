@@ -256,16 +256,13 @@ export async function runHarnessSync(
 			reportRow(normalizedOptions, row),
 		);
 		if (normalizedOptions.request.check) {
-			if (baseRows.length === 0 && evaluated.consistencyReason) {
-				reports.push(
-					await syntheticRecoveryRow(normalizedOptions, group, {
-						state: evaluated.consistencyReason,
-						detail: "Owner-group state was not stable during check.",
-					}),
-				);
-			} else {
-				reports.push(...baseRows);
-			}
+			await reportCheckedGroup(
+				normalizedOptions,
+				group,
+				evaluated,
+				baseRows,
+				reports,
+			);
 			continue;
 		}
 
@@ -288,85 +285,28 @@ export async function runHarnessSync(
 				},
 			);
 		} catch (error) {
-			if (baseRows.length === 0) {
-				reports.push(
-					await syntheticFailureRow(normalizedOptions, group, error, "write"),
-				);
-			} else {
-				reports.push(
-					...baseRows.map((row) => ({
-						...row,
-						reason: `write-failure:${errorMessage(error)}`,
-						action: "failed",
-						final: "source-ahead" as const,
-						evidence: errorMessage(error),
-					})),
-				);
-			}
+			await reportWriteFailure(
+				normalizedOptions,
+				group,
+				baseRows,
+				error,
+				reports,
+			);
 			continue;
 		}
 
 		if (transactionResult.state === "completed") {
-			const actionResult = transactionResult.result;
-			const currentRows = actionResult.current.planRows;
-			for (const row of currentRows) {
-				const localEditConflict =
-					actionResult.state === "applied" &&
-					actionResult.applied.state === "local-edit-conflict" &&
-					actionResult.applied.targetPaths.includes(row.targetPath);
-				reports.push({
-					...reportRow(normalizedOptions, row),
-					...(localEditConflict
-						? {
-								before: "locally-edited" as const,
-								reason: "locally-edited",
-								action: "none",
-								final: "locally-edited" as const,
-							}
-						: {
-								final:
-									actionResult.state === "applied" &&
-									row.action !== "none" &&
-									actionResult.applied.state === "committed"
-										? "current"
-										: row.beforeStatus,
-							}),
-					recovery: transactionResult.recovery,
-					...(actionResult.state === "applied" &&
-					actionResult.applied.state !== "committed"
-						? { evidence: actionResult.applied.state }
-						: {}),
-				});
-			}
+			reportCompletedGroup(normalizedOptions, transactionResult, reports);
 			continue;
 		}
 
-		const recovery =
-			transactionResult.state === "recovery-required"
-				? transactionResult.recovery
-				: transactionResult.state === "lock-contended"
-					? {
-							state: "lock-contended",
-							detail: `${transactionResult.lockPath}${transactionResult.ownerPid ? ` pid=${transactionResult.ownerPid}` : ""}`,
-						}
-					: {
-							state: "persisted-release-unconfirmed",
-							detail: errorMessage(transactionResult.error),
-						};
-		for (const row of baseRows) {
-			reports.push({
-				...row,
-				recovery,
-				...(transactionResult.state === "persisted-release-unconfirmed"
-					? { releaseWarning: errorMessage(transactionResult.error) }
-					: {}),
-			});
-		}
-		if (baseRows.length === 0) {
-			reports.push(
-				await syntheticRecoveryRow(normalizedOptions, group, recovery),
-			);
-		}
+		await reportIncompleteGroup(
+			normalizedOptions,
+			group,
+			baseRows,
+			transactionResult,
+			reports,
+		);
 		if (transactionResult.state === "persisted-release-unconfirmed") break;
 	}
 
@@ -378,6 +318,139 @@ export async function runHarnessSync(
 		? 1
 		: 0;
 	return { rows: reports, exitCode };
+}
+
+async function reportCheckedGroup(
+	options: HarnessSyncOptions,
+	group: OwnerGroup,
+	evaluated: EvaluatedGroup,
+	baseRows: readonly HarnessSyncReportRow[],
+	reports: HarnessSyncReportRow[],
+): Promise<void> {
+	if (baseRows.length === 0 && evaluated.consistencyReason) {
+		reports.push(
+			await syntheticRecoveryRow(options, group, {
+				state: evaluated.consistencyReason,
+				detail: "Owner-group state was not stable during check.",
+			}),
+		);
+	} else {
+		reports.push(...baseRows);
+	}
+}
+
+async function reportWriteFailure(
+	options: HarnessSyncOptions,
+	group: OwnerGroup,
+	baseRows: readonly HarnessSyncReportRow[],
+	error: unknown,
+	reports: HarnessSyncReportRow[],
+): Promise<void> {
+	if (baseRows.length === 0) {
+		reports.push(await syntheticFailureRow(options, group, error, "write"));
+	} else {
+		reports.push(
+			...baseRows.map((row) => ({
+				...row,
+				reason: `write-failure:${errorMessage(error)}`,
+				action: "failed",
+				final: "source-ahead" as const,
+				evidence: errorMessage(error),
+			})),
+		);
+	}
+}
+
+function reportCompletedGroup(
+	options: HarnessSyncOptions,
+	transactionResult: Extract<
+		OwnerRootTransactionResult<GroupTransactionActionResult>,
+		{ state: "completed" }
+	>,
+	reports: HarnessSyncReportRow[],
+): void {
+	const actionResult = transactionResult.result;
+	for (const row of actionResult.current.planRows) {
+		reports.push(
+			completedReportRow(
+				options,
+				row,
+				actionResult,
+				transactionResult.recovery,
+			),
+		);
+	}
+}
+
+function completedReportRow(
+	options: HarnessSyncOptions,
+	row: ClassifiedHarnessSyncPlanRow,
+	actionResult: GroupTransactionActionResult,
+	recovery: OwnerRootRecoveryResult,
+): HarnessSyncReportRow {
+	const localEditConflict =
+		actionResult.state === "applied" &&
+		actionResult.applied.state === "local-edit-conflict" &&
+		actionResult.applied.targetPaths.includes(row.targetPath);
+	return {
+		...reportRow(options, row),
+		...(localEditConflict
+			? {
+					before: "locally-edited" as const,
+					reason: "locally-edited",
+					action: "none",
+					final: "locally-edited" as const,
+				}
+			: {
+					final:
+						actionResult.state === "applied" &&
+						row.action !== "none" &&
+						actionResult.applied.state === "committed"
+							? "current"
+							: row.beforeStatus,
+				}),
+		recovery,
+		...(actionResult.state === "applied" &&
+		actionResult.applied.state !== "committed"
+			? { evidence: actionResult.applied.state }
+			: {}),
+	};
+}
+
+async function reportIncompleteGroup(
+	options: HarnessSyncOptions,
+	group: OwnerGroup,
+	baseRows: readonly HarnessSyncReportRow[],
+	transactionResult: Exclude<
+		OwnerRootTransactionResult<GroupTransactionActionResult>,
+		{ state: "completed" }
+	>,
+	reports: HarnessSyncReportRow[],
+): Promise<void> {
+	const recovery =
+		transactionResult.state === "recovery-required"
+			? transactionResult.recovery
+			: transactionResult.state === "lock-contended"
+				? {
+						state: "lock-contended",
+						detail: `${transactionResult.lockPath}${transactionResult.ownerPid ? ` pid=${transactionResult.ownerPid}` : ""}`,
+					}
+				: {
+						state: "persisted-release-unconfirmed",
+						detail: errorMessage(transactionResult.error),
+					};
+	for (const row of baseRows) {
+		reports.push({
+			...row,
+			recovery,
+			...(transactionResult.state === "persisted-release-unconfirmed"
+				? { releaseWarning: errorMessage(transactionResult.error) }
+				: {}),
+		});
+	}
+	if (baseRows.length === 0) {
+		reports.push(await syntheticRecoveryRow(options, group, recovery));
+	}
 }
 
 function resolveCatalogue(options: HarnessSyncOptions): ResolvedCatalogueRow[] {
@@ -450,46 +523,10 @@ async function groupCatalogue(
 	if (
 		options.request.reconciliation === "complete" &&
 		(!options.request.kinds || options.request.kinds.includes("skill"))
-	) {
-		const targets =
-			options.request.targetIds ?? listImplementedHarnessTargetIds("skill");
-		const scopes = options.request.scopes ?? (["project"] as const);
-		for (const targetId of targets) {
-			const descriptor = getHarnessTarget(targetId);
-			if (
-				!descriptor ||
-				descriptor.status !== "implemented" ||
-				!descriptor.adapters.some((adapter) => adapter.kind === "skill")
-			) {
-				continue;
-			}
-			for (const scope of scopes) {
-				const ownerRoot = join(
-					scope === "project" ? options.projectRoot : options.homeRoot,
-					descriptor.ownerDirectory,
-				);
-				const key = JSON.stringify([resolve(ownerRoot), targetId]);
-				if (!byKey.has(key)) byKey.set(key, []);
-			}
-		}
-	}
-	if (options.request.forgetRemovedAssetIds) {
-		const targets =
-			options.request.targetIds ?? listImplementedHarnessTargetIds();
-		const scopes = options.request.scopes ?? (["project", "personal"] as const);
-		for (const targetId of targets) {
-			for (const scope of scopes) {
-				const descriptor = getHarnessTarget(targetId);
-				if (!descriptor || descriptor.status !== "implemented") continue;
-				const ownerRoot = join(
-					scope === "project" ? options.projectRoot : options.homeRoot,
-					descriptor.ownerDirectory,
-				);
-				const key = JSON.stringify([resolve(ownerRoot), targetId]);
-				if (!byKey.has(key)) byKey.set(key, []);
-			}
-		}
-	}
+	)
+		registerCompleteSkillGroups(byKey, options);
+	if (options.request.forgetRemovedAssetIds)
+		registerForgetGroups(byKey, options);
 	return [...byKey.entries()].map(([key, groupedRows]) => {
 		const [ownerRoot, targetId] = JSON.parse(key) as [
 			string,
@@ -497,6 +534,70 @@ async function groupCatalogue(
 		];
 		return { ownerRoot, targetId, rows: groupedRows };
 	});
+}
+
+function registerCompleteSkillGroups(
+	byKey: Map<string, ResolvedCatalogueRow[]>,
+	options: HarnessSyncOptions,
+): void {
+	const targets =
+		options.request.targetIds ?? listImplementedHarnessTargetIds("skill");
+	const scopes = options.request.scopes ?? (["project"] as const);
+	for (const targetId of targets) {
+		const descriptor = getHarnessTarget(targetId);
+		if (
+			!descriptor ||
+			descriptor.status !== "implemented" ||
+			!descriptor.adapters.some((adapter) => adapter.kind === "skill")
+		)
+			continue;
+		for (const scope of scopes) {
+			registerEmptyOwnerGroup(
+				byKey,
+				options,
+				targetId,
+				scope,
+				descriptor.ownerDirectory,
+			);
+		}
+	}
+}
+
+function registerForgetGroups(
+	byKey: Map<string, ResolvedCatalogueRow[]>,
+	options: HarnessSyncOptions,
+): void {
+	const targets =
+		options.request.targetIds ?? listImplementedHarnessTargetIds();
+	const scopes = options.request.scopes ?? (["project", "personal"] as const);
+	for (const targetId of targets) {
+		for (const scope of scopes) {
+			const descriptor = getHarnessTarget(targetId);
+			if (!descriptor || descriptor.status !== "implemented") continue;
+			registerEmptyOwnerGroup(
+				byKey,
+				options,
+				targetId,
+				scope,
+				descriptor.ownerDirectory,
+			);
+		}
+	}
+}
+
+function registerEmptyOwnerGroup(
+	byKey: Map<string, ResolvedCatalogueRow[]>,
+	options: HarnessSyncOptions,
+	targetId: string,
+	scope: HarnessScope,
+	ownerDirectory: string,
+): void {
+	const ownerRoot = join(
+		scope === "project" ? options.projectRoot : options.homeRoot,
+		ownerDirectory,
+	);
+	const key = JSON.stringify([resolve(ownerRoot), targetId]);
+	if (!byKey.has(key)) byKey.set(key, []);
 }
 
 async function evaluateGroup(
@@ -565,18 +666,7 @@ async function evaluateGroup(
 	);
 	const enhancedRows = await Promise.all(
 		plan.rows.map(async (row): Promise<ClassifiedHarnessSyncPlanRow> => {
-			if (
-				plan.aborted ||
-				row.reason === "inventory-incomplete" ||
-				row.reason === "transaction-aborted-incomplete-inventory" ||
-				row.reason === "foreign-owner" ||
-				row.reason === "source-removed" ||
-				row.reason === "source-unavailable" ||
-				row.reason === "explicit-forget" ||
-				row.reason === "owner-transfer"
-			) {
-				return row;
-			}
+			if (plan.aborted || skipsAssetCheck(row.reason)) return row;
 			const catalogue = group.rows.find(
 				(candidate) => candidate.target.targetPath === row.targetPath,
 			);
@@ -603,35 +693,12 @@ async function evaluateGroup(
 				: checked.manifestEntry;
 			desired.set(row.targetPath, desiredEntry);
 			if (row.status === "locally-edited") return row;
-			const action = options.request.check
-				? "none"
-				: refreshLegacyEntry
-					? "refresh-entry"
-					: checked.beforeStatus === "missing"
-						? "create"
-						: checked.beforeStatus === "source-ahead"
-							? "replace"
-							: "none";
-			return {
-				...row,
-				status: checked.beforeStatus,
-				beforeStatus: checked.beforeStatus,
-				reason: checked.reason,
-				action,
-				recordedMode: checked.recordedMode,
-				requestedMode: checked.requestedMode,
-				...(checked.generatingProjectRoot
-					? { generatingProjectRoot: checked.generatingProjectRoot }
-					: {}),
-				...(checked.previousGeneratingProjectRoot
-					? {
-							previousGeneratingProjectRoot:
-								checked.previousGeneratingProjectRoot,
-						}
-					: {}),
-				writesTarget: action === "create" || action === "replace",
-				writesManifest: action !== "none",
-			};
+			return classifyCheckedRow(
+				row,
+				checked,
+				options.request.check,
+				refreshLegacyEntry,
+			);
 		}),
 	);
 	return {
@@ -640,6 +707,52 @@ async function evaluateGroup(
 		manifestEntries,
 		expectedTargetSnapshots: targetSnapshots,
 		oldManifest,
+	};
+}
+
+function skipsAssetCheck(reason: string): boolean {
+	return [
+		"inventory-incomplete",
+		"transaction-aborted-incomplete-inventory",
+		"foreign-owner",
+		"source-removed",
+		"source-unavailable",
+		"explicit-forget",
+		"owner-transfer",
+	].includes(reason);
+}
+
+function classifyCheckedRow(
+	row: ClassifiedHarnessSyncPlanRow,
+	checked: Awaited<ReturnType<typeof syncHarnessAsset>>,
+	check: boolean,
+	refreshLegacyEntry: boolean,
+): ClassifiedHarnessSyncPlanRow {
+	const action = check
+		? "none"
+		: refreshLegacyEntry
+			? "refresh-entry"
+			: checked.beforeStatus === "missing"
+				? "create"
+				: checked.beforeStatus === "source-ahead"
+					? "replace"
+					: "none";
+	return {
+		...row,
+		status: checked.beforeStatus,
+		beforeStatus: checked.beforeStatus,
+		reason: checked.reason,
+		action,
+		recordedMode: checked.recordedMode,
+		requestedMode: checked.requestedMode,
+		...(checked.generatingProjectRoot
+			? { generatingProjectRoot: checked.generatingProjectRoot }
+			: {}),
+		...(checked.previousGeneratingProjectRoot
+			? { previousGeneratingProjectRoot: checked.previousGeneratingProjectRoot }
+			: {}),
+		writesTarget: action === "create" || action === "replace",
+		writesManifest: action !== "none",
 	};
 }
 
