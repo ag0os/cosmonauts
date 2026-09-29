@@ -19,6 +19,12 @@ Implementation Order slice 5. Owns B-004 from AC-007. Design ownership: §4 Prom
 
 Files to Change owned by this slice: `lib/driver/prompt-template.ts` for all-backend criterion-marking instructions.
 
+**Precondition (D-028 checkpoint, coordinator-run before launch):** after TASK-793's Drive commit, exit the cosmo host, start a fresh print-mode cosmo session, confirm `bin/cosmonauts-drive-step` does not exist, and record HEAD and the session start time in this task's implementation notes. Inline runs execute the host's loaded source; without the restart, slices 5-12 would run on slice 1-4 code.
+
+**Standing AC-marking note (D-028):** as each acceptance criterion is verified, call `task_edit` with `checkAc: [index]`; Drive blocks a `success` report while any criterion is unchecked. This note stands until the all-backend completion protocol (slice 5) is live in the host.
+
+**Standing worker rule until TASK-801 aligns the persona (D-028):** write every implementation note, including the D-030 red/green rows, with `task_edit` `implementationNotesMode: "append"`; never replace notes; if you stop blocked, set status Blocked and end the report with `outcome: blocked`.
+
 ## Implementation Plan
 
 Follow Design §4: render a completion section whenever a task has acceptance criteria; route in-process workers to `task_edit` with `checkAc` and external `codex`/`claude-cli` workers to the task CLI; preserve the existing post-report check that blocks success while criteria remain unchecked. Test prompt routing as a contract while leaving authored persona wording to slice 12 review.
@@ -29,6 +35,6 @@ Follow Design §4: render a completion section whenever a task has acceptance cr
 - [ ] #3 The owned Files to Change entry `lib/driver/prompt-template.ts` delivers Design §4’s per-backend completion-protocol routing without taking ownership of slice 12’s authored persona prose.
 - [ ] #4 Ratified ground binds exactly: “INV-004 - The protocol and the parser agree, for every backend. Every outcome word the rendered prompt allows is parsed, every parsed outcome has one documented Drive consequence, and a rule that governs completion (such as marking acceptance criteria) reaches every backend in a form that backend can act on.” A collision is stop-and-escalate ground under the deviation protocol, not worker-adjustable detail.
 - [ ] #5 No `lib/durable-runtime/` change; no `drive-envelope` or `execution-liveness` work; no suppression, threshold, baseline, ignore-pattern, or configuration change to clear a finding; no test expectation change except where it pinned the defect being removed, citing the criterion (AC-020).
-- [ ] #6 D-028: this slice is implemented in a single Drive run on the `cosmonauts-subagent` inline backend from the fresh print-mode cosmo session established by slice 4’s checkpoint.
+- [ ] #6 D-028: this slice is implemented in a single Drive run on the `cosmonauts-subagent` inline backend from the fresh print-mode cosmo session established by the checkpoint below; before this run started, the coordinator restarted the cosmo host after TASK-793's Drive commit, confirmed no stale `bin/cosmonauts-drive-step` exists, and recorded that confirmation with HEAD and the session start time in this task's implementation notes.
 - [ ] #7 D-030: for B-004, implementation notes record one failing run before the change and one passing run after it; each row includes the test name and commit, the failing row includes a one-line failure, and the passing row records the successful result.
 <!-- AC:END -->

@@ -2,7 +2,7 @@
 title: Fix the Drive Defects the Health Audit Exposed
 status: active
 createdAt: '2026-09-29T13:31:06.260Z'
-updatedAt: '2026-09-29T16:20:00.000Z'
+updatedAt: '2026-09-29T17:25:00.000Z'
 ---
 
 ## Overview
@@ -202,12 +202,14 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Alternatives: leave behaviors shared across slices (a coverage matrix cannot assign owners; coordinator findings 3, 4, 5, 9, 10).
   - Why: the task backlog needs exactly one owner per behavior, and AC-019 says "the plan records the failing run for each".
   - Decided by: coordinator, amend-on-record, 2026-09-29
+  - *(Amended 2026-09-29 by D-031: B-012 is owned by slice 13, coordinator-run.)*
 
 - **D-028 - Slices 1–4 run on the unfixed Drive with mitigations; the host restarts after slice 4** *(Added 2026-09-29 after review)*
   - Decision: every slice runs through `run_driver` on the `cosmonauts-subagent` inline backend from a print-mode cosmo session. Until slice 3 lands, each task carries the standing AC-marking note and the coordinator recovers worker notes from the worker transcript after any block. After slice 4's Drive commit, the coordinator starts a fresh cosmo session (inline runs load live source) and confirms no stale `bin/cosmonauts-drive-step` binary exists before slice 5. Slice 12's live acceptance is the first run that relies on the fixed path.
   - Alternatives: run slices 1–4 by hand (breaks "every slice is one Drive run"); trust the running host to pick up source changes (it does not).
   - Why: D-012 is otherwise ambiguous (coordinator finding 6, partial).
   - Decided by: coordinator, amend-on-record, 2026-09-29
+  - *(Amended 2026-09-29 by D-031: the standing note holds until slice 5 is live; a second restart precedes slice 13.)*
 
 - **D-029 - The CLI's `--append-notes` uses the same source-preserving editor** *(Added 2026-09-29 after review)*
   - Decision: `cli/tasks/commands/edit.ts` maps `--append-notes` to the append input instead of read-concatenate-replace, so external backends and humans get the same byte preservation.
@@ -220,6 +222,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Alternatives: notes only (AC-019's letter unmet, coordinator finding 10).
   - Why: AC-019.
   - Decided by: coordinator, amend-on-record, 2026-09-29
+
+- **D-031 - Coordinator-only work leaves worker acceptance criteria; slice 12 splits into a Drive slice and a coordinator closeout** *(Added 2026-09-29 after the task compliance review)*
+  - Decision: slice 12 (TASK-801) keeps only the worker-run B-015 prose alignment. A thirteenth slice (TASK-802), owned by the coordinator and never dispatched through Drive, owns B-012: the second host restart, the `## Evidence` table (D-030), the AC-020 change-set audit, the live acceptance run, and the D-026 hand-off copy. The D-028 host-restart checkpoint after slice 4 is TASK-794's recorded precondition, not a TASK-793 criterion. Tasks 1-5 carry the standing AC-marking note in their Description until the all-backend completion protocol (slice 5) is live; tasks 5-12 carry the standing worker rule (append-mode notes, `outcome: blocked`) until the persona is aligned.
+  - Alternatives: keep coordinator actions as worker criteria (Drive blocks a `success` report with unchecked criteria, so TASK-793 and TASK-801 could never complete honestly; compliance review findings 3, 11, 12, 13, all confirmed).
+  - Why: INV-004 (a rule that governs completion reaches the worker in a form it can act on) and the single-Drive-run rule of D-028.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: D-027's "B-012 is owned by slice 12"; D-028's "until slice 3 lands" boundary (the note is needed until slice 5 is live) and its single restart (a second restart precedes the live acceptance); Implementation Order slice 12's coordinator paragraph.
 
 ## Behaviors
 
@@ -485,7 +494,7 @@ Drive's preflight and postflight (both paths) check the project's probe journal 
 
 ## Implementation Order
 
-Twelve slices, each one Drive run on the `cosmonauts-subagent` inline backend (D-028), dependency-ordered. Every slice records, per owned behavior, one failing run before the change and one passing run after, in its task notes (D-030). Test files are chosen by the worker after inspecting existing coverage.
+Thirteen slices: twelve are each one Drive run on the `cosmonauts-subagent` inline backend (D-028), dependency-ordered; the thirteenth is coordinator-run (D-031). Every slice records, per owned behavior, one failing run before the change and one passing run after, in its task notes (D-030). Test files are chosen by the worker after inspecting existing coverage.
 
 1. **Source-preserving task mutation and task-edit hygiene — B-003 (AC-006, AC-013).** Per-task lock, raw note transplant on every non-replacing update, exclusive input type, `task_edit` append mode, CLI `--append-notes` routing, title normalization, canonical rename. Prove: CRLF/trailing-space/blank-line bytes survive a status-only, criterion-only, and title-only update; empty-section append; no-section insertion; duplicate-section refusal; replace compatibility; both-modes rejection; simultaneous appends from separate processes; idempotent re-append; normalized-empty rejection; one canonical path.
 
@@ -493,7 +502,7 @@ Twelve slices, each one Drive run on the `cosmonauts-subagent` inline backend (D
 
 3. **Blocked report vertical slice — B-013 (AC-002, AC-003).** Blocked parse (both forms) with raw retention, report-contract wording, early branch on both paths, verbatim reason in task and event, durable blocked projection, unverified-commit range under `backend-commits`, dirty-path list otherwise. Prove: both forms; no postflight, commit, acceptance inference, or retry; legacy and normalized terminal evidence agree; `partialMode` unchanged; moved HEAD recorded.
 
-4. **Explicit retry event and nonterminal projection — B-002 (AC-005).** `task_retry` at the existing loop, activity-only normalization of contradicted evidence, no terminal step before the second spawn, bridge inclusion, `attempt unknown` in resumed finalizers. Prove: attempt 1's note precedes `task_retry`; `task_retry` precedes the second `spawn_started`; no retry event without a re-spawn; durable record shows one running step; a resumed finalizer writes `attempt unknown`; no `lib/durable-runtime/` change. *Checkpoint (D-028): restart the cosmo host, confirm no stale `bin/cosmonauts-drive-step`.*
+4. **Explicit retry event and nonterminal projection — B-002 (AC-005).** `task_retry` at the existing loop, activity-only normalization of contradicted evidence, no terminal step before the second spawn, bridge inclusion, `attempt unknown` in resumed finalizers. Prove: attempt 1's note precedes `task_retry`; `task_retry` precedes the second `spawn_started`; no retry event without a re-spawn; durable record shows one running step; a resumed finalizer writes `attempt unknown`; no `lib/durable-runtime/` change. *Checkpoint (D-028, D-031): before slice 5 launches, the coordinator restarts the cosmo host and confirms no stale `bin/cosmonauts-drive-step`; recorded in TASK-794's notes.*
 
 5. **All-backend completion protocol — B-004 (AC-007).** Render the criterion-marking section for every backend name with its mechanism; keep unchecked-success blocking. Prove: the rendered prompt for `cosmonauts-subagent`, `codex`, and `claude-cli` each contains the instruction with the right mechanism (failing before the change for the subagent); a success report with unchecked criteria still blocks.
 
@@ -509,4 +518,6 @@ Twelve slices, each one Drive run on the `cosmonauts-subagent` inline backend (D
 
 11. **Driver boundary hygiene — B-010, B-011 remaining clauses (AC-015, AC-016, AC-017, AC-018).** Safe-summary classification with task-title fallback on both paths, environment scrub for project commands only, workdir and event-log path in text, unified mode wording. Prove: safe prose remains; every forbidden subject form yields the title; backend creation still sees the variables while project children do not; identical wording in schema and both errors.
 
-12. **Worker prompt alignment and final acceptance — B-015, B-012 (AC-002, AC-006, AC-012, AC-014, AC-019, AC-020).** Persona prose in `worker.md` for append-only notes, `outcome: blocked`, probe evidence, Git rule and snapshot; skills and docs consistency. Then the coordinator-run acceptance: audit every task's red/green rows and copy them into a `## Evidence` table appended to this plan; audit the change set for prohibited configuration, suppression, or uncited expectation edits; create an unlabelled throwaway task with raw sentinel notes whose attempt 1 reports `failure` naming an existing path as absent and whose attempt 2 reports `blocked` with a fixed reason; run only that task through real inline `cosmonauts-subagent` with `no-commit` and one consented external postflight sentinel; accept only if the notes preserve the sentinel bytes and show Drive attempt 1 then attempt 2, events show attempt 1's block evidence, `task_retry`, the second `spawn_started`, exactly one postflight set before the retry and none after the blocked report, no third spawn, the verbatim final reason, a snapshot ref for the dirty tree, and durable and legacy records that agree; in `finally`, settle the run, retain its directory, append run ID and evidence to this slice's task, then remove the throwaway task and sentinel. If live access is unavailable or behavior is nondeterministic, stop for human disposition.
+12. **Worker prompt alignment — B-015 (AC-002, AC-006, AC-012, AC-014).** Persona prose in `worker.md` for append-only notes, `outcome: blocked`, probe evidence, the `backend-commits` no-commit-before-blocked rule, Git rule and snapshot ref location; skills and docs consistency. Prove: a rendered report contract or persona lacking a clause fails before the change; every clause is verified by reviewed diff. The worker records the carrying lines for TASK-802.
+
+13. **Coordinator closeout and live acceptance — B-012 (AC-019, AC-020).** *Coordinator-run, not a Drive task (D-031).* After slice 12's Drive commit: restart the cosmo host and confirm no stale `bin/cosmonauts-drive-step`; audit every task's red/green rows and copy them into a `## Evidence` table appended to this plan; audit the change set for prohibited configuration, suppression, or uncited expectation edits; create an unlabelled throwaway task with raw sentinel notes whose attempt 1 reports `failure` naming an existing path as absent and whose attempt 2 reports `blocked` with a fixed reason; run only that task through real inline `cosmonauts-subagent` with `no-commit` and one consented external postflight sentinel; accept only if the notes preserve the sentinel bytes and show Drive attempt 1 then attempt 2, events show attempt 1's block evidence, `task_retry`, the second `spawn_started`, exactly one postflight set before the retry and none after the blocked report, no third spawn, the verbatim final reason, a snapshot ref for the dirty tree, and durable and legacy records that agree; in `finally`, settle the run, retain its directory, append run ID and evidence to this slice's task, then remove the throwaway task and sentinel; copy the D-026 hand-off from TASK-790's notes into the closeout report. If live access is unavailable or behavior is nondeterministic, stop for human disposition.

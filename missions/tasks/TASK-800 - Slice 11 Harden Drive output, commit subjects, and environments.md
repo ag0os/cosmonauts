@@ -19,6 +19,8 @@ Implementation Order slice 11. Owns B-010 from AC-016 and AC-018 and the remaini
 
 Files to Change owned by this slice: `lib/driver/runtime-helpers.ts`, `lib/driver/run-one-task.ts`, `lib/driver/drive-scheduler-backend.ts`, `lib/driver/drive-finalization.ts`, `domains/shared/extensions/orchestration/driver-tool.ts`, and `docs/orchestration.md` for safe summaries, project-command environment isolation, visible result paths, and one backend/mode rule.
 
+**Standing worker rule until TASK-801 aligns the persona (D-028):** write every implementation note, including the D-030 red/green rows, with `task_edit` `implementationNotesMode: "append"`; never replace notes; if you stop blocked, set status Blocked and end the report with `outcome: blocked`.
+
 ## Implementation Plan
 
 Follow Design §8: classify report summaries as usable, absent, or unsafe and send absent/unsafe values through task-title `commitSubject` fallback on both paths; scrub every `COSMONAUTS_DRIVER_*` key only from copied pre/postflight environments after backend resolution has read the parent environment; define one backend/mode sentence reused by schema and both validation errors before backend construction; include labeled workdir and event-log paths in successful print-mode text. Preserve slice 3’s unverified-commit reporting as the remaining B-011 blocked-report clause.

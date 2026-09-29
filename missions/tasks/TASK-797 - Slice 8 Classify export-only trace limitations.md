@@ -19,6 +19,8 @@ Implementation Order slice 8. Owns B-006 from AC-010. Design ownership: §5 pre-
 
 Files to Change owned by this slice: `lib/analysis/types.ts`, `domains/shared/extensions/project-tools/fallow-provider.ts`, `domains/shared/extensions/project-tools/index.ts`, `domains/shared/skills/analysis/SKILL.md`, `docs/analysis-capabilities.md`, `docs/analysis-provider-validation.md`, and `docs/fallow.md` for provider-constraint classification and export-only guidance.
 
+**Standing worker rule until TASK-801 aligns the persona (D-028):** write every implementation note, including the D-030 red/green rows, with `task_edit` `implementationNotesMode: "append"`; never replace notes; if you stop blocked, set status Blocked and end the report with `outcome: blocked`.
+
 ## Implementation Plan
 
 Follow Design §5: add the provider-constraint unsupported-target resolution with a file suggestion; keep `execute` result-only and expose private `classifyRequest`; call classification after generic readiness and before provider execution; use the TypeScript compiler AST to confirm absence while recognizing direct, aliased, default, and supported CommonJS exports; let re-exports, unreadable sources, non-JS/TS files, and uncertainty continue through the normal provider path. Review authored skill/docs wording against the behavior rather than pinning prose sentences in tests.
