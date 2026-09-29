@@ -237,6 +237,12 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Decided by: coordinator, amend-on-record, 2026-09-29
   - Supersedes: the "provider-error" entry-point item of B-014 as far as it implied the header; D-008's "cap typed provider-error messages" stands unchanged.
 
+- **D-033 - The worktree snapshot ref is carried inside the attempt's Drive record, never as a standalone note** *(Added 2026-09-29 by the implementing coordinator after slice 10 landed)*
+  - Decision: `snapshotWorktree` returns the ref and Drive holds it in memory for the attempt; the ref is written into the task only as a line inside the attempt's `### Drive — outcome … — attempt … — run …` record when one is written (blocked, failure, partial, unknown, spawn failure), and into the `worktreeSnapshot` field of the next `spawn_started` event on every path. A `success` attempt leaves no note; its ref is in the event log and `cosmonauts run status`, and terminal cleanup deletes it when the task ends Done (D-020). The standalone `Drive worktree snapshot (attempt n): <ref>` append that slice 10 introduced is removed, and the tests that pinned it change citing this decision and INV-001.
+  - Alternatives: keep the standalone paragraph (a Drive addition outside a heading naming Drive, outcome, and attempt; collides with INV-001's letter); write a Drive heading for `success` attempts too (adds a record the matrix in Design §2 says does not exist).
+  - Why: INV-001 is ratified: "anything Drive adds to a task is appended under a heading that names Drive, the outcome, and the attempt." D-020 already places the ref "in the attempt's Drive note"; slice 10 implemented the placement outside it. Choosing the mechanism that satisfies the letter is derived ground. Owned by follow-up task TASK-803, which runs before slice 11 because both edit `lib/driver/runtime-helpers.ts`, `run-one-task.ts`, and `drive-scheduler-backend.ts`.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+
 ## Behaviors
 
 ### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts

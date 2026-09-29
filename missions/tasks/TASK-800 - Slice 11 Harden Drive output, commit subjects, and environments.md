@@ -9,8 +9,9 @@ labels:
   - 'plan:driver-hardening'
 dependencies:
   - TASK-799
+  - TASK-803
 createdAt: '2026-09-29T16:47:38.074Z'
-updatedAt: '2026-09-29T16:47:38.074Z'
+updatedAt: '2026-09-29T19:57:22.033Z'
 ---
 
 ## Description
