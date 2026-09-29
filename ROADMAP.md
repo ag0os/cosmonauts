@@ -43,21 +43,9 @@ orphans, and added the `Cancelled` task status; it superseded
 ahead of `execution-liveness`) and shipped 2026-09-29 (`origin/main` 2134cbc3;
 archived under `missions/archive/plans/project-health-audit/`). Extended by the
 human on 2026-09-29 ("keep improving the base system before major features"):
-next in the pause are `driver-hardening` then `suite-reliability`, both below;
-`execution-liveness` resumes after them.
-
-### `driver-hardening`: Fix the Drive Defects the Health Audit Exposed
-
-*Added 2026-09-29 by human ruling (relayed by Shepherd) from the 25 observations logged across 23 Drive slices in `project-health-audit`; source of truth: `missions/reviews/improvements/project-health-audit.md` (ranked follow-ups 1-7).*
-
-Drive is the execution base of every plan. One day of heavy use logged 25 defects; the ranked list already exists and the top items caused most of the retries.
-
-- Blocked-report path (one change, three losses): append the block reason instead of replacing `implementationNotes` (`lib/driver/run-one-task.ts` around line 800); accept `blocked` in `report-parser.ts` and keep raw report text on `unknown`; end the run on a blocked report without postflight or in-run retry, with an explicit retry event
-- Inject the "mark each acceptance criterion" prompt block for every backend, not only `claude-cli`/`codex` (`lib/driver/prompt-template.ts`)
-- Scoped and compact `analysis_complexity` results (`paths` scope, compact rows) so one result no longer costs ~100 KB of worker context; `analysis_trace` for non-exported symbols
-- Duplication-residue check in extraction verdicts; a worker-side execution-probe helper for reachability claims (D-031/D-033 standard)
-- Worker input hygiene: normalize or reject worker-supplied task titles; forbid git writes in the worker tool surface; Drive commit subjects never carry raw report JSON
-- Small: expose `eventLogPath` on `run_driver` results; scrub `COSMONAUTS_DRIVER_*` from the postflight env; state in the `run_driver` schema that external backends are detached-only
+next in the pause are `driver-hardening` (picked up 2026-09-29 as plan
+`missions/plans/driver-hardening/`, spec awaiting Intent ratification) then
+`suite-reliability`, below; `execution-liveness` resumes after them.
 
 ### `suite-reliability`: A Green Suite That Stays Green
 
