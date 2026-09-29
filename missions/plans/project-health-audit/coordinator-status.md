@@ -153,7 +153,23 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-`/implement-plan` Phases 2-4, successor #4 (2026-09-29). Quality Manager run `qm-a509325b-14f3-42d6-a7bf-aa2acb0de59e` (launched 08:20Z, snapshot at `3209fa00`, `nohup` pid in scratch) — assessing. Codex round 2 launches after the round-1 fix commit.
+Nothing. `/implement-plan` Phases 2-4 complete (successor #4, 2026-09-29 09:05Z). Awaiting human rulings Q-016 and Q-017 and the R-013 sign-off packet. No push, merge, or PR.
+
+## Final report — `/implement-plan project-health-audit` Phases 2-4 (successor #4, 2026-09-29)
+
+**Verdict:** review phase complete. Branch `feature/project-health-audit` at `58ac88f9` (off local `main` `64dca3c`; 113 commits ahead; origin lags and is not the comparison base), tree clean, **21/21 tasks Done**. Completion status stays **"QM human-decision items pending sign-off"** — `ready` is impossible while gate-owned paths are changed. Independent review converged: **codex round 5 = SHIP conditional on Q-016, Q-017 (a), and R-013**; QM runs 2 and 3 = `not-ready` with human items only (run 3: zero findings).
+
+**Gates at `58ac88f9` (exit codes captured):** `bun run test` 287 files / 3920 tests, EXIT=0 · `bun run lint` 643 files, 0 · `bun run typecheck` 0 · `bun run check:reachability` 212/212 + 13 exempt, 0 staged, 0 · `bun run check:suppressions -- --base main` passed, 0 · `cosmonauts plan check-artifacts project-health-audit` Issues: 0 · direct `fallow audit --base main` with the three committed floors: `verdict pass`, 0/0/0, `head_sha 58ac88f9`. Guarantees (a)-(f) re-verified at `3209fa00` (source and test tree unchanged since): 4 criticals all under `tests/` at the four named sites, 3 clone groups = the two ratified three-file families, one dead-code false positive, seven closeout paths (under D-036/D-038), test freeze = the four on-record modified test files, no `.skip/.only/.todo/.skipIf` additions except the accepted root guard (D-037).
+
+**Review rounds:** codex 1 (DO-NOT-SHIP: D-036 wording → Q-016; `skipIf` grep gap → D-037; stale `:593` → fixed) · codex 2 (DO-NOT-SHIP: review-phase records widen the closeout diff → D-038; Markdown `:593` → fixed) · codex 3 (SHIP conditional on Q-016) · QM run 1 (failed: 300 s panel timeout, `coding/reviewer` unfinished) · QM run 2 (not-ready; F-001 = Q-016, F-002 = untested narrative-provider caller → test added, D-039) · codex 4 (DO-NOT-SHIP: the D-039 test post-dates `ea27538e` → test held as proposal, D-040, Q-017; assertions strengthened) · QM run 3 (not-ready, zero findings, at `0bd92fab`) · codex 5 (SHIP conditional). Records: `missions/reviews/codex/project-health-audit-round-{1..5}.md`, `missions/reviews/qm/project-health-audit-run-{1,2,3}/`.
+
+**Pending human sign-off (R-013 packet + rulings):**
+1. Q-016 — ratify D-036 + D-038 (closeout diff excludes `missions/tasks/`, `missions/plans/`, `missions/reviews/{codex,qm,improvements}/`) as the reading of ratified D-010. Recommended: ratify.
+2. Q-017 — F-002 remediation: (a) post-plan follow-up task landing `missions/reviews/qm/project-health-audit-run-2/proposed-narrative-provider.test.ts.txt` after archive (recommended), or (b) re-run stage-16 closeout at a new analyzed commit (then re-review its tip).
+3. Gate-owned files changed on the branch: `.fallow-baselines/{dead-code,dupes,health,manifest}.json` (TASK-783 refresh; manifest provenance carries the stale `:593` text), `domains/shared/extensions/project-tools/fallow-provider.ts` (Q-006 fix, `introspectProvider` refactor; D-023 `warn` gap unfixed and non-passing — recommended narrow follow-up), `.cosmonauts/suppression-exceptions.json` (one stale row removed), `biome.json` (D-019 `!.shepherd`, D-021 `!missions/reviews/project-health-audit.json`).
+4. `main` config questions raised by the QM: whether `check:reachability` becomes a configured `qualityReview` check; whether `qualityReview.panelTimeoutMs` (default 300 000 ms) is raised for diffs of this size.
+
+**Follow-up list:** `missions/reviews/improvements/project-health-audit.md` (eight driver/tooling rows, ranked; obs. 1-25 in this file are the source). Plus: Q-017 test; D-023 `warn` verdict fix; then archive the plan (`cosmonauts plan archive project-health-audit`) and distill `memory/project-health-audit.md` per the archive skill — offered, not done.
 
 ## Review phase log (successor #4)
 
@@ -318,11 +334,15 @@ Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.
 
 ## HEAD
 
-`feature/project-health-audit`, record-only commit after slice 13 (see `git log`),
-off local `main` `64dca3c`. 21 of 21 tasks Done; tree clean after the record-only commit.
+`feature/project-health-audit` at `58ac88f9` (review phase closed, see the final report),
+off local `main` `64dca3c`. 21 of 21 tasks Done; tree clean.
 Needs the user: Q-016 (D-036 ratification); gate-owned R-013 sign-off at closeout.
 
-## Successor handoff — run `/implement-plan` Phases 2-4 (written by successor #3, 2026-09-29 08:30Z, at 40% context)
+## Successor handoff — after the human rulings (written by successor #4, 2026-09-29 09:05Z)
+
+Nothing is running. Read the final report above first. On Q-016 (a): mark D-036/D-038 ratified in `plan.md` (Decided-by lines) — record-only commit. On Q-017 (a): create one follow-up task (post-archive) that lands the preserved test file verbatim; on (b): re-run TASK-783's procedure at a new analyzed commit that includes the test (Drive worker, `cosmonauts-subagent` inline, gpt-6-sol), then codex + QM again on the new tip. On R-013: the human signs off the gate-owned paths in item 3; nothing to change on the branch. Then archive + distill. Never push/merge from this branch without an explicit instruction. Scratch helpers are gone; the codex/QM invocations used are in the final report and `missions/reviews/codex/*.md` front matter.
+
+## Previous handoff — run `/implement-plan` Phases 2-4 (written by successor #3, 2026-09-29 08:30Z, at 40% context; executed by successor #4)
 
 **State.** `feature/project-health-audit`, HEAD = the commit after `ee60ab5f` (this handoff), off local `main` `64dca3c` (origin lags by hundreds of commits — never compare against origin). **All 21 tasks Done** (768-788). Tree clean. Nothing running (`missions/sessions/project-health-audit/driver.lock` absent). `analyzedCommit = ea27538e`; closeout Drive commit `31ed8756`; record-only `ee60ab5f`. Human items pending (R-013): gate-owned paths changed on the branch — `.fallow-baselines/{dead-code,dupes,health,manifest}.json` (refreshed via `refresh:fallow-baselines` at `ea27538e`, TASK-783), `domains/shared/extensions/project-tools/fallow-provider.ts` (Q-006 reconciliation fix TASK-768; `introspectProvider` refactor TASK-776; the `warn`-verdict gap D-023/obs. 7 is **not** fixed and is the packet's recommended narrow follow-up), `.cosmonauts/suppression-exceptions.json` (stale `runDrive` row removed, TASK-776). The sign-off packet is in `missions/reviews/project-health-audit.md`. Completion is reported as "QM human-decision items pending sign-off", never `ready`.
 
