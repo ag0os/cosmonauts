@@ -26,6 +26,8 @@ suite-reliability → execution-liveness resumes.
 - **Launch binary (derived, coordinator).** The global `cosmonauts` on PATH is `~/.bun/bin/cosmonauts -> ~/.bun/install/global/node_modules/cosmonauts`, which resolves to the **main checkout** `/Users/cosmos/Projects/cosmonauts/bin/cosmonauts`. An inline `run_driver` launched through it would load the main checkout's Drive and `task_edit`, not this branch's. Every slice is therefore launched through this worktree's own `bin/cosmonauts` (absolute path), so the host runs the source being changed and the D-028 restart after slice 4 picks up the fixed Drive. Launch/poll helpers live in the session scratchpad (`launch.sh TASK-NNN`, `poll.sh`).
 - Baseline at `0f1ebf70`: typecheck green, lint green (644 files), full suite 3933/3933 in 288 files (exit 0).
 
+- **Slice 1 / TASK-790 — DONE** (run `run-d89a6674`, 2026-09-29 17:04–17:21Z, one attempt, worker `success`). Drive commit `d1e53585` (parent `4bbe5f40` = slice start). Five `verify` `passed`. `tests/`: one new file (`tests/tasks/task-note-preservation.test.ts`, 6 cases incl. separate-process concurrent appends) + purely additive cases in `tests/cli/tasks/commands/edit.test.ts` and `tests/extensions/task-tools.test.ts`; no expectation changes, no `.skip/.only/.todo`. Task path canonical, all 7 ACs checked, D-030 red/green row and D-026 hand-off (per-task `task-update-<ID>.lock`, 10 s bound, outside the episode lock) recorded in the task notes. **Boundary artifact:** Drive's `git add --all .` swept the untracked `PI-UPGRADE-STATUS.md` into `d1e53585`; un-tracked again (`git rm --cached`) in the record commit that follows, file left on disk. Improvement-pass candidate: Drive stages every untracked file outside `missions/`/`memory/`.
+
 ## Blocked
 
 Nothing.
@@ -38,7 +40,7 @@ Nothing. H-001 ruled (a),(a) and applied (spec AC-012 amended on record; plan D-
 
 | Task | Slice | Owns | Drive? |
 |---|---|---|---|
-| TASK-790 | 1 task mutation + title hygiene | B-003 | yes |
+| TASK-790 | 1 task mutation + title hygiene | B-003 | yes — DONE `d1e53585` |
 | TASK-791 | 2 Drive records (failure/partial/unknown/spawn-failure) | B-001 | yes |
 | TASK-792 | 3 blocked report vertical slice | B-013 | yes |
 | TASK-793 | 4 retry event + nonterminal projection | B-002 | yes |
