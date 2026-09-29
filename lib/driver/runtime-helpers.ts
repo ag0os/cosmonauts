@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TaskManager } from "../tasks/task-manager.ts";
@@ -309,15 +309,16 @@ export async function snapshotWorktree(options: {
 	try {
 		const env = { GIT_INDEX_FILE: join(directory, "index") };
 		git(["read-tree", "HEAD"], env);
+		// Session directories are skipped through a temporary excludes file,
+		// never through `:(exclude)` pathspecs: git exits 1 when an exclude
+		// pathspec names only paths the project's .gitignore already ignores.
+		const excludesFile = join(directory, "excludes");
+		writeFileSync(
+			excludesFile,
+			["missions/sessions/", "missions/archive/sessions/", ""].join("\n"),
+		);
 		git(
-			[
-				"add",
-				"-A",
-				"--",
-				".",
-				":(exclude)missions/sessions",
-				":(exclude)missions/archive/sessions",
-			],
+			["-c", `core.excludesFile=${excludesFile}`, "add", "-A", "--", "."],
 			env,
 		);
 		const tree = git(["write-tree"], env);
