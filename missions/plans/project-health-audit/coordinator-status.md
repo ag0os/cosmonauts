@@ -1,8 +1,8 @@
 # project-health-audit — coordinator status
 
-Coordinator: Claude, implementing coordinator successor #2 (predecessor
-`pha-implementer`, retired at the Codex cap), briefed by Shepherd via
-`.shepherd/work/in-progress/project-health-audit/brief-implementer-2.md`.
+Coordinator: Claude, implementing coordinator successor #3 (predecessor
+`pha-implementer-2`, retired at ~45% context), briefed by Shepherd via
+`.shepherd/work/in-progress/project-health-audit/brief-implementer-3.md`.
 Implementation started 2026-09-28.
 
 ## Needs the user
@@ -14,6 +14,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Done
 
+- **Slice 13 / TASK-785 Done** (2026-09-29 02:34Z, attempt 1 on gpt-6-sol, 7 min):
+  Drive commit `ef098dae`, state `fde3888b`. Exactly one new test file (2 cases,
+  both non-vacuity-probed); freeze clean from `S = 5251a314`; five gates passed.
+  `ef098dae` is `C` for TASK-776's scheduler mapping.
 - **Slice 1 / TASK-768 Done** (2026-09-28 17:06Z): Drive commit `8b366a0`, state
   commit `8a768c7`, record-only commit follows. Freeze check clean (two declared
   test edits, two new test files). Five postflight gates passed in the event log.
@@ -86,10 +90,9 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. **Next: launch TASK-785 (stage 8b, characterization, created under
-Q-014 / D-030) on the Pi worker (gpt-6-sol) as in slice 7, then TASK-776
-attempt 2 with `C` = TASK-785's Drive commit.** TASK-776 is back to To Do and
-depends on TASK-785. Ready now: 785, 778, 780 (776 after 785; 781 after 780).
+**TASK-776 attempt 2** on the Pi worker (gpt-6-sol), `C` = `ef098dae` (scheduler) +
+`7390f105` (other nine). Then 778, 780 (attempt-1 notes drafted in the
+coordinator scratchpad, appended at slice start), 781, 782, 784, 783.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -208,19 +211,19 @@ Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.
 
 ## HEAD
 
-`feature/project-health-audit`, record-only commit after Q-014 (see `git log`),
-off local `main` `64dca3c`. Tree clean; nothing running. 9 of 18 tasks Done.
+`feature/project-health-audit`, record-only commit after slice 13 (see `git log`),
+off local `main` `64dca3c`. 10 of 18 tasks Done.
 Needs the user: nothing now; gate-owned R-013 sign-off at closeout.
 
 ## Successor handoff — continue implementation (refreshed by successor #2, 2026-09-29 02:15Z, after Q-013)
 
 State: `feature/project-health-audit`; rulings Q-001..Q-014 in
 `.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`, plan
-D-001..D-030. Pins: worker and cosmo `openai-codex/gpt-6-sol` (D-029). 9 of 18
-tasks Done (768-775, 777, 779). Nothing running.
+D-001..D-030. Pins: worker and cosmo `openai-codex/gpt-6-sol` (D-029). 10 of 18
+tasks Done (768-775, 777, 779, 785).
 
-Remaining order: 785 (stage 8b characterization, ready) → 776 (refactor,
-`C` = 785's Drive commit plus 775's `7390f105`) → 778, 780 (refactor, ready) → 781
+Remaining order: 776 (refactor,
+`C` = 785's `ef098dae` plus 775's `7390f105`) → 778, 780 (refactor, ready) → 781
 (characterization, after 780; Pi worker, no claude-cli needed) → 782 (15a) →
 784 (15b) → 783 (16 closeout, D-018 (4)) → `/implement-plan` Phases 2-4:
 gates, QM (commit first, reconcile against local `main`, gate-owned files →
