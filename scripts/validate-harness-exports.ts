@@ -371,15 +371,10 @@ export async function proveRepositoryExportLineage(options: {
 			outputPath,
 			nodeShape: historical.shape,
 		} as const;
-		const authorization = verifyLegacyMigrationProof(
-			{
-				...expected,
-				historicalRenderedDigest: snapshotDigest(historical.snapshot),
-				currentTargetDigest: snapshotDigest(currentTarget.snapshot),
-				historicalNodeShape: historical.shape,
-				currentTargetNodeShape: currentTarget.shape,
-			},
+		const authorization = authorizeHistoricalCopy(
 			expected,
+			historical,
+			currentTarget,
 		);
 		if (!authorization) {
 			throw new Error(
@@ -397,6 +392,23 @@ export async function proveRepositoryExportLineage(options: {
 	}
 	return proofs;
 }
+function authorizeHistoricalCopy(
+	expected: Parameters<typeof verifyLegacyMigrationProof>[1],
+	historical: TreeBytes,
+	currentTarget: TreeBytes,
+): LegacyMigrationAuthorization | undefined {
+	return verifyLegacyMigrationProof(
+		{
+			...expected,
+			historicalRenderedDigest: snapshotDigest(historical.snapshot),
+			currentTargetDigest: snapshotDigest(currentTarget.snapshot),
+			historicalNodeShape: historical.shape,
+			currentTargetNodeShape: currentTarget.shape,
+		},
+		expected,
+	);
+}
+
 /** Resolve paths, read evidence, and assert all prerequisites for the repository phase. */
 async function resolveRepositoryValidationPaths(
 	options: RunRepositoryExportValidationOptions,
@@ -405,6 +417,14 @@ async function resolveRepositoryValidationPaths(
 	homeRoot: string;
 	evidencePath: string;
 }> {
+	return resolveValidationPaths(options);
+}
+
+async function resolveValidationPaths(options: {
+	readonly projectRoot: string;
+	readonly homeRoot?: string;
+	readonly evidencePath?: string;
+}) {
 	const requestedProjectRoot = resolve(options.projectRoot);
 	const projectRoot = await realpath(options.projectRoot);
 	const homeRoot = options.homeRoot
@@ -469,6 +489,16 @@ async function handleInstalledOrCheckedRepository(
 	});
 }
 
+async function recoverAuthorizedJournal(
+	ownerRoot: string,
+	lockRunner?: WithOwnerRootTransactionOptions["lockRunner"],
+) {
+	return withOwnerRootTransaction(
+		{ ownerRoot, targetId: "claude", ...(lockRunner ? { lockRunner } : {}) },
+		async () => "recovered" as const,
+	);
+}
+
 type AuthorizedRepositoryResult =
 	| { kind: "return"; evidence: RepositoryExportValidationEvidence }
 	| {
@@ -482,13 +512,9 @@ async function recoverAuthorizedRepositoryJournal(
 	options: RunRepositoryExportValidationOptions,
 	resolved: ResolvedRepositoryPaths,
 ): Promise<AuthorizedRepositoryResult | null> {
-	const recovered = await withOwnerRootTransaction(
-		{
-			ownerRoot: existing.ownerRoot,
-			targetId: "claude",
-			...(options.lockRunner ? { lockRunner: options.lockRunner } : {}),
-		},
-		async () => "recovered" as const,
+	const recovered = await recoverAuthorizedJournal(
+		existing.ownerRoot,
+		options.lockRunner,
 	);
 	if (recovered.state === "persisted-release-unconfirmed") {
 		await assertNoVisibleTransactionArtifacts(resolved.projectRoot);
@@ -508,15 +534,22 @@ async function recoverAuthorizedRepositoryJournal(
 		};
 	}
 
+	assertEvidenceRequiredRecovery(recovered.recovery, existing.transactionId);
+	return null; // caller must finish with installed evidence
+}
+
+function assertEvidenceRequiredRecovery(
+	recovery: OwnerRootRecoveryResult,
+	transactionId: string,
+): void {
 	if (
-		recovered.recovery.state !== "evidence-required" ||
-		recovered.recovery.transactionId !== existing.transactionId
+		recovery.state !== "evidence-required" ||
+		recovery.transactionId !== transactionId
 	) {
 		throw new Error(
-			`Harness recovery is ambiguous: ${JSON.stringify(recovered.recovery)}.`,
+			`Harness recovery is ambiguous: ${JSON.stringify(recovery)}.`,
 		);
 	}
-	return null; // caller must finish with installed evidence
 }
 
 /** Handle the "authorized" existing phase for repository evidence. */
@@ -658,6 +691,41 @@ async function prepareRepositoryTransaction(
 	};
 }
 
+function stopAfterTransactionPhase(
+	phase: string,
+	stopAfter: RepositoryValidationStop | undefined,
+): void {
+	if (phase === stopAfter) throw new Error(`injected stop after ${phase}`);
+	if (phase === "installing" && stopAfter === "rolling-back") {
+		throw new Error("injected failure before rolling back");
+	}
+}
+
+async function assertTransactionAvailable<T>(
+	result: OwnerRootTransactionResult<T>,
+	projectRoot: string,
+	retryBefore: "later live work" | "command bootstrap",
+	checkRelease: boolean,
+): Promise<
+	Extract<
+		OwnerRootTransactionResult<T>,
+		{ state: "completed" | "recovery-required" }
+	>
+> {
+	if (result.state === "persisted-release-unconfirmed") {
+		if (checkRelease) await assertNoVisibleTransactionArtifacts(projectRoot);
+		throw new Error(
+			`Harness transaction release is unconfirmed: ${errorMessage(result.error)}. Retry before ${retryBefore}.`,
+		);
+	}
+	if (result.state === "lock-contended") {
+		throw new Error(
+			`Harness transaction lock contended at ${result.lockPath}.`,
+		);
+	}
+	return result;
+}
+
 /** Execute the locked repository transaction and interpret its three-state result. */
 async function transactRepository(
 	options: RunRepositoryExportValidationOptions,
@@ -693,41 +761,23 @@ async function transactRepository(
 				})),
 				cleanupPolicy: "after-evidence",
 				transactionId,
-				onPhasePersisted: (phase) => {
-					if (phase === options.stopAfter) {
-						throw new Error(`injected stop after ${phase}`);
-					}
-					if (phase === "installing" && options.stopAfter === "rolling-back") {
-						throw new Error("injected failure before rolling back");
-					}
-				},
+				onPhasePersisted: (phase) =>
+					stopAfterTransactionPhase(phase, options.stopAfter),
 			});
 		},
 	);
 
-	if (transactionResult.state === "persisted-release-unconfirmed") {
-		await assertNoVisibleTransactionArtifacts(resolved.projectRoot);
-		throw new Error(
-			`Harness transaction release is unconfirmed: ${errorMessage(transactionResult.error)}. Retry before later live work.`,
-		);
+	const available = await assertTransactionAvailable(
+		transactionResult,
+		resolved.projectRoot,
+		"later live work",
+		true,
+	);
+	if (available.state === "recovery-required") {
+		assertEvidenceRequiredRecovery(available.recovery, transactionId);
+		return available;
 	}
-	if (transactionResult.state === "lock-contended") {
-		throw new Error(
-			`Harness transaction lock contended at ${transactionResult.lockPath}.`,
-		);
-	}
-	if (transactionResult.state === "recovery-required") {
-		if (
-			transactionResult.recovery.state !== "evidence-required" ||
-			transactionResult.recovery.transactionId !== transactionId
-		) {
-			throw new Error(
-				`Harness recovery is ambiguous: ${JSON.stringify(transactionResult.recovery)}.`,
-			);
-		}
-		return transactionResult;
-	}
-	const applied = transactionResult.result;
+	const applied = available.result;
 	if (applied.state !== "evidence-required") {
 		await assertNoVisibleTransactionArtifacts(resolved.projectRoot);
 		throw new Error(
@@ -893,15 +943,10 @@ export async function proveExternalBundleLineage(options: {
 		outputPath: target.targetPath,
 		nodeShape: historical.shape,
 	} as const;
-	const authorization = verifyLegacyMigrationProof(
-		{
-			...expected,
-			historicalRenderedDigest: snapshotDigest(historical.snapshot),
-			currentTargetDigest: snapshotDigest(currentTarget.snapshot),
-			historicalNodeShape: historical.shape,
-			currentTargetNodeShape: currentTarget.shape,
-		},
+	const authorization = authorizeHistoricalCopy(
 		expected,
+		historical,
+		currentTarget,
 	);
 	if (!authorization) {
 		throw new Error(
@@ -928,21 +973,8 @@ async function resolvePersonalBundlePaths(
 	evidencePath: string;
 	repositoryEvidence: RepositoryExportValidationEvidence;
 }> {
-	const requestedProjectRoot = resolve(options.projectRoot);
-	const projectRoot = await realpath(options.projectRoot);
-	const homeRoot = options.homeRoot
-		? await realpath(options.homeRoot)
-		: resolve(process.env.HOME ?? dirname(projectRoot));
-	const requestedEvidencePath = resolve(
-		options.evidencePath ?? join(requestedProjectRoot, EVIDENCE_RELATIVE_PATH),
-	);
-	const evidencePath = join(
-		projectRoot,
-		relative(requestedProjectRoot, requestedEvidencePath),
-	);
-	assertContained(projectRoot, evidencePath, "repository evidence");
-	await assertIgnorePrerequisites(projectRoot);
-	await assertNoVisibleTransactionArtifacts(projectRoot);
+	const { projectRoot, homeRoot, evidencePath } =
+		await resolveValidationPaths(options);
 
 	const repositoryEvidence = await readEvidence(evidencePath);
 	if (!repositoryEvidence || repositoryEvidence.phase !== "complete") {
@@ -1019,13 +1051,9 @@ async function recoverAuthorizedPersonalBundleJournal(
 	AuthorizedPersonalBundleResult,
 	{ kind: "migrate" }
 > | null> {
-	const recovered = await withOwnerRootTransaction(
-		{
-			ownerRoot: existing.ownerRoot,
-			targetId: "claude",
-			...(options.lockRunner ? { lockRunner: options.lockRunner } : {}),
-		},
-		async () => "recovered" as const,
+	const recovered = await recoverAuthorizedJournal(
+		existing.ownerRoot,
+		options.lockRunner,
 	);
 	if (recovered.state === "persisted-release-unconfirmed") {
 		throw new Error(
@@ -1045,14 +1073,7 @@ async function recoverAuthorizedPersonalBundleJournal(
 		};
 	}
 
-	if (
-		recovered.recovery.state !== "evidence-required" ||
-		recovered.recovery.transactionId !== existing.transactionId
-	) {
-		throw new Error(
-			`Harness recovery is ambiguous: ${JSON.stringify(recovered.recovery)}.`,
-		);
-	}
+	assertEvidenceRequiredRecovery(recovered.recovery, existing.transactionId);
 	return null; // caller must finish with installed evidence
 }
 
@@ -1280,47 +1301,30 @@ async function transactPersonalBundle(
 				],
 				cleanupPolicy: "after-evidence",
 				transactionId,
-				onPhasePersisted: (phase) => {
-					if (phase === options.stopAfter) {
-						throw new Error(`injected stop after ${phase}`);
-					}
-					if (phase === "installing" && options.stopAfter === "rolling-back") {
-						throw new Error("injected failure before rolling back");
-					}
-				},
+				onPhasePersisted: (phase) =>
+					stopAfterTransactionPhase(phase, options.stopAfter),
 			});
 		},
 	);
 
-	if (transactionResult.state === "persisted-release-unconfirmed") {
-		throw new Error(
-			`Harness transaction release is unconfirmed: ${errorMessage(transactionResult.error)}. Retry before command bootstrap.`,
-		);
+	const available = await assertTransactionAvailable(
+		transactionResult,
+		resolved.projectRoot,
+		"command bootstrap",
+		false,
+	);
+	if (available.state === "recovery-required") {
+		assertEvidenceRequiredRecovery(available.recovery, transactionId);
+		return available;
 	}
-	if (transactionResult.state === "lock-contended") {
+	if (available.result.state !== "evidence-required") {
 		throw new Error(
-			`Harness transaction lock contended at ${transactionResult.lockPath}.`,
-		);
-	}
-	if (transactionResult.state === "recovery-required") {
-		if (
-			transactionResult.recovery.state !== "evidence-required" ||
-			transactionResult.recovery.transactionId !== transactionId
-		) {
-			throw new Error(
-				`Harness recovery is ambiguous: ${JSON.stringify(transactionResult.recovery)}.`,
-			);
-		}
-		return transactionResult;
-	}
-	if (transactionResult.result.state !== "evidence-required") {
-		throw new Error(
-			transactionResult.result.state === "restored-old"
+			available.result.state === "restored-old"
 				? "Harness migration restored old personal bundle bytes after a prepared/install failure."
-				: `Personal bundle migration did not reach evidence hold: ${JSON.stringify(transactionResult.result)}.`,
+				: `Personal bundle migration did not reach evidence hold: ${JSON.stringify(available.result)}.`,
 		);
 	}
-	return transactionResult;
+	return available;
 }
 
 /** Execute the full personal-bundle migration: prove lineage, prepare, transact, install, finish. */
@@ -1571,17 +1575,34 @@ async function finishExternalBundleEvidence(options: {
 		},
 	);
 
+	return finishEvidenceTransaction(
+		result,
+		options.projectRoot,
+		"personal bundle",
+		"command bootstrap",
+		false,
+	);
+}
+
+async function finishEvidenceTransaction<T>(
+	result: OwnerRootTransactionResult<T>,
+	projectRoot: string,
+	context: "personal bundle" | "repository export",
+	retryBefore: "command bootstrap" | "later live work",
+	checkRelease: boolean,
+): Promise<T> {
 	if (result.state === "persisted-release-unconfirmed") {
+		if (checkRelease) await assertNoVisibleTransactionArtifacts(projectRoot);
 		throw new Error(
-			`Harness transaction release is unconfirmed: ${errorMessage(result.error)}. Retry before command bootstrap.`,
+			`Harness transaction release is unconfirmed: ${errorMessage(result.error)}. Retry before ${retryBefore}.`,
 		);
 	}
 	if (result.state !== "completed") {
 		throw new Error(
-			`Cannot finalize personal bundle evidence: ${JSON.stringify(result)}.`,
+			`Cannot finalize ${context} evidence: ${JSON.stringify(result)}.`,
 		);
 	}
-	await assertNoVisibleTransactionArtifacts(options.projectRoot);
+	await assertNoVisibleTransactionArtifacts(projectRoot);
 	return result.result;
 }
 
@@ -2044,19 +2065,13 @@ async function finishInstalledEvidence(options: {
 		},
 	);
 
-	if (result.state === "persisted-release-unconfirmed") {
-		await assertNoVisibleTransactionArtifacts(options.projectRoot);
-		throw new Error(
-			`Harness transaction release is unconfirmed: ${errorMessage(result.error)}. Retry before later live work.`,
-		);
-	}
-	if (result.state !== "completed") {
-		throw new Error(
-			`Cannot finalize repository export evidence: ${JSON.stringify(result)}.`,
-		);
-	}
-	await assertNoVisibleTransactionArtifacts(options.projectRoot);
-	return result.result;
+	return finishEvidenceTransaction(
+		result,
+		options.projectRoot,
+		"repository export",
+		"later live work",
+		true,
+	);
 }
 
 async function prepareRows(
