@@ -42,6 +42,12 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
   Two new characterization files, nothing else; five gates passed after one
   in-run retry (quality-review settle-grace timing flake, passes in isolation).
   Attempt 1 stopped on export-only symbol traces → D-024.
+- **Slice 8 / TASK-775 Done** (2026-09-29 00:33Z, attempt 2 on claude-cli/sonnet,
+  launched by Shepherd): Drive commit `7390f105`, state `6905a633`. Exactly
+  seven new test files; freeze clean from `S = 0292eaa0`; five gates passed;
+  claude-cli trial checks passed (parent, postflight events, no
+  `missions/reviews/`). Surface record added by the coordinator (D-028).
+  Attempt 1 (`run-76487eb0`) was green but aborted on the env leak (obs. 16).
 - **Slice 7 / TASK-774 Done** (2026-09-29 00:00Z, attempt 3 on DeepSeek):
   Drive commit `1692b9b6`, state `edb19337`. Freeze from `S = e97cee90` clean;
   from `C = 48ecb5c5` only the two coordinator-ruled test edits (Q-009, Q-011).
@@ -70,13 +76,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. **TASK-775 attempt 1 (`run-76487eb0`, claude-cli, launched by Shepherd)
-aborted 00:25Z** on an env-induced postflight failure (observation 16); the
-worker's seven new characterization files sit untracked in the worktree and
-the full suite is green with them (3718 tests) once the env var is unset.
-Drive overwrote the worker's notes with the block reason (observation 2).
-Relaunch line: `.shepherd/work/in-progress/project-health-audit/launch-next.sh TASK-775`
-(Shepherd runs it; observation 15).
+Nothing. Next: TASK-777 (stage 10 characterization) on claude-cli via
+`launch-next.sh TASK-777` (Shepherd runs it, obs. 15); then TASK-779.
+**STOP before TASK-776** (first remaining refactor slice) per Q-012: the user
+decides an OpenRouter top-up first. Ready now: 776 (held), 777, 779.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -135,6 +138,14 @@ Relaunch line: `.shepherd/work/in-progress/project-health-audit/launch-next.sh T
    Codex env when running claude-cli"), so the first claude-cli run
    (`run-76487eb0`) aborted on a green worker. Pin the model with
    `ANTHROPIC_MODEL` instead, or make postflight scrub driver env vars.
+17. `run_driver` rejects `claude-cli` in inline mode ("Unsupported driver
+   backend in inline mode: claude-cli", `run-ede163bf`) although the tool's
+   schema text only says external backends are "for detached runs"; the
+   coordinator's assessment that inline works was wrong. External backends
+   are detached-only.
+18. `launch-next.sh`'s first version left `$TASK` unexpanded inside the
+   `bash -c` single-quoted string ("Task not found: ", `run-2ab8e9d5`,
+   aborted, empty). Shepherd fixed both; stale runs are aborted records only.
 12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
@@ -153,6 +164,7 @@ out of extra usage) and are superseded.
 |---|---|---|---|
 | 2026-09-28 20:20Z, before slice 7 attempt 3 | 10 | 1.9529 | 8.05 |
 | 2026-09-29 00:05Z, after slice 7 (cost 2.99) | 10 | 4.9432 | 5.06 |
+| 2026-09-29 00:45Z, after slice 8 (launchers + surface record on flash, 0.29) | 10 | 5.2292 | 4.77 |
 
 - History (predecessor): **Codex usage limit reached (20:45Z).** The print-mode cosmo launcher and the
   `coding/worker` role both pin `openai-codex/gpt-5.6-sol`; the relaunch of

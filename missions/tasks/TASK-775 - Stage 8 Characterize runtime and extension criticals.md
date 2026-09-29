@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-772
 createdAt: '2026-09-28T15:24:34.550Z'
-updatedAt: '2026-09-29T00:33:53.257Z'
+updatedAt: '2026-09-29T00:37:05.884Z'
 ---
 
 ## Description
@@ -94,3 +94,12 @@ Attempt 1 (`run-76487eb0`, claude-cli/sonnet) wrote seven new characterization f
 - `introspectProvider` (discoverFallowProvider): `extensions/project-tools-fallow-introspection-characterization.test.ts` — detected, config exit 3, boundary rule off, dead-code rules off, preamble line, version exit/signal/spawn-error, prerelease versions, config exit 2/other/timeout, pre-aborted/abort during version/abort during config, consent revoked, fallow.toml changed; final test pins normalized analysis_status for the repository's own config (six non-boundary capabilities bound, boundary conformance unbound).
 - `parseRememberParams` (remember tool): `extensions/agent-memory-remember-params-characterization.test.ts` — invalid variants (unsupported type et al.), note defaults/truncation/explicit fields/kind mapping, profile forcing, playbook defaults and explicit.
 - Unreachable variants: none identified by the worker; per-return-site line-level enumeration was not re-derived this attempt (the seven files were the evidence). Flag for coordinator: verify residual variants before TASK-776 if desired.
+
+
+### Coordinator D-015 verdict (2026-09-29 00:45Z, successor #2) — PASS; claude-cli trial PASS
+
+- Run `run-6a19e506-66d7-413b-983a-4cce5b9f3b30` (claude-cli, detached, `ANTHROPIC_MODEL=sonnet`, launched by Shepherd; D-028). Drive commit `7390f1053abff498419829ce9356a910d45f3daa`; parent `S = 0292eaa0c079e39a2e3d8ec183dc774e1983b346` (confirmed). State commit `6905a633`.
+- Freeze from `S`: `git diff --name-status --diff-filter=MDR 0292eaa0 7390f105 -- tests/` → empty; `git status --porcelain -- tests/` → empty; skip/only/todo grep → empty. Drive commit paths: exactly the seven `A` test files listed in the worker record; no production path, no `missions/reviews/` path (trial check). Five `verify` `passed` events (test 00:32:23→00:33:37, lint, typecheck, check:reachability, check:suppressions). Title line and file path intact.
+- AC #3: production files unedited (no non-test path in the commit), so every owned function's range and metrics equal `S` by construction; no seam used.
+- Surface record (D-028, coordinator, one-turn Pi `worker` session on `openrouter/deepseek/deepseek-v4-flash` at `6905a633`): `analysis_status` → Fallow 2.54.2 bound (rows captured: `changed-scope-audit` bound scopes changed; `trace` bound symbol/file/dependency/duplicate-location; `fix-preview` bound project; earlier rows scrolled out of the captured tail, consistent with the TASK-774 record: complexity/dead-code/duplication bound, boundary conformance unbound). `analysis_complexity` cyclomatic, cognitive, and crap: each state=bound verdict=fail count=216 (thresholds 20/15/30; 26 critical / 56 high / 134 moderate; 607 files, 14,263 functions). All nine owned rows present in all three results with values identical to the worker's direct diagnostic: runDrive 45/44/482.4 (cli/drive/subcommand.ts:266); describeDriverEvent 30/9/224.4 (:72); introspectProvider 28/23/197.3 (:1180); parseRememberParams 28/35/197.3 (:1107); validateChainAgentEvidence 22/18/126.5 (:566); parseTaskBatchRow 22/27/126.5 (:271); summarizeEvent 21/3/116.3 (:133); isStepRecordLike 20/4/106.4 (:202); adaptStoredEvent 20/1/106.4 (:127); all critical, coverage partial.
+- AC #8 residual: the worker mapped every owned function to its characterization describe blocks but did not re-derive a per-return-site enumeration; flagged here for TASK-776's pre-edit record (the refactor worker enumerates return sites against these files before editing). Attempt 1's lost notes: observation 2.
