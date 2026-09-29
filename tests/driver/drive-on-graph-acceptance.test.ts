@@ -57,6 +57,37 @@ const WORKER_SOURCE = "cod" + "ing/worker";
 // fixture, so each pays real subprocess cost that scales with suite-wide load.
 // Declare the same 30s budget the sibling drive-on-graph suites use.
 describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
+	test.each([
+		true,
+		false,
+	])("records retained snapshot refs in terminal state only when bytes are missing: %s", async (discard) => {
+		const fixture = await setupFixture(`snapshot-terminal-${discard}`, 1);
+		await writeFile(join(fixture.projectRoot, ".gitignore"), "missions/\n");
+		await initGit(fixture.projectRoot);
+		const file = join(fixture.projectRoot, "new.txt");
+		await writeFile(file, "snapshot bytes");
+		const ref = `refs/cosmonauts/drive/${fixture.spec.runId}/${fixture.taskIds[0]}/attempt-1`;
+		const backend = createBackend({
+			onRun: async () => {
+				if (discard) await rm(file);
+				return successfulBackendResult("done");
+			},
+		});
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, backend, new AbortController().signal),
+		);
+		expect(result.outcome).toBe("completed");
+		expect(result.retainedSnapshots).toEqual(discard ? [ref] : undefined);
+		const record = JSON.parse(
+			await readFile(join(fixture.spec.workdir, "run.completion.json"), "utf8"),
+		);
+		expect(record.retainedSnapshots).toEqual(discard ? [ref] : undefined);
+		expect(
+			fixture.events.find((event) => event.type === "run_completed")?.summary
+				.retainedSnapshots,
+		).toEqual(discard ? [ref] : undefined);
+	});
 	test("emits the terminal legacy event before completion and captures afterward", async () => {
 		const outcomes: DriverResult["outcome"][] = [];
 		const cases = [

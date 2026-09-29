@@ -131,8 +131,10 @@ describe("cross-plan detached commit serialization", () => {
 			firstHandle.result,
 			secondHandle.result,
 		]);
-		expect(firstResult).toEqual(completedResult(firstSpec.runId));
-		expect(secondResult).toEqual(completedResult(secondSpec.runId));
+		// G2, INV-006, D-034: completion may now name a retained snapshot when
+		// concurrent source commits omit bytes captured by another plan's attempt.
+		expect(firstResult).toMatchObject(completedResult(firstSpec.runId));
+		expect(secondResult).toMatchObject(completedResult(secondSpec.runId));
 		await waitForPathMissing(firstPlanLockPath);
 		await waitForPathMissing(secondPlanLockPath);
 		await expect(stat(firstPlanLockPath)).rejects.toMatchObject({

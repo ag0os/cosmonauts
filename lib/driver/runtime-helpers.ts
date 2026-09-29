@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import {
 	existsSync,
 	mkdtempSync,
@@ -71,12 +71,17 @@ export function reportSummary(report: ParsedReport): string | undefined {
 		/Outcome inferred from passing postflight/u.test(line)
 	)
 		return undefined;
-	return (
-		line
-			.replace(/^(implemented|status|summary):\s*/i, "")
-			.slice(0, 80)
-			.trim() || undefined
-	);
+	const normalized = line
+		.replace(/^(implemented|status|summary):\s*/i, "")
+		.slice(0, 80)
+		.trim();
+	if (
+		/^outcome\s*:/iu.test(normalized) ||
+		/^\{.*\}$/u.test(normalized) ||
+		/```/u.test(normalized)
+	)
+		return undefined;
+	return normalized || undefined;
 }
 
 export async function uncheckedAcceptanceCriteriaReason(
@@ -181,12 +186,18 @@ export function runCommand(
 	cwd: string,
 	signal: AbortSignal,
 	shell = false,
+	options?: { env?: NodeJS.ProcessEnv; timeoutMs?: number },
 ): Promise<CommandResult> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {
 			cwd,
 			shell,
-			...(shell ? { env: projectCommandEnvironment() } : {}),
+			...(options?.env
+				? { env: { ...process.env, ...options.env } }
+				: shell
+					? { env: projectCommandEnvironment() }
+					: {}),
+			...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
 			signal,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -205,11 +216,15 @@ export function runCommand(
 			}
 			reject(error);
 		});
-		child.on("close", (code) => {
+		child.on("close", (code, closeSignal) => {
 			resolve({
 				exitCode: code ?? 1,
 				stdout: Buffer.concat(stdout).toString(),
-				stderr: Buffer.concat(stderr).toString(),
+				stderr:
+					Buffer.concat(stderr).toString() ||
+					(closeSignal && options?.timeoutMs
+						? `timed out (${closeSignal})`
+						: ""),
 			});
 		});
 	});
@@ -314,58 +329,76 @@ export async function blockedReportEvidence(options: {
 	};
 }
 
+async function boundedGit(
+	projectRoot: string,
+	signal: AbortSignal,
+	args: string[],
+	env?: NodeJS.ProcessEnv,
+): Promise<string> {
+	let result: CommandResult;
+	try {
+		result = await runCommand("git", args, projectRoot, signal, false, {
+			env,
+			timeoutMs: 60_000,
+		});
+	} catch (error) {
+		throw new Error(`git ${args.join(" ")} failed: ${formatError(error)}`);
+	}
+	if (result.exitCode !== 0 || signal.aborted) {
+		throw new Error(
+			`git ${args.join(" ")} failed: ${signal.aborted ? "aborted" : result.stderr.trim() || `exit ${result.exitCode}`}`,
+		);
+	}
+	return result.stdout.trim();
+}
+
 export async function snapshotWorktree(options: {
 	projectRoot: string;
 	runId: string;
 	taskId: string;
 	attemptNumber: number;
+	signal?: AbortSignal;
 }): Promise<string | undefined> {
-	const { projectRoot, runId, taskId, attemptNumber } = options;
-	const git = (args: string[], env?: NodeJS.ProcessEnv) => {
-		try {
-			return execFileSync("git", args, {
-				cwd: projectRoot,
-				encoding: "utf8",
-				env: env ? { ...process.env, ...env } : process.env,
-				stdio: ["ignore", "pipe", "pipe"],
-				timeout: 60_000,
-			}).trim();
-		} catch (error) {
-			const stderr = (error as { stderr?: Buffer }).stderr?.toString().trim();
-			throw new Error(
-				`git ${args.join(" ")} failed: ${stderr || (error as { signal?: string }).signal || String(error)}`,
-			);
-		}
-	};
+	const {
+		projectRoot,
+		runId,
+		taskId,
+		attemptNumber,
+		signal = new AbortController().signal,
+	} = options;
+	const git = (args: string[], env?: NodeJS.ProcessEnv) =>
+		boundedGit(projectRoot, signal, args, env);
 	try {
-		if (git(["rev-parse", "--is-inside-work-tree"]) !== "true")
+		if ((await git(["rev-parse", "--is-inside-work-tree"])) !== "true")
 			return undefined;
 	} catch (error) {
 		if (
-			String(error).includes("ETIMEDOUT") ||
-			String(error).includes("timed out")
+			signal.aborted ||
+			String(error).includes("timed out") ||
+			String(error).includes("aborted")
 		)
 			throw error;
 		return undefined;
 	}
-	if (!git(["status", "--porcelain", "--untracked-files=all"]))
+	if (!(await git(["status", "--porcelain", "--untracked-files=all"])))
 		return undefined;
 	const ref = `refs/cosmonauts/drive/${runId}/${taskId}/attempt-${attemptNumber}`;
 	const directory = mkdtempSync(join(tmpdir(), "cosmonauts-drive-index-"));
 	try {
 		const env = { GIT_INDEX_FILE: join(directory, "index") };
-		git(["read-tree", "HEAD"], env);
+		await git(["read-tree", "HEAD"], env);
 		// Session directories are skipped through a temporary excludes file,
 		// never through `:(exclude)` pathspecs: git exits 1 when an exclude
 		// pathspec names only paths the project's .gitignore already ignores.
 		const excludesFile = join(directory, "excludes");
 		let globalExcludes: string | undefined;
 		try {
-			globalExcludes = git(["config", "--get", "core.excludesFile"]);
+			globalExcludes = await git(["config", "--get", "core.excludesFile"]);
 		} catch (error) {
 			if (
-				String(error).includes("ETIMEDOUT") ||
-				String(error).includes("timed out")
+				signal.aborted ||
+				String(error).includes("timed out") ||
+				String(error).includes("aborted")
 			)
 				throw error;
 			globalExcludes = join(
@@ -391,69 +424,101 @@ export async function snapshotWorktree(options: {
 			excludesFile,
 			`${originalExcludes}\nmissions/sessions/\nmissions/archive/sessions/\n`,
 		);
-		git(
+		await git(
 			["-c", `core.excludesFile=${excludesFile}`, "add", "-A", "--", "."],
 			env,
 		);
-		const tree = git(["write-tree"], env);
-		const sha = git(
+		const tree = await git(["write-tree"], env);
+		const sha = await git(
 			[
 				"commit-tree",
 				tree,
 				"-p",
-				git(["rev-parse", "HEAD"]),
+				await git(["rev-parse", "HEAD"]),
 				"-m",
 				`Drive snapshot ${runId}/${taskId}/attempt-${attemptNumber}`,
 			],
 			env,
 		);
-		git(["update-ref", ref, sha]);
+		await git(["update-ref", ref, sha]);
 		return ref;
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
 }
 
-export function removeDoneTaskSnapshots(
+export async function removeDoneTaskSnapshots(
 	projectRoot: string,
 	runId: string,
 	taskId: string,
-): void {
+	commitPolicy: DriverRunSpec["commitPolicy"],
+	commitSha: string | undefined,
+	signal: AbortSignal,
+): Promise<string[]> {
+	const git = (args: string[]) => boundedGit(projectRoot, signal, args);
 	try {
-		execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
-			cwd: projectRoot,
-			stdio: "ignore",
-			timeout: 60_000,
-		});
+		if ((await git(["rev-parse", "--is-inside-work-tree"])) !== "true")
+			return [];
 	} catch (error) {
-		if (
-			String(error).includes("ETIMEDOUT") ||
-			String(error).includes("timed out")
-		) {
-			throw new Error(
-				`git rev-parse --is-inside-work-tree failed: ${String(error)}`,
-			);
-		}
-		return;
+		if (signal.aborted || String(error).includes("timed out")) throw error;
+		return [];
 	}
 	const prefix = `refs/cosmonauts/drive/${runId}/${taskId}/`;
-	const refs = execFileSync(
-		"git",
-		["for-each-ref", "--format=%(refname)", prefix],
-		{ cwd: projectRoot, encoding: "utf8", timeout: 60_000 },
-	);
-	for (const ref of refs
+	const refs = (await git(["for-each-ref", "--format=%(refname)", prefix]))
 		.split("\n")
-		.filter((item) => item.startsWith(prefix))) {
-		try {
-			execFileSync("git", ["update-ref", "-d", ref], {
-				cwd: projectRoot,
-				timeout: 60_000,
-			});
-		} catch (error) {
-			throw new Error(`git update-ref -d ${ref} failed: ${String(error)}`);
+		.filter((item) => item.startsWith(prefix));
+	const finalTree =
+		commitPolicy === "driver-commits" ? (commitSha ?? "HEAD") : "HEAD";
+	const finalEntries =
+		commitPolicy === "no-commit"
+			? new Map<string, string>()
+			: await treeEntries(git, finalTree);
+	const retained: string[] = [];
+	for (const ref of refs) {
+		const snapshot = await treeEntries(git, ref);
+		let contained = true;
+		for (const [path, hash] of snapshot) {
+			let finalHash: string | undefined;
+			if (commitPolicy === "no-commit") {
+				const result = await runCommand(
+					"git",
+					["hash-object", "--", path],
+					projectRoot,
+					signal,
+					false,
+					{ timeoutMs: 60_000 },
+				);
+				if (signal.aborted || result.stderr.includes("timed out"))
+					throw new Error(
+						`git hash-object -- ${path} failed: ${signal.aborted ? "aborted" : result.stderr.trim()}`,
+					);
+				finalHash = result.exitCode === 0 ? result.stdout.trim() : undefined;
+			} else finalHash = finalEntries.get(path);
+			if (hash !== finalHash) {
+				contained = false;
+				break;
+			}
 		}
+		if (!contained) {
+			retained.push(ref);
+			continue;
+		}
+		await git(["update-ref", "-d", ref]);
 	}
+	return retained;
+}
+
+async function treeEntries(
+	git: (args: string[]) => Promise<string>,
+	ref: string,
+): Promise<Map<string, string>> {
+	const output = await git(["ls-tree", "-r", "-z", ref]);
+	const entries = new Map<string, string>();
+	for (const entry of output.split("\0")) {
+		const match = /^\d+ (?:blob|commit) ([0-9a-f]+)\t([\s\S]+)$/u.exec(entry);
+		if (match?.[1] && match[2]) entries.set(match[2], match[1]);
+	}
+	return entries;
 }
 
 export async function headBeforeSpawn(
@@ -492,6 +557,7 @@ export async function runContradictedAttempts<
 	readonly attempt: (
 		appendedNote: string | undefined,
 		attemptNumber: number,
+		beforeSpawn?: () => Promise<void>,
 	) => Promise<RetriableTaskAttempt<T>>;
 	readonly find: (
 		reason: string,
@@ -506,8 +572,13 @@ export async function runContradictedAttempts<
 	let appendedNote: string | undefined;
 	let retried = false;
 	let attemptNumber = 1;
+	let beforeSpawn: (() => Promise<void>) | undefined;
 	while (true) {
-		const attempt = await options.attempt(appendedNote, attemptNumber);
+		const attempt = await options.attempt(
+			appendedNote,
+			attemptNumber,
+			beforeSpawn,
+		);
 		if (attempt.kind === "outcome") return attempt.outcome;
 		const contradicted =
 			!retried && (options.spec.retryOnContradictedBlock ?? true)
@@ -520,7 +591,7 @@ export async function runContradictedAttempts<
 		});
 		attemptNumber++;
 		appendedNote = options.buildNote(contradicted);
-		await options.onRetry(contradicted.annotation, attemptNumber);
+		beforeSpawn = () => options.onRetry(contradicted.annotation, attemptNumber);
 	}
 }
 

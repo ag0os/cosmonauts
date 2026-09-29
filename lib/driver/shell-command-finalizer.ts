@@ -200,7 +200,14 @@ async function runTaskStatusFinalizer(
 						taskOutcome.status === "done"
 							? "Drive task status finalization passed."
 							: (taskOutcome.reason ?? taskResult.summary),
-					artifacts: commit ? [commitArtifact(commit.sha, commit.subject)] : [],
+					artifacts: [
+						...(commit ? [commitArtifact(commit.sha, commit.subject)] : []),
+						...(taskOutcome.retainedSnapshots ?? []).map((ref) => ({
+							id: `drive-retained-snapshot:${ref}`,
+							path: ref,
+							kind: "drive-retained-snapshot",
+						})),
+					],
 					nextAction:
 						taskOutcome.status === "done" ? "continue" : "wait_for_human",
 				};

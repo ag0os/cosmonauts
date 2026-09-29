@@ -626,6 +626,12 @@ async function toDriverResult(
 	);
 	const taskSteps = steps.filter((step) => step.kind === "drive");
 	const tasksDone = taskStatusSteps.filter(isDoneTaskStatusStep).length;
+	const retainedSnapshots = taskStatusSteps.flatMap((step) =>
+		(step.result?.artifacts ?? [])
+			.filter((artifact) => artifact.kind === "drive-retained-snapshot")
+			.map((artifact) => artifact.path),
+	);
+	const retained = retainedSnapshots.length ? { retainedSnapshots } : {};
 	const partialStatusSteps = taskStatusSteps.filter(isPartialTaskStatusStep);
 	const blockedStatusStep = taskStatusSteps.find(
 		(step) => step.status === "blocked",
@@ -645,6 +651,7 @@ async function toDriverResult(
 		return {
 			runId: spec.runId,
 			outcome: "completed",
+			...retained,
 			tasksDone,
 			tasksBlocked: partialStatusSteps.length,
 			...(partialTaskStep
@@ -668,6 +675,7 @@ async function toDriverResult(
 		return {
 			runId: spec.runId,
 			outcome: "blocked",
+			...retained,
 			tasksDone,
 			tasksBlocked,
 			...(blockedStep ? { blockedTaskId: taskIdFromStep(blockedStep) } : {}),
@@ -747,6 +755,9 @@ async function emitTerminalLegacyEvent(
 				total: spec.taskIds.length,
 				done: result.tasksDone,
 				blocked: result.tasksBlocked,
+				...(result.retainedSnapshots?.length
+					? { retainedSnapshots: result.retainedSnapshots }
+					: {}),
 			},
 		});
 		return;

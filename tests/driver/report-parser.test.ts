@@ -4,6 +4,33 @@ import { parseReport } from "../../lib/driver/report-parser.ts";
 const outcomeReports = ["success", "failure", "partial", "completed"] as const;
 
 describe("report-parser", () => {
+	test("treats a blocked outcome line conflicting with fenced success as blocked", () => {
+		const raw =
+			'```json\n{"outcome":"success","notes":"Need a decision"}\n```\noutcome: blocked';
+		expect(parseReport(raw)).toMatchObject({
+			outcome: "blocked",
+			notes: "Need a decision",
+			raw,
+		});
+	});
+	test("retains raw output on a non-blocked disagreement", () => {
+		const raw = '```json\n{"outcome":"failure"}\n```\noutcome: success';
+		expect(parseReport(raw)).toEqual({ outcome: "unknown", raw });
+	});
+	test("honors a blocked fenced report despite a conflicting success line", () => {
+		const raw =
+			'```json\n{"outcome":"blocked","notes":"Need input"}\n```\noutcome: success';
+		expect(parseReport(raw)).toMatchObject({
+			outcome: "blocked",
+			notes: "Need input",
+			raw,
+		});
+	});
+	test("does not accept success when two fenced reports disagree", () => {
+		const raw =
+			'```json\n{"outcome":"success"}\n```\n```json\n{"outcome":"blocked"}\n```';
+		expect(parseReport(raw)).toMatchObject({ outcome: "blocked", raw });
+	});
 	test("uses the last outcome line when a worker ends with a human stop", () => {
 		const raw =
 			"Earlier example: outcome: success\noutcome: success\nNeed a decision\noutcome: blocked";

@@ -181,8 +181,14 @@ async function runDriveTaskStep(
 	await taskManager.updateTask(taskId, { status: "In Progress" });
 	return runContradictedAttempts({
 		spec,
-		attempt: (appendedNote, attemptNumber) =>
-			runDriveTaskAttempt(context, prepared, appendedNote, attemptNumber),
+		attempt: (appendedNote, attemptNumber, beforeSpawn) =>
+			runDriveTaskAttempt(
+				context,
+				prepared,
+				appendedNote,
+				attemptNumber,
+				beforeSpawn,
+			),
 		find: findContradictedPath,
 		buildNote: buildContradictionNote,
 		onRetry: (contradicted, attemptNumber) =>
@@ -201,6 +207,7 @@ async function runDriveTaskAttempt(
 	prepared: DrivePreparedStep,
 	appendedNote: string | undefined,
 	attemptNumber: number,
+	beforeSpawn?: () => Promise<void>,
 ): Promise<DriveTaskAttemptResult> {
 	const { spec, taskManager } = context;
 	const taskId = prepared.taskId;
@@ -218,7 +225,9 @@ async function runDriveTaskAttempt(
 		runId: spec.runId,
 		taskId,
 		attemptNumber,
+		signal: prepared.abortSignal,
 	});
+	await beforeSpawn?.();
 	await emit(context, {
 		type: "spawn_started",
 		taskId,

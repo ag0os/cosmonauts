@@ -115,9 +115,10 @@ describe("run-one-task", () => {
 			);
 		} else {
 			expect(notes).toBe(beforeNotes);
-			await expect(
-				git(fixture.projectRoot, ["rev-parse", "--verify", ref]),
-			).rejects.toThrow();
+			// G2, INV-006, D-034: Done does not erase discarded snapshot bytes.
+			expect(await git(fixture.projectRoot, ["show", `${ref}:new.txt`])).toBe(
+				"untracked\n\u0000bytes",
+			);
 		}
 	});
 	test.each([
@@ -223,6 +224,30 @@ describe("run-one-task", () => {
 			});
 		}
 	});
+	test("cleans a Done snapshot when every captured byte is in the final worktree", async () => {
+		const fixture = await setupGitFixture();
+		await writeProjectFile(fixture, ".gitignore", "missions/\n");
+		await git(fixture.projectRoot, ["add", ".gitignore"]);
+		await git(fixture.projectRoot, ["commit", "-m", "ignore task state"]);
+		await writeProjectFile(fixture, "new.txt", "retained");
+		await runOneTask(
+			createSpec(fixture, { commitPolicy: "no-commit" }),
+			createCtx(
+				fixture,
+				createBackend(async () => successfulResult()),
+				[],
+			),
+			fixture.taskId,
+		);
+		await expect(
+			git(fixture.projectRoot, [
+				"rev-parse",
+				"--verify",
+				`refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1`,
+			]),
+		).rejects.toThrow();
+	});
+
 	test("run-one-task happy path marks the task done and emits spawn_completed", async () => {
 		const fixture = await setupFixture();
 		const events: DriverEvent[] = [];
@@ -334,6 +359,28 @@ describe("run-one-task", () => {
 			"spawn_completed",
 			"task_blocked",
 		]);
+	});
+
+	test("blocks conflicting fenced success and final human stop before postflight or retry", async () => {
+		const fixture = await setupGitFixture();
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => ({
+			exitCode: 0,
+			stdout:
+				'```json\n{"outcome":"success","notes":"Need review"}\n```\noutcome: blocked',
+			durationMs: 1,
+		}));
+		const outcome = await runOneTask(
+			createSpec(fixture, {
+				postflightCommands: [nodeCommand("process.exit(8)")],
+			}),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+		expect(outcome).toMatchObject({ status: "blocked", reason: "Need review" });
+		expect(events.map((event) => event.type)).not.toContain("verify");
+		expect(events.map((event) => event.type)).not.toContain("task_retry");
+		expect(backend.run).toHaveBeenCalledTimes(1);
 	});
 
 	test("records a backend commit as unverified when its report blocks", async () => {
@@ -674,6 +721,8 @@ describe("run-one-task", () => {
 		'{"outcome":"success","files":[]}',
 		'{"outcome":"success"}\nChanged behavior',
 		"outcome: success",
+		"summary: outcome: success",
+		'summary: {"outcome":"success"}',
 	])("uses safe prose or task title for legacy commit subject: %s", async (notes) => {
 		const fixture = await setupGitFixture();
 		const backend = createBackend(async () => {
@@ -737,7 +786,8 @@ describe("run-one-task", () => {
 			backend,
 		);
 
-		expect(outcome).toEqual({ status: "done", commitSha: undefined });
+		// G2, INV-006, D-034: a Done status alone no longer authorizes snapshot deletion.
+		expect(outcome).toMatchObject({ status: "done", commitSha: undefined });
 		expect(task?.status).toBe("Done");
 		expect(events.map((event) => event.type)).not.toContain("commit_made");
 		expect(events).toContainEqual(

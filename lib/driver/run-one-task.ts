@@ -91,8 +91,15 @@ export async function runOneTask(
 
 	return runContradictedAttempts({
 		spec,
-		attempt: (appendedNote, attemptNumber) =>
-			runTaskAttempt(spec, ctx, taskId, appendedNote, attemptNumber),
+		attempt: (appendedNote, attemptNumber, beforeSpawn) =>
+			runTaskAttempt(
+				spec,
+				ctx,
+				taskId,
+				appendedNote,
+				attemptNumber,
+				beforeSpawn,
+			),
 		find: findContradictedPath,
 		buildNote: buildContradictionNote,
 		onRetry: (contradicted, attemptNumber) =>
@@ -118,6 +125,7 @@ async function runTaskAttempt(
 	taskId: string,
 	appendedNote: string | undefined,
 	attemptNumber: number,
+	beforeSpawn?: () => Promise<void>,
 ): Promise<TaskAttemptResult> {
 	const promptLayers: PromptLayersWithWorkdir = {
 		...spec.promptTemplate,
@@ -139,7 +147,9 @@ async function runTaskAttempt(
 		runId: spec.runId,
 		taskId,
 		attemptNumber,
+		signal: ctx.abortSignal,
 	});
+	await beforeSpawn?.();
 	await emit(ctx, spec, {
 		type: "spawn_started",
 		taskId,

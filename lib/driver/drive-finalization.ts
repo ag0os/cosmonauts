@@ -228,7 +228,14 @@ export async function transitionDriveTaskStatus({
 				});
 			}
 			await ctx.taskManager.updateTask(taskId, { status: "Done" });
-			removeDoneTaskSnapshots(spec.projectRoot, spec.runId, taskId);
+			const retained = await removeDoneTaskSnapshots(
+				spec.projectRoot,
+				spec.runId,
+				taskId,
+				spec.commitPolicy,
+				commitSha,
+				ctx.abortSignal,
+			);
 			if (spec.commitPolicy === "driver-commits") {
 				await emit(spec, ctx, {
 					type: "finalize",
@@ -239,7 +246,11 @@ export async function transitionDriveTaskStatus({
 				});
 			}
 			await emit(spec, ctx, { type: "task_done", taskId });
-			return { status: "done", commitSha };
+			return {
+				status: "done",
+				commitSha,
+				...(retained.length ? { retainedSnapshots: retained } : {}),
+			};
 		}
 
 		if (outcome === "partial") {

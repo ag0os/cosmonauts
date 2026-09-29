@@ -5,14 +5,32 @@ const OUTCOME_LINE_PATTERN =
 	/^\s*outcome:\s*(success|failure|partial|completed|blocked)\s*$/im;
 
 export function parseReport(stdout: string): ParsedReport {
-	const fencedReport = parseFencedReport(stdout);
+	const fencedReports = parseFencedReports(stdout);
+	const outcome = parseOutcomeLine(stdout);
+	const outcomes = [
+		...fencedReports.map((report) => report.outcome),
+		...(outcome ? [outcome] : []),
+	];
+	if (new Set(outcomes).size > 1) {
+		if (outcomes.includes("blocked")) {
+			const notes = fencedReports.find((report) => report.notes?.trim())?.notes;
+			return {
+				outcome: "blocked",
+				files: [],
+				verification: [],
+				raw: stdout,
+				...(notes ? { notes } : {}),
+			};
+		}
+		return { outcome: "unknown", raw: stdout };
+	}
+	const fencedReport = fencedReports[0];
 	if (fencedReport) {
 		return fencedReport.outcome === "blocked"
 			? { ...fencedReport, raw: stdout }
 			: fencedReport;
 	}
 
-	const outcome = parseOutcomeLine(stdout);
 	if (outcome) {
 		return outcome === "blocked"
 			? { outcome, files: [], verification: [], raw: stdout }
@@ -22,12 +40,12 @@ export function parseReport(stdout: string): ParsedReport {
 	return { outcome: "unknown", raw: stdout };
 }
 
-function parseFencedReport(
+function parseFencedReports(
 	stdout: string,
-):
-	| Report
-	| Omit<Extract<ParsedReport, { outcome: "blocked" }>, "raw">
-	| undefined {
+): Array<Report | Omit<Extract<ParsedReport, { outcome: "blocked" }>, "raw">> {
+	const reports: Array<
+		Report | Omit<Extract<ParsedReport, { outcome: "blocked" }>, "raw">
+	> = [];
 	for (const match of stdout.matchAll(JSON_FENCE_PATTERN)) {
 		const json = match[1];
 		if (!json) {
@@ -35,12 +53,10 @@ function parseFencedReport(
 		}
 
 		const report = parseJsonReport(json);
-		if (report) {
-			return report;
-		}
+		if (report) reports.push(report);
 	}
 
-	return undefined;
+	return reports;
 }
 
 function parseJsonReport(

@@ -238,7 +238,12 @@ export type DriverEvent =
 	  })
 	| (DriverEventBase & {
 			type: "run_completed";
-			summary: { total: number; done: number; blocked: number };
+			summary: {
+				total: number;
+				done: number;
+				blocked: number;
+				retainedSnapshots?: string[];
+			};
 	  })
 	| (DriverEventBase & {
 			type: "run_aborted";
@@ -289,6 +294,7 @@ interface DriverResultBase {
 	runId: string;
 	tasksDone: number;
 	tasksBlocked: number;
+	retainedSnapshots?: string[];
 	/**
 	 * Primary completion timestamp persisted in run.completion.json. Optional on
 	 * the type so legacy completion files remain readable during resume.
@@ -333,6 +339,7 @@ export type TaskOutcome =
 			status: "done" | "blocked" | "partial";
 			reason?: string;
 			commitSha?: string;
+			retainedSnapshots?: string[];
 	  }
 	| {
 			status: "finalization_failed";

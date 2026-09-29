@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import type {
@@ -78,6 +78,30 @@ describe("contradicted-block retry", () => {
 		expect(retryPrompt).toContain(
 			join(fixture.projectRoot, "design", "README.md"),
 		);
+	});
+
+	test("does not announce a retry when preparing its prompt fails", async () => {
+		const fixture = await setupFixture({ withDesignReadme: true });
+		const events: DriverEvent[] = [];
+		const backend = createSequencedBackend([
+			blockResult("design/README.md does not exist"),
+			successResult(),
+		]);
+		const ctx = createCtx(fixture, backend, events);
+		const sink = ctx.eventSink;
+		ctx.eventSink = async (event) => {
+			await sink(event);
+			if (event.type === "task_blocked")
+				await rm(join(fixture.projectRoot, "missions", "tasks"), {
+					recursive: true,
+					force: true,
+				});
+		};
+		await expect(
+			runOneTask(createSpec(fixture), ctx, fixture.taskId),
+		).rejects.toThrow();
+		expect(events.map((event) => event.type)).not.toContain("task_retry");
+		expect(backend.run).toHaveBeenCalledTimes(1);
 	});
 
 	test("does not retry when the named file is genuinely absent; ends Blocked", async () => {

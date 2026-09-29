@@ -119,6 +119,8 @@ describe("Drive scheduler backend", () => {
 		'{"outcome":"success","files":[]}',
 		'{"outcome":"success"}\nChanged behavior',
 		"outcome: success",
+		"summary: outcome: success",
+		'summary: {"outcome":"success"}',
 		"Outcome inferred from passing postflight.",
 	])("uses safe prose or task title for graph commit subject: %s", async (summary) => {
 		const fixture = await setupFixture(`graph-subject-${summary.length}`);
@@ -216,7 +218,7 @@ describe("Drive scheduler backend", () => {
 			expect(git(["show", `${ref}:new.txt`])).toBe("untracked\n\u0000bytes");
 		} else {
 			expect(notes).toBe(beforeNotes);
-			await transitionDriveTaskStatus({
+			const final = await transitionDriveTaskStatus({
 				spec,
 				ctx: {
 					taskManager: fixture.taskManager,
@@ -228,10 +230,55 @@ describe("Drive scheduler backend", () => {
 				parsedReport: { outcome: "success", files: [], verification: [] },
 				failureReason: "",
 			});
-			expect(() => git(["rev-parse", "--verify", ref])).toThrow();
+			// G2, INV-006, D-034: discarded snapshot bytes remain recoverable.
+			expect(final).toMatchObject({ status: "done", retainedSnapshots: [ref] });
+			expect(git(["show", `${ref}:new.txt`])).toBe("untracked\n\u0000bytes");
 		}
 		expect(step.outcome).toBe(result === "blocked" ? "blocked" : "success");
 	});
+	test("removes a Done snapshot when the final worktree contains its bytes", async () => {
+		const fixture = await setupFixture("snapshot-contained");
+		await fixture.taskManager.createTask({ title: "Snapshot" });
+		const git = (args: string[]) =>
+			execFileSync("git", args, { cwd: fixture.projectRoot, encoding: "utf8" });
+		git(["init", "-b", "main"]);
+		git(["config", "user.email", "driver@example.com"]);
+		git(["config", "user.name", "Driver Test"]);
+		await writeFile(join(fixture.projectRoot, ".gitignore"), "missions/\n");
+		git(["add", "."]);
+		git(["commit", "-m", "initial"]);
+		await writeFile(join(fixture.projectRoot, "new.txt"), "present");
+		const spec = createSpec(fixture, { commitPolicy: "no-commit" });
+		const prepared = await prepareTaskStep({
+			fixture,
+			spec,
+			events: [],
+			backendRun: async () => successfulBackendResult(),
+		});
+		await (await prepared.backend.start(prepared.step)).result;
+		const final = await transitionDriveTaskStatus({
+			spec,
+			ctx: {
+				taskManager: fixture.taskManager,
+				eventSink: async () => {},
+				abortSignal: new AbortController().signal,
+			},
+			taskId: "TASK-1",
+			outcome: "success",
+			parsedReport: { outcome: "success", files: [], verification: [] },
+			failureReason: "",
+		});
+		expect(final).toMatchObject({ status: "done" });
+		expect("retainedSnapshots" in final).toBe(false);
+		expect(() =>
+			git([
+				"rev-parse",
+				"--verify",
+				"refs/cosmonauts/drive/run-drive-scheduler/TASK-1/attempt-1",
+			]),
+		).toThrow();
+	});
+
 	test.each([
 		["blocked", "blocked"],
 		["failure", "failure"],
@@ -482,6 +529,36 @@ describe("Drive scheduler backend", () => {
 		expect(
 			events.filter((event) => event.type === "task_blocked"),
 		).toHaveLength(1);
+	});
+
+	test("blocks fenced success conflicting with a final human stop before graph postflight or retry", async () => {
+		const fixture = await setupFixture("conflicting-report");
+		await fixture.taskManager.createTask({ title: "Needs human" });
+		const raw =
+			'```json\n{"outcome":"success","notes":"Need review"}\n```\noutcome: blocked';
+		const events: DriverEvent[] = [];
+		const backendRun = vi.fn(async () => ({
+			exitCode: 0,
+			stdout: raw,
+			durationMs: 1,
+		}));
+		const spec = createSpec(fixture, {
+			postflightCommands: [nodeCommand("process.exit(8)")],
+		});
+		const prepared = await prepareTaskStep({
+			spec,
+			fixture,
+			events,
+			backendRun,
+		});
+		const result = await (await prepared.backend.start(prepared.step)).result;
+		expect(result).toMatchObject({
+			outcome: "blocked",
+			summary: "Need review",
+		});
+		expect(events.map((event) => event.type)).not.toContain("verify");
+		expect(events.map((event) => event.type)).not.toContain("task_retry");
+		expect(backendRun).toHaveBeenCalledTimes(1);
 	});
 
 	test("records moved HEAD as unverified on a graph blocked stop", async () => {
@@ -856,6 +933,32 @@ describe("Drive scheduler backend", () => {
 			"### Drive — outcome failure — attempt 1 — run run-graph-contradicted-retry",
 		);
 		expect(notes?.match(/### Drive — outcome failure/g)).toHaveLength(1);
+	});
+
+	test("does not announce a graph retry when the next prompt cannot be rendered", async () => {
+		const fixture = await setupFixture("retry-preparation-fails");
+		await fixture.taskManager.createTask({ title: "Retry" });
+		await mkdir(join(fixture.projectRoot, "design"));
+		await writeFile(
+			join(fixture.projectRoot, "design", "README.md"),
+			"present",
+		);
+		const events: DriverEvent[] = [];
+		const backendRun = vi.fn(async () => {
+			await rm(join(fixture.projectRoot, "envelope.md"));
+			return blockedBackendResult("design/README.md does not exist");
+		});
+		const prepared = await prepareTaskStep({
+			spec: createSpec(fixture),
+			fixture,
+			backendRun,
+			events,
+		});
+		await expect(
+			(await prepared.backend.start(prepared.step)).result,
+		).rejects.toThrow();
+		expect(events.map((event) => event.type)).not.toContain("task_retry");
+		expect(backendRun).toHaveBeenCalledTimes(1);
 	});
 
 	test("orders both retry records without changing status before the second spawn", async () => {
