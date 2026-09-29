@@ -250,6 +250,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Decided by: coordinator, amend-on-record, 2026-09-29
   - Supersedes: D-020's "Refs are deleted by the run's terminal cleanup only when the task ended Done" as far as it made Done sufficient.
 
+- **D-035 - The containment check compares worker work, not Drive's own state writes** *(Added 2026-09-29 by the review-phase coordinator after codex review round 3, finding 4)*
+  - Decision: D-034's "final tree" is, per snapshot path: the Drive commit under `driver-commits` and HEAD under `backend-commits` for paths those commits may contain; the working tree at cleanup (`git hash-object`) for paths the commit policy deliberately leaves uncommitted (`missions/**`, `memory/**`, `.cosmonauts/*.lock`) and for every path under `no-commit`. The task's own file is exempt from the check: Drive rewrites it (status, `updatedAt`) between snapshot and cleanup, and its worker content is protected by note preservation (INV-001, B-001, B-003), not by the snapshot.
+  - Alternatives: keep D-034 as written (verified at `427b7eda`: every Done task in a project that tracks task files retains its ref forever under `driver-commits`, because the task file is In Progress in the snapshot and never in the Drive commit); snapshot before the In Progress write (leaves the task file out of every snapshot but not other `missions/` edits, and reorders a path both suites pin).
+  - Why: the check exists to prove the worker's bytes survived (INV-006); Drive's own status write is not worker work and is already governed by INV-001.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: D-034's definition of the final tree; D-034's rule otherwise stands.
+
 ## Behaviors
 
 ### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts
