@@ -264,6 +264,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: INV-005 requires an accurate reference; D-015's observer role belongs to the coordinator between slices; ratified wording is human ground under the deviation protocol.
   - Decided by: implementing coordinator, derived, 2026-09-29; Q-016 pending the human.
 
+- **D-038 - Review-phase artifacts are in the D-036 excluded class** *(Added 2026-09-29 by the implementing coordinator, successor #4, after codex round 2)*
+  - Decision: `/implement-plan` Phases 2-4 commit their own records — `missions/reviews/codex/`, `missions/reviews/qm/`, `missions/reviews/improvements/` — after the closeout, so the D-036 path check excludes those three directories together with `missions/tasks/` and `missions/plans/`. With that exclusion `git diff --name-only ea27538e <tip>` again lists exactly the seven closeout paths. The raw list is recorded beside each check. This amendment is folded into Q-016: the human ratifies (or rejects) D-036 and D-038 as one reading of D-010.
+  - Alternatives: keep review records uncommitted (violates the procedure and INV-005 custody); place them outside `missions/` (breaks the review-artifact conventions).
+  - Why: same rationale as D-036 — review records are neither source, tests, floors, nor the exceptions document.
+  - Decided by: implementing coordinator, derived, 2026-09-29; pending Q-016.
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
