@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-793
 createdAt: '2026-09-29T16:45:17.494Z'
-updatedAt: '2026-09-29T16:45:17.494Z'
+updatedAt: '2026-09-29T18:09:28.443Z'
 ---
 
 ## Description
@@ -38,3 +38,9 @@ Follow Design §4: render a completion section whenever a task has acceptance cr
 - [ ] #6 D-028: this slice is implemented in a single Drive run on the `cosmonauts-subagent` inline backend from the fresh print-mode cosmo session established by the checkpoint below; before this run started, the coordinator restarted the cosmo host after TASK-793's Drive commit, confirmed no stale `bin/cosmonauts-drive-step` exists, and recorded that confirmation with HEAD and the session start time in this task's implementation notes.
 - [ ] #7 D-030: for B-004, implementation notes record one failing run before the change and one passing run after it; each row includes the test name and commit, the failing row includes a one-line failure, and the passing row records the successful result.
 <!-- AC:END -->
+
+## Implementation Notes
+
+### Coordinator precondition (D-028/D-031 host restart, recorded 2026-09-29T18:09Z)
+
+Slice 4 Drive commit b2752b04 landed (run run-8b24ed33; Drive state commit 29d180f8). The slice-4 cosmo host (pid 50144) exited at ~18:08:30Z. `bin/cosmonauts-drive-step` does not exist (bin/ holds only cosmonauts and cosmo-worker-codex). HEAD at restart: 29d180f8 plus the slice-4 record commit that follows. This task's run starts a fresh print-mode cosmo host from the worktree binary (/Users/cosmos/Projects/cosmonauts-framework-health/bin/cosmonauts); its start time is the `startedAt` in missions/sessions/driver-hardening/driver.lock and the run's first event, and is copied into coordinator-status.md after the run.
