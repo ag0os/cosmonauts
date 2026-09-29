@@ -156,8 +156,9 @@ Dead code, duplication, complexity, boundary conformance, and changed-scope
 audit return findings with `verdict: "pass" | "fail"`. Every such completed
 verdict-bearing result declares its non-empty evaluated gate coverage using
 the existing gate-facing capability vocabulary. Findings carry an adapter-local
-ID, gate-aligned category, severity, message, locations, generic action
-descriptions, and optional provider-tagged details.
+ID, gate-aligned category, severity, message, locations, optional provider-neutral
+cyclomatic/cognitive/CRAP metric values, generic action descriptions, and
+optional provider-tagged details.
 
 Trace returns graph nodes, edges, and evidence. Fix preview returns proposal
 descriptions and locations. These two result kinds carry
@@ -167,6 +168,16 @@ runtime must not fabricate one. They declare no evaluated gate coverage.
 Fields that cannot be supported by two independent implementations do not
 enter the generic result shape. They remain under a `{ providerId, data }`
 provider-details object or in the provider-tagged native payload.
+
+Every `analysis_*` tool presents at most 32,768 UTF-8 bytes of model-facing
+text. A fixed header identifies capability, provider (including version for
+completed results), scope, verdict, coverage, and metric before compact finding
+(location, severity, values, message), trace, proposal, status, or non-ready
+rows. Long fields and omitted rows are marked deterministically without
+splitting code points. Provider-native JSON and stderr are never rendered in
+text: complete typed results and the native envelope remain in `details`
+without another provider run. Provider-error messages use the same bound and
+retain structured process evidence on the error object.
 
 The native envelope preserves the provider ID, completed exit code, parsed
 payload, and stderr without truncation. Provider exits that mean findings are

@@ -84,8 +84,15 @@ path or beneath its directory (normalizing separators and dot segments). A
 clone group survives if **any** instance is inside the scope; the other
 locations remain visible for context. Locationless findings do not enter scoped
 results. Only the scoped verdict changes; coverage and the complete native
-payload remain available in details. No `paths` means the full project result.
-For a clone-extraction verdict, call `analysis_duplication` with the owned files
+payload remain available in details. Per-finding cyclomatic, cognitive, and
+CRAP numeric values are promoted into optional provider-neutral metric values;
+other Fallow measurements stay in tagged details. Every capability's displayed
+text uses the shared 32,768-byte UTF-8 limit, a capability/provider/scope/
+verdict/coverage/metric header, compact rows, and deterministic truncation or
+omission text. Native JSON and stderr stay in complete `details`, never in the
+model-facing text; no second provider run is needed. Thrown provider errors keep
+their legacy message format under the same byte cap. No `paths` means the full
+project result. For a clone-extraction verdict, call `analysis_duplication` with the owned files
 and quote each surviving group or the empty result; do not infer no residue
 from an unavailable or failed run.
 

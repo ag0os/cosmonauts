@@ -101,6 +101,194 @@ const CAPABILITY_REQUESTS = [
 	{ capability: "fix-preview", scope: { kind: "project" } },
 ] as const satisfies readonly AnalysisRequest[];
 
+async function presentationPi(
+	capability: AnalysisRequest["capability"],
+	payload?: unknown,
+) {
+	await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+	await recordConsent();
+	const executable = await createExecutable(
+		join(fixtureRoot, "presentation-fallow"),
+	);
+	const fixture = await loadCapabilityFixture(capability);
+	const pi = createMockPi({ cwd: projectRoot });
+	createProjectToolsExtension({
+		userStateRoot,
+		injectedExecutablePath: executable,
+		executeProcess: async (invocation) => {
+			if (invocation.args.includes("--version"))
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			if (invocation.args[0] === "config")
+				return { kind: "code-exit", code: 3, stdout: "defaults\n", stderr: "" };
+			return {
+				kind: "code-exit",
+				code: fixture.envelope.code,
+				stdout: JSON.stringify(payload ?? fixture.envelope.payload),
+				stderr: "NATIVE_SECRET",
+			};
+		},
+	})(pi as never);
+	return pi;
+}
+
+test("renders scoped duplication residue as named groups without native evidence", async () => {
+	const pi = await presentationPi("duplication");
+	const result = (await pi.callTool("analysis_duplication", {
+		paths: ["src/duplicate-a.ts"],
+	})) as ToolResult;
+	const text = result.content[0]?.text ?? "";
+	expect(text).toContain("scope: paths");
+	expect(text).toContain("src/duplicate-a.ts");
+	expect(text).toContain("src/duplicate-b.ts");
+	expect(text).not.toContain("NATIVE_SECRET");
+	expect((result.details as AnalysisResult).native.stderr).toBe(
+		"NATIVE_SECRET",
+	);
+	expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(32_768);
+});
+
+test("renders status and non-ready bindings with bounded header and preserves binding details", async () => {
+	const pi = await presentationPi("duplication");
+	const status = (await pi.callTool("analysis_status", {})) as ToolResult;
+	const text = status.content[0]?.text ?? "";
+	expect(text).toContain(
+		"capability: status\nprovider: per-binding\nscope: all-capabilities\nverdict: per-binding\ncoverage: per-binding\nmetric: per-binding",
+	);
+	expect(text).toContain("binding duplication | bound");
+	expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(32_768);
+	expect(
+		(status.details as { capabilities: unknown[] }).capabilities,
+	).toHaveLength(7);
+	const nonready = (await pi.callTool("analysis_fix_preview", {
+		paths: ["src"],
+	})) as ToolResult;
+	expect(nonready.content[0]?.text).toContain("verdict: unsupported-scope");
+	expect(nonready.content[0]?.text).toContain("supportedScopeKinds");
+	expect(nonready.details).toMatchObject({
+		kind: "unsupported-scope",
+		requestedScopeKind: "paths",
+	});
+});
+
+test("promotes all three complexity metrics into the complete typed finding and compact text", async () => {
+	const pi = await presentationPi("complexity");
+	const result = (await pi.callTool("analysis_complexity", {
+		metric: "cyclomatic",
+	})) as ToolResult;
+	const details = result.details as Extract<
+		AnalysisResult,
+		{ kind: "findings" }
+	>;
+	expect(details.findings[0]?.metricValues).toEqual({
+		cyclomatic: 5,
+		cognitive: 4,
+		crap: 30,
+	});
+	expect(result.content[0]?.text).toContain(
+		"cyclomatic=5, cognitive=4, crap=30",
+	);
+});
+
+test("bounds oversized finding rows without splitting UTF-8 and keeps all typed and native evidence", async () => {
+	const fixture = await loadCapabilityFixture("complexity");
+	const payload = fixture.envelope.payload as {
+		findings: Record<string, unknown>[];
+	};
+	const giant = "🧭".repeat(20_000);
+	const pi = await presentationPi("complexity", {
+		...payload,
+		findings: payload.findings.map((finding) => ({ ...finding, name: giant })),
+	});
+	const result = (await pi.callTool("analysis_complexity", {
+		metric: "cyclomatic",
+	})) as ToolResult;
+	const text = result.content[0]?.text ?? "";
+	expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(32_768);
+	expect(text).toContain("[truncated; complete details available]");
+	expect(text).not.toContain("�");
+	expect(
+		(result.details as Extract<AnalysisResult, { kind: "findings" }>)
+			.findings[0]?.message,
+	).toContain(giant);
+	expect(
+		(
+			(result.details as AnalysisResult).native.payload as {
+				findings: { name: string }[];
+			}
+		).findings[0]?.name,
+	).toBe(giant);
+});
+
+test("omits overflowing scoped clone groups deterministically while retaining all details", async () => {
+	const fixture = await loadCapabilityFixture("duplication");
+	const payload = fixture.envelope.payload as {
+		clone_groups: { instances: { file: string }[] }[];
+	};
+	const group = payload.clone_groups[0];
+	if (!group) throw new Error("Missing clone exemplar");
+	const groups = Array.from({ length: 500 }, (_, index) => ({
+		...group,
+		instances: [
+			{ ...group.instances[0], file: `src/owned/group-${index}.ts` },
+			{ ...group.instances[1], file: `src/external/group-${index}.ts` },
+		],
+	}));
+	const pi = await presentationPi("duplication", {
+		...payload,
+		clone_groups: groups,
+	});
+	const first = (await pi.callTool("analysis_duplication", {
+		paths: ["src/owned"],
+	})) as ToolResult;
+	const second = (await pi.callTool("analysis_duplication", {
+		paths: ["src/owned"],
+	})) as ToolResult;
+	const text = first.content[0]?.text ?? "";
+	expect(text).toMatch(/… \d+ row\(s\) omitted; complete details available\./u);
+	const displayed = text.match(/^finding /gmu)?.length ?? 0;
+	const omitted = Number(text.match(/… (\d+) row\(s\) omitted/u)?.[1]);
+	expect(displayed + omitted).toBe(500);
+	expect(text).toBe(second.content[0]?.text);
+	expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(32_768);
+	expect(
+		(first.details as Extract<AnalysisResult, { kind: "findings" }>).findings,
+	).toHaveLength(500);
+});
+
+test("keeps the legacy provider error message for ordinary process evidence", () => {
+	const error = new AnalysisProviderError({
+		capability: "complexity",
+		provider: "fallow",
+		failureClass: "timeout",
+		process: { exitCode: 2, reason: "expired" },
+	});
+	expect(error.message).toBe(
+		"Analysis failed to run.\nCapability: complexity\nProvider: fallow\nFailure class: timeout\nProcess evidence: exit=2; signal=none; reason=expired; stderr=none",
+	);
+});
+
+test("caps provider error text while retaining full structured process evidence", () => {
+	const reason = "🧭".repeat(20_000);
+	const error = new AnalysisProviderError({
+		capability: "complexity",
+		provider: "fallow",
+		failureClass: "timeout",
+		process: { reason },
+	});
+	expect(Buffer.byteLength(error.message, "utf8")).toBeLessThanOrEqual(32_768);
+	expect(error.message).toContain(
+		"Analysis failed to run.\nCapability: complexity\nProvider: fallow\nFailure class: timeout\nProcess evidence:",
+	);
+	expect(error.message).toContain("[truncated; complete details available]");
+	expect(error.message).not.toContain("�");
+	expect(error.process.reason).toBe(reason);
+});
+
 test("a run-local authorization binds the real project-tools extension in a snapshot", async () => {
 	await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 	await recordConsent();
@@ -3222,19 +3410,26 @@ describe("Fallow capability execution", () => {
 			if (modelVisibleText === undefined) {
 				throw new Error(`Expected model-visible JSON from ${toolName}.`);
 			}
-			const modelVisible = JSON.parse(modelVisibleText) as Record<
-				string,
-				unknown
-			>;
-			expect(modelVisible, toolName).toEqual(details);
+			// AC-009 / D-024: model text is bounded presentation, not details JSON.
+			expect(
+				Buffer.byteLength(modelVisibleText, "utf8"),
+				toolName,
+			).toBeLessThanOrEqual(32_768);
+			expect(modelVisibleText, toolName).toContain(
+				`capability: ${String(details.capability)}`,
+			);
+			expect(modelVisibleText, toolName).toContain("provider: fallow@");
+			expect(modelVisibleText, toolName).not.toContain("native");
 			if (
 				toolName === "analysis_trace" ||
 				toolName === "analysis_fix_preview"
 			) {
 				expect(details, toolName).not.toHaveProperty("coverage");
-				expect(modelVisible, toolName).not.toHaveProperty("coverage");
+				expect(modelVisibleText, toolName).toContain(
+					"coverage: not-applicable",
+				);
 			} else {
-				expect(details.coverage, toolName).toEqual(modelVisible.coverage);
+				expect(modelVisibleText, toolName).toContain("coverage:");
 				expect(details.coverage, toolName).toEqual(expect.any(Array));
 				expect(details.coverage, toolName).not.toHaveLength(0);
 			}
@@ -3293,7 +3488,9 @@ describe("Fallow capability execution", () => {
 			"dead-code",
 			"boundary-conformance",
 		]);
-		expect(JSON.parse(unconfiguredText)).toEqual(unconfiguredDetails);
+		// AC-009 / D-024: details retain evidence; text is a bounded summary.
+		expect(unconfiguredText).toContain("capability: dead-code");
+		expect(unconfiguredText).not.toContain("native");
 		expect(unconfiguredDetails.findings).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ category: "boundary-conformance" }),

@@ -22,6 +22,8 @@ Primary independent references:
   statistics.
 - [Radon command-line output](https://radon.readthedocs.io/en/stable/commandline.html)
   documents JSON cyclomatic-complexity output over selected paths.
+- [SonarQube cognitive complexity](https://docs.sonarsource.com/sonarqube-server/latest/user-guide/code-metrics/metrics-definition/) reports numeric cognitive complexity.
+- [CRAP4J](https://www.crap4j.org/) computes numeric per-method CRAP scores.
 - [dependency-cruiser output](https://github.com/sverweij/dependency-cruiser/blob/main/doc/cli.md)
   documents JSON dependency graphs, rule violations, severities, baselines,
   focus/include scopes, and exit behavior.
@@ -164,6 +166,9 @@ closed on them.
 | `findings[].category` | Fallow 2.54.2: payload collections distinguish dead code, clones, complexity, and boundary violations. | Knip JSON: enabled issue types are distinct keys for files, exports, dependencies, cycles, and related categories. | generic |
 | `findings[].severity` | Fallow 2.54.2: complexity findings carry native severity and unranked findings can be preserved as unknown. | ESLint JSON: every lint message carries warning or error severity. | generic |
 | `findings[].message` | Fallow 2.54.2: findings and actions provide classifiable descriptions. | ESLint JSON: every lint finding carries a message. | generic |
+| `findings[].metricValues.cyclomatic` | Fallow 2.54.2: captured complexity findings contain numeric cyclomatic values per unit. | Radon JSON: per-block cyclomatic complexity scores are numeric. | generic |
+| `findings[].metricValues.cognitive` | Fallow 2.54.2: captured complexity findings contain numeric cognitive values per unit. | SonarQube cognitive-complexity rule reports a per-function cognitive score. | generic |
+| `findings[].metricValues.crap` | Fallow 2.54.2: captured complexity findings contain numeric CRAP scores per unit. | CRAP4J reports per-method CRAP scores derived from complexity and coverage. | generic |
 | `findings[].locations[].path` | Fallow 2.54.2: findings and clone instances carry project-relative paths. | Knip JSON: every issue group carries a file path. | generic |
 | `findings[].locations[].line` | Fallow 2.54.2: export, complexity, boundary, and clone findings carry line positions. | Knip JSON: symbol issues carry 1-based line positions. | generic |
 | `findings[].locations[].column` | Fallow 2.54.2: export, complexity, boundary, and clone findings carry columns. | Knip JSON: symbol issues carry 1-based columns. | generic |
@@ -203,6 +208,13 @@ adapters never invent coordinates. The two Fallow proposal rows that mention
 reusing a finding range apply only when the preview can be losslessly joined
 to that finding; otherwise the optional coordinate is omitted.
 
+The generic per-finding cyclomatic, cognitive, and CRAP numbers are optional:
+adapters promote available finite values and leave provider-specific coverage
+tiers, thresholds, and aggregate scores under tagged details. Text is a bounded
+32,768-byte presentation of this complete typed contract, not a serialized
+copy of `details`; omissions and truncated fields are marked and native provider
+data remains accessible through the original result.
+
 ## Provider-tagged aspects
 
 | Provider-only aspect | Sole evidence | Placement |
@@ -210,7 +222,7 @@ to that finding; otherwise the optional coordinate is omitted.
 | Envelope schema versions, elapsed timings, entry-point source counts, and raw summary counters | Fallow 2.54.2: captured dead-code, complexity, and audit envelopes expose these exact fields. | `native.payload` |
 | Dead-code span offsets, type-only and re-export flags, and suppression comment syntax | Fallow 2.54.2: captured dead-code findings expose these exact representations. | `providerDetails.data` |
 | Clone families, token counts, fragments, estimated savings, and family suggestions | Fallow 2.54.2: captured duplication envelope exposes these aggregation choices. | `providerDetails.data` |
-| CRAP coverage tiers, vital-sign profiles, percentile and maintainability aggregates | Fallow 2.54.2: captured complexity envelope exposes these measurements. | `providerDetails.data` |
+| CRAP coverage tiers, vital-sign profiles, percentile and maintainability aggregates (not the per-finding numeric CRAP value) | Fallow 2.54.2: captured complexity envelope exposes these measurements. | `providerDetails.data` |
 | Zone names, import specifier spelling, and provider boundary action notes | Fallow 2.54.2: captured boundary envelope exposes these rule-engine details. | `providerDetails.data` |
 | Audit head SHA, changed-file count, and embedded per-analyzer summaries | Fallow 2.54.2: captured audit envelope exposes this composition. | `native.payload` |
 | Audit evidence used to derive declared coverage | Fallow 2.54.2: non-empty audit payloads use `dead_code`, `duplication`, and `complexity` sections and nest `boundary_violations` under `dead_code`; the captured zero-change payload instead uses an atomic set of three zero summary counters. Those exact composition keys and counters are not generic coverage members. | `native.payload` |

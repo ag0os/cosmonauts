@@ -18,6 +18,11 @@ import { loadProjectConfig } from "../../../../lib/config/index.ts";
 import type { SnapshotAnalysisAuthorization } from "./analysis-consent.ts";
 import { AnalysisProviderError } from "./analysis-provider-error.ts";
 import {
+	presentAnalysisResolution,
+	presentAnalysisResult,
+	presentAnalysisStatus,
+} from "./bounded-presentation.ts";
+import {
 	discoverFallowProvider,
 	FallowBindingUnavailableError,
 	type FallowExecutableResolutionKind,
@@ -180,14 +185,14 @@ function buildCapabilityStatusBlock(
 	].join("\n");
 }
 
-function textResult<T>(details: T): {
+function textResult<T>(
+	details: T,
+	text: string,
+): {
 	content: { type: "text"; text: string }[];
 	readonly details: T;
 } {
-	return {
-		content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
-		details,
-	};
+	return { content: [{ type: "text", text }], details };
 }
 
 function paramsObject(value: unknown, toolName: string): RawParams {
@@ -427,7 +432,7 @@ function nonreadyResult(
 			resolution.failure,
 		);
 	}
-	return textResult(resolution);
+	return textResult(resolution, presentAnalysisResolution(resolution));
 }
 
 async function refreshSnapshotBindings(
@@ -490,7 +495,8 @@ function registerCapabilityTool(
 				);
 			}
 			try {
-				return textResult(await snapshot.runtime.execute(request, signal));
+				const result = await snapshot.runtime.execute(request, signal);
+				return textResult(result, presentAnalysisResult(result));
 			} catch (error) {
 				if (error instanceof FallowBindingUnavailableError) {
 					const liveResolution = resolveAnalysisRequest(
@@ -715,15 +721,21 @@ export function createProjectToolsExtension(
 				const snapshot = await refreshSnapshotBindings(
 					await getSnapshot(ctx.cwd, signal),
 				);
-				return textResult({
-					kind: "status",
-					...(snapshot.resolutionProvenance === undefined
-						? {}
-						: {
-								resolutionProvenance: snapshot.resolutionProvenance,
-							}),
-					capabilities: snapshot.bindings,
-				} as const);
+				return textResult(
+					{
+						kind: "status",
+						...(snapshot.resolutionProvenance === undefined
+							? {}
+							: {
+									resolutionProvenance: snapshot.resolutionProvenance,
+								}),
+						capabilities: snapshot.bindings,
+					} as const,
+					presentAnalysisStatus(
+						snapshot.bindings,
+						snapshot.resolutionProvenance,
+					),
+				);
 			},
 		});
 

@@ -1,3 +1,5 @@
+import { boundedAnalysisMessage } from "./bounded-presentation.ts";
+
 export interface AnalysisProviderErrorProcessEvidence {
 	readonly exitCode?: number;
 	readonly signal?: string;
@@ -25,13 +27,15 @@ function formatAnalysisProviderError(
 		`reason=${evidenceValue(options.process.reason)}`,
 		`stderr=${evidenceValue(options.process.stderrSummary)}`,
 	].join("; ");
-	return [
-		"Analysis failed to run.",
-		`Capability: ${options.capability}`,
-		`Provider: ${options.provider}`,
-		`Failure class: ${options.failureClass}`,
-		`Process evidence: ${process}`,
-	].join("\n");
+	return boundedAnalysisMessage(
+		[
+			"Analysis failed to run.",
+			`Capability: ${options.capability}`,
+			`Provider: ${options.provider}`,
+			`Failure class: ${options.failureClass}`,
+			`Process evidence: ${process}`,
+		].join("\n"),
+	);
 }
 
 export class AnalysisProviderError extends Error {

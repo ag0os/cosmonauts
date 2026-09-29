@@ -206,6 +206,7 @@ export interface AnalysisFinding {
 	readonly severity: AnalysisFindingSeverity;
 	readonly message: string;
 	readonly locations: readonly AnalysisLocation[];
+	readonly metricValues?: Readonly<Partial<Record<AnalysisMetric, number>>>;
 	readonly actions: readonly AnalysisAction[];
 	readonly providerDetails?: ProviderTaggedDetails;
 }
@@ -472,6 +473,9 @@ export const ANALYSIS_RESULT_GENERIC_FIELDS = [
 	"findings[].category",
 	"findings[].severity",
 	"findings[].message",
+	"findings[].metricValues.cyclomatic",
+	"findings[].metricValues.cognitive",
+	"findings[].metricValues.crap",
 	"findings[].locations[].path",
 	"findings[].locations[].line",
 	"findings[].locations[].column",

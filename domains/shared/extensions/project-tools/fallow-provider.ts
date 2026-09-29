@@ -2042,6 +2042,14 @@ function normalizeComplexityFindings(
 			message: `complexity threshold exceeded${
 				subject === undefined ? "" : `: ${subject}`
 			}`,
+			metricValues: Object.fromEntries(
+				(["cyclomatic", "cognitive", "crap"] as const)
+					.map((name) => [name, numberValue(finding, name)] as const)
+					.filter(
+						(entry): entry is readonly [AnalysisMetric, number] =>
+							entry[1] !== undefined,
+					),
+			),
 			locations: findingLocations(finding),
 			actions: normalizeActions(finding),
 			providerDetails: providerDetails(finding),

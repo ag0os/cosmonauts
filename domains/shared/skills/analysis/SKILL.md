@@ -11,7 +11,7 @@ Call `analysis_status` first. If the tool is not registered in this session, sta
 
 ## Interpret outcomes
 
-- **Completed:** use the structured result and its verdict or evidence. Do not infer findings that are absent from the result.
+- **Completed:** use the structured result and its verdict or evidence. The model-facing text is capped at 32,768 UTF-8 bytes, starts with capability/provider/scope/verdict/coverage/metric, and marks omitted rows or truncated fields. Read complete typed and native evidence in `details` without rerunning the provider; do not infer findings that are absent from the result.
 - **Unbound:** record that analysis evidence is unavailable, then continue with the other evidence required by the task.
 - **Unsupported:** degrade only the unsupported metric or scope. Never widen the request silently or treat unsupported analysis as a clean result.
 - **Failed:** report analysis as failed to run. A failed binding or invocation is blocking when the task depends on that evidence.
