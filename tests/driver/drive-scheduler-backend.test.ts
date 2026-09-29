@@ -26,6 +26,7 @@ import type {
 	SchedulerStepInput,
 	StepRecord,
 } from "../../lib/durable-runtime/index.ts";
+import { withEntityFileLock } from "../../lib/entity-file-lock.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -63,10 +64,60 @@ describe("Drive scheduler backend", () => {
 			else process.env[key] = previous;
 		}
 	});
+	test("blocks a source commit when a probe owns the project lock", async () => {
+		const fixture = await setupFixture("probe-commit-lock");
+		await fixture.taskManager.createTask({ title: "Locked commit" });
+		const git = (args: string[]) =>
+			execFileSync("git", args, {
+				cwd: fixture.projectRoot,
+				encoding: "utf8",
+			}).trim();
+		git(["init", "-b", "main"]);
+		git([
+			"-c",
+			"user.name=Test",
+			"-c",
+			"user.email=test@example.com",
+			"commit",
+			"--allow-empty",
+			"-m",
+			"initial",
+		]);
+		await writeFile(join(fixture.projectRoot, "change.txt"), "changed");
+		await mkdir(probeJournalDirectory(fixture.projectRoot), {
+			recursive: true,
+			mode: 0o700,
+		});
+		await withEntityFileLock(
+			join(probeJournalDirectory(fixture.projectRoot), "probe.lock"),
+			async () => {
+				const result = await finalizeDriveSourceCommit({
+					spec: createSpec(fixture, { commitPolicy: "driver-commits" }),
+					ctx: {
+						taskManager: fixture.taskManager,
+						eventSink: async () => {},
+						abortSignal: new AbortController().signal,
+					},
+					taskId: "TASK-1",
+					outcome: "success",
+					report: { outcome: "success", files: [], verification: [] },
+				});
+				expect(result).toMatchObject({
+					status: "blocked",
+					reason: expect.stringContaining("recovery-required"),
+				});
+				expect(git(["status", "--porcelain"])).toContain("change.txt");
+				expect((await fixture.taskManager.getTask("TASK-1"))?.status).toBe(
+					"Blocked",
+				);
+			},
+		);
+	});
 	test.each([
 		"Implemented the requested change",
 		'```json\n{"outcome":"success"}\n```',
 		'{"outcome":"success","files":[]}',
+		'{"outcome":"success"}\nChanged behavior',
 		"outcome: success",
 		"Outcome inferred from passing postflight.",
 	])("uses safe prose or task title for graph commit subject: %s", async (summary) => {
@@ -367,7 +418,9 @@ describe("Drive scheduler backend", () => {
 			implementationNotes: "original  \n",
 		});
 		await writeFile(join(fixture.projectRoot, "existing.txt"), "present");
-		const raw = "existing.txt needs human input\noutcome: blocked";
+		// F3, INV-002: the final blocked line governs even after an earlier success line.
+		const raw =
+			"outcome: success\nexisting.txt needs human input\noutcome: blocked";
 		const events: DriverEvent[] = [];
 		const backendRun = vi
 			.fn()

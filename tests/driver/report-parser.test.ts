@@ -4,6 +4,11 @@ import { parseReport } from "../../lib/driver/report-parser.ts";
 const outcomeReports = ["success", "failure", "partial", "completed"] as const;
 
 describe("report-parser", () => {
+	test("uses the last outcome line when a worker ends with a human stop", () => {
+		const raw =
+			"Earlier example: outcome: success\noutcome: success\nNeed a decision\noutcome: blocked";
+		expect(parseReport(raw)).toMatchObject({ outcome: "blocked", raw });
+	});
 	test("parses fenced JSON reports", () => {
 		const report = {
 			outcome: "success",

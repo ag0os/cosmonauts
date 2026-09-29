@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const snapshotHook = vi.hoisted(() => ({
+	terminationError: false,
 	callback: undefined as undefined | (() => Promise<void>),
 }));
 vi.mock(
@@ -28,6 +29,21 @@ vi.mock(
 			runProviderProcess: async (
 				...args: Parameters<typeof actual.runProviderProcess>
 			) => {
+				if (snapshotHook.terminationError && args[0].executablePath !== "git") {
+					return {
+						kind: "termination-error" as const,
+						initiated: {
+							kind: "timeout" as const,
+							reason: "timeout",
+							timeoutMs: 100,
+						},
+						error: Object.assign(new Error("tree not stopped"), {
+							code: "PROCESS_TREE_CLEANUP_FAILED",
+						}),
+						stdout: "",
+						stderr: "tree not stopped",
+					};
+				}
 				const outcome = await actual.runProviderProcess(...args);
 				if (
 					args[0].executablePath === "git" &&
@@ -68,6 +84,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
 	snapshotHook.callback = undefined;
+	snapshotHook.terminationError = false;
 	await rm(probeJournalDirectory(root), { recursive: true, force: true });
 	await rm(root, { recursive: true, force: true });
 });
@@ -123,6 +140,24 @@ test.each([
 		exitCode,
 	});
 	expect(await readFile(source, "utf8")).toBe(original);
+});
+
+test("retains the journal when process-tree termination cannot be verified", async () => {
+	snapshotHook.terminationError = true;
+	const result = await probe();
+	expect(result).toMatchObject({
+		status: "recovery-required",
+		journal: expect.stringContaining("journal-"),
+	});
+	expect(outstandingProbeJournal(root)).toBe(result.journal);
+	expect(await readFile(source, "utf8")).toBe(original);
+	snapshotHook.terminationError = false;
+	const retry = await probe();
+	expect(retry).toMatchObject({
+		status: "recovery-required",
+		journal: result.journal,
+	});
+	expect(outstandingProbeJournal(root)).toBe(result.journal);
 });
 
 test("restores after abort", async () => {
@@ -213,7 +248,9 @@ test("refuses duplicate locations and destructive commands without touching the 
 	expect(
 		await probe({ locations: [input().locations[0], input().locations[0]] }),
 	).toMatchObject({ refused: true });
-	expect(await probe({ testCommand: "git reset --hard" })).toMatchObject({
+	expect(
+		await probe({ testCommand: "git --no-pager reset --hard" }),
+	).toMatchObject({
 		refused: true,
 	});
 	expect(await readFile(source, "utf8")).toBe(original);

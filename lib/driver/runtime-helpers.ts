@@ -1,7 +1,13 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { BackendRunResult } from "./backends/types.ts";
 import {
@@ -50,7 +56,6 @@ export function reportSummary(report: ParsedReport): string | undefined {
 	if (
 		/```/u.test(trimmed) ||
 		/^\{[\s\S]*\}$/u.test(trimmed) ||
-		/^outcome\s*:/imu.test(trimmed) ||
 		/Outcome inferred from passing postflight/u.test(trimmed)
 	)
 		return undefined;
@@ -58,7 +63,14 @@ export function reportSummary(report: ParsedReport): string | undefined {
 		.split(/\r?\n/)
 		.map((item) => item.trim())
 		.find((item) => item.length > 0);
-	if (!line) return undefined;
+	if (
+		!line ||
+		/```/u.test(line) ||
+		/^\{.*\}$/u.test(line) ||
+		/^outcome\s*:/iu.test(line) ||
+		/Outcome inferred from passing postflight/u.test(line)
+	)
+		return undefined;
 	return (
 		line
 			.replace(/^(implemented|status|summary):\s*/i, "")
@@ -316,6 +328,7 @@ export async function snapshotWorktree(options: {
 				encoding: "utf8",
 				env: env ? { ...process.env, ...env } : process.env,
 				stdio: ["ignore", "pipe", "pipe"],
+				timeout: 60_000,
 			}).trim();
 		} catch (error) {
 			const stderr = (error as { stderr?: Buffer }).stderr?.toString().trim();
@@ -327,7 +340,12 @@ export async function snapshotWorktree(options: {
 	try {
 		if (git(["rev-parse", "--is-inside-work-tree"]) !== "true")
 			return undefined;
-	} catch {
+	} catch (error) {
+		if (
+			String(error).includes("ETIMEDOUT") ||
+			String(error).includes("timed out")
+		)
+			throw error;
 		return undefined;
 	}
 	if (!git(["status", "--porcelain", "--untracked-files=all"]))
@@ -341,9 +359,37 @@ export async function snapshotWorktree(options: {
 		// never through `:(exclude)` pathspecs: git exits 1 when an exclude
 		// pathspec names only paths the project's .gitignore already ignores.
 		const excludesFile = join(directory, "excludes");
+		let globalExcludes: string | undefined;
+		try {
+			globalExcludes = git(["config", "--get", "core.excludesFile"]);
+		} catch (error) {
+			if (
+				String(error).includes("ETIMEDOUT") ||
+				String(error).includes("timed out")
+			)
+				throw error;
+			globalExcludes = join(
+				process.env.XDG_CONFIG_HOME || join(homedir(), ".config"),
+				"git",
+				"ignore",
+			);
+		}
+		const globalPath = globalExcludes.startsWith("~/")
+			? join(homedir(), globalExcludes.slice(2))
+			: isAbsolute(globalExcludes)
+				? globalExcludes
+				: join(projectRoot, globalExcludes);
+		let originalExcludes = "";
+		if (existsSync(globalPath)) {
+			try {
+				originalExcludes = readFileSync(globalPath, "utf8");
+			} catch {
+				// An unreadable global excludes file cannot contribute patterns.
+			}
+		}
 		writeFileSync(
 			excludesFile,
-			["missions/sessions/", "missions/archive/sessions/", ""].join("\n"),
+			`${originalExcludes}\nmissions/sessions/\nmissions/archive/sessions/\n`,
 		);
 		git(
 			["-c", `core.excludesFile=${excludesFile}`, "add", "-A", "--", "."],
@@ -377,20 +423,36 @@ export function removeDoneTaskSnapshots(
 		execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
 			cwd: projectRoot,
 			stdio: "ignore",
+			timeout: 60_000,
 		});
-	} catch {
+	} catch (error) {
+		if (
+			String(error).includes("ETIMEDOUT") ||
+			String(error).includes("timed out")
+		) {
+			throw new Error(
+				`git rev-parse --is-inside-work-tree failed: ${String(error)}`,
+			);
+		}
 		return;
 	}
 	const prefix = `refs/cosmonauts/drive/${runId}/${taskId}/`;
 	const refs = execFileSync(
 		"git",
 		["for-each-ref", "--format=%(refname)", prefix],
-		{ cwd: projectRoot, encoding: "utf8" },
+		{ cwd: projectRoot, encoding: "utf8", timeout: 60_000 },
 	);
 	for (const ref of refs
 		.split("\n")
 		.filter((item) => item.startsWith(prefix))) {
-		execFileSync("git", ["update-ref", "-d", ref], { cwd: projectRoot });
+		try {
+			execFileSync("git", ["update-ref", "-d", ref], {
+				cwd: projectRoot,
+				timeout: 60_000,
+			});
+		} catch (error) {
+			throw new Error(`git update-ref -d ${ref} failed: ${String(error)}`);
+		}
 	}
 }
 

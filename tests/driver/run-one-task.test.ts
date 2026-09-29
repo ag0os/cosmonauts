@@ -305,6 +305,37 @@ describe("run-one-task", () => {
 		expect(backend.run).toHaveBeenCalledTimes(1);
 	});
 
+	test("uses a final blocked outcome line instead of an earlier success line", async () => {
+		const fixture = await setupGitFixture();
+		const raw = "outcome: success\nNeed human review\noutcome: blocked";
+		const events: DriverEvent[] = [];
+		const outcome = await runOneTask(
+			createSpec(fixture, {
+				postflightCommands: [nodeCommand("process.exit(9)")],
+			}),
+			createCtx(
+				fixture,
+				createBackend(async () => ({
+					exitCode: 0,
+					stdout: raw,
+					durationMs: 1,
+				})),
+				events,
+			),
+			fixture.taskId,
+		);
+		expect(outcome).toMatchObject({ status: "blocked", reason: raw });
+		expect(events.map((event) => event.type)).not.toContain("task_retry");
+		expect(events.map((event) => event.type)).toEqual([
+			"task_started",
+			"preflight",
+			"preflight",
+			"spawn_started",
+			"spawn_completed",
+			"task_blocked",
+		]);
+	});
+
 	test("records a backend commit as unverified when its report blocks", async () => {
 		const fixture = await setupGitFixture();
 		const before = (
@@ -641,6 +672,7 @@ describe("run-one-task", () => {
 		"Implemented the requested change",
 		'```json\n{"outcome":"success"}\n```',
 		'{"outcome":"success","files":[]}',
+		'{"outcome":"success"}\nChanged behavior',
 		"outcome: success",
 	])("uses safe prose or task title for legacy commit subject: %s", async (notes) => {
 		const fixture = await setupGitFixture();

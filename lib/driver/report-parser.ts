@@ -59,7 +59,10 @@ function parseJsonReport(
 function parseOutcomeLine(
 	stdout: string,
 ): ReportOutcome | "blocked" | undefined {
-	const value = stdout.match(OUTCOME_LINE_PATTERN)?.[1]?.toLowerCase();
+	const matches = [
+		...stdout.matchAll(new RegExp(OUTCOME_LINE_PATTERN.source, "gim")),
+	];
+	const value = matches.at(-1)?.[1]?.toLowerCase();
 	return toReportOutcome(value);
 }
 

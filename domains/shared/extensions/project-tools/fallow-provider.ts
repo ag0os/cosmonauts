@@ -2503,7 +2503,10 @@ function findingsOutcome(
 }
 
 function canonicalScopePath(path: string): string {
-	return posix.normalize(path.replaceAll("\\", "/"));
+	const normalized = posix.normalize(path.replaceAll("\\", "/"));
+	return posix.isAbsolute(normalized)
+		? normalized.replace(/\/+$/u, "") || "/"
+		: normalized.replace(/\/+$/u, "") || ".";
 }
 
 function scopedFindings(

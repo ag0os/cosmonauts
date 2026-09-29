@@ -1,7 +1,12 @@
 import { execFile } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import {
+	probeJournalBlockReason,
+	probeJournalDirectory,
+	probeLockPath,
+} from "../agents/drive-worker-tool-guard.ts";
 import type {
 	ArtifactRef,
 	RunRef,
@@ -9,6 +14,10 @@ import type {
 	StepRecord,
 	StepResult,
 } from "../durable-runtime/index.ts";
+import {
+	EntityFileLockTimeoutError,
+	withEntityFileLock,
+} from "../entity-file-lock.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import { acquireRepoCommitLock } from "./lock.ts";
 import { formatPartialReport } from "./report-format.ts";
@@ -95,14 +104,36 @@ export async function finalizeDriveSourceCommit({
 	let committed = false;
 	let commitError: unknown;
 	try {
-		if (await hasCommittableChanges(spec.projectRoot, ctx.abortSignal)) {
-			await gitAddCommittableFiles(spec.projectRoot, ctx.abortSignal);
-			if (await hasStagedChanges(spec.projectRoot, ctx.abortSignal)) {
-				await gitCommit(spec.projectRoot, subject, ctx.abortSignal);
-				committed = true;
-			}
+		await mkdir(probeJournalDirectory(spec.projectRoot), {
+			recursive: true,
+			mode: 0o700,
+		});
+		const probeReason = await withEntityFileLock(
+			probeLockPath(spec.projectRoot),
+			async () => {
+				const reason = probeJournalBlockReason(spec.projectRoot);
+				if (reason) return reason;
+				if (await hasCommittableChanges(spec.projectRoot, ctx.abortSignal)) {
+					await gitAddCommittableFiles(spec.projectRoot, ctx.abortSignal);
+					if (await hasStagedChanges(spec.projectRoot, ctx.abortSignal)) {
+						await gitCommit(spec.projectRoot, subject, ctx.abortSignal);
+						committed = true;
+					}
+				}
+				return undefined;
+			},
+			{ waitTimeoutMs: 250 },
+		);
+		if (probeReason) {
+			await blockTask(ctx, spec, taskId, probeReason);
+			return { status: "blocked", reason: probeReason };
 		}
 	} catch (error) {
+		if (error instanceof EntityFileLockTimeoutError) {
+			const reason = `recovery-required: execution probe lock held: ${error.lockPath}`;
+			await blockTask(ctx, spec, taskId, reason);
+			return { status: "blocked", reason };
+		}
 		commitError = error;
 	} finally {
 		await lock.release();

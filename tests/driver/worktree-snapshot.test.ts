@@ -12,7 +12,32 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { snapshotWorktree } from "../../lib/driver/runtime-helpers.ts";
+import {
+	reportSummary,
+	snapshotWorktree,
+} from "../../lib/driver/runtime-helpers.ts";
+
+it("uses a prose summary before a later outcome line", () => {
+	expect(
+		reportSummary({
+			outcome: "success",
+			files: [],
+			verification: [],
+			notes: "Implemented a fix\noutcome: success",
+		}),
+	).toBe("Implemented a fix");
+});
+
+it("rejects a JSON first line as a commit summary even when notes continue", () => {
+	expect(
+		reportSummary({
+			outcome: "success",
+			files: [],
+			verification: [],
+			notes: '{"outcome":"success"}\nChanged behavior',
+		}),
+	).toBeUndefined();
+});
 
 let root: string;
 
@@ -57,6 +82,23 @@ describe("snapshotWorktree", () => {
 		expect(files).not.toContain("missions/sessions/w.jsonl");
 		expect(git(["show", `${ref}:tracked.txt`])).toBe("changed");
 		expect(git(["status", "--porcelain"])).toContain("untracked.txt");
+	});
+
+	it("preserves a user's global excludes in the snapshot tree", async () => {
+		const excludes = join(root, "user-excludes");
+		await writeFile(excludes, "secret.env\n");
+		git(["config", "core.excludesFile", excludes]);
+		await writeFile(join(root, "secret.env"), "secret");
+		await writeFile(join(root, "untracked.txt"), "present");
+		const ref = await snapshotWorktree({
+			projectRoot: root,
+			runId: "run-1",
+			taskId: "TASK-1",
+			attemptNumber: 1,
+		});
+		const files = git(["ls-tree", "-r", "--name-only", ref as string]);
+		expect(files).toContain("untracked.txt");
+		expect(files).not.toContain("secret.env");
 	});
 
 	it("returns undefined and writes no ref on a clean tree", async () => {

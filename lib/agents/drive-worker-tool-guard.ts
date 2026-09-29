@@ -78,12 +78,42 @@ function gitOperation(words: string[]): boolean {
 				"--work-tree",
 				"--namespace",
 				"--config-env",
+				"--exec-path",
+				"--list-cmds",
+				"--super-prefix",
+				"--attr-source",
 			].includes(option ?? "")
 		) {
 			index += 2;
 			continue;
 		}
-		if (/^--(git-dir|work-tree|namespace|config-env)=/.test(option ?? "")) {
+		if (
+			/^--(git-dir|work-tree|namespace|config-env|exec-path|list-cmds|super-prefix|attr-source)=/.test(
+				option ?? "",
+			)
+		) {
+			index++;
+			continue;
+		}
+		if (
+			[
+				"--no-pager",
+				"-p",
+				"--paginate",
+				"-P",
+				"--bare",
+				"--no-replace-objects",
+				"--no-optional-locks",
+				"--literal-pathspecs",
+				"--glob-pathspecs",
+				"--noglob-pathspecs",
+				"--icase-pathspecs",
+				"--html-path",
+				"--man-path",
+				"--info-path",
+			].includes(option ?? "") ||
+			/^-(?:C|c).+/.test(option ?? "")
+		) {
 			index++;
 			continue;
 		}
@@ -162,6 +192,10 @@ export function probeJournalDirectory(projectRoot: string): string {
 		tmpdir(),
 		`cosmonauts-probe-${createHash("sha256").update(realpathSync(projectRoot)).digest("hex")}`,
 	);
+}
+
+export function probeLockPath(projectRoot: string): string {
+	return join(probeJournalDirectory(projectRoot), "probe.lock");
 }
 
 export function probeJournalBlockReason(

@@ -2095,6 +2095,25 @@ describe("Fallow provider discovery", () => {
 });
 
 describe("Fallow capability execution", () => {
+	test.each([
+		"src/",
+		"src//",
+		"./src/",
+		"./",
+		".",
+	])("scopes trailing directory %s to descendant findings", async (path) => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const result = await runtime.execute({
+			capability: "complexity",
+			metric: "cyclomatic",
+			scope: { kind: "paths", paths: [path] },
+		});
+		expect(result).toMatchObject({
+			kind: "findings",
+			verdict: "fail",
+			findings: [{ locations: [{ path: "src/complex.ts" }] }],
+		});
+	});
 	test("scopes complexity to an exact file after a single full health run", async () => {
 		const runtime = await discoveredRuntimeWithFixtures();
 		const result = await runtime.execute({

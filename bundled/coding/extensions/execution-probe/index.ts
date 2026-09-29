@@ -19,6 +19,7 @@ import {
 	isDestructiveGitCommand,
 	outstandingProbeJournal,
 	probeJournalDirectory,
+	probeLockPath,
 } from "../../../../lib/agents/drive-worker-tool-guard.ts";
 import { withEntityFileLock } from "../../../../lib/entity-file-lock.ts";
 
@@ -343,6 +344,16 @@ async function recover(
 		) as Manifest;
 		const failure = await restore(root, journal, manifest);
 		if (failure) return failure;
+		if (
+			await readFile(join(journal, "termination-error"), "utf8").then(
+				() => true,
+				(error: NodeJS.ErrnoException) => {
+					if (error.code === "ENOENT") return false;
+					throw error;
+				},
+			)
+		)
+			return "process tree not verified stopped";
 		await rm(journal, { recursive: true, force: true });
 		return undefined;
 	} catch (error) {
@@ -363,7 +374,7 @@ async function runProbe(
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	if (((await lstat(directory)).mode & 0o777) !== 0o700)
 		return refusal("probe journal directory must be mode 0700");
-	return withEntityFileLock(join(directory, "probe.lock"), async () => {
+	return withEntityFileLock(probeLockPath(root), async () => {
 		const outstanding = outstandingProbeJournal(root);
 		if (outstanding) {
 			const failure = await recover(root, outstanding);
@@ -437,6 +448,13 @@ async function runProbe(
 				signal,
 				{ timeoutMs: input.timeoutMs ?? 30_000 },
 			);
+			if (outcome.kind === "termination-error") {
+				await durableWrite(
+					join(journal, "termination-error"),
+					outcome.error.message,
+				);
+				await syncDirectory(journal);
+			}
 		} catch (error) {
 			failure = String(error);
 		} finally {
@@ -465,6 +483,12 @@ async function runProbe(
 			}
 		}
 		if (restoreFailure) return recoveryRequired(journal, restoreFailure);
+		if (outcome?.kind === "termination-error") {
+			return recoveryRequired(
+				journal,
+				`process tree not verified stopped: ${outcome.error.message}`,
+			);
+		}
 		if (failure || !outcome) {
 			await rm(journal, { recursive: true, force: true });
 			return refusal(failure ?? "command did not run");
