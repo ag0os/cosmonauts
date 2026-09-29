@@ -20,6 +20,8 @@ Call `analysis_status` first. If the tool is not registered in this session, sta
 
 Changed-scope analysis requires an explicit base. Supply the exact base required by the active work contract; never omit it, replace it with a symbolic guess, or silently widen the scope.
 
+For clone-extraction work, call `analysis_duplication({ paths: [<owned project-relative files>] })` after the edit. The result includes clone groups when **any** instance belongs to the requested files; quote every surviving scoped group (with its locations), or quote the explicit empty result, in the verdict. A clean subset says nothing about groups outside those paths. If analysis is unbound or fails, say the residue is unknown; never claim zero clones from missing evidence. Use the result's complete details when the model-facing text omits rows.
+
 ## Investigate and remediate safely
 
 - **Trace first:** trace reachability and references before removing a file, export, type, dependency, or other structural element.

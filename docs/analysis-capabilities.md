@@ -38,7 +38,7 @@ Pi registers one status tool and one tool per capability:
 | `analysis_status` | Return all seven binding rows. |
 | `analysis_dead_code` | Request `dead-code` for project or path scope. |
 | `analysis_duplication` | Request `duplication` for project or path scope when advertised. |
-| `analysis_complexity` | Request one advertised `complexity` metric. |
+| `analysis_complexity` | Request one advertised `complexity` metric for project or path scope. |
 | `analysis_boundaries` | Request `boundary-conformance` for project or path scope when configured and advertised. |
 | `analysis_audit` | Request `changed-scope-audit` from an explicit base. |
 | `analysis_trace` | Request `trace` for exactly one target. |
@@ -65,6 +65,18 @@ requirements. Unsupported scopes, metrics, target kinds, or missing
 provider-required target identity return a structured unsupported result before
 provider execution; they are never widened, misreported as provider invalid
 output, or represented as an empty clean result.
+
+Fallow advertises `paths` for complexity and duplication. The adapter runs each
+analysis once for the whole project, reconciles the complete provider result,
+then retains findings with at least one location equal to a requested file or
+below a requested directory. Slashes and dot segments are normalized for
+matching; locationless findings are excluded. A clone group with one owned
+instance survives as a whole group, including its other locations. The scoped
+verdict is derived from that subset, while coverage and the unfiltered native
+envelope remain available in the result's details. Omit `paths` to receive the
+unchanged project inventory. For clone-extraction residue, request the owned
+files via `analysis_duplication({ paths })` and report each surviving group or
+an explicit empty result; a failed provider run cannot prove absence.
 
 Every provider invocation is shell-free, bounded by a finite timeout, and
 non-mutating. Cancellation reaches the provider process and is reported as an

@@ -62,8 +62,8 @@ When bound, the adapter exposes:
 | Capability | Fallow operation and delivered scope |
 |---|---|
 | `dead-code` | Project or explicit paths, unless every contributing rule is disabled. |
-| `duplication` | Project only. |
-| `complexity` | Project only; cyclomatic, cognitive, and CRAP metrics. |
+| `duplication` | Project or explicit paths; path results are filtered after one full project run. |
+| `complexity` | Project or explicit paths; cyclomatic, cognitive, and CRAP metrics; path results are filtered after one full project run. |
 | `boundary-conformance` | Project or explicit paths, only when zones and rules are configured and the `boundary-violation` rule is not disabled. |
 | `changed-scope-audit` | Changed scope from a required explicit base. |
 | `trace` | Exactly one symbol (required project-relative path), file, dependency, or duplicate location (required positive line; optional column). |
@@ -76,6 +76,18 @@ stderr, and exit status. Invalid configuration, crashes, signals,
 cancellation, timeouts, unsupported schemas, and unclassifiable output surface
 as provider failures rather than clean results. The generic runtime never
 applies a Fallow fix.
+
+For `analysis_duplication({ paths })` and `analysis_complexity({ metric, paths })`,
+Fallow still analyzes the whole project once. The adapter first checks the full
+result for consistency, then keeps only findings located exactly at a requested
+path or beneath its directory (normalizing separators and dot segments). A
+clone group survives if **any** instance is inside the scope; the other
+locations remain visible for context. Locationless findings do not enter scoped
+results. Only the scoped verdict changes; coverage and the complete native
+payload remain available in details. No `paths` means the full project result.
+For a clone-extraction verdict, call `analysis_duplication` with the owned files
+and quote each surviving group or the empty result; do not infer no residue
+from an unavailable or failed run.
 
 ## The Command Surface
 

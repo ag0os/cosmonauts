@@ -391,6 +391,10 @@ async function discoveredRuntimeWithFixtures(options?: {
 		signal?: AbortSignal,
 	) => Promise<AnalysisResult>;
 	readonly invocations: readonly ProviderProcessInvocation[];
+	readonly bindings: readonly {
+		readonly capability: string;
+		readonly scopes?: readonly string[];
+	}[];
 }> {
 	await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 	await recordConsent();
@@ -489,7 +493,7 @@ async function discoveredRuntimeWithFixtures(options?: {
 	if (discovery.status !== "detected") {
 		throw new Error(`Expected detected provider, received ${discovery.status}`);
 	}
-	return { ...discovery.runtime, invocations };
+	return { ...discovery.runtime, invocations, bindings: discovery.bindings };
 }
 
 async function writeProjectFile(
@@ -1786,6 +1790,227 @@ describe("Fallow provider discovery", () => {
 });
 
 describe("Fallow capability execution", () => {
+	test("scopes complexity to an exact file after a single full health run", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const result = await runtime.execute({
+			capability: "complexity",
+			metric: "cyclomatic",
+			scope: { kind: "paths", paths: ["src/complex.ts"] },
+		});
+		expect(result).toMatchObject({
+			kind: "findings",
+			verdict: "fail",
+			coverage: ["complexity"],
+			findings: [{ locations: [{ path: "src/complex.ts" }] }],
+		});
+		expect(
+			runtime.invocations.filter(({ args }) => args[0] === "health"),
+		).toHaveLength(1);
+	});
+	test("filters complexity descendants without matching sibling prefixes or locationless rows", async () => {
+		const fixture = await loadCapabilityFixture("complexity");
+		const payload = fixture.envelope.payload as {
+			readonly findings: readonly Record<string, unknown>[];
+		};
+		const exemplar = payload.findings[0];
+		if (exemplar === undefined) throw new Error("Missing complexity exemplar");
+		const fullPayload = {
+			...payload,
+			findings: [
+				{ ...exemplar, path: "src\\feature\\lib\\..\\a.ts" },
+				{ ...exemplar, path: "src/feature-two/b.ts" },
+				{ ...exemplar, path: "src/feature/nested/c.ts" },
+				{ ...exemplar, path: undefined, file: undefined, from_path: undefined },
+			],
+		};
+		const runtime = await discoveredRuntimeWithFixtures({
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: 1,
+				stdout: JSON.stringify(fullPayload),
+				stderr: "native-stderr",
+			},
+		});
+		const result = await runtime.execute({
+			capability: "complexity",
+			metric: "cyclomatic",
+			scope: { kind: "paths", paths: ["src\\feature\\."] },
+		});
+		if (result.kind !== "findings") throw new Error("Expected findings");
+		expect(result.findings.map(({ id }) => id)).toEqual([
+			"fallow:complexity:findings:0",
+			"fallow:complexity:findings:2",
+		]);
+		expect(result.native).toEqual({
+			providerId: "fallow",
+			exitCode: 1,
+			payload: fullPayload,
+			stderr: "native-stderr",
+		});
+	});
+
+	test("returns a clean scoped complexity verdict after validating a failing full run", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const result = await runtime.execute({
+			capability: "complexity",
+			metric: "cyclomatic",
+			scope: { kind: "paths", paths: ["src/absent.ts"] },
+		});
+		expect(result).toMatchObject({
+			kind: "findings",
+			verdict: "pass",
+			coverage: ["complexity"],
+			findings: [],
+		});
+		expect(result.native.exitCode).toBe(1);
+	});
+
+	test("does not turn inconsistent full provider output into a clean scoped verdict", async () => {
+		const fixture = await loadCapabilityFixture("complexity");
+		const runtime = await discoveredRuntimeWithFixtures({
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: 0,
+				stdout: fixture.envelope.stdout,
+				stderr: "",
+			},
+		});
+		await expect(
+			runtime.execute({
+				capability: "complexity",
+				metric: "cyclomatic",
+				scope: { kind: "paths", paths: ["src/absent.ts"] },
+			}),
+		).rejects.toMatchObject({ failureClass: "invalid-output" });
+	});
+
+	test("keeps full-project complexity findings and verdict unchanged", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const result = await runtime.execute({
+			capability: "complexity",
+			metric: "cyclomatic",
+			scope: { kind: "project" },
+		});
+		expect(result).toMatchObject({
+			kind: "findings",
+			verdict: "fail",
+			scope: { kind: "project" },
+		});
+		if (result.kind !== "findings") throw new Error("Expected findings");
+		expect(result.findings.map(({ locations }) => locations[0]?.path)).toEqual([
+			"src/complex.ts",
+		]);
+	});
+
+	test("reports every clone group with one owned side and no unrelated groups", async () => {
+		const fixture = await loadCapabilityFixture("duplication");
+		const payload = fixture.envelope.payload as {
+			readonly clone_groups: readonly {
+				readonly instances: readonly Record<string, unknown>[];
+			}[];
+		};
+		const exemplar = payload.clone_groups[0];
+		if (exemplar === undefined) throw new Error("Missing clone group exemplar");
+		const fullPayload = {
+			...payload,
+			clone_groups: [
+				{
+					...exemplar,
+					instances: [
+						{ file: "src\\owned\\one.ts", start_line: 2 },
+						{ file: "src/external.ts", start_line: 4 },
+					],
+				},
+				{
+					...exemplar,
+					instances: [
+						{ file: "src/owned/deep/two.ts", start_line: 5 },
+						{ file: "src/elsewhere.ts", start_line: 6 },
+					],
+				},
+				{
+					...exemplar,
+					instances: [
+						{ file: "src/owned-other.ts", start_line: 7 },
+						{ file: "src/elsewhere.ts", start_line: 8 },
+					],
+				},
+			],
+		};
+		const runtime = await discoveredRuntimeWithFixtures({
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: 1,
+				stdout: JSON.stringify(fullPayload),
+				stderr: "",
+			},
+		});
+		const result = await runtime.execute({
+			capability: "duplication",
+			scope: { kind: "paths", paths: ["src/./owned"] },
+		});
+		if (result.kind !== "findings") throw new Error("Expected findings");
+		expect(result.findings.map(({ id }) => id)).toEqual([
+			"fallow:duplication:clone_groups:0",
+			"fallow:duplication:clone_groups:1",
+		]);
+		expect(result.findings[0]?.locations).toEqual([
+			{ path: "src\\owned\\one.ts", line: 2 },
+			{ path: "src/external.ts", line: 4 },
+		]);
+		expect(result).toMatchObject({
+			verdict: "fail",
+			coverage: ["duplication"],
+			native: { payload: fullPayload },
+		});
+		expect(
+			runtime.invocations.filter(({ args }) => args[0] === "dupes"),
+		).toHaveLength(1);
+		expect(
+			runtime.bindings.find(({ capability }) => capability === "duplication"),
+		).toMatchObject({ scopes: ["project", "paths"] });
+	});
+
+	test("returns an empty duplication residue with preserved coverage and full native evidence", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const result = await runtime.execute({
+			capability: "duplication",
+			scope: { kind: "paths", paths: ["src/absent.ts"] },
+		});
+		expect(result).toMatchObject({
+			kind: "findings",
+			verdict: "pass",
+			coverage: ["duplication"],
+			findings: [],
+		});
+		expect(result.native.exitCode).toBe(1);
+	});
+
+	test("retains the full duplication inventory for project scope", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const result = await runtime.execute({
+			capability: "duplication",
+			scope: { kind: "project" },
+		});
+		if (result.kind !== "findings") throw new Error("Expected findings");
+		expect(result.verdict).toBe("fail");
+		expect(
+			result.findings.map(({ locations }) => locations.map(({ path }) => path)),
+		).toEqual([["src/duplicate-a.ts", "src/duplicate-b.ts"]]);
+	});
+
+	test("advertises paths for complexity and duplication", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		for (const capability of ["complexity", "duplication"]) {
+			expect(
+				runtime.bindings.find((binding) => binding.capability === capability),
+			).toMatchObject({
+				state: "bound",
+				scopes: ["project", "paths"],
+			});
+		}
+	});
+
 	test("bounds concurrent analyses and removes cancelled work from the queue", async () => {
 		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 		await recordConsent();

@@ -16,7 +16,7 @@ import {
 	realpath,
 	stat,
 } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, posix, resolve } from "node:path";
 import {
 	ANALYSIS_CAPABILITIES,
 	type AnalysisAction,
@@ -1013,12 +1013,12 @@ function capabilities(options: {
 		{
 			capability: "duplication",
 			status: "supported",
-			scopes: ["project"],
+			scopes: ["project", "paths"],
 		},
 		{
 			capability: "complexity",
 			status: "supported",
-			scopes: ["project"],
+			scopes: ["project", "paths"],
 			metrics: ["cyclomatic", "cognitive", "crap"],
 		},
 		hasConfiguredBoundaries
@@ -2317,6 +2317,35 @@ function findingsOutcome(
 	return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
 }
 
+function canonicalScopePath(path: string): string {
+	return posix.normalize(path.replaceAll("\\", "/"));
+}
+
+function scopedFindings(
+	findings: readonly AnalysisFinding[],
+	paths: readonly string[],
+): NormalizedAnalysisFindings {
+	const requestedPaths = paths.map(canonicalScopePath);
+	return findingsOutcome(
+		findings.filter((finding) =>
+			finding.locations.some(({ path }) => {
+				const located = canonicalScopePath(path);
+				if (
+					posix.isAbsolute(located) ||
+					located === ".." ||
+					located.startsWith("../")
+				)
+					return false;
+				return requestedPaths.some(
+					(requested) =>
+						located === requested ||
+						(requested === "." ? true : located.startsWith(`${requested}/`)),
+				);
+			}),
+		),
+	);
+}
+
 export function assertFallowFindingsCovered(
 	findings: readonly Pick<AnalysisFinding, "category">[],
 	coverage: AnalysisGateCoverage,
@@ -2734,6 +2763,12 @@ function normalizedCapabilityResult(
 			envelope.record,
 			completeEvidence,
 		);
+		const scoped =
+			(request.capability === "complexity" ||
+				request.capability === "duplication") &&
+			request.scope.kind === "paths"
+				? scopedFindings(normalized.findings, request.scope.paths)
+				: normalized;
 		if (request.capability === "complexity") {
 			return {
 				kind: "findings",
@@ -2741,9 +2776,9 @@ function normalizedCapabilityResult(
 				provider: runtime.provider,
 				scope: request.scope,
 				metric: request.metric,
-				verdict: normalized.verdict,
+				verdict: scoped.verdict,
 				coverage: normalized.coverage,
-				findings: normalized.findings,
+				findings: scoped.findings,
 				native,
 			};
 		}
@@ -2752,9 +2787,9 @@ function normalizedCapabilityResult(
 			capability: request.capability,
 			provider: runtime.provider,
 			scope: request.scope,
-			verdict: normalized.verdict,
+			verdict: scoped.verdict,
 			coverage: normalized.coverage,
-			findings: normalized.findings,
+			findings: scoped.findings,
 			native,
 		} as AnalysisResult;
 	} catch (error) {

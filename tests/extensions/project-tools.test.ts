@@ -1546,6 +1546,10 @@ describe("project-tools extension", () => {
 					});
 					expect(binding.scopes as readonly unknown[]).not.toHaveLength(0);
 				}
+				// AC-008: the adapter now filters path-scoped results after a full run.
+				expect(
+					capabilities.find(({ capability }) => capability === "duplication"),
+				).toMatchObject({ scopes: ["project", "paths"] });
 				expect(
 					capabilities.find(({ capability }) => capability === "complexity"),
 				).toMatchObject({
@@ -1555,7 +1559,7 @@ describe("project-tools extension", () => {
 						name: "Fallow",
 						version: FALLOW_VALIDATED_ENGINE_VERSION,
 					},
-					scopes: ["project"],
+					scopes: ["project", "paths"],
 					metrics: ["cyclomatic", "cognitive", "crap"],
 				});
 				expect(

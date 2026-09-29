@@ -41,13 +41,13 @@ Completed provider exits `0` and `1` remain results when their JSON is
 classifiable; other execution exits, signals, timeouts, aborts, invalid JSON,
 error envelopes, and unsupported schema versions are failures.
 
-The adapter advertises only native scope support:
+The adapter advertises native scope support and adapter-enforced result scopes:
 
 | Capability | Delivered Fallow binding |
 |---|---|
 | `dead-code` | `project`, `paths`; `provider-not-configured` when every contributing rule is disabled |
-| `duplication` | `project` |
-| `complexity` | `project`; `cyclomatic`, `cognitive`, and `crap` metrics |
+| `duplication` | `project`, `paths` (post-run location filter over one full project run) |
+| `complexity` | `project`, `paths` (post-run location filter over one full project run); `cyclomatic`, `cognitive`, and `crap` metrics |
 | `boundary-conformance` | `project`, `paths` only when zones and rules are configured and the `boundary-violation` rule is not disabled; otherwise `provider-not-configured` |
 | `changed-scope-audit` | `changed` with a required explicit base |
 | `trace` | `target`; symbol requires `path`, duplicate location requires `line`, file and dependency require no additional identity |
@@ -62,6 +62,14 @@ its clone-pair file ranges to resolve duplicate groups for a path and treat a
 supplied line as a disambiguator, while a dependency-cruiser adapter can
 advertise only file and dependency targets. Each provider therefore exposes
 only the generic target forms it can honor.
+
+For complexity and duplication, Fallow has no per-path CLI filter. The adapter
+reconciles the full exit, asserted verdict, and normalized findings before
+matching canonical project-relative locations to exact paths or directory
+descendants. Locationless findings are absent from path-scoped results. One
+owned side retains the entire clone group. Only the subset verdict is
+recomputed; coverage and the unmodified native envelope still describe the
+full run. A failed or contradictory full run cannot become a clean subset.
 
 Every analysis, config-introspection, and preview invocation disables the
 provider cache; version detection uses its intrinsically read-only operation.
