@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-772
 createdAt: '2026-09-28T15:24:34.550Z'
-updatedAt: '2026-09-28T19:31:58.880Z'
+updatedAt: '2026-09-29T00:04:41.160Z'
 ---
 
 ## Description
@@ -37,3 +37,8 @@ Drive commits this task only when **every** acceptance criterion is checked; an 
 Addendum (2026-09-28, plan D-023): a task-close `analysis_audit` that returns `failed` (e.g. `invalid-output` because Fallow answered `warn`) is recorded in these notes with its failure class, the verbatim direct diagnostic `fallow audit --base <sha> --format json --quiet --no-cache --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json`, and the owning slice of each flagged finding; it is not a completion blocker when the five stage-gate commands pass and every owned finding is dispositioned. Do not edit `fallow-provider.ts` for it.
 
 Addendum (2026-09-28, plan D-024): for critical-complexity functions the INV-003 pre-edit confirmation is the fresh project-scope `analysis_complexity` run per metric that still lists the function row; a symbol `analysis_trace` exit 2 for a non-exported function is a recorded provider limitation (`fallow dead-code --trace` resolves exports only), not a D-013 hard stop. If the surface complexity output is truncated, record its state/count/digest and confirm your owned rows with the direct diagnostic `fallow health --complexity --format json --quiet --no-cache` filtered locally by path and name, recorded verbatim as diagnosis.
+
+
+### Coordinator note before attempt 1 (2026-09-29, successor #2)
+
+Model: this slice runs on `openrouter/deepseek/deepseek-v4-pro` (plan D-027, human Q-011). Rules learned from slice 7: (1) call `analysis_complexity` one metric per turn, never in parallel, at most twice per metric; for every other confirmation use the direct diagnostic `bunx fallow health --complexity --format json --quiet --no-cache` filtered locally by path and name, recorded verbatim as diagnosis (D-024). (2) Never run `git checkout`, `git stash`, `git reset`, or any git write; Drive commits. (3) When you call `task_edit`, never pass `title`; only `implementationNotes` (paste the whole existing body back plus your additions) and `checkAc`. (4) This is a characterization task: new test files only; never modify an existing test (Q-002 hard stop: report `blocked`). (5) Slice-start commit `S` is the current HEAD at launch; record it and `C` per the ACs.
