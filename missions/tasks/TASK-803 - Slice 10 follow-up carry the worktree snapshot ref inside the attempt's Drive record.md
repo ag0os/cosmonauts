@@ -3,7 +3,7 @@ id: TASK-803
 title: >-
   Slice 10 follow-up: carry the worktree snapshot ref inside the attempt's Drive
   record
-status: To Do
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -13,7 +13,7 @@ labels:
 dependencies:
   - TASK-799
 createdAt: '2026-09-29T19:57:07.517Z'
-updatedAt: '2026-09-29T20:15:05.511Z'
+updatedAt: '2026-09-29T20:22:28.888Z'
 ---
 
 ## Description
@@ -27,10 +27,10 @@ Coordinator follow-up to slice 10 (TASK-799), plan decision D-033, source INV-00
 <!-- AC:BEGIN -->
 - [x] #1 No standalone snapshot note: after this change, no code path calls `updateTask` with a snapshot-only append; a dirty-tree attempt that ends `success` leaves the worker's implementation notes byte-identical on both Drive paths (test: notes before spawn equal notes after Done).
 - [x] #2 The ref is inside the record: for blocked, failure, partial, unknown, and spawn-failure attempts on both paths, the appended `### Drive — outcome <o> — attempt <n> — run <runId>` record contains the line `Worktree snapshot: refs/cosmonauts/drive/<runId>/<taskId>/attempt-<n>` when the tree was dirty at spawn and no such line when it was clean; exactly one Drive record per attempt (D-022) and the worker's bytes precede it unchanged (INV-001).
-- [ ] #3 `spawn_started` still carries `worktreeSnapshot` with the same ref on both paths; refs are kept for blocked/partial/aborted tasks and removed when the task ends Done; the Git guard refusal text still names the ref (slice 10 tests for these keep passing unchanged).
+- [x] #3 `spawn_started` still carries `worktreeSnapshot` with the same ref on both paths; refs are kept for blocked/partial/aborted tasks and removed when the task ends Done; the Git guard refusal text still names the ref (slice 10 tests for these keep passing unchanged).
 - [x] #4 D-030: implementation notes record one failing run before the change (test name, commit, one-line failure: the standalone paragraph is present / the record lacks the line) and one passing run after, plus a mutation check.
-- [ ] #5 No `lib/durable-runtime/` change; no `drive-envelope` or `execution-liveness` work; no suppression, threshold, baseline, ignore-pattern, or configuration change; `bun run test`, `bun run lint`, `bun run typecheck`, `bun run check:reachability`, `bun run check:suppressions -- --base main` all pass; a collision with ratified ground is stop-and-escalate (`outcome: blocked`).
-- [ ] #6 Tests whose expectation pins the standalone snapshot note introduced by slice 10 (commit 852c92b6) change to the in-record line, each with an inline comment citing INV-001 and D-033 (AC-020: they pin the defect this task removes and were introduced on this branch). Known pins: slice 10's `snapshots tracked and untracked bytes` and `snapshots dirty tracked and untracked bytes`, the run-one-task blocked-notes assertion expecting `Drive worktree snapshot (attempt 1): …` before the Drive heading, and the `updateStatuses` sequence at `tests/extensions/orchestration-driver-tool.test.ts` (the two extra `undefined` entries slice 10 added for the snapshot-only updates); any further pin of the same kind qualifies under the same rule. No other expectation changes; no `.skip/.only/.todo`.
+- [x] #5 No `lib/durable-runtime/` change; no `drive-envelope` or `execution-liveness` work; no suppression, threshold, baseline, ignore-pattern, or configuration change; `bun run test`, `bun run lint`, `bun run typecheck`, `bun run check:reachability`, `bun run check:suppressions -- --base main` all pass; a collision with ratified ground is stop-and-escalate (`outcome: blocked`).
+- [x] #6 Tests whose expectation pins the standalone snapshot note introduced by slice 10 (commit 852c92b6) change to the in-record line, each with an inline comment citing INV-001 and D-033 (AC-020: they pin the defect this task removes and were introduced on this branch). Known pins: slice 10's `snapshots tracked and untracked bytes` and `snapshots dirty tracked and untracked bytes`, the run-one-task blocked-notes assertion expecting `Drive worktree snapshot (attempt 1): …` before the Drive heading, and the `updateStatuses` sequence at `tests/extensions/orchestration-driver-tool.test.ts` (the two extra `undefined` entries slice 10 added for the snapshot-only updates); any further pin of the same kind qualifies under the same rule. No other expectation changes; no `.skip/.only/.todo`.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -67,3 +67,9 @@ Dirty paths:
 ### Coordinator note before attempt 2 (2026-09-29)
 
 Not a human decision. The `updateStatuses` assertion at `tests/extensions/orchestration-driver-tool.test.ts:635` gained its two extra `undefined` entries in slice 10 (`852c92b6`) precisely for the snapshot-only task updates that D-033 removes, so it pins the defect this task removes; the criterion listed three such pins and missed this fourth. Former AC #4 is replaced (now the last criterion) by a rule that names all four and covers any further pin of the same kind. Change that expectation back to the pre-slice-10 sequence with an inline INV-001 / D-033 comment, then run all five gates and report. Your attempt-1 work is uncommitted in the tree; continue from it.
+
+Attempt 2: slice-10 ref/event/guard tests passed (full suite 4070/4070); dirty blocked retains refs, Done deletes refs on legacy and graph paths. Initial `bun run test` had a detached cross-plan timeout (`timed out waiting for file: .../first-plan-lock.json`, child exit 127); that test passed alone and the entire suite passed on rerun. Changed-scope audit base faf1f815ff9ff68298c3506ee42dad8277fb18f1: unbound (execution-not-consented); evidence unavailable, not a clean result.
+
+AC #6: corrected the slice-10 `updateStatuses` snapshot-only update pin to the pre-slice-10 three-update sequence; inline comment cites INV-001/D-033. No other expectation changes beyond the four named defect pins; no skips/only/todo introduced. `bun run typecheck` initially rejected the new blocked-report test fixture (`"blocked"` not a ReportOutcome); changed only that new fixture's report formatting, then typecheck passed.
+
+Attempt 2 verification: `bun run test` passed 292 files/4070 tests on rerun; `bun run lint`, `bun run typecheck`, `bun run check:reachability` (214/214 runtime lib modules), `bun run check:suppressions -- --base main` passed. Changed files limited to driver snapshot/attempt handling, owned tests, and task progress; no durable-runtime, envelope, liveness, suppression, baseline, ignore-pattern, threshold, or configuration change. Drive owns commit; no staging/commit by worker.
