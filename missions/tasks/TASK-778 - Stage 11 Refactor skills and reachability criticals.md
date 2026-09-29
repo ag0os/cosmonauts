@@ -1,8 +1,9 @@
 ---
 id: TASK-778
 title: 'Stage 11: Refactor skills and reachability criticals'
-status: To Do
+status: Blocked
 priority: medium
+assignee: worker
 labels:
   - backend
   - testing
@@ -10,7 +11,7 @@ labels:
 dependencies:
   - TASK-777
 createdAt: '2026-09-28T15:25:33.131Z'
-updatedAt: '2026-09-28T19:31:59.997Z'
+updatedAt: '2026-09-29T03:54:40.776Z'
 ---
 
 ## Description
@@ -45,3 +46,22 @@ Model: `openai-codex/gpt-6-sol` on the Pi `cosmonauts-subagent` backend (plan D-
 3. Never run `git checkout`, `git stash`, `git reset`, or any git write; the driver commits. Never pass `title` to `task_edit`; only `implementationNotes` (paste the whole existing body back plus your additions) and `checkAc`. Never touch `missions/reviews/`.
 4. Helper ceiling (AC #3): every non-exported helper you create is cyclomatic ≤9 and cognitive ≤14 in a test-reachable file, and cyclomatic ≤4 / cognitive ≤14 in `scripts/check-reachability.ts` (not imported by tests unless TASK-777's test imports it — check and record); pre-existing helpers you do not touch are out of scope (slice 7 precedent). Exported entry points keep their measured tier.
 5. Q-002: if any existing test expectation would have to change, stop `blocked` and report; never edit a test. A final `outcome: blocked` line is parsed as unknown (obs. 19): write your full record into these notes first, then report.
+
+### Attempt 1 worker evidence / characterization stop (2026-09-29)
+
+S = `12f3e778cede32938005f75721fde50f793dc33a`; C = `203de10c`. No source or test edits were made, no test expectations changed, no audit or stage-gate commands run because the pre-edit characterization rule stopped work. `analysis_status`: Fallow 2.54.2 bound complexity/duplication/trace; boundary-conformance unbound. Fresh project-scope complexity surface `analysis_complexity(cyclomatic)` and `analysis_complexity(cognitive)` returned findings, verdict fail. Owned rows confirmed by direct `bunx fallow health --complexity --format json --quiet --no-cache` diagnostic:
+`{"path":"lib/skills/exporter.ts","name":"runHarnessSync","line":228,"cyclomatic":26,"cognitive":56}`
+`{"path":"scripts/check-reachability.ts","name":"visit","line":141,"cyclomatic":26,"cognitive":17,"crap":702}`
+`{"path":"lib/skills/exporter.ts","name":"groupCatalogue","line":436,"cyclomatic":24,"cognitive":45,"crap":148.4}`
+`{"path":"lib/skills/exporter.ts","name":"enhancedRows","line":567,"cyclomatic":21,"cognitive":20,"crap":116.3}`
+Project-scope `analysis_duplication` returned completed findings / verdict fail, including clone group 12 `lib/skills/exporter.ts:467-475` and `:484-492`, 9 lines / 66 tokens. No extraction attempted because characterization stop predates edits.
+
+TASK-777 exact seam: `tests/skills/exporter-sync-characterization.test.ts` drives `runHarnessSync` (check, create/noop/replace, edited target, pending journal, observation failure, lock contention, complete reconciliation, explicit forget); `tests/scripts/check-reachability-visit.test.ts` spawns `scripts/check-reachability.ts` (12 runtime forms, 12 ignored forms, transitive import, cycle, shipped staged-code verdict); the script is spawned, not imported. No test-only seam was added. Return-site audit: `groupCatalogue` returns the grouped map (TASK-777 complete/forget/default target tests). `runtimeImports.visit` has no return; `runtimeImports` returns `imports` (TASK-777 import-form cases). `runHarnessSync` returns the report (TASK-777 check/write/empty cases); its transaction callback returns `noop` (current/no-op case) or `applied` (create/replace case). Its write-failure catch when `baseRows.length === 0` and its `baseRows.map` failed-row branch when nonempty are not exercised by TASK-777 cases. `evaluateGroup` returns the consistency-failure object (pending journal) or plan object (normal check/write), but the `enhancedRows` callback early return `if (!catalogue) return row` has no TASK-777 case; the early `return row` reason list includes `source-unavailable`, `foreign-owner`, `transaction-aborted-incomplete-inventory`, `owner-transfer`, not characterized by TASK-777's exact cases (its `source-removed`, `explicit-forget`, `inventory-incomplete` cases do reach that return). The callback `return row` for `row.status === "locally-edited"` is exercised by edited-target tests; final classified return by create/replace/noop cases. In particular `source-unavailable` needs a fixture that first syncs a target and then makes its source health unavailable (while keeping the catalogue row), checking row ordering, reason, action, and unchanged target. `!catalogue` needs a planned row absent from the current catalogue, e.g. complete reconciliation against an existing manifest with empty selected assets, with its row status pinned before changing that return (existing TASK-777 complete reconciliation may exercise this; check coverage against instrumentation before claiming). The transaction write catch needs a fixture that makes `withOwnerRootTransaction` throw and pins `write-failure` rows (including empty-group synthetic case). No hunk can land inside these uncharacterized return sites, so a full B-005 refactor cannot safely proceed within TASK-778 under the coordinator pre-edit rule. AC #3 calls for a separate characterization task and dependency; only coordinator may create it. Classification: snap back / stop, not bypass ratified AC #3 by adding tests in this task. No production edit or helper decomposition proposed after this stop.
+
+Evidence command `rg -n 'write-failure:|syntheticFailureRow|source-unavailable|persisted-release-unconfirmed|releaseWarning|local-edit-conflict' tests/skills tests/cli/harness tests/harness-adapters` returned only `tests/harness-adapters/provenance.test.ts:377: reason: "source-unavailable"`, `tests/cli/harness/subcommand.test.ts:545: releaseWarning: "release unconfirmed"`, `tests/harness-adapters/sync.test.ts:1061: state: "persisted-release-unconfirmed"`, and `tests/harness-adapters/sync.test.ts:1666: reason: "source-unavailable"`; neither test imports `runHarnessSync` at those sites. D-015 in-session against C (all three outputs empty): `git diff --name-status --diff-filter=MDR 203de10c -- tests/` => [empty]; `git status --porcelain -- tests/` => [empty]; `git diff -U0 203de10c -- tests/ | grep -E '^\+.*\.(skip|only|todo)\('` => [empty]. No coordinator post-commit freeze verdict possible without an edit/commit.
+
+Unblock: coordinator creates a separate characterization task, lands missing cases through shipped `runHarnessSync`, sets TASK-778 to depend on it, then re-dispatches. At minimum pin the write-transaction failure return branches and the `enhancedRows` source-unavailable early return; inspect any additional uncharacterized return before edit. No AC is complete.
+
+### Coordinator note after attempt 1 (2026-09-29, successor #3; plan D-032) — block CONFIRMED by probe
+
+The coordinator probed the claimed sites (cp-backed backup of `lib/skills/exporter.ts`, SHA-256 `9eb97495…9a63e0` before and after restore, `appendFileSync` tags, full suite 283 files / 3897 tests green, `git status -- lib/` clean). Hits: observation catch `:245` 6; `enhancedRows` early return `:578` only for `explicit-forget` 14, `source-removed` 11, `inventory-incomplete` 4 (all with `plan.aborted === false`); `locally-edited` return `:605` 4. **Zero hits**: write-transaction catch `:292` (empty group) and `:296` (row mapping), `!catalogue` return `:583`, and the early return for `plan.aborted`, `transaction-aborted-incomplete-inventory`, `foreign-owner`, `source-unavailable`, `owner-transfer`. The attempt-1 stop stands. Per D-030's route a dependent characterization task (stage 11b) pins those through shipped `runHarnessSync`; this task depends on it and attempt 2 uses its Drive commit as `C` for `runHarnessSync`/`enhancedRows` (TASK-777's `203de10c` stays `C` for `groupCatalogue` and `visit`). Attempt 2 also follows D-031 rule 5: any further "unreached site" claim carries a probe hit count of zero recorded verbatim before a `blocked` stop.
