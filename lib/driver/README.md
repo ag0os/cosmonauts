@@ -19,7 +19,7 @@ The probe's destructive-Git classifier recognizes executable-position Git comman
 
 Only Pi workers launched with `parentRole: "driver"` have the blocking Bash `tool_call` Git guard. It rejects destructive Git in executable position and explains the safety rule, the latest task snapshot (or that none exists), and a non-destructive alternative. Read-only Git and add/commit are unaffected; non-Drive Pi sessions and external backends are not guarded. Command substitution, aliases, and redirect-overwrite are classifier residuals, **not** safe command forms.
 
-Before every dirty-worktree spawn, including retries on external backends and both Drive paths, Drive writes tracked modifications and non-ignored untracked files to a commit using a temporary Git index. It excludes Drive's own run artifacts under `missions/sessions/` (including frozen runner binaries), which are normally gitignored; it does not stash/apply or change the real index/worktree. The ref `refs/cosmonauts/drive/<runId>/<taskId>/attempt-<n>` is in the attempt's task note and `spawn_started.worktreeSnapshot`. Refs remain for blocked, partial, and aborted tasks; only a Done transition removes refs for that run/task. To recover after a destructive operation, inspect the snapshot with `git show <ref>:<path>` or `git diff HEAD <ref>`; restore only the paths you intend (for example, `git restore --source=<ref> -- <path>` for tracked files and `git show <ref>:<new-path> > <new-path>` for previously untracked files). Do not blindly reset or clean the worktree; refs are not an automatic restore and cannot preserve ignored files or changes after the last snapshot.
+Before every dirty-worktree spawn, including retries on external backends and both Drive paths, Drive writes tracked modifications and non-ignored untracked files to a commit using a temporary Git index. It excludes Drive's own run artifacts under `missions/sessions/` (including frozen runner binaries), which are normally gitignored; it does not stash/apply or change the real index/worktree. The ref `refs/cosmonauts/drive/<runId>/<taskId>/attempt-<n>` is in `spawn_started.worktreeSnapshot` and, when Drive writes a failure/partial/unknown/blocked attempt record, inside that task note's Drive outcome-and-attempt heading. Success attempts write no note. Refs remain for blocked, partial, and aborted tasks; only a Done transition removes refs for that run/task. To recover after a destructive operation, inspect the snapshot with `git show <ref>:<path>` or `git diff HEAD <ref>`; restore only the paths you intend (for example, `git restore --source=<ref> -- <path>` for tracked files and `git show <ref>:<new-path> > <new-path>` for previously untracked files). Do not blindly reset or clean the worktree; refs are not an automatic restore and cannot preserve ignored files or changes after the last snapshot.
 
 ## Prompt Rendering
 
@@ -85,8 +85,9 @@ a blocked stop.
 
 ## Contradicted-path retries
 
-When an attempt fails or blocks claiming a project-relative path is absent but
-Drive finds that path on disk, Drive appends the first attempt's note without
+When a failure candidate (not an explicit `outcome: blocked` report) claims
+that a project-relative path is absent but Drive finds it on disk, Drive
+appends the first attempt's note without
 changing task status. It writes `task_retry` to legacy `events.jsonl` with
 `trigger: "contradicted-path"`, the path in `contradicted`, and the one-based
 `attemptNumber` of the next invocation. This event is bridged to live

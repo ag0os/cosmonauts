@@ -53,11 +53,15 @@ const DRIVE_REPORT_CONTRACT = [
 	"The `outcome: success` line is the final line of the example response; it is outside the JSON and MUST match the JSON `outcome` field.",
 	"",
 	"Hard rules:",
+	'- Write durable task notes through `task_edit` with `implementationNotesMode: "append"` (or `cosmonauts task edit <taskId> --append-notes "<note>"` on external backends); do not replace notes. Response prose is not the durable task record.',
 	"- The very last non-empty line of your response MUST be exactly one of: `outcome: success`, `outcome: failure`, `outcome: partial`, `outcome: blocked`, or `outcome: completed`.",
 	"- Use `outcome: success` only when every acceptance criterion or explicit requested outcome is met and required verification passed, or you explicitly explain why verification was not run.",
 	"- Use `outcome: failure` for unmet acceptance criteria or required gates that failed and could not be fixed in this work item.",
 	"- Use `outcome: partial` only when the report clearly identifies completed work and remaining work.",
-	"- `outcome: blocked` is a human stop with no postflight or automatic retry. Include the reason in `notes`; otherwise Drive records the raw report as the reason.",
+	"- `outcome: blocked` is a human stop with no postflight or automatic retry. Set the task status to Blocked and include the reason in `notes`; otherwise Drive records the raw report as the reason.",
+	"- If a blocked report claims a source site is unreached, quote an `execution_probe` result with a usable zero hit count (exit 0, verified restoration, no other tracked-file side effects). A refused or unusable zero does not establish that claim.",
+	"- Destructive Git operations are refused in Drive Pi workers. Previous dirty-worktree attempt work is recoverable from `refs/cosmonauts/drive/<runId>/<taskId>/attempt-<n>`; inspect before restoring, never blindly reset or clean.",
+	"- Under `backend-commits`, do not commit before a blocked stop; Drive cannot postflight-verify that commit.",
 	"- Do not write anything after the final outcome line.",
 ].join("\n");
 
@@ -140,7 +144,7 @@ function renderTaskCompletionProtocol(
 		return [
 			"## Task Completion Protocol",
 			"",
-			`As you verify each acceptance criterion, call \`task_edit\` with \`taskId: "${taskId}"\` and \`checkAc: [index]\` (the 1-based \`#N\` index in the Task section above) before writing your final report. Only mark criteria you have verified; leave unmet criteria unchecked and report \`outcome: failure\` or \`outcome: partial\` with the reason.`,
+			`As you verify each acceptance criterion, call \`task_edit\` with \`taskId: "${taskId}"\` and \`checkAc: [index]\` (the 1-based \`#N\` index in the Task section above) before writing your final report. Only mark criteria you have verified; leave unmet criteria unchecked and report \`outcome: failure\` or \`outcome: partial\` with the reason, or \`outcome: blocked\` for a human stop.`,
 			"",
 			"Drive blocks a `success` report while any acceptance criterion remains unchecked. Checking criteria updates task state, not a source commit.",
 		].join("\n");
@@ -155,7 +159,7 @@ function renderTaskCompletionProtocol(
 		"```",
 		"",
 		"- The acceptance criteria and their 1-based indexes are listed in the Task section above (the `#N` markers).",
-		"- Only check a criterion after you have actually verified it (for example, the named test exists and passes). Leave any criterion you could not satisfy unchecked and report `outcome: failure` or `outcome: partial` with the reason.",
+		"- Only check a criterion after you have actually verified it (for example, the named test exists and passes). Leave any criterion you could not satisfy unchecked and report `outcome: failure` or `outcome: partial` with the reason, or `outcome: blocked` for a human stop.",
 		"- Checking acceptance criteria updates task state through the CLI; it is NOT a source commit and does not violate the commit policy above.",
 		"- Drive treats unchecked acceptance criteria as incomplete: if you report `outcome: success` while a criterion you were asked to satisfy is still unchecked, Drive will block the task.",
 	].join("\n");
