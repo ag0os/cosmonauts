@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-775
 createdAt: '2026-09-28T15:24:56.144Z'
-updatedAt: '2026-09-28T19:31:59.258Z'
+updatedAt: '2026-09-29T02:13:34.487Z'
 ---
 
 ## Description
@@ -37,3 +37,13 @@ Drive commits this task only when **every** acceptance criterion is checked; an 
 Addendum (2026-09-28, plan D-023): a task-close `analysis_audit` that returns `failed` (e.g. `invalid-output` because Fallow answered `warn`) is recorded in these notes with its failure class, the verbatim direct diagnostic `fallow audit --base <sha> --format json --quiet --no-cache --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json`, and the owning slice of each flagged finding; it is not a completion blocker when the five stage-gate commands pass and every owned finding is dispositioned. Do not edit `fallow-provider.ts` for it.
 
 Addendum (2026-09-28, plan D-024): for critical-complexity functions the INV-003 pre-edit confirmation is the fresh project-scope `analysis_complexity` run per metric that still lists the function row; a symbol `analysis_trace` exit 2 for a non-exported function is a recorded provider limitation (`fallow dead-code --trace` resolves exports only), not a D-013 hard stop. If the surface complexity output is truncated, record its state/count/digest and confirm your owned rows with the direct diagnostic `fallow health --complexity --format json --quiet --no-cache` filtered locally by path and name, recorded verbatim as diagnosis.
+
+
+### Coordinator note before attempt 1 (2026-09-29, successor #2): model, budget rules, and what TASK-775 left you
+
+Model: `openai-codex/gpt-6-sol` on the Pi `cosmonauts-subagent` backend (plan D-029, human Q-013). Characterization base `C` = `7390f1053abff498419829ce9356a910d45f3daa` (TASK-775 Drive commit); slice-start `S` = HEAD at launch (record it). Rules learned from slices 7-12:
+1. Call `analysis_complexity` **one metric per turn, never in parallel**, at most twice per metric (once before your first edit, once at the end). Each project-scope result is ~100 KB; three in one turn overflow the context and loop compaction. For every other confirmation use the direct diagnostic `bunx fallow health --complexity --format json --quiet --no-cache` filtered locally to your nine owned functions, recorded verbatim as diagnosis (D-024). Write each surface outcome into these notes right after the call.
+2. Before editing, enumerate every return site of each owned function and map it to the TASK-775 case(s) that pin it (the seven `*-characterization.test.ts` files under `tests/cli/drive`, `tests/cli/tasks/commands`, `tests/durable-runtime`, `tests/extensions`, `tests/orchestration`). TASK-775's worker mapped functions to describe blocks but did not enumerate return sites; that enumeration is your pre-edit record. A return site no test reaches is uncharacterized: no hunk may land inside it without a seam task (AC #3).
+3. Never run `git checkout`, `git stash`, `git reset`, or any git write; the driver commits. Never pass `title` to `task_edit`; only `implementationNotes` (paste the whole existing body back plus your additions) and `checkAc`. Never touch `missions/reviews/`.
+4. Helper ceiling (AC #3): every non-exported helper you create is cyclomatic ≤9 and cognitive ≤14 in a test-reachable file; pre-existing helpers you do not touch are out of scope (slice 7 precedent). Exported entry points keep their measured tier.
+5. Q-002: if any existing test expectation would have to change, stop `blocked` and report; never edit a test.
