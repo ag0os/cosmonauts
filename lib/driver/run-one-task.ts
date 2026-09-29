@@ -93,6 +93,14 @@ export async function runOneTask(
 			runTaskAttempt(spec, ctx, taskId, appendedNote, attemptNumber),
 		find: findContradictedPath,
 		buildNote: buildContradictionNote,
+		onRetry: (contradicted, attemptNumber) =>
+			emit(ctx, spec, {
+				type: "task_retry",
+				taskId,
+				trigger: "contradicted-path",
+				attemptNumber,
+				contradicted,
+			}),
 	});
 }
 

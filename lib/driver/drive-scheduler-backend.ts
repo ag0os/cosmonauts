@@ -183,6 +183,14 @@ async function runDriveTaskStep(
 			runDriveTaskAttempt(context, prepared, appendedNote, attemptNumber),
 		find: findContradictedPath,
 		buildNote: buildContradictionNote,
+		onRetry: (contradicted, attemptNumber) =>
+			emit(context, {
+				type: "task_retry",
+				taskId,
+				trigger: "contradicted-path",
+				attemptNumber,
+				contradicted,
+			}),
 	});
 }
 

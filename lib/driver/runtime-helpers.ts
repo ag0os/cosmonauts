@@ -312,7 +312,10 @@ export async function runContradictedAttempts<
 		projectRoot: string,
 	) => Contradicted | undefined;
 	readonly buildNote: (contradicted: Contradicted) => string;
-	readonly onRetry?: () => Promise<void>;
+	readonly onRetry: (
+		contradicted: Contradicted["annotation"],
+		attemptNumber: number,
+	) => Promise<void>;
 }): Promise<T> {
 	let appendedNote: string | undefined;
 	let retried = false;
@@ -331,7 +334,7 @@ export async function runContradictedAttempts<
 		});
 		attemptNumber++;
 		appendedNote = options.buildNote(contradicted);
-		await options.onRetry?.();
+		await options.onRetry(contradicted.annotation, attemptNumber);
 	}
 }
 

@@ -71,6 +71,19 @@ attempt note and event; `driver-commits` and `no-commit` list dirty paths in
 the attempt note instead. Workers on `backend-commits` should not commit before
 a blocked stop.
 
+## Contradicted-path retries
+
+When an attempt fails or blocks claiming a project-relative path is absent but
+Drive finds that path on disk, Drive appends the first attempt's note without
+changing task status. It writes `task_retry` to legacy `events.jsonl` with
+`trigger: "contradicted-path"`, the path in `contradicted`, and the one-based
+`attemptNumber` of the next invocation. This event is bridged to live
+subscribers before the second `spawn_started`. Only a re-spawn gets a retry
+event; the loop retries at most once. The first failure/block and the retry
+normalize to activity, not a terminal step, leaving one running task step
+across both attempts. Finalizers resumed without local attempt state record
+`attempt unknown` and say that the local attempt was unavailable.
+
 ## Task Timeouts
 
 Each task backend invocation has a wall-clock timeout. The default is 1800000ms

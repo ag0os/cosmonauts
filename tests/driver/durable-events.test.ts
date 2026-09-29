@@ -209,6 +209,47 @@ describe("durable driver events", () => {
 		]);
 	});
 
+	test("keeps contradicted failure evidence and retry as activity without a terminal step", () => {
+		const blocked = normalize(
+			taskBlocked({
+				contradicted: { path: "present.txt", existsOnDisk: true },
+			}),
+		);
+		const retry = normalize({
+			...base,
+			type: "task_retry",
+			taskId: "TASK-1",
+			trigger: "contradicted-path",
+			attemptNumber: 2,
+			contradicted: { path: "present.txt", existsOnDisk: true },
+		});
+		for (const result of [blocked, retry]) {
+			expect(
+				result.events.filter(
+					(event) =>
+						event.type.startsWith("step_") &&
+						event.type !== "step_tool_activity",
+				),
+			).toEqual([]);
+			expect(result.events).toContainEqual(
+				expect.objectContaining({
+					type: "step_tool_activity",
+					stepId: "TASK-1",
+				}),
+			);
+		}
+		expect(retry.events).toContainEqual(
+			expect.objectContaining({
+				details: {
+					kind: "task_retry",
+					trigger: "contradicted-path",
+					attemptNumber: 2,
+					contradicted: { path: "present.txt", existsOnDisk: true },
+				},
+			}),
+		);
+	});
+
 	test("preserves reports activity commits and finalization details without extending terminal events", () => {
 		const report: ParsedReport = {
 			outcome: "partial",

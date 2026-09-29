@@ -246,6 +246,48 @@ describe("event-stream", () => {
 		}
 	});
 
+	test("bridges and persists retry activity in legacy and normalized logs", async () => {
+		const { runId, parentSessionId, taskId, timestamp } =
+			taskFinalizationFailedEvent();
+		const retry = {
+			runId,
+			parentSessionId,
+			taskId,
+			timestamp,
+			type: "task_retry" as const,
+			trigger: "contradicted-path" as const,
+			attemptNumber: 2,
+			contradicted: { path: "present.txt", existsOnDisk: true as const },
+		};
+		expect(toBusEvent(retry)).toMatchObject({
+			type: "driver_event",
+			event: retry,
+		});
+		const publish = vi.fn();
+		await createTestDurableSink({ publish })(retry);
+		expect(publish).toHaveBeenCalledWith(
+			expect.objectContaining({ event: retry }),
+		);
+		expect((await tailEvents(logPath())).events).toEqual([retry]);
+		const normalized = await new FileRunStore({
+			rootDir: durableRootDir(),
+		}).readEvents({
+			scope: "event-stream-plan",
+			runId: "run-1",
+		});
+		expect(normalized.events.map((item) => item.event)).toContainEqual({
+			type: "step_tool_activity",
+			runId: "run-1",
+			stepId: taskId,
+			details: {
+				kind: "task_retry",
+				trigger: "contradicted-path",
+				attemptNumber: 2,
+				contradicted: { path: "present.txt", existsOnDisk: true },
+			},
+		});
+	});
+
 	test("bridges task finalization and plan completion candidate events", () => {
 		expect(toBusEvent(taskFinalizationFailedEvent())).toMatchObject({
 			type: "driver_event",

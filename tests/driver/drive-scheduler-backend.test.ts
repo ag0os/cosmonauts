@@ -494,6 +494,19 @@ describe("Drive scheduler backend", () => {
 		const result = await handle.result;
 
 		expect(backendRun).toHaveBeenCalledTimes(2);
+		expect(events.filter((event) => event.type === "task_retry")).toEqual([
+			expect.objectContaining({
+				type: "task_retry",
+				trigger: "contradicted-path",
+				attemptNumber: 2,
+				contradicted: { path: "design/README.md", existsOnDisk: true },
+			}),
+		]);
+		expect(
+			events
+				.map((event) => event.type)
+				.filter((type) => type === "task_retry" || type === "spawn_started"),
+		).toEqual(["spawn_started", "task_retry", "spawn_started"]);
 		expect(result).toMatchObject({
 			outcome: "success",
 			nextAction: "continue",
@@ -655,6 +668,7 @@ describe("Drive scheduler backend", () => {
 			summary: expect.stringContaining("design/README.md"),
 		});
 		expect(backendRun).toHaveBeenCalledTimes(1);
+		expect(events.filter((event) => event.type === "task_retry")).toEqual([]);
 		expect(
 			events.filter((event) => event.type === "task_blocked"),
 		).toHaveLength(1);

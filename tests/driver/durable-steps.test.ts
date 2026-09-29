@@ -58,6 +58,38 @@ describe("Drive durable step projector", () => {
 		).toBe(raw);
 	});
 
+	test("keeps a contradicted spawn failure nonterminal until the retry starts", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const record = await store.createRun({
+			scope: PLAN_SLUG,
+			runId: RUN_ID,
+			metadata: { driveTaskIds: [TASK_ID], configuredBackendName: "codex" },
+		});
+		const projector = createProjector(store, record);
+		await projector.project(event("task_started", { taskId: TASK_ID }));
+		await projector.project(
+			event("spawn_started", { taskId: TASK_ID, backend: "codex" }),
+		);
+		await projector.project(
+			event("spawn_failed", {
+				taskId: TASK_ID,
+				error: "present.txt is missing",
+				contradicted: { path: "present.txt", existsOnDisk: true },
+			}),
+		);
+		const step = await requireStep(store, record);
+		expect(step.status).toBe("running");
+		await projector.project(
+			event("task_retry", {
+				taskId: TASK_ID,
+				trigger: "contradicted-path",
+				attemptNumber: 2,
+				contradicted: { path: "present.txt", existsOnDisk: true },
+			}),
+		);
+		expect((await requireStep(store, record)).status).toBe("running");
+	});
+
 	test("appends a new attempt when Drive retries a task", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({
@@ -95,6 +127,10 @@ describe("Drive durable step projector", () => {
 				},
 			}),
 		);
+		expect(await requireStep(store, record)).toMatchObject({
+			status: "running",
+		});
+		expect((await requireStep(store, record)).result).toBeUndefined();
 		await projector.project(
 			event("spawn_started", { taskId: TASK_ID, backend: "codex" }),
 		);

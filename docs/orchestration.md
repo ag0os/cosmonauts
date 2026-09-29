@@ -2,6 +2,18 @@
 
 Cosmonauts coordinates agents across a spectrum: from a single agent answering directly, to fully automated chain runs, to Drive-backed task batches, to always-on agents pairing with humans. The public surface now centers on `cosmonauts run`: named chains, Drive task runs, and normalized `status` / `watch` / `list` observation all produce a `runId` when they create durable run state.
 
+## Drive retries
+
+Drive announces each in-run contradicted-path re-spawn in legacy
+`events.jsonl` with `task_retry` before the next `spawn_started`. Its
+`trigger: "contradicted-path"`, `contradicted.path` (verified on disk), and
+one-based `attemptNumber` identify why and which invocation follows. Live
+subscribers receive the retry event; normalized activity retains it and the
+first attempt's failure/block evidence without marking the durable task step
+terminal. The task remains running across the two attempts. No re-spawn means
+no retry event. A finalizer resumed without the local attempt number records
+`attempt unknown`, not an inferred attempt 1.
+
 ## Packaged agents and export
 
 Phase 1 adds a standalone packaged-agent export path. A packaged agent is an external-safe agent bundle designed for a target runtime instead of a normal Pi-backed Cosmonauts session. The initial target is `claude-cli`: `cosmonauts export` compiles a package into a Claude Code CLI-backed binary that can be moved to another project and invoked directly.

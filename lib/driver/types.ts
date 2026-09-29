@@ -156,6 +156,13 @@ export type DriverEvent =
 			backend: string;
 	  })
 	| (DriverEventBase & {
+			type: "task_retry";
+			taskId: string;
+			trigger: "contradicted-path";
+			attemptNumber: number;
+			contradicted: ContradictedBlockAnnotation;
+	  })
+	| (DriverEventBase & {
 			type: "driver_activity";
 			taskId: string;
 			activity: SpawnActivity;

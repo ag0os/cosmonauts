@@ -851,6 +851,7 @@ export async function tailEvents(
 
 const BRIDGED_EVENT_TYPES = new Set<DriverEvent["type"]>([
 	"driver_activity",
+	"task_retry",
 	"driver_diagnostic",
 	"task_done",
 	"task_blocked",

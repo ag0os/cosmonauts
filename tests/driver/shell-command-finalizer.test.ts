@@ -61,6 +61,7 @@ describe("Drive shell-command finalizer", () => {
 		expect(
 			notes?.match(/### Drive — outcome failure — attempt unknown/g),
 		).toHaveLength(1);
+		expect(notes).toContain("Finalization failed (local attempt unavailable):");
 	});
 	test("commits source changes and marks task status through shell finalizer steps", async () => {
 		const fixture = await setupFixture("success");

@@ -31,13 +31,33 @@ describe("contradicted-block retry", () => {
 			),
 			successResult(),
 		]);
+		const ctx = createCtx(fixture, backend, events);
+		let noteAtRetry: string | undefined;
+		const sink = ctx.eventSink;
+		ctx.eventSink = async (event) => {
+			if (event.type === "task_retry") {
+				noteAtRetry = (await fixture.taskManager.getTask(fixture.taskId))
+					?.implementationNotes;
+			}
+			await sink(event);
+		};
+		const outcome = await runOneTask(createSpec(fixture), ctx, fixture.taskId);
 
-		const outcome = await runOneTask(
-			createSpec(fixture),
-			createCtx(fixture, backend, events),
-			fixture.taskId,
+		expect(noteAtRetry).toContain(
+			"### Drive — outcome failure — attempt 1 — run run-304",
 		);
-
+		expect(events.filter((event) => event.type === "task_retry")).toEqual([
+			expect.objectContaining({
+				trigger: "contradicted-path",
+				attemptNumber: 2,
+				contradicted: { path: "design/README.md", existsOnDisk: true },
+			}),
+		]);
+		expect(
+			events
+				.map((event) => event.type)
+				.filter((type) => type === "task_retry" || type === "spawn_started"),
+		).toEqual(["spawn_started", "task_retry", "spawn_started"]);
 		expect(backend.run).toHaveBeenCalledTimes(2);
 		expect(outcome).toMatchObject({ status: "done" });
 		expect((await fixture.taskManager.getTask(fixture.taskId))?.status).toBe(
@@ -75,6 +95,7 @@ describe("contradicted-block retry", () => {
 		);
 
 		expect(backend.run).toHaveBeenCalledTimes(1);
+		expect(events.filter((event) => event.type === "task_retry")).toEqual([]);
 		expect(outcome).toMatchObject({ status: "blocked" });
 		expect((await fixture.taskManager.getTask(fixture.taskId))?.status).toBe(
 			"Blocked",

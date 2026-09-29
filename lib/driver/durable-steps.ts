@@ -246,7 +246,7 @@ async function recordSpawnFailed(
 		artifacts: outputArtifactsForAttempt(event.taskId, active.attemptId),
 		nextAction: "wait_for_human",
 	};
-	latestResults.set(event.taskId, result);
+	if (!event.contradicted) latestResults.set(event.taskId, result);
 	await options.store.writeStepAttemptRecord(
 		{ ...options.ref, stepId: event.taskId },
 		{
@@ -258,10 +258,10 @@ async function recordSpawnFailed(
 		{ outputText: event.error },
 	);
 	await upsertTaskStep(options, event.taskId, {
-		status: "failed",
+		status: event.contradicted ? "running" : "failed",
 		latestAttemptId: active.attemptId,
 		outputArtifacts: result.artifacts,
-		result,
+		...(event.contradicted ? {} : { result }),
 	});
 	activeAttempts.delete(event.taskId);
 }
@@ -318,6 +318,21 @@ async function recordTaskBlocked(
 	latestResults: Map<string, StepResult>,
 	event: Extract<DriverEvent, { type: "task_blocked" }>,
 ): Promise<void> {
+	if (event.contradicted) {
+		latestResults.delete(event.taskId);
+		const step = await options.store.readStepRecord({
+			...options.ref,
+			stepId: event.taskId,
+		});
+		if (step) {
+			await options.store.writeStepRecord(options.ref, {
+				...step,
+				status: "running",
+				result: undefined,
+			});
+		}
+		return;
+	}
 	const existing = latestResults.get(event.taskId);
 	const result =
 		existing && existing.outcome !== "success"

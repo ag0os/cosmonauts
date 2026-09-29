@@ -71,6 +71,16 @@ const DRIVER_EVENT_NORMALIZERS = {
 			backend: event.backend,
 		}),
 	),
+	task_retry: driverEventNormalizer<"task_retry">((event) =>
+		events(
+			activityEvent(event, {
+				kind: "task_retry",
+				trigger: event.trigger,
+				attemptNumber: event.attemptNumber,
+				contradicted: event.contradicted,
+			}),
+		),
+	),
 	driver_activity: driverEventNormalizer<"driver_activity">((event) =>
 		events(
 			activityEvent(event, {
@@ -127,12 +137,14 @@ const DRIVER_EVENT_NORMALIZERS = {
 		}),
 	),
 	task_blocked: driverEventNormalizer<"task_blocked">((event) =>
-		events(activityEvent(event, taskBlockedDetails(event)), {
-			type: "step_blocked",
-			runId: event.runId,
-			stepId: event.taskId,
-			reason: event.reason,
-		}),
+		event.contradicted
+			? events(activityEvent(event, taskBlockedDetails(event)))
+			: events(activityEvent(event, taskBlockedDetails(event)), {
+					type: "step_blocked",
+					runId: event.runId,
+					stepId: event.taskId,
+					reason: event.reason,
+				}),
 	),
 	lock_warning: driverEventNormalizer<"lock_warning">((event) =>
 		diagnostic(legacyOnlyDiagnostic(event)),
