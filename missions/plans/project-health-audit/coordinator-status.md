@@ -42,6 +42,14 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
   Two new characterization files, nothing else; five gates passed after one
   in-run retry (quality-review settle-grace timing flake, passes in isolation).
   Attempt 1 stopped on export-only symbol traces → D-024.
+- **Slice 7 / TASK-774 Done** (2026-09-29 00:00Z, attempt 3 on DeepSeek):
+  Drive commit `1692b9b6`, state `edb19337`. Freeze from `S = e97cee90` clean;
+  from `C = 48ecb5c5` only the two coordinator-ruled test edits (Q-009, Q-011).
+  Five gates passed. All seven criticals gone; every new helper below
+  threshold; the 28 remaining rows in the three files are pre-existing and
+  metric-identical at `C` (not this task's helpers; dispositioned in notes).
+  Worker quirks: quoted title renamed the task file (restored); it
+  `git checkout --`'d the validation script and redid attempt 2's work.
 - **Q-010 + Q-009 applied** (successor #2, 20:12Z): model repins (D-025) and
   the two source-hash pins removed from `tests/memory/interface.test.ts`
   (D-026; TASK-770 addendum). No test pinned the agent defaults;
@@ -62,7 +70,7 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. TASK-774 attempt 3 could not start (see Blocked).
+Nothing between slices. Next ready: TASK-775 (stage 8 characterization).
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -103,6 +111,14 @@ Nothing. TASK-774 attempt 3 could not start (see Blocked).
    compaction summary sends it back to the same step → infinite loop
    (TASK-774 attempt 1, 21 compactions in 30 min). The surface needs a path
    or file scope, or a compact rendering.
+13. Pi `task_edit` accepts a `title` with literal surrounding quotes; the
+   DeepSeek worker sent `'Stage 7: …'` and Drive's state commit then wrote
+   the task under a new quoted filename, leaving the canonical path deleted
+   in the worktree. Title edits from workers should be rejected or normalized.
+14. A weaker worker model ran `git checkout -- <owned file>` mid-attempt and
+   silently discarded the previous attempt's uncommitted refactor of that
+   file (it redid the work). Uncommitted carry-over between attempts is
+   fragile; consider a WIP commit or a warning in the worker prompt.
 12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
@@ -120,6 +136,7 @@ out of extra usage) and are superseded.
 | when | total_credits | total_usage | remaining |
 |---|---|---|---|
 | 2026-09-28 20:20Z, before slice 7 attempt 3 | 10 | 1.9529 | 8.05 |
+| 2026-09-29 00:05Z, after slice 7 (cost 2.99) | 10 | 4.9432 | 5.06 |
 
 - History (predecessor): **Codex usage limit reached (20:45Z).** The print-mode cosmo launcher and the
   `coding/worker` role both pin `openai-codex/gpt-5.6-sol`; the relaunch of
