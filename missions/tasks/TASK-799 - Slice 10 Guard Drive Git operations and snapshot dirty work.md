@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-798
 createdAt: '2026-09-29T16:47:14.963Z'
-updatedAt: '2026-09-29T16:47:14.963Z'
+updatedAt: '2026-09-29T18:47:02.953Z'
 ---
 
 ## Description
@@ -35,3 +35,9 @@ Follow Design §7: complete the pure executable-position Git classifier and use 
 - [ ] #6 D-028: this slice is implemented in a single Drive run on the `cosmonauts-subagent` inline backend from a print-mode cosmo session.
 - [ ] #7 D-030: implementation notes contain separate red/green evidence rows for B-009 and the owned snapshot clauses of B-011; for each owned behavior portion, one failing run before the change and one passing run after it are recorded with test name and commit, the failing row includes a one-line failure, and the passing row records the successful result.
 <!-- AC:END -->
+
+## Implementation Notes
+
+### Coordinator note before attempt 1 (2026-09-29, observed while snapshotting TASK-796's dirty tree)
+
+Design §7 suggests `snapshotWorktree` uses `git stash create` with `git add -A --intent-to-add` for untracked files. That combination fails: with an intent-to-add entry in the index, `git stash create` exits 1 with `error: Entry '<file>' not uptodate. Cannot merge. / Cannot save the current worktree state`. A working alternative that captures tracked and untracked state without touching the real index or worktree: a temporary index (`GIT_INDEX_FILE=<tmp> git read-tree HEAD && GIT_INDEX_FILE=<tmp> git add -A -- . ':(exclude)missions' ':(exclude)memory'`), then `git write-tree`, `git commit-tree <tree> -p HEAD`, and `git update-ref refs/cosmonauts/drive/<runId>/<taskId>/attempt-<n> <sha>`. Verified on this tree (10 modified + 1 untracked captured; `git status` unchanged afterwards). Derived detail; choose either mechanism that meets B-011's outcome, and record the one you use.

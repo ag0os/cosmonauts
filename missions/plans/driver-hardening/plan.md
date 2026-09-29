@@ -230,6 +230,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Decided by: coordinator, amend-on-record, 2026-09-29
   - Supersedes: D-027's "B-012 is owned by slice 12"; D-028's "until slice 3 lands" boundary (the note is needed until slice 5 is live) and its single restart (a second restart precedes the live acceptance); Implementation Order slice 12's coordinator paragraph.
 
+- **D-032 - Thrown provider errors keep their message format; the fixed header belongs to returned results** *(Added 2026-09-29 by the implementing coordinator after TASK-796 attempt 1 stopped `blocked`)*
+  - Decision: the D-024 header (capability, provider, scope, verdict, coverage, metric) applies to every text the analysis tools *return* (completed findings, trace, fix preview, status, non-ready resolutions). A thrown `AnalysisProviderError` keeps its existing message (`Analysis failed to run.` / `Capability:` / `Provider:` / `Failure class:` / `Process evidence:`) and receives only the 32,768-byte cap that D-008 asks for. B-014's "provider-error responses" clause means the cap, not the header. `tests/pi-contract/pi-behavior-contract.test.ts` `preserves serialized capability failure in Pi error content` is a Pi error-transport probe, not a defect pin, and does not change.
+  - Alternatives: (a) authorize an AC-020 exception for that test (needs the human; rewrites a transport probe to carry a presentation change); (b) drop the cap on errors too (contradicts D-008).
+  - Why: ratified AC-009 bounds the text of *findings results*; nothing ratified puts a header on a thrown error. AC-020 permits an expectation change only where a test pinned the defect being removed, and this test pins Pi's transport of the message, which is not a defect. Choosing the reading under which both ratified clauses hold is a derived decision; escalating would have asked the human to break one of them.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: the "provider-error" entry-point item of B-014 as far as it implied the header; D-008's "cap typed provider-error messages" stands unchanged.
+
 ## Behaviors
 
 ### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts

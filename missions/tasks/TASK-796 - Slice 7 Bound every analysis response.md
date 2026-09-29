@@ -3,6 +3,7 @@ id: TASK-796
 title: 'Slice 7: Bound every analysis response'
 status: To Do
 priority: high
+assignee: worker
 labels:
   - backend
   - testing
@@ -10,7 +11,7 @@ labels:
 dependencies:
   - TASK-795
 createdAt: '2026-09-29T16:45:54.644Z'
-updatedAt: '2026-09-29T16:45:54.644Z'
+updatedAt: '2026-09-29T18:46:29.614Z'
 ---
 
 ## Description
@@ -34,3 +35,36 @@ Follow Design §5: promote cyclomatic/cognitive/CRAP values into provider-neutra
 - [ ] #6 D-028: this slice is implemented in a single Drive run on the `cosmonauts-subagent` inline backend from a print-mode cosmo session.
 - [ ] #7 D-030: for B-014, implementation notes record one failing run before the change and one passing run after it; each row includes the test name and commit, the failing row includes a one-line failure, and the passing row records the successful result.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Task-start audit base: 34ae869bbfbde6329c3f076d910a6479176fe1aa.
+
+D-030 B-014 RED | test: Fallow capability execution > leaves the entire worktree unchanged across status and every capability | commit: 34ae869bbfbde6329c3f076d910a6479176fe1aa | `bun run test -- tests/extensions/project-tools-fallow.test.ts -t 'leaves the entire worktree unchanged'` failed: analysis_dead_code text did not contain `capability: dead-code` (native JSON exposed).
+
+HALT-AND-ESCALATE (ratified AC-009 versus AC-020 / task #5). Draft decision: AC-009/D-008/D-024 require the fixed capability/provider/scope/verdict/coverage/metric header even on thrown provider errors. AC-020 and task #5 forbid changing existing expectations except text-equals-details tests. `tests/pi-contract/pi-behavior-contract.test.ts` hardcodes and checks the *exact* legacy provider-error message (lines 260-269, 315-320), without the scope/verdict/coverage/metric header. Both cannot be true. Options for human: (a) authorize one narrowly scoped exception to AC-020/#5 for this pinned provider-error error-transport test (recommended; preserve Pi transport assertion while updating the AC-009 output contract); (b) explicitly exempt provider-error messages from AC-009's fixed header (weakens INV-005's universal analysis presentation), or (c) leave task blocked. No test expectation was changed at that seam. Partial work is uncommitted; Drive owns commits. Required `bun run test` failed: `pi contract: thrown analysis provider errors > preserves serialized capability failure in Pi error content` expected `Analysis failed to run.\nCapability: ...`, received `capability: dead-code\nprovider: fallow@2.54.2\nscope: not-executed\nverdict: provider-error ...`. An unrelated detached-driver timing test also failed in that full-suite run: `startDetached > escalates an ignored SIGTERM to SIGKILL so abort settles on a bounded deadline`: `promise rejected "Error: Detached driver start aborted" instead of resolving` (lib/driver/driver.ts:712). Targeted analysis suite earlier passed (73 tests). D-030 B-014 GREEN | test: Fallow capability execution > leaves the entire worktree unchanged across status and every capability | commit: 34ae869bbfbde6329c3f076d910a6479176fe1aa (working-tree change) | `bun run test -- tests/extensions/project-tools-fallow.test.ts -t 'leaves the entire worktree unchanged'` passed (1 test). Mutation check temporarily set rendered capability to `wrong`; same test failed with expected `capability: dead-code`, received `capability: wrong`; restored. `bun run lint`, `bun run typecheck`, `bun run check:reachability`, `bun run check:suppressions -- --base main` were not run after discovering the ratified collision; no source commit made.
+
+### Drive — outcome blocked — attempt 1 — run run-ea89294e-6763-4515-9820-3a03e10912f2
+
+{
+  "outcome": "blocked",
+  "notes": "Human decision needed: AC-009 requires a fixed header on provider-error text, but AC-020 forbids changing the existing exact-message test in tests/pi-contract/pi-behavior-contract.test.ts. `bun run test` failed there: expected `Analysis failed to run.\\nCapability: ...`, received `capability: dead-code\\nprovider: fallow@2.54.2\\nscope: not-executed\\nverdict: provider-error ...`. Partial changes are uncommitted; the decision options and red/green evidence are appended to TASK-796. The same run also had an unrelated detached-driver timing failure."
+}
+outcome: blocked
+
+Dirty paths:
+ M docs/analysis-capabilities.md
+ M docs/analysis-provider-validation.md
+ M docs/fallow.md
+ M domains/shared/extensions/project-tools/analysis-provider-error.ts
+ M domains/shared/extensions/project-tools/fallow-provider.ts
+ M domains/shared/extensions/project-tools/index.ts
+ M domains/shared/skills/analysis/SKILL.md
+ M lib/analysis/types.ts
+ M "missions/tasks/TASK-796 - Slice 7 Bound every analysis response.md"
+ M tests/extensions/project-tools-fallow.test.ts
+?? domains/shared/extensions/project-tools/bounded-presentation.ts
+
+### Coordinator note before attempt 2 (2026-09-29, derived ruling D-032)
+
+Not a human decision. Ratified AC-009 bounds the text of *findings results*; the header on a thrown provider error came only from derived ground (D-008 asks for a cap on error messages; D-024's header is for returned results). The pi-contract test `preserves serialized capability failure in Pi error content` pins Pi's error transport of the exact legacy message, not a defect, so AC-020 forbids changing it and nothing requires it to change. Ruling (plan D-032, coordinator, amend-on-record): keep `AnalysisProviderError`'s message format exactly as before and apply only the 32,768-byte cap to it (via the shared bound, without the header); the fixed header applies to every text the analysis tools *return* (findings, trace, fix-preview, status, non-ready). Do not edit `tests/pi-contract/`. Your attempt-1 work is uncommitted in the worktree and also snapshotted at `refs/cosmonauts/coordinator/TASK-796-attempt-1`; continue from it (revert only the header-on-error part of `analysis-provider-error.ts` and any test that asserted a header on errors), then run all five gates and report. The detached-driver SIGTERM test failure you saw is a known flake unrelated to this slice; rerun the suite once if it recurs and record the rerun.
