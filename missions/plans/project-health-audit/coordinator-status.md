@@ -128,7 +128,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-782** (stage 15a: `runPass` + deferred `recoverAcceptedEpisodeFinalization` +
+**TASK-782 attempt 2** (attempt 1 stopped early on a misreading of AC #3's stop
+clause, obs. 25; stage 15a: `runPass` + deferred `recoverAcceptedEpisodeFinalization` +
 the nine-group living-memory family; `C` = `1a9f62ce`) on the Pi worker. Then
 784 → 783 → `/implement-plan` Phases 2-4.
 
@@ -228,6 +229,11 @@ the nine-group living-memory family; `C` = `1a9f62ce`) on the Pi worker. Then
    its commit unnoticed until the stage-13 verdict looked at the whole dupes
    inventory (D-035). Extraction-slice verdicts must diff the owned family
    list against the post-commit `fallow dupes` inventory.
+25. TASK-782 attempt 1 stopped after one extraction, calling the remaining
+   decomposition "seams needing characterization" and citing AC #3; it also
+   wrote its final notes with the file `edit` tool (overwritten by Drive). The
+   worker prompt should say that private-helper extraction under existing
+   characterization is the work, and that only `task_edit` reaches the notes.
 12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
