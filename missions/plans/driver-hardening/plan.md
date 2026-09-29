@@ -2,152 +2,24 @@
 title: Fix the Drive Defects the Health Audit Exposed
 status: active
 createdAt: '2026-09-29T13:31:06.260Z'
-updatedAt: '2026-09-29T14:49:50.237Z'
+updatedAt: '2026-09-29T16:20:00.000Z'
 ---
 
 ## Overview
 
 Harden the existing Drive execution path and its adjacent task, analysis, and worker surfaces using `missions/reviews/improvements/project-health-audit.md` as the evidence base. The implementation is behavior-first and keeps the graph-backed Drive path and the legacy single-task path in parity without changing scheduler attempt, lease, or cancellation semantics. The blocked-report path is delivered first so every later slice can record failures and blockers without destroying worker notes.
 
-This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces no work from `drive-envelope`, `execution-liveness`, or the excluded observation 4.
+This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces no work from `drive-envelope`, `execution-liveness`, or the excluded observation 4. The spec at `missions/plans/driver-hardening/spec.md` owns the Intent (INV-001..006 and the Ranking), the acceptance criteria AC-001..AC-020, the Scope with its non-goals, and the three human rulings Q-001..Q-003; this plan cites them by ID and does not restate them.
 
-## Intent
-
-Goal: a Drive run never loses what a worker recorded, never acts on a report
-its own protocol did not define, and hands the worker tools whose results fit
-the worker's context.
-
-Invariants — mechanism yields to these:
-
-- INV-001 - The worker's record survives every Drive outcome. Drive never
-  replaces text a worker wrote into a task; anything Drive adds to a task is
-  appended under a heading that names Drive, the outcome, and the attempt.
-- INV-002 - A blocked report is a question for a human, not a transient
-  failure. When a worker reports `blocked`, Drive runs no postflight, spawns no
-  automatic retry, and records the worker's reason verbatim as the block
-  reason.
-- INV-003 - Every re-spawn is announced. Before Drive runs a worker again for
-  the same task inside one run, it emits an event that names the trigger.
-  Nothing re-spawns silently.
-- INV-004 - The protocol and the parser agree, for every backend. Every outcome
-  word the rendered prompt allows is parsed, every parsed outcome has one
-  documented Drive consequence, and a rule that governs completion (such as
-  marking acceptance criteria) reaches every backend in a form that backend can
-  act on.
-- INV-005 - Analysis results fit their consumer. A capability result honors the
-  requested scope or reports the scope unsupported; it never silently widens.
-  The text a tool returns to the model is bounded in size, with the full
-  provider payload reachable without re-running the provider.
-- INV-006 - Task state and the worktree change only through validated paths.
-  Worker-supplied task fields are validated before they reach task files, and
-  a worker cannot discard uncommitted work left by a previous attempt.
-
-Ranking. INV-001 and INV-002 win over throughput: a lost note or a burned
-retry costs more than the minutes a retry might save. INV-005 wins over
-completeness: a bounded, scoped result beats a complete one; the complete
-inventory stays available through the result's details or a paths-scoped
-follow-up call. INV-006 wins over worker autonomy: a guard that refuses a
-destructive git command is preferred to a prompt rule the worker may ignore.
-
-Provenance. The scope (the roadmap item's six bullets; ranked follow-ups 1-3
-must-have, 4-7 in scope unless argued out) is a human ruling of 2026-09-29
-typed to Shepherd and relayed. The invariant wording was drafted by the
-coordinator on 2026-09-29 and **ratified as drafted by the human on
-2026-09-29** (typed to Shepherd, relayed; recorded in
-`.shepherd/work/in-progress/driver-hardening/rulings.md`, Q-001: goal,
-INV-001..006, and the Ranking paragraph). These invariants and their ranking
-are ratified ground and change only by human decision.
-
-## Scope
-
-In scope (human ruling 2026-09-29, relayed; ratified ground):
-
-- The roadmap item's six bullets, restated as AC-001 through AC-018 above.
-- Ranked follow-ups 1-3 (rows 2-4, 1, 5) are must-have.
-- Ranked follow-ups 4-7 (rows 6-8 and the small items) are in scope.
-
-Argued out, with the reason (coordinator-proposed; **confirmed by the human
-on 2026-09-29**, Q-003 (a), rulings file above):
-
-- Observation 4 (`bun run lint` reads `.git/info/exclude`-ignored paths and
-  formats machine-canonical JSON under `missions/reviews/`). It is a
-  lint-configuration matter, not a Drive defect; the only fix is a Biome
-  configuration change, which the brief forbids as a way to clear findings,
-  and the previous plan already recorded the exclusions it needed (D-019/D-021).
-  Recorded here so it is not lost; it belongs to `suite-reliability` or a
-  direct fix.
-
-Non-goals:
-
-- Anything from `drive-envelope` (portable run envelope, harness-agnostic
-  prompt layers) or `execution-liveness` (the scheduler attempt/lease/
-  cancellation seam in `lib/durable-runtime/`). The retry event in AC-005 is
-  emitted by the existing contradicted-path loop in `lib/driver/`; it does not
-  add attempts, leases, or cancellation semantics.
-- The `fallow-provider.ts` `warn` verdict gap (obs. 7, D-023): gate-owned,
-  in the human sign-off packet of `project-health-audit`.
-- The suite flakes (obs. 5, 10): `suite-reliability`.
-- Coordinator process rules (obs. 12, 15, 18, 22): already written into
-  handoffs, not tooling.
-- New analysis providers, a Fallow bump, a Pi bump, or any change to the
-  changed-scope audit floors.
-- Pushing, merging, or opening a pull request.
-
-## Assumptions
-
-- The improvement review is the evidence base. Its rows were re-derived
-  against the 41 archived run records on 2026-09-29 (see the Purpose section);
-  the records confirm rows 1-4 and the commit-subject bullet directly and are
-  consistent with the rest. If a row is contradicted during implementation,
-  the deviation protocol applies and the review is amended on the record.
-- The execution-probe helper (AC-012) may make a temporary source edit inside
-  the worker's session, with digest-verified byte-identical restore and a
-  refusal to run on a dirty file (human ruling 2026-09-29, Q-002 (a); ratified
-  ground for the helper's mechanism).
-- Fallow 2.54.2 `health` has no per-file filter (its help lists only
-  `--changed-since`), so AC-008's path scope is applied by the adapter after a
-  project run; the cost of one provider run per call is unchanged. Fallow
-  `dead-code --trace` takes `FILE:EXPORT`, so AC-010 is a surface-level
-  classification, not a provider capability.
-- Pi's `tool_call` hook can block a tool invocation (the pinned Pi skill lists
-  "Block/allow" for that event), which is the mechanism AC-014 will use; if
-  the pinned Pi version cannot block, the plan falls back to a bash-tool
-  wrapper and records the change.
-- The `cosmonauts-subagent` worker holds the `tasks` extension, so AC-007's
-  in-process mechanism is `task_edit` with `checkAc`; external backends keep
-  the CLI instruction.
-- One slice per run stays the operating mode for this plan's own
-  implementation, so AC-003's run-level consequence (a blocked task ends the
-  run) is observed directly; multi-task runs keep the existing `partialMode`
-  semantics untouched.
-
-## Open Questions
-
-None open. All three were ruled by the human on 2026-09-29 (typed to
-Shepherd, relayed; `.shepherd/work/in-progress/driver-hardening/rulings.md`).
-The rulings are ratified ground:
-
-- Q-001 - Intent INV-001..006 and the ranking: **ratified as drafted**.
-- Q-002 - Execution-probe helper mechanism: **(a)**, a temporary source edit
-  inside the worker's session with digest-verified byte-identical restore and
-  a refusal on a dirty file. Rejected: (b) a throwaway worktree copy of HEAD
-  (cannot probe uncommitted refactors); (c) keeping D-031 manual.
-- Q-003 - Observation 4 (Biome and `.git/info/exclude`): **excluded** as a
-  lint-configuration matter.
-
-Everything else in this spec is derived ground and may be overridden freely.
-Note for planning: the branch was rebased onto `main` `e55040de` on
-2026-09-29, which includes the `fallow-provider.ts` `warn` verdict fix
-(completed non-passing result) and tab-separated `--plain` rows; neither
-touches this plan's files.
+*(Revised 2026-09-29 after review: chain rounds `review-1.md`, `review-2.md`, `review-3.md` and the coordinator's independent four-lens adversarially verified review. Every change is a dated Decision Log entry D-017 through D-030 or an amendment noted in place. Rounds 2 and 3 were written after the planner's last edit and were unaddressed until this revision.)*
 
 ## Architecture Context
 
-- `docs/orchestration.md` and `lib/driver/README.md` make the graph-backed path through `lib/driver/drive-scheduler-backend.ts` the shipped Drive path. `lib/driver/run-one-task.ts` retains equivalent legacy behavior and must stay in parity. `lib/driver/durable-events.ts`, `lib/driver/durable-steps.ts`, `lib/driver/event-stream.ts`, and `lib/driver/shell-command-finalizer.ts` are compatibility consumers of report and event contracts; they change with those contracts without moving scheduler ownership.
-- The scheduler attempt/lease/cancellation state in `lib/durable-runtime/` is outside this plan. A task step continues to return the existing durable `StepResult`; blocked-report handling terminates the worker attempt before postflight and hands that result to the existing graph.
-- Task files remain owned by `TaskManager`. Driver code depends on the generic task update contract; task code does not import Driver concepts. Raw note preservation and an unconditional task-ID mutation lock belong in the task module, while Drive-specific headings belong in Driver runtime helpers.
-- `missions/architecture/tool-ecosystem.md`, `docs/analysis-capabilities.md`, and `docs/fallow.md` keep provider-neutral contracts in `lib/analysis/`, provider behavior in the Fallow adapter, and Pi presentation in extensions. The execution probe is a separate worker-only extension with an explicit capability prompt, so loading `project-tools` in read-only agents does not grant project execution. It reuses the existing settled process-tree runner rather than adding a second child-lifecycle implementation.
-- `lib/orchestration/definition-resolution.ts` supplies the existing coding Bash tool. The pinned Pi API exposes a blocking `tool_call` event, and session assembly receives sub-agent runtime context; the guard wraps that existing tool only when `parentRole` is `driver`, without replacing tool resolution or affecting external sessions.
+- `docs/orchestration.md` and `lib/driver/README.md` make the graph-backed path through `lib/driver/drive-scheduler-backend.ts` the shipped Drive path (inline `run_driver` runs it through `lib/driver/drive-graph-runner.ts`). `lib/driver/run-one-task.ts` retains equivalent legacy behavior and must stay in parity. `lib/driver/durable-events.ts`, `lib/driver/durable-steps.ts`, `lib/driver/event-stream.ts`, and `lib/driver/shell-command-finalizer.ts` are compatibility consumers of report and event contracts; they change with those contracts without moving scheduler ownership.
+- The scheduler attempt/lease/cancellation state in `lib/durable-runtime/` is outside this plan. A task step continues to return the existing durable `StepResult`; blocked-report handling terminates the worker attempt before postflight and hands that result to the existing graph. The in-run contradicted-path retry stays a local loop inside one scheduler step; its evidence is projected as nonterminal activity so the first-terminal rule the active `execution-liveness` plan delivers (its D-036) is never violated (D-021).
+- Task files remain owned by `TaskManager`. Driver code depends on the generic task update contract; task code does not import Driver concepts. Raw note preservation on every update and a per-task mutation lock belong in the task module, while Drive-specific headings belong in Driver runtime helpers. The active `execution-liveness` plan (its D-038) will absorb this lock into `TaskManager.withTaskMutation()`; this plan builds the lock as a plain `withEntityFileLock` around the update and records the hand-off (D-026). This plan does not edit that plan's artifacts.
+- `missions/architecture/tool-ecosystem.md`, `docs/analysis-capabilities.md`, and `docs/fallow.md` keep provider-neutral contracts in `lib/analysis/`, provider behavior in the Fallow adapter, and Pi presentation in extensions. The execution probe is a worker-only extension under the coding domain (`bundled/coding/extensions/execution-probe/`), loaded only through the coding worker definition; the package manifest's auto-loaded directory is `domains/shared/extensions`, so a plain Pi session with cosmonauts installed never sees it (D-025). It reuses the existing provider process runner for the test command.
+- `lib/orchestration/definition-resolution.ts` resolves the `coding` tool set to Pi's built-in tool names only; nothing wraps Bash. The pinned Pi API exposes a blocking `tool_call` event, and session assembly receives sub-agent runtime context (`parentRole`, set to `driver` by the `cosmonauts-subagent` backend). The Git guard is an inline `tool_call` extension added to the session's extension factories only when `parentRole === "driver"`; tool resolution and external sessions are unchanged (D-011 as amended, D-020).
 - Planning-time structural evidence is unavailable: complexity, duplication, boundary-conformance, and trace were all unbound with reason `execution-not-consented`. This is absence of evidence, not a clean baseline; implementation must rely on behavior-first evidence and sign-off's configured checks rather than assume the touched units are structurally clean.
 
 ## Decision Log
@@ -158,11 +30,12 @@ touches this plan's files.
   - Why: Q-001 explicitly ratified this ground.
   - Decided by: human, 2026-09-29 (spec Q-001)
 
-- **D-002 - The probe edits the live clean file temporarily**
-  - Decision: instrument only clean target files in the worker's current project and restore them to digest-verified byte identity.
+- **D-002 - The probe edits the live file temporarily**
+  - Decision: instrument target files in the worker's current project and restore them to digest-verified byte identity; refuse to run on a dirty file.
   - Alternatives: probe a HEAD worktree copy; leave probing manual.
   - Why: Q-002 (a) ratified live-session temporary edits, dirty-file refusal, and digest-verified restoration.
   - Decided by: human, 2026-09-29 (spec Q-002 (a))
+  - *(Note 2026-09-29 after review: the ruling does not define "dirty". Whether it means git-dirty or changed-during-the-probe is H-001 (D-019); the plan proceeds on the recommended reading only after the human rules.)*
 
 - **D-003 - Observation 4 stays excluded**
   - Decision: make no formatter, ignore-pattern, suppression, baseline, threshold, or other configuration change for the excluded Biome behavior.
@@ -176,17 +49,19 @@ touches this plan's files.
   - Why: only a distinct early branch satisfies INV-002 and keeps parser, legacy events, and durable evidence aligned (review-1.md PR-006).
   - Decided by: planner-proposed
 
-- **D-005 - Task notes use source-preserving append under an unconditional mutation lock**
-  - Decision: every task update acquires an always-on cross-process lock keyed by task ID. Append mode patches the exact existing raw `Implementation Notes` section in the original task source after other fields are serialized, leaving every pre-existing note byte unchanged, then adds a level-three Drive heading and text.
-  - Alternatives: parsed read/serialize append; Driver-side read/concatenate/write; rely on the conditional episode-capture lock.
+- **D-005 - Task notes use source-preserving editing under a per-task lock**
+  - Decision: every `TaskManager.updateTask` acquires a cross-process lock keyed by task ID before lookup, parse, rename, write, and release. The raw `Implementation Notes` section of the original source is transplanted byte for byte into the re-serialized document on every update that does not explicitly replace notes (status, title, criteria, labels, and append-mode updates alike); append mode adds a level-three Drive heading and text after the transplanted bytes.
+  - Alternatives: parsed read/serialize append; Driver-side read/concatenate/write; rely on the conditional episode-capture lock; preserve raw bytes only in append mode.
   - Why: parser normalization and the optional episode lock cannot satisfy INV-001 or concurrent append safety (review-1.md PR-001, PR-002).
   - Decided by: planner-proposed
+  - *(Amended 2026-09-29 after review, review-2.md PR-011 / review-3.md PR-015: preservation applies to every non-replacing update, not only append mode; see D-018. The lock's hand-off to `execution-liveness` D-038 is D-026.)*
 
 - **D-006 - Retry status suppression never suppresses attempt evidence**
   - Decision: the contradicted-path loop passes a one-based attempt number and distinguishes `skipStatusTransition` from note persistence. Attempt 1 appends its structured Drive record, then emits `task_retry` with trigger, path, and attempt 2 immediately before the second spawn.
   - Alternatives: infer retries by counting spawns; keep `skipTaskUpdate`; add scheduler attempts or leases.
   - Why: every attempt record must survive and every re-spawn must be explicit without entering the execution-liveness seam (review-1.md PR-008).
   - Decided by: planner-proposed
+  - *(Amended 2026-09-29 after review, review-3.md PR-020/PR-021: the attempt number is held in memory for the step and is not persisted in a schema-tagged artifact; retry-candidate evidence is projected as nonterminal; a finalizer that cannot know the local attempt writes `attempt unknown`, never `1`. See D-021.)*
 
 - **D-007 - Scoped Fallow results are filtered after one project run**
   - Decision: advertise `paths` for complexity and duplication. Validate and normalize one full project payload, then retain a finding when any normalized location equals or lies below a requested path. Exclude locationless findings, recompute the scoped verdict, and retain the unfiltered native envelope in details.
@@ -199,6 +74,7 @@ touches this plan's files.
   - Alternatives: bound only findings; stringify complete results; drop native details.
   - Why: INV-005 applies to every analysis response, while its Ranking permits bounded display to omit rows (review-1.md PR-003).
   - Decided by: planner-proposed
+  - *(Amended 2026-09-29 after review: the text carries a fixed, never-truncated header before the rows; the pinned text-equals-details tests change under AC-009; see D-024.)*
 
 - **D-009 - Non-exported trace classification is a pre-execution provider check**
   - Decision: the private Fallow runtime exposes `classifyRequest(request, signal)` returning an optional provider-constraint `AnalysisUnsupportedTargetResolution`. The project-tools adapter calls it after generic binding resolution and before `execute`; `execute` remains `AnalysisResult`-only.
@@ -212,23 +88,26 @@ touches this plan's files.
   - Why: path-scoped duplication already has the required inputs and output.
   - Decided by: planner-proposed
 
-- **D-011 - Drive Git safety is a session-scoped Pi guard**
-  - Decision: session assembly loads a blocking `tool_call` guard only for Pi sub-agents whose runtime parent is `driver`. It blocks destructive Git worktree/index verbs in Bash while leaving read-only Git and the existing add/commit policy unchanged. External CLI backends retain prompt guidance because they do not emit Pi events.
-  - Alternatives: modify global Bash; rely only on prose; change repository permissions.
-  - Why: this is the narrow enforceable seam named by AC-014.
+- **D-011 - Drive Git safety is a session-scoped Pi guard plus a backend-independent snapshot**
+  - Decision: session assembly loads a blocking `tool_call` guard only for Pi sub-agents whose runtime parent is `driver`. It blocks destructive Git worktree/index verbs in Bash while leaving read-only Git and the existing add/commit policy unchanged. The same classifier is applied to the execution probe's test command. For every backend, Drive records a recoverable snapshot of the dirty worktree before each spawn (D-020), so a worker on `codex` or `claude-cli` cannot cause loss either.
+  - Alternatives: modify global Bash; rely only on prose; change repository permissions; give external backends prose only.
+  - Why: this is the narrow enforceable seam named by AC-014, and the snapshot satisfies INV-006 for every backend instead of narrowing it.
   - Decided by: planner-proposed
+  - *(Amended 2026-09-29 after review, coordinator channel finding 7 (confirmed high) and review-3.md PR-019: the original text gave external backends prompt guidance only, which narrowed ratified INV-006 under a planner decision; D-020 restores full coverage. The probe's test command now passes through the same classifier.)*
 
-- **D-012 - Delivery uses eleven dependency-ordered slices**
-  - Decision: complete note preservation, blocked handling, and retry visibility in slices 1–4 before using Drive for the remaining seven slices. Each slice records red evidence before implementation.
-  - Alternatives: parallelize immediately; combine all changes into one run.
+- **D-012 - Delivery uses twelve dependency-ordered slices**
+  - Decision: complete note preservation, blocked handling, and retry visibility in slices 1–4 before the remaining slices depend on Drive's own failure evidence. Each slice records red evidence per behavior before implementation. All slices run through Drive on the `cosmonauts-subagent` inline backend (D-028).
+  - Alternatives: parallelize immediately; combine all changes into one run; run slices 1–4 by hand.
   - Why: later failure evidence is trustworthy only after the must-have path preserves it.
   - Decided by: planner-proposed
+  - *(Amended 2026-09-29 after review: eleven slices became twelve when the worker-prompt contract and final acceptance got an owning slice (D-027); how slices 1–4 survive the unfixed Drive is D-028.)*
 
-- **D-013 - Probe recovery is journaled, exclusive, process-identified, and process-settled**
-  - Decision: a project-wide probe lock covers validation through restoration. A durable manifest records every original and planned instrumented digest before any source write. A detached command supervisor cannot release the project command until its process-tree identity is durable; recovery settles that recorded tree before touching source. Recovery accepts both original and planned bytes, restores only known instrumented bytes from a digest-verified backup, and treats every other digest as a conflict.
-  - Alternatives: in-memory backups; per-file locks; start the test shell before persisting its identity; restore immediately after signalling only the shell leader.
-  - Why: this closes multi-file and parent-crash windows and prevents overlapping probes or live descendants from racing restoration (review-1.md PR-004, PR-005).
+- **D-013 - Probe recovery is journaled and digest-verified** *(superseded in part by D-019, 2026-09-29)*
+  - Decision: a project-wide probe lock covers validation through restoration. A durable manifest records every original digest before any source write. Recovery restores only known instrumented bytes from a digest-verified backup and treats every other digest as a conflict.
+  - Alternatives: in-memory backups; per-file locks.
+  - Why: this closes multi-file crash windows and prevents overlapping probes (review-1.md PR-004, PR-005).
   - Decided by: planner-proposed
+  - *(Superseded 2026-09-29 by D-019 for everything about a detached supervisor, a `go` gate, arm deadlines, persisted PID/process-group identity, process-tree settlement before restore, and a five-state manifest machine. Reviews review-2.md PR-012 and review-3.md PR-016/PR-017 showed that numeric process identity is not durable and that a scoped lock cannot own an unsettled tree; the coordinator channel (findings 2, 8, 13, 18, 19, 22) showed the mechanism was too large for one slice and still could not meet AC-012's letter. The journal, the sidecars, and the digest matrix stand.)*
 
 - **D-014 - Unknown raw output is persisted before inference**
   - Decision: both Drive paths append an `unknown` attempt record immediately after parsing and before postflight. Later success inference or failure transition does not replace or duplicate that record.
@@ -237,363 +116,396 @@ touches this plan's files.
   - Decided by: planner-proposed
 
 - **D-015 - Compatibility consumers and quality ownership are explicit**
-  - Decision: update all Driver event/report/finalizer consumers named in Architecture Context. Carry the requested abstract quality contract inside B-012, owning risks, and per-slice evidence rather than a parallel gate section. Test files remain worker-chosen and are intentionally omitted from Files to Change under the canonical plan format.
+  - Decision: update all Driver event/report/finalizer consumers named in Architecture Context. Quality expectations specific to this work are carried by B-012, the owning Risks, and per-slice evidence; the plan declares no gate table, per the work-artifacts rule that gates are resolved at sign-off. Test files remain worker-chosen and are intentionally omitted from Files to Change under the canonical plan format.
   - Alternatives: let exhaustive consumers fail during implementation; declare a standalone gate list; preselect test files before workers inspect coverage.
   - Why: this resolves review-1.md PR-006 and PR-010 without crossing into `lib/durable-runtime/` or violating plan artifact rules.
   - Decided by: planner-proposed
 
 - **D-016 - Closing consistency pass keeps mechanisms aligned with invariants**
-  - Decision: same-file probe locations are batched with unique markers, backup bytes are verified before restore, provider errors share the text bound, and new Driver attempt artifacts carry an explicit local-attempt schema. No behavior, risk, or implementation stage now depends on a weaker mechanism than its governing invariant.
+  - Decision: same-file probe locations are batched with unique markers, backup bytes are verified before restore, and provider errors share the text bound. No behavior, risk, or implementation stage now depends on a weaker mechanism than its governing invariant.
   - Alternatives: leave those details to implementers; rely on successful-path evidence only.
-  - Why: it resolves the final cross-section discrepancies between D-008/D-013, B-005/B-008, and stages 4/7/9 before handoff.
+  - Why: it resolves cross-section discrepancies between D-008/D-013 and B-005/B-008 before handoff.
   - Decided by: planner-proposed
+  - *(Amended 2026-09-29 after review: the "explicit local-attempt schema" clause is withdrawn by D-021.)*
+
+- **D-017 - The plan cites the spec instead of copying it** *(Added 2026-09-29 after review)*
+  - Decision: the verbatim copies of the spec's `## Intent`, `## Scope`, `## Assumptions`, and `## Open Questions` are removed from this plan; the Overview cites them by ID. Citations to the previous plan's decisions (`project-health-audit` D-019, D-021, D-023, D-031) live only in the spec.
+  - Alternatives: keep the copies as convenience.
+  - Why: the plan format says plans cite `INV-###` and do not restate intent; the copies created a second copy of ratified text, four dangling decision citations (artifact check), and two sentences that only make sense in the spec (coordinator channel finding 12, confirmed).
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: plan.md lines 14–142 of the chain revision.
+
+- **D-018 - Raw note bytes survive every non-replacing task update** *(Added 2026-09-29 after review)*
+  - Decision: `TaskManager.updateTask` transplants the original raw `## Implementation Notes` section (heading, line endings, trailing spaces, boundary blank lines) into the re-serialized document on every update that does not supply `implementationNotes` in replace mode. This covers Drive's success transition to Done, `task_edit` criterion checks and title edits, and CLI edits. Replace mode alone re-serializes the notes.
+  - Alternatives: preserve raw bytes only in append mode (chain revision); amend INV-001 to "semantic content" preservation (would be human ground).
+  - Why: INV-001 covers every Drive outcome, and today every update parses (CRLF to LF, trimmed sections) and re-serializes, so a status-only update rewrites worker bytes (review-2.md PR-011, review-3.md PR-015, both high). A mechanism that preserves the bytes on every path satisfies the invariant without touching it.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: D-005's "for append mode" scope and Design §1's "Replace mode keeps canonical serialization" as the only other case.
+
+- **D-019 - The execution probe is a locked, journaled, always-restoring tool with no process-identity machinery** *(Added 2026-09-29 after review; pending H-001)*
+  - Decision: one `execution_probe` call, under one project-wide `withEntityFileLock` held for the call only: validate; write digest-verified sidecars and a manifest before any source write; instrument; run the test command through the existing provider process runner with a timeout; count markers; restore every instrumented file from its sidecar and verify the digest in a `finally` that runs on success, failure, timeout, and abort; compare `git status --porcelain` before and after and report every other changed path as a side effect. A zero hit count is evidence only when the command exited 0, every restore verified, and there were no side effects. If a restore cannot be verified (corrupt sidecar, digest mismatch), the journal stays and the result is `recovery-required` naming the journal. A later probe call first recovers any outstanding journal (restore from verified sidecars) or refuses with `recovery-required`. Drive's preflight and postflight refuse to proceed, and Drive never commits, while a probe journal for the project is outstanding (the task is blocked with a `recovery-required` reason). The test command is classified by the same destructive-Git classifier as the Bash guard and refused on a match. No persisted PID or process-group identity, no detached supervisor, no arm gate: if the tool host dies mid-command, the journal is recovered by the next probe call or blocks Drive, and a stray test process cannot alter source.
+  - Alternatives: the D-013 supervisor design (cannot make numeric process identity durable; too large for one slice); a filesystem sandbox for the test command (no portable primitive); dropping the helper (Q-002 rejected (c)).
+  - Why: AC-012 and Q-002 (a) ask for hit counts, digest-verified restoration, and dirty-file refusal; every reviewed hazard (instrumented source reaching a Drive commit, coordinator channel 13; unsettled trees, review-3.md PR-017; command-side mutation, PR-018; guard bypass through the test command, PR-019) is closed by always restoring, blocking Drive on an outstanding journal, and reporting side effects, without process identity.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: D-013's supervisor, gate, identity, settlement, and manifest-state clauses; Design §6 of the chain revision.
+  - **H-001 (needs the human; drafted decision, not applied).** Two clauses of ratified ground collide with this mechanism and only the human can settle them. (i) AC-012's letter promises "the source tree byte-identical to its start even when the command fails"; a target-file journal can prove that for the instrumented files and can *detect* but not undo mutations an arbitrary test command makes elsewhere (review-3.md PR-018; coordinator finding 18). Options: (a) amend AC-012 on record to "every instrumented file is restored to its original digest; any other tracked-file change the command makes is reported as a side effect and invalidates the hit evidence" (recommended); (b) keep the letter, which requires a filesystem sandbox this plan cannot build, so drop the helper and keep D-031 manual. (ii) Q-002 (a) says the helper "refuses a dirty file" without defining dirty. Read as git-dirty, it refuses exactly the uncommitted refactor Q-002 rejected option (b) for not covering (coordinator finding 19). Options: (a) dirty means the target's bytes changed between the digest taken at validation and the instrumentation write, or an outstanding journal exists for the project; git-dirty files are probeable (recommended); (b) dirty means git-dirty. Stage 9 does not start until both are ruled.
+
+- **D-020 - Drive snapshots the dirty worktree before every spawn** *(Added 2026-09-29 after review)*
+  - Decision: before each worker spawn (attempt 1 and any retry), when `git status --porcelain` is non-empty, Drive writes a snapshot commit object of the tracked and untracked worktree state (the `git stash create` object, never applied) and stores its SHA under a run-scoped ref `refs/cosmonauts/drive/<runId>/<taskId>/attempt-<n>`; the ref is recorded in the attempt's Drive note and in a `worktree_snapshot` field on the next `spawn_started` event. Refs are deleted by the run's terminal cleanup only when the task ended Done; blocked, partial, and aborted runs keep them. The Pi guard (D-011) remains defense in depth for in-process workers.
+  - Alternatives: prompt guidance only for external backends (narrows INV-006); a WIP commit on the branch (pollutes history and collides with `driver-commits`); per-harness deny rules for `codex` and `claude-cli` (three implementations, each unverifiable here).
+  - Why: INV-006's Ranking prefers a guard to a prompt rule, and INV-006 has no backend qualifier; a snapshot the worker cannot reach makes the previous attempt's work unlosable on every backend with one mechanism in `lib/driver/`.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: D-011's "External CLI backends retain prompt guidance because they do not emit Pi events."
+
+- **D-021 - Retry evidence is nonterminal, and the local attempt is never fabricated** *(Added 2026-09-29 after review)*
+  - Decision: a `task_blocked` or `spawn_failed` event carrying `contradicted` (a retry candidate) normalizes to durable *activity*, not `step_blocked`/`step_failed`, and the projector does not write a terminal step for it; `task_retry` follows as activity; the second `spawn_started` continues the same running step. The attempt number lives in memory for the duration of the scheduler step; no task-output artifact is extended with an attempt schema. A finalizer that runs after a resume and cannot know the local attempt writes the Drive heading with `attempt unknown` and a diagnostic, never `attempt 1`.
+  - Alternatives: keep terminal projection and rely on the second spawn reopening the step (violates first-terminal, review-3.md PR-020); persist `{ driverAttemptSchema, attemptNumber }` on artifacts with a fallback of 1 (fabricates, PR-021; edges into the attempt concept the spec reserves, coordinator finding 11).
+  - Why: INV-003 wants the retry explicit; the active `execution-liveness` plan (its D-036) will reject terminal-to-running transitions; a fabricated attempt number is a false record under INV-001.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: D-006's terminal-event clause; Design §3's schema-tagged artifact and finalizer consumption; D-016's "explicit local-attempt schema".
+
+- **D-022 - One writer per Drive note, and appends are idempotent** *(Added 2026-09-29 after review)*
+  - Decision: the task step (legacy attempt or graph attempt) is the sole writer of the per-attempt Drive record; the graph task-status finalizer changes status only and writes no note; commit-finalization-failure notes are written once per failure reason, and the append helper skips a heading-plus-body block that is already present byte for byte. `partialMode: continue` therefore produces one record per attempt with no `partial: partial:` prefix.
+  - Alternatives: let both the step and the finalizer write (duplicates on the graph path today, coordinator findings 14 and 21, both confirmed medium); make finalizers the only writer (they lack the attempt number).
+  - Why: INV-001's append heading must be a record, not noise; finalizers retry without limit.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: Design §1 "Every Driver note write, including retry candidates and finalization failures, uses source-preserving append" as a statement about writers.
+
+- **D-023 - A blocked report under `backend-commits` records unverified commits** *(Added 2026-09-29 after review)*
+  - Decision: Drive records HEAD before every spawn. On a `blocked` report, if HEAD moved, the Drive note and the `task_blocked` event carry `unverifiedCommits: <before>..<after>`; under `driver-commits` and `no-commit` the note lists the dirty paths. The rendered prompt tells `backend-commits` workers not to commit before a `blocked` stop.
+  - Alternatives: run postflight anyway on blocked (violates INV-002); ignore the moved HEAD (silent).
+  - Why: INV-002 forbids postflight on blocked, so the only honest handling of a worker commit is to name it as unverified (coordinator finding 17, partial).
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+
+- **D-024 - Bounded text has a fixed header, and pinned text-equals-details tests change under AC-009** *(Added 2026-09-29 after review)*
+  - Decision: every completed analysis result's text begins with a never-truncated header: capability, provider id and version, scope kind and paths, verdict (the recomputed scoped verdict for paths scope), coverage, and metric when present; then the rows, then the omission line. Existing tests that assert the model-visible text equals the JSON details change their expectation citing AC-009 and this decision.
+  - Alternatives: rows only (the reader cannot tell what was run); keep the pinned equality (contradicts AC-009).
+  - Why: AC-009 changes the text contract by design; AC-020 allows an expectation change that cites the criterion (coordinator finding 15, partial).
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+
+- **D-025 - The probe extension lives in the coding domain, not the auto-loaded shared directory** *(Added 2026-09-29 after review)*
+  - Decision: `bundled/coding/extensions/execution-probe/index.ts` with the capability at `bundled/coding/capabilities/execution-probe.md`; the coding worker lists the extension by name and domain-first resolution finds it. Nothing under `domains/shared/extensions/` changes for the probe.
+  - Alternatives: `domains/shared/extensions/execution-probe/` (the package manifest auto-loads every subdirectory there, so any plain Pi session would get a source-mutating tool, coordinator finding 22, confirmed).
+  - Why: "worker-only" must hold for package consumers too.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: Files to Change entries for `domains/shared/extensions/execution-probe/` and `domains/shared/capabilities/execution-probe.md`.
+
+- **D-026 - Overlap with `execution-liveness` is recorded, not duplicated** *(Added 2026-09-29 after review)*
+  - Decision: this plan adds a per-task `withEntityFileLock` around `updateTask` (D-005) and nothing about process identity (D-019 needs none). The `execution-liveness` plan's D-038 (`withTaskMutation`) will absorb the lock and its D-035 lock-generation work will supersede the lock file semantics; this plan records the change to `lib/tasks/task-manager.ts` and `lib/tasks/lock.ts` in its final report for that plan's re-validation and does not edit that plan's artifacts.
+  - Alternatives: build the D-038 shape now (pre-empts an active plan's design); skip the lock (loses concurrent append safety).
+  - Why: INV-001 needs concurrent append safety today; the seam is derived ground and the spec's non-goal covers only `lib/durable-runtime/` (coordinator finding 1, partial).
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+
+- **D-027 - Every behavior has one owning slice** *(Added 2026-09-29 after review)*
+  - Decision: B-001 is narrowed to failure/partial/unknown/spawn-failure records (slice 2); the blocked branch is B-013 (slice 3); B-002 is the retry event alone (slice 4); B-005 is scope filtering (slice 6) and bounded presentation is B-014 (slice 7); the worker-prompt clauses of AC-002, AC-006, AC-012, and AC-014 are B-015 (slice 12); B-012 is owned by slice 12 as the coordinator-run acceptance whose evidence table lands in this plan. Red/green evidence is recorded per behavior, and every slice has a proof clause.
+  - Alternatives: leave behaviors shared across slices (a coverage matrix cannot assign owners; coordinator findings 3, 4, 5, 9, 10).
+  - Why: the task backlog needs exactly one owner per behavior, and AC-019 says "the plan records the failing run for each".
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+
+- **D-028 - Slices 1–4 run on the unfixed Drive with mitigations; the host restarts after slice 4** *(Added 2026-09-29 after review)*
+  - Decision: every slice runs through `run_driver` on the `cosmonauts-subagent` inline backend from a print-mode cosmo session. Until slice 3 lands, each task carries the standing AC-marking note and the coordinator recovers worker notes from the worker transcript after any block. After slice 4's Drive commit, the coordinator starts a fresh cosmo session (inline runs load live source) and confirms no stale `bin/cosmonauts-drive-step` binary exists before slice 5. Slice 12's live acceptance is the first run that relies on the fixed path.
+  - Alternatives: run slices 1–4 by hand (breaks "every slice is one Drive run"); trust the running host to pick up source changes (it does not).
+  - Why: D-012 is otherwise ambiguous (coordinator finding 6, partial).
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+
+- **D-029 - The CLI's `--append-notes` uses the same source-preserving editor** *(Added 2026-09-29 after review)*
+  - Decision: `cli/tasks/commands/edit.ts` maps `--append-notes` to the append input instead of read-concatenate-replace, so external backends and humans get the same byte preservation.
+  - Alternatives: leave the CLI path (silently re-serializes, coordinator finding 20).
+  - Why: INV-001 does not depend on which surface wrote the note.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+
+- **D-030 - Red/green evidence is tabulated in the plan at closeout** *(Added 2026-09-29 after review)*
+  - Decision: each slice's task notes carry, per behavior, the failing run (test name, commit, one-line failure) and the passing run; slice 12 copies those rows into a `## Evidence` table appended to this plan, so "the plan records the failing run for each" (AC-019) is literally true.
+  - Alternatives: notes only (AC-019's letter unmet, coordinator finding 10).
+  - Why: AC-019.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
 
 ## Behaviors
 
-### B-001 - Worker records survive every non-success or unknown attempt
+### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts
 
-- Source: AC-001, AC-002, AC-003, AC-004
-- Observer: a coordinator examining a Drive task, its legacy and durable events, and its terminal run result
-- Entry point: `run_driver` when a backend returns a worker report or an attempt fails before a parseable report
-- Outcome: `blocked` is recognized under the same contract the worker saw; its notes, or otherwise raw report, become the verbatim block reason. Drive marks the task Blocked, appends under a Drive/outcome/attempt/run heading without changing any existing note byte, emits that reason, and performs no postflight, commit, acceptance inference, or contradiction retry after the report. Every `failure` and `partial` attempt—including a retry candidate whose status stays In Progress—and every spawn failure appends the same structured record. Every `unknown` report appends its complete raw text before any postflight-based success inference. Existing `partialMode` scheduling behavior remains unchanged.
+- Source: AC-001, AC-004
+- Observer: a coordinator examining a Drive task file, its legacy and durable events, and its terminal run result
+- Entry point: `run_driver` when a backend returns a `failure`, `partial`, or `unknown` report, or the spawn itself fails
+- Outcome: every pre-existing byte of the worker's implementation notes is unchanged, including after Drive's own status transitions; Drive's reason is appended once under a heading naming Drive, the outcome, the attempt number, and the run ID; an `unknown` report's complete raw text is appended before any postflight-based success inference and is not duplicated when inference later succeeds or fails; a retry candidate's record is appended while its status stays In Progress; a graph run with `partialMode: continue` and a retried finalizer each produce exactly one record per attempt; a worker's title edit or criterion check does not alter note bytes either.
 
-### B-002 - Every attempt record and in-run retry is explicit
+### B-002 - Every in-run retry is announced before the re-spawn
 
 - Source: AC-005
-- Observer: a reviewer reading `events.jsonl`, normalized activity, and task notes
-- Entry point: a task whose first failure claims that an existing project path is absent
-- Outcome: attempt 1's Drive note is persisted while its status remains In Progress; exactly one retry event names the contradicted-path trigger, path, and next attempt number before the next spawn; attempt 2 receives its own note if non-successful. A task that is not re-spawned emits no retry event.
+- Observer: a reviewer reading `events.jsonl`, the normalized run activity, and the live event stream
+- Entry point: a task whose first attempt is blocked or fails citing a project path Drive can see on disk
+- Outcome: exactly one retry event names the trigger (contradicted path), the path, and the next attempt number, and precedes the second `spawn_started`; the first attempt's blocked or failed evidence is recorded as activity and never as a terminal step, so the durable record shows one running step across both attempts; a task that is not re-spawned emits no retry event.
 
 ### B-003 - Task edits preserve notes and canonicalize titles
 
 - Source: AC-006, AC-013
-- Observer: a worker using `task_edit` and a coordinator opening the resulting task artifact
-- Entry point: `task_edit` with implementation notes in append mode or with a quoted/irregular title
-- Outcome: append mode preserves the exact pre-existing raw note bytes and adds supplied text once, including under concurrent cross-process append calls; replace mode retains its existing meaning and contradictory note modes are rejected. A title loses surrounding quote pairs, trims and collapses redundant whitespace, and produces one canonical task path; a title that normalizes empty is rejected without changing the task.
+- Observer: a worker using `task_edit` or the task CLI, and a coordinator opening the resulting task file
+- Entry point: `task_edit` (or `cosmonauts task edit --append-notes`) with implementation notes in append mode, with only a status or criterion change, or with a quoted or irregular title
+- Outcome: append mode preserves the exact pre-existing raw note bytes and adds the supplied text once, including under concurrent appends from separate processes; a status-only or criterion-only edit leaves the raw note section byte-identical; replace mode keeps its meaning and supplying both modes is rejected; a title loses surrounding quote pairs, trims and collapses whitespace, and yields one canonical task file path; a title that normalizes to empty is rejected without changing the task.
 
 ### B-004 - Every backend receives an actionable completion protocol
 
 - Source: AC-007
 - Observer: a Drive worker on any supported backend
 - Entry point: the rendered prompt for a task with acceptance criteria
-- Outcome: the worker sees how to mark every verified criterion before reporting, using `task_edit` in an in-process worker and the task CLI in an external worker. A success report with unchecked criteria remains blocked.
+- Outcome: the worker sees how to mark every verified criterion before reporting, using `task_edit` in an in-process worker and the task CLI in an external worker; a success report with unchecked criteria remains blocked as today.
 
-### B-005 - Analysis results honor scope and context budget
+### B-005 - Analysis findings honor the requested scope
 
-- Source: AC-008, AC-009
-- Observer: an agent calling any `analysis_*` tool
-- Entry point: status, findings, trace, fix-preview, or provider-failure analysis, including project- and paths-scoped complexity
-- Outcome: project complexity exposes its full requested-metric inventory; paths scope contains only findings with a matching location and never silently widens. Findings text gives one compact row per displayed finding with location, severity, available metric values, and message. Trace and fix-preview use equally compact variant-specific rows. Every analysis response's model-facing text excludes native payload, reports omissions or truncation, and is at most 32,768 UTF-8 bytes; complete typed and native completed-result data remain in details without another provider run.
+- Source: AC-008
+- Observer: an agent calling `analysis_complexity` or `analysis_duplication`
+- Entry point: a project-scope or `paths`-scope call
+- Outcome: project scope returns the full inventory for the requested metric; `paths` scope returns only findings with a location equal to a requested path or below a requested directory, with the verdict recomputed for that subset and coverage preserved; locationless findings are excluded from a scoped result; the binding advertises the `paths` scope; the native provider payload is unchanged and available in details.
 
 ### B-006 - Trace limitations are explicit
 
 - Source: AC-010
-- Observer: an agent tracing a non-exported symbol with the Fallow-backed trace tool
-- Entry point: `analysis_trace` with a symbol and project-relative source path
-- Outcome: before provider execution, a confirmed non-export returns `unsupported-target`, states that Fallow traces exports only, and suggests a file-target trace. Exported or indeterminate targets retain normal provider handling. Analysis guidance prevents planners from treating this as proof about non-exported function reachability.
+- Observer: an agent tracing a symbol with the Fallow-backed trace tool
+- Entry point: `analysis_trace` with a symbol target and a project-relative source path
+- Outcome: a symbol the adapter can confirm is not exported returns an unsupported-target result before any provider run, stating that the provider traces exports only and suggesting the file-target trace; exported, re-exported, unreadable, non-JS/TS, or indeterminate targets take the normal provider path; the analysis skill and documentation state the limit so plans do not generalize symbol tracing to non-exported functions.
 
 ### B-007 - Clone extraction verdicts report residue
 
 - Source: AC-011
 - Observer: a worker or reviewer assessing a clone-extraction slice
-- Entry point: path-scoped `analysis_duplication` over the files owned by that slice
-- Outcome: the result names every surviving clone group with an owned location, or states that none remain, in bounded text that can be quoted in the verdict; Drive and analysis guidance require that evidence for clone-extraction work.
+- Entry point: `analysis_duplication` with `paths` set to the files the slice owns
+- Outcome: the result names every surviving clone group with an owned location, or states that none remain, in bounded quotable text; the Drive and analysis skills require that evidence in the verdict of clone-extraction work.
 
-### B-008 - Execution probes produce recoverable hit evidence
+### B-008 - Execution probes produce hit evidence and always restore
 
 - Source: AC-012
-- Observer: a Drive worker evaluating whether one or more source sites are unreached
-- Entry point: the worker-only execution-probe tool with clean tracked locations, language-appropriate marker statement templates, a test command, timeout, and explicit project-execution confirmation
-- Outcome: under one exclusive project lock, the tool runs the command once and reports a hit count for each distinct location only after the command's process tree is quiescent. Multiple locations in one file are supported. It restores every instrumented regular file to its original digest when a failing, timed-out, or aborted command has settled; it refuses dirty, symlinked, non-regular, escaped, or duplicate locations. Interrupted work is recovered from persisted process identity plus original/planned digests; corrupt backups, unknown source bytes, or an unverified surviving tree preserve evidence and return recovery-required, never a fabricated zero or restoration claim. Worker guidance accepts a zero-hit blocker only from a successful test command and verified restoration.
+- Observer: a Drive worker deciding whether one or more source sites are unreached
+- Entry point: the worker-only `execution_probe` tool with source locations, marker statement templates, a test command, and explicit project-execution confirmation
+- Outcome: the tool runs the command once and reports a hit count per location and the command's exit status; multiple locations in one file are supported; every instrumented file is restored to its original digest whether the command passed, failed, timed out, or was aborted, and any other tracked path the command changed is listed as a side effect; a zero count is marked usable only when the command exited 0, every restore verified, and no side effects occurred; symlinked, escaped, non-regular, or duplicate locations are refused, as is a file whose bytes changed between validation and instrumentation or a project with an outstanding probe journal (H-001 rules the exact dirty definition); a restore that cannot be verified returns `recovery-required` naming the journal and never a count; a test command that contains a destructive Git operation is refused with the same rule as the Bash guard.
 
 ### B-009 - Destructive Git is refused in Drive Pi workers
 
 - Source: AC-014
 - Observer: an in-process Drive worker invoking Bash
-- Entry point: a Bash call containing a Git operation that discards or rewrites worktree or index state
-- Outcome: the tool call is blocked before execution with the Drive safety rule and a non-destructive alternative. Read-only Git calls and the existing add/commit policy are not redefined, and the same Bash call outside a Drive worker session is unaffected.
+- Entry point: a Bash call containing a Git operation that discards or rewrites worktree or index state, in executable position (including chained, `env`/`command`-prefixed, `git -C`, `git -c`, `--git-dir`/`--work-tree`, and `sh -c`/`bash -c`/`eval` forms)
+- Outcome: the call is blocked before execution with the Drive safety rule, the snapshot ref where the previous attempt's work is recoverable, and a non-destructive alternative; quoted prose, read-only Git, and the add/commit policy are unaffected; the same call outside a Drive worker session is unaffected; forms the classifier does not recognize (command substitution, aliases, redirect-overwrite) are listed in the documentation as residual and are covered by the snapshot in B-011.
 
 ### B-010 - Drive operator output and mode errors agree
 
 - Source: AC-016, AC-018
 - Observer: a print-mode caller launching Drive
 - Entry point: `run_driver`
-- Outcome: a successful launch's visible text includes both workdir and event-log path. Its schema and every wrong backend/mode error use the same rule: `cosmonauts-subagent` is inline-only, while `codex` and `claude-cli` are detached-only.
+- Outcome: a successful launch's visible text includes the run workdir and the event-log path; the tool schema and every wrong backend/mode error use the same sentence: `cosmonauts-subagent` is inline-only, `codex` and `claude-cli` are detached-only.
 
-### B-011 - Drive child execution does not leak control metadata
+### B-011 - Drive protects previous work and leaks no control metadata
 
 - Source: AC-015, AC-017
-- Observer: a coordinator inspecting a Drive-created source commit and a project preflight/postflight process
-- Entry point: `run_driver` with driver-owned commits and project commands
-- Outcome: a source-commit subject uses a safe report summary or the task title, never a JSON fence, brace-delimited JSON, or report outcome line; unknown-success inference preserves the title fallback instead of substituting another generic subject. Project preflight and postflight processes receive no `COSMONAUTS_DRIVER_*` variables, while backend selection still reads the parent environment.
+- Observer: a coordinator inspecting a Drive-created source commit, a project preflight/postflight process, and the run's refs
+- Entry point: `run_driver` with driver-owned commits, project commands, and a dirty worktree between attempts
+- Outcome: a source-commit subject uses a safe report summary or the task title, never a JSON fence, brace-delimited JSON, or a report outcome line; project preflight and postflight processes receive no `COSMONAUTS_DRIVER_*` variables while backend selection still reads them; before every spawn with a dirty worktree, Drive records a snapshot ref of that state, names it in the attempt's Drive note and the next `spawn_started` event, and keeps it unless the task ends Done; a `blocked` report under `backend-commits` with a moved HEAD is recorded with the unverified commit range.
 
 ### B-012 - Acceptance evidence proves the hardening without weakening checks
 
 - Source: AC-019, AC-020
-- Observer: the implementing coordinator and final reviewer
-- Entry point: the completed change set, per-slice evidence, and a real inline `run_driver` acceptance slice on a throwaway task
-- Outcome: the abstract quality contract is carried as behavior evidence, static correctness, structural conformance, integration evidence, and change integrity—without declaring runtime commands. Every changed Drive behavior has a recorded pre-change failure and post-change pass. The real slice shows attempt 1's note, an announced retry, and a blocked attempt 2; preserves all prior worker bytes; runs postflight only before attempt 1; and leaves task, event, and run records consistent. The change set contains no suppression, threshold, baseline, ignore-pattern, or configuration workaround, and any changed expectation cites the defect criterion it removes.
+- Observer: the implementing coordinator and the final reviewer
+- Entry point: the completed change set, the per-behavior evidence in task notes, the `## Evidence` table in this plan, and one real inline `run_driver` slice on a throwaway task
+- Outcome: every behavior has a recorded failing run before its change and a passing run after; the live slice shows attempt 1's appended record, a `task_retry` before the second `spawn_started`, one postflight set before the retry and none after the blocked report, attempt 2's verbatim block reason, the worker's sentinel bytes untouched, and durable and legacy records that agree; the change set contains no suppression, threshold, baseline, ignore-pattern, or configuration workaround, and every changed test expectation cites the criterion whose defect it pinned.
+
+### B-013 - A blocked report ends the attempt without postflight or retry
+
+- Source: AC-002, AC-003
+- Observer: a coordinator reading the task file, `events.jsonl`, and the run's terminal result
+- Entry point: `run_driver` when a worker's final report says `outcome: blocked` in the fenced JSON or the outcome line
+- Outcome: the report is parsed as blocked under the same contract the worker saw; no postflight command runs; no contradicted-path retry occurs; the task is Blocked with the worker's notes (or, absent notes, the raw report) verbatim as the reason; `task_blocked` carries that reason; the run's handling of the task follows the existing `partialMode` rule; under `backend-commits` a moved HEAD is recorded as unverified commits.
+
+### B-014 - Every analysis response fits a bounded text budget
+
+- Source: AC-009
+- Observer: an agent calling any `analysis_*` tool, including on provider failure
+- Entry point: status, findings, trace, fix-preview, non-ready, and provider-error responses
+- Outcome: the model-facing text begins with a fixed header (capability, provider, scope, verdict, coverage, metric) followed by one compact row per displayed finding (location, severity, metric values, message) or the variant's equivalent rows; the text never contains the native payload, states omissions or truncation deterministically, and is at most 32,768 UTF-8 bytes without splitting a code point; complete typed and native data remain in details without another provider run; a provider error's message is capped at the same bound.
+
+### B-015 - The worker prompt matches the mechanisms
+
+- Source: AC-002, AC-006, AC-012, AC-014
+- Observer: a coding worker reading its rendered prompt and the coding worker persona
+- Entry point: the rendered Drive prompt and `bundled/coding/prompts/worker.md`
+- Outcome: the worker is told that only `task_edit` (or the task CLI append) reaches the notes Drive preserves and that response prose is not the durable record; that a Blocked status is reported with `outcome: blocked`, which ends the run for a human with no postflight or retry; that a `blocked` stop claiming an unreached site must quote a usable zero hit count from `execution_probe`; and that destructive Git is refused and the previous attempt's work is in a snapshot ref; the report contract lists `blocked` with that meaning.
 
 ## Design
 
 ### 1. Source-preserving task mutation
 
-Make note modes unrepresentable together:
+`TaskUpdateInput` makes note modes unrepresentable together:
 
 ```ts
-interface TaskUpdateFields {
-  // existing fields except implementationNotes
-}
-
 type TaskUpdateInput = TaskUpdateFields & (
   | { implementationNotes?: string; appendImplementationNotes?: never }
   | { implementationNotes?: never; appendImplementationNotes?: string }
 );
 ```
 
-All `TaskManager.updateTask` calls acquire an unconditional `withEntityFileLock` at a task-ID-derived `.cosmonauts/*.lock` path before lookup, parse, rename, write, and release. The task lock is always outermost; the existing episode transition lock remains nested only for episode capture and is never acquired in the reverse order. A stable ID lock protects title renames across old/new filenames and separate processes.
+Every `TaskManager.updateTask` acquires `withEntityFileLock` at a task-ID-derived `.cosmonauts/*.lock` path (bounded wait, like the create lock) around lookup, parse, rename, write, and release. The task lock is outermost; the existing episode transition lock stays exactly where it is today, wrapping `updateTaskLocked`, and episode capture still runs after that lock is released and inside the task lock. `execution-liveness` D-038 absorbs this later (D-026).
 
-For append mode, the manager removes `appendImplementationNotes` before forming the `Task`, computes the semantic appended notes so canonical serialization emits one target section, and passes original bytes plus that serialization to a focused task note editor. The editor accepts zero or one raw `## Implementation Notes` section in the original—including an empty section—and exactly one in the canonical document. If an original section exists, it composes the exact original section span, preserving its heading, line endings, spaces, and boundary blank lines, followed by a separator in that section's line-ending style and the new text. It then replaces the canonical section with that composed span. With no original section, it keeps the canonical new section. Duplicate/ambiguous sections or an empty append are rejected before write. Replace mode keeps canonical serialization. Evidence compares raw byte slices, including CRLF, trailing spaces, empty sections, and boundary blank lines; parsed-value equality is insufficient.
+A focused note editor (`lib/tasks/task-note-editor.ts`) works on raw source. It finds zero or one raw `## Implementation Notes` section in the original (an empty section counts) and exactly one in the canonical re-serialization. For every update that does not replace notes, it transplants the original section span (heading, line endings, trailing spaces, boundary blank lines) over the canonical one. For append mode it composes original span + separator in the section's line-ending style + new text, and skips the write when the exact heading-plus-body block is already present (D-022). Duplicate or ambiguous sections, and an empty append, are rejected before write. Replace mode alone re-serializes. Evidence compares raw byte slices, including CRLF, trailing spaces, empty sections, and boundary blank lines.
 
-The task extension exposes `implementationNotesMode: "replace" | "append"` (default replace) and maps append mode to the atomic input. It normalizes tool-supplied titles by trimming, repeatedly removing matching surrounding single/double/backtick pairs, trimming again, and collapsing internal whitespace runs. Empty output fails before persistence.
+The task extension exposes `implementationNotesMode: "replace" | "append"` (default replace) and normalizes titles: trim, repeatedly strip matching surrounding single, double, or backtick quotes, trim, collapse internal whitespace; empty output fails before persistence. `cli/tasks/commands/edit.ts` maps `--append-notes` to the append input (D-029).
 
-Drive additions use:
+Drive appends use:
 
 ```text
-### Drive — outcome <blocked|failure|partial|unknown> — attempt <n> — run <runId>
+### Drive — outcome <blocked|failure|partial|unknown> — attempt <n|unknown> — run <runId>
 
 <reason or raw report>
 ```
 
-Level three is contractual because level two terminates the parser's notes section. Every Driver note write, including retry candidates and finalization failures, uses source-preserving append.
+Level three is contractual because level two terminates the parser's notes section.
 
 ### 2. Report, note, and transition matrix
 
-Keep executable postflight outcomes separate from a human block:
-
 ```ts
-interface BlockedReport extends Omit<Report, "outcome"> {
-  outcome: "blocked";
-  raw: string;
-}
-
+interface BlockedReport extends Omit<Report, "outcome"> { outcome: "blocked"; raw: string }
 type ParsedReport = Report | BlockedReport | { outcome: "unknown"; raw: string };
 ```
 
-Both blocked forms retain original stdout. Non-empty `notes` is authoritative without trimming; otherwise raw stdout is authoritative. `lib/driver/durable-steps.ts` maps a blocked `spawn_completed` report to an existing blocked `StepResult` with `wait_for_human` and the same untrimmed reason; no `lib/durable-runtime/` type changes.
+Both blocked forms retain original stdout; non-empty `notes` is the reason verbatim, otherwise raw stdout. `lib/driver/durable-steps.ts` maps a blocked `spawn_completed` report to the existing blocked `StepResult` with `wait_for_human` and the same reason; no `lib/durable-runtime/` type changes.
 
-After `spawn_completed`, both task paths follow:
+After `spawn_completed`, both task paths follow one matrix. The task step is the sole note writer (D-022):
 
-| Parsed report | Immediate note | Postflight | Contradiction retry | Final task effect |
+| Parsed report | Note (task step) | Postflight | Contradiction retry | Final task effect |
 |---|---|---|---|---|
-| `success` | None | Run | Only if existing later checks create a failure candidate | Existing success/unchecked-AC behavior |
-| `failure` | Append when attempt is finalized, including before retry | Run | Existing one-time rule | Blocked on final attempt; status unchanged on retry candidate |
-| `partial` | Append when attempt is finalized, including before retry | Run | Existing one-time rule | Existing `partialMode`; status unchanged on retry candidate |
-| `blocked` | Append verbatim reason | **Do not run** | **Never** | Blocked and terminal for this task attempt |
-| `unknown` | Append complete raw stdout **before inference** | Run under existing rules | Existing rule only if a later candidate qualifies | Existing inferred-success/failure status; no second unknown note |
+| `success` | none | run | only if a later check produces a failure candidate | existing success / unchecked-AC behavior |
+| `failure` | append when the attempt is finalized, including before a retry | run | existing one-time rule | Blocked on the final attempt; status untouched on a retry candidate |
+| `partial` | append when finalized, including before a retry | run | existing one-time rule | existing `partialMode`; one record per attempt under `continue` |
+| `blocked` | append the verbatim reason (+ unverified commit range or dirty paths, D-023) | **never** | **never** | Blocked, terminal for this attempt; run follows `partialMode` |
+| `unknown` | append the complete raw stdout **before inference** | run under existing rules | existing rule only if a later candidate qualifies | existing inferred success/failure; no second unknown note |
 
-Spawn failures use the failure append path even without a parsed report. A blocked task leaves Drive's control and can exit Blocked only through a later explicit task edit or run; Drive never auto-clears it. Partial remains In Progress for later work. Unknown note persistence failure aborts the attempt before inference rather than proceeding with lost evidence.
+Spawn failures use the failure append path. A blocked task leaves Drive's control and exits Blocked only through a later explicit edit or run. Unknown-note persistence failure aborts the attempt before inference. HEAD is recorded before every spawn (D-023).
 
-### 3. Retry and compatibility events
+### 3. Retry event and durable projection
 
-`runContradictedAttempts` passes `{ appendedNote, attemptNumber }` and its retry callback receives `{ trigger, attemptNumber, contradicted }`. Rename finalizer control to `skipStatusTransition`; note append and the contradicted terminal event still occur for attempt 1. Then emit:
+`runContradictedAttempts` passes `{ appendedNote, attemptNumber }` to each attempt and `{ trigger, attemptNumber, contradicted }` to `onRetry`. `skipTaskUpdate` becomes `skipStatusTransition`; the note append and the contradicted `task_blocked`/`spawn_failed` event still happen for attempt 1. Then:
 
 ```ts
-{
-  type: "task_retry";
-  taskId: string;
-  trigger: "contradicted-path";
-  attemptNumber: 2;
-  contradicted: { path: string; existsOnDisk: true };
-}
+{ type: "task_retry"; taskId: string; trigger: "contradicted-path"; attemptNumber: 2; contradicted: { path: string; existsOnDisk: true } }
 ```
 
-The graph callback emits this and then its second `spawn_started`; the legacy attempt emits its own next `spawn_started`. `lib/driver/durable-events.ts` adds the exhaustive normalizer as retry activity, and `lib/driver/event-stream.ts` bridges it for live subscribers while legacy JSONL remains authoritative. `lib/driver/durable-steps.ts` carries local attempt metadata when reconstructing compatibility records. The retry loop exits on a normal outcome or after finalizing attempt 2; it creates no persisted scheduler state.
-
-Every new graph task-output report artifact carries `{ driverAttemptSchema: 1, attemptNumber }`. `shell-command-finalizer.ts` reads it for source/task finalization notes, so a fresh finalizer process does not use empty in-memory state. A schema-1 artifact missing its number is invalid and blocks finalization. A pre-feature artifact with no schema uses an explicit, diagnosed compatibility fallback of attempt 1; it is never presented as newly persisted evidence.
+The graph callback emits `task_retry` and then its second `spawn_started`; the legacy attempt emits its own next `spawn_started`. In `lib/driver/durable-events.ts`, a `task_blocked`/`spawn_failed` carrying `contradicted` normalizes to activity only (no `step_blocked`/`step_failed`), and `task_retry` normalizes to activity; `lib/driver/durable-steps.ts` writes no terminal step for a retry candidate. `lib/driver/event-stream.ts` bridges `task_retry` to live subscribers; legacy JSONL stays authoritative. The attempt number is in-memory for the step; a finalizer that cannot know it writes `attempt unknown` with a diagnostic (D-021). Before every spawn, Drive records HEAD and, if the worktree is dirty, the snapshot ref (D-020); `spawn_started` gains an optional `worktreeSnapshot` field.
 
 ### 4. Prompt composition
 
-Tasks with acceptance criteria always receive a completion section. `cosmonauts-subagent` uses `task_edit` with `checkAc`; external backends use the existing task CLI instruction. The report contract lists `blocked` as a human stop with no postflight or retry.
-
-The coding worker prompt uses task-note append mode, says response prose is not the durable record, aligns Blocked status with `outcome: blocked`, uses `partial` for unfinished carry-over, forbids destructive Git, and requires a successful restored execution probe before an unreached-site block. Authored prose is reviewed for those agent outcomes; rendered protocol behavior is code-tested.
+Tasks with acceptance criteria always receive a completion section: `cosmonauts-subagent` gets `task_edit` with `checkAc`; external backends keep the task CLI instruction. The report contract lists `outcome: blocked` as a human stop with no postflight or retry and tells `backend-commits` workers not to commit before a blocked stop. Rendered protocol behavior is code-tested per backend name (B-004); authored persona prose is B-015 (slice 12).
 
 ### 5. Analysis scoping, classification, and bounded presentation
 
-Add optional provider-neutral values:
+`lib/analysis/types.ts` adds optional `metricValues?: Readonly<Partial<Record<AnalysisMetric, number>>>` on findings; Fallow promotes cyclomatic/cognitive/CRAP. Complexity and duplication advertise `paths`; Fallow runs once at project scope; after full schema and verdict reconciliation the adapter canonicalizes project-relative separators and dot segments and retains a finding whose location equals a requested path or starts with a requested directory plus `/`; locationless findings are excluded; the scoped verdict is recomputed; coverage is preserved; native payload is untouched. Project scope bypasses filtering. `analysis_duplication({ paths })` is the residue helper (D-010).
 
-```ts
-readonly metricValues?: Readonly<Partial<Record<AnalysisMetric, number>>>;
-```
+One shared renderer caps every analysis tool's text at 32,768 UTF-8 bytes: a fixed never-truncated header (D-024), then rows, then a deterministic omitted-count or truncation line, never splitting a code point. Findings rows carry location, severity, metric values, message; trace rows carry nodes/edges/evidence; fix-preview rows carry action and locations; status and non-ready resolutions use bounded summaries; `AnalysisProviderError` keeps its structured fields and caps its formatted message. Native payload and provider details stay in `details`.
 
-Fallow promotes cyclomatic/cognitive/CRAP numbers while retaining native detail. Complexity and duplication advertise `paths`; Fallow still runs once at project scope. After full schema and provider-verdict reconciliation, canonicalize project-relative separators and dot segments, then retain a finding if any location equals a requested path or starts with that directory plus `/`; exclude locationless findings, recompute the scoped verdict, preserve coverage, and never mutate native payload. Project scope bypasses filtering.
+Unsupported-target resolution becomes a discriminated union with a new provider-constraint variant (`reason: "provider-target-constraint"`, `suggestedTarget` of kind `file`); the private Fallow runtime adds `classifyRequest(request, signal)`, called by project-tools after `resolveAnalysisRequest` returns ready and before `execute`. A TypeScript-compiler AST check recognizes direct exports, export lists and aliases, default exports, and supported CommonJS assignments; confirmed absent exports return the exports-only result without spawning Fallow; re-exports, other languages, unreadable, or indeterminate sources return `undefined` and proceed.
 
-One shared renderer caps every analysis tool's model-facing text at 32,768 UTF-8 bytes and reserves room for an omitted-count or truncation line without splitting code points. Findings rows carry locations, severity, metric values, and message; trace rows carry nodes/edges/evidence; fix-preview rows carry proposed action and locations; status and non-ready resolutions use bounded summaries. A single oversized row is truncated deterministically. Native payload and provider details are omitted from text but remain complete in `details`. The typed `AnalysisProviderError` keeps full structured process fields but caps its formatted message to the same bound, so provider-failure tool text cannot bypass INV-005.
+### 6. Execution probe (worker-only)
 
-`analysis_duplication({ paths })` is the residue helper. Skills require all extraction-owned files and a quoted survivor/empty result.
-
-Refactor unsupported target data as a discriminated union so existing `unsupported-kind`/`missing-identity` shapes remain unchanged and the provider variant is explicit:
-
-```ts
-type AnalysisUnsupportedTargetResolution =
-  | ExistingUnsupportedTargetResolution
-  | {
-      kind: "unsupported-target";
-      capability: "trace";
-      providerId: string;
-      requestedTargetKind: "symbol";
-      reason: "provider-target-constraint";
-      message: string;
-      suggestedTarget: Extract<AnalysisTraceTarget, { kind: "file" }>;
-    };
-```
-
-The private Fallow runtime adds:
-
-```ts
-classifyRequest(
-  request: AnalysisRequest,
-  signal?: AbortSignal,
-): Promise<AnalysisUnsupportedTargetResolution | undefined>;
-```
-
-After generic `resolveAnalysisRequest` returns ready, project-tools calls this classifier before `runtime.execute`. A TypeScript-compiler AST check handles JS/TS direct exports, export lists/aliases, default exports, and supported CommonJS assignments. Confirmed absent exports return the exports-only unsupported result and file suggestion without spawning Fallow. Re-exports, unsupported languages, unreadable files, and syntactically indeterminate source return `undefined` and retain normal provider handling. `execute` remains `Promise<AnalysisResult>`.
-
-### 6. Worker-only execution probe
-
-Ship `execution_probe` from its own extension and add an `execution-probe` capability to the coding worker; do not register it in `project-tools`, which is loaded by read-only roles. Boundary input is:
+Input:
 
 ```ts
 interface ExecutionProbeInput {
-  locations: readonly {
-    path: string;
-    line: number;
-    statementTemplate: string; // contains {{hitFile}} and {{marker}}
-  }[];
+  locations: readonly { path: string; line: number; statementTemplate: string }[]; // template uses {{hitFile}} and {{marker}}
   testCommand: string;
   timeoutMs?: number;
   confirmProjectExecution: true;
 }
 ```
 
-The caller supplies syntax appropriate to each source language; the tool substitutes JSON string literals for a private OS-temporary hit file and a unique marker per location, and requires each statement to append that marker. It groups locations by canonical file and constructs one planned byte sequence from original lines, applying distinct-line insertions in descending order so line numbers remain source-relative. Exact duplicate `(realpath, line)` entries are rejected; different lines in the same file are supported. One test command runs after all locations are instrumented, addressing the per-site full-suite cost. A zero count is usable only when that command succeeds.
+Flow, under one project-wide `withEntityFileLock` held for the call: (1) recover any outstanding journal for this project (restore from digest-verified sidecars) or return `recovery-required`; (2) classify `testCommand` with the destructive-Git classifier and refuse on a match; (3) validate locations: tracked regular files whose realpath stays inside the root, no symlinks, no exact duplicate `(realpath, line)`, valid lines; take each file's digest; (4) write sidecars and a manifest (project root, per-file original digest, planned instrumented digest) to a mode-0700 directory under the OS temp root keyed by a hash of the canonical root, fsync, verify; (5) re-check each file's digest against step 3 and refuse if it changed (the H-001 (a) dirty rule; git-dirty is allowed under that ruling); (6) instrument, grouping locations by file and inserting in descending line order so line numbers stay source-relative, each marker unique; (7) run the command once through the existing provider process runner with the timeout; (8) in `finally`, restore every instrumented file from its sidecar, verify the digest, compare `git status --porcelain` with the pre-instrumentation capture and record side effects, delete the journal only when every restore verified; (9) count markers in the private hit file and return `{ hits, exitCode, sideEffects, usableZero, restored }` or `recovery-required` with the journal path.
 
-Acquire one project-wide `withEntityFileLock` before recovery or validation and hold it through process settlement and restore. Canonicalize project root and target realpaths; require tracked regular files whose realpaths stay inside the root; reject symlinks, duplicate locations, staged/unstaged target changes, and invalid lines.
+Drive's preflight and postflight (both paths) check the project's probe journal directory: an outstanding journal blocks the task with a `recovery-required` reason before any postflight or commit. There is no persisted process identity and no supervisor; a stray test process cannot alter source, and its hit file is ignored (D-019).
 
-Use a deterministic mode-0700 recovery directory under the OS temp root, keyed by a hash of the canonical project root while storing the exact root as identity. Before any source write, compute every original and planned instrumented byte sequence, persist original sidecars, fsync them, verify each sidecar against its original digest, and atomically/fsync a manifest containing project identity plus both digests for every file. No restore writes a sidecar whose digest does not match the manifest.
+### 7. Drive worker Git guard and snapshot
 
-The command starts through the existing process-tree runner behind a private detached supervisor and a one-use `go` gate. The manifest enters an arming state before spawn; the supervisor writes its PID/process-group identity and waits behind the gate with a durable absolute arm deadline. The tool persists that identity before modifying source. Only after every atomic source replacement matches its planned digest does the manifest enter running and the tool create the gate. If the parent dies before identity persistence, the supervisor can never run the project command and exits at the arm deadline; recovery waits through that recorded deadline before clearing an all-original state. Thus no crash window permits an unidentified project command to run against live edits.
+`lib/agents/drive-worker-tool-guard.ts` exports a pure classifier over a shell command string that finds Git invocations in executable position (handling `;`, `&&`, `||`, `|`, newlines, `env`/`command` prefixes, `git -C`, `git -c`, `--git-dir`/`--work-tree`, and `sh -c`/`bash -c`/`eval` string arguments) and matches the destructive families `checkout` (with paths or `--`), `switch --discard-changes`, `restore`, `reset`, `stash` (except `list`/`show`), `clean`, `rm`, `read-tree`, `checkout-index`, `update-index`, `apply -R`. Command substitution, aliases, and redirect-overwrite are documented residuals. Session assembly adds an inline `tool_call` extension using the classifier only when `runtimeContext.parentRole === "driver"`; refusal text names the rule, the snapshot ref, and the alternative. The same classifier gates the probe's test command.
 
-Recovery under the same project lock first settles any persisted supervisor/process tree using the runner's platform-specific termination and positive liveness check, then classifies every current source digest:
-
-| Current digest | Recovery action |
-|---|---|
-| original | File was untouched or already restored; verify and continue |
-| planned instrumented | Restore the already-verified persisted original, then verify |
-| anything else | Preserve those unknown bytes, restore other safely recognized instrumented files, keep journal, return recovery-required |
-
-Manifest states have exits: prepared/all-original clears; arming waits for identity or arm deadline; armed/instrumented/running first settle the tree then apply the digest matrix; restoring re-enters the same idempotent matrix; complete deletes the journal. Delete the journal only after every target verifies original and no recorded process tree survives. A stale PID lock can be reclaimed, but the manifest—not memory—is authoritative.
-
-The test shell remains in the supervisor's detached process tree. Count hit-file markers and restore only after code exit or verified tree termination. If termination cannot be verified, keep the journal, return recovery-required, and never report counts or zero. Command failure with a settled tree still restores and reports its nonzero status plus counts. The command and marker templates are project-controlled execution with the worker's existing Bash authority; literal `confirmProjectExecution: true` is the command-level consent gate.
-
-### 7. Drive worker Git guard
-
-Session assembly includes a focused inline extension only for sub-agent runtime context with `parentRole: "driver"`. Its Pi `tool_call` handler examines executable shell command positions and blocks Git worktree/index mutation families including `checkout`, `switch`, `restore`, `reset`, `stash`, `clean`, `rm`, `read-tree`, `checkout-index`, `update-index`, reverse apply, and equivalent chained invocations. It recognizes shell separators and common `env`/`command`/`git -C` prefixes without treating quoted prose such as `echo 'git reset'` as execution.
-
-Refusal says earlier-attempt work may be uncommitted and directs the worker to inspect with read-only Git, edit intended files directly, or stop for coordinator recovery. Read-only calls and existing add/commit policy are unchanged. External CLI agents get prompt guidance but no false claim of Pi enforcement.
+`lib/driver/runtime-helpers.ts` gains `snapshotWorktree(projectRoot, ref)`: `git stash create` (tracked + untracked via `git add -A --intent-to-add` on a temporary index if needed), `git update-ref <ref> <sha>`; called before every spawn when the worktree is dirty; refs under `refs/cosmonauts/drive/<runId>/<taskId>/attempt-<n>`; terminal cleanup deletes refs of Done tasks only (D-020).
 
 ### 8. Driver boundary hygiene
 
-`reportSummary` classifies a candidate as usable, absent, or unsafe. JSON fences, complete brace-delimited JSON, and report outcome markers are unsafe. Legacy inferred-success reports and graph `StepResult` summaries preserve unsafe/absent as the already-recognized generic `Drive task completed.` so `commitSubject` falls back to the task title; safe prose remains usable.
-
-Preflight and postflight shells receive a copied environment with all `COSMONAUTS_DRIVER_*` keys removed. Backend creation reads the parent environment first and backend processes retain their existing configuration path.
-
-The orchestration extension defines one backend/mode guidance string reused by schema and explicit/defaulted-mode errors. Validation precedes backend construction. Successful visible text includes literal `workdir:` and `eventLogPath:` fields plus unchanged structured details.
+`reportSummary` classifies a candidate as usable, absent, or unsafe (JSON fence, complete brace-delimited JSON, report outcome marker); unsafe or absent yields the task title through `commitSubject` on both paths. Pre/postflight shells receive a copied environment with all `COSMONAUTS_DRIVER_*` keys removed; backend construction reads the parent environment first. The orchestration extension defines one backend/mode guidance string reused by the schema and both mode errors; validation precedes backend construction; successful text includes `workdir:` and `eventLogPath:`.
 
 ## Files to Change
 
 - `lib/tasks/task-types.ts` — make replace and append note inputs mutually exclusive.
-- `lib/tasks/lock.ts` — define the always-on task-ID mutation lock path and bounded acquisition.
-- `lib/tasks/task-note-editor.ts` — new raw-source note-section extraction/transplant/append module.
-- `lib/tasks/task-manager.ts` — serialize every update under the mutation lock and use source-preserving append.
-- `domains/shared/extensions/tasks/index.ts` — expose append mode and normalize/reject tool-supplied titles.
-- `lib/driver/types.ts` — add blocked parsed reports and the retry event.
+- `lib/tasks/lock.ts` — task-ID mutation lock path and bounded acquisition (hand-off to execution-liveness D-038 recorded).
+- `lib/tasks/task-note-editor.ts` — new raw-source note-section extraction, transplant, and idempotent append.
+- `lib/tasks/task-manager.ts` — lock every update; transplant raw notes on every non-replacing update; append mode.
+- `domains/shared/extensions/tasks/index.ts` — expose append mode; normalize/reject tool-supplied titles.
+- `cli/tasks/commands/edit.ts` — route `--append-notes` through the append input.
+- `lib/driver/types.ts` — blocked parsed report, `task_retry` event, `worktreeSnapshot` on `spawn_started`, unverified-commit fields.
 - `lib/driver/report-parser.ts` — parse blocked JSON/line reports and retain raw output.
-- `lib/driver/runtime-helpers.ts` — format Drive notes, carry attempts, preserve retry evidence, scrub project-command environments, and classify report summaries.
-- `lib/driver/run-one-task.ts` — implement unknown-before-inference and early blocked behavior in the legacy path.
-- `lib/driver/drive-scheduler-backend.ts` — implement matching graph behavior and persist schema-tagged local attempt metadata.
-- `lib/driver/drive-finalization.ts` — append structured notes and enforce safe title fallback.
-- `lib/driver/durable-events.ts` — normalize retry as explicit activity and keep the event map exhaustive.
-- `lib/driver/durable-steps.ts` — project blocked reports and local retry metadata into existing step results.
-- `lib/driver/event-stream.ts` — bridge retry events to live subscribers while preserving JSONL.
-- `lib/driver/shell-command-finalizer.ts` — consume persisted local attempt metadata with diagnosed legacy compatibility.
-- `lib/driver/prompt-template.ts` — align report vocabulary and all-backend completion instructions.
-- `lib/driver/README.md` — document blocked parsing, retry visibility, and compatibility behavior.
-- `bundled/coding/agents/worker.ts` — enable the execution-probe capability and extension only for coding workers.
-- `bundled/coding/prompts/worker.md` — require append notes, aligned outcomes, safe Git, and valid probe evidence.
-- `domains/shared/capabilities/execution-probe.md` — new always-on worker contract for the native probe tool.
-- `domains/shared/extensions/execution-probe/index.ts` — new locked/journaled probe implementation with gated process supervision.
-- `domains/shared/extensions/project-tools/process-runner.ts` — expose platform-specific settlement for a persisted supervised process tree.
-- `lib/analysis/types.ts` — add normalized metric values and a discriminated provider-constraint unsupported target.
-- `domains/shared/extensions/project-tools/analysis-provider-error.ts` — cap model-facing typed provider-error messages while retaining structured evidence.
-- `domains/shared/extensions/project-tools/fallow-provider.ts` — filter scoped complexity/duplication, promote metrics, and classify export surfaces.
-- `domains/shared/extensions/project-tools/index.ts` — render every analysis response boundedly and call provider classification before execution.
-- `lib/agents/session-assembly.ts` — compose the Drive-only Pi guard from runtime context.
-- `lib/agents/drive-worker-tool-guard.ts` — new Bash Git classifier and blocking `tool_call` extension.
-- `domains/shared/extensions/orchestration/driver-tool.ts` — align mode validation and expose workdir/event log in text.
-- `domains/shared/skills/analysis/SKILL.md` — document residue, bounded details, and export-only trace.
-- `domains/shared/skills/drive/SKILL.md` — require duplication residue and preserve worker-stop/retry protocol.
-- `docs/analysis-capabilities.md` — document scopes, all-response text cap, details, and trace limit.
-- `docs/analysis-provider-validation.md` — record metric neutrality and adapter limitations.
-- `docs/fallow.md` — document adapter filtering and export classification.
-- `docs/orchestration.md` — align report, retry, result text, environment, and mode behavior.
+- `lib/driver/runtime-helpers.ts` — Drive note formatting, attempt numbers in the retry loop, environment scrub, report-summary classification, HEAD capture, worktree snapshot.
+- `lib/driver/run-one-task.ts` — unknown-before-inference, early blocked branch, probe-journal check, snapshot before spawn (legacy path).
+- `lib/driver/drive-scheduler-backend.ts` — matching graph behavior; sole note writer; `task_retry` before the second spawn.
+- `lib/driver/drive-finalization.ts` — status-only finalizers; safe title fallback; `attempt unknown` diagnostic.
+- `lib/driver/durable-events.ts` — nonterminal projection of retry candidates; `task_retry` as activity; exhaustive map.
+- `lib/driver/durable-steps.ts` — blocked report projection; no terminal step for a retry candidate.
+- `lib/driver/event-stream.ts` — bridge `task_retry` to live subscribers.
+- `lib/driver/shell-command-finalizer.ts` — no note writes; `attempt unknown` when the local attempt is not known.
+- `lib/driver/prompt-template.ts` — `blocked` in the report contract; all-backend completion protocol; no-commit-before-blocked for `backend-commits`.
+- `lib/driver/README.md` — blocked parsing, retry visibility, snapshot refs, probe-journal check.
+- `lib/agents/drive-worker-tool-guard.ts` — new destructive-Git classifier and blocking `tool_call` extension.
+- `lib/agents/session-assembly.ts` — compose the Drive-only guard from runtime context.
+- `bundled/coding/agents/worker.ts` — load the `execution-probe` extension and capability.
+- `bundled/coding/capabilities/execution-probe.md` — new worker contract for the probe tool.
+- `bundled/coding/extensions/execution-probe/index.ts` — new locked, journaled, always-restoring probe tool.
+- `bundled/coding/prompts/worker.md` — append notes, aligned blocked outcome, probe evidence rule, Git rule and snapshot.
+- `lib/analysis/types.ts` — `metricValues`; provider-constraint unsupported-target variant.
+- `domains/shared/extensions/project-tools/analysis-provider-error.ts` — cap the formatted message.
+- `domains/shared/extensions/project-tools/fallow-provider.ts` — scoped filtering, metric promotion, export classification, `paths` advertisement.
+- `domains/shared/extensions/project-tools/index.ts` — bounded renderer with header; pre-execution classification.
+- `domains/shared/extensions/orchestration/driver-tool.ts` — unified mode guidance and errors; workdir and event-log path in text.
+- `domains/shared/skills/analysis/SKILL.md` — residue, bounded text and details, export-only trace.
+- `domains/shared/skills/drive/SKILL.md` — residue requirement, blocked/retry protocol, snapshot refs, probe-journal block.
+- `docs/analysis-capabilities.md` — scopes, text cap and header, details, trace limit.
+- `docs/analysis-provider-validation.md` — metric neutrality and adapter limitations.
+- `docs/fallow.md` — adapter filtering and export classification.
+- `docs/orchestration.md` — report vocabulary, retry event, result text, environment, mode rule, snapshots.
 
 ## Risks
 
-- **Raw note fidelity:** any parsed-string append, full-body rewrite without raw-section transplant, ambiguous duplicate note section, or unlocked update violates ratified INV-001. Abort on a raw byte-prefix mismatch or concurrent lost append; do not narrow the invariant (review-1.md PR-001, PR-002).
-- **Graph/legacy/compatibility drift:** blocked reports and retry events have legacy, durable, bridge, and finalizer consumers. Each affected slice exercises all owned consumers. Abort if parity would require scheduler attempt/lease/cancellation changes; revise only Driver compatibility seams (review-1.md PR-006).
-- **Unknown inference:** postflight may infer success, but raw unknown output must already be durable. Abort inference if append fails; never synthesize away the record (review-1.md PR-007).
-- **Scoped verdict mismatch:** provider exit describes full inventory while paths scope describes a subset. Reconcile full integrity first, then scoped verdict. Abort if native evidence cannot be validated; never label an unknown run clean.
-- **Bounded text versus complete display:** unbounded finding/trace/fix inventories and provider errors cannot all fit. The ratified Ranking makes the cap authoritative; text states omissions/truncation and completed-result details retain all data (review-1.md PR-003).
-- **Export false certainty:** only AST-confirmed non-exports return unsupported; indeterminate source proceeds to provider. Pivot narrower rather than misclassify.
-- **Probe interruption/concurrency:** one project lock, verified backups, pre-write durable planned state, pre-write process identity, a no-exec gate, regular contained paths, quiescent process tree, and the digest matrix are mandatory. On corrupt backup, unknown digest, or unverified termination, preserve evidence and return recovery-required; never guess, race restoration, or report zero (review-1.md PR-004, PR-005).
-- **Probe instrumentation trust:** caller templates and test commands execute project-controlled code. Require explicit confirmation, successful command for zero-hit claims, and worker-only extension loading. Do not expose the mutating tool to read-only roles.
-- **Git guard coverage:** shell syntax is broad and external CLI workers lack Pi events. Test executable positions, quoting, chaining/prefix forms, scope enforcement to Drive Pi sessions, and keep prompt guidance elsewhere. If pinned Pi cannot block, stop and record the fallback before implementation.
-- **Commit fallback provenance:** legacy and graph inference must both preserve an unsafe-summary signal through finalization. Abort if a generic synthetic sentence can become a commit subject instead of task-title fallback.
-- **Live acceptance lifecycle:** if the run starts but fails, abort/settle it before cleanup, retain run artifacts, append observed evidence/failure to the owning task, then remove only the throwaway task and external sentinel. Backend unavailability is a human stop, never a mock substitution.
-- **Static/structural evidence:** type/lint correctness and no new structural findings are work expectations carried by B-012, but planning analysis was unbound. Treat sign-off findings as evidence and pivot the owning slice; never clear them through floors, suppressions, or configuration.
-- **Scope creep:** no `lib/durable-runtime/`, `drive-envelope`, execution-liveness, suppression, threshold, baseline, ignore, or config work belongs here. Apply deviation protocol rather than absorb it.
+- **Raw note fidelity:** any parsed-string write, full-body rewrite without raw-section transplant, ambiguous duplicate note section, or unlocked update violates INV-001. Abort on a raw byte-prefix mismatch or a lost concurrent append; do not narrow the invariant.
+- **Graph/legacy/compatibility drift:** blocked reports, retry events, and the nonterminal projection have legacy, durable, bridge, and finalizer consumers. Each slice exercises all owned consumers. Abort if parity would require scheduler attempt/lease/cancellation changes; revise only Driver seams. Pivot if `execution-liveness` lands its first-terminal guard before slice 4: re-validate B-002 against it.
+- **Unknown inference:** raw unknown output must be durable before inference. Abort inference if the append fails.
+- **Duplicate records:** a second writer or a non-idempotent append turns the record into noise. Abort if the graph `continue` case or a finalizer retry yields two records for one attempt.
+- **Scoped verdict mismatch:** provider exit describes the full inventory; paths scope describes a subset. Reconcile full integrity first, then the scoped verdict. Never label an unknown run clean.
+- **Bounded text versus complete display:** the Ranking makes the cap authoritative; text states omissions; details retain all data. The pinned text-equals-details tests change only with the AC-009 citation.
+- **Export false certainty:** only AST-confirmed non-exports return unsupported. Pivot narrower rather than misclassify.
+- **Probe restoration:** H-001 must be ruled before slice 9. Restoration runs in `finally` on every exit; an unverifiable restore returns `recovery-required` and blocks Drive; never report a count without a verified restore. If the human keeps AC-012's letter (H-001 (i)(b)), slice 9 is removed on record and D-031's manual procedure stays.
+- **Probe instrumentation trust:** the test command executes project code with the worker's authority; it is classified against destructive Git and requires explicit confirmation; the tool is loaded only by the coding worker.
+- **Git guard coverage:** the classifier is syntactic; residual bypasses are documented and the snapshot ref makes them non-lossy. If the pinned Pi cannot block a `tool_call`, stop and record the fallback before implementation.
+- **Snapshot cost and hygiene:** a snapshot per spawn on a dirty tree is one `git stash create`; refs accumulate on blocked runs by design and are listed in `cosmonauts run status`. Abort if a snapshot would require applying stash state to the worktree.
+- **Commit fallback provenance:** both paths must carry the unsafe-summary signal through finalization; abort if a synthetic sentence can become a subject instead of the task title.
+- **Live acceptance lifecycle:** if the run starts but fails, settle it, retain artifacts, append the evidence to slice 12's task, then remove the throwaway task and sentinel. Backend unavailability is a human stop, never a mock.
+- **Static/structural evidence:** planning analysis was unbound. Treat sign-off findings as evidence and pivot the owning slice; never clear them through floors, suppressions, or configuration.
+- **Scope creep:** no `lib/durable-runtime/`, `drive-envelope`, execution-liveness, suppression, threshold, baseline, ignore, or config work belongs here. Apply the deviation protocol rather than absorb it.
 
 ## Implementation Order
 
-The eleven numbered stages are candidate tasks, each one Drive slice and dependent on prior stages. Their abstract quality contract is inherited from B-012 and owning Risks: behavior evidence, static correctness, structural conformance, integration evidence, and change integrity; sign-off resolves actual checks. Each Drive behavior slice appends its focused pre-change failure and post-change pass to its own task notes. Test files are selected by the worker after inspecting existing coverage, not prescribed here.
+Twelve slices, each one Drive run on the `cosmonauts-subagent` inline backend (D-028), dependency-ordered. Every slice records, per owned behavior, one failing run before the change and one passing run after, in its task notes (D-030). Test files are chosen by the worker after inspecting existing coverage.
 
-1. **Source-preserving task mutation and task-edit hygiene — B-003 (AC-006, AC-013).** Add the unconditional task-ID lock, raw note-section append, exclusive input type, task-edit append mode, title normalization, and canonical rename. Prove raw CRLF/spaces/blank bytes, empty-note-section append, no-note insertion, duplicate-section refusal, replace compatibility, simultaneous appends from separate processes/manager instances, normalized-empty no-op, and one canonical path.
+1. **Source-preserving task mutation and task-edit hygiene — B-003 (AC-006, AC-013).** Per-task lock, raw note transplant on every non-replacing update, exclusive input type, `task_edit` append mode, CLI `--append-notes` routing, title normalization, canonical rename. Prove: CRLF/trailing-space/blank-line bytes survive a status-only, criterion-only, and title-only update; empty-section append; no-section insertion; duplicate-section refusal; replace compatibility; both-modes rejection; simultaneous appends from separate processes; idempotent re-append; normalized-empty rejection; one canonical path.
 
-2. **Structured Drive records on existing outcomes — B-001, B-002 (AC-001, AC-004).** Add Drive heading formatting and attempt identity. Convert graph/legacy/finalization writes to append; persist every unknown before inference; append failure/partial/spawn failure on contradicted attempt 1 while suppressing only status. Prove prior raw bytes, inferred-unknown success, final unknown failure, attempt 1 then attempt 2 ordering, and finalization failure.
+2. **Structured Drive records on failure, partial, unknown, and spawn failure — B-001 (AC-001, AC-004).** Drive heading with attempt number, sole-writer rule on both paths, unknown-before-inference, retry-candidate record with status untouched, HEAD capture before spawn. Prove: prior bytes intact on both paths; inferred-unknown success keeps one record; final unknown failure; graph `continue` yields one record per attempt; finalizer retry does not duplicate; attempt 1 then attempt 2 ordering; finalization failure writes once.
 
-3. **Blocked report vertical slice and durable projection — B-001 (AC-002, AC-003).** Add blocked parse/raw contract, prompt meaning, early graph/legacy branches, verbatim task/event reason, and blocked durable projection. Prove both report forms, no postflight/commit/acceptance inference/retry, matching legacy and normalized terminal evidence, and unchanged partial-mode scheduling.
+3. **Blocked report vertical slice — B-013 (AC-002, AC-003).** Blocked parse (both forms) with raw retention, report-contract wording, early branch on both paths, verbatim reason in task and event, durable blocked projection, unverified-commit range under `backend-commits`, dirty-path list otherwise. Prove: both forms; no postflight, commit, acceptance inference, or retry; legacy and normalized terminal evidence agree; `partialMode` unchanged; moved HEAD recorded.
 
-4. **Explicit retry event and compatibility visibility — B-002 (AC-005).** Add the event at the existing contradiction loop, exhaustive durable activity normalization, live bridge inclusion, JSONL ordering, schema-tagged local attempt artifacts, and finalizer consumption. Prove attempt 1 note precedes retry, retry precedes second spawn, no retry without re-spawn, current-schema missing-number failure, diagnosed legacy fallback, and no scheduler source change.
+4. **Explicit retry event and nonterminal projection — B-002 (AC-005).** `task_retry` at the existing loop, activity-only normalization of contradicted evidence, no terminal step before the second spawn, bridge inclusion, `attempt unknown` in resumed finalizers. Prove: attempt 1's note precedes `task_retry`; `task_retry` precedes the second `spawn_started`; no retry event without a re-spawn; durable record shows one running step; a resumed finalizer writes `attempt unknown`; no `lib/durable-runtime/` change. *Checkpoint (D-028): restart the cosmo host, confirm no stale `bin/cosmonauts-drive-step`.*
 
-5. **All-backend completion protocol — B-004 (AC-007).** Render criterion-marking instructions for all backend names with their available mechanism and retain unchecked-success blocking. Review worker prose for aligned blocked, partial, append, and Git semantics.
+5. **All-backend completion protocol — B-004 (AC-007).** Render the criterion-marking section for every backend name with its mechanism; keep unchecked-success blocking. Prove: the rendered prompt for `cosmonauts-subagent`, `codex`, and `claude-cli` each contains the instruction with the right mechanism (failing before the change for the subagent); a success report with unchecked criteria still blocks.
 
-6. **Scoped complexity and duplication residue — B-005, B-007 (AC-008, AC-011).** Advertise/filter complexity and duplication paths after one full Fallow run, recompute scoped verdicts, retain native payload, and require scoped clone verdict evidence. Prove exact file, directory descendant, nonmatch, locationless, one-owned-side clone, separator/dot normalization, and full project cases.
+6. **Scoped complexity and duplication residue — B-005, B-007 (AC-008, AC-011).** Advertise and filter `paths` after one project run; recompute the scoped verdict; skill guidance for residue. Prove: exact file, directory descendant, non-match, locationless exclusion, one-owned-side clone group, separator/dot normalization, full project unchanged, binding advertises `paths`.
 
-7. **Bounded presentation for every analysis response — B-005 (AC-009, INV-005).** Promote metric values and implement the shared 32 KiB renderer for findings, trace, fix preview, status, non-ready outcomes, and typed provider errors. Prove required finding columns, variant rows, no native text, full completed-result details, oversized single rows/errors, UTF-8 safety, and deterministic omissions within cap.
+7. **Bounded presentation for every analysis response — B-014 (AC-009).** Metric promotion, shared renderer with fixed header and 32 KiB cap, provider-error cap, pinned-test expectation change citing AC-009. Prove: header always present; required columns; variant rows; no native text; complete details; oversized rows and errors; UTF-8 safety; deterministic omission line.
 
-8. **Export-only trace classification — B-006 (AC-010).** Add the discriminated provider-constraint variant and pre-execution classifier contract. Prove direct/aliased/default/CommonJS exports proceed, confirmed JS/TS internals return unsupported without provider spawn, and re-export/unreadable/unsupported-language/indeterminate source is not mislabeled.
+8. **Export-only trace classification — B-006 (AC-010).** Discriminated unsupported-target variant, `classifyRequest`, AST check, docs and skill wording. Prove: direct/aliased/default/CommonJS exports proceed; confirmed internals return unsupported without a provider spawn; re-export/unreadable/other-language/indeterminate proceed.
 
-9. **Locked recoverable execution probe — B-008 (AC-012).** Ship the worker-only capability/extension; implement templates, same-file batching, containment, project lock, verified planned manifest, gated supervisor identity, multi-file writes, settled execution, counts, restoration, and recovery. Prove crashes before identity, before/between writes, before/after gate, during command termination, and during each restore; command pass/fail/timeout/abort; surviving-descendant refusal; simultaneous calls; symlink/escape/nonregular/dirty/exact-duplicate refusal; multiple lines in one file; corrupt backup; original/instrumented/conflict recovery cells; and no zero from unsafe or failed commands.
+9. **Locked, journaled, always-restoring execution probe — B-008 (AC-012).** *Gated on H-001.* Worker-only extension and capability under `bundled/coding/`; validation, sidecars and manifest, instrumentation with same-file batching, single command run with timeout, `finally` restore with digest verification, side-effect comparison, hit counts and `usableZero`, journal recovery on the next call, Drive preflight/postflight journal block on both paths, test-command Git classification. Prove: pass/fail/timeout/abort all restore; side effect invalidates zero; changed-since-validation refusal; outstanding-journal refusal and recovery; corrupt sidecar returns `recovery-required` and Drive blocks before postflight and commit; symlink/escape/non-regular/duplicate refusal; multiple lines in one file; destructive test command refused.
 
-10. **Drive Pi worker Git guard — B-009 (AC-014).** Compose runtime-scoped blocking and refusal text. Prove Drive versus non-Drive sessions, executable positions versus quoted prose, separators/prefixes/`git -C`, destructive families, read-only commands, and unchanged add/commit policy. Do not alter external CLI or global Bash.
+10. **Drive Pi worker Git guard and worktree snapshots — B-009, B-011 snapshot clauses (AC-014).** Classifier, Drive-only `tool_call` extension, refusal text, `snapshotWorktree` before every spawn on a dirty tree, ref naming and cleanup, `worktreeSnapshot` on `spawn_started`. Prove: Drive versus non-Drive sessions; executable position versus quoted prose; separators, prefixes, `-C`, `-c`, `--git-dir`, `sh -c`/`eval`; each destructive family; read-only Git and add/commit unaffected; snapshot ref exists and resolves after a simulated `git checkout --` on a dirty tree; refs kept on blocked, removed on Done.
 
-11. **Driver boundary hygiene — B-010, B-011 (AC-015, AC-016, AC-017, AC-018).** Preserve unsafe-summary fallback through legacy and graph inference, scrub Driver variables only from project pre/postflight environments, print workdir/event path, and unify explicit/default mode errors. Prove safe prose remains, every forbidden subject form uses task title, backend creation retains parent variables, project children see none, and mode wording is identical.
+11. **Driver boundary hygiene — B-010, B-011 remaining clauses (AC-015, AC-016, AC-017, AC-018).** Safe-summary classification with task-title fallback on both paths, environment scrub for project commands only, workdir and event-log path in text, unified mode wording. Prove: safe prose remains; every forbidden subject form yields the title; backend creation still sees the variables while project children do not; identical wording in schema and both errors.
 
-After stage 11, the coordinator performs final acceptance for **B-012 (AC-019, AC-020)**; it is not an implementation task:
-
-- Audit all task notes for red/green evidence and the change set for prohibited configuration/suppression or unrelated expectation edits.
-- Create an unlabelled throwaway task with raw sentinel notes. Its first attempt appends a worker record and reports failure naming a known existing path as absent; after the contradiction note, attempt 2 appends another record and reports blocked with a fixed reason.
-- Launch only that task through real inline `cosmonauts-subagent` with no commit. Use an explicitly consented external postflight sentinel that appends once per execution.
-- Accept only if task notes preserve the sentinel bytes and show Drive attempt 1 followed by Drive attempt 2; events show attempt 1's block evidence, then `task_retry`, then the second `spawn_started`, exactly one postflight set before retry, none after blocked completion, no third spawn, and the verbatim final block reason; durable and legacy run records agree on blocked.
-- In `finally`, settle any started run, retain its run directory, append run ID/artifact paths/event subsequence or failure evidence to the final implementation task, then remove the throwaway task and external sentinel. If live access is unavailable or behavior is nondeterministic, stop for human disposition rather than substitute a mock.
+12. **Worker prompt alignment and final acceptance — B-015, B-012 (AC-002, AC-006, AC-012, AC-014, AC-019, AC-020).** Persona prose in `worker.md` for append-only notes, `outcome: blocked`, probe evidence, Git rule and snapshot; skills and docs consistency. Then the coordinator-run acceptance: audit every task's red/green rows and copy them into a `## Evidence` table appended to this plan; audit the change set for prohibited configuration, suppression, or uncited expectation edits; create an unlabelled throwaway task with raw sentinel notes whose attempt 1 reports `failure` naming an existing path as absent and whose attempt 2 reports `blocked` with a fixed reason; run only that task through real inline `cosmonauts-subagent` with `no-commit` and one consented external postflight sentinel; accept only if the notes preserve the sentinel bytes and show Drive attempt 1 then attempt 2, events show attempt 1's block evidence, `task_retry`, the second `spawn_started`, exactly one postflight set before the retry and none after the blocked report, no third spawn, the verbatim final reason, a snapshot ref for the dirty tree, and durable and legacy records that agree; in `finally`, settle the run, retain its directory, append run ID and evidence to this slice's task, then remove the throwaway task and sentinel. If live access is unavailable or behavior is nondeterministic, stop for human disposition.
