@@ -3,6 +3,7 @@ id: TASK-805
 title: 'Codex round 2 remediation: five correctness and liveness findings'
 status: To Do
 priority: high
+assignee: worker
 labels:
   - backend
   - testing
@@ -10,7 +11,7 @@ labels:
 dependencies:
   - TASK-804
 createdAt: '2026-09-29T21:35:34.390Z'
-updatedAt: '2026-09-29T21:35:34.390Z'
+updatedAt: '2026-09-29T21:37:40.302Z'
 ---
 
 ## Description
@@ -25,3 +26,11 @@ Remediation slice for plan driver-hardening after codex review round 2 (`mission
 - [ ] #5 G5 (P2, B-002, INV-003): `task_retry` is emitted after the next attempt's preparation (prompt render and worktree snapshot) succeeds and immediately before that attempt's `spawn_started`, on both paths; a retry whose preparation fails emits no `task_retry` and the attempt's failure/abort is recorded as today. Tests: preparation failure yields no `task_retry`; the success path still shows `task_retry` before the second `spawn_started` and after attempt 1's block evidence.
 - [ ] #6 D-030: implementation notes record, per finding G1..G5, one failing run before the change (test name, commit, one-line failure) and one passing run after, plus a mutation check; `bun run test`, `bun run lint`, `bun run typecheck`, `bun run check:reachability`, `bun run check:suppressions -- --base main` all pass; no `.skip/.only/.todo`; no `lib/durable-runtime/` change; no config, suppression, threshold, baseline, or ignore change.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Start base SHA 4f271bb4d02b35473820e96e68b80e4324ee171b; Drive driver-commits, no staging/commit.
+
+### Coordinator note before attempt 1 (2026-09-29, handoff)
+
+Run `run-0b77042c` was launched at 21:35:52Z and stopped by the coordinator ~1 minute later on Shepherd's instruction (context budget); it is not a Drive verdict on this task. The worker's partial edit to `tests/driver/report-parser.test.ts` (a G1 red test in progress) was snapshotted to `refs/cosmonauts/coordinator/TASK-805-attempt-1` and the file restored to HEAD; the tree is clean. Start fresh: the criteria G1..G5 stand as written; read `missions/reviews/codex/driver-hardening-round-2.md` (dispositions at the end) and plan D-034 before G2.
