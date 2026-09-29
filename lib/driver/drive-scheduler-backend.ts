@@ -1,3 +1,4 @@
+import { probeJournalBlockReason } from "../agents/drive-worker-tool-guard.ts";
 import type {
 	ArtifactRef,
 	BackendContext,
@@ -293,11 +294,23 @@ async function runDriveTaskAttempt(
 			body: parsedReport.raw,
 		});
 	}
+	const beforePostflight = await blockForProbeJournal(
+		context,
+		prepared,
+		attemptNumber,
+	);
+	if (beforePostflight) return beforePostflight;
 	const postVerifyResults = await runPostVerify(
 		context,
 		taskId,
 		prepared.abortSignal,
 	);
+	const beforeCommit = await blockForProbeJournal(
+		context,
+		prepared,
+		attemptNumber,
+	);
+	if (beforeCommit) return beforeCommit;
 	const allowUnknownSuccess = await canInferUnknownSuccess(
 		spec,
 		toRunOneTaskCtx(context, prepared.abortSignal),
@@ -415,6 +428,32 @@ async function invocationForAttempt(
 	return { ...prepared.invocation, promptPath };
 }
 
+async function blockForProbeJournal(
+	context: DriveSchedulerBackendContext,
+	prepared: DrivePreparedStep,
+	attemptNumber: number,
+): Promise<DriveTaskAttemptResult | undefined> {
+	const reason = probeJournalBlockReason(context.spec.projectRoot);
+	if (!reason) return undefined;
+	const taskId = prepared.taskId;
+	await appendDriveAttemptRecord({
+		taskManager: context.taskManager,
+		taskId,
+		runId: context.spec.runId,
+		outcome: "blocked",
+		attemptNumber,
+		body: reason,
+	});
+	await blockTask(context, taskId, reason);
+	return {
+		kind: "outcome",
+		outcome: blockedStepResult(
+			reason,
+			outputArtifacts(taskId, prepared.attemptId),
+		),
+	};
+}
+
 function spawnFailureCandidate(
 	context: DriveSchedulerBackendContext,
 	taskId: string,
@@ -494,7 +533,14 @@ async function runPreflight(
 	signal: AbortSignal,
 ): Promise<{ passed: true } | { passed: false; reason: string }> {
 	await emit(context, { type: "preflight", taskId, status: "started" });
-	const result = await checkDrivePreflight(context.spec, signal);
+	const probeReason = probeJournalBlockReason(context.spec.projectRoot);
+	const result = probeReason
+		? {
+				passed: false as const,
+				reason: probeReason,
+				details: { stderr: probeReason },
+			}
+		: await checkDrivePreflight(context.spec, signal);
 	if (!result.passed) {
 		await emit(context, {
 			type: "preflight",
@@ -502,6 +548,17 @@ async function runPreflight(
 			status: "failed",
 			details: result.details,
 		});
+		if (probeReason) {
+			await appendDriveAttemptRecord({
+				taskManager: context.taskManager,
+				taskId,
+				runId: context.spec.runId,
+				outcome: "blocked",
+				attemptNumber: 1,
+				body: probeReason,
+			});
+			await blockTask(context, taskId, probeReason);
+		}
 		return result;
 	}
 	await emit(context, { type: "preflight", taskId, status: "passed" });

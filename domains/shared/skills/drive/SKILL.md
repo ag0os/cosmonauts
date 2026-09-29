@@ -22,6 +22,10 @@ Use Drive for approved plan-linked task batches where a mechanical loop should r
 - Default per-task timeout is 1800000ms (30 minutes). For unusually long cold E2E suites, slow external backends, or tasks expected to iterate on multiple failures, set `taskTimeoutMs` / `--task-timeout` explicitly higher (for example 3600000ms / 60 minutes).
 - Use `driver-commits` unless there is a concrete reason for `backend-commits` or `no-commit`.
 
+## Execution-probe journal safety
+
+The coding worker's `execution_probe` temporarily instruments tracked source and writes digest-verified sidecars under an OS-temp directory keyed by the canonical project root. Both Drive paths block in preflight before spawn, before postflight, and after postflight before commit when a `journal-*` entry remains, with a `recovery-required` reason naming it. A later probe call can recover from verified sidecars under a project-wide lock. On a corrupt journal, inspect and verify source manually; never delete a journal merely to unblock Drive. Zero-hit evidence is usable only after exit 0, restoration, and no other tracked side effects.
+
 ## Choose the Frontend
 
 | Frontend | Use When |

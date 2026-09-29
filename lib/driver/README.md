@@ -9,6 +9,12 @@ selection, prompt rendering, verification, event logging, locking, and commit
 policy. Backends only execute the rendered prompt and report the subprocess
 result.
 
+## Probe-journal safety
+
+Execution-probe journals live in the OS temporary directory, in a mode-0700 directory keyed by the canonical project root. Both Drive paths check for an outstanding `journal-*` entry in preflight before spawn, after the worker before postflight, and again after postflight before commit. An outstanding journal blocks with a `recovery-required` reason naming the journal. The probe can recover an intact journal under the project-wide lock using verified sidecars; an unverifiable restore requires manual recovery. Never delete a journal without verifying source restoration.
+
+The probe's destructive-Git classifier recognizes executable-position Git commands after shell separators, `env`/`command` prefixes, Git global options, and `sh -c`/`bash -c`/`eval` arguments. It rejects checkout of paths, discard switch, restore, reset, destructive stash, clean, rm, read-tree, checkout-index, update-index and reverse apply. Quoted prose and read-only Git are not rejected. Command substitution, aliases and redirect-overwrite are syntactic residuals; review a test command before confirming project execution. Drive's worktree snapshots protect previous attempt work against such residual bypasses.
+
 ## Prompt Rendering
 
 For each queued work item (currently a task ID), Drive writes

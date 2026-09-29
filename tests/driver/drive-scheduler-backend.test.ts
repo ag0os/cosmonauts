@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import { probeJournalDirectory } from "../../lib/agents/drive-worker-tool-guard.ts";
 import { DRIVE_BACKEND_ORCHESTRATION_CAPABILITIES } from "../../lib/driver/backends/orchestration-adapter.ts";
 import type {
 	Backend,
@@ -32,6 +33,58 @@ const PLAN_SLUG = "durable-frontend-migration";
 const PARENT_SESSION_ID = "drive-scheduler-parent";
 
 describe("Drive scheduler backend", () => {
+	test.each([
+		"preflight",
+		"postflight",
+		"during-postflight",
+	] as const)("blocks a %s probe journal before verification or commit", async (phase) => {
+		const fixture = await setupFixture(`probe-journal-${phase}`);
+		await fixture.taskManager.createTask({ title: "Journal safety" });
+		const journal = join(
+			probeJournalDirectory(fixture.projectRoot),
+			"journal-corrupt",
+		);
+		const events: DriverEvent[] = [];
+		const run = vi.fn(async () => {
+			if (phase === "postflight") await mkdir(journal, { recursive: true });
+			return successfulBackendResult();
+		});
+		if (phase === "preflight") await mkdir(journal, { recursive: true });
+		try {
+			const spec = createSpec(fixture, {
+				postflightCommands: [
+					phase === "during-postflight"
+						? nodeCommand(
+								`require('fs').mkdirSync(${JSON.stringify(journal)}, { recursive: true })`,
+							)
+						: nodeCommand("process.exit(7)"),
+				],
+			});
+			const prepared = await prepareTaskStep({
+				fixture,
+				spec,
+				backendRun: run,
+				events,
+			});
+			const result = await (await prepared.backend.start(prepared.step)).result;
+			expect(result).toMatchObject({
+				outcome: "blocked",
+				summary: expect.stringContaining(`recovery-required: ${journal}`),
+			});
+			expect(events.some((event) => event.type === "verify")).toBe(
+				phase === "during-postflight",
+			);
+			expect(run).toHaveBeenCalledTimes(phase === "preflight" ? 0 : 1);
+			expect((await fixture.taskManager.getTask("TASK-1"))?.status).toBe(
+				"Blocked",
+			);
+		} finally {
+			await rm(probeJournalDirectory(fixture.projectRoot), {
+				recursive: true,
+				force: true,
+			});
+		}
+	});
 	test("builds BackendInvocation from scheduler input and rendered task prompts", async () => {
 		const fixture = await setupFixture("prepare-authoritative");
 		await fixture.taskManager.createTask({ title: "First selected task" });

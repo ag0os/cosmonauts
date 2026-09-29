@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test, vi } from "vitest";
+import { probeJournalDirectory } from "../../lib/agents/drive-worker-tool-guard.ts";
 import type {
 	Backend,
 	BackendInvocation,
@@ -31,6 +32,54 @@ const temp = useTempDir("run-one-task-test-");
 const execFileAsync = promisify(execFile);
 
 describe("run-one-task", () => {
+	test.each([
+		"preflight",
+		"postflight",
+		"during-postflight",
+	] as const)("blocks a %s probe journal before verification or commit", async (phase) => {
+		const fixture = await setupGitFixture();
+		const journal = join(
+			probeJournalDirectory(fixture.projectRoot),
+			"journal-corrupt",
+		);
+		const events: DriverEvent[] = [];
+		const run = vi.fn(async () => {
+			if (phase === "postflight") await mkdir(journal, { recursive: true });
+			return successfulResult();
+		});
+		if (phase === "preflight") await mkdir(journal, { recursive: true });
+		try {
+			const outcome = await runOneTask(
+				createSpec(fixture, {
+					postflightCommands: [
+						phase === "during-postflight"
+							? nodeCommand(
+									`require('fs').mkdirSync(${JSON.stringify(journal)}, { recursive: true })`,
+								)
+							: nodeCommand("process.exit(7)"),
+					],
+				}),
+				createCtx(fixture, createBackend(run), events),
+				fixture.taskId,
+			);
+			expect(outcome).toMatchObject({
+				status: "blocked",
+				reason: expect.stringContaining(`recovery-required: ${journal}`),
+			});
+			expect(events.some((event) => event.type === "verify")).toBe(
+				phase === "during-postflight",
+			);
+			expect(run).toHaveBeenCalledTimes(phase === "preflight" ? 0 : 1);
+			expect((await fixture.taskManager.getTask(fixture.taskId))?.status).toBe(
+				"Blocked",
+			);
+		} finally {
+			await rm(probeJournalDirectory(fixture.projectRoot), {
+				recursive: true,
+				force: true,
+			});
+		}
+	});
 	test("run-one-task happy path marks the task done and emits spawn_completed", async () => {
 		const fixture = await setupFixture();
 		const events: DriverEvent[] = [];

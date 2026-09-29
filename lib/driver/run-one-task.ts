@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { probeJournalBlockReason } from "../agents/drive-worker-tool-guard.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { Backend } from "./backends/types.ts";
 import {
@@ -207,7 +208,21 @@ async function runTaskAttempt(
 			body: parsedReport.raw,
 		});
 	}
+	const beforePostflight = await blockForProbeJournal(
+		spec,
+		ctx,
+		taskId,
+		attemptNumber,
+	);
+	if (beforePostflight) return beforePostflight;
 	const postVerifyResults = await runPostVerify(spec, ctx, taskId);
+	const beforeCommit = await blockForProbeJournal(
+		spec,
+		ctx,
+		taskId,
+		attemptNumber,
+	);
+	if (beforeCommit) return beforeCommit;
 	const allowUnknownSuccess = await canInferUnknownSuccess(
 		spec,
 		ctx,
@@ -296,6 +311,27 @@ async function runTaskAttempt(
 			});
 		},
 	};
+}
+
+async function blockForProbeJournal(
+	spec: DriverRunSpec,
+	ctx: RunOneTaskCtx,
+	taskId: string,
+	attemptNumber: number,
+): Promise<TaskAttemptResult | undefined> {
+	const reason = probeJournalBlockReason(spec.projectRoot);
+	if (!reason) return undefined;
+	await appendDriveAttemptRecord({
+		taskManager: ctx.taskManager,
+		taskId,
+		runId: spec.runId,
+		outcome: "blocked",
+		attemptNumber,
+		body: reason,
+	});
+	await ctx.taskManager.updateTask(taskId, { status: "Blocked" });
+	await emit(ctx, spec, { type: "task_blocked", taskId, reason });
+	return { kind: "outcome", outcome: { status: "blocked", reason } };
 }
 
 function spawnFailureCandidate(
@@ -527,7 +563,14 @@ async function runPreflight(
 	taskId: string,
 ): Promise<{ passed: true } | { passed: false; reason: string }> {
 	await emit(ctx, spec, { type: "preflight", taskId, status: "started" });
-	const result = await checkDrivePreflight(spec, ctx.abortSignal);
+	const probeReason = probeJournalBlockReason(spec.projectRoot);
+	const result = probeReason
+		? {
+				passed: false as const,
+				reason: probeReason,
+				details: { stderr: probeReason },
+			}
+		: await checkDrivePreflight(spec, ctx.abortSignal);
 	if (!result.passed) {
 		await emit(ctx, spec, {
 			type: "preflight",
@@ -535,6 +578,22 @@ async function runPreflight(
 			status: "failed",
 			details: result.details,
 		});
+		if (probeReason) {
+			await appendDriveAttemptRecord({
+				taskManager: ctx.taskManager,
+				taskId,
+				runId: spec.runId,
+				outcome: "blocked",
+				attemptNumber: 1,
+				body: probeReason,
+			});
+			await ctx.taskManager.updateTask(taskId, { status: "Blocked" });
+			await emit(ctx, spec, {
+				type: "task_blocked",
+				taskId,
+				reason: probeReason,
+			});
+		}
 		return result;
 	}
 	await emit(ctx, spec, { type: "preflight", taskId, status: "passed" });
