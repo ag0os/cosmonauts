@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-772
 createdAt: '2026-09-28T15:24:34.550Z'
-updatedAt: '2026-09-29T00:04:41.160Z'
+updatedAt: '2026-09-29T00:06:45.729Z'
 ---
 
 ## Description
@@ -42,3 +42,8 @@ Addendum (2026-09-28, plan D-024): for critical-complexity functions the INV-003
 ### Coordinator note before attempt 1 (2026-09-29, successor #2)
 
 Model: this slice runs on `openrouter/deepseek/deepseek-v4-pro` (plan D-027, human Q-011). Rules learned from slice 7: (1) call `analysis_complexity` one metric per turn, never in parallel, at most twice per metric; for every other confirmation use the direct diagnostic `bunx fallow health --complexity --format json --quiet --no-cache` filtered locally by path and name, recorded verbatim as diagnosis (D-024). (2) Never run `git checkout`, `git stash`, `git reset`, or any git write; Drive commits. (3) When you call `task_edit`, never pass `title`; only `implementationNotes` (paste the whole existing body back plus your additions) and `checkAc`. (4) This is a characterization task: new test files only; never modify an existing test (Q-002 hard stop: report `blocked`). (5) Slice-start commit `S` is the current HEAD at launch; record it and `C` per the ACs.
+
+
+### Coordinator note before attempt 1, addendum (2026-09-29, plan D-028 / Q-012): backend
+
+This attempt runs on the `claude-cli` backend (Claude Code, `--model sonnet`), not the Pi subagent. You have no `analysis_*` tools: for AC #4/#7 record the direct diagnostic `bunx fallow health --complexity --format json --quiet --no-cache` filtered to your nine owned functions (cyclomatic, cognitive, CRAP, coverage tier), verbatim as diagnosis; the coordinator adds the `analysis_status` and surface-capability record at verdict time (D-028), so tick #7 once the five gate commands exit 0 and your diagnostic rows are recorded. Mark acceptance criteria by editing the checkboxes in this task file and append your evidence under `## Implementation Notes` (never rewrite earlier sections, never change the title line). Never touch `missions/reviews/`; never run git write operations; the driver commits.

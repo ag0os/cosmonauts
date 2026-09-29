@@ -204,6 +204,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: the user's direction ("cosmonauts can be used with deepseek interactively if needed") and Shepherd's live probe that `openrouter/deepseek/deepseek-v4-pro` answers through cosmo.
   - Decided by: coordinator, derived under human rulings Q-010/Q-011, 2026-09-28 (Shepherd relayed)
 
+- **D-028 - Q-012: characterization slices run on the `claude-cli` backend; OpenRouter credit is reserved for refactor slices** *(Added 2026-09-29 by the implementing coordinator, successor #2)*
+  - Decision: TASK-775, 777, 779 and 781 (test-only characterization) run through `run_driver` with `backend: 'claude-cli'` and `COSMONAUTS_DRIVER_CLAUDE_ARGS='--model sonnet'`, the same five postflight gates, `driver-commits`, and the D-015 freeze check; the launcher stays cosmo on `openrouter/deepseek/deepseek-v4-flash`. Because a claude-cli worker has no Pi `analysis_*` tools and a test-only slice acts on no finding (INV-003's trace-before-edit does not bind), the worker records the direct Fallow diagnostic and the coordinator adds the `analysis_status` + complexity surface record at verdict time from a one-turn Pi session on `openrouter/deepseek/deepseek-v4-flash`. The first claude-cli slice is a trial: commit parent, postflight in the event log, and no `missions/reviews/` edits by the worker are verified. The coordinator stops before launching TASK-776 (first remaining refactor slice) so the user can decide an OpenRouter top-up. A claude worker at 0% CPU mid-turn is out of usage: kill, record, escalate.
+  - Alternatives: keep DeepSeek for every slice (credit exhausted after one or two more slices); wait for the Codex cap.
+  - Why: the user's direction on re-allocating the remaining credit; test-only slices do not need the Pi analysis surface.
+  - Decided by: Shepherd, derived under human rulings Q-010/Q-011, 2026-09-29 (rulings file round 6)
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
