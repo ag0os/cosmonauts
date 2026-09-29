@@ -15,6 +15,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Done
 
+- **Slice 20 / TASK-788 Done** (2026-09-29 06:53Z, attempt 1 on gpt-6-sol, 15 min):
+  Drive commit `8f770e9d`, state `464c13a7`. One owned file; the seven script
+  clone groups gone (12 groups repo-wide, none in the script); shipped script
+  output byte-identical at `S` and tip; new helpers ≤4/≤4; freeze clean from
+  `S = 35a2c4d5`; five gates passed.
 - **Slice 19 / TASK-781 Done** (2026-09-29 06:29Z, attempt 1 on gpt-6-sol, 37 min):
   Drive commit `1a9f62ce`, state `6677665e`. One new test file (10 cases); all 13
   `runPass` return sites probed reached; freeze clean from `S = ee22aefe`; five
@@ -123,8 +128,9 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-788** (stage 4b corrective extraction, D-035) on the Pi worker. Then 782
-(`C` = `1a9f62ce`) → 784 (now also depends on 788) → 783.
+**TASK-782** (stage 15a: `runPass` + deferred `recoverAcceptedEpisodeFinalization` +
+the nine-group living-memory family; `C` = `1a9f62ce`) on the Pi worker. Then
+784 → 783 → `/implement-plan` Phases 2-4.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -269,7 +275,7 @@ Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.
 ## HEAD
 
 `feature/project-health-audit`, record-only commit after slice 13 (see `git log`),
-off local `main` `64dca3c`. 16 of 21 tasks Done; tree clean.
+off local `main` `64dca3c`. 17 of 21 tasks Done; tree clean.
 Needs the user: nothing now; gate-owned R-013 sign-off at closeout.
 
 ## Successor handoff — continue implementation (refreshed by successor #2, 2026-09-29 02:15Z, after Q-013)
