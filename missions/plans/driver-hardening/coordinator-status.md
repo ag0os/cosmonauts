@@ -27,6 +27,7 @@ suite-reliability → execution-liveness resumes.
 - Baseline at `0f1ebf70`: typecheck green, lint green (644 files), full suite 3933/3933 in 288 files (exit 0).
 
 - **Slice 1 / TASK-790 — DONE** (run `run-d89a6674`, 2026-09-29 17:04–17:21Z, one attempt, worker `success`). Drive commit `d1e53585` (parent `4bbe5f40` = slice start). Five `verify` `passed`. `tests/`: one new file (`tests/tasks/task-note-preservation.test.ts`, 6 cases incl. separate-process concurrent appends) + purely additive cases in `tests/cli/tasks/commands/edit.test.ts` and `tests/extensions/task-tools.test.ts`; no expectation changes, no `.skip/.only/.todo`. Task path canonical, all 7 ACs checked, D-030 red/green row and D-026 hand-off (per-task `task-update-<ID>.lock`, 10 s bound, outside the episode lock) recorded in the task notes. **Boundary artifact:** Drive's `git add --all .` swept the untracked `PI-UPGRADE-STATUS.md` into `d1e53585`; un-tracked again (`git rm --cached`) in the record commit that follows, file left on disk. Improvement-pass candidate: Drive stages every untracked file outside `missions/`/`memory/`.
+- **Slice 2 / TASK-791 — DONE** (run `run-dca91814`, 2026-09-29 17:22–17:38Z, one attempt, worker `success`). Drive commit `10664396` (parent `0e2fe9f9` = slice start). Five `verify` `passed`. `tests/`: additive cases in four driver/extension suites; six pre-existing expectations that pinned the note-replacement defect changed, each with an inline `AC-020` comment (finalization-failure, unknown-reason, post-verify-failed, and `verify failed` note assertions now assert the worker note plus the `### Drive — outcome … — attempt … — run …` record; finalizer update is status-only `{ status: "Blocked" }`). No `.skip/.only/.todo`, no `lib/durable-runtime/`, no config files. All 7 ACs checked; D-030 row (RED `preserves worker notes and records unknown output before inferred success` at `0e2fe9f9`, GREEN same test, mutation-checked). Cosmo's final text: "Event log path: not returned" — the AC-016 defect, expected until slice 11.
 
 ## Blocked
 
@@ -41,7 +42,7 @@ Nothing. H-001 ruled (a),(a) and applied (spec AC-012 amended on record; plan D-
 | Task | Slice | Owns | Drive? |
 |---|---|---|---|
 | TASK-790 | 1 task mutation + title hygiene | B-003 | yes — DONE `d1e53585` |
-| TASK-791 | 2 Drive records (failure/partial/unknown/spawn-failure) | B-001 | yes |
+| TASK-791 | 2 Drive records (failure/partial/unknown/spawn-failure) | B-001 | yes — DONE `10664396` |
 | TASK-792 | 3 blocked report vertical slice | B-013 | yes |
 | TASK-793 | 4 retry event + nonterminal projection | B-002 | yes |
 | TASK-794 | 5 all-backend completion protocol (host-restart precondition recorded here) | B-004 | yes |
