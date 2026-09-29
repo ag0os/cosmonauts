@@ -72,8 +72,16 @@
 				"command": "bun",
 				"args": ["run", "typecheck"],
 				"timeoutMs": 120000
+			},
+			{
+				"id": "reachability",
+				"command": "bun",
+				"args": ["run", "check:reachability"],
+				"timeoutMs": 120000
 			}
-		]
+		],
+		"panelTimeoutMs": 1200000,
+		"assessmentTimeoutMs": 1800000
 	},
 	"knowledgeSurface": {
 		"enabled": true

@@ -9,16 +9,7 @@ Implementation started 2026-09-28.
 
 ## Needs the user
 
-- **Q-016 (from codex round 1, High):** D-010 (ratified Q-004(a)) says the record "proves that the tip differs from [the analyzed commit] only by those closeout artifacts". Under `driver-commits` the tip also carries Drive's task-state commit and the coordinator's record-only commits, so `git diff --name-only ea27538e <tip>` lists the seven closeout paths plus `missions/plans/project-health-audit/{coordinator-status,plan}.md` and the TASK-783/TASK-784 files. D-036 (coordinator, derived) evaluates the check excluding `missions/tasks/` and `missions/plans/`. Codex round 2 added that the review-phase records (`missions/reviews/{codex,qm,improvements}/`) widen the diff further; D-038 puts them in the same excluded class (seven paths hold again with `missions/tasks/`, `missions/plans/`, and those three directories excluded). Ratify the D-036 + D-038 reading, or rule otherwise (the alternative is rewriting Drive history or leaving review records uncommitted). Recommended: (a) ratify D-036 and D-038.
-- **Q-017 (from codex round 4, High):** the QM F-002 remediation test (`narrative-provider.test.ts`) post-dated the ratified analyzed commit `ea27538e`, breaking D-010's closeout claim; it is removed from the tree and preserved at `missions/reviews/qm/project-health-audit-run-2/proposed-narrative-provider.test.ts.txt` (D-040). Choose: (a) land it as a post-plan follow-up task after archive (recommended), or (b) re-run stage-16 closeout at a new analyzed commit that includes it.
-- At closeout: gate-owned R-013 sign-off (`.fallow-baselines/*`, `fallow-provider.ts` incl. the D-023 `warn` gap, `.cosmonauts/suppression-exceptions.json`, **`biome.json`** D-019/D-021), plus the cosmetic stale `:593` reference in `.fallow-baselines/manifest.json` provenance text (D-037 (2)).
-- QM run 2 also asks whether `bun run check:reachability` should become a configured `qualityReview` check on `main` (today it is postflight-only). Separately, the QM panel budget (`qualityReview.panelTimeoutMs`, default 300 000 ms, read from `main`'s config) was too small for this diff in run 1; raising it is a `main` config decision.
-
-Earlier: nothing pending. Q-015 ruled (B) by Shepherd 2026-09-29 (rulings round 9, plan D-034).
-At closeout: gate-owned R-013 sign-off. Earlier: Q-013 resolved the provider (Codex back, gpt-6-sol). At closeout:
-gate-owned R-013 sign-off. Earlier: Q-008 ruled (a) 2026-09-28 (human, relayed; plan D-022, spec Q-008,
-rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
-`plan.md` D-010/D-012/D-013/D-017.
+Nothing. Round 10 (2026-09-29, relayed by Shepherd): Q-016 RATIFIED (D-036 + D-038), Q-017 (a), R-013 SIGNED OFF (all listed gate-owned paths incl. `biome.json`), config question 1 YES (`check:reachability` configured), config question 2 YES (QM timeouts raised, D-041). Shepherd runs the gates and fast-forwards local `main`; no push.
 
 ## Done
 
@@ -153,7 +144,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. `/implement-plan` Phases 2-4 complete (successor #4, 2026-09-29 09:05Z). Awaiting human rulings Q-016 and Q-017 and the R-013 sign-off packet. No push, merge, or PR.
+Nothing. `/implement-plan` Phases 2-4 complete; round-10 rulings applied (D-041), Q-017 follow-up task created, plan archived and distilled to `memory/agent/proposals/project-health-audit/` (see the closing note below). No push, merge, or PR.
+
+## Closing note (successor #4, 2026-09-29, after the round-10 rulings)
+
+Rulings applied: Q-016 ratified (D-036/D-038 marked ratified), Q-017 (a) (D-040), R-013 signed off, config questions 1-2 (D-041: `reachability` check added to `qualityReview.checks`; `panelTimeoutMs` 1 200 000, `assessmentTimeoutMs` 1 800 000; backfill amendment 4 registers the new config digest `0e10af9c…6bd8`; `.cosmonauts/config.json` is a human-authorized eighth path beside the seven closeout artifacts). Follow-up task **TASK-789** (labels `follow-up`, `quality-manager`, `testing`; not under this plan) lands the preserved F-002 test after archive. Plan status set to `completed`; archived with `cosmonauts plan archive project-health-audit`; distilled as ten OKF proposals under `memory/agent/proposals/project-health-audit/` (root `memory/<slug>.md` distillations are retired per the archive skill and `docs/memory.md`). Gates at the final tip: test 287/3920 EXIT=0, lint, typecheck, reachability 212/212, suppressions, check-artifacts Issues: 0. Shepherd runs the gates and fast-forwards local `main`; no push.
 
 ## Final report — `/implement-plan project-health-audit` Phases 2-4 (successor #4, 2026-09-29)
 
