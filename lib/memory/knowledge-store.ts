@@ -185,73 +185,14 @@ async function retrieveKnowledge(options: {
 			options.query.includeRetired === true,
 		);
 		for (const path of paths) {
-			const scan = await scanKnowledgeFile({
+			await scanForKnowledge({
+				root,
 				path,
 				scope,
-				warnings,
-				...(options.readOptions?.byteLimits === undefined
-					? {}
-					: {
-							limits: {
-								maxRecordBytes: options.readOptions.byteLimits.maxRecordBytes,
-								remainingBytes: Math.max(
-									0,
-									options.readOptions.byteLimits.maxAggregateBytes -
-										tally.bodyBytesAdmitted,
-								),
-							},
-						}),
+				query: options.query,
+				readOptions: options.readOptions,
+				state: { warnings, records, readDeclines, inventoryRecords, tally },
 			});
-			if (scan.kind === "skipped") continue;
-			if (scan.decline !== undefined) readDeclines.push(scan.decline);
-			const scanned = scan.file;
-			tally.filesScanned += 1;
-			tally.bytesRead += scanned.bytesRead;
-			if (scan.decline === undefined) {
-				tally.bodyBytesAdmitted += scanned.bytesRead;
-			}
-			try {
-				const physicalResource = toPosixRelative(root, path);
-				const retired = physicalResource.startsWith("retired/");
-				const logicalResource = retired
-					? physicalResource.slice("retired/".length)
-					: physicalResource;
-				const parsed = parseHumanKnowledgeRecord({
-					raw: scanned.raw,
-					physicalResource: logicalResource,
-					physicalScope: scope,
-					mtime: scanned.mtime,
-					...(scanned.contentMetadata === undefined
-						? {}
-						: { contentMetadata: scanned.contentMetadata }),
-				});
-				if (!parsed.ok) {
-					warnings.push({ path, message: parsed.message });
-					continue;
-				}
-				const record = toRetrievedKnowledgeRecord({
-					record: parsed.record,
-					path,
-				});
-				if (matchesQuery(record, options.query)) {
-					if (options.readOptions?.byteLimits !== undefined) {
-						inventoryRecords.push({ record, digest: scanned.digest });
-					}
-					if (scan.decline !== undefined) continue;
-					records.push({
-						...record,
-						...(options.readOptions?.includeRawContent
-							? { rawContent: scanned.raw }
-							: {}),
-						...(retired ? { retired: true } : {}),
-					});
-				}
-			} catch (error: unknown) {
-				warnings.push({
-					path,
-					message: error instanceof Error ? error.message : String(error),
-				});
-			}
 		}
 	}
 
@@ -285,6 +226,126 @@ async function retrieveKnowledge(options: {
 			bytesRead: tally.bytesRead,
 			durationMs: performance.now() - startedAt,
 		},
+	};
+}
+
+interface KnowledgeRetrievalState {
+	readonly warnings: MemoryWarning[];
+	readonly records: KnowledgeRetrievedMemoryRecord[];
+	readonly readDeclines: KnowledgeReadDecline[];
+	readonly inventoryRecords: Array<{
+		record: RetrievedMemoryRecord;
+		digest: string;
+	}>;
+	readonly tally: ScanTally;
+}
+
+interface KnowledgeScanContext {
+	readonly root: string;
+	readonly path: string;
+	readonly scope: DurableScope;
+	readonly query: MemoryQuery;
+	readonly readOptions?: KnowledgeReadOptions;
+	readonly state: KnowledgeRetrievalState;
+}
+
+async function scanForKnowledge(options: KnowledgeScanContext): Promise<void> {
+	const { path, scope, state, readOptions } = options;
+	const scan = await scanKnowledgeFile({
+		path,
+		scope,
+		warnings: state.warnings,
+		...(readOptions?.byteLimits === undefined
+			? {}
+			: {
+					limits: {
+						maxRecordBytes: readOptions.byteLimits.maxRecordBytes,
+						remainingBytes: Math.max(
+							0,
+							readOptions.byteLimits.maxAggregateBytes -
+								state.tally.bodyBytesAdmitted,
+						),
+					},
+				}),
+	});
+	if (scan.kind === "skipped") return;
+	if (scan.decline !== undefined) state.readDeclines.push(scan.decline);
+	state.tally.filesScanned += 1;
+	state.tally.bytesRead += scan.file.bytesRead;
+	if (scan.decline === undefined)
+		state.tally.bodyBytesAdmitted += scan.file.bytesRead;
+	admitKnowledgeScan(options, scan);
+}
+
+function admitKnowledgeScan(
+	options: KnowledgeScanContext,
+	scan: Extract<KnowledgeScanResult, { kind: "read" }>,
+): void {
+	const { root, path, scope, query, readOptions, state } = options;
+	const scanned = scan.file;
+	try {
+		const { parsed, retired } = parseScannedKnowledge(
+			root,
+			path,
+			scope,
+			scanned,
+		);
+		if (!parsed.ok) {
+			state.warnings.push({ path, message: parsed.message });
+			return;
+		}
+		const record = toRetrievedKnowledgeRecord({ record: parsed.record, path });
+		if (!matchesQuery(record, query)) return;
+		if (readOptions?.byteLimits !== undefined) {
+			state.inventoryRecords.push({ record, digest: scanned.digest });
+		}
+		if (scan.decline !== undefined) return;
+		state.records.push(
+			retrievedKnowledge(record, scanned.raw, retired, readOptions),
+		);
+	} catch (error: unknown) {
+		state.warnings.push({
+			path,
+			message: error instanceof Error ? error.message : String(error),
+		});
+	}
+}
+
+function parseScannedKnowledge(
+	root: string,
+	path: string,
+	scope: DurableScope,
+	scanned: KnowledgeScannedFile,
+): { parsed: ReturnType<typeof parseHumanKnowledgeRecord>; retired: boolean } {
+	const physicalResource = toPosixRelative(root, path);
+	const retired = physicalResource.startsWith("retired/");
+	const logicalResource = retired
+		? physicalResource.slice("retired/".length)
+		: physicalResource;
+	return {
+		retired,
+		parsed: parseHumanKnowledgeRecord({
+			raw: scanned.raw,
+			physicalResource: logicalResource,
+			physicalScope: scope,
+			mtime: scanned.mtime,
+			...(scanned.contentMetadata === undefined
+				? {}
+				: { contentMetadata: scanned.contentMetadata }),
+		}),
+	};
+}
+
+function retrievedKnowledge(
+	record: RetrievedMemoryRecord,
+	raw: string,
+	retired: boolean,
+	readOptions?: KnowledgeReadOptions,
+): KnowledgeRetrievedMemoryRecord {
+	return {
+		...record,
+		...(readOptions?.includeRawContent ? { rawContent: raw } : {}),
+		...(retired ? { retired: true } : {}),
 	};
 }
 

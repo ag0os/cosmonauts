@@ -93,103 +93,18 @@ export async function readRetirementReceiptInventory(options: {
 	const retiredRecordPaths = new Set<string>();
 	const promotionRounds: number[] = [];
 
-	validateContiguousRounds(ledgerFiles, "promotion", issues);
-	for (const file of ledgerFiles) {
-		const data = parseFrontmatter(file, issues);
-		if (!data) continue;
-		if (data.kind !== "knowledge-surface-promotion") {
-			issues.push(`ledger-kind:${file.path}`);
-			continue;
-		}
-		if (data.round !== file.round) {
-			issues.push(`ledger-round:${file.path}`);
-			continue;
-		}
-		promotionRounds.push(file.round);
-
-		const rows = requireArray(
-			data.promotions,
-			`promotions:${file.path}`,
-			issues,
-		);
-		if (rows) {
-			if (
-				typeof data.promotedCount !== "number" ||
-				!Number.isInteger(data.promotedCount) ||
-				data.promotedCount !== rows.length
-			) {
-				issues.push(`promoted-count:${file.path}`);
-			}
-			for (const [index, row] of rows.entries()) {
-				const context = `promotion:${file.path}:${index}`;
-				if (!isExactObject(row, ["from", "to", "sha256"])) {
-					issues.push(context);
-					continue;
-				}
-				if (
-					!isSafeProposalPath(row.from) ||
-					!isSafeKnowledgePath(row.to) ||
-					!isSha256(row.sha256)
-				) {
-					issues.push(context);
-					continue;
-				}
-				if (promotedPaths.has(row.to)) {
-					issues.push(`duplicate-promotion:${row.to}`);
-					continue;
-				}
-				promotedPaths.add(row.to);
-				const promotion = {
-					round: file.round,
-					from: row.from,
-					to: row.to,
-					sha256: row.sha256,
-				} satisfies PromotionReceipt;
-				promotions.push(promotion);
-				activeBaselines.set(row.to, {
-					round: file.round,
-					path: row.to,
-					sha256: row.sha256,
-					source: "promotion",
-				});
-			}
-		}
-
-		const curated = parsePathList({
-			value: data.curatedRecords,
-			context: `curated-records:${file.path}`,
-			issues,
-		});
-		for (const path of curated) {
-			curatedRecords.push(path);
-			activeBaselines.delete(path);
-		}
-
-		const retired = parsePathList({
-			value: data.retiredRecords,
-			context: `retired-records:${file.path}`,
-			issues,
-		});
-		for (const path of retired) {
-			if (retiredRecordPaths.has(path)) {
-				issues.push(`duplicate-retired-record:${path}`);
-				continue;
-			}
-			retiredRecordPaths.add(path);
-			retiredRecords.push(path);
-		}
-
-		const baselines = parseRatifiedBaselines({
-			value: data.ratifiedBaselines,
-			round: file.round,
-			context: `ratified-baselines:${file.path}`,
-			issues,
-		});
-		for (const baseline of baselines) {
-			ratifiedBaselines.push(baseline);
-			activeBaselines.set(baseline.path, baseline);
-		}
-	}
+	collectPromotionLedger({
+		ledgerFiles,
+		issues,
+		promotions,
+		curatedRecords,
+		retiredRecords,
+		ratifiedBaselines,
+		activeBaselines,
+		promotedPaths,
+		retiredRecordPaths,
+		promotionRounds,
+	});
 
 	const retirementEvents: RetirementReceiptEvent[] = [];
 	const retirementStates = new Map<string, RetirementReceiptState>();
@@ -210,62 +125,15 @@ export async function readRetirementReceiptInventory(options: {
 		if (!events) continue;
 		if (events.length === 0) issues.push(`empty-events:${file.path}`);
 		for (const [index, value] of events.entries()) {
-			const context = `event:${file.path}:${index}`;
-			if (!isRecord(value) || typeof value.kind !== "string") {
-				issues.push(context);
-				continue;
-			}
-			if (value.kind === "retired") {
-				const event = parseRetiredEvent(value, file.round, context, issues);
-				if (!event) continue;
-				if (retirementStates.has(event.id)) {
-					issues.push(`duplicate-retirement-id:${event.id}`);
-					continue;
-				}
-				if (activeRetirementByPath.has(event.path)) {
-					issues.push(`conflicting-retirement:${event.path}`);
-					continue;
-				}
-				retirementEvents.push(event);
-				retirementStates.set(event.id, {
-					id: event.id,
-					path: event.path,
-					digest: event.digest,
-					status: "retired",
-					round: event.round,
-				});
-				activeRetirementByPath.set(event.path, event.id);
-				continue;
-			}
-			if (value.kind === "restored") {
-				const event = parseRestoredEvent(value, file.round, context, issues);
-				if (!event) continue;
-				const previous = retirementStates.get(event.retirementId);
-				if (!previous) {
-					issues.push(`unknown-restoration:${event.retirementId}`);
-					continue;
-				}
-				if (
-					previous.status !== "retired" ||
-					previous.path !== event.path ||
-					previous.digest !== event.digest ||
-					activeRetirementByPath.get(event.path) !== event.retirementId
-				) {
-					issues.push(`conflicting-restoration:${event.retirementId}`);
-					continue;
-				}
-				retirementEvents.push(event);
-				retirementStates.set(event.retirementId, {
-					id: event.retirementId,
-					path: event.path,
-					digest: event.digest,
-					status: "restored",
-					round: event.round,
-				});
-				activeRetirementByPath.delete(event.path);
-				continue;
-			}
-			issues.push(`unknown-event-kind:${context}`);
+			applyRetirementEvent({
+				value,
+				file,
+				index,
+				issues,
+				retirementEvents,
+				retirementStates,
+				activeRetirementByPath,
+			});
 		}
 	}
 
@@ -285,6 +153,235 @@ export async function readRetirementReceiptInventory(options: {
 			retirementStates: [...retirementStates.values()].sort(comparePath),
 		},
 	};
+}
+
+interface PromotionLedgerState {
+	readonly issues: string[];
+	readonly promotions: PromotionReceipt[];
+	readonly curatedRecords: string[];
+	readonly retiredRecords: string[];
+	readonly ratifiedBaselines: RatifiedBaselineReceipt[];
+	readonly activeBaselines: Map<string, RatifiedBaselineReceipt>;
+	readonly promotedPaths: Set<string>;
+	readonly retiredRecordPaths: Set<string>;
+	readonly promotionRounds: number[];
+}
+
+function collectPromotionLedger(
+	input: PromotionLedgerState & { readonly ledgerFiles: readonly RoundFile[] },
+): void {
+	validateContiguousRounds(input.ledgerFiles, "promotion", input.issues);
+	for (const file of input.ledgerFiles) {
+		const data = parseFrontmatter(file, input.issues);
+		if (!data) continue;
+		if (data.kind !== "knowledge-surface-promotion") {
+			input.issues.push(`ledger-kind:${file.path}`);
+			continue;
+		}
+		if (data.round !== file.round) {
+			input.issues.push(`ledger-round:${file.path}`);
+			continue;
+		}
+		input.promotionRounds.push(file.round);
+		collectPromotionFile(file, data, input);
+	}
+}
+
+function collectPromotionFile(
+	file: RoundFile,
+	data: Record<string, unknown>,
+	state: PromotionLedgerState,
+): void {
+	const {
+		issues,
+		promotedPaths,
+		promotions,
+		activeBaselines,
+		curatedRecords,
+		retiredRecordPaths,
+		retiredRecords,
+		ratifiedBaselines,
+	} = state;
+	const rows = requireArray(data.promotions, `promotions:${file.path}`, issues);
+	if (rows) {
+		if (
+			typeof data.promotedCount !== "number" ||
+			!Number.isInteger(data.promotedCount) ||
+			data.promotedCount !== rows.length
+		) {
+			issues.push(`promoted-count:${file.path}`);
+		}
+		collectPromotionRows({
+			rows,
+			file,
+			issues,
+			promotedPaths,
+			promotions,
+			activeBaselines,
+		});
+	}
+	const curated = parsePathList({
+		value: data.curatedRecords,
+		context: `curated-records:${file.path}`,
+		issues,
+	});
+	for (const path of curated) {
+		curatedRecords.push(path);
+		activeBaselines.delete(path);
+	}
+	const retired = parsePathList({
+		value: data.retiredRecords,
+		context: `retired-records:${file.path}`,
+		issues,
+	});
+	for (const path of retired) {
+		if (retiredRecordPaths.has(path)) {
+			issues.push(`duplicate-retired-record:${path}`);
+			continue;
+		}
+		retiredRecordPaths.add(path);
+		retiredRecords.push(path);
+	}
+	const baselines = parseRatifiedBaselines({
+		value: data.ratifiedBaselines,
+		round: file.round,
+		context: `ratified-baselines:${file.path}`,
+		issues,
+	});
+	for (const baseline of baselines) {
+		ratifiedBaselines.push(baseline);
+		activeBaselines.set(baseline.path, baseline);
+	}
+}
+
+interface RetirementEventState {
+	readonly issues: string[];
+	readonly retirementEvents: RetirementReceiptEvent[];
+	readonly retirementStates: Map<string, RetirementReceiptState>;
+	readonly activeRetirementByPath: Map<string, string>;
+}
+
+function applyRetirementEvent(
+	input: RetirementEventState & {
+		readonly value: unknown;
+		readonly file: RoundFile;
+		readonly index: number;
+	},
+): void {
+	const { value, file, index, issues } = input;
+	const context = `event:${file.path}:${index}`;
+	if (!isRecord(value) || typeof value.kind !== "string") {
+		issues.push(context);
+		return;
+	}
+	if (value.kind === "retired") {
+		const event = parseRetiredEvent(value, file.round, context, issues);
+		if (event) applyRetiredEvent(event, input);
+		return;
+	}
+	if (value.kind === "restored") {
+		const event = parseRestoredEvent(value, file.round, context, issues);
+		if (event) applyRestoredEvent(event, input);
+		return;
+	}
+	issues.push(`unknown-event-kind:${context}`);
+}
+
+function applyRetiredEvent(
+	event: RetiredReceiptEvent,
+	state: RetirementEventState,
+): void {
+	const { issues, retirementEvents, retirementStates, activeRetirementByPath } =
+		state;
+	if (retirementStates.has(event.id)) {
+		issues.push(`duplicate-retirement-id:${event.id}`);
+		return;
+	}
+	if (activeRetirementByPath.has(event.path)) {
+		issues.push(`conflicting-retirement:${event.path}`);
+		return;
+	}
+	retirementEvents.push(event);
+	retirementStates.set(event.id, {
+		id: event.id,
+		path: event.path,
+		digest: event.digest,
+		status: "retired",
+		round: event.round,
+	});
+	activeRetirementByPath.set(event.path, event.id);
+}
+
+function applyRestoredEvent(
+	event: RestoredReceiptEvent,
+	state: RetirementEventState,
+): void {
+	const { issues, retirementEvents, retirementStates, activeRetirementByPath } =
+		state;
+	const previous = retirementStates.get(event.retirementId);
+	if (!previous) {
+		issues.push(`unknown-restoration:${event.retirementId}`);
+		return;
+	}
+	if (
+		previous.status !== "retired" ||
+		previous.path !== event.path ||
+		previous.digest !== event.digest ||
+		activeRetirementByPath.get(event.path) !== event.retirementId
+	) {
+		issues.push(`conflicting-restoration:${event.retirementId}`);
+		return;
+	}
+	retirementEvents.push(event);
+	retirementStates.set(event.retirementId, {
+		id: event.retirementId,
+		path: event.path,
+		digest: event.digest,
+		status: "restored",
+		round: event.round,
+	});
+	activeRetirementByPath.delete(event.path);
+}
+
+function collectPromotionRows(input: {
+	readonly rows: readonly unknown[];
+	readonly file: RoundFile;
+	readonly issues: string[];
+	readonly promotedPaths: Set<string>;
+	readonly promotions: PromotionReceipt[];
+	readonly activeBaselines: Map<string, RatifiedBaselineReceipt>;
+}): void {
+	const { rows, file, issues, promotedPaths, promotions, activeBaselines } =
+		input;
+	for (const [index, row] of rows.entries()) {
+		const context = `promotion:${file.path}:${index}`;
+		if (
+			!isExactObject(row, ["from", "to", "sha256"]) ||
+			!isSafeProposalPath(row.from) ||
+			!isSafeKnowledgePath(row.to) ||
+			!isSha256(row.sha256)
+		) {
+			issues.push(context);
+			continue;
+		}
+		if (promotedPaths.has(row.to)) {
+			issues.push(`duplicate-promotion:${row.to}`);
+			continue;
+		}
+		promotedPaths.add(row.to);
+		promotions.push({
+			round: file.round,
+			from: row.from,
+			to: row.to,
+			sha256: row.sha256,
+		});
+		activeBaselines.set(row.to, {
+			round: file.round,
+			path: row.to,
+			sha256: row.sha256,
+			source: "promotion",
+		});
+	}
 }
 
 interface RoundFile {

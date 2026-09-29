@@ -1,5 +1,3 @@
-import type { Dirent } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { withEntityFileLock } from "../entity-file-lock.ts";
 import { createDurableMachineFiles } from "./durable-files.ts";
@@ -9,6 +7,7 @@ import {
 } from "./path-safety.ts";
 import {
 	ensureSafeContainedDirectory,
+	readOptionalRegularDirectoryEntries,
 	readSafeRegularText,
 	writeSafeExclusiveText,
 } from "./proposal-files.ts";
@@ -64,19 +63,11 @@ export function createAcceptedJudgmentReceiptStore(options: {
 		);
 	const list = async (): Promise<readonly AcceptedJudgmentReceipt[]> => {
 		const directory = join(options.projectRoot, RECEIPT_ROOT);
-		let entries: Dirent[];
-		try {
-			const metadata = await lstat(directory);
-			if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-				throw new Error(
-					`Accepted judgment receipt root is not a regular directory: ${directory}.`,
-				);
-			}
-			entries = await readdir(directory, { withFileTypes: true });
-		} catch (error: unknown) {
-			if (errorCode(error) === "ENOENT") return Object.freeze([]);
-			throw error;
-		}
+		const entries = await readOptionalRegularDirectoryEntries({
+			directory,
+			label: "Accepted judgment receipt",
+		});
+		if (entries === undefined) return Object.freeze([]);
 		const receipts: AcceptedJudgmentReceipt[] = [];
 		for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
 			if (entry.name.startsWith(".")) continue;
@@ -443,10 +434,4 @@ function isEvidenceKey(value: string): boolean {
 		isSafePosixRelativePath(path) &&
 		/^[a-f0-9]{64}$/u.test(digest ?? "")
 	);
-}
-
-function errorCode(error: unknown): string | undefined {
-	return error !== null && typeof error === "object" && "code" in error
-		? String((error as NodeJS.ErrnoException).code)
-		: undefined;
 }

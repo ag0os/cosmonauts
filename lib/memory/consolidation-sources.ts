@@ -712,13 +712,14 @@ async function removeEpisodeFile(options: {
 	}
 }
 
-function isEpisodePruneJournal(value: unknown): value is EpisodePruneJournal {
-	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+function hasPruneJournalFields(
+	value: unknown,
+): value is Record<keyof EpisodePruneJournal, unknown> {
+	if (value === null || typeof value !== "object" || Array.isArray(value))
 		return false;
-	}
 	const journal = value as Record<string, unknown>;
-	if (
-		Object.keys(journal).sort().join("\0") !==
+	return (
+		Object.keys(journal).sort().join("\0") ===
 			[
 				"digest",
 				"fileIdentity",
@@ -727,40 +728,51 @@ function isEpisodePruneJournal(value: unknown): value is EpisodePruneJournal {
 				"tombstonePath",
 			]
 				.sort()
-				.join("\0") ||
-		journal.schemaVersion !== 1 ||
-		typeof journal.originalPath !== "string" ||
-		typeof journal.tombstonePath !== "string" ||
-		typeof journal.digest !== "string" ||
-		!/^[a-f0-9]{64}$/u.test(journal.digest) ||
-		journal.fileIdentity === null ||
-		typeof journal.fileIdentity !== "object" ||
-		Array.isArray(journal.fileIdentity)
-	) {
+				.join("\0") &&
+		journal.schemaVersion === 1 &&
+		typeof journal.originalPath === "string" &&
+		typeof journal.tombstonePath === "string" &&
+		typeof journal.digest === "string" &&
+		/^[a-f0-9]{64}$/u.test(journal.digest)
+	);
+}
+
+function hasPruneFileIdentity(
+	value: unknown,
+): value is EpisodePruneJournal["fileIdentity"] {
+	if (value === null || typeof value !== "object" || Array.isArray(value))
 		return false;
-	}
-	const identity = journal.fileIdentity as Record<string, unknown>;
-	if (
-		Object.keys(identity).sort().join("\0") !== "device\0inode" ||
-		typeof identity.device !== "string" ||
-		identity.device.length === 0 ||
-		typeof identity.inode !== "string" ||
-		identity.inode.length === 0
-	) {
-		return false;
-	}
+	const identity = value as Record<string, unknown>;
+	return (
+		Object.keys(identity).sort().join("\0") === "device\0inode" &&
+		typeof identity.device === "string" &&
+		identity.device.length > 0 &&
+		typeof identity.inode === "string" &&
+		identity.inode.length > 0
+	);
+}
+
+function hasPrunePaths(originalPath: string, tombstonePath: string): boolean {
 	try {
-		assertDirectProjectEpisodePath(journal.originalPath);
+		assertDirectProjectEpisodePath(originalPath);
 	} catch {
 		return false;
 	}
 	return (
-		isSafePosixRelativePath(journal.tombstonePath) &&
-		posix.dirname(journal.tombstonePath) === PROJECT_EPISODE_DIRECTORY &&
+		isSafePosixRelativePath(tombstonePath) &&
+		posix.dirname(tombstonePath) === PROJECT_EPISODE_DIRECTORY &&
 		posix
-			.basename(journal.tombstonePath)
-			.startsWith(`.${posix.basename(journal.originalPath)}.`) &&
-		posix.basename(journal.tombstonePath).endsWith(".tombstone")
+			.basename(tombstonePath)
+			.startsWith(`.${posix.basename(originalPath)}.`) &&
+		posix.basename(tombstonePath).endsWith(".tombstone")
+	);
+}
+
+function isEpisodePruneJournal(value: unknown): value is EpisodePruneJournal {
+	return (
+		hasPruneJournalFields(value) &&
+		hasPruneFileIdentity(value.fileIdentity) &&
+		hasPrunePaths(value.originalPath as string, value.tombstonePath as string)
 	);
 }
 
@@ -788,10 +800,12 @@ export async function collectConsolidationSources(options: {
 	const warnings: MemoryWarning[] = [];
 	const sourceIds = new Set<string>();
 	const recordKeys = new Set<string>();
-	let admittedCorpus = 0;
-	let admittedCorpusBytes = 0;
-	let admittedEpisodes = 0;
-	let admittedEpisodeBytes = 0;
+	const admission = {
+		admittedCorpus: 0,
+		admittedCorpusBytes: 0,
+		admittedEpisodes: 0,
+		admittedEpisodeBytes: 0,
+	};
 	let inventoryComplete = true;
 	let knowledgeIndex: KnowledgeIndexRenderInput | undefined;
 	const requestedLimit = Math.max(
@@ -820,131 +834,33 @@ export async function collectConsolidationSources(options: {
 				: { representedKeys: options.representedKeys }),
 			...(options.signal === undefined ? {} : { signal: options.signal }),
 		});
-		if (typeof snapshot.inventoryComplete !== "boolean") {
-			throw new ConsolidationSourceContractError(
-				`Source ${source.id} must declare inventory completeness.`,
-			);
-		}
-		if (!Number.isSafeInteger(snapshot.omitted) || snapshot.omitted < 0) {
-			throw new ConsolidationSourceContractError(
-				`Source ${source.id} returned an invalid omitted count.`,
-			);
-		}
-		if (
-			!Number.isSafeInteger(snapshot.deferred) ||
-			snapshot.deferred < 0 ||
-			snapshot.deferred > snapshot.omitted
-		) {
-			throw new ConsolidationSourceContractError(
-				`Source ${source.id} returned an invalid deferred count.`,
-			);
-		}
-		if (snapshot.records.length > requestedLimit) {
-			throw new ConsolidationSourceContractError(
-				`Source ${source.id} returned over-limit output (${snapshot.records.length} > ${requestedLimit}).`,
-			);
-		}
+		validateSourceSnapshot(snapshot, source.id, requestedLimit);
 		const sourceInventory = snapshot.inventory?.map((candidate) =>
 			immutableValidatedInventoryRecord(candidate, source.id),
 		);
 		inventoryComplete = inventoryComplete && snapshot.inventoryComplete;
 		warnings.push(...immutableSourceWarnings(snapshot.warnings, source.id));
-		if (snapshot.knowledgeIndex !== undefined) {
-			if (knowledgeIndex !== undefined) {
-				throw new ConsolidationSourceContractError(
-					"Multiple knowledge-index render-input providers are not supported.",
-				);
-			}
-			knowledgeIndex = immutableKnowledgeIndexInput(snapshot.knowledgeIndex);
-		}
+		knowledgeIndex = collectKnowledgeIndex(
+			snapshot.knowledgeIndex,
+			knowledgeIndex,
+		);
 
-		let admitted = 0;
-		let collectorDeferred = 0;
-		const validatedSourceRecords: ConsolidationSourceRecord[] = [];
-		for (const candidate of snapshot.records) {
-			const record = immutableValidatedRecord(candidate, source.id);
-			const contentBytes = Buffer.byteLength(record.content, "utf-8");
-			const recordByteLimit =
-				record.kind === "episode"
-					? options.maxEpisodeRecordBytes
-					: options.maxCorpusRecordBytes;
-			if (contentBytes > recordByteLimit) {
-				throw new ConsolidationSourceContractError(
-					`Record ${record.id} exceeds the ${record.kind === "episode" ? "episode" : "corpus"} record ceiling (${recordByteLimit.toLocaleString("en-US")} bytes).`,
-				);
-			}
-			const aggregateBytes =
-				record.kind === "episode"
-					? admittedEpisodeBytes + contentBytes
-					: admittedCorpusBytes + contentBytes;
-			const aggregateByteLimit =
-				record.kind === "episode"
-					? options.maxEpisodeBytes
-					: options.maxCorpusBytes;
-			if (aggregateBytes > aggregateByteLimit) {
-				throw new ConsolidationSourceContractError(
-					`${record.kind === "episode" ? "Episode" : "Corpus"} aggregate body bytes exceed the per-pass ceiling (${aggregateByteLimit.toLocaleString("en-US")} bytes).`,
-				);
-			}
-			validatedSourceRecords.push(record);
-			const key = `${record.sourceId}\0${record.id}`;
-			if (recordKeys.has(key)) {
-				throw new ConsolidationSourceContractError(
-					`Source ${source.id} returned duplicate ids: ${record.id}.`,
-				);
-			}
-			recordKeys.add(key);
+		const { admitted, collectorDeferred, validatedSourceRecords } =
+			admitSourceRecords({
+				snapshot,
+				sourceId: source.id,
+				recordKeys,
+				admission,
+				records,
+				options,
+			});
 
-			if (record.scope !== "project") continue;
-			const isEpisode = record.kind === "episode";
-			const hasCapacity = isEpisode
-				? admittedEpisodes < options.maxEpisodeRecords
-				: admittedCorpus < options.maxCorpusRecords;
-			if (!hasCapacity) {
-				collectorDeferred += 1;
-				continue;
-			}
-			if (isEpisode) {
-				admittedEpisodes += 1;
-				admittedEpisodeBytes += contentBytes;
-			} else {
-				admittedCorpus += 1;
-				admittedCorpusBytes += contentBytes;
-			}
-			records.push(record);
-			admitted += 1;
-		}
-
-		if (snapshot.inventoryComplete) {
-			if (sourceInventory === undefined) {
-				if (snapshot.omitted > 0) {
-					throw new ConsolidationSourceContractError(
-						`Source ${source.id} claimed complete inventory without inventorying omitted records.`,
-					);
-				}
-			} else {
-				const inventoryKeys = new Set(
-					sourceInventory.map(consolidationEvidenceKey),
-				);
-				if (
-					validatedSourceRecords.some(
-						(record) => !inventoryKeys.has(consolidationEvidenceKey(record)),
-					)
-				) {
-					throw new ConsolidationSourceContractError(
-						`Source ${source.id} claimed complete inventory without inventorying admitted records.`,
-					);
-				}
-				if (
-					inventoryKeys.size <
-					validatedSourceRecords.length + snapshot.omitted
-				) {
-					throw new ConsolidationSourceContractError(
-						`Source ${source.id} claimed complete inventory without inventorying omitted records.`,
-					);
-				}
-			}
-		}
+		validateSourceInventory({
+			snapshot,
+			sourceInventory,
+			validatedSourceRecords,
+			sourceId: source.id,
+		});
 
 		inventory.push(
 			...(sourceInventory ??
@@ -973,6 +889,182 @@ export async function collectConsolidationSources(options: {
 		warnings: Object.freeze(warnings),
 		...(knowledgeIndex === undefined ? {} : { knowledgeIndex }),
 	});
+}
+
+function collectKnowledgeIndex(
+	incoming: KnowledgeIndexRenderInput | undefined,
+	current: KnowledgeIndexRenderInput | undefined,
+): KnowledgeIndexRenderInput | undefined {
+	if (incoming === undefined) return current;
+	if (current !== undefined) {
+		throw new ConsolidationSourceContractError(
+			"Multiple knowledge-index render-input providers are not supported.",
+		);
+	}
+	return immutableKnowledgeIndexInput(incoming);
+}
+
+interface SourceAdmission {
+	admittedCorpus: number;
+	admittedCorpusBytes: number;
+	admittedEpisodes: number;
+	admittedEpisodeBytes: number;
+}
+
+function admitSourceRecords(input: {
+	readonly snapshot: ConsolidationSourceSnapshot;
+	readonly sourceId: string;
+	readonly recordKeys: Set<string>;
+	readonly admission: SourceAdmission;
+	readonly records: ConsolidationSourceRecord[];
+	readonly options: Parameters<typeof collectConsolidationSources>[0];
+}) {
+	const { snapshot, sourceId, recordKeys, admission, records, options } = input;
+	let admitted = 0;
+	let collectorDeferred = 0;
+	const validatedSourceRecords: ConsolidationSourceRecord[] = [];
+	for (const candidate of snapshot.records) {
+		const record = immutableValidatedRecord(candidate, sourceId);
+		const contentBytes = Buffer.byteLength(record.content, "utf-8");
+		validateRecordCeilings({
+			record,
+			contentBytes,
+			admittedCorpusBytes: admission.admittedCorpusBytes,
+			admittedEpisodeBytes: admission.admittedEpisodeBytes,
+			options,
+		});
+		validatedSourceRecords.push(record);
+		const key = `${record.sourceId}\0${record.id}`;
+		if (recordKeys.has(key)) {
+			throw new ConsolidationSourceContractError(
+				`Source ${sourceId} returned duplicate ids: ${record.id}.`,
+			);
+		}
+		recordKeys.add(key);
+		if (record.scope !== "project") continue;
+		const isEpisode = record.kind === "episode";
+		const hasCapacity = isEpisode
+			? admission.admittedEpisodes < options.maxEpisodeRecords
+			: admission.admittedCorpus < options.maxCorpusRecords;
+		if (!hasCapacity) {
+			collectorDeferred += 1;
+			continue;
+		}
+		if (isEpisode) {
+			admission.admittedEpisodes += 1;
+			admission.admittedEpisodeBytes += contentBytes;
+		} else {
+			admission.admittedCorpus += 1;
+			admission.admittedCorpusBytes += contentBytes;
+		}
+		records.push(record);
+		admitted += 1;
+	}
+	return { admitted, collectorDeferred, validatedSourceRecords };
+}
+
+function validateSourceSnapshot(
+	snapshot: ConsolidationSourceSnapshot,
+	sourceId: string,
+	requestedLimit: number,
+): void {
+	if (typeof snapshot.inventoryComplete !== "boolean") {
+		throw new ConsolidationSourceContractError(
+			`Source ${sourceId} must declare inventory completeness.`,
+		);
+	}
+	if (!Number.isSafeInteger(snapshot.omitted) || snapshot.omitted < 0) {
+		throw new ConsolidationSourceContractError(
+			`Source ${sourceId} returned an invalid omitted count.`,
+		);
+	}
+	if (
+		!Number.isSafeInteger(snapshot.deferred) ||
+		snapshot.deferred < 0 ||
+		snapshot.deferred > snapshot.omitted
+	) {
+		throw new ConsolidationSourceContractError(
+			`Source ${sourceId} returned an invalid deferred count.`,
+		);
+	}
+	if (snapshot.records.length > requestedLimit) {
+		throw new ConsolidationSourceContractError(
+			`Source ${sourceId} returned over-limit output (${snapshot.records.length} > ${requestedLimit}).`,
+		);
+	}
+}
+
+function validateRecordCeilings(input: {
+	readonly record: ConsolidationSourceRecord;
+	readonly contentBytes: number;
+	readonly admittedCorpusBytes: number;
+	readonly admittedEpisodeBytes: number;
+	readonly options: Parameters<typeof collectConsolidationSources>[0];
+}): void {
+	const {
+		record,
+		contentBytes,
+		admittedCorpusBytes,
+		admittedEpisodeBytes,
+		options,
+	} = input;
+	const recordByteLimit =
+		record.kind === "episode"
+			? options.maxEpisodeRecordBytes
+			: options.maxCorpusRecordBytes;
+	if (contentBytes > recordByteLimit) {
+		throw new ConsolidationSourceContractError(
+			`Record ${record.id} exceeds the ${record.kind === "episode" ? "episode" : "corpus"} record ceiling (${recordByteLimit.toLocaleString("en-US")} bytes).`,
+		);
+	}
+	const aggregateBytes =
+		record.kind === "episode"
+			? admittedEpisodeBytes + contentBytes
+			: admittedCorpusBytes + contentBytes;
+	const aggregateByteLimit =
+		record.kind === "episode"
+			? options.maxEpisodeBytes
+			: options.maxCorpusBytes;
+	if (aggregateBytes > aggregateByteLimit) {
+		throw new ConsolidationSourceContractError(
+			`${record.kind === "episode" ? "Episode" : "Corpus"} aggregate body bytes exceed the per-pass ceiling (${aggregateByteLimit.toLocaleString("en-US")} bytes).`,
+		);
+	}
+}
+
+function validateSourceInventory(input: {
+	readonly snapshot: ConsolidationSourceSnapshot;
+	readonly sourceInventory:
+		| readonly ConsolidationSourceInventoryRecord[]
+		| undefined;
+	readonly validatedSourceRecords: readonly ConsolidationSourceRecord[];
+	readonly sourceId: string;
+}): void {
+	const { snapshot, sourceInventory, validatedSourceRecords, sourceId } = input;
+	if (!snapshot.inventoryComplete) return;
+	if (sourceInventory === undefined) {
+		if (snapshot.omitted > 0) {
+			throw new ConsolidationSourceContractError(
+				`Source ${sourceId} claimed complete inventory without inventorying omitted records.`,
+			);
+		}
+		return;
+	}
+	const inventoryKeys = new Set(sourceInventory.map(consolidationEvidenceKey));
+	if (
+		validatedSourceRecords.some(
+			(record) => !inventoryKeys.has(consolidationEvidenceKey(record)),
+		)
+	) {
+		throw new ConsolidationSourceContractError(
+			`Source ${sourceId} claimed complete inventory without inventorying admitted records.`,
+		);
+	}
+	if (inventoryKeys.size < validatedSourceRecords.length + snapshot.omitted) {
+		throw new ConsolidationSourceContractError(
+			`Source ${sourceId} claimed complete inventory without inventorying omitted records.`,
+		);
+	}
 }
 
 function immutableKnowledgeIndexInput(

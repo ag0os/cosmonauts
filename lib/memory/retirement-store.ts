@@ -570,15 +570,7 @@ async function applyUnderLock(options: {
 			});
 		}
 		throwIfAborted(options.signal);
-		if (
-			!Number.isSafeInteger(options.maxRetirements) ||
-			options.maxRetirements < 1 ||
-			options.candidates.length > options.maxRetirements
-		) {
-			throw new Error(
-				`Retirement candidates exceed the bounded cap (${options.candidates.length} > ${options.maxRetirements}).`,
-			);
-		}
+		assertRetirementCap(options);
 		if (options.candidates.length === 0) {
 			return completedResult({
 				recovery: recovered,
@@ -600,106 +592,162 @@ async function applyUnderLock(options: {
 				`Retirement receipt inventory became unhealthy: ${receiptInventory.issues.join(", ")}.`,
 			);
 		}
-		const round = nextRound(receiptInventory.inventory);
-		const entries = authorized.authorized.map((candidate, index) =>
-			prepareRetirement({ candidate, round, index, date: options.date }),
-		);
-		const manifestPath = `${RETIREMENTS_PATH}/round-${round}.md`;
-		const manifestContent = renderManifest({ round, entries });
-		const journal = {
-			schemaVersion: 1,
-			state: "prepared",
-			round,
-			manifestPath,
-			manifestContent,
-			entries,
-		} satisfies RetirementJournal;
-
-		await prepareCapabilities({
-			projectRoot: options.projectRoot,
-			durableFiles: options.durableFiles,
-			entries,
-		});
-		await options.durableFiles.replaceText({
-			path: absolutePath(options.projectRoot, JOURNAL_PATH),
-			content: `${JSON.stringify(journal, null, 2)}\n`,
-			...(options.signal === undefined ? {} : { signal: options.signal }),
-		});
-		await options.failpoint?.("after-journal-sync");
-		for (const entry of entries) {
-			await options.durableFiles.linkFile({
-				sourcePath: absolutePath(options.projectRoot, entry.originalPath),
-				destinationPath: absolutePath(options.projectRoot, entry.retiredPath),
-			});
-		}
-		await options.failpoint?.("after-retired-link-sync");
-		await options.durableFiles.writeText({
-			path: absolutePath(options.projectRoot, manifestPath),
-			content: manifestContent,
-			...(options.signal === undefined ? {} : { signal: options.signal }),
-		});
-		committed = true;
-		await options.failpoint?.("after-manifest-sync");
-		for (const entry of entries) {
-			await removeManifestedLiveThroughTombstone({
-				projectRoot: options.projectRoot,
-				durableFiles: options.durableFiles,
-				entry,
-				...(options.failpoint === undefined
-					? {}
-					: { failpoint: options.failpoint }),
-			});
-		}
-		await options.failpoint?.("after-live-unlink-sync");
-		await options.failpoint?.("before-journal-remove");
-		await options.durableFiles.removeFile(
-			absolutePath(options.projectRoot, JOURNAL_PATH),
-		);
-		return completedResult({
-			retirements: entries.map((entry) => ({
-				path: entry.originalPath,
-				digest: entry.digest,
-				status: "applied",
-				reason: entry.reason,
-			})),
-			declines: authorized.declines,
-			warnings: authorized.warnings,
-			recovery: recovered,
-			writesCommitted: true,
-			manifestPath: absolutePath(options.projectRoot, manifestPath),
+		return await commitAuthorizedRetirements({
+			options,
+			authorized,
+			round: nextRound(receiptInventory.inventory),
+			recovered,
+			onCommitted: () => {
+				committed = true;
+			},
 		});
 	} catch (error: unknown) {
-		const recoveryAttempt = await recoverJournal(options).catch(() => ({
-			recovery: recovered,
-			conflicts: Object.freeze([]),
-		}));
-		const journalPending = await pathExists(
-			absolutePath(options.projectRoot, JOURNAL_PATH),
-		).catch(() => false);
-		const recovery = journalPending
-			? "pending"
-			: committed && recoveryAttempt.recovery === "none"
-				? "pending"
-				: recoveryAttempt.recovery;
-		return failedResult({
-			reason: error instanceof Error ? error.message : String(error),
-			recovery,
-			warnings: [],
-			writesCommitted:
-				committed || journalPending || recovery === "rolled-forward",
-			...(error instanceof RetirementUnlinkConflictError
-				? {
-						declines: [
-							{
-								code: "retirement-unlink-conflict",
-								path: error.path,
-								reason: error.message,
-							},
-						],
-					}
-				: {}),
+		return failedRetirementAttempt({ options, error, recovered, committed });
+	}
+}
+
+async function commitAuthorizedRetirements(input: {
+	readonly options: Parameters<typeof applyUnderLock>[0];
+	readonly authorized: Awaited<ReturnType<typeof authorizeCandidates>>;
+	readonly round: number;
+	readonly recovered: "none" | "pending" | "rolled-back" | "rolled-forward";
+	readonly onCommitted: () => void;
+}): Promise<LivingMemoryRetirementRunResult> {
+	const { options, authorized, round, recovered, onCommitted } = input;
+	const entries = authorized.authorized.map((candidate, index) =>
+		prepareRetirement({ candidate, round, index, date: options.date }),
+	);
+	const manifestPath = `${RETIREMENTS_PATH}/round-${round}.md`;
+	const manifestContent = renderManifest({ round, entries });
+	const journal = {
+		schemaVersion: 1,
+		state: "prepared",
+		round,
+		manifestPath,
+		manifestContent,
+		entries,
+	} satisfies RetirementJournal;
+
+	await prepareCapabilities({
+		projectRoot: options.projectRoot,
+		durableFiles: options.durableFiles,
+		entries,
+	});
+	await options.durableFiles.replaceText({
+		path: absolutePath(options.projectRoot, JOURNAL_PATH),
+		content: `${JSON.stringify(journal, null, 2)}\n`,
+		...(options.signal === undefined ? {} : { signal: options.signal }),
+	});
+	await options.failpoint?.("after-journal-sync");
+	await linkRetiredEntries(options, entries);
+	await options.durableFiles.writeText({
+		path: absolutePath(options.projectRoot, manifestPath),
+		content: manifestContent,
+		...(options.signal === undefined ? {} : { signal: options.signal }),
+	});
+	onCommitted();
+	await options.failpoint?.("after-manifest-sync");
+	await unlinkManifestedEntries(options, entries);
+	await options.failpoint?.("before-journal-remove");
+	await options.durableFiles.removeFile(
+		absolutePath(options.projectRoot, JOURNAL_PATH),
+	);
+	return completedResult({
+		retirements: entries.map((entry) => ({
+			path: entry.originalPath,
+			digest: entry.digest,
+			status: "applied",
+			reason: entry.reason,
+		})),
+		declines: authorized.declines,
+		warnings: authorized.warnings,
+		recovery: recovered,
+		writesCommitted: true,
+		manifestPath: absolutePath(options.projectRoot, manifestPath),
+	});
+}
+
+async function linkRetiredEntries(
+	options: Parameters<typeof applyUnderLock>[0],
+	entries: readonly RetirementJournal["entries"][number][],
+): Promise<void> {
+	for (const entry of entries) {
+		await options.durableFiles.linkFile({
+			sourcePath: absolutePath(options.projectRoot, entry.originalPath),
+			destinationPath: absolutePath(options.projectRoot, entry.retiredPath),
 		});
 	}
+	await options.failpoint?.("after-retired-link-sync");
+}
+
+async function unlinkManifestedEntries(
+	options: Parameters<typeof applyUnderLock>[0],
+	entries: readonly RetirementJournal["entries"][number][],
+): Promise<void> {
+	for (const entry of entries) {
+		await removeManifestedLiveThroughTombstone({
+			projectRoot: options.projectRoot,
+			durableFiles: options.durableFiles,
+			entry,
+			...(options.failpoint === undefined
+				? {}
+				: { failpoint: options.failpoint }),
+		});
+	}
+	await options.failpoint?.("after-live-unlink-sync");
+}
+
+function assertRetirementCap(
+	options: Parameters<typeof applyUnderLock>[0],
+): void {
+	if (
+		!Number.isSafeInteger(options.maxRetirements) ||
+		options.maxRetirements < 1 ||
+		options.candidates.length > options.maxRetirements
+	) {
+		throw new Error(
+			`Retirement candidates exceed the bounded cap (${options.candidates.length} > ${options.maxRetirements}).`,
+		);
+	}
+}
+
+async function failedRetirementAttempt(input: {
+	readonly options: Parameters<typeof applyUnderLock>[0];
+	readonly error: unknown;
+	readonly recovered: "none" | "pending" | "rolled-back" | "rolled-forward";
+	readonly committed: boolean;
+}): Promise<LivingMemoryRetirementRunResult> {
+	const { options, error, recovered, committed } = input;
+	const recoveryAttempt = await recoverJournal(options).catch(() => ({
+		recovery: recovered,
+		conflicts: Object.freeze([]),
+	}));
+	const journalPending = await pathExists(
+		absolutePath(options.projectRoot, JOURNAL_PATH),
+	).catch(() => false);
+	const recovery = journalPending
+		? "pending"
+		: committed && recoveryAttempt.recovery === "none"
+			? "pending"
+			: recoveryAttempt.recovery;
+	return failedResult({
+		reason: error instanceof Error ? error.message : String(error),
+		recovery,
+		warnings: [],
+		writesCommitted:
+			committed || journalPending || recovery === "rolled-forward",
+		...(error instanceof RetirementUnlinkConflictError
+			? {
+					declines: [
+						{
+							code: "retirement-unlink-conflict",
+							path: error.path,
+							reason: error.message,
+						},
+					],
+				}
+			: {}),
+	});
 }
 
 async function authorizeCandidates(options: {
@@ -772,33 +820,8 @@ async function candidateConflict(options: {
 	const { candidate } = options;
 	const path = candidate.record.path;
 	const blocked = (code: string, reason: string) => ({ code, path, reason });
-	if (
-		candidate.record.scope !== "project" ||
-		candidate.record.kind !== "knowledge" ||
-		!isSafeKnowledgePath(path) ||
-		candidate.record.metadata.scopeRoot !== options.projectRoot
-	) {
-		return blocked(
-			"retirement-path-conflict",
-			"Retirement requires a contained project knowledge source.",
-		);
-	}
-	if (
-		candidate.evidence.length === 0 ||
-		!candidate.evidence.every(validEvidence) ||
-		!candidate.evidence.some(
-			(evidence) =>
-				evidence.scope === candidate.record.scope &&
-				evidence.path === path &&
-				evidence.digest === candidate.record.digest,
-		) ||
-		candidate.evidenceReason.trim().length === 0
-	) {
-		return blocked(
-			"retirement-evidence-incomplete",
-			"Retirement evidence must completely name the consumed scope, path, digest, and reason.",
-		);
-	}
+	const preflight = candidatePreflightConflict(options);
+	if (preflight !== undefined) return preflight;
 	const current = await readRegularBytes(
 		absolutePath(options.projectRoot, path),
 		options.projectRoot,
@@ -818,22 +841,8 @@ async function candidateConflict(options: {
 			"No exact active promotion or human-ratified destination baseline matches the current bytes.",
 		);
 	}
-	const state = latestStateForPath(options.receipts, path);
-	if (state?.status === "retired") {
-		return blocked(
-			"restoration-in-progress",
-			"The live path has an active retired event and must complete human restoration first.",
-		);
-	}
-	if (
-		state?.status === "restored" &&
-		state.digest === candidate.record.digest
-	) {
-		return blocked(
-			"restoration-suppressed",
-			"The unchanged restored bytes remain under the human retirement veto.",
-		);
-	}
+	const historyConflict = candidateHistoryConflict(options);
+	if (historyConflict !== undefined) return historyConflict;
 	const retiredPath = absolutePath(
 		options.projectRoot,
 		deriveRetiredPath(path),
@@ -859,6 +868,71 @@ async function candidateConflict(options: {
 				.map((entry) => entry.path)
 				.join(", ")}.`,
 		);
+	}
+	return undefined;
+}
+
+function candidatePreflightConflict(
+	options: Parameters<typeof candidateConflict>[0],
+): LivingMemoryRetirementRunDetails["declines"][number] | undefined {
+	const { candidate } = options;
+	const path = candidate.record.path;
+	if (
+		candidate.record.scope !== "project" ||
+		candidate.record.kind !== "knowledge" ||
+		!isSafeKnowledgePath(path) ||
+		candidate.record.metadata.scopeRoot !== options.projectRoot
+	) {
+		return {
+			code: "retirement-path-conflict",
+			path,
+			reason: "Retirement requires a contained project knowledge source.",
+		};
+	}
+	if (
+		candidate.evidence.length === 0 ||
+		!candidate.evidence.every(validEvidence) ||
+		!candidate.evidence.some(
+			(evidence) =>
+				evidence.scope === candidate.record.scope &&
+				evidence.path === path &&
+				evidence.digest === candidate.record.digest,
+		) ||
+		candidate.evidenceReason.trim().length === 0
+	) {
+		return {
+			code: "retirement-evidence-incomplete",
+			path,
+			reason:
+				"Retirement evidence must completely name the consumed scope, path, digest, and reason.",
+		};
+	}
+	return undefined;
+}
+
+function candidateHistoryConflict(
+	options: Parameters<typeof candidateConflict>[0],
+): LivingMemoryRetirementRunDetails["declines"][number] | undefined {
+	const path = options.candidate.record.path;
+	const state = latestStateForPath(options.receipts, path);
+	if (state?.status === "retired") {
+		return {
+			code: "restoration-in-progress",
+			path,
+			reason:
+				"The live path has an active retired event and must complete human restoration first.",
+		};
+	}
+	if (
+		state?.status === "restored" &&
+		state.digest === options.candidate.record.digest
+	) {
+		return {
+			code: "restoration-suppressed",
+			path,
+			reason:
+				"The unchanged restored bytes remain under the human retirement veto.",
+		};
 	}
 	return undefined;
 }

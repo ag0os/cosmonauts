@@ -1,5 +1,6 @@
+import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { DurableMachineFiles } from "./durable-files.ts";
 import {
@@ -74,6 +75,24 @@ export async function writeSafeExclusiveText(options: {
 		content: options.content,
 		...(options.signal === undefined ? {} : { signal: options.signal }),
 	});
+}
+
+export async function readOptionalRegularDirectoryEntries(options: {
+	readonly directory: string;
+	readonly label: string;
+}): Promise<Dirent[] | undefined> {
+	try {
+		const metadata = await lstat(options.directory);
+		if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+			throw new Error(
+				`${options.label} root is not a regular directory: ${options.directory}.`,
+			);
+		}
+		return await readdir(options.directory, { withFileTypes: true });
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return undefined;
+		throw error;
+	}
 }
 
 export async function readSafeRegularText(options: {
