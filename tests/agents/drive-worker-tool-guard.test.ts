@@ -6,6 +6,8 @@ describe("destructive Git command classifier", () => {
 		"git checkout -- src/a.ts",
 		"git checkout src/a.ts",
 		"git switch --discard-changes main",
+		"git switch -f main",
+		"git switch --force main",
 		"git restore src/a.ts",
 		"git reset --hard",
 		...[

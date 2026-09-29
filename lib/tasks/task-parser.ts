@@ -4,6 +4,7 @@
  */
 
 import matter from "gray-matter";
+import { taskNoteSection } from "./task-note-editor.ts";
 import type {
 	AcceptanceCriterion,
 	Task,
@@ -157,7 +158,7 @@ function extractSection(
 
 	// Match the section header and capture content until next ## header or end
 	const regex = new RegExp(
-		`## ${escapeRegex(sectionTitle)}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`,
+		`## ${escapeRegex(sectionTitle)}\\s*\\n([\\s\\S]*?)(?=\\n {0,3}##[ \\t]+|$)`,
 		"i",
 	);
 
@@ -261,8 +262,14 @@ function extractRawContent(
 	const frontmatterRegex = /^---\n[\s\S]*?\n---\n?/;
 	let remaining = normalized.replace(frontmatterRegex, "");
 
+	const notes = taskNoteSection(remaining);
+	if (notes)
+		remaining = remaining.slice(0, notes.start) + remaining.slice(notes.end);
+
 	// Remove recognized sections
-	for (const section of recognizedSections) {
+	for (const section of recognizedSections.filter(
+		(section) => section !== "Implementation Notes",
+	)) {
 		const sectionRegex = new RegExp(
 			`## ${escapeRegex(section)}\\s*\\n[\\s\\S]*?(?=\\n## |$)`,
 			"gi",
@@ -277,8 +284,7 @@ function extractRawContent(
 	);
 	remaining = remaining.replace(acRegex, "");
 
-	// Clean up multiple newlines and trim
-	remaining = remaining.replace(/\n{3,}/g, "\n\n").trim();
+	remaining = remaining.replace(/\n{3,}/g, "\n\n").replace(/^\n+|\n+$/g, "");
 
 	return remaining || undefined;
 }
@@ -318,15 +324,16 @@ export function parseTask(content: string): Task {
 	assertYamlFrontmatter(normalized);
 	const parsed = matter(normalized);
 	const frontmatter = parsed.data;
-	const bodyContent = parsed.content.trim();
+	const bodyContent = parsed.content.replace(/^[\r\n]+|[\r\n]+$/g, "");
 
 	// Extract sections from body content
 	const description = extractSection(bodyContent, "Description");
 	const implementationPlan = extractSection(bodyContent, "Implementation Plan");
-	const implementationNotes = extractSection(
-		bodyContent,
-		"Implementation Notes",
-	);
+	const notes = taskNoteSection(bodyContent);
+	const implementationNotes = notes
+		? stripAcBlocks(bodyContent.slice(notes.contentStart, notes.end)) ||
+			undefined
+		: undefined;
 
 	// Parse acceptance criteria (from markers or legacy format)
 	const acceptanceCriteria = parseAcceptanceCriteria(bodyContent);

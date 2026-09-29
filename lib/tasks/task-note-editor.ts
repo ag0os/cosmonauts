@@ -2,8 +2,12 @@ const HEADING = "## Implementation Notes";
 
 interface SectionSpan {
 	start: number;
+	contentStart: number;
 	end: number;
 }
+
+// Markdown ATX headings may be indented by at most three spaces.
+const SECTION_HEADING = /^ {0,3}##[ \t]+([^\r\n]*?)[ \t]*(?:\r\n|\n|\r|$)/gim;
 
 function containsCompleteBlock(
 	section: string,
@@ -21,22 +25,25 @@ function containsCompleteBlock(
 	return false;
 }
 
-function noteSection(source: string): SectionSpan | undefined {
-	const heading = /^## Implementation Notes[ \t]*(?:\r\n|\n|\r|$)/gim;
-	const matches = [...source.matchAll(heading)];
+export function taskNoteSection(source: string): SectionSpan | undefined {
+	const headings = [...source.matchAll(SECTION_HEADING)];
+	const matches = headings.filter(
+		(match) => match[1]?.trim().toLowerCase() === "implementation notes",
+	);
 	if (matches.length > 1)
 		throw new Error("Duplicate Implementation Notes sections");
 	const match = matches[0];
 	if (!match || match.index === undefined) return undefined;
-	const start = match.index;
-	const next = /^## [^\r\n]+/gm;
-	next.lastIndex = start + match[0].length;
-	const following = next.exec(source);
-	return { start, end: following?.index ?? source.length };
+	const next = headings.find((heading) => (heading.index ?? 0) > match.index);
+	return {
+		start: match.index,
+		contentStart: match.index + match[0].length,
+		end: next?.index ?? source.length,
+	};
 }
 
 export function hasTaskNoteBlock(source: string, append: string): boolean {
-	const span = noteSection(source);
+	const span = taskNoteSection(source);
 	if (!span) return false;
 	const section = source.slice(span.start, span.end);
 	const lineEnding = section.match(/\r\n|\n|\r/)?.[0] ?? "\n";
@@ -55,8 +62,8 @@ export function preserveTaskNotes(
 ): string {
 	if (append !== undefined && !append.trim())
 		throw new Error("Cannot append empty implementation notes");
-	const old = noteSection(original);
-	const canonical = noteSection(serialized);
+	const old = taskNoteSection(original);
+	const canonical = taskNoteSection(serialized);
 	const lineEnding = old
 		? (original.slice(old.start, old.end).match(/\r\n|\n|\r/)?.[0] ??
 			original.match(/\r\n|\n|\r/)?.[0] ??

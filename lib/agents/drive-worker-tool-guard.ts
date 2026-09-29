@@ -123,7 +123,10 @@ function gitOperation(words: string[]): boolean {
 	const args = words.slice(index + 1);
 	if (verb === "checkout")
 		return args.includes("--") || args.some((arg) => !arg.startsWith("-"));
-	if (verb === "switch") return args.includes("--discard-changes");
+	if (verb === "switch")
+		return args.some((arg) =>
+			["--discard-changes", "-f", "--force"].includes(arg),
+		);
 	if (verb === "stash") return !["list", "show"].includes(args[0] ?? "");
 	if (verb === "apply")
 		return args.includes("-R") || args.includes("--reverse");

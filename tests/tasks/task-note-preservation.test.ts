@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { parseTask } from "../../lib/tasks/task-parser.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("task-notes-");
@@ -22,6 +23,44 @@ async function fixture(notes = "## Implementation Notes\r\n\r\nOld  \r\n\r\n") {
 }
 
 describe("source-preserving task edits", () => {
+	it("preserves a three-space-indented notes heading read by the parser on a status update", async () => {
+		const notes = "   ## Implementation Notes  \r\nKEEP THIS  \r\n";
+		const { manager, task, file } = await fixture(notes);
+		expect(parseTask(await readFile(file, "utf8")).implementationNotes).toBe(
+			"KEEP THIS",
+		);
+		await manager.updateTask(task.id, { status: "In Progress" });
+		expect(await readFile(file, "utf8")).toContain(notes);
+	});
+	it("keeps indented notes separate from an earlier description", async () => {
+		const notes = "   ## Implementation Notes  \r\nKEEP THIS  \r\n";
+		const { manager, task, file } = await fixture(notes);
+		await writeFile(
+			file,
+			(await readFile(file, "utf8")).replace(
+				notes,
+				`## Description\n\nDescription\n\n${notes}`,
+			),
+		);
+		await manager.updateTask(task.id, { status: "In Progress" });
+		const updated = await readFile(file, "utf8");
+		expect(updated).toContain(notes);
+		expect(updated.split("KEEP THIS")).toHaveLength(2);
+	});
+	it("does not read or edit a four-space-indented code heading as notes", async () => {
+		const { manager, task, file } = await fixture(
+			"    ## Implementation Notes\nKEEP THIS\n",
+		);
+		expect(
+			parseTask(await readFile(file, "utf8")).implementationNotes,
+		).toBeUndefined();
+		await manager.updateTask(task.id, {
+			appendImplementationNotes: "Real note",
+		});
+		const updated = await readFile(file, "utf8");
+		expect(updated).toContain("    ## Implementation Notes\nKEEP THIS");
+		expect(updated).toContain("## Implementation Notes\n\nReal note");
+	});
 	it("preserves lower-case implementation notes byte for byte on status-only update", async () => {
 		const notes = "## implementation notes  \r\n\r\nKEEP THIS  \r\n";
 		const { manager, task, file } = await fixture(notes);

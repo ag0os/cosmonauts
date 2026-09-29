@@ -270,6 +270,14 @@ test("refuses duplicate locations and destructive commands without touching the 
 	expect(await readFile(source, "utf8")).toBe(original);
 });
 
+test.each([
+	"git switch -f main",
+	"git switch --force main",
+])("refuses destructive probe test command %s without changing the source", async (testCommand) => {
+	expect(await probe({ testCommand })).toMatchObject({ refused: true });
+	expect(await readFile(source, "utf8")).toBe(original);
+});
+
 test("refuses symlinks, escaped paths and nonregular paths", async () => {
 	await symlink(source, join(root, "link.js"));
 	for (const path of ["link.js", "../outside.js", "."]) {

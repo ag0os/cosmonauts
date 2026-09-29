@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import {
 	existsSync,
+	lstatSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -475,7 +476,13 @@ export async function snapshotWorktree(options: {
 				"-m",
 				`Drive snapshot ${runId}/${taskId}/attempt-${attemptNumber}${options.taskFile ? `\n\nDrive-Task-File: ${options.taskFile}` : ""}`,
 			],
-			env,
+			{
+				...env,
+				GIT_AUTHOR_NAME: "Cosmonauts Drive",
+				GIT_AUTHOR_EMAIL: "drive@cosmonauts.local",
+				GIT_COMMITTER_NAME: "Cosmonauts Drive",
+				GIT_COMMITTER_EMAIL: "drive@cosmonauts.local",
+			},
 		);
 		await git(["update-ref", ref, sha]);
 		return ref;
@@ -556,7 +563,11 @@ export async function removeDoneTaskSnapshots(
 					throw new GitInterruptedError(
 						`git hash-object -- ${path} failed: ${result.termination === "abort" ? "aborted" : "timed out"}`,
 					);
-				finalHash = result.exitCode === 0 ? result.stdout.trim() : undefined;
+				const mode = worktreeMode(join(projectRoot, path));
+				finalHash =
+					result.exitCode === 0 && mode
+						? `${mode} ${result.stdout.trim()}`
+						: undefined;
 			} else finalHash = finalEntries.get(path);
 			if (hash !== finalHash) {
 				contained = false;
@@ -572,6 +583,19 @@ export async function removeDoneTaskSnapshots(
 	return retained;
 }
 
+function worktreeMode(path: string): string | undefined {
+	let info: ReturnType<typeof lstatSync>;
+	try {
+		info = lstatSync(path);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
+	if (info.isSymbolicLink()) return "120000";
+	if (info.isFile()) return info.mode & 0o111 ? "100755" : "100644";
+	return undefined;
+}
+
 async function treeEntries(
 	git: (args: string[]) => Promise<string>,
 	ref: string,
@@ -579,8 +603,9 @@ async function treeEntries(
 	const output = await git(["ls-tree", "-r", "-z", ref]);
 	const entries = new Map<string, string>();
 	for (const entry of output.split("\0")) {
-		const match = /^\d+ (?:blob|commit) ([0-9a-f]+)\t([\s\S]+)$/u.exec(entry);
-		if (match?.[1] && match[2]) entries.set(match[2], match[1]);
+		const match = /^(\d+) (?:blob|commit) ([0-9a-f]+)\t([\s\S]+)$/u.exec(entry);
+		if (match?.[1] && match[2] && match[3])
+			entries.set(match[3], `${match[1]} ${match[2]}`);
 	}
 	return entries;
 }

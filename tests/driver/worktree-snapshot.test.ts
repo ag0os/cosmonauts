@@ -8,10 +8,17 @@
  * every Drive spawn on a dirty tree aborted before the worker started.
  */
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	removeDoneTaskSnapshots,
 	reportSummary,
@@ -68,10 +75,44 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await rm(root, { recursive: true, force: true });
 });
 
 describe("snapshotWorktree", () => {
+	it("snapshots without a host Git identity for either Drive path", async () => {
+		const config = join(root, "empty-config");
+		await writeFile(config, "");
+		git(["config", "--unset", "user.name"]);
+		git(["config", "--unset", "user.email"]);
+		git(["config", "user.useConfigOnly", "true"]);
+		vi.stubEnv("GIT_CONFIG_GLOBAL", config);
+		vi.stubEnv("GIT_CONFIG_SYSTEM", config);
+		for (const key of [
+			"GIT_AUTHOR_NAME",
+			"GIT_AUTHOR_EMAIL",
+			"GIT_COMMITTER_NAME",
+			"GIT_COMMITTER_EMAIL",
+		])
+			vi.stubEnv(key, undefined);
+		await writeFile(join(root, "tracked.txt"), "changed\n");
+		for (const [runId, attemptNumber] of [
+			["legacy", 1],
+			["graph", 2],
+		] as const) {
+			const ref = await snapshotWorktree({
+				projectRoot: root,
+				runId,
+				taskId: "TASK-1",
+				attemptNumber,
+			});
+			expect(
+				git(["show", "-s", "--format=%an <%ae>|%cn <%ce>", ref as string]),
+			).toBe(
+				"Cosmonauts Drive <drive@cosmonauts.local>|Cosmonauts Drive <drive@cosmonauts.local>",
+			);
+		}
+	});
 	it("cancels a snapshot git command on abort and identifies the command", async () => {
 		await writeFile(join(root, "tracked.txt"), "changed");
 		const controller = new AbortController();
@@ -181,6 +222,76 @@ describe("snapshotWorktree", () => {
 					: [ref],
 			);
 		}
+	});
+
+	it.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s retains reverted executable mode but removes a contained snapshot", async (policy) => {
+		await chmod(join(root, "tracked.txt"), 0o755);
+		const ref = await snapshotWorktree({
+			projectRoot: root,
+			runId: "mode-reverted",
+			taskId: "TASK-1",
+			attemptNumber: 1,
+		});
+		await chmod(join(root, "tracked.txt"), 0o644);
+		expect(
+			await removeDoneTaskSnapshots(
+				root,
+				"mode-reverted",
+				"TASK-1",
+				policy,
+				undefined,
+				new AbortController().signal,
+			),
+		).toEqual([ref]);
+		await chmod(join(root, "tracked.txt"), 0o755);
+		await snapshotWorktree({
+			projectRoot: root,
+			runId: "mode-kept",
+			taskId: "TASK-1",
+			attemptNumber: 1,
+		});
+		if (policy !== "no-commit") {
+			git(["add", "tracked.txt"]);
+			git(["commit", "-q", "-m", "preserve executable mode"]);
+		}
+		expect(
+			await removeDoneTaskSnapshots(
+				root,
+				"mode-kept",
+				"TASK-1",
+				policy,
+				policy === "driver-commits" ? git(["rev-parse", "HEAD"]) : undefined,
+				new AbortController().signal,
+			),
+		).toEqual([]);
+		expect(git(["show", `${ref}:tracked.txt`])).toBe("original");
+	});
+
+	it("retains a captured symlink when the worker replaces it with a regular file", async () => {
+		await rm(join(root, "tracked.txt"));
+		await symlink("original\n", join(root, "tracked.txt"));
+		const ref = await snapshotWorktree({
+			projectRoot: root,
+			runId: "link",
+			taskId: "TASK-1",
+			attemptNumber: 1,
+		});
+		await rm(join(root, "tracked.txt"));
+		await writeFile(join(root, "tracked.txt"), "original\n");
+		expect(
+			await removeDoneTaskSnapshots(
+				root,
+				"link",
+				"TASK-1",
+				"no-commit",
+				undefined,
+				new AbortController().signal,
+			),
+		).toEqual([ref]);
 	});
 
 	it("retains snapshot bytes missing from the final worktree", async () => {
