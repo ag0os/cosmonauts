@@ -111,7 +111,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-780 attempt 2** (stage 13 refactor, `C` = `86b44e34`) on the Pi worker.
+**TASK-780 attempt 3** (stage 13 refactor, `C` = `86b44e34`; attempt 2 stopped on a
+coordinator mid-run commit, obs. 22) on the Pi worker.
 Then 781 → 782 → 784 → 783.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
@@ -197,6 +198,10 @@ Then 781 → 782 → 784 → 783.
    Every pre-launch note now carries rule 5. Each coordinator probe costs one
    full-suite run (~2.5 min); a worker-side probe helper would remove the
    round trip.
+22. Coordinator error: a record-only commit made while a run was live
+   (TASK-781 note during TASK-780 attempt 2) moved HEAD past the worker's
+   recorded `S`; the worker correctly stopped `partial` (4 min lost). Rule: the
+   coordinator commits nothing between `run_started` and the terminal event.
 12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
