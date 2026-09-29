@@ -205,28 +205,39 @@ export function runCommand(
 		const stderr: Buffer[] = [];
 		child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
 		child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-		child.on("error", (error) => {
-			if ((error as NodeJS.ErrnoException).name === "AbortError") {
-				resolve({
-					exitCode: 124,
-					stdout: Buffer.concat(stdout).toString(),
-					stderr: Buffer.concat(stderr).toString() || formatError(error),
-				});
-				return;
-			}
-			reject(error);
-		});
-		child.on("close", (code, closeSignal) => {
+		let closeTimer: NodeJS.Timeout | undefined;
+		let abortError: string | undefined;
+		const finish = (
+			code: number | null,
+			closeSignal: NodeJS.Signals | null,
+		) => {
+			if (closeTimer) clearTimeout(closeTimer);
+			child.stdout?.destroy();
+			child.stderr?.destroy();
 			resolve({
-				exitCode: code ?? 1,
+				exitCode: abortError ? 124 : (code ?? 1),
 				stdout: Buffer.concat(stdout).toString(),
 				stderr:
 					Buffer.concat(stderr).toString() ||
+					abortError ||
 					(closeSignal && options?.timeoutMs
 						? `timed out (${closeSignal})`
 						: ""),
 			});
+		};
+		child.on("error", (error) => {
+			if ((error as NodeJS.ErrnoException).name !== "AbortError") {
+				if (closeTimer) clearTimeout(closeTimer);
+				reject(error);
+				return;
+			}
+			abortError = formatError(error);
+			closeTimer ??= setTimeout(() => finish(null, null), 250);
 		});
+		child.on("exit", (code, exitSignal) => {
+			closeTimer ??= setTimeout(() => finish(code, exitSignal), 250);
+		});
+		child.on("close", (code, closeSignal) => finish(code, closeSignal));
 	});
 }
 
@@ -478,8 +489,18 @@ export async function removeDoneTaskSnapshots(
 		const snapshot = await treeEntries(git, ref);
 		let contained = true;
 		for (const [path, hash] of snapshot) {
+			if (
+				path === `missions/tasks/${taskId}.md` ||
+				(path.startsWith(`missions/tasks/${taskId} - `) && path.endsWith(".md"))
+			)
+				continue;
 			let finalHash: string | undefined;
-			if (commitPolicy === "no-commit") {
+			if (
+				commitPolicy === "no-commit" ||
+				path.startsWith("missions/") ||
+				path.startsWith("memory/") ||
+				/^\.cosmonauts\/[^/]+\.lock$/u.test(path)
+			) {
 				const result = await runCommand(
 					"git",
 					["hash-object", "--", path],

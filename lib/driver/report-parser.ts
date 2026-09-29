@@ -13,7 +13,9 @@ export function parseReport(stdout: string): ParsedReport {
 	];
 	if (new Set(outcomes).size > 1) {
 		if (outcomes.includes("blocked")) {
-			const notes = fencedReports.find((report) => report.notes?.trim())?.notes;
+			const notes = fencedReports
+				.filter((report) => report.outcome === "blocked")
+				.at(-1)?.notes;
 			return {
 				outcome: "blocked",
 				files: [],

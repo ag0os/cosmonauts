@@ -58,6 +58,60 @@ const WORKER_SOURCE = "cod" + "ing/worker";
 // Declare the same 30s budget the sibling drive-on-graph suites use.
 describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
 	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s compares Done snapshots with worker work, not Drive task state", async (policy) => {
+		for (const discarded of [
+			"none",
+			"envelope.md",
+			"missions/plan.md",
+		] as const) {
+			const fixture = await setupFixture(
+				`contained-${policy}-${discarded.replaceAll("/", "-")}`,
+				1,
+			);
+			await writeFile(join(fixture.projectRoot, "missions/plan.md"), "base\n");
+			await initGit(fixture.projectRoot);
+			fixture.spec = { ...fixture.spec, commitPolicy: policy };
+			await writeFile(
+				join(fixture.projectRoot, "envelope.md"),
+				"worker source\n",
+			);
+			await writeFile(
+				join(fixture.projectRoot, "missions/plan.md"),
+				"worker plan\n",
+			);
+			const backend = createBackend({
+				onRun: async () => {
+					if (discarded !== "none")
+						await writeFile(
+							join(fixture.projectRoot, discarded),
+							discarded === "envelope.md" ? "# Live Envelope\n" : "base\n",
+						);
+					if (policy === "backend-commits") {
+						await git(fixture.projectRoot, [
+							"add",
+							"envelope.md",
+							"missions/plan.md",
+						]);
+						await git(fixture.projectRoot, ["commit", "-m", "worker commit"]);
+					}
+					return successfulBackendResult("done");
+				},
+			});
+			const result = await runDriveOnGraph(
+				fixture.spec,
+				createRunContext(fixture, backend, new AbortController().signal),
+			);
+			const ref = `refs/cosmonauts/drive/${fixture.spec.runId}/${fixture.taskIds[0]}/attempt-1`;
+			expect(result.outcome).toBe("completed");
+			expect(result.retainedSnapshots, `${policy}: ${discarded}`).toEqual(
+				discarded === "none" ? undefined : [ref],
+			);
+		}
+	});
+	test.each([
 		true,
 		false,
 	])("records retained snapshot refs in terminal state only when bytes are missing: %s", async (discard) => {
@@ -88,6 +142,51 @@ describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
 				.retainedSnapshots,
 		).toEqual(discard ? [ref] : undefined);
 	});
+	test.each([
+		"finalization_failed",
+		"aborted",
+	] as const)("carries an earlier Done task's retained ref into %s completion", async (terminal) => {
+		const fixture = await setupFixture(`retained-${terminal}`, 2);
+		await initGit(fixture.projectRoot);
+		fixture.spec = {
+			...fixture.spec,
+			commitPolicy:
+				terminal === "finalization_failed" ? "driver-commits" : "no-commit",
+		};
+		const source = join(fixture.projectRoot, "envelope.md");
+		await writeFile(source, "snapshot worker bytes\n");
+		const controller = new AbortController();
+		const backend = createBackend({
+			onRun: async (_invocation, number) => {
+				if (number === 1) {
+					await writeFile(source, "# Live Envelope\n");
+					return successfulBackendResult("A complete");
+				}
+				if (terminal === "aborted")
+					controller.abort(new Error("operator aborted"));
+				else {
+					await installFailingCommitHook(fixture.projectRoot);
+					await writeFile(
+						join(fixture.projectRoot, "worker.ts"),
+						"export const x = 1;\n",
+					);
+				}
+				return successfulBackendResult("B complete");
+			},
+		});
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, backend, controller.signal),
+		);
+		const ref = `refs/cosmonauts/drive/${fixture.spec.runId}/${fixture.taskIds[0]}/attempt-1`;
+		expect(result.outcome).toBe(terminal);
+		expect(result.retainedSnapshots).toContain(ref);
+		const completion = JSON.parse(
+			await readFile(join(fixture.spec.workdir, "run.completion.json"), "utf8"),
+		);
+		expect(completion.retainedSnapshots).toContain(ref);
+	});
+
 	test("emits the terminal legacy event before completion and captures afterward", async () => {
 		const outcomes: DriverResult["outcome"][] = [];
 		const cases = [

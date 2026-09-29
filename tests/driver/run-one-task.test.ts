@@ -61,6 +61,53 @@ describe("run-one-task", () => {
 		}
 	});
 	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s cleans only contained Done refs with tracked task state", async (policy) => {
+		for (const discarded of [
+			"none",
+			"README.md",
+			"missions/plan.md",
+		] as const) {
+			const fixture = await setupGitFixture();
+			await writeProjectFile(fixture, "missions/plan.md", "base\n");
+			await git(fixture.projectRoot, ["add", "-A"]);
+			await git(fixture.projectRoot, ["commit", "-m", "track task and plan"]);
+			await writeProjectFile(fixture, "README.md", "worker source\n");
+			await writeProjectFile(fixture, "missions/plan.md", "worker plan\n");
+			const backend = createBackend(async () => {
+				if (discarded !== "none")
+					await writeProjectFile(
+						fixture,
+						discarded,
+						discarded === "README.md" ? "initial\n" : "base\n",
+					);
+				if (policy === "backend-commits") {
+					await git(fixture.projectRoot, [
+						"add",
+						"README.md",
+						"missions/plan.md",
+					]);
+					await git(fixture.projectRoot, ["commit", "-m", "worker commit"]);
+				}
+				return successfulResult();
+			});
+			const outcome = await runOneTask(
+				createSpec(fixture, { commitPolicy: policy }),
+				createCtx(fixture, backend, []),
+				fixture.taskId,
+			);
+			const ref = `refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1`;
+			expect(outcome.status).toBe("done");
+			if (outcome.status !== "done") throw new Error("Expected a Done task");
+			expect(outcome.retainedSnapshots, `${policy}: ${discarded}`).toEqual(
+				discarded === "none" ? undefined : [ref],
+			);
+			await rm(fixture.projectRoot, { recursive: true, force: true });
+		}
+	});
+	test.each([
 		"blocked",
 		"success",
 	] as const)("snapshots tracked and untracked bytes before spawn and %s retains only unfinished refs", async (result) => {
@@ -367,7 +414,7 @@ describe("run-one-task", () => {
 		const backend = createBackend(async () => ({
 			exitCode: 0,
 			stdout:
-				'```json\n{"outcome":"success","notes":"Need review"}\n```\noutcome: blocked',
+				'```json\n{"outcome":"success","notes":"Finished"}\n```\n```json\n{"outcome":"blocked","notes":"Need approval"}\n```',
 			durationMs: 1,
 		}));
 		const outcome = await runOneTask(
@@ -377,7 +424,14 @@ describe("run-one-task", () => {
 			createCtx(fixture, backend, events),
 			fixture.taskId,
 		);
-		expect(outcome).toMatchObject({ status: "blocked", reason: "Need review" });
+		// H1 / INV-002: the Drive record must contain the blocked report's verbatim reason.
+		expect(outcome).toMatchObject({
+			status: "blocked",
+			reason: "Need approval",
+		});
+		expect(
+			(await fixture.taskManager.getTask(fixture.taskId))?.implementationNotes,
+		).toContain("Need approval");
 		expect(events.map((event) => event.type)).not.toContain("verify");
 		expect(events.map((event) => event.type)).not.toContain("task_retry");
 		expect(backend.run).toHaveBeenCalledTimes(1);

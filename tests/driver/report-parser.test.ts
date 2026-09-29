@@ -6,10 +6,31 @@ const outcomeReports = ["success", "failure", "partial", "completed"] as const;
 describe("report-parser", () => {
 	test("treats a blocked outcome line conflicting with fenced success as blocked", () => {
 		const raw =
-			'```json\n{"outcome":"success","notes":"Need a decision"}\n```\noutcome: blocked';
+			'```json\n{"outcome":"success","notes":"Finished"}\n```\noutcome: blocked';
+		// H1 / INV-002: a non-blocked report cannot supply the human stop reason.
+		expect(parseReport(raw)).toEqual({
+			outcome: "blocked",
+			files: [],
+			verification: [],
+			raw,
+		});
+	});
+	test("uses the last blocked fenced notes, never success notes, for a disagreement", () => {
+		const raw =
+			'```json\n{"outcome":"success","notes":"Finished"}\n```\n```json\n{"outcome":"blocked","notes":"Earlier approval"}\n```\n```json\n{"outcome":"blocked","notes":"Need approval"}\n```';
 		expect(parseReport(raw)).toMatchObject({
 			outcome: "blocked",
-			notes: "Need a decision",
+			notes: "Need approval",
+			raw,
+		});
+	});
+	test("falls back to raw text when the last blocked report has no notes", () => {
+		const raw =
+			'```json\n{"outcome":"blocked","notes":"Stale approval"}\n```\n```json\n{"outcome":"blocked"}\n```\noutcome: success';
+		expect(parseReport(raw)).toEqual({
+			outcome: "blocked",
+			files: [],
+			verification: [],
 			raw,
 		});
 	});

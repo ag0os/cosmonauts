@@ -8,6 +8,7 @@ const observed = vi.hoisted(() => ({
 	commands: [] as string[],
 	abortAdd: undefined as (() => void) | undefined,
 	stallCommand: undefined as string | undefined,
+	inheritedPipe: false,
 }));
 vi.mock("node:child_process", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:child_process")>();
@@ -30,12 +31,20 @@ vi.mock("node:child_process", async (importOriginal) => {
 				args.join(" ").includes(observed.stallCommand)
 					? actual.spawn(
 							process.execPath,
-							["-e", "setTimeout(() => {}, 60000)"],
-							{ ...options, timeout: 20 },
+							[
+								"-e",
+								observed.inheritedPipe
+									? 'require("node:child_process").spawn(process.execPath,["-e","setTimeout(()=>{},2200)"],{stdio:["ignore",1,2]});process.stdout.write("descendant ready\\n");setTimeout(()=>{},60000)'
+									: "setTimeout(() => {}, 60000)",
+							],
+							{ ...options, timeout: observed.inheritedPipe ? 180 : 20 },
 						)
 					: actual.spawn(command, args, options);
-			if (command === "git" && args.includes("add"))
-				setImmediate(() => observed.abortAdd?.());
+			if (command === "git" && args.includes("add")) {
+				if (observed.inheritedPipe)
+					child.stdout?.once("data", () => observed.abortAdd?.());
+				else setImmediate(() => observed.abortAdd?.());
+			}
 			return child;
 		}) as typeof actual.spawn,
 	};
@@ -51,6 +60,7 @@ afterEach(async () => {
 	observed.commands = [];
 	observed.abortAdd = undefined;
 	observed.stallCommand = undefined;
+	observed.inheritedPipe = false;
 	if (root) await rm(root, { recursive: true, force: true });
 });
 test("aborts an in-flight snapshot add and identifies the git command", async () => {
@@ -118,6 +128,43 @@ test("identifies timed-out snapshot and cleanup git commands", async () => {
 			signal,
 		),
 	).rejects.toThrow(/git update-ref -d .*failed: timed out/);
+});
+
+test.each([
+	"timeout",
+	"abort",
+] as const)("settles a %s snapshot git despite inherited pipes", async (route) => {
+	root = await mkdtemp(join(tmpdir(), "drive-snapshot-inherited-"));
+	const git = (...args: string[]) => execFileSync("git", args, { cwd: root });
+	git("init", "-q", "-b", "main");
+	git("config", "user.name", "Test");
+	git("config", "user.email", "test@example.com");
+	await writeFile(join(root, "tracked"), "base");
+	git("add", "tracked");
+	git("commit", "-q", "-m", "base");
+	await writeFile(join(root, "tracked"), "changed");
+	observed.stallCommand = "add -A";
+	observed.inheritedPipe = true;
+	const controller = new AbortController();
+	if (route === "abort") observed.abortAdd = () => controller.abort();
+	const started = Date.now();
+	await expect(
+		snapshotWorktree({
+			projectRoot: root,
+			runId: "run-1",
+			taskId: "TASK-1",
+			attemptNumber: 1,
+			signal: controller.signal,
+		}),
+	).rejects.toThrow(
+		route === "abort"
+			? /git .*add -A.*failed: aborted/
+			: /git .*add -A.*failed: timed out/,
+	);
+	expect(observed.commands.some((command) => command.includes("add -A"))).toBe(
+		true,
+	);
+	expect(Date.now() - started).toBeLessThan(1800);
 });
 
 test("bounds snapshot and cleanup git commands through an abortable runner", async () => {

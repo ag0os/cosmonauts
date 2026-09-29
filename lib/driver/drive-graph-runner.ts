@@ -626,12 +626,7 @@ async function toDriverResult(
 	);
 	const taskSteps = steps.filter((step) => step.kind === "drive");
 	const tasksDone = taskStatusSteps.filter(isDoneTaskStatusStep).length;
-	const retainedSnapshots = taskStatusSteps.flatMap((step) =>
-		(step.result?.artifacts ?? [])
-			.filter((artifact) => artifact.kind === "drive-retained-snapshot")
-			.map((artifact) => artifact.path),
-	);
-	const retained = retainedSnapshots.length ? { retainedSnapshots } : {};
+	const retained = retainedTaskSnapshots(taskStatusSteps);
 	const partialStatusSteps = taskStatusSteps.filter(isPartialTaskStatusStep);
 	const blockedStatusStep = taskStatusSteps.find(
 		(step) => step.status === "blocked",
@@ -689,6 +684,7 @@ async function toDriverResult(
 	return {
 		runId: spec.runId,
 		outcome: "aborted",
+		...retained,
 		tasksDone,
 		tasksBlocked,
 		blockedReason:
@@ -703,6 +699,17 @@ async function toDriverResult(
 		}),
 	};
 }
+function retainedTaskSnapshots(steps: readonly StepRecord[]): {
+	retainedSnapshots?: string[];
+} {
+	const retainedSnapshots = steps.flatMap((step) =>
+		(step.result?.artifacts ?? [])
+			.filter((artifact) => artifact.kind === "drive-retained-snapshot")
+			.map((artifact) => artifact.path),
+	);
+	return retainedSnapshots.length ? { retainedSnapshots } : {};
+}
+
 function finalizationFailureResult(
 	spec: DriverRunSpec,
 	failure: Awaited<ReturnType<typeof readRetryableDriveFinalizerFailure>>,
@@ -714,6 +721,9 @@ function finalizationFailureResult(
 	return {
 		runId: spec.runId,
 		outcome: "finalization_failed",
+		...retainedTaskSnapshots(
+			steps.filter((step) => step.id.startsWith("finalizer-task-status-")),
+		),
 		tasksDone: steps.filter(isDoneTaskStatusStep).length,
 		tasksBlocked: 0,
 		finalizationPhase: failure.finalizationPhase,

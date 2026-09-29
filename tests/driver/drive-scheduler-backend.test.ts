@@ -535,7 +535,7 @@ describe("Drive scheduler backend", () => {
 		const fixture = await setupFixture("conflicting-report");
 		await fixture.taskManager.createTask({ title: "Needs human" });
 		const raw =
-			'```json\n{"outcome":"success","notes":"Need review"}\n```\noutcome: blocked';
+			'```json\n{"outcome":"success","notes":"Finished"}\n```\n```json\n{"outcome":"blocked","notes":"Need approval"}\n```';
 		const events: DriverEvent[] = [];
 		const backendRun = vi.fn(async () => ({
 			exitCode: 0,
@@ -554,8 +554,12 @@ describe("Drive scheduler backend", () => {
 		const result = await (await prepared.backend.start(prepared.step)).result;
 		expect(result).toMatchObject({
 			outcome: "blocked",
-			summary: "Need review",
+			summary: "Need approval",
 		});
+		// H1 / INV-002: graph task record names the blocked report's reason.
+		expect(
+			(await fixture.taskManager.getTask("TASK-1"))?.implementationNotes,
+		).toContain("Need approval");
 		expect(events.map((event) => event.type)).not.toContain("verify");
 		expect(events.map((event) => event.type)).not.toContain("task_retry");
 		expect(backendRun).toHaveBeenCalledTimes(1);

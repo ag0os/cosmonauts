@@ -125,6 +125,58 @@ describe("snapshotWorktree", () => {
 		expect(files).not.toContain("secret.env");
 	});
 
+	it.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s protects worker bytes but exempts Drive's own task status", async (policy) => {
+		const taskFile = "missions/tasks/TASK-1.md";
+		const missionFile = "missions/plan.md";
+		await writeFile(join(root, taskFile), "To Do\n");
+		await writeFile(join(root, missionFile), "base\n");
+		git(["add", "-A"]);
+		git(["commit", "-q", "-m", "track task and plan"]);
+		for (const discarded of ["none", "tracked.txt", missionFile] as const) {
+			await writeFile(join(root, taskFile), "In Progress\n");
+			await writeFile(join(root, "tracked.txt"), "worker source\n");
+			await writeFile(join(root, missionFile), "worker plan\n");
+			const attemptNumber = { none: 1, "tracked.txt": 2, [missionFile]: 3 }[
+				discarded
+			];
+			const runId = `run-${attemptNumber}`;
+			const ref = await snapshotWorktree({
+				projectRoot: root,
+				runId,
+				taskId: "TASK-1",
+				attemptNumber,
+			});
+			await writeFile(join(root, taskFile), "Done\n");
+			if (discarded !== "none")
+				await writeFile(
+					join(root, discarded),
+					discarded === missionFile ? "base\n" : "original\n",
+				);
+			let sha: string | undefined;
+			if (policy !== "no-commit") {
+				git(["add", "tracked.txt"]);
+				if (policy === "backend-commits") git(["add", missionFile]);
+				git(["commit", "-q", "-m", "worker source"]);
+				sha = git(["rev-parse", "HEAD"]);
+			}
+			const retained = await removeDoneTaskSnapshots(
+				root,
+				runId,
+				"TASK-1",
+				policy,
+				sha,
+				new AbortController().signal,
+			);
+			expect(retained, `${policy}: ${discarded}`).toEqual(
+				discarded === "none" ? [] : [ref],
+			);
+		}
+	});
+
 	it("retains snapshot bytes missing from the final worktree", async () => {
 		await writeFile(join(root, "untracked.txt"), "recover me");
 		const ref = await snapshotWorktree({
