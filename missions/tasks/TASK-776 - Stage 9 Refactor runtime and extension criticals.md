@@ -1,8 +1,9 @@
 ---
 id: TASK-776
 title: 'Stage 9: Refactor runtime and extension criticals'
-status: To Do
+status: Blocked
 priority: medium
+assignee: worker
 labels:
   - backend
   - testing
@@ -10,7 +11,7 @@ labels:
 dependencies:
   - TASK-775
 createdAt: '2026-09-28T15:24:56.144Z'
-updatedAt: '2026-09-29T02:13:34.487Z'
+updatedAt: '2026-09-29T02:23:36.699Z'
 ---
 
 ## Description
@@ -38,7 +39,6 @@ Addendum (2026-09-28, plan D-023): a task-close `analysis_audit` that returns `f
 
 Addendum (2026-09-28, plan D-024): for critical-complexity functions the INV-003 pre-edit confirmation is the fresh project-scope `analysis_complexity` run per metric that still lists the function row; a symbol `analysis_trace` exit 2 for a non-exported function is a recorded provider limitation (`fallow dead-code --trace` resolves exports only), not a D-013 hard stop. If the surface complexity output is truncated, record its state/count/digest and confirm your owned rows with the direct diagnostic `fallow health --complexity --format json --quiet --no-cache` filtered locally by path and name, recorded verbatim as diagnosis.
 
-
 ### Coordinator note before attempt 1 (2026-09-29, successor #2): model, budget rules, and what TASK-775 left you
 
 Model: `openai-codex/gpt-6-sol` on the Pi `cosmonauts-subagent` backend (plan D-029, human Q-013). Characterization base `C` = `7390f1053abff498419829ce9356a910d45f3daa` (TASK-775 Drive commit); slice-start `S` = HEAD at launch (record it). Rules learned from slices 7-12:
@@ -47,3 +47,13 @@ Model: `openai-codex/gpt-6-sol` on the Pi `cosmonauts-subagent` backend (plan D-
 3. Never run `git checkout`, `git stash`, `git reset`, or any git write; the driver commits. Never pass `title` to `task_edit`; only `implementationNotes` (paste the whole existing body back plus your additions) and `checkAc`. Never touch `missions/reviews/`.
 4. Helper ceiling (AC #3): every non-exported helper you create is cyclomatic ≤9 and cognitive ≤14 in a test-reachable file; pre-existing helpers you do not touch are out of scope (slice 7 precedent). Exported entry points keep their measured tier.
 5. Q-002: if any existing test expectation would have to change, stop `blocked` and report; never edit a test.
+
+### Attempt 1 worker pre-edit evidence
+S = `6fa0170852f8c74d1e0cbe70dd7fa24795ffe92e`; C = `7390f1053abff498419829ce9356a910d45f3daa`. `analysis_status`: package-native Fallow 2.54.2 bound dead-code(project,paths), duplication(project), complexity(project; cyclomatic,cognitive,crap), changed-scope-audit(changed), trace(target), fix-preview(project); boundary-conformance unbound(provider-not-configured). No source or test edits yet.
+
+### Attempt 1 worker blocker (pre-edit)
+Fresh project-scope `analysis_complexity` was called separately for cyclomatic, cognitive and CRAP (outputs truncated); direct diagnostic `bunx fallow health --complexity --format json --quiet --no-cache`, filtered to owned names, reproduced these ten rows (cyclomatic/cognitive/CRAP): runDrive 45/44/482.4; parseTaskBatchRow 22/27/126.5; describeDriverEvent 30/9/224.4; introspectProvider 28/23/197.3; runDurableGraphScheduler 29/30/31.8 (high-tier); isStepRecordLike 20/4/106.4; summarizeEvent 21/3/116.3; parseRememberParams 28/35/197.3; adaptStoredEvent 20/1/106.4; validateChainAgentEvidence 22/18/126.5. Immediately before recording this blocker, `analysis_status` reconfirmed bound complexity (three metrics), trace and audit on Fallow 2.54.2; boundary conformance remains unbound.
+
+Uncharacterized return site discovered before any production edit: `lib/durable-runtime/scheduler.ts:215-224`, `runDurableGraphScheduler`'s `availableSlots === 0` return (`waiting_for_fresh_external_work` with runnable ready work while existing running work fills the effective parallelism limit). TASK-775's `tests/durable-runtime/runtime-criticals-characterization.test.ts` only covers `summarizeEvent` and `isStepRecordLike`; existing `scheduler-parallelism.test.ts` tests fresh runs without a pre-existing running step, and `scheduler-recovery.test.ts:110-165` tests a sole externally running step without any ready step. Repository test search for saturated slots/ready + running found no case reaching this return. This is a separate observable scheduler result, not the `!runnable` waiting return; changing it during extraction would violate AC #3's return-site coverage rule and INV-002. The missing-run throw at scheduler.ts:40-42 likewise has no scheduler test (controller's missing-run test exercises a different entry), another failure variant to characterize. D-018(2) requires a separate characterization task/commit for the needed result variants; this refactor task may neither create a test file nor land a test-only seam. Route: halt without code edits and ask coordinator to create a dependent characterization task with a fixture for externally running plus ready step at maxParallelSteps 1 asserting waiting result, no new backend start and no mutation of the ready step, and a missing-run rejection fixture, then restart the return-site mapping. No threshold, suppression, configuration, source, or test edits were made; no stage-gate claim or task-close audit is made. This is a prerequisite characterization gap, not a failed analysis binding and not a request to change any test expectation.
+
+D-015 in-session evidence against C (2026-09-29): `git diff --name-status --diff-filter=MDR 7390f1053abff498419829ce9356a910d45f3daa -- tests/` => empty; `git status --porcelain -- tests/` => empty; `git diff -U0 7390f1053abff498419829ce9356a910d45f3daa -- tests/ | grep -E '^\+.*\.(skip|only|todo)\('` => empty (grep exit 1, command wrapped with `|| true`). `git diff --name-only --` all ten owned source files plus registry => empty. HEAD remains S. Unrelated dirty `missions/plans/project-health-audit/coordinator-status.md` was left untouched.

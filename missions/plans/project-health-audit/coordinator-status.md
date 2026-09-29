@@ -7,7 +7,8 @@ Implementation started 2026-09-28.
 
 ## Needs the user
 
-The top-up decision (Q-012 stop; see Running). Earlier: Q-008 ruled (a) 2026-09-28 (human, relayed; plan D-022, spec Q-008,
+Nothing now (Q-013 resolved the provider: Codex back, gpt-6-sol). At closeout:
+gate-owned R-013 sign-off. Earlier: Q-008 ruled (a) 2026-09-28 (human, relayed; plan D-022, spec Q-008,
 rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 `plan.md` D-010/D-012/D-013/D-017.
 
@@ -85,14 +86,23 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. **STOPPED per Q-012 (2026-09-29 01:00Z).** All four characterization
-slices eligible for claude-cli are done except TASK-781, which depends on
-TASK-780 (a refactor slice) and cannot run yet. Ready tasks are exactly the
-three held refactor slices: TASK-776, TASK-778, TASK-780 (then 781 → 782 →
-784 → 783). Each refactor slice needs the Pi `cosmonauts-subagent` worker
-(INV-003 analysis tools), i.e. OpenRouter credit (slice 7 cost $2.99 on
-deepseek-v4-pro; $4.52 remains, guard $2) or a restored Codex/Claude quota.
-The user decides the top-up; Shepherd relays.
+Nothing. **TASK-776 attempt 1 (`run-6fe911a5`, gpt-6-sol) stopped `blocked`
+before any edit, 02:21Z — ESCALATED to Shepherd (refactor blocked on a seam).**
+The worker (correctly, per AC #3 / D-018 (2)) found two return sites of the
+owned high-tier `runDurableGraphScheduler` that no test reaches:
+`lib/durable-runtime/scheduler.ts:215-224` (`availableSlots === 0` →
+`waiting_for_fresh_external_work` with runnable ready work while running work
+fills the parallelism limit) and the missing-run throw at `scheduler.ts:40-42`.
+TASK-775 characterized only `summarizeEvent`/`isStepRecordLike` in that area
+(its AC #3 said the scheduler "remains unchanged under existing coverage",
+which TASK-776 AC #1 contradicts by requiring all ten below thresholds).
+No source/test edits; worker notes recovered from the transcript into the
+task (Drive had overwritten them: obs. 2 + obs. 19). Proposed route: a new
+dependent characterization task (stage 8b) adding two scheduler test cases
+(saturated slots with a ready step at `maxParallelSteps` 1 → waiting result,
+no backend start, ready step unmutated; missing run → rejection), then
+TASK-776 attempt 2 with 776 depending on it. Needs a human/Shepherd ruling
+because it adds a task to the D-016 backlog.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -159,6 +169,13 @@ The user decides the top-up; Shepherd relays.
 18. `launch-next.sh`'s first version left `$TASK` unexpanded inside the
    `bash -c` single-quoted string ("Task not found: ", `run-2ab8e9d5`,
    aborted, empty). Shepherd fixed both; stale runs are aborted records only.
+19. `lib/driver/report-parser.ts:5` accepts only `outcome: success|failure|
+   partial|completed`; the worker protocol tells workers to stop `blocked`,
+   and a final `outcome: blocked` line parses as `unknown` → `task_blocked`
+   "report outcome unknown" + `run_aborted`, and the worker's notes are
+   overwritten (obs. 2) even though it wrote a full blocker record
+   (TASK-776 attempt 1, `run-6fe911a5`). Add `blocked` to the parser or map
+   unknown-with-raw to the raw text in the notes.
 12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
@@ -171,7 +188,7 @@ provider: worker `openrouter/deepseek/deepseek-v4-pro`, cosmo
 The D-025 Anthropic pins (`1bce4ac2`) failed their probe (claude.ai OAuth
 out of extra usage) and are superseded.
 
-## Spend guard (Q-011: stop and escalate below $2 remaining)
+## Spend guard (Q-011; RETIRED by Q-013 / D-029 — table kept as record)
 
 | when | total_credits | total_usage | remaining |
 |---|---|---|---|
@@ -210,45 +227,48 @@ out of extra usage) and are superseded.
 user: the OpenRouter top-up (or Codex/Claude quota) decision before any
 refactor slice; gate-owned R-013 sign-off at closeout.
 
-## Successor handoff — resume after the top-up decision (written by successor #2, 2026-09-29 01:05Z)
+## Successor handoff — continue implementation (refreshed by successor #2, 2026-09-29 02:15Z, after Q-013)
 
-State: `feature/project-health-audit`, HEAD = the record-only commit after
-TASK-779; tree clean; nothing running; 9 of 17 tasks Done (768-775, 777,
-779). Rulings Q-001..Q-012 in `.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`
-and plan D-001..D-028. Model pins on the branch: worker
-`openrouter/deepseek/deepseek-v4-pro`, cosmo `openrouter/deepseek/deepseek-v4-flash`
-(D-027; revert to `openai-codex/gpt-5.6-sol` when the Codex cap lifts).
+State: `feature/project-health-audit`; rulings Q-001..Q-013 in
+`.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`, plan
+D-001..D-029. Pins: worker and cosmo `openai-codex/gpt-6-sol` (D-029). 9 of 17
+tasks Done (768-775, 777, 779). TASK-776 attempt 1 is running (see Running);
+if you inherit it mid-run, poll as described there and do the verdict.
 
-Remaining order: TASK-776, TASK-778, TASK-780 (refactor, any order, ready) →
-TASK-781 (characterization, claude-cli eligible, after 780) → TASK-782 (15a)
-→ TASK-784 (15b) → TASK-783 (16 closeout, D-018 (4)) → `/implement-plan`
-Phases 2-4 with Claude-subagent + Kimi reviews, `codex exec` review pending.
+Remaining order: 776 (running) → 778, 780 (refactor, ready) → 781
+(characterization, after 780; Pi worker, no claude-cli needed) → 782 (15a) →
+784 (15b) → 783 (16 closeout, D-018 (4)) → `/implement-plan` Phases 2-4:
+gates, QM (commit first, reconcile against local `main`, gate-owned files →
+"pending sign-off"), `codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only < /dev/null`
+framed as correctness/liveness, Claude-subagent reviewer, Kimi channel via
+Shepherd, improvement pass from the observations below, final report. No
+push/merge/PR.
 
-Two launch paths, both proven:
-
-A. **Refactor slice (Pi subagent worker, needs credit/quota):** from a clean
-   tree, the handoff-step-1 `nohup … cosmonauts -p -a cosmo "Call run_driver …
-   backend 'cosmonauts-subagent', mode 'inline' …"` line (see the original
-   handoff below). Costs about $3 per slice on deepseek-v4-pro; guard $2
-   (Q-011). Before launching: append a coordinator note to the task with the
-   D-024 one-metric-per-turn rule, "never git checkout/stash/reset", "never
-   pass `title` to task_edit", and the characterization task's residual-risk
-   variants (TASK-777 → 778, TASK-779 → 780, TASK-775 → 776: enumerate return
-   sites before editing). Expect 2-4 attempts per slice; on `task_blocked`
-   restore notes from the newest `worker-*.jsonl` (step 3 below).
-
-B. **Characterization slice (claude-cli, no credit):** the coordinator cannot
-   launch it (obs. 15); Shepherd runs
-   `.shepherd/work/in-progress/project-health-audit/launch-next.sh TASK-NNN`
-   (detached, `ANTHROPIC_MODEL=sonnet`, no `COSMONAUTS_DRIVER_CLAUDE_ARGS`,
-   obs. 16-18). Coordinator: add the D-028 pre-launch note, watch
-   `driver.lock` for the runId, poll the worker pid then the driver pid,
-   freeze check from `S`, trial checks, then add the surface record from a
-   one-turn `cosmonauts -p -a worker -m openrouter/deepseek/deepseek-v4-flash`
-   session (cents), write the verdict, commit record files.
-
-After every slice: `curl -s https://openrouter.ai/api/v1/credits -H "Authorization: Bearer <openrouter key from ~/.pi/agent/auth.json>"`
-→ row in the spend-guard table; stop below $2.
+Per slice (Pi worker path, proven in slices 1-7):
+1. Clean tree at a record-only commit. Append a coordinator note to the task
+   with: model, `C` (its characterization task's Drive commit), the D-024
+   one-metric-per-turn rule, return-site enumeration before edit, "never git
+   checkout/stash/reset", "never pass `title` to task_edit", helper ceiling
+   (new helpers only; pre-existing untouched rows out of scope, slice-7
+   precedent), Q-002 hard stop. Commit it (explicit paths). That commit is `S`.
+2. Launch detached with the `nohup … cosmonauts -p -a cosmo "Call run_driver …
+   backend 'cosmonauts-subagent', mode 'inline' …"` line in the previous
+   handoff (step 1 there); runId/pid in `driver.lock`.
+3. On `run_completed`: `freeze-check.sh <S> <driveCommit>` (recreate: parent,
+   `git diff --name-status --diff-filter=MDR`, porcelain, skip/only/todo grep,
+   non-test path list) plus the same from `C`; confirm five `verify passed`
+   events; `bunx fallow health --complexity --format json --quiet --no-cache`
+   filtered to the owned files at the Drive commit and (via a throwaway
+   `git worktree add --detach <dir> <C>`) at `C`; confirm the owned criticals
+   are absent and every remaining row existed at `C` with equal metrics.
+   Append `### Coordinator D-015 verdict`, set Done if the worker did not,
+   update this file, commit record files with explicit paths. Check the task
+   file path: a quoted title from the worker renames it (obs. 13).
+4. On `task_blocked`: recover notes from the newest
+   `missions/sessions/project-health-audit/worker-*.jsonl`, write them back,
+   add a `### Coordinator note before attempt N`, `--status todo`, relaunch.
+5. Characterization slice 781: same path, `C` not applicable, expect new test
+   files only.
 
 ## Previous handoff — continue implementation (pha-implementer; steps 1-5 still accurate)
 
