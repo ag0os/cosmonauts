@@ -10,7 +10,7 @@ const definition: AgentDefinition = {
 		"coding-readwrite",
 		"tasks",
 	],
-	model: "openrouter/deepseek/deepseek-v4-pro",
+	model: "openai-codex/gpt-6-sol",
 	tools: "coding",
 	extensions: ["tasks", "project-tools", "architecture-memory"],
 	skills: ["*"],

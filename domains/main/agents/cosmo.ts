@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Personal assistant — helps with the user's files, email, calendar, notes, and general work; aware of other Cosmonauts domains and can pull in specialists when the work warrants it.",
 	capabilities: ["tasks", "spawning", "todo", "drive"],
-	model: "openrouter/deepseek/deepseek-v4-flash",
+	model: "openai-codex/gpt-6-sol",
 	tools: "none",
 	extensions: [
 		"tasks",

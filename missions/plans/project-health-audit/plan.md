@@ -210,6 +210,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: the user's direction on re-allocating the remaining credit; test-only slices do not need the Pi analysis surface.
   - Decided by: Shepherd, derived under human rulings Q-010/Q-011, 2026-09-29 (rulings file round 6)
 
+- **D-029 - Q-013: Codex is back; worker and cosmo pins return to `openai-codex/gpt-6-sol`; the OpenRouter spend guard is dropped** *(Added 2026-09-29 by the implementing coordinator, successor #2)*
+  - Decision: the Q-010/Q-011 revert condition (Codex cap lifted) is met and GPT-6 Sol is available; Shepherd verified `codex exec -m gpt-6-sol` and `cosmonauts -p -a cosmo -m openai-codex/gpt-6-sol` answer. `bundled/coding/agents/worker.ts` and `domains/main/agents/cosmo.ts` are repinned to `openai-codex/gpt-6-sol` (one step above the original `gpt-5.6-sol`, per the user's model direction). D-027's DeepSeek pins and the Q-011 spend guard are retired; the spend-guard table stays as a record. Remaining refactor slices (776, 778, 780) and TASK-781 run on the Pi `cosmonauts-subagent` worker launched by the coordinator as in slice 7; D-028's claude-cli path is no longer needed. The closure `codex exec` review (D-025/D-028 "pending") runs on `gpt-6-sol` at high effort. The model-id format test widening from D-027 stays (harmless).
+  - Alternatives: keep DeepSeek (credit-bound, weaker worker); keep claude-cli for 781 (classifier-blocked launch, no analysis surface).
+  - Why: the human's ruling; GPT-backed Pi workers were the plan's original preference (Q-007 (a)).
+  - Decided by: coordinator, derived under human ruling Q-013, 2026-09-29 (rulings file round 7, relayed by Shepherd)
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
