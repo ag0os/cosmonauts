@@ -14,6 +14,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
+import tasksExtension from "../../domains/shared/extensions/tasks/index.ts";
 import type {
 	Backend,
 	BackendInvocation,
@@ -46,6 +47,7 @@ import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
 import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { createMockPi } from "../helpers/mocks/extension-api.ts";
 
 const temp = useTempDir("drive-on-graph-acceptance-");
 const execFileAsync = promisify(execFile);
@@ -57,6 +59,48 @@ const WORKER_SOURCE = "cod" + "ing/worker";
 // fixture, so each pays real subprocess cost that scales with suite-wide load.
 // Declare the same 30s budget the sibling drive-on-graph suites use.
 describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
+	test.each([
+		false,
+		true,
+	] as const)("renamed task %s retains a snapshot only when dirty source is discarded", async (discard) => {
+		const fixture = await setupFixture(`renamed-${discard}`, 1);
+		await initGit(fixture.projectRoot);
+		if (discard)
+			await writeFile(
+				join(fixture.projectRoot, "envelope.md"),
+				"dirty source\n",
+			);
+		const taskId = fixture.taskIds[0];
+		if (!taskId) throw new Error("Expected a task");
+		const backend = createBackend({
+			onRun: async () => {
+				const pi = createMockPi({ cwd: fixture.projectRoot });
+				tasksExtension(pi as never);
+				await pi.callTool("task_edit", { taskId, title: "Renamed by worker" });
+				if (discard)
+					await writeFile(
+						join(fixture.projectRoot, "envelope.md"),
+						"# Live Envelope\n",
+					);
+				return successfulBackendResult("done");
+			},
+		});
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, backend, new AbortController().signal),
+		);
+		expect(result.outcome).toBe("completed");
+		const ref = `refs/cosmonauts/drive/${fixture.spec.runId}/${taskId}/attempt-1`;
+		expect(result.retainedSnapshots).toEqual(discard ? [ref] : undefined);
+		if (discard)
+			await expect(
+				git(fixture.projectRoot, ["show-ref", "--verify", ref]),
+			).resolves.toBeUndefined();
+		else
+			await expect(
+				git(fixture.projectRoot, ["show-ref", "--verify", ref]),
+			).rejects.toThrow();
+	});
 	test.each([
 		"driver-commits",
 		"backend-commits",

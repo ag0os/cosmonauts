@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { probeJournalBlockReason } from "../agents/drive-worker-tool-guard.ts";
+import { getTaskFilename } from "../tasks/file-system.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { Backend } from "./backends/types.ts";
 import {
@@ -142,7 +143,11 @@ async function runTaskAttempt(
 	);
 
 	const headBefore = await headBeforeSpawn(spec.projectRoot, ctx.abortSignal);
+	const snapshotTask = await ctx.taskManager.getTask(taskId);
 	const worktreeSnapshot = await snapshotWorktree({
+		...(snapshotTask
+			? { taskFile: `missions/tasks/${getTaskFilename(snapshotTask)}` }
+			: {}),
 		projectRoot: spec.projectRoot,
 		runId: spec.runId,
 		taskId,

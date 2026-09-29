@@ -220,6 +220,20 @@ test("reports tracked index side effects even when worktree bytes do not change"
 	});
 });
 
+test("invalidates zero when the command removes instrumentation by restoring original bytes", async () => {
+	const result = await probe({
+		testCommand: `node -e "require('fs').writeFileSync('entry.js', Buffer.from('${Buffer.from(original).toString("base64")}', 'base64'))"`,
+	});
+	expect(result).toMatchObject({
+		hits: [{ count: 0 }],
+		exitCode: 0,
+		restored: true,
+		sideEffects: ["entry.js"],
+		usableZero: false,
+	});
+	expect(await readFile(source, "utf8")).toBe(original);
+});
+
 test("marks a clean zero usable", async () => {
 	expect(
 		await probe({ testCommand: "node -e 'process.exit(0)'" }),

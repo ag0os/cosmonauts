@@ -198,7 +198,6 @@ export function runCommand(
 				: shell
 					? { env: projectCommandEnvironment() }
 					: {}),
-			...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
 			signal,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -207,7 +206,10 @@ export function runCommand(
 		child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
 		child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
 		let closeTimer: NodeJS.Timeout | undefined;
+		let timeoutTimer: NodeJS.Timeout | undefined;
 		let abortError: string | undefined;
+		let timedOut = false;
+		let childExited = false;
 		let settled = false;
 		const finish = (
 			code: number | null,
@@ -216,14 +218,11 @@ export function runCommand(
 			if (settled) return;
 			settled = true;
 			if (closeTimer) clearTimeout(closeTimer);
+			if (timeoutTimer) clearTimeout(timeoutTimer);
 			child.stdout?.destroy();
 			child.stderr?.destroy();
 			const termination =
-				signal.aborted || abortError
-					? "abort"
-					: closeSignal && options?.timeoutMs
-						? "timeout"
-						: "exit";
+				signal.aborted || abortError ? "abort" : timedOut ? "timeout" : "exit";
 			resolve({
 				termination,
 				exitCode: termination !== "exit" ? 124 : (code ?? 1),
@@ -231,14 +230,26 @@ export function runCommand(
 				stderr:
 					Buffer.concat(stderr).toString() ||
 					abortError ||
-					(closeSignal && options?.timeoutMs
-						? `timed out (${closeSignal})`
+					(timedOut
+						? `timed out${closeSignal ? ` (${closeSignal})` : ""}`
 						: ""),
 			});
 		};
+		if (options?.timeoutMs) {
+			timeoutTimer = setTimeout(() => {
+				timedOut = true;
+				child.kill("SIGTERM");
+				closeTimer ??= setTimeout(() => {
+					if (!childExited) child.kill("SIGKILL");
+					finish(null, null);
+				}, 250);
+			}, options.timeoutMs);
+		}
 		child.on("error", (error) => {
 			if ((error as NodeJS.ErrnoException).name !== "AbortError") {
 				if (closeTimer) clearTimeout(closeTimer);
+				if (timeoutTimer) clearTimeout(timeoutTimer);
+				settled = true;
 				reject(error);
 				return;
 			}
@@ -246,6 +257,8 @@ export function runCommand(
 			closeTimer ??= setTimeout(() => finish(null, null), 250);
 		});
 		child.on("exit", (code, exitSignal) => {
+			childExited = true;
+			if (timeoutTimer) clearTimeout(timeoutTimer);
 			closeTimer ??= setTimeout(() => finish(code, exitSignal), 250);
 		});
 		child.on("close", (code, closeSignal) => finish(code, closeSignal));
@@ -386,6 +399,7 @@ export async function snapshotWorktree(options: {
 	runId: string;
 	taskId: string;
 	attemptNumber: number;
+	taskFile?: string;
 	signal?: AbortSignal;
 }): Promise<string | undefined> {
 	const {
@@ -459,7 +473,7 @@ export async function snapshotWorktree(options: {
 				"-p",
 				await git(["rev-parse", "HEAD"]),
 				"-m",
-				`Drive snapshot ${runId}/${taskId}/attempt-${attemptNumber}`,
+				`Drive snapshot ${runId}/${taskId}/attempt-${attemptNumber}${options.taskFile ? `\n\nDrive-Task-File: ${options.taskFile}` : ""}`,
 			],
 			env,
 		);
@@ -503,6 +517,9 @@ export async function removeDoneTaskSnapshots(
 			: await treeEntries(git, finalTree);
 	const retained: string[] = [];
 	for (const ref of refs) {
+		const message = await git(["show", "-s", "--format=%B", ref]);
+		const snapshotTaskFile =
+			/^Drive-Task-File: (missions\/tasks\/[^\n]+\.md)$/mu.exec(message)?.[1];
 		const snapshot = await treeEntries(git, ref);
 		const delta = await git([
 			"diff-tree",
@@ -517,7 +534,8 @@ export async function removeDoneTaskSnapshots(
 		for (let index = 0; index + 1 < changes.length; index += 2) {
 			const status = changes[index];
 			const path = changes[index + 1];
-			if (!path || !status || path === taskFile) continue;
+			if (!path || !status || path === taskFile || path === snapshotTaskFile)
+				continue;
 			const hash = status === "D" ? undefined : snapshot.get(path);
 			let finalHash: string | undefined;
 			if (

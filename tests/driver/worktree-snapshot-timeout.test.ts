@@ -1,8 +1,10 @@
 import { execFileSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, expect, test, vi } from "vitest";
+import { PassThrough } from "node:stream";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const observed = vi.hoisted(() => ({
 	commands: [] as string[],
@@ -11,6 +13,13 @@ const observed = vi.hoisted(() => ({
 	inheritedPipe: false,
 	warningBeforeStall: false,
 	failCommandWithWarning: false,
+	ignoreTerm: false,
+	ignoredChild: undefined as
+		| ReturnType<typeof import("node:child_process").spawn>
+		| undefined,
+	signals: [] as (NodeJS.Signals | number)[],
+	neverCloses: false,
+	exitsWithoutClosing: false,
 }));
 vi.mock("node:child_process", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:child_process")>();
@@ -21,11 +30,27 @@ vi.mock("node:child_process", async (importOriginal) => {
 			args: string[],
 			options: { timeout?: number; signal?: AbortSignal },
 		) => {
+			if (
+				(observed.neverCloses || observed.exitsWithoutClosing) &&
+				command === "git"
+			) {
+				const child = new EventEmitter();
+				return Object.assign(child, {
+					stdout: new PassThrough(),
+					stderr: new PassThrough(),
+					kill: (signal: NodeJS.Signals) => {
+						observed.signals.push(signal);
+						if (signal === "SIGTERM" && observed.exitsWithoutClosing)
+							queueMicrotask(() => child.emit("exit", 0, null));
+						return true;
+					},
+				}) as unknown as ReturnType<typeof actual.spawn>;
+			}
 			if (command === "git") {
 				observed.commands.push(`${command} ${args.join(" ")}`);
 				if (
 					args.join(" ").includes(observed.stallCommand ?? "\u0000") &&
-					(!options.timeout || !options.signal)
+					!options.signal
 				)
 					throw new Error(`unbounded git ${args.join(" ")}`);
 			}
@@ -50,18 +75,25 @@ vi.mock("node:child_process", async (importOriginal) => {
 										? 'require("node:child_process").spawn(process.execPath,["-e","setTimeout(()=>{},2200)"],{stdio:["ignore",1,2]});process.stdout.write("descendant ready\\n");setTimeout(()=>{},60000)'
 										: observed.warningBeforeStall
 											? 'process.stderr.write("warning\\n");setTimeout(() => {}, 60000)'
-											: "setTimeout(() => {}, 60000)",
+											: observed.ignoreTerm
+												? 'process.on("SIGTERM",()=>{}); process.stdout.write("ready\\n"); setInterval(()=>{},1000)'
+												: "setTimeout(() => {}, 60000)",
 								],
-								{
-									...options,
-									timeout: observed.inheritedPipe
-										? 180
-										: observed.warningBeforeStall
-											? 250
-											: 20,
-								},
+								options,
 							)
 						: actual.spawn(command, args, options);
+			if (
+				observed.ignoreTerm &&
+				command === "git" &&
+				args.join(" ").includes(observed.stallCommand ?? "\u0000")
+			) {
+				observed.ignoredChild = child;
+				const kill = child.kill.bind(child);
+				child.kill = ((signal?: NodeJS.Signals | number) => {
+					if (signal) observed.signals.push(signal);
+					return kill(signal);
+				}) as typeof child.kill;
+			}
 			if (command === "git" && args.includes("add")) {
 				if (observed.inheritedPipe)
 					child.stdout?.once("data", () => observed.abortAdd?.());
@@ -83,13 +115,34 @@ import type { DriverRunSpec } from "../../lib/driver/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
 let root: string;
+const nativeTimeout = setTimeout;
+beforeEach(() => {
+	// K1/L2: accelerate the git bound, not the child-spawn timeout (which no longer owns it).
+	vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+		callback: (...args: unknown[]) => void,
+		delay?: number,
+		...args: unknown[]
+	) =>
+		nativeTimeout(
+			callback,
+			delay === 60_000 ? 500 : delay,
+			...args,
+		)) as typeof setTimeout);
+});
 afterEach(async () => {
+	vi.restoreAllMocks();
 	observed.commands = [];
 	observed.abortAdd = undefined;
 	observed.stallCommand = undefined;
 	observed.inheritedPipe = false;
 	observed.warningBeforeStall = false;
 	observed.failCommandWithWarning = false;
+	observed.ignoreTerm = false;
+	observed.ignoredChild?.kill("SIGKILL");
+	observed.ignoredChild = undefined;
+	observed.signals = [];
+	observed.neverCloses = false;
+	observed.exitsWithoutClosing = false;
 	if (root) await rm(root, { recursive: true, force: true });
 });
 test("aborts an in-flight snapshot add and identifies the git command", async () => {
@@ -168,9 +221,57 @@ test("reports timeout separately from a git warning", async () => {
 		root,
 		new AbortController().signal,
 		false,
-		{ timeoutMs: 50 },
+		{ timeoutMs: 500 },
 	);
 	expect(result).toMatchObject({ termination: "timeout", stderr: "warning\n" });
+});
+
+test("labels a child that exits zero on SIGTERM after the timeout as timed out", async () => {
+	root = await mkdtemp(join(tmpdir(), "drive-command-handled-"));
+	const result = await runCommand(
+		process.execPath,
+		[
+			"-e",
+			'process.on("SIGTERM", () => process.exit(0));setTimeout(() => {}, 60000)',
+		],
+		root,
+		new AbortController().signal,
+		false,
+		{ timeoutMs: 200 },
+	);
+	expect(result).toMatchObject({ termination: "timeout", exitCode: 124 });
+});
+
+test("settles by the grace even when the child never emits exit or close", async () => {
+	root = await mkdtemp(join(tmpdir(), "drive-never-close-"));
+	observed.neverCloses = true;
+	const started = Date.now();
+	const result = await runCommand(
+		"git",
+		["status"],
+		root,
+		new AbortController().signal,
+		false,
+		{ timeoutMs: 40 },
+	);
+	expect(result).toMatchObject({ termination: "timeout", exitCode: 124 });
+	expect(observed.signals).toEqual(["SIGTERM", "SIGKILL"]);
+	expect(Date.now() - started).toBeLessThan(500);
+});
+
+test("does not send SIGKILL after a timed-out child exits but never closes", async () => {
+	root = await mkdtemp(join(tmpdir(), "drive-exits-no-close-"));
+	observed.exitsWithoutClosing = true;
+	const result = await runCommand(
+		"git",
+		["status"],
+		root,
+		new AbortController().signal,
+		false,
+		{ timeoutMs: 40 },
+	);
+	expect(result).toMatchObject({ termination: "timeout", exitCode: 124 });
+	expect(observed.signals).toEqual(["SIGTERM"]);
 });
 
 test("reports abort separately from timeout and child stderr", async () => {
@@ -194,9 +295,11 @@ test("reports abort separately from timeout and child stderr", async () => {
 });
 
 test.each([
-	"legacy",
-	"graph",
-] as const)("%s refuses warning-producing timed-out snapshot preflight before spawn", async (route) => {
+	["legacy", "warning"],
+	["graph", "warning"],
+	["legacy", "ignore"],
+	["graph", "ignore"],
+] as const)("%s refuses %s timed-out snapshot preflight before spawn", async (route, mode) => {
 	root = await mkdtemp(join(tmpdir(), "drive-preflight-warning-"));
 	const git = (...args: string[]) => execFileSync("git", args, { cwd: root });
 	git("init", "-q", "-b", "main");
@@ -237,7 +340,9 @@ test.each([
 		},
 	};
 	observed.stallCommand = "rev-parse --is-inside-work-tree";
-	observed.warningBeforeStall = true;
+	observed.warningBeforeStall = mode === "warning";
+	observed.ignoreTerm = mode === "ignore";
+	const started = Date.now();
 	const ctx = {
 		taskManager: manager,
 		backend,
@@ -262,6 +367,10 @@ test.each([
 		});
 	}
 	expect(spawned).toBe(false);
+	if (mode === "ignore") {
+		expect(Date.now() - started).toBeLessThan(1800);
+		expect(observed.signals).toEqual(["SIGTERM", "SIGKILL"]);
+	}
 });
 
 test("identifies timed-out snapshot and cleanup git commands", async () => {

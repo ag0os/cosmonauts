@@ -12,6 +12,7 @@ import type {
 	StepResult,
 	VerificationResult,
 } from "../durable-runtime/index.ts";
+import { getTaskFilename } from "../tasks/file-system.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import { DRIVE_BACKEND_ORCHESTRATION_CAPABILITIES } from "./backends/orchestration-adapter.ts";
 import type { Backend, BackendInvocation } from "./backends/types.ts";
@@ -222,7 +223,11 @@ async function runDriveTaskAttempt(
 	);
 	let worktreeSnapshot: string | undefined;
 	try {
+		const snapshotTask = await taskManager.getTask(taskId);
 		worktreeSnapshot = await snapshotWorktree({
+			...(snapshotTask
+				? { taskFile: `missions/tasks/${getTaskFilename(snapshotTask)}` }
+				: {}),
 			projectRoot: spec.projectRoot,
 			runId: spec.runId,
 			taskId,

@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test, vi } from "vitest";
+import tasksExtension from "../../domains/shared/extensions/tasks/index.ts";
 import { probeJournalDirectory } from "../../lib/agents/drive-worker-tool-guard.ts";
 import type {
 	Backend,
@@ -27,6 +28,7 @@ import type {
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import type { Task, TaskUpdateInput } from "../../lib/tasks/task-types.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { createMockPi } from "../helpers/mocks/extension-api.ts";
 
 const temp = useTempDir("run-one-task-test-");
 const execFileAsync = promisify(execFile);
@@ -106,6 +108,43 @@ describe("run-one-task", () => {
 			);
 			await rm(fixture.projectRoot, { recursive: true, force: true });
 		}
+	});
+	test.each([
+		false,
+		true,
+	] as const)("renamed task %s retains a snapshot only when dirty source is discarded", async (discard) => {
+		const fixture = await setupGitFixture();
+		await git(fixture.projectRoot, ["add", "-A"]);
+		await git(fixture.projectRoot, ["commit", "-m", "track task"]);
+		if (discard) await writeProjectFile(fixture, "README.md", "dirty source\n");
+		const backend = createBackend(async () => {
+			const pi = createMockPi({ cwd: fixture.projectRoot });
+			tasksExtension(pi as never);
+			await pi.callTool("task_edit", {
+				taskId: fixture.taskId,
+				title: "Renamed by worker",
+			});
+			if (discard) await writeProjectFile(fixture, "README.md", "initial\n");
+			return successfulResult();
+		});
+		const outcome = await runOneTask(
+			createSpec(fixture, { commitPolicy: "no-commit" }),
+			createCtx(fixture, backend, []),
+			fixture.taskId,
+		);
+		expect(outcome.status).toBe("done");
+		const ref = `refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1`;
+		expect(outcome.status === "done" && outcome.retainedSnapshots).toEqual(
+			discard ? [ref] : undefined,
+		);
+		if (discard)
+			await expect(
+				git(fixture.projectRoot, ["show-ref", "--verify", ref]),
+			).resolves.toBeDefined();
+		else
+			await expect(
+				git(fixture.projectRoot, ["show-ref", "--verify", ref]),
+			).rejects.toThrow();
 	});
 	test.each([
 		"driver-commits",

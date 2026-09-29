@@ -464,11 +464,7 @@ async function runProbe(
 						const current = digest(
 							await readFile(join(root, file.record.path)),
 						);
-						if (
-							outcome &&
-							current !== file.record.instrumented &&
-							current !== file.record.original
-						)
+						if (outcome && current !== file.record.instrumented)
 							modifiedByCommand.push(file.record.path);
 					} catch {
 						modifiedByCommand.push(file.record.path);
