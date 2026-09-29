@@ -217,10 +217,14 @@ Verdict and probe helpers (rows 6-7; in scope):
   slice whose task is clone extraction. (row 6)
 - [ ] AC-012 - A worker-invocable execution-probe helper takes one or more
   source locations and a test command, reports the hit count per location
-  under that command, and leaves the source tree byte-identical to its start
-  even when the command fails; the worker protocol requires a recorded zero
-  hit count from it before a `blocked` stop that claims a site is unreached.
-  (row 7; D-031/D-033 standard)
+  under that command, restores every instrumented file to its original digest
+  whether the command passed, failed, timed out, or was aborted, and reports
+  any other tracked-file change the command made as a side effect that
+  invalidates the hit evidence; the worker protocol requires a recorded,
+  usable zero hit count from it before a `blocked` stop that claims a site is
+  unreached. (row 7; D-031/D-033 standard) *(Amended on record by human
+  ruling H-001 (i)(a), 2026-09-29; the original letter read "leaves the
+  source tree byte-identical to its start even when the command fails".)*
 
 Worker input hygiene (row 8; in scope):
 
@@ -340,6 +344,18 @@ The rulings are ratified ground:
   (cannot probe uncommitted refactors); (c) keeping D-031 manual.
 - Q-003 - Observation 4 (Biome and `.git/info/exclude`): **excluded** as a
   lint-configuration matter.
+
+Ruled during planning (human, 2026-09-29, typed to Shepherd, relayed;
+rulings file round 2):
+
+- H-001 (i) - AC-012's letter: **(a)**, amended on record as shown in the
+  criterion. Rejected: (b) keep the whole-tree letter and drop the helper.
+- H-001 (ii) - "Dirty file" in Q-002 (a): **(a)**, dirty means the target's
+  bytes changed between the digest taken at validation and the
+  instrumentation write, or an outstanding probe journal exists for the
+  project; git-dirty files are probeable. Rejected: (b) git-dirty.
+- D-020 (Drive snapshots the dirty worktree to a run-scoped ref before every
+  spawn, for every backend) was reviewed by the human and stands.
 
 Everything else in this spec is derived ground and may be overridden freely.
 Note for planning: the branch was rebased onto `main` `e55040de` on
