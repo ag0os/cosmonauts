@@ -270,6 +270,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: same rationale as D-036 — review records are neither source, tests, floors, nor the exceptions document.
   - Decided by: implementing coordinator, derived, 2026-09-29; pending Q-016.
 
+- **D-039 - QM F-002: caller-level test for the architecture narrative provider's shared session** *(Added 2026-09-29 by the implementing coordinator, successor #4, after Quality Manager run 2)*
+  - Decision: TASK-770 replaced the architecture narrative provider's inline Pi-session construction with the shared `createToollessPiSession` (`cli/pi-session.ts`); the judgment-provider caller has session-level tests, the architecture caller had none (pre-existing on `main`, but the extraction is this plan's B-011 edge contract). Added `tests/cli/architecture/narrative-provider.test.ts`: mocks the Pi package the same way `tests/cli/memory/subcommand.test.ts` does and asserts project-root, agent-dir, model, tool-less and in-memory-session forwarding, the architecture system prompt, prompt payload, session reuse, prose fallback, and the no-assistant-text failure. A mutation probe (misrouting the prompt and dropping the model) fails the first case. New test file only; no existing expectation changed (D-015 class (a)).
+  - Alternatives: leave the gap as pre-existing (QM already excluded the pre-existing `warn` gap that way, but this caller's contract is exactly what B-011 promises); inject a `createSession` seam like the judgment provider (a production change for a test-only need).
+  - Why: B-011 says behavior-sensitive clone extractions keep their edge contracts, and the shared helper now carries two callers' contracts; the second caller had no observer.
+  - Decided by: implementing coordinator, derived, 2026-09-29
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
