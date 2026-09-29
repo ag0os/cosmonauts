@@ -70,16 +70,16 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. **HOLD from Shepherd (2026-09-29 00:30Z):** do not launch TASK-775 on
-DeepSeek; the user is re-allocating the remaining OpenRouter credit, ruling
-follows. Assessed meanwhile: `run_driver` accepts `backend: 'claude-cli'`
-(inline or detached) with the same driver-side postflight gates; the backend
-runs `claude --dangerously-skip-permissions -p` (extra args via
-`COSMONAUTS_DRIVER_CLAUDE_ARGS`); `claude -p --model sonnet` answered `ok`.
-Open point for the ruling: characterization ACs #7 want `analysis_status` +
-complexity surface records, which a claude-cli worker cannot call; proposed
-derived split — worker records the direct diagnostic, coordinator adds the
-surface record at verdict time (one-turn Pi worker on deepseek-v4-flash).
+Nothing. **Blocked on a permission (2026-09-29):** Q-012 (D-028, commit
+`7da88970`) says launch TASK-775 on `backend: 'claude-cli'`. The launch
+command was denied by the coordinator session's auto-mode classifier
+("Create Unsafe Agents") because the backend runs
+`claude --dangerously-skip-permissions -p`. Not worked around. The user can
+either run the launch line themselves (`! <command>` in the coordinator pane,
+with `COSMONAUTS_DRIVER_CLAUDE_ARGS='--model sonnet'` exported) or add a Bash
+permission rule for it. Launch line = handoff step 1 with
+`backend '"'"'claude-cli'"'"'` and `taskIds ['"'"'TASK-775'"'"']`. Nothing is
+running; tree clean at the slice-start commit.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
