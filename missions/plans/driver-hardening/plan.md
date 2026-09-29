@@ -243,6 +243,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Why: INV-001 is ratified: "anything Drive adds to a task is appended under a heading that names Drive, the outcome, and the attempt." D-020 already places the ref "in the attempt's Drive note"; slice 10 implemented the placement outside it. Choosing the mechanism that satisfies the letter is derived ground. Owned by follow-up task TASK-803, which runs before slice 11 because both edit `lib/driver/runtime-helpers.ts`, `run-one-task.ts`, and `drive-scheduler-backend.ts`.
   - Decided by: coordinator, amend-on-record, 2026-09-29
 
+- **D-034 - Snapshot refs are deleted only when the final tree provably contains the snapshotted bytes** *(Added 2026-09-29 by the implementing coordinator after codex review round 2, finding 2)*
+  - Decision: terminal cleanup of a Done task deletes `refs/cosmonauts/drive/<runId>/<taskId>/attempt-<n>` only when every path in that snapshot's tree is byte-identical in the task's final tree (the Drive commit under `driver-commits`, HEAD under `backend-commits`, the worktree under `no-commit`). Otherwise the ref is kept and the run's terminal record names it as retained. Blocked, partial, and aborted tasks keep their refs as before.
+  - Alternatives: keep D-020's "delete on Done" (an external worker can discard a prior attempt's work, report success, and Drive deletes the only durable copy, so the snapshot no longer satisfies INV-006); never delete refs (accumulates on every dirty Done task).
+  - Why: INV-006 is ratified and the snapshot is its mechanism for backends without the Pi guard; a mechanism that deletes its own evidence on the worker's say-so is not a guard. D-020's cleanup clause is derived ground.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: D-020's "Refs are deleted by the run's terminal cleanup only when the task ended Done" as far as it made Done sufficient.
+
 ## Behaviors
 
 ### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts
