@@ -97,8 +97,9 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-778 attempt 1** (stage 11 refactor, `C` = `203de10c`) on the Pi worker. Then
-780 (note drafted), 781, 782, 784, 783.
+**TASK-780 attempt 1** (stage 13 refactor, `C` = `3cb2d2c3`, `run-dc7558e3`) on the Pi
+worker. Then TASK-786 (stage 11b characterization, created under D-032) → 778
+attempt 2 → 781 → 782 → 784 → 783.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -178,13 +179,19 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
    report) before a `blocked` stop on reachability; vitest v8 line coverage for
    `scheduler.ts` had duplicated function-map entries, so it cannot be the
    standard either.
+21. The coordinator's TASK-778 attempt-1 note predated D-031 rule 5, so the
+   worker again reasoned from fixture greps; this time the claim was true.
+   Every pre-launch note now carries rule 5. Each coordinator probe costs one
+   full-suite run (~2.5 min); a worker-side probe helper would remove the
+   round trip.
 12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
 
 ## Blocked
 
-Nothing. History: TASK-776 attempt 1 (`run-6fe911a5`, 02:21Z) stopped
+TASK-778 waits on TASK-786 (D-032; probe-confirmed unreached exporter return
+sites). History: TASK-776 attempt 1 (`run-6fe911a5`, 02:21Z) stopped
 `blocked` on the two unreached `runDurableGraphScheduler` return sites
 (`scheduler.ts:215-224`, `:40-42`); resolved by Q-014 / D-030 = TASK-785.
 Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.

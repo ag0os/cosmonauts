@@ -1,7 +1,7 @@
 ---
 id: TASK-778
 title: 'Stage 11: Refactor skills and reachability criticals'
-status: Blocked
+status: To Do
 priority: medium
 assignee: worker
 labels:
@@ -10,6 +10,7 @@ labels:
   - 'plan:project-health-audit'
 dependencies:
   - TASK-777
+  - TASK-786
 createdAt: '2026-09-28T15:25:33.131Z'
 updatedAt: '2026-09-29T03:54:40.776Z'
 ---

@@ -228,6 +228,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: INV-002 asks for characterization, which the probe proves exists; D-030's route is for sites that are actually unreached. Vitest v8 line coverage was checked and found unreliable for this file (duplicated function map entries in the 250-291 window), so execution probes are the standard.
   - Decided by: implementing coordinator, derived under INV-002 and D-030, 2026-09-29
 
+- **D-032 - A dependent characterization task (stage 11b) precedes TASK-778 for probe-confirmed unreached `runHarnessSync`/`enhancedRows` return sites** *(Added 2026-09-29 by the implementing coordinator, successor #3, after TASK-778 attempt 1)*
+  - Decision: TASK-778 attempt 1 (`run-f6f0bde6`, gpt-6-sol) stopped `blocked` before any edit on unreached return sites in `lib/skills/exporter.ts`; unlike D-031's case, the coordinator's execution probe confirms zero hits under the full suite for the write-transaction catch (`:292`, `:296`), the `!catalogue` return (`:583`) and the early return for `plan.aborted`, `transaction-aborted-incomplete-inventory`, `foreign-owner`, `source-unavailable`, `owner-transfer`. Per D-030's route, TASK-786 ("Stage 11b", new test file under `tests/skills/` only, depends on TASK-777) pins each variant reachable through shipped `runHarnessSync` and records the rest as Q-002 residual risk; TASK-778 depends on it and its `C` for `runHarnessSync`/`enhancedRows` becomes TASK-786's Drive commit (TASK-777's `203de10c` stays `C` for `groupCatalogue` and `visit`). Backlog 18 → 19 (D-016 amended on record).
+  - Alternatives: refactor around the sites byte-identical (the early-return chain is the complexity being reduced, so not viable); amend stage 11 scope (human ground).
+  - Why: INV-002 and D-018 (2); D-031 rule 5 satisfied by the coordinator's probe.
+  - Decided by: implementing coordinator, derived under INV-002, D-030 and D-031, 2026-09-29
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
