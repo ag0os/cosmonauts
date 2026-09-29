@@ -375,82 +375,155 @@ async function isManifestEntry(
 	key: string,
 	manifestPath: string,
 ): Promise<boolean> {
-	if (!isRecord(value) || value.schemaVersion !== 1) return false;
-	if (
-		typeof value.assetId !== "string" ||
-		(value.kind !== "skill" && value.kind !== "command") ||
-		!isImplementedHarnessTargetId(value.target) ||
-		(value.scope !== "project" && value.scope !== "personal") ||
-		typeof value.sourceRootId !== "string" ||
-		typeof value.sourcePath !== "string" ||
-		typeof value.logicalPath !== "string" ||
-		(Object.hasOwn(value, "outputIdentity") &&
-			typeof value.outputIdentity !== "string") ||
-		typeof value.outputPath !== "string" ||
-		(value.mode !== "copy" && value.mode !== "link") ||
-		typeof value.exportedAt !== "string" ||
-		!isRecord(value.owner) ||
-		typeof value.owner.ownerId !== "string" ||
-		!isRecord(value.provenance)
-	) {
-		return false;
-	}
+	if (!isManifestEntryShape(value)) return false;
+	if (!isManifestEntryOwner(value, key)) return false;
+	if (!(await isManifestEntryPathValid(value, manifestPath))) return false;
+	return isManifestEntryMetadataValid(value);
+}
+
+function isManifestEntryShape(value: unknown): value is Record<
+	string,
+	unknown
+> & {
+	assetId: string;
+	kind: "skill" | "command";
+	target: ImplementedHarnessTargetId;
+	outputPath: string;
+	owner: Record<string, unknown>;
+	provenance: Record<string, unknown>;
+} {
+	if (!isRecord(value)) return false;
+	return [
+		value.schemaVersion === 1,
+		typeof value.assetId === "string",
+		isHarnessAssetKind(value.kind),
+		isImplementedHarnessTargetId(value.target),
+		isHarnessScope(value.scope),
+		typeof value.sourceRootId === "string",
+		typeof value.sourcePath === "string",
+		typeof value.logicalPath === "string",
+		isOptionalString(value, "outputIdentity"),
+		typeof value.outputPath === "string",
+		isHarnessMode(value.mode),
+		typeof value.exportedAt === "string",
+		isRecord(value.owner),
+		isRecord(value.owner) && typeof value.owner.ownerId === "string",
+		isRecord(value.provenance),
+	].every(Boolean);
+}
+
+function isHarnessAssetKind(value: unknown): boolean {
+	return value === "skill" || value === "command";
+}
+
+function isHarnessScope(value: unknown): boolean {
+	return value === "project" || value === "personal";
+}
+
+function isHarnessMode(value: unknown): boolean {
+	return value === "copy" || value === "link";
+}
+
+function isOptionalString(
+	value: Record<string, unknown>,
+	key: string,
+): boolean {
+	return !Object.hasOwn(value, key) || typeof value[key] === "string";
+}
+
+function isManifestEntryOwner(
+	value: Record<string, unknown> & {
+		assetId: string;
+		owner: Record<string, unknown>;
+	},
+	key: string,
+): boolean {
 	if (!isOwnerIdentity(value.owner)) return false;
 	const owner = value.owner as unknown as OwnerIdentity;
-	if (key !== manifestEntryKey(owner, value.assetId)) return false;
+	return key === manifestEntryKey(owner, value.assetId);
+}
+
+async function isManifestEntryPathValid(
+	value: Record<string, unknown> & {
+		kind: "skill" | "command";
+		target: ImplementedHarnessTargetId;
+		outputPath: string;
+	},
+	manifestPath: string,
+): Promise<boolean> {
 	const outputIdentity = manifestOutputIdentity(value);
 	if (!outputIdentity) return false;
 	try {
 		const claimedOwnerRoot = dirname(dirname(value.outputPath));
-		if (
-			value.outputPath !==
-				resolveRegisteredHarnessAssetPath({
-					ownerRoot: claimedOwnerRoot,
-					targetId: value.target as ImplementedHarnessTargetId,
-					kind: value.kind,
-					outputIdentity,
-				}) ||
-			(await realpath(claimedOwnerRoot)) !==
-				(await realpath(dirname(manifestPath)))
-		) {
-			return false;
-		}
+		const expectedPath = resolveRegisteredHarnessAssetPath({
+			ownerRoot: claimedOwnerRoot,
+			targetId: value.target,
+			kind: value.kind,
+			outputIdentity,
+		});
+		if (value.outputPath !== expectedPath) return false;
+		return (
+			(await realpath(claimedOwnerRoot)) ===
+			(await realpath(dirname(manifestPath)))
+		);
 	} catch {
 		return false;
 	}
-	if (
-		(value.assetId === "external-skill:cosmonauts" &&
-			(typeof value.generatingProjectRoot !== "string" ||
-				!isAbsolute(value.generatingProjectRoot))) ||
-		(Object.hasOwn(value, "generatingProjectRoot") &&
-			typeof value.generatingProjectRoot !== "string")
-	) {
-		return false;
-	}
-	if (value.provenance.kind === "copy") {
+}
+
+function isGeneratingProjectRootValid(value: Record<string, unknown>): boolean {
+	if (value.assetId === "external-skill:cosmonauts") {
 		return (
-			typeof value.provenance.baselineDigest === "string" &&
-			typeof value.provenance.sourceDigest === "string" &&
-			typeof value.provenance.renderedDigest === "string" &&
-			typeof value.provenance.targetDigest === "string" &&
-			value.provenance.markerVersion === 1
+			typeof value.generatingProjectRoot === "string" &&
+			isAbsolute(value.generatingProjectRoot)
 		);
 	}
-	if (value.provenance.kind === "direct-link") {
-		return (
-			typeof value.provenance.expectedCanonicalSource === "string" &&
-			(value.provenance.linkShape === "directory" ||
-				value.provenance.linkShape === "flat-skill") &&
-			!Object.hasOwn(value.provenance, "sourceDigest")
-		);
-	}
-	if (value.provenance.kind !== "generated-wrapper") return false;
+	return isOptionalString(value, "generatingProjectRoot");
+}
+
+function isManifestEntryMetadataValid(
+	value: Record<string, unknown> & { provenance: Record<string, unknown> },
+): boolean {
 	return (
-		typeof value.provenance.baselineDigest === "string" &&
-		Array.isArray(value.provenance.authoredLinks) &&
-		value.provenance.authoredLinks.every(isAuthoredLink) &&
-		Array.isArray(value.provenance.generatedNodes) &&
-		value.provenance.generatedNodes.every(isGeneratedNode)
+		isGeneratingProjectRootValid(value) &&
+		isManifestProvenance(value.provenance)
+	);
+}
+
+function isManifestProvenance(value: Record<string, unknown>): boolean {
+	if (value.kind === "copy") return isCopyProvenance(value);
+	if (value.kind === "direct-link") return isDirectLinkProvenance(value);
+	if (value.kind === "generated-wrapper") {
+		return isGeneratedWrapperProvenance(value);
+	}
+	return false;
+}
+
+function isCopyProvenance(value: Record<string, unknown>): boolean {
+	return (
+		typeof value.baselineDigest === "string" &&
+		typeof value.sourceDigest === "string" &&
+		typeof value.renderedDigest === "string" &&
+		typeof value.targetDigest === "string" &&
+		value.markerVersion === 1
+	);
+}
+
+function isDirectLinkProvenance(value: Record<string, unknown>): boolean {
+	return (
+		typeof value.expectedCanonicalSource === "string" &&
+		(value.linkShape === "directory" || value.linkShape === "flat-skill") &&
+		!Object.hasOwn(value, "sourceDigest")
+	);
+}
+
+function isGeneratedWrapperProvenance(value: Record<string, unknown>): boolean {
+	return (
+		typeof value.baselineDigest === "string" &&
+		Array.isArray(value.authoredLinks) &&
+		value.authoredLinks.every(isAuthoredLink) &&
+		Array.isArray(value.generatedNodes) &&
+		value.generatedNodes.every(isGeneratedNode)
 	);
 }
 

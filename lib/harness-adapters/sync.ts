@@ -383,21 +383,40 @@ function concurrentAssetResult(
 	};
 }
 
+interface AssetClassificationObservation {
+	readonly manifest: HarnessProvenanceManifest;
+	readonly targetState: "absent" | "present" | "intact" | "edited";
+	readonly consistencyReason?: "pending-journal" | "concurrent-change";
+}
+
+interface AssetClassificationContext {
+	readonly options: SyncHarnessAssetOptions;
+	readonly owner: OwnerIdentity;
+	readonly generatingProjectRoot?: string;
+	readonly recorded?: MaterializedHarnessManifestEntry;
+	readonly requestedMode: SyncMode;
+	readonly prepared: PreparedHarnessMaterialization;
+	readonly foreignClaim: boolean;
+	readonly targetState: AssetClassificationObservation["targetState"];
+	readonly consistencyReason?: AssetClassificationObservation["consistencyReason"];
+}
+
 async function syncHarnessAssetCore(
 	options: SyncHarnessAssetOptions,
 ): Promise<Omit<SyncHarnessAssetResult, "exitCode">> {
-	if (!options.check)
+	if (!options.check) {
 		throw new Error("Harness asset classification requires check mode.");
-	const explicitLinkPreparation =
-		options.target.requestedMode === "link"
-			? await prepareHarnessMaterialization({
-					projectRoot: options.projectRoot,
-					asset: options.asset,
-					target: options.target,
-					mode: "link",
-					generatedNodes: options.generatedNodes,
-				})
-			: undefined;
+	}
+	const context = await prepareAssetClassification(options);
+	if (context.consistencyReason) return classifyInconsistentAsset(context);
+	if (!context.recorded) return classifyUnrecordedAsset(context);
+	return classifyRecordedAsset(context, context.recorded);
+}
+
+async function prepareAssetClassification(
+	options: SyncHarnessAssetOptions,
+): Promise<AssetClassificationContext> {
+	const explicitLinkPreparation = await prepareExplicitLink(options);
 	await validateOwnerTarget(options.target);
 	const manifestPath = join(
 		options.target.ownerRoot,
@@ -410,42 +429,13 @@ async function syncHarnessAssetCore(
 	const generatingProjectRoot = options.asset.generatedInputs
 		? await realpath(options.projectRoot)
 		: undefined;
-	let consistencyReason: "pending-journal" | "concurrent-change" | undefined;
-	let observedTargetState:
-		| "absent"
-		| "present"
-		| "intact"
-		| "edited"
-		| undefined;
-	let manifest: HarnessProvenanceManifest;
-	if (options.checkObservation) {
-		manifest = options.checkObservation.manifest;
-		observedTargetState =
-			options.checkObservation.target.state === "exact-baseline"
-				? "intact"
-				: options.checkObservation.target.state;
-	} else {
-		const transactionPaths = resolveHarnessTransactionPaths(
-			options.target.ownerRoot,
-			options.target.targetId,
-		);
-		const observation = await observeStableHarnessState({
-			manifestPath,
-			journalPath: transactionPaths.journalPath,
-			observeTarget: async (observedManifest) => {
-				const observedKey = manifestEntryKey(owner, options.asset.assetId);
-				const observedRecorded = observedManifest.entries[observedKey];
-				return observedRecorded
-					? observeRecordedTarget(options.target.targetPath, observedRecorded)
-					: pathState(options.target.targetPath);
-			},
-		});
-		manifest = observation.manifest;
-		observedTargetState = observation.target;
-		consistencyReason = observation.reason;
-	}
+	const observation = await observeAssetClassification(
+		options,
+		owner,
+		manifestPath,
+	);
 	const key = manifestEntryKey(owner, options.asset.assetId);
-	const recorded = manifest.entries[key];
+	const recorded = observation.manifest.entries[key];
 	const requestedMode = resolveHarnessSyncMode(
 		options.target.requestedMode,
 		recorded?.mode,
@@ -459,103 +449,187 @@ async function syncHarnessAssetCore(
 			mode: requestedMode,
 			generatedNodes: options.generatedNodes,
 		}));
-
-	const foreignClaim = Object.values(manifest.entries).find(
+	const foreignClaim = Object.values(observation.manifest.entries).some(
 		(entry) =>
 			entry.outputPath === options.target.targetPath &&
 			!ownersMatch(entry.owner, owner),
 	);
-	const targetState =
-		observedTargetState ??
-		(recorded
-			? await observeRecordedTarget(options.target.targetPath, recorded)
-			: await pathState(options.target.targetPath));
+	return {
+		options,
+		owner,
+		...(generatingProjectRoot ? { generatingProjectRoot } : {}),
+		...(recorded ? { recorded } : {}),
+		requestedMode,
+		prepared,
+		foreignClaim,
+		targetState: observation.targetState,
+		...(observation.consistencyReason
+			? { consistencyReason: observation.consistencyReason }
+			: {}),
+	};
+}
 
-	if (consistencyReason) {
-		const entry =
-			recorded ??
-			makeManifestEntry(
-				options,
-				owner,
-				requestedMode,
-				prepared,
-				generatingProjectRoot,
-			);
+async function prepareExplicitLink(
+	options: SyncHarnessAssetOptions,
+): Promise<PreparedHarnessMaterialization | undefined> {
+	if (options.target.requestedMode !== "link") return undefined;
+	return prepareHarnessMaterialization({
+		projectRoot: options.projectRoot,
+		asset: options.asset,
+		target: options.target,
+		mode: "link",
+		generatedNodes: options.generatedNodes,
+	});
+}
+
+async function observeAssetClassification(
+	options: SyncHarnessAssetOptions,
+	owner: OwnerIdentity,
+	manifestPath: string,
+): Promise<AssetClassificationObservation> {
+	if (options.checkObservation) {
+		return {
+			manifest: options.checkObservation.manifest,
+			targetState:
+				options.checkObservation.target.state === "exact-baseline"
+					? "intact"
+					: options.checkObservation.target.state,
+		};
+	}
+	const transactionPaths = resolveHarnessTransactionPaths(
+		options.target.ownerRoot,
+		options.target.targetId,
+	);
+	const observation = await observeStableHarnessState({
+		manifestPath,
+		journalPath: transactionPaths.journalPath,
+		observeTarget: async (manifest) =>
+			observeAssetTarget(options, owner, manifest),
+	});
+	return {
+		manifest: observation.manifest,
+		targetState: observation.target,
+		...(observation.reason ? { consistencyReason: observation.reason } : {}),
+	};
+}
+
+async function observeAssetTarget(
+	options: SyncHarnessAssetOptions,
+	owner: OwnerIdentity,
+	manifest: HarnessProvenanceManifest,
+): Promise<AssetClassificationObservation["targetState"]> {
+	const key = manifestEntryKey(owner, options.asset.assetId);
+	const recorded = manifest.entries[key];
+	return recorded
+		? observeRecordedTarget(options.target.targetPath, recorded)
+		: pathState(options.target.targetPath);
+}
+
+function makeClassificationEntry(
+	context: AssetClassificationContext,
+): MaterializedHarnessManifestEntry {
+	return makeManifestEntry(
+		context.options,
+		context.owner,
+		context.requestedMode,
+		context.prepared,
+		context.generatingProjectRoot,
+	);
+}
+
+function classifyInconsistentAsset(
+	context: AssetClassificationContext,
+): Omit<SyncHarnessAssetResult, "exitCode"> {
+	const entry = context.recorded ?? makeClassificationEntry(context);
+	return noWriteResult(entry, {
+		...(context.recorded ? { recordedMode: context.recorded.mode } : {}),
+		requestedMode: context.requestedMode,
+		beforeStatus: "source-ahead",
+		reason: context.consistencyReason ?? "concurrent-change",
+	});
+}
+
+function classifyUnrecordedAsset(
+	context: AssetClassificationContext,
+): Omit<SyncHarnessAssetResult, "exitCode"> {
+	const entry = makeClassificationEntry(context);
+	if (context.foreignClaim || context.targetState !== "absent") {
 		return noWriteResult(entry, {
-			...(recorded ? { recordedMode: recorded.mode } : {}),
-			requestedMode,
-			beforeStatus: "source-ahead",
-			reason: consistencyReason,
+			requestedMode: context.requestedMode,
+			beforeStatus: "locally-edited",
+			reason: context.foreignClaim ? "foreign-owner" : "foreign-or-untraceable",
 		});
 	}
+	return noWriteResult(entry, {
+		requestedMode: context.requestedMode,
+		beforeStatus: "missing",
+		reason: "missing",
+	});
+}
 
-	if (!recorded) {
-		const entry = makeManifestEntry(
-			options,
-			owner,
-			requestedMode,
-			prepared,
-			generatingProjectRoot,
-		);
-		if (foreignClaim || targetState !== "absent") {
-			return noWriteResult(entry, {
-				requestedMode,
-				beforeStatus: "locally-edited",
-				reason: foreignClaim ? "foreign-owner" : "foreign-or-untraceable",
-			});
-		}
-		return noWriteResult(entry, {
-			requestedMode,
-			beforeStatus: "missing",
-			reason: "missing",
-		});
-	}
-
-	const explicitConversion =
-		options.target.requestedMode !== undefined &&
-		options.target.requestedMode !== recorded.mode;
-	if (targetState !== "intact") {
+function classifyRecordedAsset(
+	context: AssetClassificationContext,
+	recorded: MaterializedHarnessManifestEntry,
+): Omit<SyncHarnessAssetResult, "exitCode"> {
+	if (context.targetState !== "intact") {
+		const status =
+			context.targetState === "absent" ? "missing" : "locally-edited";
 		return noWriteResult(recorded, {
 			recordedMode: recorded.mode,
-			requestedMode,
-			beforeStatus: targetState === "absent" ? "missing" : "locally-edited",
-			reason: targetState === "absent" ? "missing" : "locally-edited",
+			requestedMode: context.requestedMode,
+			beforeStatus: status,
+			reason: status,
 		});
 	}
-
 	const previousGeneratingProjectRoot = recorded.generatingProjectRoot;
-	const generatedByOtherProject =
-		generatingProjectRoot !== undefined &&
-		previousGeneratingProjectRoot !== undefined &&
-		generatingProjectRoot !== previousGeneratingProjectRoot;
-	const difference = generatedByOtherProject
-		? "regenerated-from-other-project"
-		: explicitConversion
-			? "mode-conversion"
-			: desiredDifference(recorded, prepared);
+	const generatedByOtherProject = isGeneratedByOtherProject(
+		context.generatingProjectRoot,
+		previousGeneratingProjectRoot,
+	);
+	const difference = classifyDesiredDifference(
+		context,
+		recorded,
+		generatedByOtherProject,
+	);
 	if (!difference) {
 		return noWriteResult(recorded, {
 			recordedMode: recorded.mode,
-			requestedMode,
+			requestedMode: context.requestedMode,
 			beforeStatus: "current",
 			reason: "current",
 		});
 	}
-
-	const entry = makeManifestEntry(
-		options,
-		owner,
-		requestedMode,
-		prepared,
-		generatingProjectRoot,
-	);
-	return noWriteResult(entry, {
+	return noWriteResult(makeClassificationEntry(context), {
 		recordedMode: recorded.mode,
-		requestedMode,
+		requestedMode: context.requestedMode,
 		beforeStatus: "source-ahead",
 		reason: difference,
 		...(generatedByOtherProject ? { previousGeneratingProjectRoot } : {}),
 	});
+}
+
+function isGeneratedByOtherProject(
+	current: string | undefined,
+	previous: string | undefined,
+): boolean {
+	return (
+		current !== undefined && previous !== undefined && current !== previous
+	);
+}
+
+function classifyDesiredDifference(
+	context: AssetClassificationContext,
+	recorded: MaterializedHarnessManifestEntry,
+	generatedByOtherProject: boolean,
+): SyncHarnessAssetResult["reason"] | undefined {
+	if (generatedByOtherProject) return "regenerated-from-other-project";
+	if (
+		context.options.target.requestedMode !== undefined &&
+		context.options.target.requestedMode !== recorded.mode
+	) {
+		return "mode-conversion";
+	}
+	return desiredDifference(recorded, context.prepared);
 }
 
 async function validateOwnerTarget(
@@ -1381,12 +1455,47 @@ async function assertCommandBootstrapPrerequisites(
 	}
 }
 
+interface ClaudeCommandSourcePair {
+	readonly livePaths: readonly string[];
+	readonly nativePaths: readonly string[];
+	readonly liveBytes: readonly Buffer[];
+	readonly nativeBytes: readonly Buffer[];
+}
+
 async function prepareClaudeCommandPair(
 	projectRoot: string,
 	homeRoot: string,
 	createNativeSources: boolean,
 	exportedAt: string,
 ): Promise<readonly [PreparedClaudeCommand, PreparedClaudeCommand]> {
+	const sources = await prepareClaudeCommandSources(
+		projectRoot,
+		homeRoot,
+		createNativeSources,
+	);
+	const rows = await Promise.all(
+		CLAUDE_COMMAND_BOOTSTRAP_SPECS.map((spec, index) =>
+			prepareClaudeCommand({
+				projectRoot,
+				homeRoot,
+				exportedAt,
+				sources,
+				spec,
+				index,
+			}),
+		),
+	);
+	return rows as unknown as readonly [
+		PreparedClaudeCommand,
+		PreparedClaudeCommand,
+	];
+}
+
+async function prepareClaudeCommandSources(
+	projectRoot: string,
+	homeRoot: string,
+	createNativeSources: boolean,
+): Promise<ClaudeCommandSourcePair> {
 	const livePaths = CLAUDE_COMMAND_BOOTSTRAP_SPECS.map((spec) =>
 		join(homeRoot, ".claude", "commands", `${spec.name}.md`),
 	);
@@ -1394,114 +1503,150 @@ async function prepareClaudeCommandPair(
 		join(projectRoot, spec.nativeRelativePath),
 	);
 	const liveBytes = await Promise.all(livePaths.map((path) => readFile(path)));
-	for (const bytes of liveBytes) assertClaudeCommandFrontmatter(bytes);
+	liveBytes.forEach(assertClaudeCommandFrontmatter);
+	await ensureClaudeNativeSources(nativePaths, liveBytes, createNativeSources);
+	const nativeBytes = await Promise.all(
+		nativePaths.map((path) => readFile(path)),
+	);
+	nativeBytes.forEach(assertClaudeCommandFrontmatter);
+	return { livePaths, nativePaths, liveBytes, nativeBytes };
+}
 
+async function ensureClaudeNativeSources(
+	nativePaths: readonly string[],
+	liveBytes: readonly Buffer[],
+	createNativeSources: boolean,
+): Promise<void> {
 	const nativeExists = await Promise.all(nativePaths.map(pathExists));
 	if (nativeExists.some(Boolean) && !nativeExists.every(Boolean)) {
 		throw new Error(
 			"Claude command native bootstrap is partial; pair equality cannot be established.",
 		);
 	}
-	if (!nativeExists.some(Boolean)) {
-		if (!createNativeSources) {
-			throw new Error(
-				"Claude command native sources are missing under the transaction lock.",
-			);
-		}
-		for (let index = 0; index < nativePaths.length; index += 1) {
-			await writeDurableFile(
-				nativePaths[index] ?? "",
-				liveBytes[index] ?? Buffer.alloc(0),
-			);
-		}
+	if (nativeExists.every(Boolean)) return;
+	if (!createNativeSources) {
+		throw new Error(
+			"Claude command native sources are missing under the transaction lock.",
+		);
 	}
-	const nativeBytes = await Promise.all(
-		nativePaths.map((path) => readFile(path)),
+	await Promise.all(
+		nativePaths.map((path, index) =>
+			writeDurableFile(path, liveBytes[index] ?? Buffer.alloc(0)),
+		),
 	);
-	for (const bytes of nativeBytes) assertClaudeCommandFrontmatter(bytes);
+}
 
-	const rows: PreparedClaudeCommand[] = [];
-	for (
-		let index = 0;
-		index < CLAUDE_COMMAND_BOOTSTRAP_SPECS.length;
-		index += 1
-	) {
-		const spec = CLAUDE_COMMAND_BOOTSTRAP_SPECS[index];
-		const live = liveBytes[index];
-		const native = nativeBytes[index];
-		if (!spec || !live || !native) {
-			throw new Error("Claude command pair preparation is incomplete.");
-		}
-		const registered = getStaticHarnessAsset(spec.assetId);
-		if (!registered || registered.kind !== "command") {
-			throw new Error(
-				`Fixed Claude command asset is not registered: ${spec.assetId}.`,
-			);
-		}
-		const asset = { ...registered, sourceRoot: projectRoot };
-		const target = resolveHarnessAssetTarget({
-			targetId: "claude",
-			asset,
-			roots: { projectRoot, homeRoot },
-			scope: "personal",
-			requestedMode: "copy",
-		});
-		if (
-			target.targetPath !== livePaths[index] ||
-			resolve(projectRoot, asset.sourcePath) !== nativePaths[index]
-		) {
-			throw new Error(
-				`Fixed Claude command path contract changed for ${spec.assetId}.`,
-			);
-		}
-		const materialization = await prepareHarnessMaterialization({
-			projectRoot,
-			asset,
-			target,
-			mode: "copy",
-		});
-		const rendered = materialization.copyNodes[0];
-		if (
-			materialization.copyNodes.length !== 1 ||
-			!rendered ||
-			rendered.relativePath !== ""
-		) {
-			throw new Error(
-				`Claude command render shape changed for ${spec.assetId}.`,
-			);
-		}
-		const stripped = stripGeneratedByMarker(rendered.bytes);
-		if (!live.equals(native) || !live.equals(stripped)) {
-			throw new Error(
-				`Claude command pair equality failed for ${spec.assetId}; live, native, and marker-stripped render bytes must match before either command moves.`,
-			);
-		}
-		const desired = await syncHarnessAsset({
-			projectRoot,
-			asset,
-			target,
-			check: true,
-			now: () => new Date(exportedAt),
-		});
-		const owner = await resolveAssetOwnerIdentity(asset, projectRoot);
-		rows.push({
-			spec,
-			asset,
-			target,
-			liveBytes: live,
-			nativeBytes: native,
-			renderedBytes: rendered.bytes,
-			strippedRenderedBytes: stripped,
-			oldState: await observeHarnessNodeSnapshot(target.targetPath),
-			newState: fileNodeSnapshot(rendered.bytes),
-			manifestEntry: desired.manifestEntry,
-			manifestKey: manifestEntryKey(owner, spec.assetId),
-		});
+async function prepareClaudeCommand(options: {
+	readonly projectRoot: string;
+	readonly homeRoot: string;
+	readonly exportedAt: string;
+	readonly sources: ClaudeCommandSourcePair;
+	readonly spec: (typeof CLAUDE_COMMAND_BOOTSTRAP_SPECS)[number];
+	readonly index: number;
+}): Promise<PreparedClaudeCommand> {
+	const live = options.sources.liveBytes[options.index];
+	const native = options.sources.nativeBytes[options.index];
+	if (!live || !native) {
+		throw new Error("Claude command pair preparation is incomplete.");
 	}
-	return rows as unknown as readonly [
-		PreparedClaudeCommand,
-		PreparedClaudeCommand,
-	];
+	const asset = requireClaudeCommandAsset(options.spec, options.projectRoot);
+	const target = resolveHarnessAssetTarget({
+		targetId: "claude",
+		asset,
+		roots: { projectRoot: options.projectRoot, homeRoot: options.homeRoot },
+		scope: "personal",
+		requestedMode: "copy",
+	});
+	assertClaudeCommandPaths(options, asset, target);
+	const materialization = await prepareHarnessMaterialization({
+		projectRoot: options.projectRoot,
+		asset,
+		target,
+		mode: "copy",
+	});
+	const rendered = requireClaudeCommandRender(
+		materialization,
+		options.spec.assetId,
+	);
+	const stripped = stripGeneratedByMarker(rendered.bytes);
+	assertClaudeCommandBytes(options.spec.assetId, live, native, stripped);
+	const desired = await syncHarnessAsset({
+		projectRoot: options.projectRoot,
+		asset,
+		target,
+		check: true,
+		now: () => new Date(options.exportedAt),
+	});
+	const owner = await resolveAssetOwnerIdentity(asset, options.projectRoot);
+	return {
+		spec: options.spec,
+		asset,
+		target,
+		liveBytes: live,
+		nativeBytes: native,
+		renderedBytes: rendered.bytes,
+		strippedRenderedBytes: stripped,
+		oldState: await observeHarnessNodeSnapshot(target.targetPath),
+		newState: fileNodeSnapshot(rendered.bytes),
+		manifestEntry: desired.manifestEntry,
+		manifestKey: manifestEntryKey(owner, options.spec.assetId),
+	};
+}
+
+function requireClaudeCommandAsset(
+	spec: (typeof CLAUDE_COMMAND_BOOTSTRAP_SPECS)[number],
+	projectRoot: string,
+): HarnessAsset {
+	const registered = getStaticHarnessAsset(spec.assetId);
+	if (!registered || registered.kind !== "command") {
+		throw new Error(
+			`Fixed Claude command asset is not registered: ${spec.assetId}.`,
+		);
+	}
+	return { ...registered, sourceRoot: projectRoot };
+}
+
+function assertClaudeCommandPaths(
+	options: Parameters<typeof prepareClaudeCommand>[0],
+	asset: HarnessAsset,
+	target: ResolvedHarnessAssetTarget,
+): void {
+	if (
+		target.targetPath !== options.sources.livePaths[options.index] ||
+		resolve(options.projectRoot, asset.sourcePath) !==
+			options.sources.nativePaths[options.index]
+	) {
+		throw new Error(
+			`Fixed Claude command path contract changed for ${options.spec.assetId}.`,
+		);
+	}
+}
+
+function requireClaudeCommandRender(
+	materialization: PreparedHarnessMaterialization,
+	assetId: string,
+): RenderedFileNode {
+	const rendered = materialization.copyNodes[0];
+	if (
+		materialization.copyNodes.length !== 1 ||
+		!rendered ||
+		rendered.relativePath !== ""
+	) {
+		throw new Error(`Claude command render shape changed for ${assetId}.`);
+	}
+	return rendered;
+}
+
+function assertClaudeCommandBytes(
+	assetId: string,
+	live: Buffer,
+	native: Buffer,
+	stripped: Buffer,
+): void {
+	if (live.equals(native) && live.equals(stripped)) return;
+	throw new Error(
+		`Claude command pair equality failed for ${assetId}; live, native, and marker-stripped render bytes must match before either command moves.`,
+	);
 }
 
 function assertCommandManifestIsBootstrapReady(
@@ -1919,18 +2064,7 @@ function validateCommandEvidenceIdentity(
 	projectRoot: string,
 	homeRoot: string,
 ): void {
-	if (
-		evidence.schemaVersion !== 1 ||
-		evidence.authorizationKind !== "ratified-live-bootstrap" ||
-		evidence.ownerId !== "authority:cosmonauts/core" ||
-		evidence.ownerRoot !== "~/.claude" ||
-		evidence.target !== "claude" ||
-		evidence.scope !== "personal" ||
-		evidence.cleanupPolicy !== "after-evidence" ||
-		evidence.atomicSet !== true ||
-		evidence.markerVersion !== GENERATED_BY_MARKER_VERSION ||
-		evidence.commands.length !== 2
-	) {
+	if (!hasFixedCommandEvidenceIdentity(evidence)) {
 		throw new Error("Claude command migration evidence identity is invalid.");
 	}
 	for (
@@ -1943,30 +2077,104 @@ function validateCommandEvidenceIdentity(
 		if (
 			!spec ||
 			!row ||
-			row.assetId !== spec.assetId ||
-			row.livePath !== `~/.claude/commands/${spec.name}.md` ||
-			row.outputPath !== row.livePath ||
-			row.nativePath !== spec.nativeRelativePath ||
-			row.liveDigest !== row.nativeDigest ||
-			row.liveDigest !== row.renderDigest ||
-			row.liveLength !== row.nativeLength ||
-			row.liveLength !== row.renderLength ||
-			(evidence.phase !== "authorized" &&
-				(row.finalDigest !== row.liveDigest ||
-					row.finalLength !== row.liveLength ||
-					row.backupPath !==
-						`~/.cosmonauts-harness-claude-${evidence.transactionId}-${index}.backup`)) ||
-			evidence.manifestKeys[index] !== row.manifestKey ||
-			resolve(projectRoot, row.nativePath) !==
-				join(projectRoot, spec.nativeRelativePath) ||
-			join(homeRoot, row.livePath.slice(2)) !==
-				join(homeRoot, ".claude", "commands", `${spec.name}.md`)
+			!isCommandEvidenceRowValid({
+				evidence,
+				projectRoot,
+				homeRoot,
+				spec,
+				row,
+				index,
+			})
 		) {
 			throw new Error(
 				"Claude command migration evidence path identity is invalid.",
 			);
 		}
 	}
+}
+
+function hasFixedCommandEvidenceIdentity(
+	evidence: ClaudeCommandMigrationEvidence,
+): boolean {
+	return [
+		evidence.schemaVersion === 1,
+		evidence.authorizationKind === "ratified-live-bootstrap",
+		evidence.ownerId === "authority:cosmonauts/core",
+		evidence.ownerRoot === "~/.claude",
+		evidence.target === "claude",
+		evidence.scope === "personal",
+		evidence.cleanupPolicy === "after-evidence",
+		evidence.atomicSet === true,
+		evidence.markerVersion === GENERATED_BY_MARKER_VERSION,
+		evidence.commands.length === 2,
+	].every(Boolean);
+}
+
+interface CommandEvidenceRowValidation {
+	readonly evidence: ClaudeCommandMigrationEvidence;
+	readonly projectRoot: string;
+	readonly homeRoot: string;
+	readonly spec: (typeof CLAUDE_COMMAND_BOOTSTRAP_SPECS)[number];
+	readonly row: ClaudeCommandEvidenceRow;
+	readonly index: number;
+}
+
+function isCommandEvidenceRowValid(
+	options: CommandEvidenceRowValidation,
+): boolean {
+	return (
+		hasCommandStaticIdentity(options) &&
+		hasCommandByteIdentity(options.row) &&
+		hasCommandInstalledIdentity(options) &&
+		hasCommandResolvedPathIdentity(options)
+	);
+}
+
+function hasCommandStaticIdentity(
+	options: CommandEvidenceRowValidation,
+): boolean {
+	const { row, spec, evidence, index } = options;
+	return [
+		row.assetId === spec.assetId,
+		row.livePath === `~/.claude/commands/${spec.name}.md`,
+		row.outputPath === row.livePath,
+		row.nativePath === spec.nativeRelativePath,
+		evidence.manifestKeys[index] === row.manifestKey,
+	].every(Boolean);
+}
+
+function hasCommandByteIdentity(row: ClaudeCommandEvidenceRow): boolean {
+	return [
+		row.liveDigest === row.nativeDigest,
+		row.liveDigest === row.renderDigest,
+		row.liveLength === row.nativeLength,
+		row.liveLength === row.renderLength,
+	].every(Boolean);
+}
+
+function hasCommandInstalledIdentity(
+	options: CommandEvidenceRowValidation,
+): boolean {
+	if (options.evidence.phase === "authorized") return true;
+	const { row, evidence, index } = options;
+	return [
+		row.finalDigest === row.liveDigest,
+		row.finalLength === row.liveLength,
+		row.backupPath ===
+			`~/.cosmonauts-harness-claude-${evidence.transactionId}-${index}.backup`,
+	].every(Boolean);
+}
+
+function hasCommandResolvedPathIdentity(
+	options: CommandEvidenceRowValidation,
+): boolean {
+	const { projectRoot, homeRoot, row, spec } = options;
+	return [
+		resolve(projectRoot, row.nativePath) ===
+			join(projectRoot, spec.nativeRelativePath),
+		join(homeRoot, row.livePath.slice(2)) ===
+			join(homeRoot, ".claude", "commands", `${spec.name}.md`),
+	].every(Boolean);
 }
 
 async function readCommandMigrationEvidence(
@@ -2474,111 +2682,154 @@ export async function observeHarnessManifestTarget(
 	};
 }
 
+type ObservedJournalVector = Awaited<ReturnType<typeof observeJournalVector>>;
+
 async function recoverOwnerRootJournal(
 	transaction: OwnerRootTransaction,
 	receipt?: OwnerRootEvidenceReceipt,
 ): Promise<OwnerRootRecoveryResult> {
-	let journal: OwnerRootTransactionJournal;
-	try {
-		const contents = await readFile(transaction.journalPath, "utf8");
-		journal = parseOwnerRootJournal(contents, transaction);
-	} catch (error) {
-		if (isNodeError(error) && error.code === "ENOENT") return { state: "none" };
-		return { state: "ambiguous", reason: errorMessage(error) };
-	}
+	const loaded = await loadOwnerRootJournal(transaction);
+	if ("result" in loaded) return loaded.result;
+	const { journal } = loaded;
 	const observed = await observeJournalVector(journal);
 	if (observed.manifest === "other" || observed.hasOther) {
-		return {
-			state: "ambiguous",
-			phase: journal.phase,
-			reason: "transaction-vector-other",
-		};
+		return ambiguousJournalResult(journal, "transaction-vector-other");
 	}
+	return recoverJournalPhase(transaction, journal, observed, receipt);
+}
 
+async function loadOwnerRootJournal(
+	transaction: OwnerRootTransaction,
+): Promise<
+	| { readonly journal: OwnerRootTransactionJournal }
+	| { readonly result: OwnerRootRecoveryResult }
+> {
+	try {
+		const contents = await readFile(transaction.journalPath, "utf8");
+		return { journal: parseOwnerRootJournal(contents, transaction) };
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") {
+			return { result: { state: "none" } };
+		}
+		return { result: { state: "ambiguous", reason: errorMessage(error) } };
+	}
+}
+
+function ambiguousJournalResult(
+	journal: OwnerRootTransactionJournal,
+	reason: string,
+): OwnerRootRecoveryResult {
+	return { state: "ambiguous", phase: journal.phase, reason };
+}
+
+async function recoverJournalPhase(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+	observed: ObservedJournalVector,
+	receipt?: OwnerRootEvidenceReceipt,
+): Promise<OwnerRootRecoveryResult> {
 	if (journal.phase === "prepared") {
-		if (
-			observed.manifest === "old" &&
-			observed.members.every(
-				(row) =>
-					row.target.matchesOld &&
-					row.backup.isAbsent &&
-					(row.stage.matchesNew || row.stage.isAbsent),
-			)
-		) {
-			await cleanupPrepared(transaction, journal);
-			return { state: "restored-old", phase: journal.phase };
-		}
-		return {
-			state: "ambiguous",
-			phase: journal.phase,
-			reason: "prepared-vector-invalid",
-		};
+		return recoverPreparedJournal(transaction, journal, observed);
 	}
-
 	if (journal.phase === "installing") {
-		if (
-			observed.manifest !== "old" ||
-			!installingVectorCanRollback(journal, observed.members)
-		) {
-			return {
-				state: "ambiguous",
-				phase: journal.phase,
-				reason: "installing-vector-invalid",
-			};
-		}
-		const rollingBack = { ...journal, phase: "rolling-back" } as const;
-		await persistJournal(transaction, rollingBack);
-		const rolledBack = await rollbackJournal(transaction, rollingBack);
-		return rolledBack.state === "ambiguous"
-			? { ...rolledBack, phase: rollingBack.phase }
-			: { state: "restored-old", phase: journal.phase };
+		return recoverInstallingJournal(transaction, journal, observed);
 	}
-
 	if (journal.phase === "commit-ready") {
-		if (
-			(observed.manifest !== "old" && observed.manifest !== "new") ||
-			!commitVectorIsNew(observed.members)
-		) {
-			return {
-				state: "ambiguous",
-				phase: journal.phase,
-				reason: "commit-ready-vector-invalid",
-			};
-		}
-		if (observed.manifest === "old")
-			await writeManifestSnapshot(transaction, journal.newManifest);
-		const committed = { ...journal, phase: "committed" } as const;
-		await persistJournal(transaction, committed);
-		return finishCommittedRecovery(
-			transaction,
-			committed,
-			receipt,
-			journal.phase,
-		);
+		return recoverCommitReadyJournal(transaction, journal, observed, receipt);
 	}
-
 	if (journal.phase === "committed") {
-		if (observed.manifest !== "new" || !commitVectorIsNew(observed.members)) {
-			return {
-				state: "ambiguous",
-				phase: journal.phase,
-				reason: "committed-vector-invalid",
-			};
-		}
-		return finishCommittedRecovery(
-			transaction,
-			journal,
-			receipt,
-			journal.phase,
-		);
+		return recoverCommittedJournal(transaction, journal, observed, receipt);
 	}
+	return recoverRollingBackJournal(transaction, journal, observed);
+}
 
+async function recoverPreparedJournal(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+	observed: ObservedJournalVector,
+): Promise<OwnerRootRecoveryResult> {
+	const canRestore =
+		observed.manifest === "old" &&
+		observed.members.every(
+			(row) =>
+				row.target.matchesOld &&
+				row.backup.isAbsent &&
+				(row.stage.matchesNew || row.stage.isAbsent),
+		);
+	if (!canRestore) {
+		return ambiguousJournalResult(journal, "prepared-vector-invalid");
+	}
+	await cleanupPrepared(transaction, journal);
+	return { state: "restored-old", phase: journal.phase };
+}
+
+async function recoverInstallingJournal(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+	observed: ObservedJournalVector,
+): Promise<OwnerRootRecoveryResult> {
+	if (
+		observed.manifest !== "old" ||
+		!installingVectorCanRollback(journal, observed.members)
+	) {
+		return ambiguousJournalResult(journal, "installing-vector-invalid");
+	}
+	const rollingBack = { ...journal, phase: "rolling-back" } as const;
+	await persistJournal(transaction, rollingBack);
+	const rolledBack = await rollbackJournal(transaction, rollingBack);
+	return rolledBack.state === "ambiguous"
+		? { ...rolledBack, phase: rollingBack.phase }
+		: { state: "restored-old", phase: journal.phase };
+}
+
+async function recoverCommitReadyJournal(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+	observed: ObservedJournalVector,
+	receipt?: OwnerRootEvidenceReceipt,
+): Promise<OwnerRootRecoveryResult> {
+	if (!isCommitReadyVector(observed)) {
+		return ambiguousJournalResult(journal, "commit-ready-vector-invalid");
+	}
+	if (observed.manifest === "old") {
+		await writeManifestSnapshot(transaction, journal.newManifest);
+	}
+	const committed = { ...journal, phase: "committed" } as const;
+	await persistJournal(transaction, committed);
+	return finishCommittedRecovery(
+		transaction,
+		committed,
+		receipt,
+		journal.phase,
+	);
+}
+
+function isCommitReadyVector(observed: ObservedJournalVector): boolean {
+	return (
+		(observed.manifest === "old" || observed.manifest === "new") &&
+		commitVectorIsNew(observed.members)
+	);
+}
+
+async function recoverCommittedJournal(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+	observed: ObservedJournalVector,
+	receipt?: OwnerRootEvidenceReceipt,
+): Promise<OwnerRootRecoveryResult> {
+	if (observed.manifest !== "new" || !commitVectorIsNew(observed.members)) {
+		return ambiguousJournalResult(journal, "committed-vector-invalid");
+	}
+	return finishCommittedRecovery(transaction, journal, receipt, journal.phase);
+}
+
+async function recoverRollingBackJournal(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+	observed: ObservedJournalVector,
+): Promise<OwnerRootRecoveryResult> {
 	if (!rollingBackVectorCanRestore(journal, observed.members)) {
-		return {
-			state: "ambiguous",
-			phase: journal.phase,
-			reason: "rolling-back-vector-invalid",
-		};
+		return ambiguousJournalResult(journal, "rolling-back-vector-invalid");
 	}
 	const rolledBack = await rollbackJournal(transaction, journal);
 	return rolledBack.state === "ambiguous"
