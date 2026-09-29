@@ -1,5 +1,6 @@
 import { isTerminalStatus, statusFromEvent } from "./status.ts";
 import type {
+	OrchestrationEvent,
 	ReadEventsOptions,
 	RunRecord,
 	RunRef,
@@ -131,46 +132,71 @@ export function summarizeRunStatus(
 }
 
 function summarizeEvent(envelope: StoredOrchestrationEvent): string {
-	const event = envelope.event;
+	const { seq, event } = envelope;
+	return (summarizeRunEvent(seq, event) ??
+		summarizeStepEvent(seq, event) ??
+		summarizeStepOutcome(seq, event)) as string;
+}
+
+function summarizeRunEvent(
+	seq: number,
+	event: OrchestrationEvent,
+): string | undefined {
 	switch (event.type) {
 		case "run_started":
-			return `${envelope.seq} run_started`;
+			return `${seq} run_started`;
 		case "run_completed":
-			return `${envelope.seq} run_completed: ${event.result.outcome}`;
+			return `${seq} run_completed: ${event.result.outcome}`;
 		case "run_blocked":
-			return `${envelope.seq} run_blocked: ${event.reason}`;
+			return `${seq} run_blocked: ${event.reason}`;
 		case "run_activity":
-			return `${envelope.seq} run_activity${describeRunActivity(event.details)}`;
+			return `${seq} run_activity${describeRunActivity(event.details)}`;
 		case "run_failed":
-			return `${envelope.seq} run_failed: ${event.reason}`;
+			return `${seq} run_failed: ${event.reason}`;
 		case "run_cancelled":
-			return `${envelope.seq} run_cancelled`;
+			return `${seq} run_cancelled`;
 		case "run_stale":
-			return `${envelope.seq} run_stale`;
+			return `${seq} run_stale`;
+	}
+}
+
+function summarizeStepEvent(
+	seq: number,
+	event: OrchestrationEvent,
+): string | undefined {
+	switch (event.type) {
 		case "step_ready":
-			return `${envelope.seq} step_ready ${event.stepId}`;
+			return `${seq} step_ready ${event.stepId}`;
 		case "step_started":
-			return `${envelope.seq} step_started ${event.stepId}: ${event.backend}`;
+			return `${seq} step_started ${event.stepId}: ${event.backend}`;
 		case "step_heartbeat":
-			return `${envelope.seq} step_heartbeat ${event.stepId}`;
+			return `${seq} step_heartbeat ${event.stepId}`;
 		case "step_output":
-			return `${envelope.seq} step_output ${event.stepId}: ${compactText(event.chunk)}`;
+			return `${seq} step_output ${event.stepId}: ${compactText(event.chunk)}`;
 		case "step_tool_activity":
-			return `${envelope.seq} step_tool_activity ${event.stepId}`;
+			return `${seq} step_tool_activity ${event.stepId}`;
 		case "artifact_written":
-			return `${envelope.seq} artifact_written${event.stepId ? ` ${event.stepId}` : ""}: ${event.artifact.id}`;
+			return `${seq} artifact_written${event.stepId ? ` ${event.stepId}` : ""}: ${event.artifact.id}`;
+	}
+}
+
+function summarizeStepOutcome(
+	seq: number,
+	event: OrchestrationEvent,
+): string | undefined {
+	switch (event.type) {
 		case "step_completed":
-			return `${envelope.seq} step_completed ${event.stepId}: ${event.result.outcome}`;
+			return `${seq} step_completed ${event.stepId}: ${event.result.outcome}`;
 		case "step_failed":
-			return `${envelope.seq} step_failed ${event.stepId}: ${event.reason}`;
+			return `${seq} step_failed ${event.stepId}: ${event.reason}`;
 		case "step_blocked":
-			return `${envelope.seq} step_blocked ${event.stepId}: ${event.reason}`;
+			return `${seq} step_blocked ${event.stepId}: ${event.reason}`;
 		case "child_run_started":
-			return `${envelope.seq} child_run_started ${event.stepId}: ${event.childRunId}`;
+			return `${seq} child_run_started ${event.stepId}: ${event.childRunId}`;
 		case "step_cancelled":
-			return `${envelope.seq} step_cancelled ${event.stepId}`;
+			return `${seq} step_cancelled ${event.stepId}`;
 		case "step_stale":
-			return `${envelope.seq} step_stale ${event.stepId}`;
+			return `${seq} step_stale ${event.stepId}`;
 	}
 }
 

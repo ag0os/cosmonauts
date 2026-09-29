@@ -262,112 +262,20 @@ function configureRunCommand(command: Command): void {
 		});
 }
 
-// fallow-ignore-next-line complexity: CLI compatibility flow intentionally keeps legacy option ordering in one command handler.
 async function runDrive(options: DriveRunOptions): Promise<void> {
-	if (!options.plan) {
-		throw new Error("Missing required option '--plan <slug>'");
-	}
-	validateDriverPlanSlug(options.plan);
-
-	const projectRoot = process.cwd();
-	const planSlug = options.plan;
-	const episodeCaptureEnabled = await isDriveEpisodeCaptureEnabled(projectRoot);
-	const taskManager = new TaskManager(projectRoot);
-	await taskManager.init();
-
-	const resume = options.resume
-		? await loadResumeDefaults(projectRoot, planSlug, options.resume)
-		: undefined;
-	await prepareTerminalResumeEpisodeIdentity({
-		resume,
-		episodeCaptureEnabled,
+	const selection = await prepareDriveSelection(options);
+	if (!selection) return;
+	const {
 		projectRoot,
-	});
-	if (!(await prepareResume(resume, taskManager, episodeCaptureEnabled))) {
-		return;
-	}
-	if (await refuseDirtyResume({ resume, options, projectRoot, planSlug })) {
-		return;
-	}
-
-	const taskIds = await resolveTaskIds(taskManager, planSlug, options, resume);
-	await assertDriveTasksNotCancelled(
+		planSlug,
 		taskManager,
-		resumeModeTaskIds(resume, taskIds),
-	);
-	const mode =
-		options.mode ??
-		(resumeModeTaskIds(resume, taskIds).length >=
-		DETACHED_DEFAULT_TASK_THRESHOLD
-			? "detached"
-			: "inline");
-	const backendName = options.backend ?? resume?.spec.backendName ?? "codex";
-
-	if (refuseUnsupportedDetachedBackend(mode, backendName)) {
-		return;
-	}
-	const reconcilePriorAttempt =
-		resume !== undefined &&
-		resume.remainingTaskIds.length === 0 &&
-		!(await hasGraphResumeState(resume));
-	const frozenEpisodeSource = resume?.spec.episodeSource;
-	const trustedFrozenWorkerSource =
-		episodeCaptureEnabled &&
-		!reconcilePriorAttempt &&
-		frozenEpisodeSource !== undefined &&
-		isFrozenDriveEpisodeWorkerSource(frozenEpisodeSource)
-			? frozenEpisodeSource
-			: undefined;
-	const needsExecutionRuntime =
-		mode === "inline" && backendName === "cosmonauts-subagent";
-	const needsEpisodeRuntime =
-		episodeCaptureEnabled &&
-		(frozenEpisodeSource === undefined ||
-			(!reconcilePriorAttempt && trustedFrozenWorkerSource === undefined));
-	let runtime: CosmonautsRuntime | undefined;
-	if (needsExecutionRuntime || needsEpisodeRuntime) {
-		try {
-			runtime = await createDriveRuntime(projectRoot);
-		} catch (error) {
-			if (needsExecutionRuntime) throw error;
-			reportDriveEpisodeLaunchWarning(error);
-		}
-	}
-	const episodeWorker = episodeCaptureEnabled
-		? runtime && trustedFrozenWorkerSource
-			? resolveFrozenDriveEpisodeWorker(runtime, trustedFrozenWorkerSource)
-			: runtime
-				? resolveDriveEpisodeWorker(runtime)
-				: undefined
-		: undefined;
-	// A resumed run that will EXECUTE (not merely reconcile a prior terminal) but
-	// whose frozen worker no longer resolves would run the fallback default worker
-	// while the stale frozen source misattributes the episode. Omit episode
-	// identity for that attempt (resolveFrozenDriveEpisodeWorker already warned)
-	// rather than record a recalled worker that did not execute.
-	const frozenWorkerLostForExecution =
-		episodeCaptureEnabled &&
-		needsExecutionRuntime &&
-		!reconcilePriorAttempt &&
-		runtime !== undefined &&
-		trustedFrozenWorkerSource !== undefined &&
-		episodeWorker === undefined;
-	const episodeSource =
-		episodeCaptureEnabled && !frozenWorkerLostForExecution
-			? reconcilePriorAttempt
-				? (frozenEpisodeSource ?? episodeWorker?.qualifiedId)
-				: (trustedFrozenWorkerSource ?? episodeWorker?.qualifiedId)
-			: undefined;
-	const episodeIdentity = episodeSource
-		? reconcilePriorAttempt && resume?.spec.episodeAttemptId
-			? {
-					episodeSource,
-					episodeAttemptId: resume.spec.episodeAttemptId,
-				}
-			: reconcilePriorAttempt
-				? undefined
-				: mintDriveEpisodeIdentity(episodeSource)
-		: undefined;
+		resume,
+		taskIds,
+		mode,
+		backendName,
+	} = selection;
+	const { runtime, episodeWorker, episodeIdentity } =
+		await prepareDriveEpisode(selection);
 
 	const spec = await createRunSpec({
 		projectRoot,
@@ -398,6 +306,217 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	}
 
 	await runInlineMode(spec, deps);
+}
+
+interface DriveSelection {
+	projectRoot: string;
+	planSlug: string;
+	episodeCaptureEnabled: boolean;
+	taskManager: TaskManager;
+	resume: ResumeDefaults | undefined;
+	taskIds: string[];
+	mode: DriverMode;
+	backendName: BackendName;
+}
+
+async function prepareDriveEpisode(selection: DriveSelection): Promise<{
+	runtime: CosmonautsRuntime | undefined;
+	episodeWorker: SpawnAgentResolution | undefined;
+	episodeIdentity: DriveEpisodeIdentity | undefined;
+}> {
+	const { resume } = selection;
+	const reconcilePriorAttempt =
+		resume !== undefined &&
+		resume.remainingTaskIds.length === 0 &&
+		!(await hasGraphResumeState(resume));
+	const frozenEpisodeSource = resume?.spec.episodeSource;
+	const trustedFrozenWorkerSource = trustedDriveWorkerSource({
+		selection,
+		reconcilePriorAttempt,
+		frozenEpisodeSource,
+	});
+	const context = {
+		selection,
+		reconcilePriorAttempt,
+		frozenEpisodeSource,
+		trustedFrozenWorkerSource,
+	};
+	const runtime = await loadDriveEpisodeRuntime(context);
+	const episodeWorker = driveEpisodeWorker(context, runtime);
+	const episodeSource = driveEpisodeSource({
+		...context,
+		runtime,
+		episodeWorker,
+	});
+	const episodeIdentity = driveEpisodeIdentity(
+		episodeSource,
+		resume,
+		reconcilePriorAttempt,
+	);
+	return { runtime, episodeWorker, episodeIdentity };
+}
+
+interface DriveEpisodeContext {
+	selection: DriveSelection;
+	reconcilePriorAttempt: boolean;
+	frozenEpisodeSource: string | undefined;
+	trustedFrozenWorkerSource: string | undefined;
+}
+
+function trustedDriveWorkerSource(
+	context: Omit<DriveEpisodeContext, "trustedFrozenWorkerSource">,
+): string | undefined {
+	const { selection, reconcilePriorAttempt, frozenEpisodeSource } = context;
+	return selection.episodeCaptureEnabled &&
+		!reconcilePriorAttempt &&
+		frozenEpisodeSource !== undefined &&
+		isFrozenDriveEpisodeWorkerSource(frozenEpisodeSource)
+		? frozenEpisodeSource
+		: undefined;
+}
+
+async function loadDriveEpisodeRuntime(
+	context: DriveEpisodeContext,
+): Promise<CosmonautsRuntime | undefined> {
+	const {
+		selection,
+		reconcilePriorAttempt,
+		frozenEpisodeSource,
+		trustedFrozenWorkerSource,
+	} = context;
+	const needsExecutionRuntime =
+		selection.mode === "inline" &&
+		selection.backendName === "cosmonauts-subagent";
+	const needsEpisodeRuntime =
+		selection.episodeCaptureEnabled &&
+		(frozenEpisodeSource === undefined ||
+			(!reconcilePriorAttempt && trustedFrozenWorkerSource === undefined));
+	if (!needsExecutionRuntime && !needsEpisodeRuntime) return undefined;
+	try {
+		return await createDriveRuntime(selection.projectRoot);
+	} catch (error) {
+		if (needsExecutionRuntime) throw error;
+		reportDriveEpisodeLaunchWarning(error);
+		return undefined;
+	}
+}
+
+function driveEpisodeWorker(
+	context: DriveEpisodeContext,
+	runtime: CosmonautsRuntime | undefined,
+): SpawnAgentResolution | undefined {
+	if (!context.selection.episodeCaptureEnabled) return undefined;
+	if (runtime && context.trustedFrozenWorkerSource) {
+		return resolveFrozenDriveEpisodeWorker(
+			runtime,
+			context.trustedFrozenWorkerSource,
+		);
+	}
+	return runtime ? resolveDriveEpisodeWorker(runtime) : undefined;
+}
+
+function lostFrozenDriveWorker(
+	context: DriveEpisodeContext & {
+		runtime: CosmonautsRuntime | undefined;
+		episodeWorker: SpawnAgentResolution | undefined;
+	},
+): boolean {
+	// A resumed execution without its frozen worker must not attribute the fallback
+	// worker's episode to the unavailable frozen source.
+	return (
+		context.selection.episodeCaptureEnabled &&
+		context.selection.mode === "inline" &&
+		context.selection.backendName === "cosmonauts-subagent" &&
+		!context.reconcilePriorAttempt &&
+		context.runtime !== undefined &&
+		context.trustedFrozenWorkerSource !== undefined &&
+		context.episodeWorker === undefined
+	);
+}
+
+function driveEpisodeSource(
+	context: DriveEpisodeContext & {
+		runtime: CosmonautsRuntime | undefined;
+		episodeWorker: SpawnAgentResolution | undefined;
+	},
+): string | undefined {
+	if (
+		!context.selection.episodeCaptureEnabled ||
+		lostFrozenDriveWorker(context)
+	)
+		return undefined;
+	return context.reconcilePriorAttempt
+		? (context.frozenEpisodeSource ?? context.episodeWorker?.qualifiedId)
+		: (context.trustedFrozenWorkerSource ?? context.episodeWorker?.qualifiedId);
+}
+
+function driveEpisodeIdentity(
+	episodeSource: string | undefined,
+	resume: ResumeDefaults | undefined,
+	reconcilePriorAttempt: boolean,
+): DriveEpisodeIdentity | undefined {
+	if (!episodeSource) return undefined;
+	if (reconcilePriorAttempt && resume?.spec.episodeAttemptId) {
+		return { episodeSource, episodeAttemptId: resume.spec.episodeAttemptId };
+	}
+	return reconcilePriorAttempt
+		? undefined
+		: mintDriveEpisodeIdentity(episodeSource);
+}
+
+async function prepareDriveSelection(
+	options: DriveRunOptions,
+): Promise<DriveSelection | undefined> {
+	if (!options.plan) throw new Error("Missing required option '--plan <slug>'");
+	validateDriverPlanSlug(options.plan);
+	const projectRoot = process.cwd();
+	const planSlug = options.plan;
+	const episodeCaptureEnabled = await isDriveEpisodeCaptureEnabled(projectRoot);
+	const taskManager = new TaskManager(projectRoot);
+	await taskManager.init();
+	const resume = options.resume
+		? await loadResumeDefaults(projectRoot, planSlug, options.resume)
+		: undefined;
+	await prepareTerminalResumeEpisodeIdentity({
+		resume,
+		episodeCaptureEnabled,
+		projectRoot,
+	});
+	if (!(await prepareResume(resume, taskManager, episodeCaptureEnabled)))
+		return undefined;
+	if (await refuseDirtyResume({ resume, options, projectRoot, planSlug }))
+		return undefined;
+	const taskIds = await resolveTaskIds(taskManager, planSlug, options, resume);
+	await assertDriveTasksNotCancelled(
+		taskManager,
+		resumeModeTaskIds(resume, taskIds),
+	);
+	const mode = selectDriveMode(
+		options.mode,
+		resumeModeTaskIds(resume, taskIds),
+	);
+	const backendName = options.backend ?? resume?.spec.backendName ?? "codex";
+	if (refuseUnsupportedDetachedBackend(mode, backendName)) return undefined;
+	return {
+		projectRoot,
+		planSlug,
+		episodeCaptureEnabled,
+		taskManager,
+		resume,
+		taskIds,
+		mode,
+		backendName,
+	};
+}
+
+function selectDriveMode(
+	explicitMode: DriverMode | undefined,
+	taskIds: readonly string[],
+): DriverMode {
+	return (
+		explicitMode ??
+		(taskIds.length >= DETACHED_DEFAULT_TASK_THRESHOLD ? "detached" : "inline")
+	);
 }
 
 async function prepareTerminalResumeEpisodeIdentity({

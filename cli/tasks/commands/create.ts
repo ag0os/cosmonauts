@@ -273,7 +273,7 @@ function parseTaskBatchRow(
 	index: number,
 ): CliParseResult<TaskCreateInput> {
 	const rowLabel = `row ${index + 1}`;
-	if (row === null || typeof row !== "object" || Array.isArray(row)) {
+	if (!isTaskBatchMapping(row)) {
 		return {
 			ok: false,
 			error: `${rowLabel}: expected a mapping of task fields.`,
@@ -285,84 +285,121 @@ function parseTaskBatchRow(
 		return { ok: false, error: `${rowLabel}: missing required field "title".` };
 	}
 
+	const textFields = parseBatchTextFields(spec, rowLabel);
+	if (!textFields.ok) return textFields;
+	const listFields = parseBatchListFields(spec, rowLabel);
+	if (!listFields.ok) return listFields;
+
+	const priority = parseBatchPriority(spec.priority, rowLabel);
+	if (!priority.ok) return priority;
+	const dueDate = parseBatchDue(spec.due, rowLabel);
+	if (!dueDate.ok) return dueDate;
+
+	return {
+		ok: true,
+		value: {
+			title: spec.title,
+			...textFields.value,
+			...listFields.value,
+			priority: priority.value,
+			dueDate: dueDate.value,
+		},
+	};
+}
+
+function isTaskBatchMapping(value: unknown): value is TaskBatchRow {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseBatchTextFields(
+	spec: TaskBatchRow,
+	rowLabel: string,
+): CliParseResult<
+	Pick<TaskCreateInput, "description" | "assignee" | "parent">
+> {
 	const description = ensureOptionalString(
 		spec.description,
 		"description",
 		rowLabel,
 	);
 	if (!description.ok) return description;
-
 	const assignee = ensureOptionalString(spec.assignee, "assignee", rowLabel);
 	if (!assignee.ok) return assignee;
-
 	const parent = ensureOptionalString(spec.parent, "parent", rowLabel);
 	if (!parent.ok) return parent;
+	return {
+		ok: true,
+		value: {
+			description: description.value,
+			assignee: assignee.value,
+			parent: parent.value,
+		},
+	};
+}
 
+function parseBatchListFields(
+	spec: TaskBatchRow,
+	rowLabel: string,
+): CliParseResult<
+	Pick<TaskCreateInput, "labels" | "dependencies" | "acceptanceCriteria">
+> {
 	const labels = ensureOptionalStringArray(spec.labels, "labels", rowLabel);
 	if (!labels.ok) return labels;
-
 	const dependencies = ensureOptionalStringArray(
 		spec.dependencies,
 		"dependencies",
 		rowLabel,
 	);
 	if (!dependencies.ok) return dependencies;
-
 	const ac = ensureOptionalStringArray(spec.ac, "ac", rowLabel);
 	if (!ac.ok) return ac;
-
-	let priority: TaskPriority | undefined;
-	if (spec.priority !== undefined && spec.priority !== null) {
-		if (typeof spec.priority !== "string" || !isValidPriority(spec.priority)) {
-			return {
-				ok: false,
-				error: `${rowLabel}: invalid priority "${String(spec.priority)}". Must be one of: high, medium, low.`,
-			};
-		}
-		priority = spec.priority;
-	}
-
-	// YAML 1.1 (js-yaml's default, what gray-matter ships) auto-converts
-	// timestamp-shaped scalars like `2026-06-01` into Date objects before this
-	// validator runs. Accept both Date and string forms so unquoted YAML dates
-	// don't need to be escaped.
-	let dueDate: Date | undefined;
-	if (spec.due !== undefined && spec.due !== null) {
-		if (spec.due instanceof Date) {
-			if (Number.isNaN(spec.due.getTime())) {
-				return {
-					ok: false,
-					error: `${rowLabel}: "due" is not a valid date.`,
-				};
-			}
-			dueDate = spec.due;
-		} else if (typeof spec.due === "string") {
-			const parsed = parseTaskDueDate(spec.due);
-			if (!parsed.ok) {
-				return { ok: false, error: `${rowLabel}: ${parsed.error}` };
-			}
-			dueDate = parsed.value;
-		} else {
-			return {
-				ok: false,
-				error: `${rowLabel}: "due" must be a date string (YYYY-MM-DD) or a YAML date value.`,
-			};
-		}
-	}
-
 	return {
 		ok: true,
 		value: {
-			title: spec.title,
-			description: description.value,
-			priority,
-			assignee: assignee.value,
 			labels: labels.value,
-			dueDate,
 			dependencies: dependencies.value,
 			acceptanceCriteria: ac.value,
-			parent: parent.value,
 		},
+	};
+}
+
+function parseBatchPriority(
+	value: unknown,
+	rowLabel: string,
+): CliParseResult<TaskPriority | undefined> {
+	if (value === undefined || value === null)
+		return { ok: true, value: undefined };
+	if (typeof value !== "string" || !isValidPriority(value)) {
+		return {
+			ok: false,
+			error: `${rowLabel}: invalid priority "${String(value)}". Must be one of: high, medium, low.`,
+		};
+	}
+	return { ok: true, value };
+}
+
+function parseBatchDue(
+	value: unknown,
+	rowLabel: string,
+): CliParseResult<Date | undefined> {
+	if (value === undefined || value === null)
+		return { ok: true, value: undefined };
+	// YAML 1.1 (js-yaml's default, what gray-matter ships) auto-converts
+	// timestamp-shaped scalars into Date objects before validation.
+	if (value instanceof Date) {
+		if (Number.isNaN(value.getTime()))
+			return { ok: false, error: `${rowLabel}: "due" is not a valid date.` };
+		return { ok: true, value };
+	}
+	if (typeof value === "string") {
+		const parsed = parseTaskDueDate(value);
+		return parsed.ok
+			? parsed
+			: { ok: false, error: `${rowLabel}: ${parsed.error}` };
+	}
+	return {
+		ok: false,
+		error: `${rowLabel}: "due" must be a date string (YYYY-MM-DD) or a YAML date value.`,
 	};
 }
 

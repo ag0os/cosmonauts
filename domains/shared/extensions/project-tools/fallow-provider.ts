@@ -1177,6 +1177,273 @@ function discoveryFromIntrospectionError(
 	throw error;
 }
 
+interface IntrospectionProbeContext {
+	options: DiscoverFallowProviderOptions;
+	detectionSignal: FallowDetectionSignal;
+	executableResolution: FallowExecutableResolutionKind;
+	bindingIdentity: FallowBindingIdentity;
+	executeProcess: ProviderProcessExecutor;
+	spawnPreconditionOptions: Parameters<typeof validateSpawnPreconditions>[0];
+	beforeSpawn: () => void;
+}
+
+type VersionProbeResult =
+	| { ok: true; version: string }
+	| { ok: false; discovery: FallowProviderDiscovery };
+
+async function probeFallowVersion(
+	context: IntrospectionProbeContext,
+): Promise<VersionProbeResult> {
+	const {
+		options,
+		detectionSignal,
+		executableResolution,
+		spawnPreconditionOptions,
+	} = context;
+	if (options.signal?.aborted)
+		return {
+			ok: false,
+			discovery: abortedDiscovery(
+				detectionSignal,
+				"version",
+				options.signal,
+				undefined,
+				executableResolution,
+			),
+		};
+	const versionPrecondition = discoveryFromSpawnPrecondition(
+		detectionSignal,
+		validateSpawnPreconditions(spawnPreconditionOptions),
+		executableResolution,
+	);
+	if (versionPrecondition !== undefined)
+		return { ok: false, discovery: versionPrecondition };
+	if (options.signal?.aborted)
+		return {
+			ok: false,
+			discovery: abortedDiscovery(
+				detectionSignal,
+				"version",
+				options.signal,
+				undefined,
+				executableResolution,
+			),
+		};
+	return executeVersionProbe(context);
+}
+
+type IntrospectionProcessResult =
+	| { ok: true; outcome: ProviderProcessOutcome }
+	| { ok: false; discovery: FallowProviderDiscovery };
+
+async function executeIntrospectionProcess(
+	context: IntrospectionProbeContext,
+	operation: "version" | "config",
+	args: string[],
+): Promise<IntrospectionProcessResult> {
+	const {
+		options,
+		detectionSignal,
+		executableResolution,
+		bindingIdentity,
+		executeProcess,
+		beforeSpawn,
+	} = context;
+	let outcome: ProviderProcessOutcome;
+	try {
+		outcome = await executeProcess(
+			{
+				executablePath: bindingIdentity.executable.canonicalPath,
+				args,
+				cwd: options.projectRoot,
+			},
+			options.signal,
+			{ beforeSpawn },
+		);
+	} catch (error) {
+		return {
+			ok: false,
+			discovery: discoveryFromIntrospectionError(
+				error,
+				detectionSignal,
+				executableResolution,
+			),
+		};
+	}
+	if (options.signal?.aborted) {
+		return {
+			ok: false,
+			discovery: abortedDiscovery(
+				detectionSignal,
+				operation,
+				options.signal,
+				outcome,
+				executableResolution,
+			),
+		};
+	}
+	return { ok: true, outcome };
+}
+
+async function executeVersionProbe(
+	context: IntrospectionProbeContext,
+): Promise<VersionProbeResult> {
+	const { detectionSignal, executableResolution } = context;
+	const process = await executeIntrospectionProcess(context, "version", [
+		"--version",
+		"--no-cache",
+	]);
+	if (!process.ok) return process;
+	const versionOutcome = process.outcome;
+	if (versionOutcome.kind !== "code-exit" || versionOutcome.code !== 0) {
+		return {
+			ok: false,
+			discovery: failedDiscovery(
+				detectionSignal,
+				processFailure("version", versionOutcome),
+				executableResolution,
+			),
+		};
+	}
+	const version = parseVersion(versionOutcome.stdout);
+	if (version === null)
+		return {
+			ok: false,
+			discovery: failedDiscovery(
+				detectionSignal,
+				invalidOutput("version", "expected `fallow <version>`"),
+				executableResolution,
+			),
+		};
+	return { ok: true, version };
+}
+
+type ConfigProbeResult =
+	| {
+			ok: true;
+			config: FallowConfig | null;
+			expectedConfigurationIdentity: string;
+	  }
+	| { ok: false; discovery: FallowProviderDiscovery };
+
+async function probeFallowConfig(
+	context: IntrospectionProbeContext,
+): Promise<ConfigProbeResult> {
+	const {
+		options,
+		detectionSignal,
+		executableResolution,
+		spawnPreconditionOptions,
+	} = context;
+	const configSpawnPrecondition = validateSpawnPreconditions(
+		spawnPreconditionOptions,
+	);
+	const configPrecondition = discoveryFromSpawnPrecondition(
+		detectionSignal,
+		configSpawnPrecondition,
+		executableResolution,
+	);
+	if (configPrecondition !== undefined)
+		return { ok: false, discovery: configPrecondition };
+	if (options.signal?.aborted)
+		return {
+			ok: false,
+			discovery: abortedDiscovery(
+				detectionSignal,
+				"config",
+				options.signal,
+				undefined,
+				executableResolution,
+			),
+		};
+	const process = await executeIntrospectionProcess(context, "config", [
+		"config",
+		"--format",
+		"json",
+		"--quiet",
+		"--no-cache",
+	]);
+	if (!process.ok) return process;
+	return parseFallowConfig(context, configSpawnPrecondition, process.outcome);
+}
+
+function parseFallowConfig(
+	context: IntrospectionProbeContext,
+	configSpawnPrecondition: FallowSpawnPrecondition,
+	configOutcome: ProviderProcessOutcome,
+): ConfigProbeResult {
+	const { detectionSignal, executableResolution, spawnPreconditionOptions } =
+		context;
+	let config: FallowConfig | null;
+	if (configOutcome.kind === "code-exit" && configOutcome.code === 3) {
+		config = null;
+	} else if (configOutcome.kind === "code-exit" && configOutcome.code === 0) {
+		config = parseConfig(configOutcome.stdout);
+		if (config === null)
+			return {
+				ok: false,
+				discovery: failedDiscovery(
+					detectionSignal,
+					invalidOutput("config", "expected a JSON object after any preamble"),
+					executableResolution,
+				),
+			};
+	} else {
+		return {
+			ok: false,
+			discovery: failedDiscovery(
+				detectionSignal,
+				processFailure("config", configOutcome),
+				executableResolution,
+			),
+		};
+	}
+	const configCompletionPrecondition = validateSpawnPreconditions(
+		spawnPreconditionOptions,
+	);
+	const configCompletionFailure = discoveryFromSpawnPrecondition(
+		detectionSignal,
+		configCompletionPrecondition,
+		executableResolution,
+	);
+	if (configCompletionFailure !== undefined)
+		return { ok: false, discovery: configCompletionFailure };
+	if (
+		!sameIntrospectionConfiguration(
+			configSpawnPrecondition,
+			configCompletionPrecondition,
+		)
+	) {
+		return {
+			ok: false,
+			discovery: failedDiscovery(
+				detectionSignal,
+				configurationIdentityFailure(
+					"Fallow configuration changed during provider introspection.",
+				),
+				executableResolution,
+			),
+		};
+	}
+	return {
+		ok: true,
+		config,
+		expectedConfigurationIdentity:
+			configCompletionPrecondition.configurationIdentity,
+	};
+}
+
+function sameIntrospectionConfiguration(
+	before: FallowSpawnPrecondition,
+	after: FallowSpawnPrecondition,
+): after is Extract<FallowSpawnPrecondition, { kind: "ready" }> {
+	return (
+		before.kind === "ready" &&
+		after.kind === "ready" &&
+		before.configurationIdentity === after.configurationIdentity
+	);
+}
+
 async function introspectProvider(
 	options: DiscoverFallowProviderOptions,
 	detectionSignal: FallowDetectionSignal,
@@ -1195,162 +1462,21 @@ async function introspectProvider(
 			readAnalysisExecutionAuthorizationSync,
 	} as const;
 	const beforeSpawn = finalSpawnPrecondition(spawnPreconditionOptions);
-	if (options.signal?.aborted) {
-		return abortedDiscovery(
-			detectionSignal,
-			"version",
-			options.signal,
-			undefined,
-			executableResolution,
-		);
-	}
-	const versionPrecondition = discoveryFromSpawnPrecondition(
+	const context: IntrospectionProbeContext = {
+		options,
 		detectionSignal,
-		validateSpawnPreconditions(spawnPreconditionOptions),
 		executableResolution,
-	);
-	if (versionPrecondition !== undefined) return versionPrecondition;
-	if (options.signal?.aborted) {
-		return abortedDiscovery(
-			detectionSignal,
-			"version",
-			options.signal,
-			undefined,
-			executableResolution,
-		);
-	}
-	let versionOutcome: ProviderProcessOutcome;
-	try {
-		versionOutcome = await executeProcess(
-			{
-				executablePath: bindingIdentity.executable.canonicalPath,
-				args: ["--version", "--no-cache"],
-				cwd: options.projectRoot,
-			},
-			options.signal,
-			{ beforeSpawn },
-		);
-	} catch (error) {
-		return discoveryFromIntrospectionError(
-			error,
-			detectionSignal,
-			executableResolution,
-		);
-	}
-	if (options.signal?.aborted) {
-		return abortedDiscovery(
-			detectionSignal,
-			"version",
-			options.signal,
-			versionOutcome,
-			executableResolution,
-		);
-	}
-	if (versionOutcome.kind !== "code-exit" || versionOutcome.code !== 0) {
-		return failedDiscovery(
-			detectionSignal,
-			processFailure("version", versionOutcome),
-			executableResolution,
-		);
-	}
-	const version = parseVersion(versionOutcome.stdout);
-	if (version === null) {
-		return failedDiscovery(
-			detectionSignal,
-			invalidOutput("version", "expected `fallow <version>`"),
-			executableResolution,
-		);
-	}
-
-	const configSpawnPrecondition = validateSpawnPreconditions(
+		bindingIdentity,
+		executeProcess,
 		spawnPreconditionOptions,
-	);
-	const configPrecondition = discoveryFromSpawnPrecondition(
-		detectionSignal,
-		configSpawnPrecondition,
-		executableResolution,
-	);
-	if (configPrecondition !== undefined) return configPrecondition;
-	if (options.signal?.aborted) {
-		return abortedDiscovery(
-			detectionSignal,
-			"config",
-			options.signal,
-			undefined,
-			executableResolution,
-		);
-	}
-	let configOutcome: ProviderProcessOutcome;
-	try {
-		configOutcome = await executeProcess(
-			{
-				executablePath: bindingIdentity.executable.canonicalPath,
-				args: ["config", "--format", "json", "--quiet", "--no-cache"],
-				cwd: options.projectRoot,
-			},
-			options.signal,
-			{ beforeSpawn },
-		);
-	} catch (error) {
-		return discoveryFromIntrospectionError(
-			error,
-			detectionSignal,
-			executableResolution,
-		);
-	}
-	if (options.signal?.aborted) {
-		return abortedDiscovery(
-			detectionSignal,
-			"config",
-			options.signal,
-			configOutcome,
-			executableResolution,
-		);
-	}
-	let config: FallowConfig | null;
-	if (configOutcome.kind === "code-exit" && configOutcome.code === 3) {
-		config = null;
-	} else if (configOutcome.kind === "code-exit" && configOutcome.code === 0) {
-		config = parseConfig(configOutcome.stdout);
-		if (config === null) {
-			return failedDiscovery(
-				detectionSignal,
-				invalidOutput("config", "expected a JSON object after any preamble"),
-				executableResolution,
-			);
-		}
-	} else {
-		return failedDiscovery(
-			detectionSignal,
-			processFailure("config", configOutcome),
-			executableResolution,
-		);
-	}
-	const configCompletionPrecondition = validateSpawnPreconditions(
-		spawnPreconditionOptions,
-	);
-	const configCompletionFailure = discoveryFromSpawnPrecondition(
-		detectionSignal,
-		configCompletionPrecondition,
-		executableResolution,
-	);
-	if (configCompletionFailure !== undefined) return configCompletionFailure;
-	if (
-		configSpawnPrecondition.kind !== "ready" ||
-		configCompletionPrecondition.kind !== "ready" ||
-		configSpawnPrecondition.configurationIdentity !==
-			configCompletionPrecondition.configurationIdentity
-	) {
-		return failedDiscovery(
-			detectionSignal,
-			configurationIdentityFailure(
-				"Fallow configuration changed during provider introspection.",
-			),
-			executableResolution,
-		);
-	}
-	const expectedConfigurationIdentity =
-		configCompletionPrecondition.configurationIdentity;
+		beforeSpawn,
+	};
+	const versionProbe = await probeFallowVersion(context);
+	if (!versionProbe.ok) return versionProbe.discovery;
+	const version = versionProbe.version;
+	const configProbe = await probeFallowConfig(context);
+	if (!configProbe.ok) return configProbe.discovery;
+	const { config, expectedConfigurationIdentity } = configProbe;
 
 	const provider = {
 		id: FALLOW_PROVIDER_ID,

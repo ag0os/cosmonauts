@@ -70,6 +70,16 @@ function summarizeDriverEvent(event: DriverEvent): string {
 }
 
 function describeDriverEvent(event: DriverEvent): string {
+	return (
+		describeLaunchEvent(event) ??
+		describeProgressEvent(event) ??
+		describeTerminalEvent(event) ??
+		describeRunEndEvent(event) ??
+		JSON.stringify(event)
+	);
+}
+
+function describeLaunchEvent(event: DriverEvent): string | undefined {
 	switch (event.type) {
 		case "run_started":
 			return `${event.planSlug} via ${event.backend} (${event.mode})`;
@@ -87,6 +97,11 @@ function describeDriverEvent(event: DriverEvent): string {
 			return `${event.taskId} ${describeActivity(event.activity)}`;
 		case "spawn_completed":
 			return `${event.taskId} report: ${describeReportOutcome(event.report)}`;
+	}
+}
+
+function describeProgressEvent(event: DriverEvent): string | undefined {
+	switch (event.type) {
 		case "spawn_failed":
 			return joinParts([
 				event.taskId,
@@ -103,13 +118,11 @@ function describeDriverEvent(event: DriverEvent): string {
 			return `${event.taskId} ${shortSha(event.sha)} ${event.subject}`;
 		case "finalize":
 			return describeFinalizeEvent(event);
-		case "task_finalization_failed":
-			return joinParts([
-				event.taskId,
-				`phase ${event.phase}`,
-				`reason: ${event.reason}`,
-				event.commitSha && `commit ${shortSha(event.commitSha)}`,
-			]);
+	}
+}
+
+function describeTerminalEvent(event: DriverEvent): string | undefined {
+	switch (event.type) {
 		case "task_done":
 			return event.taskId;
 		case "task_blocked":
@@ -129,6 +142,18 @@ function describeDriverEvent(event: DriverEvent): string {
 			return `total ${event.summary.total}, done ${event.summary.done}, blocked ${event.summary.blocked}`;
 		case "run_aborted":
 			return `reason: ${event.reason}`;
+	}
+}
+
+function describeRunEndEvent(event: DriverEvent): string | undefined {
+	switch (event.type) {
+		case "task_finalization_failed":
+			return joinParts([
+				event.taskId,
+				`phase ${event.phase}`,
+				`reason: ${event.reason}`,
+				event.commitSha && `commit ${shortSha(event.commitSha)}`,
+			]);
 		case "run_finalization_failed":
 			return joinParts([
 				`phase ${event.phase}`,
@@ -138,8 +163,6 @@ function describeDriverEvent(event: DriverEvent): string {
 			]);
 		case "plan_completion_candidate":
 			return `${event.planSlug}, all ${event.taskCount} plan tasks closed (Done or Cancelled), reason: ${event.reason}`;
-		default:
-			return JSON.stringify(event);
 	}
 }
 

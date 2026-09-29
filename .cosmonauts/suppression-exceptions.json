@@ -4,12 +4,6 @@
 	"entries": [
 		{
 			"family": "fallow-ignore",
-			"path": "cli/drive/subcommand.ts",
-			"directive": "be1b4cb00b3bef1c7e24d8dcc8f3c321e878886bf85a2d97e42034cf41afede7",
-			"target": "de613c8a3698d33a47f6ffafb09df25555949fe026978fb6d4c4a0e0ae0dea69"
-		},
-		{
-			"family": "fallow-ignore",
 			"path": "domains/shared/extensions/domain-bindings/index.ts",
 			"directive": "2c243de9aded223b36577405286a908ec16af3ff29fd661c57c0efeb6f669870",
 			"target": "76c38b0f717f2c4bc34bef2e4bc322fa17cc59044b5e40cf881ab7b8ae8caafb"

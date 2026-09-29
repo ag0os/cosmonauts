@@ -199,6 +199,17 @@ function pathFromError(error: unknown): string | undefined {
 	return undefined;
 }
 
+const STEP_STATUSES = new Set<StepRecord["status"]>([
+	"pending",
+	"ready",
+	"running",
+	"completed",
+	"blocked",
+	"failed",
+	"cancelled",
+	"stale",
+]);
+
 function isStepRecordLike(
 	value: unknown,
 	runId: string,
@@ -211,22 +222,27 @@ function isStepRecordLike(
 	return (
 		step.id === stepId &&
 		step.runId === runId &&
+		isStepIdentityLike(step) &&
+		isStepArtifactsLike(step) &&
+		STEP_STATUSES.has(step.status as StepRecord["status"])
+	);
+}
+
+function isStepIdentityLike(step: Partial<StepRecord>): boolean {
+	return (
 		typeof step.title === "string" &&
 		typeof step.kind === "string" &&
 		typeof step.backend === "object" &&
-		step.backend !== null &&
+		step.backend !== null
+	);
+}
+
+function isStepArtifactsLike(step: Partial<StepRecord>): boolean {
+	return (
 		Array.isArray(step.dependsOn) &&
 		step.dependsOn.every((dependency) => typeof dependency === "string") &&
 		Array.isArray(step.inputArtifacts) &&
-		Array.isArray(step.outputArtifacts) &&
-		(step.status === "pending" ||
-			step.status === "ready" ||
-			step.status === "running" ||
-			step.status === "completed" ||
-			step.status === "blocked" ||
-			step.status === "failed" ||
-			step.status === "cancelled" ||
-			step.status === "stale")
+		Array.isArray(step.outputArtifacts)
 	);
 }
 

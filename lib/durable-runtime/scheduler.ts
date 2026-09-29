@@ -57,34 +57,9 @@ export async function runDurableGraphScheduler({
 		};
 	}
 
-	let reconciliation = await reconcileSchedulerState({ store, ref, now });
-	const diagnostics = [...reconciliation.diagnostics];
-	const terminalAttemptPromotion = await promotePersistedTerminalAttempts({
-		store,
-		ref,
-		run,
-		now: now ?? (() => new Date().toISOString()),
-		state: reconciliation.state,
-		steps: reconciliation.steps,
-	});
-	if (terminalAttemptPromotion.changed) {
-		reconciliation = await reconcileSchedulerState({ store, ref, now });
-		diagnostics.push(...reconciliation.diagnostics);
-		const finalized = await finalizeRun({
-			store,
-			ref,
-			diagnostics,
-		});
-		if (finalized && isTerminalStatus(finalized.status)) {
-			return schedulerResult({
-				store,
-				ref,
-				run: finalized,
-				diagnostics,
-				exitReason: "terminal",
-			});
-		}
-	}
+	const promoted = await reconcilePromotedAttempts({ store, ref, run, now });
+	if (promoted.kind === "terminal") return promoted.result;
+	const { reconciliation, diagnostics } = promoted;
 	if (hasBlockingPersistedStateDiagnostics(reconciliation.diagnostics)) {
 		const blockedRun = await blockRunForPersistedStateDiagnostics({
 			store,
@@ -98,58 +73,16 @@ export async function runDurableGraphScheduler({
 			exitReason: "blocked",
 		};
 	}
-	const committedWorkBlock = await blockPotentiallyCommittedRunningSteps({
+	const recovered = await recoverRunningSteps({
 		store,
 		ref,
 		run,
 		backends,
-		now: now ?? (() => new Date().toISOString()),
-		state: reconciliation.state,
-		steps: reconciliation.steps,
+		now,
+		reconciliation,
+		diagnostics,
 	});
-	if (committedWorkBlock.changed) {
-		diagnostics.push(...committedWorkBlock.diagnostics);
-		return finalizeSchedulerResult({
-			store,
-			ref,
-			run,
-			diagnostics,
-			fallbackExitReason: "blocked",
-		});
-	}
-	const staleTransition = await markPersistedStaleRunningSteps({
-		store,
-		ref,
-		run,
-		now: now ?? (() => new Date().toISOString()),
-		state: reconciliation.state,
-		steps: reconciliation.steps,
-	});
-	if (staleTransition.changed) {
-		return finalizeSchedulerResult({
-			store,
-			ref,
-			run,
-			diagnostics,
-			fallbackExitReason: "drained",
-		});
-	}
-
-	const backendBlock = await blockUnknownBackendSteps({
-		store,
-		ref,
-		steps: reconciliation.steps,
-	});
-	if (backendBlock.changed) {
-		diagnostics.push(...backendBlock.diagnostics);
-		return finalizeSchedulerResult({
-			store,
-			ref,
-			run,
-			diagnostics,
-			fallbackExitReason: "drained",
-		});
-	}
+	if (recovered) return recovered;
 
 	const alreadyFinalized = await finalizeRun({
 		store,
@@ -222,8 +155,189 @@ export async function runDurableGraphScheduler({
 		});
 	}
 
+	const completed = await executePlannedSteps({
+		store,
+		ref,
+		run,
+		holderId,
+		inputForStep,
+		now,
+		signal,
+		heartbeatIntervalMs,
+		steps: runnablePlan.steps,
+		availableSlots,
+	});
+	diagnostics.push(...completed.diagnostics);
+	const cancellationObserved = completed.cancellationObserved;
+
+	const finalized = await finalizeRun({
+		store,
+		ref,
+		diagnostics,
+	});
+	return schedulerResult({
+		store,
+		ref,
+		run: finalized ?? run,
+		diagnostics,
+		exitReason: completedExecutionExitReason(cancellationObserved, finalized),
+	});
+}
+
+async function reconcilePromotedAttempts({
+	store,
+	ref,
+	run,
+	now,
+}: Pick<RunGraphSchedulerOptions, "store" | "ref" | "now"> & {
+	run: RunRecord;
+}): Promise<
+	| { kind: "terminal"; result: RunGraphSchedulerResult }
+	| {
+			kind: "continue";
+			reconciliation: Awaited<ReturnType<typeof reconcileSchedulerState>>;
+			diagnostics: RuntimeDiagnostic[];
+	  }
+> {
+	let reconciliation = await reconcileSchedulerState({ store, ref, now });
+	const diagnostics = [...reconciliation.diagnostics];
+	const promotion = await promotePersistedTerminalAttempts({
+		store,
+		ref,
+		run,
+		now: now ?? (() => new Date().toISOString()),
+		state: reconciliation.state,
+		steps: reconciliation.steps,
+	});
+	if (promotion.changed) {
+		reconciliation = await reconcileSchedulerState({ store, ref, now });
+		diagnostics.push(...reconciliation.diagnostics);
+		const finalized = await finalizeRun({ store, ref, diagnostics });
+		if (finalized && isTerminalStatus(finalized.status)) {
+			return {
+				kind: "terminal",
+				result: await schedulerResult({
+					store,
+					ref,
+					run: finalized,
+					diagnostics,
+					exitReason: "terminal",
+				}),
+			};
+		}
+	}
+	return { kind: "continue", reconciliation, diagnostics };
+}
+
+async function recoverRunningSteps({
+	store,
+	ref,
+	run,
+	backends,
+	now,
+	reconciliation,
+	diagnostics,
+}: Pick<RunGraphSchedulerOptions, "store" | "ref" | "backends" | "now"> & {
+	run: RunRecord;
+	reconciliation: Awaited<ReturnType<typeof reconcileSchedulerState>>;
+	diagnostics: RuntimeDiagnostic[];
+}): Promise<RunGraphSchedulerResult | undefined> {
+	const committedWorkBlock = await blockPotentiallyCommittedRunningSteps({
+		store,
+		ref,
+		run,
+		backends,
+		now: now ?? (() => new Date().toISOString()),
+		state: reconciliation.state,
+		steps: reconciliation.steps,
+	});
+	if (committedWorkBlock.changed) {
+		diagnostics.push(...committedWorkBlock.diagnostics);
+		return finalizeSchedulerResult({
+			store,
+			ref,
+			run,
+			diagnostics,
+			fallbackExitReason: "blocked",
+		});
+	}
+	const staleTransition = await markPersistedStaleRunningSteps({
+		store,
+		ref,
+		run,
+		now: now ?? (() => new Date().toISOString()),
+		state: reconciliation.state,
+		steps: reconciliation.steps,
+	});
+	if (staleTransition.changed) {
+		return finalizeSchedulerResult({
+			store,
+			ref,
+			run,
+			diagnostics,
+			fallbackExitReason: "drained",
+		});
+	}
+	const backendBlock = await blockUnknownBackendSteps({
+		store,
+		ref,
+		steps: reconciliation.steps,
+	});
+	if (backendBlock.changed) {
+		diagnostics.push(...backendBlock.diagnostics);
+		return finalizeSchedulerResult({
+			store,
+			ref,
+			run,
+			diagnostics,
+			fallbackExitReason: "drained",
+		});
+	}
+	return undefined;
+}
+
+function completedExecutionExitReason(
+	cancellationObserved: boolean,
+	finalized: RunRecord | undefined,
+): RunGraphSchedulerResult["exitReason"] {
+	return cancellationObserved
+		? "cancelled"
+		: finalized && isTerminalStatus(finalized.status)
+			? "terminal"
+			: "drained";
+}
+
+async function executePlannedSteps(
+	options: Pick<
+		RunGraphSchedulerOptions,
+		| "store"
+		| "ref"
+		| "holderId"
+		| "inputForStep"
+		| "now"
+		| "signal"
+		| "heartbeatIntervalMs"
+	> & {
+		run: RunRecord;
+		steps: ReturnType<typeof planRunnableSteps>["steps"];
+		availableSlots: number;
+	},
+): Promise<{
+	diagnostics: RuntimeDiagnostic[];
+	cancellationObserved: boolean;
+}> {
+	const {
+		store,
+		ref,
+		run,
+		holderId,
+		inputForStep,
+		now,
+		signal,
+		heartbeatIntervalMs,
+	} = options;
 	const executions: StartedStepExecution[] = [];
-	for (const runnableStep of runnablePlan.steps.slice(0, availableSlots)) {
+	for (const runnableStep of options.steps.slice(0, options.availableSlots)) {
 		executions.push(
 			await startStepExecution({
 				store,
@@ -239,7 +353,7 @@ export async function runDurableGraphScheduler({
 			}),
 		);
 	}
-
+	const diagnostics: RuntimeDiagnostic[] = [];
 	let cancellationObserved = false;
 	for (const execution of executions) {
 		const finished = await finishStepExecution({
@@ -253,23 +367,7 @@ export async function runDurableGraphScheduler({
 		diagnostics.push(...finished.diagnostics);
 		cancellationObserved ||= finished.cancellationObserved;
 	}
-
-	const finalized = await finalizeRun({
-		store,
-		ref,
-		diagnostics,
-	});
-	return schedulerResult({
-		store,
-		ref,
-		run: finalized ?? run,
-		diagnostics,
-		exitReason: cancellationObserved
-			? "cancelled"
-			: finalized && isTerminalStatus(finalized.status)
-				? "terminal"
-				: "drained",
-	});
+	return { diagnostics, cancellationObserved };
 }
 
 async function finalizeSchedulerResult(options: {

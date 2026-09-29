@@ -1115,93 +1115,102 @@ function parseRememberParams(params: RememberParams): ParseRememberResult {
 	}
 
 	switch (type) {
-		case "note": {
-			if (params.changeSummary !== undefined) {
-				return invalidRemember("changeSummary is only supported for profiles");
-			}
-			if (params.confirmUpdate !== undefined) {
-				return invalidRemember("confirmUpdate is only supported for playbooks");
-			}
-			const title =
-				normalizeString(params.title) ?? defaultTitleFromContent(content);
-			return {
-				ok: true,
-				request: {
-					type: "note",
-					content,
-					title,
-					description: normalizeString(params.description) ?? title,
-					tags: normalizeTags(params.tags),
-					scope: normalizeScope(params.scope),
-					kind: normalizeKind(params.kind),
-				},
-			};
-		}
-		case "profile": {
-			const changeSummary = normalizeString(params.changeSummary);
-			if (!changeSummary) {
-				return invalidRemember(
-					"profile changeSummary must be a non-empty string",
-				);
-			}
-			if (params.scope !== undefined && params.scope !== "user") {
-				return invalidRemember("profiles require user scope");
-			}
-			if (params.kind !== undefined && params.kind !== "semantic") {
-				return invalidRemember("profiles require semantic memory kind");
-			}
-			if (params.confirmUpdate !== undefined) {
-				return invalidRemember("confirmUpdate is only supported for playbooks");
-			}
-			return {
-				ok: true,
-				request: {
-					type: "profile",
-					content,
-					tags: normalizeTags(params.tags),
-					scope: "user",
-					kind: "semantic",
-					changeSummary,
-				},
-			};
-		}
-		case "playbook": {
-			const title = normalizeString(params.title);
-			if (!title) {
-				return invalidRemember("playbook title must be a non-empty string");
-			}
-			if (params.scope !== "project" && params.scope !== "user") {
-				return invalidRemember(
-					"playbooks require an explicit project or user scope",
-				);
-			}
-			if (params.kind !== undefined && params.kind !== "procedural") {
-				return invalidRemember("playbooks require procedural memory kind");
-			}
-			if (params.changeSummary !== undefined) {
-				return invalidRemember("changeSummary is only supported for profiles");
-			}
-			if (
-				params.confirmUpdate !== undefined &&
-				typeof params.confirmUpdate !== "boolean"
-			) {
-				return invalidRemember("confirmUpdate must be a boolean");
-			}
-			return {
-				ok: true,
-				request: {
-					type: "playbook",
-					content,
-					title,
-					description: normalizeString(params.description) ?? title,
-					tags: normalizeTags(params.tags),
-					scope: params.scope,
-					kind: "procedural",
-					confirmUpdate: params.confirmUpdate === true,
-				},
-			};
-		}
+		case "note":
+			return parseNoteRemember(params, content);
+		case "profile":
+			return parseProfileRemember(params, content);
+		case "playbook":
+			return parsePlaybookRemember(params, content);
 	}
+}
+
+function parseNoteRemember(
+	params: RememberParams,
+	content: string,
+): ParseRememberResult {
+	if (params.changeSummary !== undefined)
+		return invalidRemember("changeSummary is only supported for profiles");
+	if (params.confirmUpdate !== undefined)
+		return invalidRemember("confirmUpdate is only supported for playbooks");
+	const title =
+		normalizeString(params.title) ?? defaultTitleFromContent(content);
+	return {
+		ok: true,
+		request: {
+			type: "note",
+			content,
+			title,
+			description: normalizeString(params.description) ?? title,
+			tags: normalizeTags(params.tags),
+			scope: normalizeScope(params.scope),
+			kind: normalizeKind(params.kind),
+		},
+	};
+}
+
+function parseProfileRemember(
+	params: RememberParams,
+	content: string,
+): ParseRememberResult {
+	const changeSummary = normalizeString(params.changeSummary);
+	if (!changeSummary)
+		return invalidRemember("profile changeSummary must be a non-empty string");
+	if (params.scope !== undefined && params.scope !== "user")
+		return invalidRemember("profiles require user scope");
+	if (params.kind !== undefined && params.kind !== "semantic")
+		return invalidRemember("profiles require semantic memory kind");
+	if (params.confirmUpdate !== undefined)
+		return invalidRemember("confirmUpdate is only supported for playbooks");
+	return {
+		ok: true,
+		request: {
+			type: "profile",
+			content,
+			tags: normalizeTags(params.tags),
+			scope: "user",
+			kind: "semantic",
+			changeSummary,
+		},
+	};
+}
+
+function parsePlaybookRemember(
+	params: RememberParams,
+	content: string,
+): ParseRememberResult {
+	const title = normalizeString(params.title);
+	if (!title)
+		return invalidRemember("playbook title must be a non-empty string");
+	if (!isPlaybookScope(params.scope))
+		return invalidRemember(
+			"playbooks require an explicit project or user scope",
+		);
+	if (params.kind !== undefined && params.kind !== "procedural")
+		return invalidRemember("playbooks require procedural memory kind");
+	if (params.changeSummary !== undefined)
+		return invalidRemember("changeSummary is only supported for profiles");
+	if (
+		params.confirmUpdate !== undefined &&
+		typeof params.confirmUpdate !== "boolean"
+	)
+		return invalidRemember("confirmUpdate must be a boolean");
+	return {
+		ok: true,
+		request: {
+			type: "playbook",
+			content,
+			title,
+			description: normalizeString(params.description) ?? title,
+			tags: normalizeTags(params.tags),
+			scope: params.scope,
+			kind: "procedural",
+			confirmUpdate: params.confirmUpdate === true,
+		},
+	};
+}
+
+function isPlaybookScope(scope: unknown): scope is "project" | "user" {
+	return scope === "project" || scope === "user";
 }
 
 function invalidRemember(reason: string): ParseRememberResult {

@@ -128,6 +128,15 @@ function adaptStoredEvent(
 	state: AdapterState,
 	envelope: StoredOrchestrationEvent,
 ): void {
+	adaptRunLifecycle(state, envelope);
+	adaptStepLifecycle(state, envelope);
+	adaptActivityEvent(state, envelope.event);
+}
+
+function adaptRunLifecycle(
+	state: AdapterState,
+	envelope: StoredOrchestrationEvent,
+): void {
 	const event = envelope.event;
 	switch (event.type) {
 		case "run_started":
@@ -137,14 +146,58 @@ function adaptStoredEvent(
 				steps: state.topology.chainSteps,
 			});
 			break;
+		case "run_completed":
+			state.events.push({
+				type: "chain_end",
+				result: chainResult(state, envelope.timestamp, event.result.outcome),
+			});
+			break;
+		case "run_failed":
+		case "run_blocked":
+			addError(state, event.reason);
+			state.events.push({ type: "error", message: event.reason });
+			state.events.push({
+				type: "chain_end",
+				result: chainResult(
+					state,
+					envelope.timestamp,
+					event.type === "run_failed" ? "failed" : "blocked",
+				),
+			});
+			break;
+		case "run_cancelled":
+		case "run_stale":
+			adaptRunCancellation(state, envelope.timestamp, event);
+			break;
+	}
+}
+
+function adaptRunCancellation(
+	state: AdapterState,
+	timestamp: string,
+	event: Extract<OrchestrationEvent, { type: "run_cancelled" | "run_stale" }>,
+): void {
+	const reason = event.type === "run_cancelled" ? "Run cancelled" : "Run stale";
+	addError(state, reason);
+	state.events.push({ type: "error", message: reason });
+	state.events.push({
+		type: "chain_end",
+		result: chainResult(
+			state,
+			timestamp,
+			event.type === "run_cancelled" ? "cancelled" : "stale",
+		),
+	});
+}
+
+function adaptStepLifecycle(
+	state: AdapterState,
+	envelope: StoredOrchestrationEvent,
+): void {
+	const event = envelope.event;
+	switch (event.type) {
 		case "step_started":
 			adaptStepStarted(state, envelope.timestamp, event);
-			break;
-		case "step_tool_activity":
-			adaptStepToolActivity(state, event);
-			break;
-		case "run_activity":
-			adaptRunActivity(state, event);
 			break;
 		case "step_completed":
 			adaptStepTerminal(
@@ -160,8 +213,6 @@ function adaptStoredEvent(
 			);
 			break;
 		case "step_failed":
-			adaptStepFailure(state, envelope.timestamp, event.stepId, event.reason);
-			break;
 		case "step_blocked":
 			adaptStepFailure(state, envelope.timestamp, event.stepId, event.reason);
 			break;
@@ -176,49 +227,19 @@ function adaptStoredEvent(
 		case "step_stale":
 			adaptStepFailure(state, envelope.timestamp, event.stepId, "Step stale");
 			break;
-		case "run_completed":
-			state.events.push({
-				type: "chain_end",
-				result: chainResult(state, envelope.timestamp, event.result.outcome),
-			});
+	}
+}
+
+function adaptActivityEvent(
+	state: AdapterState,
+	event: OrchestrationEvent,
+): void {
+	switch (event.type) {
+		case "step_tool_activity":
+			adaptStepToolActivity(state, event);
 			break;
-		case "run_failed":
-			addError(state, event.reason);
-			state.events.push({ type: "error", message: event.reason });
-			state.events.push({
-				type: "chain_end",
-				result: chainResult(state, envelope.timestamp, "failed"),
-			});
-			break;
-		case "run_blocked":
-			addError(state, event.reason);
-			state.events.push({ type: "error", message: event.reason });
-			state.events.push({
-				type: "chain_end",
-				result: chainResult(state, envelope.timestamp, "blocked"),
-			});
-			break;
-		case "run_cancelled":
-			addError(state, "Run cancelled");
-			state.events.push({ type: "error", message: "Run cancelled" });
-			state.events.push({
-				type: "chain_end",
-				result: chainResult(state, envelope.timestamp, "cancelled"),
-			});
-			break;
-		case "run_stale":
-			addError(state, "Run stale");
-			state.events.push({ type: "error", message: "Run stale" });
-			state.events.push({
-				type: "chain_end",
-				result: chainResult(state, envelope.timestamp, "stale"),
-			});
-			break;
-		case "step_ready":
-		case "step_heartbeat":
-		case "step_output":
-		case "artifact_written":
-		case "child_run_started":
+		case "run_activity":
+			adaptRunActivity(state, event);
 			break;
 	}
 }
@@ -568,48 +589,13 @@ function validateChainAgentEvidence(
 	stepId: string,
 	details: Record<string, unknown>,
 ): ChainAgentEvidenceDetails | undefined {
-	const errors: string[] = [];
-	const chainEvent = details.chainEvent;
-	const role = details.role;
-	const sessionId = details.sessionId;
-	const event = details.event;
-	const metadata = state.topology.stepById.get(stepId);
-
-	if (details.source !== "chain") errors.push("source must be chain");
-	if (details.kind !== "chain_agent_event") {
-		errors.push("kind must be chain_agent_event");
-	}
-	if (!isChainAgentEventType(chainEvent)) {
-		errors.push("chainEvent must be a supported agent event type");
-	}
-	if (typeof role !== "string" || role.length === 0) {
-		errors.push("role must be a non-empty string");
-	}
-	if (typeof sessionId !== "string" || sessionId.length === 0) {
-		errors.push("sessionId must be a non-empty string");
-	}
-	if (!isSpawnEvent(event)) {
-		errors.push("event must be a valid SpawnEvent payload");
-	} else if (typeof sessionId === "string" && event.sessionId !== sessionId) {
-		errors.push("event.sessionId must match sessionId");
-	}
-	if (metadata && typeof role === "string" && metadata.stage.name !== role) {
-		errors.push("role must match scheduler stage metadata");
-	}
-	if (
-		chainEvent === "agent_turn" &&
-		isSpawnEvent(event) &&
-		!isTurnLikeSpawnEvent(event)
-	) {
-		errors.push("agent_turn requires a turn or compaction SpawnEvent");
-	}
-	if (
-		chainEvent === "agent_tool_use" &&
-		isSpawnEvent(event) &&
-		!isToolSpawnEvent(event)
-	) {
-		errors.push("agent_tool_use requires a tool execution SpawnEvent");
-	}
+	const { chainEvent, role, sessionId, event } = details;
+	const errors = [
+		...evidenceSourceErrors(details),
+		...evidenceIdentityErrors(details),
+		...evidenceRoleErrors(state, stepId, role),
+		...evidenceEventErrors(chainEvent, event),
+	];
 
 	if (errors.length > 0) {
 		state.diagnostics.push({
@@ -633,6 +619,61 @@ function validateChainAgentEvidence(
 		sessionId: sessionId as string,
 		event: event as SpawnEvent,
 	};
+}
+
+function evidenceSourceErrors(details: Record<string, unknown>): string[] {
+	const errors: string[] = [];
+	if (details.source !== "chain") errors.push("source must be chain");
+	if (details.kind !== "chain_agent_event")
+		errors.push("kind must be chain_agent_event");
+	return errors;
+}
+
+function evidenceIdentityErrors(details: Record<string, unknown>): string[] {
+	const { chainEvent, role, sessionId, event } = details;
+	const errors: string[] = [];
+	if (!isChainAgentEventType(chainEvent))
+		errors.push("chainEvent must be a supported agent event type");
+	if (typeof role !== "string" || role.length === 0)
+		errors.push("role must be a non-empty string");
+	if (typeof sessionId !== "string" || sessionId.length === 0)
+		errors.push("sessionId must be a non-empty string");
+	if (!isSpawnEvent(event)) {
+		errors.push("event must be a valid SpawnEvent payload");
+	} else if (typeof sessionId === "string" && event.sessionId !== sessionId) {
+		errors.push("event.sessionId must match sessionId");
+	}
+	return errors;
+}
+
+function evidenceRoleErrors(
+	state: AdapterState,
+	stepId: string,
+	role: unknown,
+): string[] {
+	const metadata = state.topology.stepById.get(stepId);
+	return metadata && typeof role === "string" && metadata.stage.name !== role
+		? ["role must match scheduler stage metadata"]
+		: [];
+}
+
+function evidenceEventErrors(chainEvent: unknown, event: unknown): string[] {
+	const errors: string[] = [];
+	if (
+		chainEvent === "agent_turn" &&
+		isSpawnEvent(event) &&
+		!isTurnLikeSpawnEvent(event)
+	) {
+		errors.push("agent_turn requires a turn or compaction SpawnEvent");
+	}
+	if (
+		chainEvent === "agent_tool_use" &&
+		isSpawnEvent(event) &&
+		!isToolSpawnEvent(event)
+	) {
+		errors.push("agent_tool_use requires a tool execution SpawnEvent");
+	}
+	return errors;
 }
 
 function chainTopology(
