@@ -70,7 +70,16 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing between slices. Next ready: TASK-775 (stage 8 characterization).
+Nothing. **HOLD from Shepherd (2026-09-29 00:30Z):** do not launch TASK-775 on
+DeepSeek; the user is re-allocating the remaining OpenRouter credit, ruling
+follows. Assessed meanwhile: `run_driver` accepts `backend: 'claude-cli'`
+(inline or detached) with the same driver-side postflight gates; the backend
+runs `claude --dangerously-skip-permissions -p` (extra args via
+`COSMONAUTS_DRIVER_CLAUDE_ARGS`); `claude -p --model sonnet` answered `ok`.
+Open point for the ruling: characterization ACs #7 want `analysis_status` +
+complexity surface records, which a claude-cli worker cannot call; proposed
+derived split — worker records the direct diagnostic, coordinator adds the
+surface record at verdict time (one-turn Pi worker on deepseek-v4-flash).
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
