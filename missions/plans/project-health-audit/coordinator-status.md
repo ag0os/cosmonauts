@@ -15,6 +15,13 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Done
 
+- **Slice 18 / TASK-780 Done** (2026-09-29 05:50Z, attempt 4 on gpt-6-sol, 18 min, after
+  Q-015 (B)): Drive commit `5f018779`, state `d405b5ca`. Seven owned sources,
+  `living-memory.ts` untouched; freeze clean from `S = 66778c1d` and `C =
+  86b44e34`; five gates passed; seven criticals absent, 20 surviving rows
+  metric-identical at `C`; proposals/receipts family gone. Three pre-existing
+  clone groups touching these files (two stage-5 CLI pairs + the ratified
+  `readExactBytes` three-file baseline) flagged for the stage-16 audit.
 - **Slice 17 / TASK-787 Done** (2026-09-29 04:57Z, attempt 1 on gpt-6-sol, 13 min):
   Drive commit `86b44e34`, state `3933993f`. Two new test files (5 cases) + a full
   AST return/throw inventory with probe hit counts for the eight stage-13
@@ -112,9 +119,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-780 attempt 4** (seven functions after D-034; resumes from the preserved
-worktree) on the Pi worker. Then 781 (now depends on 779) → 782 (+ the deferred
-function) → 784 → 783.
+**TASK-781** (stage 14 characterization of `runPass`, depends on 779) on the Pi
+worker. Then 782 (+ deferred `recoverAcceptedEpisodeFinalization`) → 784 → 783.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -254,17 +260,17 @@ Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.
 ## HEAD
 
 `feature/project-health-audit`, record-only commit after slice 13 (see `git log`),
-off local `main` `64dca3c`. 14 of 20 tasks Done; worktree dirty (TASK-780 partial).
+off local `main` `64dca3c`. 15 of 20 tasks Done; tree clean.
 Needs the user: nothing now; gate-owned R-013 sign-off at closeout.
 
 ## Successor handoff — continue implementation (refreshed by successor #2, 2026-09-29 02:15Z, after Q-013)
 
 State: `feature/project-health-audit`; rulings Q-001..Q-014 in
 `.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`, plan
-D-001..D-030. Pins: worker and cosmo `openai-codex/gpt-6-sol` (D-029). 14 of 20
-tasks Done (768-779, 785-787).
+D-001..D-030. Pins: worker and cosmo `openai-codex/gpt-6-sol` (D-029). 15 of 20
+tasks Done (768-780, 785-787).
 
-Remaining order: 780 attempt 2 (refactor, ready) → 781
+Remaining order: 781 (refactor, ready) → 781
 (characterization, after 780; Pi worker, no claude-cli needed) → 782 (15a) →
 784 (15b) → 783 (16 closeout, D-018 (4)) → `/implement-plan` Phases 2-4:
 gates, QM (commit first, reconcile against local `main`, gate-owned files →
