@@ -39,7 +39,6 @@ import {
 	uncheckedAcceptanceCriteriaReason as findUncheckedAcceptanceCriteriaReason,
 	headBeforeSpawn,
 	type RetriableTaskAttempt,
-	recordWorktreeSnapshot,
 	runContradictedAttempts,
 	runShellCommand,
 	runBackendWithTimeout as runWithTimeout,
@@ -219,7 +218,6 @@ async function runDriveTaskAttempt(
 		runId: spec.runId,
 		taskId,
 		attemptNumber,
-		taskManager,
 	});
 	await emit(context, {
 		type: "spawn_started",
@@ -233,12 +231,6 @@ async function runDriveTaskAttempt(
 		spec.taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS,
 		prepared.abortSignal,
 	);
-	await recordWorktreeSnapshot(
-		taskManager,
-		taskId,
-		attemptNumber,
-		worktreeSnapshot,
-	);
 	if (spawnResult.status === "failure") {
 		return spawnFailureCandidate(
 			context,
@@ -246,6 +238,7 @@ async function runDriveTaskAttempt(
 			spawnResult.error,
 			spawnResult.exitCode,
 			attemptNumber,
+			worktreeSnapshot,
 		);
 	}
 	if (spawnResult.result.exitCode !== 0) {
@@ -256,6 +249,7 @@ async function runDriveTaskAttempt(
 			reason,
 			spawnResult.result.exitCode,
 			attemptNumber,
+			worktreeSnapshot,
 		);
 	}
 
@@ -280,6 +274,7 @@ async function runDriveTaskAttempt(
 			runId: spec.runId,
 			outcome: "blocked",
 			attemptNumber,
+			worktreeSnapshot,
 			body: evidence.note ? `${reason}\n\n${evidence.note}` : reason,
 		});
 		await taskManager.updateTask(taskId, { status: "Blocked" });
@@ -307,6 +302,7 @@ async function runDriveTaskAttempt(
 			runId: spec.runId,
 			outcome: "unknown",
 			attemptNumber,
+			worktreeSnapshot,
 			body: parsedReport.raw,
 		});
 	}
@@ -314,6 +310,7 @@ async function runDriveTaskAttempt(
 		context,
 		prepared,
 		attemptNumber,
+		worktreeSnapshot,
 	);
 	if (beforePostflight) return beforePostflight;
 	const postVerifyResults = await runPostVerify(
@@ -325,6 +322,7 @@ async function runDriveTaskAttempt(
 		context,
 		prepared,
 		attemptNumber,
+		worktreeSnapshot,
 	);
 	if (beforeCommit) return beforeCommit;
 	const allowUnknownSuccess = await canInferUnknownSuccess(
@@ -370,6 +368,7 @@ async function runDriveTaskAttempt(
 					runId: spec.runId,
 					outcome: "partial",
 					attemptNumber,
+					worktreeSnapshot,
 					body: reason,
 				});
 				if (!options?.skipStatusTransition) {
@@ -400,6 +399,7 @@ async function runDriveTaskAttempt(
 					runId: spec.runId,
 					outcome: "failure",
 					attemptNumber,
+					worktreeSnapshot,
 					body: failureReason,
 				});
 			}
@@ -448,6 +448,7 @@ async function blockForProbeJournal(
 	context: DriveSchedulerBackendContext,
 	prepared: DrivePreparedStep,
 	attemptNumber: number,
+	worktreeSnapshot: string | undefined,
 ): Promise<DriveTaskAttemptResult | undefined> {
 	const reason = probeJournalBlockReason(context.spec.projectRoot);
 	if (!reason) return undefined;
@@ -458,6 +459,7 @@ async function blockForProbeJournal(
 		runId: context.spec.runId,
 		outcome: "blocked",
 		attemptNumber,
+		worktreeSnapshot,
 		body: reason,
 	});
 	await blockTask(context, taskId, reason);
@@ -476,6 +478,7 @@ function spawnFailureCandidate(
 	error: string,
 	exitCode: number | undefined,
 	attemptNumber: number,
+	worktreeSnapshot: string | undefined,
 ): DriveTaskBlockCandidate {
 	return {
 		kind: "block-candidate",
@@ -487,6 +490,7 @@ function spawnFailureCandidate(
 				runId: context.spec.runId,
 				outcome: "failure",
 				attemptNumber,
+				worktreeSnapshot,
 				body: error,
 			});
 			await emit(context, {

@@ -54,6 +54,10 @@ describe("Drive scheduler backend", () => {
 			join(fixture.projectRoot, "new.txt"),
 			"untracked\n\u0000bytes",
 		);
+		const beforeNotes = "worker sentinel  \nsecond line";
+		await fixture.taskManager.updateTask("TASK-1", {
+			implementationNotes: beforeNotes,
+		});
 		const events: DriverEvent[] = [];
 		const spec = createSpec(fixture);
 		const prepared = await prepareTaskStep({
@@ -61,8 +65,8 @@ describe("Drive scheduler backend", () => {
 			spec,
 			events,
 			backendRun: async () => {
-				git(["checkout", "--", "."]);
-				git(["clean", "-fd"]);
+				git(["checkout", "--", "envelope.md"]);
+				await rm(join(fixture.projectRoot, "new.txt"));
 				return result === "blocked"
 					? { exitCode: 0, stdout: "outcome: blocked", durationMs: 1 }
 					: successfulBackendResult();
@@ -73,13 +77,17 @@ describe("Drive scheduler backend", () => {
 		expect(
 			events.find((event) => event.type === "spawn_started"),
 		).toMatchObject({ worktreeSnapshot: ref });
-		expect(
-			(await fixture.taskManager.getTask("TASK-1"))?.implementationNotes,
-		).toContain(ref);
+		const notes = (await fixture.taskManager.getTask("TASK-1"))
+			?.implementationNotes;
+		// INV-001, D-033: the snapshot belongs inside the attempt record, never before it.
 		if (result === "blocked") {
+			expect(notes).toContain(
+				`${beforeNotes}\n\n### Drive — outcome blocked — attempt 1 — run ${spec.runId}\n\nWorktree snapshot: ${ref}\n`,
+			);
 			expect(git(["show", `${ref}:envelope.md`])).toBe("changed\n\u0000bytes");
 			expect(git(["show", `${ref}:new.txt`])).toBe("untracked\n\u0000bytes");
 		} else {
+			expect(notes).toBe(beforeNotes);
 			await transitionDriveTaskStatus({
 				spec,
 				ctx: {
@@ -96,6 +104,71 @@ describe("Drive scheduler backend", () => {
 		}
 		expect(step.outcome).toBe(result === "blocked" ? "blocked" : "success");
 	});
+	test.each([
+		["blocked", "blocked"],
+		["failure", "failure"],
+		["partial", "partial"],
+		["unknown", "unknown"],
+		["spawn failure", "failure"],
+	] as const)("writes one %s attempt record with a snapshot line only for dirty trees", async (report, outcome) => {
+		for (const dirty of [false, true]) {
+			const fixture = await setupFixture(`record-${report}-${dirty}`);
+			await fixture.taskManager.createTask({ title: "Snapshot record" });
+			const git = (args: string[]) =>
+				execFileSync("git", args, {
+					cwd: fixture.projectRoot,
+					encoding: "utf8",
+				});
+			git(["init", "-b", "main"]);
+			git(["config", "user.email", "driver@example.com"]);
+			git(["config", "user.name", "Driver Test"]);
+			await writeFile(join(fixture.projectRoot, ".gitignore"), "missions/\n");
+			git(["add", "envelope.md", ".gitignore"]);
+			git(["commit", "-m", "initial"]);
+			if (dirty)
+				await writeFile(join(fixture.projectRoot, "dirty.txt"), "unfinished");
+			const beforeNotes = "worker sentinel  \nsecond line";
+			await fixture.taskManager.updateTask("TASK-1", {
+				implementationNotes: beforeNotes,
+			});
+			const events: DriverEvent[] = [];
+			const spec = createSpec(fixture);
+			const prepared = await prepareTaskStep({
+				fixture,
+				spec,
+				events,
+				backendRun: async () =>
+					report === "spawn failure"
+						? { exitCode: 2, stdout: "", durationMs: 1 }
+						: {
+								exitCode: 0,
+								stdout:
+									report === "unknown"
+										? "unstructured"
+										: `\`\`\`json\n${JSON.stringify({ outcome: report, files: [], verification: [], notes: "needs work" })}\n\`\`\``,
+								durationMs: 1,
+							},
+			});
+			await (await prepared.backend.start(prepared.step)).result;
+			const notes =
+				(await fixture.taskManager.getTask("TASK-1"))?.implementationNotes ??
+				"";
+			const ref = `refs/cosmonauts/drive/${spec.runId}/TASK-1/attempt-1`;
+			expect(
+				notes.startsWith(
+					`${beforeNotes}\n\n### Drive — outcome ${outcome} — attempt 1 — run ${spec.runId}\n\n${dirty ? `Worktree snapshot: ${ref}\n` : ""}`,
+				),
+			).toBe(true);
+			expect(notes.match(/### Drive — outcome /g)).toHaveLength(1);
+			expect(notes.includes("Worktree snapshot:")).toBe(dirty);
+			expect(
+				events.find((event) => event.type === "spawn_started"),
+			).toMatchObject(
+				dirty ? { worktreeSnapshot: ref } : { type: "spawn_started" },
+			);
+		}
+	});
+
 	test.each([
 		"preflight",
 		"postflight",

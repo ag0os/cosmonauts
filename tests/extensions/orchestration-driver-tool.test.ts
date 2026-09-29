@@ -627,15 +627,13 @@ describe("driver e2e run_driver integration", () => {
 			task?.status,
 			`${specDebug}\n${events.map((event) => JSON.stringify(event)).join("\n")}`,
 		).toBe("Blocked");
-		// AC-014 snapshot notes add two append-only updates; AC-020 still keeps the finalizer status-only.
+		// INV-001, D-033: no slice-10 snapshot-only updates; finalizer remains status-only.
 		expect(task?.implementationNotes).toContain(
 			"### Drive — outcome unknown — attempt 1",
 		);
 		expect(task?.implementationNotes).toContain("no structured report");
 		expect(updateStatuses(updateSpy)).toEqual([
 			"In Progress",
-			undefined,
-			undefined,
 			undefined,
 			"Blocked",
 		]);

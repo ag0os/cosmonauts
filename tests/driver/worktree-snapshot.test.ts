@@ -13,7 +13,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { snapshotWorktree } from "../../lib/driver/runtime-helpers.ts";
-import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
 let root: string;
 
@@ -44,17 +43,14 @@ describe("snapshotWorktree", () => {
 		await writeFile(join(root, "tracked.txt"), "changed\n");
 		await writeFile(join(root, "untracked.txt"), "new\n");
 
-		const taskManager = new TaskManager(root);
-		const task = await taskManager.createTask({ title: "Snapshot fixture" });
 		const ref = await snapshotWorktree({
 			projectRoot: root,
 			runId: "run-1",
-			taskId: task.id,
+			taskId: "TASK-1",
 			attemptNumber: 1,
-			taskManager,
 		});
 
-		expect(ref).toBe(`refs/cosmonauts/drive/run-1/${task.id}/attempt-1`);
+		expect(ref).toBe("refs/cosmonauts/drive/run-1/TASK-1/attempt-1");
 		const files = git(["ls-tree", "-r", "--name-only", ref as string]);
 		expect(files).toContain("tracked.txt");
 		expect(files).toContain("untracked.txt");
@@ -69,7 +65,6 @@ describe("snapshotWorktree", () => {
 			runId: "run-1",
 			taskId: "TASK-1",
 			attemptNumber: 1,
-			taskManager: new TaskManager(root),
 		});
 		expect(ref).toBeUndefined();
 		expect(() =>

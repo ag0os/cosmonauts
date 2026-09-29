@@ -19,7 +19,6 @@ import {
 	uncheckedAcceptanceCriteriaReason as findUncheckedAcceptanceCriteriaReason,
 	headBeforeSpawn,
 	type RetriableTaskAttempt,
-	recordWorktreeSnapshot,
 	reportSummary,
 	runBackendWithTimeout,
 	runCommand,
@@ -140,7 +139,6 @@ async function runTaskAttempt(
 		runId: spec.runId,
 		taskId,
 		attemptNumber,
-		taskManager: ctx.taskManager,
 	});
 	await emit(ctx, spec, {
 		type: "spawn_started",
@@ -150,12 +148,6 @@ async function runTaskAttempt(
 	});
 
 	const spawnResult = await runTaskBackend(spec, ctx, taskId, promptPath);
-	await recordWorktreeSnapshot(
-		ctx.taskManager,
-		taskId,
-		attemptNumber,
-		worktreeSnapshot,
-	);
 	if (spawnResult.status === "failure") {
 		return spawnFailureCandidate(
 			ctx,
@@ -164,6 +156,7 @@ async function runTaskAttempt(
 			spawnResult.error,
 			spawnResult.exitCode,
 			attemptNumber,
+			worktreeSnapshot,
 		);
 	}
 
@@ -176,6 +169,7 @@ async function runTaskAttempt(
 			reason,
 			spawnResult.result.exitCode,
 			attemptNumber,
+			worktreeSnapshot,
 		);
 	}
 
@@ -200,6 +194,7 @@ async function runTaskAttempt(
 			runId: spec.runId,
 			outcome: "blocked",
 			attemptNumber,
+			worktreeSnapshot,
 			body: evidence.note ? `${reason}\n\n${evidence.note}` : reason,
 		});
 		await ctx.taskManager.updateTask(taskId, { status: "Blocked" });
@@ -221,6 +216,7 @@ async function runTaskAttempt(
 			runId: spec.runId,
 			outcome: "unknown",
 			attemptNumber,
+			worktreeSnapshot,
 			body: parsedReport.raw,
 		});
 	}
@@ -229,6 +225,7 @@ async function runTaskAttempt(
 		ctx,
 		taskId,
 		attemptNumber,
+		worktreeSnapshot,
 	);
 	if (beforePostflight) return beforePostflight;
 	const postVerifyResults = await runPostVerify(spec, ctx, taskId);
@@ -237,6 +234,7 @@ async function runTaskAttempt(
 		ctx,
 		taskId,
 		attemptNumber,
+		worktreeSnapshot,
 	);
 	if (beforeCommit) return beforeCommit;
 	const allowUnknownSuccess = await canInferUnknownSuccess(
@@ -273,6 +271,7 @@ async function runTaskAttempt(
 			runId: spec.runId,
 			outcome: effectiveOutcome,
 			attemptNumber,
+			worktreeSnapshot,
 			body: reason,
 		});
 	}
@@ -334,6 +333,7 @@ async function blockForProbeJournal(
 	ctx: RunOneTaskCtx,
 	taskId: string,
 	attemptNumber: number,
+	worktreeSnapshot: string | undefined,
 ): Promise<TaskAttemptResult | undefined> {
 	const reason = probeJournalBlockReason(spec.projectRoot);
 	if (!reason) return undefined;
@@ -343,6 +343,7 @@ async function blockForProbeJournal(
 		runId: spec.runId,
 		outcome: "blocked",
 		attemptNumber,
+		worktreeSnapshot,
 		body: reason,
 	});
 	await ctx.taskManager.updateTask(taskId, { status: "Blocked" });
@@ -357,6 +358,7 @@ function spawnFailureCandidate(
 	error: string,
 	exitCode: number | undefined,
 	attemptNumber: number,
+	worktreeSnapshot: string | undefined,
 ): TaskAttemptBlockCandidate {
 	return {
 		kind: "block-candidate",
@@ -368,6 +370,7 @@ function spawnFailureCandidate(
 				runId: spec.runId,
 				outcome: "failure",
 				attemptNumber,
+				worktreeSnapshot,
 				body: error,
 			});
 			await emit(ctx, spec, {

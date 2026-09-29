@@ -230,10 +230,22 @@ export async function appendDriveAttemptRecord(options: {
 	outcome: "failure" | "partial" | "unknown" | "blocked";
 	attemptNumber: number;
 	body: string;
+	worktreeSnapshot?: string;
 }): Promise<void> {
-	const { taskManager, taskId, runId, outcome, attemptNumber, body } = options;
+	const {
+		taskManager,
+		taskId,
+		runId,
+		outcome,
+		attemptNumber,
+		body,
+		worktreeSnapshot,
+	} = options;
+	const snapshotLine = worktreeSnapshot
+		? `Worktree snapshot: ${worktreeSnapshot}\n`
+		: "";
 	await taskManager.updateTask(taskId, {
-		appendImplementationNotes: `### Drive — outcome ${outcome} — attempt ${attemptNumber} — run ${runId}\n\n${body}`,
+		appendImplementationNotes: `### Drive — outcome ${outcome} — attempt ${attemptNumber} — run ${runId}\n\n${snapshotLine}${body}`,
 	});
 }
 
@@ -278,9 +290,8 @@ export async function snapshotWorktree(options: {
 	runId: string;
 	taskId: string;
 	attemptNumber: number;
-	taskManager: TaskManager;
 }): Promise<string | undefined> {
-	const { projectRoot, runId, taskId, attemptNumber, taskManager } = options;
+	const { projectRoot, runId, taskId, attemptNumber } = options;
 	const git = (args: string[], env?: NodeJS.ProcessEnv) => {
 		try {
 			return execFileSync("git", args, {
@@ -334,23 +345,10 @@ export async function snapshotWorktree(options: {
 			env,
 		);
 		git(["update-ref", ref, sha]);
-		await recordWorktreeSnapshot(taskManager, taskId, attemptNumber, ref);
 		return ref;
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
-}
-
-export async function recordWorktreeSnapshot(
-	taskManager: TaskManager,
-	taskId: string,
-	attemptNumber: number,
-	ref: string | undefined,
-): Promise<void> {
-	if (ref)
-		await taskManager.updateTask(taskId, {
-			appendImplementationNotes: `Drive worktree snapshot (attempt ${attemptNumber}): ${ref}`,
-		});
 }
 
 export function removeDoneTaskSnapshots(

@@ -41,10 +41,14 @@ describe("run-one-task", () => {
 		await git(fixture.projectRoot, ["commit", "-m", "track tasks"]);
 		await writeProjectFile(fixture, "README.md", "changed\n\u0000bytes");
 		await writeProjectFile(fixture, "new.txt", "untracked\n\u0000bytes");
+		const beforeNotes = "worker sentinel  \nsecond line";
+		await fixture.taskManager.updateTask(fixture.taskId, {
+			implementationNotes: beforeNotes,
+		});
 		const events: DriverEvent[] = [];
 		const backend = createBackend(async () => {
-			await git(fixture.projectRoot, ["checkout", "--", "."]);
-			await git(fixture.projectRoot, ["clean", "-fd"]);
+			await git(fixture.projectRoot, ["checkout", "--", "README.md"]);
+			await rm(join(fixture.projectRoot, "new.txt"));
 			return result === "blocked"
 				? { exitCode: 0, stdout: "outcome: blocked", durationMs: 1 }
 				: successfulResult();
@@ -58,10 +62,13 @@ describe("run-one-task", () => {
 		expect(
 			events.find((event) => event.type === "spawn_started"),
 		).toMatchObject({ worktreeSnapshot: ref });
-		expect(
-			(await fixture.taskManager.getTask(fixture.taskId))?.implementationNotes,
-		).toContain(ref);
+		const notes = (await fixture.taskManager.getTask(fixture.taskId))
+			?.implementationNotes;
+		// INV-001, D-033: the snapshot belongs inside the attempt record, never before it.
 		if (result === "blocked") {
+			expect(notes).toContain(
+				`${beforeNotes}\n\n### Drive — outcome blocked — attempt 1 — run run-255\n\nWorktree snapshot: ${ref}\n`,
+			);
 			await git(fixture.projectRoot, [
 				"restore",
 				"--source",
@@ -79,11 +86,67 @@ describe("run-one-task", () => {
 				"untracked\n\u0000bytes",
 			);
 		} else {
+			expect(notes).toBe(beforeNotes);
 			await expect(
 				git(fixture.projectRoot, ["rev-parse", "--verify", ref]),
 			).rejects.toThrow();
 		}
 	});
+	test.each([
+		["blocked", "blocked"],
+		["failure", "failure"],
+		["partial", "partial"],
+		["unknown", "unknown"],
+		["spawn failure", "failure"],
+	] as const)("writes one %s attempt record with a snapshot line only for dirty trees", async (report, outcome) => {
+		for (const dirty of [false, true]) {
+			const fixture = await setupGitFixture();
+			await writeProjectFile(fixture, ".gitignore", "missions/\n");
+			await git(fixture.projectRoot, ["add", ".gitignore"]);
+			await git(fixture.projectRoot, ["commit", "-m", "ignore task state"]);
+			if (dirty) await writeProjectFile(fixture, "dirty.txt", "unfinished");
+			const beforeNotes = "worker sentinel  \nsecond line";
+			await fixture.taskManager.updateTask(fixture.taskId, {
+				implementationNotes: beforeNotes,
+			});
+			const events: DriverEvent[] = [];
+			const backend = createBackend(async () =>
+				report === "spawn failure"
+					? { exitCode: 2, stdout: "", durationMs: 1 }
+					: {
+							exitCode: 0,
+							stdout:
+								report === "unknown"
+									? "unstructured"
+									: `\`\`\`json\n${JSON.stringify({ outcome: report, files: [], verification: [], notes: "needs work" })}\n\`\`\``,
+							durationMs: 1,
+						},
+			);
+			await runOneTask(
+				createSpec(fixture),
+				createCtx(fixture, backend, events),
+				fixture.taskId,
+			);
+			const notes =
+				(await fixture.taskManager.getTask(fixture.taskId))
+					?.implementationNotes ?? "";
+			const ref = `refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1`;
+			expect(
+				notes.startsWith(
+					`${beforeNotes}\n\n### Drive — outcome ${outcome} — attempt 1 — run run-255\n\n${dirty ? `Worktree snapshot: ${ref}\n` : ""}`,
+				),
+			).toBe(true);
+			expect(notes.match(/### Drive — outcome /g)).toHaveLength(1);
+			expect(notes.includes("Worktree snapshot:")).toBe(dirty);
+			expect(
+				events.find((event) => event.type === "spawn_started"),
+			).toMatchObject(
+				dirty ? { worktreeSnapshot: ref } : { type: "spawn_started" },
+			);
+			await rm(fixture.projectRoot, { recursive: true, force: true });
+		}
+	});
+
 	test.each([
 		"preflight",
 		"postflight",
@@ -188,8 +251,9 @@ describe("run-one-task", () => {
 		const task = await fixture.taskManager.getTask(fixture.taskId);
 		expect(outcome).toEqual({ status: "blocked", reason });
 		expect(task?.status).toBe("Blocked");
+		// INV-001, D-033: replace the slice-10 standalone snapshot expectation.
 		expect(task?.implementationNotes).toContain(
-			`worker sentinel  \n\nDrive worktree snapshot (attempt 1): refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1\n\n### Drive — outcome blocked — attempt 1 — run run-255\n\n${reason}`,
+			`worker sentinel  \n\n### Drive — outcome blocked — attempt 1 — run run-255\n\nWorktree snapshot: refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1\n${reason}`,
 		);
 		expect(
 			task?.implementationNotes?.match(/### Drive — outcome blocked/g),
