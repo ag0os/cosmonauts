@@ -7,22 +7,8 @@ Implementation started 2026-09-28.
 
 ## Needs the user
 
-**Q-015 (escalated 2026-09-29 05:35Z): stage-13/15 collision on
-`recoverAcceptedEpisodeFinalization`.** TASK-780 AC #1 needs it below the
-partial-tier ceiling; AC #2 says its living-memory same-file clone instances
-stay untouched for stage 15. Three of the nine living-memory clone groups have an
-instance inside the function (`living-memory.ts:1090-1098`, `:1100-1107`,
-`:1130-1141`); extracting everything else leaves 21/31 (measured, reverted).
-Options from the worker: (A) relax "untouched" to "moved intact into a private
-helper, no internal change"; (B) defer the function to stage 15a (TASK-782,
-which owns `runPass` and the family in the same file) and drop it from
-TASK-780 AC #1/#2; (C) another explicit seam. **Coordinator recommends (B)**:
-the function and its clones are refactored together where the family is
-extracted; TASK-779's characterization still applies; no invariant relaxed.
-On (B) the coordinator patches TASK-780 AC #1/#2, TASK-782 AC/owned files,
-re-derives TASK-781's dependency (781 ← 780 was file-ordering on
-`living-memory.ts`, which 780 then no longer touches), records D-034, and
-relaunches 780 attempt 4 from the worktree state. Earlier: Q-013 resolved the provider (Codex back, gpt-6-sol). At closeout:
+Nothing now. Q-015 ruled (B) by Shepherd 2026-09-29 (rulings round 9, plan D-034).
+At closeout: gate-owned R-013 sign-off. Earlier: Q-013 resolved the provider (Codex back, gpt-6-sol). At closeout:
 gate-owned R-013 sign-off. Earlier: Q-008 ruled (a) 2026-09-28 (human, relayed; plan D-022, spec Q-008,
 rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 `plan.md` D-010/D-012/D-013/D-017.
@@ -126,10 +112,9 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. **Worktree is DIRTY on purpose**: TASK-780 attempt 3's partial refactor
-(six `lib/memory/*` files, uncommitted; tests/typecheck green, lint fails on two
-unused `errorCode` helpers + formatting). Do not `git checkout`/`stash`/`reset`
-it; attempt 4 resumes from it after Q-015. Nothing launches until Q-015.
+**TASK-780 attempt 4** (seven functions after D-034; resumes from the preserved
+worktree) on the Pi worker. Then 781 (now depends on 779) → 782 (+ the deferred
+function) → 784 → 783.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -228,7 +213,7 @@ it; attempt 4 resumes from it after Q-015. Nothing launches until Q-015.
 
 ## Blocked
 
-TASK-780 on Q-015 (human): see Needs the user. Earlier waits (778/786, 780/787) resolved. Both blocks were probe-confirmed unreached return sites, routed as characterization
+Nothing. Q-015 ruled (B). Earlier waits (778/786, 780/787) resolved. Both blocks were probe-confirmed unreached return sites, routed as characterization
 tasks with a full return-site sweep. History: TASK-776 attempt 1 (`run-6fe911a5`, 02:21Z) stopped
 `blocked` on the two unreached `runDurableGraphScheduler` return sites
 (`scheduler.ts:215-224`, `:40-42`); resolved by Q-014 / D-030 = TASK-785.

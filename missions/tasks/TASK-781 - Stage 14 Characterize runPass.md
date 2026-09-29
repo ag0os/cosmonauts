@@ -8,7 +8,7 @@ labels:
   - testing
   - 'plan:project-health-audit'
 dependencies:
-  - TASK-780
+  - TASK-779
 createdAt: '2026-09-28T15:26:34.808Z'
 updatedAt: '2026-09-29T04:58:48.907Z'
 ---
@@ -41,3 +41,5 @@ Addendum (2026-09-28, plan D-024): for critical-complexity functions the INV-003
 ### Coordinator note before attempt 1 (2026-09-29, successor #3)
 
 Model: `openai-codex/gpt-6-sol` on the Pi `cosmonauts-subagent` backend (D-029). Characterization-only slice for `runPass` (`lib/memory/living-memory.ts`): new test file(s) under `tests/memory/` only; never modify an existing test (Q-002 hard stop → write the full record here, then report); no production edit unless a bounded seam is named here first (AC #3). Fixture models: `tests/memory/living-memory.test.ts` and TASK-779's `tests/memory/accepted-episode-finalization-characterization.test.ts` (same file, same stores). AC #8's sweep is what lets TASK-782 refactor without stopping: inventory `runPass`'s return/throw sites from the AST first, map the ones existing tests reach by reading them, then tag all unmapped sites in one instrumented full-suite run (one tag per site, one file), restore from the cp, confirm `git status --short -- lib/` empty, and record the counts verbatim as TASK-787 did. Known suite flake: `tests/extensions/project-tools.test.ts` abort-terminates-child; rerun before believing it. Call `analysis_complexity` one metric per turn, never in parallel, at most twice per metric; use the direct diagnostic `bunx fallow health --complexity --format json --quiet --no-cache` filtered to `runPass` for other confirmations (D-024); for AC #7's duplication pair call `analysis_duplication` once and pair it with `bunx fallow dupes --format json --quiet --no-cache` filtered to `lib/memory/living-memory.ts`. Never run `git checkout`, `git stash`, `git reset`, or any git write; the driver commits. Never pass `title` to `task_edit`; only `implementationNotes` (paste the whole existing body back plus your additions) and `checkAc`. Never touch `missions/reviews/`. Record the slice-start `S` (HEAD at launch) and the D-015 in-session check verbatim; tick every satisfied criterion (D-020 for the coordinator-verdict one) and end with `outcome: success` — Drive's parser accepts only success|failure|partial|completed, so a blocked stop must still be reported with your full record in these notes first.
+
+Addendum (Q-015 / D-034): this task now depends on TASK-779 instead of TASK-780, because TASK-780 no longer edits `lib/memory/living-memory.ts`; `recoverAcceptedEpisodeFinalization` moves to TASK-782, so include its return/throw sites in the AC #8 sweep only if they share code paths with `runPass` (TASK-779 already characterizes it).

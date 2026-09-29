@@ -240,6 +240,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: INV-002, D-018 (2), D-030; the sweep amortizes the probe cost into the characterization slice where tests may be added.
   - Decided by: implementing coordinator, derived under INV-002, D-030 and D-031, 2026-09-29
 
+- **D-034 - Q-015 (B): `recoverAcceptedEpisodeFinalization` moves from stage 13 (TASK-780) to stage 15a (TASK-782)** *(Added 2026-09-29 by the implementing coordinator, successor #3, after TASK-780 attempt 3)*
+  - Decision: TASK-780 attempt 3 (`run-57fabb1f`, gpt-6-sol) measured that `recoverAcceptedEpisodeFinalization` (`lib/memory/living-memory.ts:1049`, 26/40/172) cannot reach its ceiling while the three living-memory clone instances inside it (`:1090-1098`, `:1100-1107`, `:1130-1141`) stay untouched for stage 15 (best extraction 21/31, reverted). Shepherd ruled (B): the function is refactored in TASK-782 together with `runPass` and the nine-group family it shares; TASK-780 AC #1/#2/#7 now name seven functions and exclude `living-memory.ts`; TASK-782 AC #1/#2 name the function; TASK-781 depends on TASK-779 instead of TASK-780 (the old edge was file ordering on `living-memory.ts`). TASK-779's characterization of the function stands as its `C` evidence.
+  - Alternatives: (A) relax "untouched" to "moved intact" (weakens an AC's wording); (C) a seam for one function.
+  - Why: same file, same family, no scope change; INV-002 preserved by the existing characterization.
+  - Decided by: Shepherd, derived under the ratified Intent, 2026-09-29 (rulings file round 9)
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
