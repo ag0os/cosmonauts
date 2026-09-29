@@ -136,678 +136,29 @@ export function createLivingMemoryConsolidator(
 			}
 		};
 
-		try {
-			throwIfAborted(options.signal);
-			const recoveryRun = dryRun
-				? undefined
-				: await applyRetirements({
-						candidates: [],
-						dryRun: false,
+		const runRetirements = (
+			candidates: readonly LivingMemoryRetirementCandidate[],
+		) =>
+			candidates.length === 0
+				? Promise.resolve(undefined)
+				: applyRetirements({
+						candidates,
+						dryRun,
 						date: dependencies.clock(),
 						maxRetirements: dependencies.limits.maxRetirements,
 						lockOptions: dependencies.lockOptions,
 						lockHeld,
 						...(options.signal === undefined ? {} : { signal: options.signal }),
 					});
-			if (recoveryRun !== undefined) {
-				details = {
-					...details,
-					retirements: recoveryRun.details.retirements,
-					declines: recoveryRun.details.declines,
-					warnings: recoveryRun.details.warnings,
-					recovery: recoveryRun.details.recovery,
-					...(recoveryRun.details.manifestPath === undefined
-						? {}
-						: { manifestPath: recoveryRun.details.manifestPath }),
-				};
-			}
-			if (recoveryRun?.kind === "failed") {
-				return {
-					kind: "failed" as const,
-					reason: recoveryRun.reason,
-					details,
-				};
-			}
-			if (!dryRun) {
-				for (const source of dependencies.sources) {
-					const sourceRecovery = await source.recover?.();
-					if (sourceRecovery === undefined) continue;
-					reportCommittedState(sourceRecovery);
-				}
-			}
-			const [initialReceipts, proposalPhase] = await Promise.all([
-				dependencies.acceptedJudgmentReceiptStore.list(),
-				readProposalPhase(dependencies.proposalStore),
-			]);
-			const {
-				evidence: proposalEvidence,
-				materializations: proposalMaterializations,
-			} = proposalPhase;
-			const representedBeforeCollection = Object.freeze([
-				...initialReceipts.flatMap((receipt) =>
-					receipt.state === "materialized"
-						? (receipt.inputs ?? []).map(consolidationEvidenceKey)
-						: [],
-				),
-				...proposalEvidence
-					.filter((evidence) => {
-						if (!evidence.path.startsWith("memory/agent/episodes/")) {
-							return true;
-						}
-						return !initialReceipts.some(
-							(receipt) =>
-								receipt.state === "accepted" &&
-								((receipt.inputs ?? []).some(
-									(input) =>
-										consolidationEvidenceKey(input) ===
-										consolidationEvidenceKey(evidence),
-								) ||
-									receipt.inputDigests.includes(evidence.digest)),
-						);
-					})
-					.map(consolidationEvidenceKey),
-			]);
-			const collected = await collectConsolidationSources({
-				sources: dependencies.sources,
-				maxCorpusRecords: dependencies.limits.maxCorpusRecords,
-				maxCorpusRecordBytes: dependencies.limits.maxCorpusRecordBytes,
-				maxCorpusBytes: dependencies.limits.maxCorpusBytes,
-				maxEpisodeRecords: dependencies.limits.maxEpisodeRecords,
-				maxEpisodeRecordBytes: dependencies.limits.maxEpisodeRecordBytes,
-				maxEpisodeBytes: dependencies.limits.maxEpisodeBytes,
-				representedKeys: representedBeforeCollection,
-				...(options.signal === undefined ? {} : { signal: options.signal }),
-			});
-			details = {
-				...details,
-				sources: collected.sources,
-				declines: Object.freeze([
-					...details.declines,
-					...collected.declines,
-					...collected.sources
-						.filter((source) => source.deferred > 0)
-						.map((source) => ({
-							code: "source-deferred",
-							count: source.deferred,
-							reason: `${source.deferred} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
-						})),
-				]),
-				warnings: Object.freeze([...details.warnings, ...collected.warnings]),
-				recovery: recoveryRun?.details.recovery ?? "none",
-			};
-			const pressure: KnowledgeIndexPressureResult =
-				collected.knowledgeIndex === undefined
-					? {
-							kind: "unusable",
-							targetSatisfied: false,
-							reason:
-								"No exact knowledge-index render input was supplied by consolidation sources.",
-						}
-					: dependencies.indexPressure.measure(collected.knowledgeIndex);
-			details = {
-				...details,
-				indexPressure: pressure,
-				...(pressure.kind === "measured"
-					? {}
-					: {
-							declines: Object.freeze([
-								...details.declines,
-								{
-									code: "index-pressure-unusable",
-									reason: pressure.reason,
-								},
-							]),
-						}),
-			};
-			if (!collected.inventoryComplete) {
-				const incompleteSourceDeclines = collected.sources
-					.filter((source) => !source.inventoryComplete)
-					.map((source) => ({
-						code: "source-inventory-incomplete",
-						count: source.omitted - source.deferred,
-						sourceId: source.sourceId,
-						reason: `Consolidation source ${source.sourceId} reported incomplete inventory; absence-dependent work is blocked.`,
-					}));
-				details = {
-					...details,
-					declines: Object.freeze([
-						...details.declines,
-						...incompleteSourceDeclines,
-					]),
-				};
-				return {
-					kind: "failed" as const,
-					reason: "Consolidation source inventory is incomplete.",
-					details,
-				};
-			}
-			const discharge = dryRun
-				? { paths: Object.freeze([]), writesCommitted: false }
-				: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
-						currentKeys: Object.freeze(
-							collected.inventory.map(consolidationEvidenceKey),
-						),
-						lockOptions: dependencies.lockOptions,
-						lockHeld,
-					});
-			reportCommittedState({ writesCommitted: discharge.writesCommitted });
-			const dischargedPaths = new Set(discharge.paths);
-			const receipts = initialReceipts.filter(
-				(receipt) => !dischargedPaths.has(receipt.path),
-			);
-			const retirementInspection = await dependencies.retirementStore.inspect(
-				collected.records,
-				{ lockHeld },
-			);
-			if (dryRun && retirementInspection.recovery !== "none") {
-				details = {
-					...details,
-					warnings: Object.freeze([
-						...details.warnings,
-						...retirementInspection.warnings,
-					]),
-					recovery: retirementInspection.recovery,
-				};
-				return {
-					kind: "failed" as const,
-					reason:
-						"Dry-run observes retirement state but never acquires a lock or performs recovery.",
-					details,
-				};
-			}
-			const episodeRecovery = dryRun
-				? undefined
-				: await recoverAcceptedEpisodeFinalization({
-						records: collected.records,
-						receipts,
-						proposals: proposalMaterializations,
-						dependencies,
-						markReceiptMaterialized,
-						reportCommittedState,
-					});
-			if (episodeRecovery !== undefined) {
-				details = {
-					...details,
-					proposals: episodeRecovery.proposals,
-					...(episodeRecovery.receiptPath === undefined
-						? {}
-						: {
-								acceptedJudgmentReceiptPath: episodeRecovery.receiptPath,
-							}),
-				};
-				return { kind: "ran" as const, details };
-			}
-			const representedKeys = new Set([
-				...receipts.flatMap((receipt) =>
-					receipt.state === "materialized"
-						? (receipt.inputs ?? []).map(consolidationEvidenceKey)
-						: [],
-				),
-				...proposalEvidence.map(consolidationEvidenceKey),
-				...retirementInspection.representedKeys,
-			]);
-			const mutationCandidates = collected.records.filter(
-				(record) => record.scope === "project",
-			);
-			const currentKeys = mutationCandidates
-				.map(consolidationEvidenceKey)
-				.sort();
-			const acceptedCurrentBatch = receipts.some(
-				(receipt) =>
-					receipt.state === "accepted" &&
-					(receipt.inputs === undefined
-						? sameStrings(
-								[...receipt.inputDigests].sort(),
-								mutationCandidates.map((record) => record.digest).sort(),
-							)
-						: sameStrings(
-								receipt.inputs.map(consolidationEvidenceKey).sort(),
-								currentKeys,
-							)),
-			);
-			const selectedRecords = Object.freeze(
-				acceptedCurrentBatch
-					? mutationCandidates
-					: mutationCandidates.filter(
-							(record) =>
-								!representedKeys.has(consolidationEvidenceKey(record)),
-						),
-			);
-			details = {
-				...details,
-				warnings: Object.freeze([
-					...details.warnings,
-					...retirementInspection.warnings,
-				]),
-				recovery:
-					details.recovery === "none"
-						? retirementInspection.recovery
-						: details.recovery,
-			};
-			if (selectedRecords.length === 0) {
-				details = {
-					...details,
-					declines: Object.freeze([
-						...details.declines,
-						...targetUnmetDeclines({ pressure, retirements: [] }),
-					]),
-				};
-				return details.writesCommitted
-					? { kind: "ran" as const, details }
-					: {
-							kind: "noop" as const,
-							reason:
-								collected.records.length === 0
-									? "No consolidation work was admitted from healthy sources."
-									: "All admitted consolidation evidence is already represented.",
-							details,
-						};
-			}
-			const inventoryRoot = deterministicInventoryRoot(selectedRecords);
-			const needsRetirementInventory = selectedRecords.some(
-				(record) => structuredRetireWhen(record.metadata) !== undefined,
-			);
-			const inventory =
-				needsRetirementInventory && inventoryRoot !== undefined
-					? await inspectLivingMemoryCitationInventory({
-							projectRoot: inventoryRoot,
-							maxRecordBytes: dependencies.limits.maxCorpusRecordBytes,
-							maxBytes: dependencies.limits.maxCorpusBytes,
-						})
-					: undefined;
-			if (inventory !== undefined && !inventory.healthy) {
-				details = {
-					...details,
-					warnings: Object.freeze([...details.warnings, ...inventory.warnings]),
-					declines: Object.freeze([
-						...details.declines,
-						{
-							code: "citation-inventory-incomplete",
-							reason:
-								"Relevant citation discovery was incomplete; every retirement is blocked.",
-						},
-					]),
-				};
-			}
-			const observedDeterministic = await observeDeterministicRecords(
-				selectedRecords,
-				inventory,
-			);
-			const deterministic = observedDeterministic.slice(
-				0,
-				dependencies.limits.maxObservations,
-			);
-			const observationCapDeferred = observedDeterministic.slice(
-				dependencies.limits.maxObservations,
-			);
-			const needsJudgment =
-				modelMode === "full" &&
-				deterministic.some(
-					(finding) =>
-						finding.retirement !== undefined && finding.proposal === undefined,
-				);
-			if (deterministic.length > 0 && !needsJudgment) {
-				const observedProposalFindings = deterministic.filter(
-					(finding) => finding.proposal !== undefined,
-				);
-				const proposalFindings = observedProposalFindings.slice(
-					0,
-					dependencies.limits.maxProposals,
-				);
-				const proposalCapDeferred = observedProposalFindings.slice(
-					dependencies.limits.maxProposals,
-				);
-				const proposals = [];
-				for (const finding of proposalFindings) {
-					if (finding.proposal === undefined || finding.key === undefined)
-						continue;
-					proposals.push(
-						await persistProposal({
-							batchKey: finding.key,
-							observation: finding.observation,
-							proposal: finding.proposal,
-							dryRun,
-							...(options.signal === undefined
-								? {}
-								: { signal: options.signal }),
-						}),
-					);
-				}
-				const observedRetirementCandidates = retirementCandidatesForFindings(
-					deterministic,
-					selectedRecords,
-				);
-				const retirementCandidates =
-					pressure.kind === "measured"
-						? observedRetirementCandidates.slice(
-								0,
-								dependencies.limits.maxRetirements,
-							)
-						: [];
-				const pressureDeferredRetirements =
-					pressure.kind === "unusable"
-						? observedRetirementCandidates
-								.slice(0, dependencies.limits.maxRetirements)
-								.map((candidate) => ({
-									path: candidate.record.path,
-									digest: candidate.record.digest,
-									status: "deferred" as const,
-									reason: candidate.reason,
-								}))
-						: [];
-				const capDeferredRetirements = observedRetirementCandidates
-					.slice(dependencies.limits.maxRetirements)
-					.map((candidate) => ({
-						path: candidate.record.path,
-						digest: candidate.record.digest,
-						status: "deferred" as const,
-						reason: candidate.reason,
-					}));
-				const retirementRun =
-					retirementCandidates.length === 0
-						? undefined
-						: await applyRetirements({
-								candidates: retirementCandidates,
-								dryRun,
-								date: dependencies.clock(),
-								maxRetirements: dependencies.limits.maxRetirements,
-								lockOptions: dependencies.lockOptions,
-								lockHeld,
-								...(options.signal === undefined
-									? {}
-									: { signal: options.signal }),
-							});
-				const reportedRetirements = [
-					...(retirementRun?.details.retirements ?? []),
-					...pressureDeferredRetirements,
-					...capDeferredRetirements,
-				].slice(0, dependencies.limits.maxRetirements);
-				details = {
-					...details,
-					observations: Object.freeze(
-						deterministic.map((finding) => finding.observation),
-					),
-					retirements: Object.freeze(reportedRetirements),
-					proposals: Object.freeze(proposals),
-					declines: Object.freeze([
-						...details.declines,
-						...deterministicCapDeclines(proposalCapDeferred, "proposal"),
-						...deterministicCapDeclines(observationCapDeferred, "observation"),
-						...(retirementRun?.details.declines ?? []),
-						...pressureDeferredRetirements.map((retirement) => ({
-							code: "retirement-pressure-deferred",
-							path: retirement.path,
-							reason:
-								"Retirement was deferred because knowledge index pressure is unusable.",
-						})),
-						...capDeferredRetirements.map((retirement) => ({
-							code: "retirement-cap-deferred",
-							path: retirement.path,
-							reason: "The bounded retirement cap deferred this candidate.",
-						})),
-						...targetUnmetDeclines({
-							pressure,
-							retirements: reportedRetirements,
-						}),
-					]),
-					warnings: Object.freeze([
-						...details.warnings,
-						...(retirementRun?.details.warnings ?? []),
-					]),
-					recovery: retirementRun?.details.recovery ?? details.recovery,
-					...(retirementRun?.details.manifestPath === undefined
-						? {}
-						: { manifestPath: retirementRun.details.manifestPath }),
-				};
-				if (retirementRun?.kind === "failed") {
-					return {
-						kind: "failed" as const,
-						reason: retirementRun.reason,
-						details,
-					};
-				}
-				return { kind: "ran" as const, details };
-			}
-			if (modelMode === "deterministic-only") {
-				details = {
-					...details,
-					declines: Object.freeze([
-						...details.declines,
-						...deterministicCapDeclines(observationCapDeferred, "observation"),
-						...targetUnmetDeclines({ pressure, retirements: [] }),
-					]),
-				};
-				return {
-					kind: "noop" as const,
-					reason: "No deterministic consolidation observations were found.",
-					details,
-				};
-			}
-			if (!dependencies.judgmentProvider) {
-				return {
-					kind: "failed" as const,
-					reason:
-						"Full living-memory consolidation requires a judgment provider.",
-					details,
-				};
-			}
-			const deterministicProposalFindings = deterministic.filter(
-				(finding) => finding.proposal !== undefined,
-			);
-			const observedRetirementCandidates = retirementCandidatesForFindings(
-				deterministic,
-				selectedRecords,
-			);
 
-			const input = Object.freeze({
-				schemaVersion: 1 as const,
-				batchKey: batchKey({
-					providerId: dependencies.judgmentProvider.id,
-					records: selectedRecords,
-					deterministicObservations: deterministic.map(
-						(finding) => finding.observation,
-					),
-				}),
-				records: selectedRecords,
-				deterministicObservations: Object.freeze(
-					deterministic.map((finding) => finding.observation),
-				),
-				limits: Object.freeze({ ...dependencies.limits }),
-			});
-			assertSerializedByteCeiling({
-				label: "Judgment request",
-				value: input,
-				ceiling: dependencies.limits.maxJudgmentRequestBytes,
-			});
-			const existing = dryRun
-				? { receipt: undefined, writesCommitted: false }
-				: await dependencies.acceptedJudgmentReceiptStore.read(input.batchKey);
-			reportCommittedState({ writesCommitted: existing.writesCommitted });
-			const existingReceipt = existing.receipt;
-			const output =
-				existingReceipt?.output ??
-				(await dependencies.judgmentProvider.judge(input, {
-					...(options.signal === undefined ? {} : { signal: options.signal }),
-				}));
-			throwIfAborted(options.signal);
-			let normalized = validateJudgmentOutput({
-				output,
-				records: selectedRecords,
-				limits: dependencies.limits,
-				reservedObservations: deterministic.length,
-				reservedProposals: Math.min(
-					deterministicProposalFindings.length,
-					dependencies.limits.maxProposals,
-				),
-			});
-			const modelProposalCount = normalized.filter(
-				(item) => item.proposal !== undefined,
-			).length;
-			const deterministicProposalFindingsToPersist =
-				deterministicProposalFindings.slice(
-					0,
-					dependencies.limits.maxProposals - modelProposalCount,
-				);
-			const proposalCapDeferred = deterministicProposalFindings.slice(
-				deterministicProposalFindingsToPersist.length,
-			);
-			const boundedRetirementCandidates = observedRetirementCandidates.slice(
-				0,
-				dependencies.limits.maxRetirements,
-			);
-			const retirementCandidates =
-				pressure.kind === "measured" ? boundedRetirementCandidates : [];
-			const pressureDeferredRetirements =
-				pressure.kind === "unusable"
-					? boundedRetirementCandidates.map((candidate) => ({
-							path: candidate.record.path,
-							digest: candidate.record.digest,
-							status: "deferred" as const,
-							reason: candidate.reason,
-						}))
-					: [];
-			const capDeferredRetirements = observedRetirementCandidates
-				.slice(dependencies.limits.maxRetirements)
-				.map((candidate) => ({
-					path: candidate.record.path,
-					digest: candidate.record.digest,
-					status: "deferred" as const,
-					reason: candidate.reason,
-				}));
-			const deferredEvidenceKeys = new Set([
-				...observationCapDeferred.flatMap((finding) =>
-					finding.observation.inputs.map(consolidationEvidenceKey),
-				),
-				...proposalCapDeferred.flatMap((finding) =>
-					finding.observation.inputs.map(consolidationEvidenceKey),
-				),
-				...observedRetirementCandidates
-					.slice(dependencies.limits.maxRetirements)
-					.flatMap((candidate) =>
-						candidate.evidence.map(consolidationEvidenceKey),
-					),
-			]);
-			let acceptedReceipt = existingReceipt;
-			if (!dryRun && acceptedReceipt === undefined) {
-				const accepted = await dependencies.acceptedJudgmentReceiptStore.write({
-					schemaVersion: 1,
-					batchKey: input.batchKey,
-					state: "accepted",
-					inputDigests: Object.freeze(
-						selectedRecords.map((record) => record.digest),
-					),
-					inputs: Object.freeze(
-						selectedRecords
-							.filter(
-								(record) =>
-									!deferredEvidenceKeys.has(consolidationEvidenceKey(record)),
-							)
-							.map(evidenceRef),
-					),
-					output: normalizedJudgmentOutput(output),
-					path: dependencies.acceptedJudgmentReceiptStore.pathFor(
-						input.batchKey,
-					),
-				});
-				acceptedReceipt = accepted.receipt;
-				reportCommittedState({ writesCommitted: accepted.writesCommitted });
-			}
-			if (acceptedReceipt !== undefined) {
-				normalized = validateJudgmentOutput({
-					output: acceptedReceipt.output,
-					records: selectedRecords,
-					limits: dependencies.limits,
-					reservedObservations: deterministic.length,
-					reservedProposals: Math.min(
-						deterministicProposalFindings.length,
-						dependencies.limits.maxProposals,
-					),
-				});
-				details = {
-					...details,
-					acceptedJudgmentReceiptPath: acceptedReceipt.path,
-				};
-			}
-			const proposals = [];
-			for (const finding of deterministicProposalFindingsToPersist) {
-				if (finding.proposal === undefined || finding.key === undefined)
-					continue;
-				proposals.push(
-					await persistProposal({
-						batchKey: finding.key,
-						observation: finding.observation,
-						proposal: finding.proposal,
-						dryRun,
-						...(options.signal === undefined ? {} : { signal: options.signal }),
-					}),
-				);
-			}
-			const representedEpisodes = new Map<
-				string,
-				Map<
-					string,
-					{
-						readonly id: string;
-						readonly digest: string;
-						readonly fileIdentity?: ConsolidationSourceRecord["fileIdentity"];
-						readonly proposalPaths: Set<string>;
-					}
-				>
-			>();
-			for (const item of normalized) {
-				if (item.proposal === undefined) continue;
-				if (
-					item.observation.inputs.some((evidence) =>
-						deferredEvidenceKeys.has(consolidationEvidenceKey(evidence)),
-					)
-				) {
-					continue;
-				}
-				const proposal = await persistProposal({
-					batchKey: input.batchKey,
-					observation: item.observation,
-					proposal: item.proposal,
-					dryRun,
-					...(options.signal === undefined ? {} : { signal: options.signal }),
-				});
-				proposals.push(proposal);
-				if (
-					item.proposal.proposalKind === "create" &&
-					item.proposal.record.type === "note" &&
-					proposal.path !== undefined
-				) {
-					for (const evidence of item.observation.inputs) {
-						const record = selectedRecords.find(
-							(candidate) =>
-								candidate.sourceId === evidence.sourceId &&
-								candidate.id === evidence.id &&
-								candidate.digest === evidence.digest &&
-								candidate.kind === "episode" &&
-								candidate.scope === "project",
-						);
-						if (record === undefined) continue;
-						const sourceRecords =
-							representedEpisodes.get(record.sourceId) ?? new Map();
-						const represented = sourceRecords.get(record.id) ?? {
-							id: record.id,
-							digest: record.digest,
-							...(record.fileIdentity === undefined
-								? {}
-								: { fileIdentity: record.fileIdentity }),
-							proposalPaths: new Set<string>(),
-						};
-						represented.proposalPaths.add(proposal.path);
-						sourceRecords.set(record.id, represented);
-						representedEpisodes.set(record.sourceId, sourceRecords);
-					}
-				}
-			}
-			const retirementRun =
-				retirementCandidates.length === 0
+		try {
+			const recoverRetirements = async () => {
+				throwIfAborted(options.signal);
+				const recoveryRun = dryRun
 					? undefined
 					: await applyRetirements({
-							candidates: retirementCandidates,
-							dryRun,
+							candidates: [],
+							dryRun: false,
 							date: dependencies.clock(),
 							maxRetirements: dependencies.limits.maxRetirements,
 							lockOptions: dependencies.lockOptions,
@@ -816,145 +167,688 @@ export function createLivingMemoryConsolidator(
 								? {}
 								: { signal: options.signal }),
 						});
-			const modelOnlyRetirements = normalized.flatMap((item) => {
-				if (item.proposal?.proposalKind !== "retire") return [];
-				const evidence = item.observation.inputs[0];
-				if (
-					evidence === undefined ||
+				if (recoveryRun !== undefined) {
+					details = {
+						...details,
+						retirements: recoveryRun.details.retirements,
+						declines: recoveryRun.details.declines,
+						warnings: recoveryRun.details.warnings,
+						recovery: recoveryRun.details.recovery,
+						...(recoveryRun.details.manifestPath === undefined
+							? {}
+							: { manifestPath: recoveryRun.details.manifestPath }),
+					};
+				}
+				return recoveryRun;
+			};
+			const recoveryRun = await recoverRetirements();
+			const prepareInventory = async () => {
+				if (recoveryRun?.kind === "failed") {
+					return {
+						kind: "failed" as const,
+						reason: recoveryRun.reason,
+						details,
+					};
+				}
+				if (!dryRun) {
+					for (const source of dependencies.sources) {
+						const sourceRecovery = await source.recover?.();
+						if (sourceRecovery === undefined) continue;
+						reportCommittedState(sourceRecovery);
+					}
+				}
+				const [initialReceipts, proposalPhase] = await Promise.all([
+					dependencies.acceptedJudgmentReceiptStore.list(),
+					readProposalPhase(dependencies.proposalStore),
+				]);
+				const {
+					evidence: proposalEvidence,
+					materializations: proposalMaterializations,
+				} = proposalPhase;
+				const representedBeforeCollection = representedCollectionKeys(
+					initialReceipts,
+					proposalEvidence,
+				);
+				const collectPressure = async () => {
+					const collected = await collectConsolidationSources({
+						sources: dependencies.sources,
+						maxCorpusRecords: dependencies.limits.maxCorpusRecords,
+						maxCorpusRecordBytes: dependencies.limits.maxCorpusRecordBytes,
+						maxCorpusBytes: dependencies.limits.maxCorpusBytes,
+						maxEpisodeRecords: dependencies.limits.maxEpisodeRecords,
+						maxEpisodeRecordBytes: dependencies.limits.maxEpisodeRecordBytes,
+						maxEpisodeBytes: dependencies.limits.maxEpisodeBytes,
+						representedKeys: representedBeforeCollection,
+						...(options.signal === undefined ? {} : { signal: options.signal }),
+					});
+					details = {
+						...details,
+						sources: collected.sources,
+						declines: Object.freeze([
+							...details.declines,
+							...collected.declines,
+							...collected.sources
+								.filter((source) => source.deferred > 0)
+								.map((source) => ({
+									code: "source-deferred",
+									count: source.deferred,
+									reason: `${source.deferred} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
+								})),
+						]),
+						warnings: Object.freeze([
+							...details.warnings,
+							...collected.warnings,
+						]),
+						recovery: recoveryRun?.details.recovery ?? "none",
+					};
+					const pressure: KnowledgeIndexPressureResult =
+						collected.knowledgeIndex === undefined
+							? {
+									kind: "unusable",
+									targetSatisfied: false,
+									reason:
+										"No exact knowledge-index render input was supplied by consolidation sources.",
+								}
+							: dependencies.indexPressure.measure(collected.knowledgeIndex);
+					details = {
+						...details,
+						indexPressure: pressure,
+						...(pressure.kind === "measured"
+							? {}
+							: {
+									declines: Object.freeze([
+										...details.declines,
+										{
+											code: "index-pressure-unusable",
+											reason: pressure.reason,
+										},
+									]),
+								}),
+					};
+					return { collected, pressure };
+				};
+				const { collected, pressure } = await collectPressure();
+				if (!collected.inventoryComplete) {
+					const incompleteSourceDeclines = collected.sources
+						.filter((source) => !source.inventoryComplete)
+						.map((source) => ({
+							code: "source-inventory-incomplete",
+							count: source.omitted - source.deferred,
+							sourceId: source.sourceId,
+							reason: `Consolidation source ${source.sourceId} reported incomplete inventory; absence-dependent work is blocked.`,
+						}));
+					details = {
+						...details,
+						declines: Object.freeze([
+							...details.declines,
+							...incompleteSourceDeclines,
+						]),
+					};
+					return {
+						kind: "failed" as const,
+						reason: "Consolidation source inventory is incomplete.",
+						details,
+					};
+				}
+				return {
+					kind: "ready" as const,
+					collected,
+					pressure,
+					initialReceipts,
+					proposalEvidence,
+					proposalMaterializations,
+				};
+			};
+			const prepared = await prepareInventory();
+			if (prepared.kind === "failed") return prepared;
+			const {
+				collected,
+				pressure,
+				initialReceipts,
+				proposalEvidence,
+				proposalMaterializations,
+			} = prepared;
+			const inspectInventory = async () => {
+				const discharge = dryRun
+					? { paths: Object.freeze([]), writesCommitted: false }
+					: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
+							currentKeys: Object.freeze(
+								collected.inventory.map(consolidationEvidenceKey),
+							),
+							lockOptions: dependencies.lockOptions,
+							lockHeld,
+						});
+				reportCommittedState({ writesCommitted: discharge.writesCommitted });
+				const dischargedPaths = new Set(discharge.paths);
+				const receipts = initialReceipts.filter(
+					(receipt) => !dischargedPaths.has(receipt.path),
+				);
+				const retirementInspection = await dependencies.retirementStore.inspect(
+					collected.records,
+					{ lockHeld },
+				);
+				return { receipts, retirementInspection };
+			};
+			const { receipts, retirementInspection } = await inspectInventory();
+			const selectWork = async () => {
+				if (dryRun && retirementInspection.recovery !== "none") {
+					details = {
+						...details,
+						warnings: Object.freeze([
+							...details.warnings,
+							...retirementInspection.warnings,
+						]),
+						recovery: retirementInspection.recovery,
+					};
+					return {
+						kind: "failed" as const,
+						reason:
+							"Dry-run observes retirement state but never acquires a lock or performs recovery.",
+						details,
+					};
+				}
+				const episodeRecovery = dryRun
+					? undefined
+					: await recoverAcceptedEpisodeFinalization({
+							records: collected.records,
+							receipts,
+							proposals: proposalMaterializations,
+							dependencies,
+							markReceiptMaterialized,
+							reportCommittedState,
+						});
+				if (episodeRecovery !== undefined) {
+					details = {
+						...details,
+						proposals: episodeRecovery.proposals,
+						...(episodeRecovery.receiptPath === undefined
+							? {}
+							: {
+									acceptedJudgmentReceiptPath: episodeRecovery.receiptPath,
+								}),
+					};
+					return { kind: "ran" as const, details };
+				}
+				const selectedRecords = selectUnrepresentedRecords({
+					records: collected.records,
+					receipts,
+					proposalEvidence,
+					retirementKeys: retirementInspection.representedKeys,
+				});
+				details = {
+					...details,
+					warnings: Object.freeze([
+						...details.warnings,
+						...retirementInspection.warnings,
+					]),
+					recovery:
+						details.recovery === "none"
+							? retirementInspection.recovery
+							: details.recovery,
+				};
+				const finishEmptySelection = () => {
+					if (selectedRecords.length === 0) {
+						details = {
+							...details,
+							declines: Object.freeze([
+								...details.declines,
+								...targetUnmetDeclines({ pressure, retirements: [] }),
+							]),
+						};
+						return details.writesCommitted
+							? { kind: "ran" as const, details }
+							: {
+									kind: "noop" as const,
+									reason:
+										collected.records.length === 0
+											? "No consolidation work was admitted from healthy sources."
+											: "All admitted consolidation evidence is already represented.",
+									details,
+								};
+					}
+					return undefined;
+				};
+				const emptySelection = finishEmptySelection();
+				if (emptySelection !== undefined) return emptySelection;
+				return { kind: "selected" as const, selectedRecords };
+			};
+			const selection = await selectWork();
+			if (selection.kind !== "selected") return selection;
+			const { selectedRecords } = selection;
+			const collectDeterministic = async () => {
+				const inventoryRoot = deterministicInventoryRoot(selectedRecords);
+				const needsRetirementInventory = selectedRecords.some(
+					(record) => structuredRetireWhen(record.metadata) !== undefined,
+				);
+				const inventory =
+					needsRetirementInventory && inventoryRoot !== undefined
+						? await inspectLivingMemoryCitationInventory({
+								projectRoot: inventoryRoot,
+								maxRecordBytes: dependencies.limits.maxCorpusRecordBytes,
+								maxBytes: dependencies.limits.maxCorpusBytes,
+							})
+						: undefined;
+				if (inventory !== undefined && !inventory.healthy) {
+					details = {
+						...details,
+						warnings: Object.freeze([
+							...details.warnings,
+							...inventory.warnings,
+						]),
+						declines: Object.freeze([
+							...details.declines,
+							{
+								code: "citation-inventory-incomplete",
+								reason:
+									"Relevant citation discovery was incomplete; every retirement is blocked.",
+							},
+						]),
+					};
+				}
+				const observedDeterministic = await observeDeterministicRecords(
+					selectedRecords,
+					inventory,
+				);
+				const deterministic = observedDeterministic.slice(
+					0,
+					dependencies.limits.maxObservations,
+				);
+				const observationCapDeferred = observedDeterministic.slice(
+					dependencies.limits.maxObservations,
+				);
+				const needsJudgment =
+					modelMode === "full" &&
 					deterministic.some(
 						(finding) =>
 							finding.retirement !== undefined &&
-							finding.observation.inputs.some(
-								(input) =>
-									input.sourceId === evidence.sourceId &&
-									input.id === evidence.id &&
-									input.digest === evidence.digest,
+							finding.proposal === undefined,
+					);
+				return { deterministic, observationCapDeferred, needsJudgment };
+			};
+			const { deterministic, observationCapDeferred, needsJudgment } =
+				await collectDeterministic();
+			const executeDeterministic = async () => {
+				if (deterministic.length > 0 && !needsJudgment) {
+					const observedProposalFindings = deterministic.filter(
+						(finding) => finding.proposal !== undefined,
+					);
+					const proposalFindings = observedProposalFindings.slice(
+						0,
+						dependencies.limits.maxProposals,
+					);
+					const proposalCapDeferred = observedProposalFindings.slice(
+						dependencies.limits.maxProposals,
+					);
+					const proposals = await persistDeterministicProposals({
+						findings: proposalFindings,
+						persistProposal,
+						dryRun,
+						signal: options.signal,
+					});
+					const observedRetirementCandidates = retirementCandidatesForFindings(
+						deterministic,
+						selectedRecords,
+					);
+					const {
+						retirementCandidates,
+						pressureDeferredRetirements,
+						capDeferredRetirements,
+					} = partitionRetirementCandidates(
+						observedRetirementCandidates,
+						pressure,
+						dependencies.limits.maxRetirements,
+					);
+					const retirementRun = await runRetirements(retirementCandidates);
+					const reportedRetirements = [
+						...(retirementRun?.details.retirements ?? []),
+						...pressureDeferredRetirements,
+						...capDeferredRetirements,
+					].slice(0, dependencies.limits.maxRetirements);
+					details = {
+						...details,
+						observations: Object.freeze(
+							deterministic.map((finding) => finding.observation),
+						),
+						retirements: Object.freeze(reportedRetirements),
+						proposals: Object.freeze(proposals),
+						declines: Object.freeze([
+							...details.declines,
+							...deterministicCapDeclines(proposalCapDeferred, "proposal"),
+							...deterministicCapDeclines(
+								observationCapDeferred,
+								"observation",
 							),
-					)
-				) {
-					return [];
+							...(retirementRun?.details.declines ?? []),
+							...deferredRetirementDeclines(
+								pressureDeferredRetirements,
+								capDeferredRetirements,
+							),
+							...targetUnmetDeclines({
+								pressure,
+								retirements: reportedRetirements,
+							}),
+						]),
+						warnings: Object.freeze([
+							...details.warnings,
+							...(retirementRun?.details.warnings ?? []),
+						]),
+						recovery: retirementRun?.details.recovery ?? details.recovery,
+						...(retirementRun?.details.manifestPath === undefined
+							? {}
+							: { manifestPath: retirementRun.details.manifestPath }),
+					};
+					return completedRetirementResult(details, retirementRun);
 				}
-				return [
-					{
-						path: evidence.path,
-						digest: evidence.digest,
-						status: "deferred" as const,
-						reason: item.proposal.reason,
-					},
-				];
-			});
-			const episodePrunes: string[] = [];
-			if (!dryRun && retirementRun?.kind !== "failed") {
-				for (const source of dependencies.sources) {
-					const represented = representedEpisodes.get(source.id);
-					if (represented === undefined || represented.size === 0) continue;
-					if (source.finalize === undefined) {
-						throw new Error(
-							`Episode source ${source.id} cannot finalize represented records.`,
+				if (modelMode === "deterministic-only") {
+					details = {
+						...details,
+						declines: Object.freeze([
+							...details.declines,
+							...deterministicCapDeclines(
+								observationCapDeferred,
+								"observation",
+							),
+							...targetUnmetDeclines({ pressure, retirements: [] }),
+						]),
+					};
+					return {
+						kind: "noop" as const,
+						reason: "No deterministic consolidation observations were found.",
+						details,
+					};
+				}
+				return undefined;
+			};
+			const deterministicResult = await executeDeterministic();
+			if (deterministicResult !== undefined) return deterministicResult;
+			const runModel = async () => {
+				if (!dependencies.judgmentProvider) {
+					return {
+						kind: "failed" as const,
+						reason:
+							"Full living-memory consolidation requires a judgment provider.",
+						details,
+					};
+				}
+				const judgmentProvider = dependencies.judgmentProvider;
+				const deterministicProposalFindings = deterministic.filter(
+					(finding) => finding.proposal !== undefined,
+				);
+				const observedRetirementCandidates = retirementCandidatesForFindings(
+					deterministic,
+					selectedRecords,
+				);
+
+				const judgeModel = async () => {
+					const input = Object.freeze({
+						schemaVersion: 1 as const,
+						batchKey: batchKey({
+							providerId: judgmentProvider.id,
+							records: selectedRecords,
+							deterministicObservations: deterministic.map(
+								(finding) => finding.observation,
+							),
+						}),
+						records: selectedRecords,
+						deterministicObservations: Object.freeze(
+							deterministic.map((finding) => finding.observation),
+						),
+						limits: Object.freeze({ ...dependencies.limits }),
+					});
+					assertSerializedByteCeiling({
+						label: "Judgment request",
+						value: input,
+						ceiling: dependencies.limits.maxJudgmentRequestBytes,
+					});
+					const existing = dryRun
+						? { receipt: undefined, writesCommitted: false }
+						: await dependencies.acceptedJudgmentReceiptStore.read(
+								input.batchKey,
+							);
+					reportCommittedState({ writesCommitted: existing.writesCommitted });
+					const existingReceipt = existing.receipt;
+					const output =
+						existingReceipt?.output ??
+						(await judgmentProvider.judge(input, {
+							...(options.signal === undefined
+								? {}
+								: { signal: options.signal }),
+						}));
+					throwIfAborted(options.signal);
+					const normalized = validateJudgmentOutput({
+						output,
+						records: selectedRecords,
+						limits: dependencies.limits,
+						reservedObservations: deterministic.length,
+						reservedProposals: Math.min(
+							deterministicProposalFindings.length,
+							dependencies.limits.maxProposals,
+						),
+					});
+					return { input, existingReceipt, output, normalized };
+				};
+				let { input, existingReceipt, output, normalized } = await judgeModel();
+				const planModel = () => {
+					const modelProposalCount = normalized.filter(
+						(item) => item.proposal !== undefined,
+					).length;
+					const deterministicProposalFindingsToPersist =
+						deterministicProposalFindings.slice(
+							0,
+							dependencies.limits.maxProposals - modelProposalCount,
+						);
+					const proposalCapDeferred = deterministicProposalFindings.slice(
+						deterministicProposalFindingsToPersist.length,
+					);
+					const {
+						retirementCandidates,
+						pressureDeferredRetirements,
+						capDeferredRetirements,
+					} = partitionRetirementCandidates(
+						observedRetirementCandidates,
+						pressure,
+						dependencies.limits.maxRetirements,
+					);
+					const deferredEvidenceKeys = new Set([
+						...observationCapDeferred.flatMap((finding) =>
+							finding.observation.inputs.map(consolidationEvidenceKey),
+						),
+						...proposalCapDeferred.flatMap((finding) =>
+							finding.observation.inputs.map(consolidationEvidenceKey),
+						),
+						...observedRetirementCandidates
+							.slice(dependencies.limits.maxRetirements)
+							.flatMap((candidate) =>
+								candidate.evidence.map(consolidationEvidenceKey),
+							),
+					]);
+					return {
+						deterministicProposalFindingsToPersist,
+						proposalCapDeferred,
+						retirementCandidates,
+						pressureDeferredRetirements,
+						capDeferredRetirements,
+						deferredEvidenceKeys,
+					};
+				};
+				const {
+					deterministicProposalFindingsToPersist,
+					proposalCapDeferred,
+					retirementCandidates,
+					pressureDeferredRetirements,
+					capDeferredRetirements,
+					deferredEvidenceKeys,
+				} = planModel();
+				const acceptModelReceipt = async () => {
+					let acceptedReceipt = existingReceipt;
+					if (!dryRun && acceptedReceipt === undefined) {
+						const accepted =
+							await dependencies.acceptedJudgmentReceiptStore.write({
+								schemaVersion: 1,
+								batchKey: input.batchKey,
+								state: "accepted",
+								inputDigests: Object.freeze(
+									selectedRecords.map((record) => record.digest),
+								),
+								inputs: Object.freeze(
+									selectedRecords
+										.filter(
+											(record) =>
+												!deferredEvidenceKeys.has(
+													consolidationEvidenceKey(record),
+												),
+										)
+										.map(evidenceRef),
+								),
+								output: normalizedJudgmentOutput(output),
+								path: dependencies.acceptedJudgmentReceiptStore.pathFor(
+									input.batchKey,
+								),
+							});
+						acceptedReceipt = accepted.receipt;
+						reportCommittedState({ writesCommitted: accepted.writesCommitted });
+					}
+					if (acceptedReceipt !== undefined) {
+						normalized = validateJudgmentOutput({
+							output: acceptedReceipt.output,
+							records: selectedRecords,
+							limits: dependencies.limits,
+							reservedObservations: deterministic.length,
+							reservedProposals: Math.min(
+								deterministicProposalFindings.length,
+								dependencies.limits.maxProposals,
+							),
+						});
+						details = {
+							...details,
+							acceptedJudgmentReceiptPath: acceptedReceipt.path,
+						};
+					}
+					return { acceptedReceipt, normalized };
+				};
+				const acceptedModel = await acceptModelReceipt();
+				let acceptedReceipt = acceptedModel.acceptedReceipt;
+				normalized = acceptedModel.normalized;
+				const persistModelProposals = async () => {
+					const proposals = await persistDeterministicProposals({
+						findings: deterministicProposalFindingsToPersist,
+						persistProposal,
+						dryRun,
+						signal: options.signal,
+					});
+					const representedEpisodes: EpisodeRepresentations = new Map();
+					for (const item of normalized) {
+						if (item.proposal === undefined) continue;
+						if (
+							item.observation.inputs.some((evidence) =>
+								deferredEvidenceKeys.has(consolidationEvidenceKey(evidence)),
+							)
+						) {
+							continue;
+						}
+						const proposal = await persistProposal({
+							batchKey: input.batchKey,
+							observation: item.observation,
+							proposal: item.proposal,
+							dryRun,
+							...(options.signal === undefined
+								? {}
+								: { signal: options.signal }),
+						});
+						proposals.push(proposal);
+						recordJudgedEpisodes(
+							representedEpisodes,
+							selectedRecords,
+							item,
+							proposal.path,
 						);
 					}
-					const finalized = await source.finalize(
-						Object.freeze(
-							[...represented.values()].map((record) =>
-								Object.freeze({
-									id: record.id,
-									digest: record.digest,
-									...(record.fileIdentity === undefined
-										? {}
-										: { fileIdentity: record.fileIdentity }),
-									proposalPaths: Object.freeze([...record.proposalPaths]),
-								}),
-							),
-						),
-					);
-					reportCommittedState({
-						episodePrunes: finalized.episodePrunes,
-						writesCommitted: finalized.writesCommitted,
-					});
-					episodePrunes.push(...finalized.episodePrunes);
-				}
-			}
-			const shouldMaterializeReceipt =
-				acceptedReceipt?.state === "accepted" &&
-				retirementRun?.kind !== "failed" &&
-				pressureDeferredRetirements.length === 0 &&
-				retirementCandidates.every((candidate) =>
-					retirementRun?.details.retirements.some(
-						(retirement) =>
-							retirement.path === candidate.record.path &&
-							retirement.digest === candidate.record.digest &&
-							retirement.status === "applied",
-					),
-				) &&
-				[...representedEpisodes.values()].every((records) =>
-					[...records.values()].every((record) =>
-						episodePrunes.includes(record.id),
-					),
-				);
-			if (shouldMaterializeReceipt) {
-				acceptedReceipt = await markReceiptMaterialized(input.batchKey);
-			}
-			const reportedRetirements = [
-				...(retirementRun?.details.retirements ?? []),
-				...pressureDeferredRetirements,
-				...capDeferredRetirements,
-				...modelOnlyRetirements,
-			].slice(0, dependencies.limits.maxRetirements);
-			details = {
-				...details,
-				observations: Object.freeze([
-					...deterministic.map((finding) => finding.observation),
-					...normalized.map((item) => item.observation),
-				]),
-				proposals: Object.freeze(proposals),
-				episodePrunes: details.episodePrunes,
-				retirements: Object.freeze(reportedRetirements),
-				declines: Object.freeze([
-					...details.declines,
-					...deterministicCapDeclines(observationCapDeferred, "observation"),
-					...deterministicCapDeclines(proposalCapDeferred, "proposal"),
-					...(retirementRun?.details.declines ?? []),
-					...pressureDeferredRetirements.map((retirement) => ({
-						code: "retirement-pressure-deferred",
-						path: retirement.path,
-						reason:
-							"Retirement was deferred because knowledge index pressure is unusable.",
-					})),
-					...capDeferredRetirements.map((retirement) => ({
-						code: "retirement-cap-deferred",
-						path: retirement.path,
-						reason: "The bounded retirement cap deferred this candidate.",
-					})),
-					...modelOnlyRetirements.map((retirement) => ({
-						code: "retirement-authority-deferred",
-						path: retirement.path,
-						reason: "Model judgment alone cannot grant retirement authority.",
-					})),
-					...targetUnmetDeclines({
-						pressure,
-						retirements: reportedRetirements,
-					}),
-				]),
-				warnings: Object.freeze([
-					...details.warnings,
-					...(retirementRun?.details.warnings ?? []),
-				]),
-				recovery: retirementRun?.details.recovery ?? details.recovery,
-				...(acceptedReceipt === undefined
-					? {}
-					: { acceptedJudgmentReceiptPath: acceptedReceipt.path }),
-				...(retirementRun?.details.manifestPath === undefined
-					? {}
-					: { manifestPath: retirementRun.details.manifestPath }),
-			};
-			if (retirementRun?.kind === "failed") {
-				return {
-					kind: "failed" as const,
-					reason: retirementRun.reason,
-					details,
+					return { proposals, representedEpisodes };
 				};
-			}
-			return { kind: "ran" as const, details };
+				const { proposals, representedEpisodes } =
+					await persistModelProposals();
+				const retirementRun = await runRetirements(retirementCandidates);
+				const modelOnlyRetirements = modelAuthorityDeferrals(
+					normalized,
+					deterministic,
+				);
+				const episodePrunes =
+					!dryRun && retirementRun?.kind !== "failed"
+						? (
+								await finalizeRepresentedEpisodes({
+									represented: representedEpisodes,
+									sources: dependencies.sources,
+									reportCommittedState,
+								})
+							).episodePrunes
+						: [];
+				const shouldMaterializeReceipt = canMaterializeModelReceipt({
+					acceptedReceipt,
+					retirementRun,
+					pressureDeferredRetirements,
+					retirementCandidates,
+					representedEpisodes,
+					episodePrunes,
+				});
+				if (shouldMaterializeReceipt) {
+					acceptedReceipt = await markReceiptMaterialized(input.batchKey);
+				}
+				const assembleModelResult = () => {
+					const reportedRetirements = [
+						...(retirementRun?.details.retirements ?? []),
+						...pressureDeferredRetirements,
+						...capDeferredRetirements,
+						...modelOnlyRetirements,
+					].slice(0, dependencies.limits.maxRetirements);
+					details = {
+						...details,
+						observations: Object.freeze([
+							...deterministic.map((finding) => finding.observation),
+							...normalized.map((item) => item.observation),
+						]),
+						proposals: Object.freeze(proposals),
+						episodePrunes: details.episodePrunes,
+						retirements: Object.freeze(reportedRetirements),
+						declines: Object.freeze([
+							...details.declines,
+							...deterministicCapDeclines(
+								observationCapDeferred,
+								"observation",
+							),
+							...deterministicCapDeclines(proposalCapDeferred, "proposal"),
+							...(retirementRun?.details.declines ?? []),
+							...deferredRetirementDeclines(
+								pressureDeferredRetirements,
+								capDeferredRetirements,
+							),
+							...modelOnlyRetirements.map((retirement) => ({
+								code: "retirement-authority-deferred",
+								path: retirement.path,
+								reason:
+									"Model judgment alone cannot grant retirement authority.",
+							})),
+							...targetUnmetDeclines({
+								pressure,
+								retirements: reportedRetirements,
+							}),
+						]),
+						warnings: Object.freeze([
+							...details.warnings,
+							...(retirementRun?.details.warnings ?? []),
+						]),
+						recovery: retirementRun?.details.recovery ?? details.recovery,
+						...(acceptedReceipt === undefined
+							? {}
+							: { acceptedJudgmentReceiptPath: acceptedReceipt.path }),
+						...(retirementRun?.details.manifestPath === undefined
+							? {}
+							: { manifestPath: retirementRun.details.manifestPath }),
+					};
+					return completedRetirementResult(details, retirementRun);
+				};
+				return assembleModelResult();
+			};
+			return await runModel();
 		} catch (error: unknown) {
 			reportCommittedState({ writesCommitted: hasCommittedWrites(error) });
 			return {
@@ -1018,6 +912,176 @@ export function createLivingMemoryConsolidator(
 	};
 }
 
+function canMaterializeModelReceipt(options: {
+	readonly acceptedReceipt: AcceptedJudgmentReceipt | undefined;
+	readonly retirementRun:
+		| Awaited<
+				ReturnType<
+					LivingMemoryConsolidatorDependencies["retirementStore"]["apply"]
+				>
+		  >
+		| undefined;
+	readonly pressureDeferredRetirements: MemoryConsolidateDetails["retirements"];
+	readonly retirementCandidates: readonly LivingMemoryRetirementCandidate[];
+	readonly representedEpisodes: EpisodeRepresentations;
+	readonly episodePrunes: readonly string[];
+}): boolean {
+	return (
+		options.acceptedReceipt?.state === "accepted" &&
+		options.retirementRun?.kind !== "failed" &&
+		options.pressureDeferredRetirements.length === 0 &&
+		options.retirementCandidates.every((candidate) =>
+			options.retirementRun?.details.retirements.some(
+				(retirement) =>
+					retirement.path === candidate.record.path &&
+					retirement.digest === candidate.record.digest &&
+					retirement.status === "applied",
+			),
+		) &&
+		[...options.representedEpisodes.values()].every((records) =>
+			[...records.values()].every((record) =>
+				options.episodePrunes.includes(record.id),
+			),
+		)
+	);
+}
+
+function recordJudgedEpisodes(
+	represented: EpisodeRepresentations,
+	records: readonly ConsolidationSourceRecord[],
+	item: ReturnType<typeof validateJudgmentOutput>[number],
+	proposalPath: string | undefined,
+): void {
+	if (
+		item.proposal?.proposalKind !== "create" ||
+		item.proposal.record.type !== "note" ||
+		proposalPath === undefined
+	)
+		return;
+	for (const evidence of item.observation.inputs) {
+		const record = findProjectEpisode(records, evidence);
+		if (record !== undefined)
+			representEpisode(represented, record, proposalPath);
+	}
+}
+
+function modelAuthorityDeferrals(
+	judged: ReturnType<typeof validateJudgmentOutput>,
+	deterministic: readonly DeterministicFinding[],
+): MemoryConsolidateDetails["retirements"] {
+	return judged.flatMap((item) => {
+		if (item.proposal?.proposalKind !== "retire") return [];
+		const evidence = item.observation.inputs[0];
+		if (
+			evidence === undefined ||
+			deterministic.some(
+				(finding) =>
+					finding.retirement !== undefined &&
+					finding.observation.inputs.some(
+						(input) =>
+							input.sourceId === evidence.sourceId &&
+							input.id === evidence.id &&
+							input.digest === evidence.digest,
+					),
+			)
+		)
+			return [];
+		return [
+			{
+				path: evidence.path,
+				digest: evidence.digest,
+				status: "deferred" as const,
+				reason: item.proposal.reason,
+			},
+		];
+	});
+}
+
+function completedRetirementResult(
+	details: MemoryConsolidateDetails,
+	retirementRun:
+		| Awaited<
+				ReturnType<
+					LivingMemoryConsolidatorDependencies["retirementStore"]["apply"]
+				>
+		  >
+		| undefined,
+) {
+	if (retirementRun?.kind === "failed")
+		return { kind: "failed" as const, reason: retirementRun.reason, details };
+	return { kind: "ran" as const, details };
+}
+
+function selectUnrepresentedRecords(options: {
+	readonly records: readonly ConsolidationSourceRecord[];
+	readonly receipts: readonly AcceptedJudgmentReceipt[];
+	readonly proposalEvidence: readonly ConsolidationEvidenceRef[];
+	readonly retirementKeys: readonly string[];
+}): readonly ConsolidationSourceRecord[] {
+	const representedKeys = new Set([
+		...options.receipts.flatMap((receipt) =>
+			receipt.state === "materialized"
+				? (receipt.inputs ?? []).map(consolidationEvidenceKey)
+				: [],
+		),
+		...options.proposalEvidence.map(consolidationEvidenceKey),
+		...options.retirementKeys,
+	]);
+	const candidates = options.records.filter(
+		(record) => record.scope === "project",
+	);
+	const keys = candidates.map(consolidationEvidenceKey).sort();
+	const acceptedCurrentBatch = options.receipts.some(
+		(receipt) =>
+			receipt.state === "accepted" &&
+			(receipt.inputs === undefined
+				? sameStrings(
+						[...receipt.inputDigests].sort(),
+						candidates.map((record) => record.digest).sort(),
+					)
+				: sameStrings(
+						receipt.inputs.map(consolidationEvidenceKey).sort(),
+						keys,
+					)),
+	);
+	return Object.freeze(
+		acceptedCurrentBatch
+			? candidates
+			: candidates.filter(
+					(record) => !representedKeys.has(consolidationEvidenceKey(record)),
+				),
+	);
+}
+
+function representedCollectionKeys(
+	receipts: readonly AcceptedJudgmentReceipt[],
+	proposalEvidence: readonly ConsolidationEvidenceRef[],
+): readonly string[] {
+	return Object.freeze([
+		...receipts.flatMap((receipt) =>
+			receipt.state === "materialized"
+				? (receipt.inputs ?? []).map(consolidationEvidenceKey)
+				: [],
+		),
+		...proposalEvidence
+			.filter(
+				(evidence) =>
+					!evidence.path.startsWith("memory/agent/episodes/") ||
+					!receipts.some(
+						(receipt) =>
+							receipt.state === "accepted" &&
+							((receipt.inputs ?? []).some(
+								(input) =>
+									consolidationEvidenceKey(input) ===
+									consolidationEvidenceKey(evidence),
+							) ||
+								receipt.inputDigests.includes(evidence.digest)),
+					),
+			)
+			.map(consolidationEvidenceKey),
+	]);
+}
+
 async function readProposalPhase(
 	proposalStore: LivingMemoryConsolidatorDependencies["proposalStore"],
 ): Promise<{
@@ -1046,79 +1110,61 @@ interface AcceptedEpisodeRecovery {
 	readonly receiptPath?: string;
 }
 
-async function recoverAcceptedEpisodeFinalization(options: {
-	readonly records: readonly ConsolidationSourceRecord[];
-	readonly receipts: readonly AcceptedJudgmentReceipt[];
-	readonly proposals: readonly ConsolidationProposalMaterialization[];
-	readonly dependencies: LivingMemoryConsolidatorDependencies;
-	readonly markReceiptMaterialized: (
-		batchKey: string,
-	) => Promise<AcceptedJudgmentReceipt>;
-	readonly reportCommittedState: (state: CommittedWriteState) => void;
-}): Promise<AcceptedEpisodeRecovery | undefined> {
-	const acceptedReceipts = new Map(
-		options.receipts
-			.filter((receipt) => receipt.state === "accepted")
-			.map((receipt) => [receipt.batchKey, receipt] as const),
-	);
-	const recoverable = new Map<
-		string,
-		Map<
-			string,
-			{
-				readonly id: string;
-				readonly digest: string;
-				readonly fileIdentity?: ConsolidationSourceRecord["fileIdentity"];
-				readonly proposalPaths: Set<string>;
-				readonly receiptKeys: Set<string>;
-			}
-		>
-	>();
-	const materializations: ConsolidationProposalMaterialization[] = [];
-	for (const proposal of options.proposals) {
-		const receipt = acceptedReceipts.get(proposal.key);
-		if (
-			receipt === undefined ||
-			proposal.proposalKind !== "create" ||
-			proposal.outputType !== "note"
-		) {
-			continue;
-		}
-		let matched = false;
-		for (const evidence of proposal.inputs) {
-			if (!receipt.inputDigests.includes(evidence.digest)) continue;
-			const record = options.records.find(
-				(candidate) =>
-					candidate.sourceId === evidence.sourceId &&
-					candidate.id === evidence.id &&
-					candidate.digest === evidence.digest &&
-					candidate.kind === "episode" &&
-					candidate.scope === "project",
-			);
-			if (record === undefined) continue;
-			matched = true;
-			const sourceRecords = recoverable.get(record.sourceId) ?? new Map();
-			const represented = sourceRecords.get(record.id) ?? {
-				id: record.id,
-				digest: record.digest,
-				...(record.fileIdentity === undefined
-					? {}
-					: { fileIdentity: record.fileIdentity }),
-				proposalPaths: new Set<string>(),
-				receiptKeys: new Set<string>(),
-			};
-			represented.proposalPaths.add(proposal.path);
-			represented.receiptKeys.add(receipt.batchKey);
-			sourceRecords.set(record.id, represented);
-			recoverable.set(record.sourceId, sourceRecords);
-		}
-		if (matched) materializations.push(proposal);
-	}
-	if (recoverable.size === 0) return undefined;
+interface RepresentedEpisode {
+	readonly id: string;
+	readonly digest: string;
+	readonly fileIdentity?: ConsolidationSourceRecord["fileIdentity"];
+	readonly proposalPaths: Set<string>;
+	readonly receiptKeys: Set<string>;
+}
 
+type EpisodeRepresentations = Map<string, Map<string, RepresentedEpisode>>;
+
+function findProjectEpisode(
+	records: readonly ConsolidationSourceRecord[],
+	evidence: ConsolidationEvidenceRef,
+): ConsolidationSourceRecord | undefined {
+	return records.find(
+		(candidate) =>
+			candidate.sourceId === evidence.sourceId &&
+			candidate.id === evidence.id &&
+			candidate.digest === evidence.digest &&
+			candidate.kind === "episode" &&
+			candidate.scope === "project",
+	);
+}
+
+function representEpisode(
+	represented: EpisodeRepresentations,
+	record: ConsolidationSourceRecord,
+	proposalPath: string,
+	receiptKey?: string,
+): void {
+	const sourceRecords = represented.get(record.sourceId) ?? new Map();
+	const episode = sourceRecords.get(record.id) ?? {
+		id: record.id,
+		digest: record.digest,
+		...(record.fileIdentity === undefined
+			? {}
+			: { fileIdentity: record.fileIdentity }),
+		proposalPaths: new Set<string>(),
+		receiptKeys: new Set<string>(),
+	};
+	episode.proposalPaths.add(proposalPath);
+	if (receiptKey !== undefined) episode.receiptKeys.add(receiptKey);
+	sourceRecords.set(record.id, episode);
+	represented.set(record.sourceId, sourceRecords);
+}
+
+async function finalizeRepresentedEpisodes(options: {
+	readonly represented: EpisodeRepresentations;
+	readonly sources: LivingMemoryConsolidatorDependencies["sources"];
+	readonly reportCommittedState: (state: CommittedWriteState) => void;
+}): Promise<{ episodePrunes: string[]; completedIds: Set<string> }> {
+	const episodePrunes: string[] = [];
 	const completedIds = new Set<string>();
-	for (const source of options.dependencies.sources) {
-		const records = recoverable.get(source.id);
+	for (const source of options.sources) {
+		const records = options.represented.get(source.id);
 		if (records === undefined || records.size === 0) continue;
 		if (source.finalize === undefined) {
 			throw new Error(
@@ -1139,15 +1185,88 @@ async function recoverAcceptedEpisodeFinalization(options: {
 				),
 			),
 		);
-		options.reportCommittedState({
-			episodePrunes: finalized.episodePrunes,
-			writesCommitted: finalized.writesCommitted,
-		});
-		for (const id of finalized.episodePrunes) {
+		options.reportCommittedState(finalized);
+		episodePrunes.push(...finalized.episodePrunes);
+		for (const id of finalized.episodePrunes)
 			completedIds.add(`${source.id}\0${id}`);
-		}
 	}
+	return { episodePrunes, completedIds };
+}
 
+async function recoverAcceptedEpisodeFinalization(options: {
+	readonly records: readonly ConsolidationSourceRecord[];
+	readonly receipts: readonly AcceptedJudgmentReceipt[];
+	readonly proposals: readonly ConsolidationProposalMaterialization[];
+	readonly dependencies: LivingMemoryConsolidatorDependencies;
+	readonly markReceiptMaterialized: (
+		batchKey: string,
+	) => Promise<AcceptedJudgmentReceipt>;
+	readonly reportCommittedState: (state: CommittedWriteState) => void;
+}): Promise<AcceptedEpisodeRecovery | undefined> {
+	const acceptedReceipts = new Map(
+		options.receipts
+			.filter((receipt) => receipt.state === "accepted")
+			.map((receipt) => [receipt.batchKey, receipt] as const),
+	);
+	const { recoverable, materializations } = collectAcceptedEpisodes({
+		records: options.records,
+		proposals: options.proposals,
+		acceptedReceipts,
+	});
+	if (recoverable.size === 0) return undefined;
+
+	const { completedIds } = await finalizeRepresentedEpisodes({
+		represented: recoverable,
+		sources: options.dependencies.sources,
+		reportCommittedState: options.reportCommittedState,
+	});
+
+	const completedReceiptKeys = completedEpisodeReceiptKeys(
+		recoverable,
+		completedIds,
+	);
+	for (const key of completedReceiptKeys) {
+		await options.markReceiptMaterialized(key);
+	}
+	const receipt = acceptedReceipts.get([...completedReceiptKeys][0] ?? "");
+	return Object.freeze({
+		proposals: Object.freeze(materializations),
+		...(receipt === undefined ? {} : { receiptPath: receipt.path }),
+	});
+}
+
+function collectAcceptedEpisodes(options: {
+	readonly records: readonly ConsolidationSourceRecord[];
+	readonly proposals: readonly ConsolidationProposalMaterialization[];
+	readonly acceptedReceipts: ReadonlyMap<string, AcceptedJudgmentReceipt>;
+}) {
+	const recoverable: EpisodeRepresentations = new Map();
+	const materializations: ConsolidationProposalMaterialization[] = [];
+	for (const proposal of options.proposals) {
+		const receipt = options.acceptedReceipts.get(proposal.key);
+		if (
+			receipt === undefined ||
+			proposal.proposalKind !== "create" ||
+			proposal.outputType !== "note"
+		)
+			continue;
+		let matched = false;
+		for (const evidence of proposal.inputs) {
+			if (!receipt.inputDigests.includes(evidence.digest)) continue;
+			const record = findProjectEpisode(options.records, evidence);
+			if (record === undefined) continue;
+			matched = true;
+			representEpisode(recoverable, record, proposal.path, receipt.batchKey);
+		}
+		if (matched) materializations.push(proposal);
+	}
+	return { recoverable, materializations };
+}
+
+function completedEpisodeReceiptKeys(
+	recoverable: EpisodeRepresentations,
+	completedIds: ReadonlySet<string>,
+): Set<string> {
 	const recoverableReceiptKeys = new Set<string>();
 	for (const records of recoverable.values()) {
 		for (const record of records.values()) {
@@ -1166,14 +1285,69 @@ async function recoverAcceptedEpisodeFinalization(options: {
 		);
 		if (everyMatchingRecordPruned) completedReceiptKeys.add(key);
 	}
-	for (const key of completedReceiptKeys) {
-		await options.markReceiptMaterialized(key);
+	return completedReceiptKeys;
+}
+
+async function persistDeterministicProposals(options: {
+	readonly findings: readonly DeterministicFinding[];
+	readonly persistProposal: LivingMemoryConsolidatorDependencies["proposalStore"]["persist"];
+	readonly dryRun: boolean;
+	readonly signal?: AbortSignal;
+}) {
+	const proposals: Awaited<ReturnType<typeof options.persistProposal>>[] = [];
+	for (const finding of options.findings) {
+		if (finding.proposal === undefined || finding.key === undefined) continue;
+		proposals.push(
+			await options.persistProposal({
+				batchKey: finding.key,
+				observation: finding.observation,
+				proposal: finding.proposal,
+				dryRun: options.dryRun,
+				...(options.signal === undefined ? {} : { signal: options.signal }),
+			}),
+		);
 	}
-	const receipt = acceptedReceipts.get([...completedReceiptKeys][0] ?? "");
-	return Object.freeze({
-		proposals: Object.freeze(materializations),
-		...(receipt === undefined ? {} : { receiptPath: receipt.path }),
-	});
+	return proposals;
+}
+
+function deferredRetirementDeclines(
+	pressureDeferred: MemoryConsolidateDetails["retirements"],
+	capDeferred: MemoryConsolidateDetails["retirements"],
+): MemoryConsolidateDetails["declines"] {
+	return [
+		...pressureDeferred.map((retirement) => ({
+			code: "retirement-pressure-deferred",
+			path: retirement.path,
+			reason:
+				"Retirement was deferred because knowledge index pressure is unusable.",
+		})),
+		...capDeferred.map((retirement) => ({
+			code: "retirement-cap-deferred",
+			path: retirement.path,
+			reason: "The bounded retirement cap deferred this candidate.",
+		})),
+	];
+}
+
+function partitionRetirementCandidates(
+	observed: readonly LivingMemoryRetirementCandidate[],
+	pressure: KnowledgeIndexPressureResult,
+	maxRetirements: number,
+) {
+	const bounded = observed.slice(0, maxRetirements);
+	const deferred = (candidates: readonly LivingMemoryRetirementCandidate[]) =>
+		candidates.map((candidate) => ({
+			path: candidate.record.path,
+			digest: candidate.record.digest,
+			status: "deferred" as const,
+			reason: candidate.reason,
+		}));
+	return {
+		retirementCandidates: pressure.kind === "measured" ? bounded : [],
+		pressureDeferredRetirements:
+			pressure.kind === "unusable" ? deferred(bounded) : [],
+		capDeferredRetirements: deferred(observed.slice(maxRetirements)),
+	};
 }
 
 interface DeterministicFinding {
