@@ -14,6 +14,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Done
 
+- **Slice 17 / TASK-787 Done** (2026-09-29 04:57Z, attempt 1 on gpt-6-sol, 13 min):
+  Drive commit `86b44e34`, state `3933993f`. Two new test files (5 cases) + a full
+  AST return/throw inventory with probe hit counts for the eight stage-13
+  functions (one dead-by-construction throw left, `retirement-store.ts:599`);
+  freeze clean from `S = 91524cd4`; five gates passed. `C` for TASK-780.
 - **Slice 16 / TASK-778 Done** (2026-09-29 04:43Z, attempt 2 on gpt-6-sol, 17 min):
   Drive commit `87a9dbc3`, state `3a0c568c`. Two owned sources only; freeze clean
   from `S = 3afd9873` and `C = 9e6ebf4b`; five gates passed; four criticals
@@ -106,8 +111,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-787** (stage 13b characterization) on the Pi worker. Then 780 attempt 2
-(`C` = 787's Drive commit) → 781 → 782 → 784 → 783.
+**TASK-780 attempt 2** (stage 13 refactor, `C` = `86b44e34`) on the Pi worker.
+Then 781 → 782 → 784 → 783.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -198,8 +203,7 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Blocked
 
-TASK-780 waits on TASK-787 (D-033); TASK-778's wait on TASK-786 is resolved. Both
-blocks were probe-confirmed unreached return sites, routed as characterization
+Nothing (TASK-778/780 waits on 786/787 resolved). Both blocks were probe-confirmed unreached return sites, routed as characterization
 tasks with a full return-site sweep. History: TASK-776 attempt 1 (`run-6fe911a5`, 02:21Z) stopped
 `blocked` on the two unreached `runDurableGraphScheduler` return sites
 (`scheduler.ts:215-224`, `:40-42`); resolved by Q-014 / D-030 = TASK-785.
@@ -240,17 +244,17 @@ Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.
 ## HEAD
 
 `feature/project-health-audit`, record-only commit after slice 13 (see `git log`),
-off local `main` `64dca3c`. 13 of 20 tasks Done.
+off local `main` `64dca3c`. 14 of 20 tasks Done.
 Needs the user: nothing now; gate-owned R-013 sign-off at closeout.
 
 ## Successor handoff — continue implementation (refreshed by successor #2, 2026-09-29 02:15Z, after Q-013)
 
 State: `feature/project-health-audit`; rulings Q-001..Q-014 in
 `.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`, plan
-D-001..D-030. Pins: worker and cosmo `openai-codex/gpt-6-sol` (D-029). 13 of 20
-tasks Done (768-779 except 780, 785, 786).
+D-001..D-030. Pins: worker and cosmo `openai-codex/gpt-6-sol` (D-029). 14 of 20
+tasks Done (768-779, 785-787).
 
-Remaining order: 787 → 780 attempt 2 (refactor, ready) → 781
+Remaining order: 780 attempt 2 (refactor, ready) → 781
 (characterization, after 780; Pi worker, no claude-cli needed) → 782 (15a) →
 784 (15b) → 783 (16 closeout, D-018 (4)) → `/implement-plan` Phases 2-4:
 gates, QM (commit first, reconcile against local `main`, gate-owned files →
