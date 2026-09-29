@@ -19,7 +19,12 @@ suite-reliability → execution-liveness resumes.
 
 ## Running
 
-Nothing. `/spec-to-backlog` is COMPLETE (Phases 1-7). The backlog is verified and committed. Handed off at ~40% context; a fresh session implements.
+`/implement-plan driver-hardening` (implementing coordinator, started 2026-09-29 from Shepherd's `brief-implementer.md`). Slice log below under `## Implementation log`.
+
+## Implementation log (implementing coordinator, 2026-09-29)
+
+- **Launch binary (derived, coordinator).** The global `cosmonauts` on PATH is `~/.bun/bin/cosmonauts -> ~/.bun/install/global/node_modules/cosmonauts`, which resolves to the **main checkout** `/Users/cosmos/Projects/cosmonauts/bin/cosmonauts`. An inline `run_driver` launched through it would load the main checkout's Drive and `task_edit`, not this branch's. Every slice is therefore launched through this worktree's own `bin/cosmonauts` (absolute path), so the host runs the source being changed and the D-028 restart after slice 4 picks up the fixed Drive. Launch/poll helpers live in the session scratchpad (`launch.sh TASK-NNN`, `poll.sh`).
+- Baseline at `0f1ebf70`: typecheck green, lint green (644 files), full suite 3933/3933 in 288 files (exit 0).
 
 ## Blocked
 
