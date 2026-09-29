@@ -222,6 +222,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: INV-002 (behavior-preserving refactors need characterization first) and the plan's own D-018 (2) route for a seam.
   - Decided by: Shepherd, derived under INV-002, 2026-09-29 (rulings file round 8, relayed)
 
+- **D-031 - A claimed unreached return site must be proven by execution probe before a refactor task stops `blocked`; TASK-776 attempt 2's `drained` blocker is refuted** *(Added 2026-09-29 by the implementing coordinator, successor #3, after TASK-776 attempt 2)*
+  - Decision: TASK-776 attempt 2 (`run-a0059301`, gpt-6-sol) stopped `blocked` before any edit claiming the `!runnable` → `"drained"` return of `runDurableGraphScheduler` (`lib/durable-runtime/scheduler.ts:190-199`) is reached by no test, reasoning from fixture greps. A coordinator execution probe (cp-backed, tag appended per exit arm, full suite, source restored byte-identical, plain suite green 3897/3897) shows the arm is reached (`tests/driver/drive-run-start-characterization.test.ts:238`); the only unreached exit arm is the non-terminal fallback inside the helper `finalizeSchedulerResult` (`:289`), plus the three `now ??` default arms. Ruling: no new characterization task; TASK-776 attempt 3 proceeds with `finalizeSchedulerResult` byte-identical, the `now` defaults hoistable, and a standing rule that any future "unreached site" block must carry a probe hit count of zero recorded verbatim. Fixture greps are not reachability evidence.
+  - Alternatives: another stage-8c characterization task (would pin a reached path twice, grows D-016 again); trusting the worker's claim (blocks stage 9 on a false premise).
+  - Why: INV-002 asks for characterization, which the probe proves exists; D-030's route is for sites that are actually unreached. Vitest v8 line coverage was checked and found unreliable for this file (duplicated function map entries in the 250-291 window), so execution probes are the standard.
+  - Decided by: implementing coordinator, derived under INV-002 and D-030, 2026-09-29
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible

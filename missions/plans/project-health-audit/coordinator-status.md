@@ -90,7 +90,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-776 attempt 2** on the Pi worker (gpt-6-sol), `C` = `ef098dae` (scheduler) +
+**TASK-776 attempt 3** on the Pi worker (attempt 2 `run-a0059301` blocked on a
+false reachability claim, refuted by probe, D-031) (gpt-6-sol), `C` = `ef098dae` (scheduler) +
 `7390f105` (other nine). Then 778, 780 (attempt-1 notes drafted in the
 coordinator scratchpad, appended at slice start), 781, 782, 784, 783.
 
@@ -166,6 +167,12 @@ coordinator scratchpad, appended at slice start), 781, 782, 784, 783.
    overwritten (obs. 2) even though it wrote a full blocker record
    (TASK-776 attempt 1, `run-6fe911a5`). Add `blocked` to the parser or map
    unknown-with-raw to the raw text in the notes.
+20. Workers enumerate return-site reachability by grepping test fixtures
+   (TASK-776 attempts 1 and 2); attempt 2's block was false (D-031). The worker
+   protocol should require an execution probe (or a trustworthy coverage
+   report) before a `blocked` stop on reachability; vitest v8 line coverage for
+   `scheduler.ts` had duplicated function-map entries, so it cannot be the
+   standard either.
 12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
