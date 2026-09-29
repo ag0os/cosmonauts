@@ -1,7 +1,7 @@
 # Project health audit record
 
 Schema-v1 machine record: `missions/reviews/project-health-audit.json`  
-SHA-256: `5b1bbbd0874e8c5943ec3312738b5cc744ad8afb9c5843ab7f26ec754b0e29a9`
+SHA-256: `d9314187dcd943d37c3228ba35e279807021dec095e3698fbc25ba4126c21eeb`
 
 The JSON companion is canonical. This Markdown file summarizes it and does not supersede its identities, digests, invocation objects, or dispositions.
 
@@ -18,7 +18,7 @@ The JSON companion is canonical. This Markdown file summarizes it and does not s
 - Family dispositions: 41 extract, two baseline. The 41 extract rows remain visible as pending later slices; only the two TASK-768 formatter groups are marked remediated now.
 - Suppressions: 23 inline directives, 23 registered exceptions, zero stale suppressions. The authoritative `scanSuppressions` policy scan over the `git ls-files` scan paths found 20 directives under `lib/`, `cli/`, `domains/`, and `scripts/`, plus three under `tests/`; Shepherd's supplied count of 20 covered only the non-test subset. No suppression or analysis configuration was added.
 
-The final plan-wide `after`, same-commit reproduction, floor refresh, and closeout snapshot are explicitly `not-yet-produced`; the closeout owner replaces those placeholders after all extraction and complexity slices finish.
+This Stage-1 snapshot is historical; the plan-wide after, reproduction, and closeout records below supersede the preliminary checkpoint.
 
 ## Capability bindings and stage-1 invocations
 
@@ -95,4 +95,39 @@ Family IDs are `family-` plus the first 16 hexadecimal characters of SHA-256 ove
 
 The only gate-owned production file changed by this slice is `domains/shared/extensions/project-tools/fallow-provider.ts`: under Q-006(a), duplication exit 0 with normalized findings reconciles to a completed `fail` verdict. No other capability contradiction is accepted. The corresponding regression test is pre-authorized in TASK-768.
 
-No `fallow.toml`, threshold, ignore, entry, dependency version, quality-review, staged-code, suppression-registry, or execution-liveness artifact changed. The downstream execution-liveness impact list is empty.
+No `fallow.toml`, threshold, ignore, entry, dependency version, quality-review, staged-code, suppression-registry, or execution-liveness artifact changed **in Stage 1**. Subsequent slices removed one obsolete registered suppression and restructured the execution-liveness files described below.
+
+## Final analyzed snapshot and same-commit reproduction
+
+- Analyzed source/test commit: `ea27538ef242155767d64804111997e0e037ad1d`. Execution-root consent recorded by its canonical-path SHA-256, never its absolute path. Fallow `2.54.2`; seven capability binding rows are in JSON. Boundary conformance remains **unbound**, `provider-not-configured`, not passing.
+- Project dead code: completed fail, one Q-005 false positive, `TaskManager.getTaskDependencyStatusSnapshot` (`lib/tasks/task-manager.ts:570`); the live call at `lib/driver/drive-graph-runner.ts:593` contradicts the unused-member inference. Zero other dead files, exports, types, dependencies, or stale suppressions.
+- Project duplication: `analysis_duplication({})` **completed**, `verdict: "fail"`: three clone groups, seven instances, 135 duplicated lines (0.14323151517723576%). The two overlapping validation groups at `cli/memory/judgment-provider.ts:304-332`/`lib/memory/consolidation-proposals.ts:813-841` and `cli/memory/judgment-provider.ts:307-332`/`lib/memory/retirement-receipts.ts:677-702` make one ratified three-file family; the `readExactBytes` group at `lib/memory/consolidation-sources.ts:1560-1576`, `lib/memory/knowledge-store.ts:879-895`, and `lib/memory/living-memory.ts:2634-2650` is the other. The distinct direct diagnostic is verbatim `fallow ["dupes", "--format", "json", "--quiet", "--no-cache"]`: exit 0, three groups, same normalized identity digest `269a588eace7f0221476ac02fc8b592e15233a5c88efa924d2c332ebf383507d`. AC-004 is satisfied by the *surface*, not by the diagnostic.
+- Project complexity: cyclomatic 9, cognitive 45, CRAP 183 measured findings; all three surface metrics completed **fail**. The full direct `fallow health --complexity --format json --quiet --no-cache` reports 192 unique rows (four critical test functions, 55 high, 133 moderate; no production critical) with normalized result digest `2f16bf07a204e05de16432d212621656a4ac8a913dbfdd1c2c890986e797368c`. The 172 production high/moderate plus critical-test stable identities and exact file-specific justification texts are mirrored in JSON from the unchanged `### Baselined complexity (project-health-audit)` subsection of `docs/fallow-exceptions.md`; the other 20 noncritical test rows remain measured and explicitly escalated outside D-011's baselining scope, not silently treated as passing.
+- Suppressions: 23 inline, 22 registered (23 on `main`), zero stale; no new directive. Fresh direct dead-code, duplication, and health diagnostics rerun at the same frozen source tree yielded identical normalized payloads after removing volatile `elapsed_ms`, counts, identity digests and analysisConfiguration digest `27cf3dc012ee6a21924dac54ad6c00c8bad9cee95a582b517d2298ba023a2c03`. Reproduction mismatches: none.
+- One **initial failed** changed-scope surface invocation returned `invalid-output` (`expected audit verdict to be pass or fail`) because the direct `fallow audit --base main --format json --quiet --no-cache --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json` returned `warn` before refresh; D-023 keeps it non-passing. After all three floors were refreshed separately, `analysis_audit({ base: "main" })` completed **pass**, zero new findings, and exit 0. The earlier failure is retained in JSON, not converted to a pass.
+
+## Closeout and sign-off
+
+`dead-code`, `dupes`, and `health` were refreshed in three separate runs against the frozen commit, each with one category-specific reason and verified file digest in `.fallow-baselines/manifest.json`. Current floors are one dead-code member, three clone groups, and 229 health finding counts across 84 paths. Floor/manifest bundle digest: `31c0900c2272658befe9a587f636eef9c37a6d716f550f6e06f4d7d988140292`. The seven permitted closeout artifact paths and each file digest appear in JSON; source/test files did not change during this closeout. The coordinator checks the post-commit seven-path diff and appends closeout SHAs and final audit evidence to TASK-783 notes.
+
+The gate-owned-file packet in JSON lists each changed floor, the manifest, `domains/shared/extensions/project-tools/fallow-provider.ts` (Q-006(a) exit-zero reconciliation; D-023 warns remain non-passing), and `.cosmonauts/suppression-exceptions.json` (one removed exception), with per-path justifications. All five gates passed: 287 test files/3920 tests; lint 643 files; typecheck; reachability 212/212 runtime modules plus 13 type-only exemptions, zero staged; suppression policy passed. Completion status: **QM human-decision items pending sign-off**.
+
+## Downstream impact: execution-liveness
+
+Re-validate the execution-liveness plan and TASK-712 before implementation. Per-file changes (including new modules and exported names) are stored in `downstream.executionLiveness` in JSON:
+
+| File | Structural change to re-validate |
+|---|---|
+| `cli/drive/subcommand.ts` | `runDrive` split into drive-selection/episode preparation and frozen-worker identity handling. |
+| `lib/entity-file-lock.ts` | Shared lock acquisition/stale-owner/release primitive; split `attemptLock` and `readLockFile`. |
+| `lib/driver/lock.ts` | Delegates lock operations to the shared entity-file lock. |
+| `lib/durable-runtime/scheduler.ts` | Split running-step recovery, promoted-attempt reconciliation, planned execution, and finalization. |
+| `lib/durable-runtime/scheduler-state.ts` | Exported `newestHeartbeat` for shared scheduler recovery. |
+| `lib/driver/run-one-task.ts` | Split backend execution and shell/runtime helpers; shared partial-report formatting. |
+| `lib/driver/drive-finalization.ts` | Moved partial-report formatting into new `lib/driver/report-format.ts` (`formatPartialReport` export). |
+| `lib/driver/drive-scheduler-backend.ts` | Shares new `lib/driver/runtime-helpers.ts` exports `driveRunExpectations`, `reportSummary`, `uncheckedAcceptanceCriteriaReason`, `authoritativeDriveTaskIds`, `checkDrivePreflight`, `runShellCommand`, `runCommand`, `runBackendWithTimeout`, and `runContradictedAttempts`; split backend/retry flow. |
+| `lib/process/process-group.ts` | Narrowed liveness export and common process usage. |
+| `lib/tasks/lock.ts` | Delegates lock semantics to entity-file lock. |
+| `lib/memory/episode-transition-lock.ts` | Delegates acquisition/release to shared entity-file lock. |
+
+No execution-liveness artifact, qualityReview, dependency, `fallow.toml`, staged-code configuration, or project analysis configuration is edited by this closeout.

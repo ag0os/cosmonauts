@@ -4227,7 +4227,7 @@
     }
   },
   "after": {
-    "commit": "not-yet-produced",
+    "commit": "ea27538ef242155767d64804111997e0e037ad1d",
     "executionRoot": {
       "canonicalPathSha256": "1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f",
       "consent": "recorded"
@@ -4246,7 +4246,7 @@
         },
         {
           "path": ".cosmonauts/suppression-exceptions.json",
-          "sha256": "f512fa049009c5adadd0aa3a50c25da9d341fe820055d3717916e6e382b47b17"
+          "sha256": "c0136f9a3c9482d6da76f3bc834091c5747224c6f16a6b56d267b6639e449e05"
         },
         {
           "path": "bun.lock",
@@ -4254,7 +4254,7 @@
         },
         {
           "path": "domains/shared/extensions/project-tools/fallow-provider.ts",
-          "sha256": "ca8d8f8d6d117d45c481fa0575a45c1ab9ed68d2dd57cc3dd3e42d2778f93ba9"
+          "sha256": "f453bfc90e31dc52e9621a973041eeae526b1596d00f97a8977f0e522a160f50"
         },
         {
           "path": "fallow.toml",
@@ -4269,7 +4269,28 @@
           "sha256": "305824fbc1b329a811a1ac9cfc764b9723bea69a258b40d7858e41375d8eb539"
         }
       ],
-      "digest": "a3a712ac24c1359cf841cbb1ad393726b43ec30a8a882168ed326065f10cefcd"
+      "digest": "27cf3dc012ee6a21924dac54ad6c00c8bad9cee95a582b517d2298ba023a2c03"
+    },
+    "floorConfiguration": {
+      "files": [
+        {
+          "path": ".fallow-baselines/dead-code.json",
+          "sha256": "ba9311b507cf396e77d193dcdc50590fc935e4e4821de6e42f6d8a43fa610be6"
+        },
+        {
+          "path": ".fallow-baselines/dupes.json",
+          "sha256": "d0ed95beaba70c76f222f77d8876c51624d7528686d26f41217862ed9a1bdc96"
+        },
+        {
+          "path": ".fallow-baselines/health.json",
+          "sha256": "39e566a1cdc918640eaaac0174e64b4e1cc19a724dca4e291fdfd9e647b9e39b"
+        },
+        {
+          "path": ".fallow-baselines/manifest.json",
+          "sha256": "f2c55e762b3b0bc421d833772c38d391e63a21c70ac17b91375671a6f5310b0d"
+        }
+      ],
+      "digest": "a3778c472126fd8d2c20b834128e02df41ecb540ac283d84d51e2669e5d3cf1c"
     },
     "bindings": [
       {
@@ -4352,33 +4373,99 @@
     ],
     "invocations": [
       {
-        "id": "after.dead-code.pending",
+        "id": "after.dead-code.surface.1",
         "source": {
           "kind": "surface",
           "tool": "analysis_dead_code",
           "arguments": {}
         },
         "outcome": {
-          "state": "unsupported",
-          "reason": "not-yet-produced: closeout owns the final same-commit after snapshot",
-          "identityDigest": "77034fd32386c5a471d70c42d3f865aeee22a0a63a9e1fe155ddf4a45ca63c3b"
+          "state": "completed-fail",
+          "count": 1,
+          "identities": [
+            "unused-class-member\tlib/tasks/task-manager.ts\tTaskManager.getTaskDependencyStatusSnapshot"
+          ],
+          "identityDigest": "4f75cdc45d8df34c7f40c3b8c97c52a2c8fe49f9362551f6ecf59683076f03f2"
         }
       },
       {
-        "id": "after.duplication.pending",
+        "id": "after.dead-code.diagnostic.1",
+        "source": {
+          "kind": "direct",
+          "label": "diagnostic",
+          "executable": "fallow",
+          "args": [
+            "dead-code",
+            "--format",
+            "json",
+            "--quiet",
+            "--no-cache"
+          ]
+        },
+        "outcome": {
+          "state": "completed-fail",
+          "count": 1,
+          "identities": [
+            "unused-class-member\tlib/tasks/task-manager.ts\tTaskManager.getTaskDependencyStatusSnapshot"
+          ],
+          "identityDigest": "4f75cdc45d8df34c7f40c3b8c97c52a2c8fe49f9362551f6ecf59683076f03f2"
+        },
+        "native": {
+          "exitCode": 1,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "payloadSha256": "6bf872f66e9dc73a9ef24bbda4360e053382ea476582cd25fa55080e0b8f96f3"
+        }
+      },
+      {
+        "id": "after.duplication.surface.1",
         "source": {
           "kind": "surface",
           "tool": "analysis_duplication",
           "arguments": {}
         },
         "outcome": {
-          "state": "unsupported",
-          "reason": "not-yet-produced: closeout owns the final same-commit after snapshot",
-          "identityDigest": "d9b00b4817bb448f16603a8ad363714321e9685bef4452dc8f6183769562bfdd"
+          "state": "completed-fail",
+          "count": 3,
+          "identities": [
+            "dupes\tcli/memory/judgment-provider.ts:304:332;lib/memory/consolidation-proposals.ts:813:841",
+            "dupes\tcli/memory/judgment-provider.ts:307:332;lib/memory/retirement-receipts.ts:677:702",
+            "dupes\tlib/memory/consolidation-sources.ts:1560:1576;lib/memory/knowledge-store.ts:879:895;lib/memory/living-memory.ts:2634:2650"
+          ],
+          "identityDigest": "269a588eace7f0221476ac02fc8b592e15233a5c88efa924d2c332ebf383507d"
         }
       },
       {
-        "id": "after.complexity.pending",
+        "id": "after.duplication.diagnostic.1",
+        "source": {
+          "kind": "direct",
+          "label": "diagnostic",
+          "executable": "fallow",
+          "args": [
+            "dupes",
+            "--format",
+            "json",
+            "--quiet",
+            "--no-cache"
+          ]
+        },
+        "outcome": {
+          "state": "completed-fail",
+          "count": 3,
+          "identities": [
+            "dupes\tcli/memory/judgment-provider.ts:304:332;lib/memory/consolidation-proposals.ts:813:841",
+            "dupes\tcli/memory/judgment-provider.ts:307:332;lib/memory/retirement-receipts.ts:677:702",
+            "dupes\tlib/memory/consolidation-sources.ts:1560:1576;lib/memory/knowledge-store.ts:879:895;lib/memory/living-memory.ts:2634:2650"
+          ],
+          "identityDigest": "269a588eace7f0221476ac02fc8b592e15233a5c88efa924d2c332ebf383507d"
+        },
+        "native": {
+          "exitCode": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "payloadSha256": "1500d878bb530fb25780da0372f1313881eac7416939247153a7d368d0b12b23"
+        }
+      },
+      {
+        "id": "after.complexity-cyclomatic.surface.1",
         "source": {
           "kind": "surface",
           "tool": "analysis_complexity",
@@ -4387,13 +4474,506 @@
           }
         },
         "outcome": {
-          "state": "unsupported",
-          "reason": "not-yet-produced: closeout owns the final same-commit after snapshot",
-          "identityDigest": "0721e893b8efa63cebbbffb2035ac8c795e0d8c376421053075b99229b58811d"
+          "state": "completed-fail",
+          "count": 9,
+          "identities": [
+            "cyclomatic\tcli/harness/subcommand.ts\t181\t7\tparseSyncRequest\t23\t20",
+            "cyclomatic\tlib/harness-adapters/sync.ts\t1221\t7\trunClaudeCommandPairBootstrap\t27\t20",
+            "cyclomatic\tlib/harness-adapters/sync.ts\t2440\t7\tapplySyncPlanInTransaction\t31\t20",
+            "cyclomatic\tlib/memory/knowledge-records.ts\t142\t7\tparseHumanKnowledgeRecord\t36\t20",
+            "cyclomatic\tlib/memory/knowledge-records.ts\t351\t7\tnormalizeKnowledgeProposal\t25\t20",
+            "cyclomatic\tlib/memory/knowledge-records.ts\t453\t7\tparseKnowledgeProposalOccupant\t24\t20",
+            "cyclomatic\ttests/harness-adapters/sync.test.ts\t380\t93\t<arrow>\t35\t20",
+            "cyclomatic\ttests/memory/interface.test.ts\t2713\t0\tauditMigratedSeed\t25\t20",
+            "cyclomatic\ttests/orchestration/chain-runner.test.ts\t2191\t81\t<arrow>\t22\t20"
+          ],
+          "identityDigest": "58237ca748f29cd9872da1e7aa8b25efb51501f9d8d4bf504963071bd32c1095"
         }
       },
       {
-        "id": "after.boundary.pending",
+        "id": "after.complexity-cognitive.surface.1",
+        "source": {
+          "kind": "surface",
+          "tool": "analysis_complexity",
+          "arguments": {
+            "metric": "cognitive"
+          }
+        },
+        "outcome": {
+          "state": "completed-fail",
+          "count": 45,
+          "identities": [
+            "cognitive\tcli/harness/subcommand.ts\t181\t7\tparseSyncRequest\t20\t15",
+            "cognitive\tcli/memory/judgment-provider.ts\t151\t0\textractLatestAssistantText\t17\t15",
+            "cognitive\tdomains/shared/extensions/project-tools/fallow-provider.ts\t2418\t0\tauditFindings\t17\t15",
+            "cognitive\tdomains/shared/extensions/project-tools/fallow-provider.ts\t830\t0\tprocessFailure\t16\t15",
+            "cognitive\tlib/agent-packages/codex-cli.ts\t122\t0\tsanitizeCodexArgs\t17\t15",
+            "cognitive\tlib/analysis/binding-resolver.ts\t150\t7\tresolveAnalysisRequest\t21\t15",
+            "cognitive\tlib/driver/backends/env-args.ts\t32\t0\tsplitShellWords\t19\t15",
+            "cognitive\tlib/driver/drive-finalization.ts\t172\t7\ttransitionDriveTaskStatus\t21\t15",
+            "cognitive\tlib/driver/drive-graph-runner.ts\t360\t0\trecordClaimedDriveTerminalEpisode\t16\t15",
+            "cognitive\tlib/driver/drive-graph-runner.ts\t616\t0\ttoDriverResult\t17\t15",
+            "cognitive\tlib/driver/event-stream.ts\t598\t24\tprocessContent\t30\t15",
+            "cognitive\tlib/extensions/agent-memory/index.ts\t778\t0\trenderRememberResult\t16\t15",
+            "cognitive\tlib/harness-adapters/sync.ts\t1221\t7\trunClaudeCommandPairBootstrap\t29\t15",
+            "cognitive\tlib/harness-adapters/sync.ts\t1828\t2\t<arrow>\t16\t15",
+            "cognitive\tlib/harness-adapters/sync.ts\t2440\t7\tapplySyncPlanInTransaction\t34\t15",
+            "cognitive\tlib/harness-adapters/sync.ts\t3016\t0\trollbackJournal\t17\t15",
+            "cognitive\tlib/harness-adapters/sync.ts\t3758\t0\tclassifyInventoryRow\t17\t15",
+            "cognitive\tlib/harness-adapters/sync.ts\t3875\t0\tplanTransfers\t16\t15",
+            "cognitive\tlib/harness-adapters/sync.ts\t635\t0\tvalidateOwnerTarget\t17\t15",
+            "cognitive\tlib/memory/consolidation-sources.ts\t204\t15\tcollect\t22\t15",
+            "cognitive\tlib/memory/consolidation-sources.ts\t479\t16\tfinalize\t25\t15",
+            "cognitive\tlib/memory/durable-files.ts\t233\t0\tdurableRestore\t17\t15",
+            "cognitive\tlib/memory/injection-budget.ts\t64\t0\tfairCaps\t16\t15",
+            "cognitive\tlib/memory/knowledge-records.ts\t142\t7\tparseHumanKnowledgeRecord\t33\t15",
+            "cognitive\tlib/memory/knowledge-records.ts\t351\t7\tnormalizeKnowledgeProposal\t17\t15",
+            "cognitive\tlib/memory/knowledge-store.ts\t465\t0\tcollectKnowledgeFiles\t16\t15",
+            "cognitive\tlib/memory/knowledge-store.ts\t507\t0\tscanKnowledgeFile\t18\t15",
+            "cognitive\tlib/memory/living-memory.ts\t1403\t0\tobserveDeterministicRecords\t22\t15",
+            "cognitive\tlib/memory/living-memory.ts\t1495\t7\tinspectLivingMemoryCitationInventory\t29\t15",
+            "cognitive\tlib/memory/living-memory.ts\t1705\t0\tcollectInventoryMarkdown\t21\t15",
+            "cognitive\tlib/memory/living-memory.ts\t1932\t0\tcitationReferences\t21\t15",
+            "cognitive\tlib/memory/markdown-store.ts\t129\t0\twriteEpisode\t16\t15",
+            "cognitive\tlib/memory/markdown-store.ts\t325\t0\twritePlaybook\t19\t15",
+            "cognitive\tlib/memory/retirement-store.ts\t197\t15\trestore\t17\t15",
+            "cognitive\tlib/memory/retirement-store.ts\t989\t0\trecoverJournal\t25\t15",
+            "cognitive\tlib/skills/exporter.ts\t456\t0\tresolveCatalogue\t21\t15",
+            "cognitive\tlib/skills/exporter.ts\t882\t0\tapplyEvaluatedGroup\t32\t15",
+            "cognitive\tscripts/knowledge-surface-backfill.ts\t178\t7\trunKnowledgeSurfaceBackfill\t20\t15",
+            "cognitive\tscripts/knowledge-surface-backfill.ts\t516\t0\treadIndexedProposals\t16\t15",
+            "cognitive\tscripts/validate-harness-exports.ts\t1938\t2\t<arrow>\t20\t15",
+            "cognitive\ttests/harness-adapters/sync.test.ts\t2087\t0\tseededRecoveryFixture\t27\t15",
+            "cognitive\ttests/harness-adapters/sync.test.ts\t380\t93\t<arrow>\t43\t15",
+            "cognitive\ttests/memory/interface.test.ts\t2713\t0\tauditMigratedSeed\t39\t15",
+            "cognitive\ttests/memory/markdown-store.test.ts\t1171\t75\t<arrow>\t33\t15",
+            "cognitive\ttests/orchestration/chain-runner.test.ts\t2191\t81\t<arrow>\t27\t15"
+          ],
+          "identityDigest": "e158d5d2f454bfddeeec9957843e5217dc3a5f89685e768978908991ce079094"
+        }
+      },
+      {
+        "id": "after.complexity-crap.surface.1",
+        "source": {
+          "kind": "surface",
+          "tool": "analysis_complexity",
+          "arguments": {
+            "metric": "crap"
+          }
+        },
+        "outcome": {
+          "state": "completed-fail",
+          "count": 183,
+          "identities": [
+            "crap\tcli/drive/subcommand.ts\t1180\t0\tcreateRunSpec\t56.3\t30",
+            "crap\tcli/drive/subcommand.ts\t522\t0\tprepareTerminalResumeEpisodeIdentity\t49.5\t30",
+            "crap\tcli/drive/subcommand.ts\t569\t0\tprepareResume\t63.6\t30",
+            "crap\tcli/harness/subcommand.ts\t101\t13\t<arrow>\t43.1\t30",
+            "crap\tcli/main.ts\t220\t0\tnormalizeCliOptions\t37.1\t30",
+            "crap\tcli/memory/judgment-provider.ts\t151\t0\textractLatestAssistantText\t37.1\t30",
+            "crap\tcli/memory/judgment-provider.ts\t184\t0\tparseCorpusJudgmentOutput\t88\t30",
+            "crap\tcli/memory/judgment-provider.ts\t246\t0\tisJudgedProposal\t56.3\t30",
+            "crap\tcli/memory/judgment-provider.ts\t69\t13\tjudge\t37.1\t30",
+            "crap\tcli/run/subcommand.ts\t217\t0\trunChainCommand\t31.6\t30",
+            "crap\tcli/session.ts\t90\t0\ttoResourceLoaderOptions\t71.3\t30",
+            "crap\tcli/sessions/subcommand.ts\t349\t0\tlistAction\t43.1\t30",
+            "crap\tcli/skills/subcommand.ts\t212\t10\t<arrow>\t31.6\t30",
+            "crap\tcli/tasks/commands/create.ts\t196\t0\thasPerTaskOptions\t43.1\t30",
+            "crap\tcli/update/subcommand.ts\t64\t0\tupdateOne\t37.1\t30",
+            "crap\tdomains/shared/extensions/orchestration/spawn-tool.ts\t524\t20\tresolved\t37.1\t30",
+            "crap\tdomains/shared/extensions/orchestration/spawn-tool.ts\t634\t30\tcheckAuthorization\t43.1\t30",
+            "crap\tdomains/shared/extensions/plans/index.ts\t195\t11\texecute\t37.1\t30",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t1728\t0\tvalidateFallowEnvelopeSchema\t31.6\t30",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t1874\t0\tfindingLocations\t31.6\t30",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t2144\t0\tcapabilityArgs\t49.5\t30",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t2317\t0\treconcileVerdictEvidence\t43.1\t30",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t2418\t0\tauditFindings\t88\t30",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t438\t0\tdetectFallowSignal\t43.1\t30",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t711\t0\tvalidateSpawnPreconditions\t31.6\t30",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t830\t0\tprocessFailure\t43.1\t30",
+            "crap\tdomains/shared/extensions/project-tools/index.ts\t261\t0\ttraceTarget\t56.3\t30",
+            "crap\tdomains/shared/extensions/project-tools/index.ts\t535\t27\tdiscoverSnapshot\t37.1\t30",
+            "crap\tdomains/shared/extensions/tasks/index.ts\t254\t11\texecute\t43.1\t30",
+            "crap\tlib/agent-packages/codex-cli.ts\t122\t0\tsanitizeCodexArgs\t31.6\t30",
+            "crap\tlib/agent-packages/definition.ts\t55\t0\tvalidateAgentPackageDefinition\t31.6\t30",
+            "crap\tlib/architecture-map/config.ts\t143\t0\tbuildArchitectureMapConfig\t56.3\t30",
+            "crap\tlib/architecture-map/freshness.ts\t242\t0\tcollectSourceFiles\t43.1\t30",
+            "crap\tlib/architecture-map/generator.ts\t161\t0\tresolveModuleNarrative\t43.1\t30",
+            "crap\tlib/architecture-map/generator.ts\t324\t0\trenderStableRecord\t31.6\t30",
+            "crap\tlib/architecture-map/retrieval.ts\t342\t0\tcollectModuleResources\t31.6\t30",
+            "crap\tlib/architecture-map/store.ts\t147\t0\tvalidateBundlePath\t31.6\t30",
+            "crap\tlib/artifacts/plan-conformance.ts\t55\t0\tvalidateDecisionReferences\t37.1\t30",
+            "crap\tlib/domains/loader.ts\t99\t0\tloadSingleDomain\t37.1\t30",
+            "crap\tlib/domains/registry.ts\t55\t18\tresolveCapability\t31.6\t30",
+            "crap\tlib/driver/backends/env-args.ts\t32\t0\tsplitShellWords\t43.1\t30",
+            "crap\tlib/driver/drive-graph-runner.ts\t1005\t0\tblockingTaskIdsForPendingTasks\t63.6\t30",
+            "crap\tlib/driver/drive-graph-runner.ts\t360\t0\trecordClaimedDriveTerminalEpisode\t56.3\t30",
+            "crap\tlib/driver/drive-graph-runner.ts\t616\t0\ttoDriverResult\t63.6\t30",
+            "crap\tlib/driver/drive-scheduler-backend.ts\t197\t0\trunDriveTaskAttempt\t37.1\t30",
+            "crap\tlib/driver/durable-steps.ts\t617\t0\tupsertTaskStep\t79.4\t30",
+            "crap\tlib/driver/durable-steps.ts\t648\t0\tupsertFinalizerStep\t88\t30",
+            "crap\tlib/driver/durable-steps.ts\t69\t15\tproject\t56.3\t30",
+            "crap\tlib/driver/event-stream.ts\t598\t24\tprocessContent\t71.3\t30",
+            "crap\tlib/driver/report-parser.ts\t50\t0\ttoReport\t37.1\t30",
+            "crap\tlib/driver/run-one-task.ts\t100\t0\trunTaskAttempt\t43.1\t30",
+            "crap\tlib/driver/run-state.ts\t263\t0\tisDriveTerminalRecord\t37.1\t30",
+            "crap\tlib/driver/run-state.ts\t322\t0\tisStampedRunCompletion\t31.6\t30",
+            "crap\tlib/driver/shell-command-finalizer.ts\t157\t0\trunTaskStatusFinalizer\t43.1\t30",
+            "crap\tlib/durable-runtime/file-store.ts\t833\t0\tisStoredEvent\t63.6\t30",
+            "crap\tlib/durable-runtime/file-store.ts\t853\t0\tisStoredDiagnostic\t49.5\t30",
+            "crap\tlib/durable-runtime/file-store.ts\t887\t0\tisRunGraphStepLike\t88\t30",
+            "crap\tlib/durable-runtime/file-store.ts\t923\t0\tisSchedulerStateLike\t49.5\t30",
+            "crap\tlib/durable-runtime/scheduler.ts\t1519\t0\tisStepResult\t31.6\t30",
+            "crap\tlib/durable-runtime/scheduler.ts\t1687\t0\tfinalizeRun\t63.6\t30",
+            "crap\tlib/durable-runtime/scheduler.ts\t653\t0\tblockPotentiallyCommittedRunningSteps\t31.6\t30",
+            "crap\tlib/extensions/agent-memory/index.ts\t720\t0\trenderRememberWithCapture\t43.1\t30",
+            "crap\tlib/extensions/agent-memory/index.ts\t778\t0\trenderRememberResult\t56.3\t30",
+            "crap\tlib/extensions/architecture-memory/index.ts\t211\t0\trenderArchitectureMapResult\t63.6\t30",
+            "crap\tlib/extensions/knowledge-surface/knowledge-tools.ts\t330\t0\tparseKnowledgeProposalRequest\t31.6\t30",
+            "crap\tlib/extensions/knowledge-surface/knowledge-tools.ts\t71\t8\t<arrow>\t31.6\t30",
+            "crap\tlib/harness-adapters/inventory.ts\t138\t0\tescapeInventoryCell\t43.1\t30",
+            "crap\tlib/harness-adapters/provenance.ts\t530\t0\tisOwnerIdentity\t31.6\t30",
+            "crap\tlib/harness-adapters/render.ts\t322\t0\treadRegisteredSource\t31.6\t30",
+            "crap\tlib/harness-adapters/render.ts\t465\t0\tvalidateGeneratedShape\t43.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t175\t2\t<arrow>\t31.6\t30",
+            "crap\tlib/harness-adapters/sync.ts\t1828\t2\t<arrow>\t37.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t1947\t0\tassertLockedCommandPairMatchesEvidence\t43.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t2013\t0\tvalidateCompleteCommandEvidence\t37.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t2180\t0\treadCommandMigrationEvidence\t31.6\t30",
+            "crap\tlib/harness-adapters/sync.ts\t2440\t7\tapplySyncPlanInTransaction\t34.2\t30",
+            "crap\tlib/harness-adapters/sync.ts\t2955\t19\t<arrow>\t37.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t3000\t19\t<arrow>\t31.6\t30",
+            "crap\tlib/harness-adapters/sync.ts\t3016\t0\trollbackJournal\t49.5\t30",
+            "crap\tlib/harness-adapters/sync.ts\t3165\t0\tparseOwnerRootJournal\t37.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t3229\t0\tisOwnerRootJournal\t56.3\t30",
+            "crap\tlib/harness-adapters/sync.ts\t3372\t0\tverifyEvidenceReceipt\t37.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t3400\t0\tcanonicalizeOwnerRootReadOnly\t43.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t3758\t0\tclassifyInventoryRow\t63.6\t30",
+            "crap\tlib/harness-adapters/sync.ts\t3875\t0\tplanTransfers\t49.5\t30",
+            "crap\tlib/harness-adapters/sync.ts\t3969\t0\tplanForgets\t43.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t4233\t0\tvalidateRequest\t49.5\t30",
+            "crap\tlib/harness-adapters/sync.ts\t635\t0\tvalidateOwnerTarget\t37.1\t30",
+            "crap\tlib/harness-adapters/sync.ts\t742\t0\tdesiredDifference\t63.6\t30",
+            "crap\tlib/harness-adapters/sync.ts\t810\t0\tobserveRecordedTarget\t31.6\t30",
+            "crap\tlib/harness-adapters/sync.ts\t905\t0\tgeneratedWrapperMatches\t37.1\t30",
+            "crap\tlib/memory/consolidation-proposals.ts\t316\t0\tparseResolutionHistory\t43.1\t30",
+            "crap\tlib/memory/consolidation-proposals.ts\t751\t0\tisEvidenceRef\t56.3\t30",
+            "crap\tlib/memory/consolidation-receipts.ts\t291\t0\tnormalizeReceipt\t37.1\t30",
+            "crap\tlib/memory/consolidation-receipts.ts\t335\t0\tparseReceipt\t49.5\t30",
+            "crap\tlib/memory/consolidation-receipts.ts\t408\t0\tisEvidenceRef\t49.5\t30",
+            "crap\tlib/memory/consolidation-sources.ts\t204\t15\tcollect\t63.6\t30",
+            "crap\tlib/memory/consolidation-sources.ts\t479\t16\tfinalize\t79.4\t30",
+            "crap\tlib/memory/consolidation-sources.ts\t610\t0\trecoverEpisodePruneJournal\t43.1\t30",
+            "crap\tlib/memory/durable-files.ts\t233\t0\tdurableRestore\t37.1\t30",
+            "crap\tlib/memory/episodic-records.ts\t157\t0\tvalidateEvent\t56.3\t30",
+            "crap\tlib/memory/knowledge-records.ts\t142\t7\tparseHumanKnowledgeRecord\t40.4\t30",
+            "crap\tlib/memory/knowledge-records.ts\t249\t0\tnormalizeRetireWhen\t88\t30",
+            "crap\tlib/memory/knowledge-store.ts\t465\t0\tcollectKnowledgeFiles\t56.3\t30",
+            "crap\tlib/memory/knowledge-store.ts\t507\t0\tscanKnowledgeFile\t56.3\t30",
+            "crap\tlib/memory/knowledge-store.ts\t676\t24\tacceptBodyLine\t43.1\t30",
+            "crap\tlib/memory/knowledge-store.ts\t694\t20\tacceptBody\t37.1\t30",
+            "crap\tlib/memory/knowledge-store.ts\t768\t0\tknowledgeFrontmatterEnd\t37.1\t30",
+            "crap\tlib/memory/living-memory.ts\t1403\t0\tobserveDeterministicRecords\t71.3\t30",
+            "crap\tlib/memory/living-memory.ts\t1705\t0\tcollectInventoryMarkdown\t79.4\t30",
+            "crap\tlib/memory/living-memory.ts\t1830\t0\textractInventoryTargets\t37.1\t30",
+            "crap\tlib/memory/living-memory.ts\t1932\t0\tcitationReferences\t49.5\t30",
+            "crap\tlib/memory/living-memory.ts\t2078\t0\tisPathShaped\t37.1\t30",
+            "crap\tlib/memory/living-memory.ts\t2138\t0\tretireWhenFromMetadata\t63.6\t30",
+            "crap\tlib/memory/living-memory.ts\t2266\t0\tvalidateJudgmentOutput\t31.6\t30",
+            "crap\tlib/memory/living-memory.ts\t2435\t0\tvalidateProposal\t43.1\t30",
+            "crap\tlib/memory/living-memory.ts\t862\t8\t<arrow>\t31.6\t30",
+            "crap\tlib/memory/markdown-store.ts\t129\t0\twriteEpisode\t37.1\t30",
+            "crap\tlib/memory/markdown-store.ts\t241\t0\twriteProfile\t43.1\t30",
+            "crap\tlib/memory/markdown-store.ts\t325\t0\twritePlaybook\t56.3\t30",
+            "crap\tlib/memory/retirement-receipts.ts\t539\t0\tparseRetiredEvent\t97\t30",
+            "crap\tlib/memory/retirement-store.ts\t1300\t0\tisRetirementJournal\t49.5\t30",
+            "crap\tlib/memory/retirement-store.ts\t1324\t22\t<arrow>\t63.6\t30",
+            "crap\tlib/memory/retirement-store.ts\t197\t15\trestore\t63.6\t30",
+            "crap\tlib/memory/retirement-store.ts\t273\t0\trestoreUnderLock\t56.3\t30",
+            "crap\tlib/memory/retirement-store.ts\t448\t0\tpreviewRetirements\t31.6\t30",
+            "crap\tlib/memory/retirement-store.ts\t989\t0\trecoverJournal\t63.6\t30",
+            "crap\tlib/orchestration/chain-event-adapter.ts\t679\t0\tchainTopology\t31.6\t30",
+            "crap\tlib/orchestration/chain-event-adapter.ts\t771\t0\tisSpawnEvent\t71.3\t30",
+            "crap\tlib/orchestration/chain-parser.ts\t61\t0\tresolveStage\t31.6\t30",
+            "crap\tlib/orchestration/chain-profiler.ts\t99\t12\thandleEvent\t79.4\t30",
+            "crap\tlib/orchestration/chain-runner.ts\t117\t0\tevaluateDefaultCompletionState\t31.6\t30",
+            "crap\tlib/orchestration/chain-runner.ts\t1297\t0\tprepareStageExecution\t31.6\t30",
+            "crap\tlib/orchestration/chain-runner.ts\t1448\t0\trunLoopStage\t43.1\t30",
+            "crap\tlib/orchestration/durable-chain-runner.ts\t250\t0\texecuteChainStep\t43.1\t30",
+            "crap\tlib/orchestration/durable-chain-runner.ts\t468\t0\treadPersistedPlanReview\t37.1\t30",
+            "crap\tlib/plans/plan-manager.ts\t196\t31\tupdatePlanLocked\t31.6\t30",
+            "crap\tlib/plans/review-rounds.ts\t349\t0\treadReviewEntries\t37.1\t30",
+            "crap\tlib/plans/review-rounds.ts\t522\t0\tparseFinding\t56.3\t30",
+            "crap\tlib/runtime.ts\t125\t20\tcreate\t31.6\t30",
+            "crap\tlib/sessions/session-store.ts\t63\t0\textractAssistantParts\t43.1\t30",
+            "crap\tlib/skills/exporter.ts\t456\t0\tresolveCatalogue\t31.6\t30",
+            "crap\tlib/skills/exporter.ts\t882\t0\tapplyEvaluatedGroup\t71.3\t30",
+            "crap\tlib/tasks/task-parser.ts\t183\t0\tparseAcceptanceCriteria\t31.6\t30",
+            "crap\tscripts/check-reachability.ts\t70\t0\townerLive\t90\t30",
+            "crap\tscripts/knowledge-surface-backfill.ts\t516\t0\treadIndexedProposals\t56.3\t30",
+            "crap\tscripts/knowledge-surface-backfill.ts\t599\t0\tvalidateSlugProposals\t31.6\t30",
+            "crap\tscripts/probe-census.ts\t105\t15\tvisit\t56\t30",
+            "crap\tscripts/probe-census.ts\t131\t0\tcensus\t30\t30",
+            "crap\tscripts/probe-census.ts\t27\t0\tresolveImport\t42\t30",
+            "crap\tscripts/probe-census.ts\t40\t7\t<arrow>\t30\t30",
+            "crap\tscripts/probe-census.ts\t46\t0\tproductionReach\t56\t30",
+            "crap\tscripts/probe-census.ts\t68\t0\tadmit\t72\t30",
+            "crap\tscripts/probe-census.ts\t89\t0\tisDeclarationCallee\t42\t30",
+            "crap\tscripts/validate-harness-exports.ts\t1473\t2\t<arrow>\t31.6\t30",
+            "crap\tscripts/validate-harness-exports.ts\t1652\t0\tmakeInstalledExternalBundleEvidence\t37.1\t30",
+            "crap\tscripts/validate-harness-exports.ts\t1848\t21\t<arrow>\t31.6\t30",
+            "crap\tscripts/validate-harness-exports.ts\t1938\t2\t<arrow>\t49.5\t30",
+            "crap\tscripts/validate-harness-exports.ts\t2325\t0\tassertProofsMatchEvidence\t31.6\t30",
+            "crap\ttests/cli/drive/run.test.ts\t1216\t81\t<arrow>\t31.6\t30",
+            "crap\ttests/cli/drive/run.test.ts\t1523\t97\t<arrow>\t37.1\t30",
+            "crap\ttests/cli/drive/run.test.ts\t478\t87\t<arrow>\t31.6\t30",
+            "crap\ttests/driver/driver-durable-steps.test.ts\t288\t76\t<arrow>\t56.3\t30",
+            "crap\ttests/extensions/project-tools-fallow.test.ts\t2848\t81\t<arrow>\t31.6\t30",
+            "crap\ttests/extensions/project-tools-fallow.test.ts\t409\t49\texecuteProcess\t31.6\t30",
+            "crap\ttests/extensions/project-tools-fallow.test.ts\t445\t46\tfixture\t37.1\t30",
+            "crap\ttests/harness-adapters/provenance.test.ts\t1119\t1\twalk\t31.6\t30",
+            "crap\ttests/harness-adapters/sync.test.ts\t146\t92\t<arrow>\t49.5\t30",
+            "crap\ttests/harness-adapters/sync.test.ts\t2087\t0\tseededRecoveryFixture\t63.6\t30",
+            "crap\ttests/harness-adapters/sync.test.ts\t380\t93\t<arrow>\t299.6\t30",
+            "crap\ttests/helpers/domain-package-fixture.test.ts\t12\t80\t<arrow>\t31.6\t30",
+            "crap\ttests/helpers/packages.ts\t208\t0\twriteSyntheticAgents\t43.1\t30",
+            "crap\ttests/memory/interface.test.ts\t2273\t81\t<arrow>\t43.1\t30",
+            "crap\ttests/memory/interface.test.ts\t2713\t0\tauditMigratedSeed\t160\t30",
+            "crap\ttests/memory/interface.test.ts\t2735\t27\tlocateDestination\t49.5\t30",
+            "crap\ttests/memory/interface.test.ts\t780\t92\t<arrow>\t37.1\t30",
+            "crap\ttests/memory/living-memory.test.ts\t1837\t81\t<arrow>\t31.6\t30",
+            "crap\ttests/memory/living-memory.test.ts\t2853\t90\t<arrow>\t31.6\t30",
+            "crap\ttests/memory/markdown-store.test.ts\t1171\t75\t<arrow>\t106.4\t30",
+            "crap\ttests/orchestration/chain-runner.test.ts\t2191\t81\t<arrow>\t126.5\t30",
+            "crap\ttests/orchestration/chain-runner.test.ts\t2655\t98\t<arrow>\t79.4\t30",
+            "crap\ttests/orchestration/chain-runner.test.ts\t3906\t68\t<arrow>\t31.6\t30",
+            "crap\ttests/tasks/task-manager-concurrency.test.ts\t76\t87\t<arrow>\t37.1\t30"
+          ],
+          "identityDigest": "2757a44c2471cffa9758d84e041b5702176c6b2152cfca77ffdfc3cafeffa9b3"
+        }
+      },
+      {
+        "id": "after.complexity-all.diagnostic.1",
+        "source": {
+          "kind": "direct",
+          "label": "diagnostic",
+          "executable": "fallow",
+          "args": [
+            "health",
+            "--complexity",
+            "--format",
+            "json",
+            "--quiet",
+            "--no-cache"
+          ]
+        },
+        "outcome": {
+          "state": "completed-fail",
+          "count": 192,
+          "identities": [
+            "all\tlib/harness-adapters/sync.ts\t2440\t7\tapplySyncPlanInTransaction\t31\t34\t34.2",
+            "all\tlib/memory/knowledge-records.ts\t142\t7\tparseHumanKnowledgeRecord\t36\t33\t40.4",
+            "all\ttests/harness-adapters/sync.test.ts\t380\t93\t<arrow>\t35\t43\t299.6",
+            "all\ttests/memory/interface.test.ts\t2713\t0\tauditMigratedSeed\t25\t39\t160",
+            "all\ttests/orchestration/chain-runner.test.ts\t2191\t81\t<arrow>\t22\t27\t126.5",
+            "both\tcli/harness/subcommand.ts\t181\t7\tparseSyncRequest\t23\t20\t",
+            "both\tlib/harness-adapters/sync.ts\t1221\t7\trunClaudeCommandPairBootstrap\t27\t29\t",
+            "both\tlib/memory/knowledge-records.ts\t351\t7\tnormalizeKnowledgeProposal\t25\t17\t",
+            "cognitive\tlib/analysis/binding-resolver.ts\t150\t7\tresolveAnalysisRequest\t16\t21\t",
+            "cognitive\tlib/driver/drive-finalization.ts\t172\t7\ttransitionDriveTaskStatus\t13\t21\t",
+            "cognitive\tlib/memory/injection-budget.ts\t64\t0\tfairCaps\t8\t16\t",
+            "cognitive\tlib/memory/living-memory.ts\t1495\t7\tinspectLivingMemoryCitationInventory\t20\t29\t",
+            "cognitive\tscripts/knowledge-surface-backfill.ts\t178\t7\trunKnowledgeSurfaceBackfill\t15\t20\t",
+            "cognitive_crap\tcli/memory/judgment-provider.ts\t151\t0\textractLatestAssistantText\t11\t17\t37.1",
+            "cognitive_crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t2418\t0\tauditFindings\t18\t17\t88",
+            "cognitive_crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t830\t0\tprocessFailure\t12\t16\t43.1",
+            "cognitive_crap\tlib/agent-packages/codex-cli.ts\t122\t0\tsanitizeCodexArgs\t10\t17\t31.6",
+            "cognitive_crap\tlib/driver/backends/env-args.ts\t32\t0\tsplitShellWords\t12\t19\t43.1",
+            "cognitive_crap\tlib/driver/drive-graph-runner.ts\t360\t0\trecordClaimedDriveTerminalEpisode\t14\t16\t56.3",
+            "cognitive_crap\tlib/driver/drive-graph-runner.ts\t616\t0\ttoDriverResult\t15\t17\t63.6",
+            "cognitive_crap\tlib/driver/event-stream.ts\t598\t24\tprocessContent\t16\t30\t71.3",
+            "cognitive_crap\tlib/extensions/agent-memory/index.ts\t778\t0\trenderRememberResult\t14\t16\t56.3",
+            "cognitive_crap\tlib/harness-adapters/sync.ts\t1828\t2\t<arrow>\t11\t16\t37.1",
+            "cognitive_crap\tlib/harness-adapters/sync.ts\t3016\t0\trollbackJournal\t13\t17\t49.5",
+            "cognitive_crap\tlib/harness-adapters/sync.ts\t3758\t0\tclassifyInventoryRow\t15\t17\t63.6",
+            "cognitive_crap\tlib/harness-adapters/sync.ts\t3875\t0\tplanTransfers\t13\t16\t49.5",
+            "cognitive_crap\tlib/harness-adapters/sync.ts\t635\t0\tvalidateOwnerTarget\t11\t17\t37.1",
+            "cognitive_crap\tlib/memory/consolidation-sources.ts\t204\t15\tcollect\t15\t22\t63.6",
+            "cognitive_crap\tlib/memory/consolidation-sources.ts\t479\t16\tfinalize\t17\t25\t79.4",
+            "cognitive_crap\tlib/memory/durable-files.ts\t233\t0\tdurableRestore\t11\t17\t37.1",
+            "cognitive_crap\tlib/memory/knowledge-store.ts\t465\t0\tcollectKnowledgeFiles\t14\t16\t56.3",
+            "cognitive_crap\tlib/memory/knowledge-store.ts\t507\t0\tscanKnowledgeFile\t14\t18\t56.3",
+            "cognitive_crap\tlib/memory/living-memory.ts\t1403\t0\tobserveDeterministicRecords\t16\t22\t71.3",
+            "cognitive_crap\tlib/memory/living-memory.ts\t1705\t0\tcollectInventoryMarkdown\t17\t21\t79.4",
+            "cognitive_crap\tlib/memory/living-memory.ts\t1932\t0\tcitationReferences\t13\t21\t49.5",
+            "cognitive_crap\tlib/memory/markdown-store.ts\t129\t0\twriteEpisode\t11\t16\t37.1",
+            "cognitive_crap\tlib/memory/markdown-store.ts\t325\t0\twritePlaybook\t14\t19\t56.3",
+            "cognitive_crap\tlib/memory/retirement-store.ts\t197\t15\trestore\t15\t17\t63.6",
+            "cognitive_crap\tlib/memory/retirement-store.ts\t989\t0\trecoverJournal\t15\t25\t63.6",
+            "cognitive_crap\tlib/skills/exporter.ts\t456\t0\tresolveCatalogue\t10\t21\t31.6",
+            "cognitive_crap\tlib/skills/exporter.ts\t882\t0\tapplyEvaluatedGroup\t16\t32\t71.3",
+            "cognitive_crap\tscripts/knowledge-surface-backfill.ts\t516\t0\treadIndexedProposals\t14\t16\t56.3",
+            "cognitive_crap\tscripts/validate-harness-exports.ts\t1938\t2\t<arrow>\t13\t20\t49.5",
+            "cognitive_crap\ttests/harness-adapters/sync.test.ts\t2087\t0\tseededRecoveryFixture\t15\t27\t63.6",
+            "cognitive_crap\ttests/memory/markdown-store.test.ts\t1171\t75\t<arrow>\t20\t33\t106.4",
+            "crap\tcli/drive/subcommand.ts\t1180\t0\tcreateRunSpec\t14\t11\t56.3",
+            "crap\tcli/drive/subcommand.ts\t522\t0\tprepareTerminalResumeEpisodeIdentity\t13\t12\t49.5",
+            "crap\tcli/drive/subcommand.ts\t569\t0\tprepareResume\t15\t14\t63.6",
+            "crap\tcli/harness/subcommand.ts\t101\t13\t<arrow>\t12\t12\t43.1",
+            "crap\tcli/main.ts\t220\t0\tnormalizeCliOptions\t11\t10\t37.1",
+            "crap\tcli/memory/judgment-provider.ts\t184\t0\tparseCorpusJudgmentOutput\t18\t14\t88",
+            "crap\tcli/memory/judgment-provider.ts\t246\t0\tisJudgedProposal\t14\t7\t56.3",
+            "crap\tcli/memory/judgment-provider.ts\t69\t13\tjudge\t11\t8\t37.1",
+            "crap\tcli/run/subcommand.ts\t217\t0\trunChainCommand\t10\t9\t31.6",
+            "crap\tcli/session.ts\t90\t0\ttoResourceLoaderOptions\t16\t12\t71.3",
+            "crap\tcli/sessions/subcommand.ts\t349\t0\tlistAction\t12\t15\t43.1",
+            "crap\tcli/skills/subcommand.ts\t212\t10\t<arrow>\t10\t11\t31.6",
+            "crap\tcli/tasks/commands/create.ts\t196\t0\thasPerTaskOptions\t12\t11\t43.1",
+            "crap\tcli/update/subcommand.ts\t64\t0\tupdateOne\t11\t14\t37.1",
+            "crap\tdomains/shared/extensions/orchestration/spawn-tool.ts\t524\t20\tresolved\t11\t7\t37.1",
+            "crap\tdomains/shared/extensions/orchestration/spawn-tool.ts\t634\t30\tcheckAuthorization\t12\t9\t43.1",
+            "crap\tdomains/shared/extensions/plans/index.ts\t195\t11\texecute\t11\t7\t37.1",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t1728\t0\tvalidateFallowEnvelopeSchema\t10\t8\t31.6",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t1874\t0\tfindingLocations\t10\t8\t31.6",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t2144\t0\tcapabilityArgs\t13\t10\t49.5",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t2317\t0\treconcileVerdictEvidence\t12\t12\t43.1",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t438\t0\tdetectFallowSignal\t12\t10\t43.1",
+            "crap\tdomains/shared/extensions/project-tools/fallow-provider.ts\t711\t0\tvalidateSpawnPreconditions\t10\t8\t31.6",
+            "crap\tdomains/shared/extensions/project-tools/index.ts\t261\t0\ttraceTarget\t14\t15\t56.3",
+            "crap\tdomains/shared/extensions/project-tools/index.ts\t535\t27\tdiscoverSnapshot\t11\t9\t37.1",
+            "crap\tdomains/shared/extensions/tasks/index.ts\t254\t11\texecute\t12\t14\t43.1",
+            "crap\tlib/agent-packages/definition.ts\t55\t0\tvalidateAgentPackageDefinition\t10\t10\t31.6",
+            "crap\tlib/architecture-map/config.ts\t143\t0\tbuildArchitectureMapConfig\t14\t5\t56.3",
+            "crap\tlib/architecture-map/freshness.ts\t242\t0\tcollectSourceFiles\t12\t14\t43.1",
+            "crap\tlib/architecture-map/generator.ts\t161\t0\tresolveModuleNarrative\t12\t13\t43.1",
+            "crap\tlib/architecture-map/generator.ts\t324\t0\trenderStableRecord\t10\t6\t31.6",
+            "crap\tlib/architecture-map/retrieval.ts\t342\t0\tcollectModuleResources\t10\t14\t31.6",
+            "crap\tlib/architecture-map/store.ts\t147\t0\tvalidateBundlePath\t10\t4\t31.6",
+            "crap\tlib/artifacts/plan-conformance.ts\t55\t0\tvalidateDecisionReferences\t11\t12\t37.1",
+            "crap\tlib/domains/loader.ts\t99\t0\tloadSingleDomain\t11\t14\t37.1",
+            "crap\tlib/domains/registry.ts\t55\t18\tresolveCapability\t10\t13\t31.6",
+            "crap\tlib/driver/drive-graph-runner.ts\t1005\t0\tblockingTaskIdsForPendingTasks\t15\t13\t63.6",
+            "crap\tlib/driver/drive-scheduler-backend.ts\t197\t0\trunDriveTaskAttempt\t11\t10\t37.1",
+            "crap\tlib/driver/durable-steps.ts\t617\t0\tupsertTaskStep\t17\t7\t79.4",
+            "crap\tlib/driver/durable-steps.ts\t648\t0\tupsertFinalizerStep\t18\t8\t88",
+            "crap\tlib/driver/durable-steps.ts\t69\t15\tproject\t14\t4\t56.3",
+            "crap\tlib/driver/report-parser.ts\t50\t0\ttoReport\t11\t12\t37.1",
+            "crap\tlib/driver/run-one-task.ts\t100\t0\trunTaskAttempt\t12\t12\t43.1",
+            "crap\tlib/driver/run-state.ts\t263\t0\tisDriveTerminalRecord\t11\t4\t37.1",
+            "crap\tlib/driver/run-state.ts\t322\t0\tisStampedRunCompletion\t10\t3\t31.6",
+            "crap\tlib/driver/shell-command-finalizer.ts\t157\t0\trunTaskStatusFinalizer\t12\t13\t43.1",
+            "crap\tlib/durable-runtime/file-store.ts\t833\t0\tisStoredEvent\t15\t1\t63.6",
+            "crap\tlib/durable-runtime/file-store.ts\t853\t0\tisStoredDiagnostic\t13\t3\t49.5",
+            "crap\tlib/durable-runtime/file-store.ts\t887\t0\tisRunGraphStepLike\t18\t1\t88",
+            "crap\tlib/durable-runtime/file-store.ts\t923\t0\tisSchedulerStateLike\t13\t1\t49.5",
+            "crap\tlib/durable-runtime/scheduler.ts\t1519\t0\tisStepResult\t10\t4\t31.6",
+            "crap\tlib/durable-runtime/scheduler.ts\t1687\t0\tfinalizeRun\t15\t12\t63.6",
+            "crap\tlib/durable-runtime/scheduler.ts\t653\t0\tblockPotentiallyCommittedRunningSteps\t10\t14\t31.6",
+            "crap\tlib/extensions/agent-memory/index.ts\t720\t0\trenderRememberWithCapture\t12\t8\t43.1",
+            "crap\tlib/extensions/architecture-memory/index.ts\t211\t0\trenderArchitectureMapResult\t15\t10\t63.6",
+            "crap\tlib/extensions/knowledge-surface/knowledge-tools.ts\t330\t0\tparseKnowledgeProposalRequest\t10\t9\t31.6",
+            "crap\tlib/extensions/knowledge-surface/knowledge-tools.ts\t71\t8\t<arrow>\t10\t11\t31.6",
+            "crap\tlib/harness-adapters/inventory.ts\t138\t0\tescapeInventoryCell\t12\t8\t43.1",
+            "crap\tlib/harness-adapters/provenance.ts\t530\t0\tisOwnerIdentity\t10\t4\t31.6",
+            "crap\tlib/harness-adapters/render.ts\t322\t0\treadRegisteredSource\t10\t10\t31.6",
+            "crap\tlib/harness-adapters/render.ts\t465\t0\tvalidateGeneratedShape\t12\t14\t43.1",
+            "crap\tlib/harness-adapters/sync.ts\t175\t2\t<arrow>\t10\t6\t31.6",
+            "crap\tlib/harness-adapters/sync.ts\t1947\t0\tassertLockedCommandPairMatchesEvidence\t12\t4\t43.1",
+            "crap\tlib/harness-adapters/sync.ts\t2013\t0\tvalidateCompleteCommandEvidence\t11\t8\t37.1",
+            "crap\tlib/harness-adapters/sync.ts\t2180\t0\treadCommandMigrationEvidence\t10\t6\t31.6",
+            "crap\tlib/harness-adapters/sync.ts\t2955\t19\t<arrow>\t11\t10\t37.1",
+            "crap\tlib/harness-adapters/sync.ts\t3000\t19\t<arrow>\t10\t9\t31.6",
+            "crap\tlib/harness-adapters/sync.ts\t3165\t0\tparseOwnerRootJournal\t11\t12\t37.1",
+            "crap\tlib/harness-adapters/sync.ts\t3229\t0\tisOwnerRootJournal\t14\t3\t56.3",
+            "crap\tlib/harness-adapters/sync.ts\t3372\t0\tverifyEvidenceReceipt\t11\t5\t37.1",
+            "crap\tlib/harness-adapters/sync.ts\t3400\t0\tcanonicalizeOwnerRootReadOnly\t12\t13\t43.1",
+            "crap\tlib/harness-adapters/sync.ts\t3969\t0\tplanForgets\t12\t12\t43.1",
+            "crap\tlib/harness-adapters/sync.ts\t4233\t0\tvalidateRequest\t13\t10\t49.5",
+            "crap\tlib/harness-adapters/sync.ts\t742\t0\tdesiredDifference\t15\t14\t63.6",
+            "crap\tlib/harness-adapters/sync.ts\t810\t0\tobserveRecordedTarget\t10\t12\t31.6",
+            "crap\tlib/harness-adapters/sync.ts\t905\t0\tgeneratedWrapperMatches\t11\t14\t37.1",
+            "crap\tlib/memory/consolidation-proposals.ts\t316\t0\tparseResolutionHistory\t12\t3\t43.1",
+            "crap\tlib/memory/consolidation-proposals.ts\t751\t0\tisEvidenceRef\t14\t5\t56.3",
+            "crap\tlib/memory/consolidation-receipts.ts\t291\t0\tnormalizeReceipt\t11\t10\t37.1",
+            "crap\tlib/memory/consolidation-receipts.ts\t335\t0\tparseReceipt\t13\t7\t49.5",
+            "crap\tlib/memory/consolidation-receipts.ts\t408\t0\tisEvidenceRef\t13\t4\t49.5",
+            "crap\tlib/memory/consolidation-sources.ts\t610\t0\trecoverEpisodePruneJournal\t12\t11\t43.1",
+            "crap\tlib/memory/episodic-records.ts\t157\t0\tvalidateEvent\t14\t13\t56.3",
+            "crap\tlib/memory/knowledge-records.ts\t249\t0\tnormalizeRetireWhen\t18\t11\t88",
+            "crap\tlib/memory/knowledge-store.ts\t676\t24\tacceptBodyLine\t12\t13\t43.1",
+            "crap\tlib/memory/knowledge-store.ts\t694\t20\tacceptBody\t11\t12\t37.1",
+            "crap\tlib/memory/knowledge-store.ts\t768\t0\tknowledgeFrontmatterEnd\t11\t10\t37.1",
+            "crap\tlib/memory/living-memory.ts\t1830\t0\textractInventoryTargets\t11\t15\t37.1",
+            "crap\tlib/memory/living-memory.ts\t2078\t0\tisPathShaped\t11\t4\t37.1",
+            "crap\tlib/memory/living-memory.ts\t2138\t0\tretireWhenFromMetadata\t15\t9\t63.6",
+            "crap\tlib/memory/living-memory.ts\t2266\t0\tvalidateJudgmentOutput\t10\t9\t31.6",
+            "crap\tlib/memory/living-memory.ts\t2435\t0\tvalidateProposal\t12\t12\t43.1",
+            "crap\tlib/memory/living-memory.ts\t862\t8\t<arrow>\t10\t10\t31.6",
+            "crap\tlib/memory/markdown-store.ts\t241\t0\twriteProfile\t12\t14\t43.1",
+            "crap\tlib/memory/retirement-receipts.ts\t539\t0\tparseRetiredEvent\t19\t12\t97",
+            "crap\tlib/memory/retirement-store.ts\t1300\t0\tisRetirementJournal\t13\t4\t49.5",
+            "crap\tlib/memory/retirement-store.ts\t1324\t22\t<arrow>\t15\t2\t63.6",
+            "crap\tlib/memory/retirement-store.ts\t273\t0\trestoreUnderLock\t14\t13\t56.3",
+            "crap\tlib/memory/retirement-store.ts\t448\t0\tpreviewRetirements\t10\t7\t31.6",
+            "crap\tlib/orchestration/chain-event-adapter.ts\t679\t0\tchainTopology\t10\t13\t31.6",
+            "crap\tlib/orchestration/chain-event-adapter.ts\t771\t0\tisSpawnEvent\t16\t7\t71.3",
+            "crap\tlib/orchestration/chain-parser.ts\t61\t0\tresolveStage\t10\t8\t31.6",
+            "crap\tlib/orchestration/chain-profiler.ts\t99\t12\thandleEvent\t17\t9\t79.4",
+            "crap\tlib/orchestration/chain-runner.ts\t117\t0\tevaluateDefaultCompletionState\t10\t12\t31.6",
+            "crap\tlib/orchestration/chain-runner.ts\t1297\t0\tprepareStageExecution\t10\t8\t31.6",
+            "crap\tlib/orchestration/chain-runner.ts\t1448\t0\trunLoopStage\t12\t11\t43.1",
+            "crap\tlib/orchestration/durable-chain-runner.ts\t250\t0\texecuteChainStep\t12\t11\t43.1",
+            "crap\tlib/orchestration/durable-chain-runner.ts\t468\t0\treadPersistedPlanReview\t11\t14\t37.1",
+            "crap\tlib/plans/plan-manager.ts\t196\t31\tupdatePlanLocked\t10\t8\t31.6",
+            "crap\tlib/plans/review-rounds.ts\t349\t0\treadReviewEntries\t11\t15\t37.1",
+            "crap\tlib/plans/review-rounds.ts\t522\t0\tparseFinding\t14\t4\t56.3",
+            "crap\tlib/runtime.ts\t125\t20\tcreate\t10\t10\t31.6",
+            "crap\tlib/sessions/session-store.ts\t63\t0\textractAssistantParts\t12\t12\t43.1",
+            "crap\tlib/tasks/task-parser.ts\t183\t0\tparseAcceptanceCriteria\t10\t6\t31.6",
+            "crap\tscripts/check-reachability.ts\t70\t0\townerLive\t9\t12\t90",
+            "crap\tscripts/knowledge-surface-backfill.ts\t599\t0\tvalidateSlugProposals\t10\t12\t31.6",
+            "crap\tscripts/probe-census.ts\t105\t15\tvisit\t7\t4\t56",
+            "crap\tscripts/probe-census.ts\t131\t0\tcensus\t5\t6\t30",
+            "crap\tscripts/probe-census.ts\t27\t0\tresolveImport\t6\t6\t42",
+            "crap\tscripts/probe-census.ts\t40\t7\t<arrow>\t5\t1\t30",
+            "crap\tscripts/probe-census.ts\t46\t0\tproductionReach\t7\t11\t56",
+            "crap\tscripts/probe-census.ts\t68\t0\tadmit\t8\t8\t72",
+            "crap\tscripts/probe-census.ts\t89\t0\tisDeclarationCallee\t6\t5\t42",
+            "crap\tscripts/validate-harness-exports.ts\t1473\t2\t<arrow>\t10\t12\t31.6",
+            "crap\tscripts/validate-harness-exports.ts\t1652\t0\tmakeInstalledExternalBundleEvidence\t11\t2\t37.1",
+            "crap\tscripts/validate-harness-exports.ts\t1848\t21\t<arrow>\t10\t1\t31.6",
+            "crap\tscripts/validate-harness-exports.ts\t2325\t0\tassertProofsMatchEvidence\t10\t5\t31.6",
+            "crap\ttests/cli/drive/run.test.ts\t1216\t81\t<arrow>\t10\t3\t31.6",
+            "crap\ttests/cli/drive/run.test.ts\t1523\t97\t<arrow>\t11\t5\t37.1",
+            "crap\ttests/cli/drive/run.test.ts\t478\t87\t<arrow>\t10\t2\t31.6",
+            "crap\ttests/driver/driver-durable-steps.test.ts\t288\t76\t<arrow>\t14\t2\t56.3",
+            "crap\ttests/extensions/project-tools-fallow.test.ts\t2848\t81\t<arrow>\t10\t9\t31.6",
+            "crap\ttests/extensions/project-tools-fallow.test.ts\t409\t49\texecuteProcess\t10\t7\t31.6",
+            "crap\ttests/extensions/project-tools-fallow.test.ts\t445\t46\tfixture\t11\t3\t37.1",
+            "crap\ttests/harness-adapters/provenance.test.ts\t1119\t1\twalk\t10\t11\t31.6",
+            "crap\ttests/harness-adapters/sync.test.ts\t146\t92\t<arrow>\t13\t12\t49.5",
+            "crap\ttests/helpers/domain-package-fixture.test.ts\t12\t80\t<arrow>\t10\t1\t31.6",
+            "crap\ttests/helpers/packages.ts\t208\t0\twriteSyntheticAgents\t12\t11\t43.1",
+            "crap\ttests/memory/interface.test.ts\t2273\t81\t<arrow>\t12\t9\t43.1",
+            "crap\ttests/memory/interface.test.ts\t2735\t27\tlocateDestination\t13\t12\t49.5",
+            "crap\ttests/memory/interface.test.ts\t780\t92\t<arrow>\t11\t11\t37.1",
+            "crap\ttests/memory/living-memory.test.ts\t1837\t81\t<arrow>\t10\t8\t31.6",
+            "crap\ttests/memory/living-memory.test.ts\t2853\t90\t<arrow>\t10\t5\t31.6",
+            "crap\ttests/orchestration/chain-runner.test.ts\t2655\t98\t<arrow>\t17\t11\t79.4",
+            "crap\ttests/orchestration/chain-runner.test.ts\t3906\t68\t<arrow>\t10\t0\t31.6",
+            "crap\ttests/tasks/task-manager-concurrency.test.ts\t76\t87\t<arrow>\t11\t3\t37.1",
+            "cyclomatic\tlib/memory/knowledge-records.ts\t453\t7\tparseKnowledgeProposalOccupant\t24\t12\t"
+          ],
+          "identityDigest": "2f16bf07a204e05de16432d212621656a4ac8a913dbfdd1c2c890986e797368c"
+        },
+        "native": {
+          "exitCode": 1,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "payloadSha256": "e452bc6b43659e68f98b7e9259de2a49b5a7f2166a19ab8c0dd2399e3d49c03b"
+        }
+      },
+      {
+        "id": "after.boundary.surface.1",
         "source": {
           "kind": "surface",
           "tool": "analysis_boundaries",
@@ -4404,27 +4984,2456 @@
           "reason": "provider-not-configured",
           "identityDigest": "3870cdaf78cb24d4bf4e1f63afd2644b9ec532007719c36c3a284ee770a1c251"
         }
+      },
+      {
+        "id": "after.audit.initial.surface.1",
+        "source": {
+          "kind": "surface",
+          "tool": "analysis_audit",
+          "arguments": {
+            "base": "main"
+          }
+        },
+        "outcome": {
+          "state": "failed",
+          "reason": "invalid-output: expected audit verdict to be pass or fail (Fallow returned warn)",
+          "identityDigest": "4c8d749a546d13450dcd7fa6129b443b50721274b2b6ce90c6d7758edec103d6"
+        },
+        "failure": {
+          "kind": "invalid-output",
+          "message": "expected audit verdict to be pass or fail"
+        }
+      },
+      {
+        "id": "after.audit.initial.diagnostic.1",
+        "source": {
+          "kind": "direct",
+          "label": "diagnostic",
+          "executable": "fallow",
+          "args": [
+            "audit",
+            "--base",
+            "main",
+            "--format",
+            "json",
+            "--quiet",
+            "--no-cache",
+            "--dead-code-baseline",
+            ".fallow-baselines/dead-code.json",
+            "--health-baseline",
+            ".fallow-baselines/health.json",
+            "--dupes-baseline",
+            ".fallow-baselines/dupes.json"
+          ]
+        },
+        "outcome": {
+          "state": "failed",
+          "reason": "Fallow verdict warn before floor refresh; not a passing result",
+          "identityDigest": "45ebe5667b7c43272a3ec5b6ed5d2561de27fe316d43d7006a555123761a3a05"
+        },
+        "native": {
+          "exitCode": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "payloadSha256": "a4bf14fa31801fbdeb4cd02ecda681c8322045963af5074d14c061b4ce6b7178"
+        }
+      },
+      {
+        "id": "after.audit.main.surface.1",
+        "source": {
+          "kind": "surface",
+          "tool": "analysis_audit",
+          "arguments": {
+            "base": "main"
+          }
+        },
+        "outcome": {
+          "state": "completed-pass",
+          "count": 0,
+          "identities": [],
+          "identityDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
       }
     ],
-    "findings": [],
+    "findings": [
+      {
+        "identity": "all/lib/harness-adapters/sync.ts/2440/7/applySyncPlanInTransaction",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "all/lib/memory/knowledge-records.ts/142/7/parseHumanKnowledgeRecord",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge record and proposal parsing enforce human-authored/retirement contracts; high coverage on the human parser does not remove its many field branches, while partial/unreported coverage calls for malformed frontmatter, retirement, and occupant variants before refactoring.",
+          "files": [
+            "lib/memory/knowledge-records.ts"
+          ]
+        }
+      },
+      {
+        "identity": "all/tests/harness-adapters/sync.test.ts/380/93/<arrow>",
+        "category": "complexity",
+        "severity": "critical",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "The critical transactional sync suite callback holds many recovery assertions; partial coverage is measured at file level and cannot establish every rollback branch. Preserve assertions until those scenarios can be split safely.",
+          "files": [
+            "tests/harness-adapters/sync.test.ts"
+          ]
+        }
+      },
+      {
+        "identity": "all/tests/memory/interface.test.ts/2713/0/auditMigratedSeed",
+        "category": "complexity",
+        "severity": "critical",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "The critical migrated-seed audit checks destination and provenance across memory stores; partial coverage leaves missing/duplicate destination cases to characterize before extracting the helper.",
+          "files": [
+            "tests/memory/interface.test.ts"
+          ]
+        }
+      },
+      {
+        "identity": "all/tests/orchestration/chain-runner.test.ts/2191/81/<arrow>",
+        "category": "complexity",
+        "severity": "critical",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "The critical chain-runner callback spans staged execution and failure tests; partial file coverage needs canceled/failed stage characterization before splitting the suite without changing expectations.",
+          "files": [
+            "tests/orchestration/chain-runner.test.ts"
+          ]
+        }
+      },
+      {
+        "identity": "both/cli/harness/subcommand.ts/181/7/parseSyncRequest",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness command dispatch and sync-request parsing preserve CLI error behavior; partial coverage on the callback and unreported coverage on the parser require invalid-option and conflict cases before simplification.",
+          "files": [
+            "cli/harness/subcommand.ts"
+          ]
+        }
+      },
+      {
+        "identity": "both/lib/harness-adapters/sync.ts/1221/7/runClaudeCommandPairBootstrap",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "both/lib/memory/knowledge-records.ts/351/7/normalizeKnowledgeProposal",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge record and proposal parsing enforce human-authored/retirement contracts; high coverage on the human parser does not remove its many field branches, while partial/unreported coverage calls for malformed frontmatter, retirement, and occupant variants before refactoring.",
+          "files": [
+            "lib/memory/knowledge-records.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/cli/memory/judgment-provider.ts/151/0/extractLatestAssistantText",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Model judgment output is extracted, parsed, and shape-checked at an untrusted boundary; partial coverage calls for malformed-response and rejection cases.",
+          "files": [
+            "cli/memory/judgment-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/domains/shared/extensions/project-tools/fallow-provider.ts/2418/0/auditFindings",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Provider adapter validates envelopes, failure signals, capability arguments, and audit findings before exposing them to tools; partial coverage requires malformed provider output and contradictory verdict cases before refactoring.",
+          "files": [
+            "domains/shared/extensions/project-tools/fallow-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/domains/shared/extensions/project-tools/fallow-provider.ts/830/0/processFailure",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Provider adapter validates envelopes, failure signals, capability arguments, and audit findings before exposing them to tools; partial coverage requires malformed provider output and contradictory verdict cases before refactoring.",
+          "files": [
+            "domains/shared/extensions/project-tools/fallow-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/agent-packages/codex-cli.ts/122/0/sanitizeCodexArgs",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Codex argument sanitization rejects unsafe or unsupported CLI switches; partial coverage needs hostile and mixed flag permutations first.",
+          "files": [
+            "lib/agent-packages/codex-cli.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/driver/backends/env-args.ts/32/0/splitShellWords",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Shell-word splitting preserves quoted backend environment arguments; partial coverage needs escaped quotes and malformed input before changing the parser.",
+          "files": [
+            "lib/driver/backends/env-args.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/driver/drive-graph-runner.ts/360/0/recordClaimedDriveTerminalEpisode",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Graph runner records terminal episodes, blocked dependencies, and returned results; partial coverage needs replay and cancellation interleavings first.",
+          "files": [
+            "lib/driver/drive-graph-runner.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/driver/drive-graph-runner.ts/616/0/toDriverResult",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Graph runner records terminal episodes, blocked dependencies, and returned results; partial coverage needs replay and cancellation interleavings first.",
+          "files": [
+            "lib/driver/drive-graph-runner.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/driver/event-stream.ts/598/24/processContent",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Event stream content processing translates backend JSONL into activity; partial coverage needs malformed chunks and out-of-order event cases.",
+          "files": [
+            "lib/driver/event-stream.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/extensions/agent-memory/index.ts/778/0/renderRememberResult",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Memory extension renders captured/remembered results for agents; partial coverage needs failed capture and mixed-memory result shapes.",
+          "files": [
+            "lib/extensions/agent-memory/index.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/harness-adapters/sync.ts/1828/2/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/harness-adapters/sync.ts/3016/0/rollbackJournal",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/harness-adapters/sync.ts/3758/0/classifyInventoryRow",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/harness-adapters/sync.ts/3875/0/planTransfers",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/harness-adapters/sync.ts/635/0/validateOwnerTarget",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/consolidation-sources.ts/204/15/collect",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Episode source collection/finalization and prune-journal recovery preserve accepted work across crashes; partial coverage needs recovery interleavings.",
+          "files": [
+            "lib/memory/consolidation-sources.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/consolidation-sources.ts/479/16/finalize",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Episode source collection/finalization and prune-journal recovery preserve accepted work across crashes; partial coverage needs recovery interleavings.",
+          "files": [
+            "lib/memory/consolidation-sources.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/durable-files.ts/233/0/durableRestore",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Durable restore handles interrupted file replacement; partial coverage calls for missing backup and failed rename cases before restructuring.",
+          "files": [
+            "lib/memory/durable-files.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/knowledge-store.ts/465/0/collectKnowledgeFiles",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge-store scans files and accumulates frontmatter/body metadata; partial coverage needs truncated frontmatter and invalid files before splitting.",
+          "files": [
+            "lib/memory/knowledge-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/knowledge-store.ts/507/0/scanKnowledgeFile",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge-store scans files and accumulates frontmatter/body metadata; partial coverage needs truncated frontmatter and invalid files before splitting.",
+          "files": [
+            "lib/memory/knowledge-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/living-memory.ts/1403/0/observeDeterministicRecords",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/living-memory.ts/1705/0/collectInventoryMarkdown",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/living-memory.ts/1932/0/citationReferences",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/markdown-store.ts/129/0/writeEpisode",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Profile, playbook, and episode writers maintain stable markdown serialization; partial coverage needs escaping, duplicate-key, and write-failure cases.",
+          "files": [
+            "lib/memory/markdown-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/markdown-store.ts/325/0/writePlaybook",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Profile, playbook, and episode writers maintain stable markdown serialization; partial coverage needs escaping, duplicate-key, and write-failure cases.",
+          "files": [
+            "lib/memory/markdown-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/retirement-store.ts/197/15/restore",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Retirement preview, restore, journal recovery, and persisted journal guards preserve atomic moves; partial coverage needs interrupted restore and corrupt journal cases before decomposition.",
+          "files": [
+            "lib/memory/retirement-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/memory/retirement-store.ts/989/0/recoverJournal",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Retirement preview, restore, journal recovery, and persisted journal guards preserve atomic moves; partial coverage needs interrupted restore and corrupt journal cases before decomposition.",
+          "files": [
+            "lib/memory/retirement-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/skills/exporter.ts/456/0/resolveCatalogue",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Skill exporter resolves catalogues and applies evaluated target groups; partial coverage needs collisions, stale destinations, and rollback cases.",
+          "files": [
+            "lib/skills/exporter.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/lib/skills/exporter.ts/882/0/applyEvaluatedGroup",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Skill exporter resolves catalogues and applies evaluated target groups; partial coverage needs collisions, stale destinations, and rollback cases.",
+          "files": [
+            "lib/skills/exporter.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/scripts/knowledge-surface-backfill.ts/516/0/readIndexedProposals",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Backfill reads indexed proposals and validates slugs before writing knowledge; partial/unreported coverage needs duplicate slug, corrupt index, and dry-run cases before restructuring.",
+          "files": [
+            "scripts/knowledge-surface-backfill.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/scripts/validate-harness-exports.ts/1938/2/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Export validation compares installed bundles, proofs, and lineage evidence; partial coverage needs tampered bundle and mismatched proof cases first.",
+          "files": [
+            "scripts/validate-harness-exports.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive_crap/tests/harness-adapters/sync.test.ts/2087/0/seededRecoveryFixture",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "cognitive_crap/tests/memory/markdown-store.test.ts/1171/75/<arrow>",
+        "category": "complexity",
+        "severity": "critical",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "The critical markdown-store suite callback checks serialization invariants; partial file coverage does not guarantee each invalid-record branch is covered. Split fixtures only after preserving all write and rejection assertions.",
+          "files": [
+            "tests/memory/markdown-store.test.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive/lib/analysis/binding-resolver.ts/150/7/resolveAnalysisRequest",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Capability binding resolves scope, provider, and consent rules; coverage is unreported, so unmatched scopes and unavailable providers need characterization.",
+          "files": [
+            "lib/analysis/binding-resolver.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive/lib/driver/drive-finalization.ts/172/7/transitionDriveTaskStatus",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Task-status transitions reconcile durable Drive finalization; unreported coverage calls for interrupted commits and contradictory terminal states.",
+          "files": [
+            "lib/driver/drive-finalization.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive/lib/memory/injection-budget.ts/64/0/fairCaps",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Fair-cap allocation distributes limited context across sources; unreported coverage requires zero-budget and uneven-source cases before simplifying.",
+          "files": [
+            "lib/memory/injection-budget.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive/lib/memory/living-memory.ts/1495/7/inspectLivingMemoryCitationInventory",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "cognitive/scripts/knowledge-surface-backfill.ts/178/7/runKnowledgeSurfaceBackfill",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Backfill reads indexed proposals and validates slugs before writing knowledge; partial/unreported coverage needs duplicate slug, corrupt index, and dry-run cases before restructuring.",
+          "files": [
+            "scripts/knowledge-surface-backfill.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/drive/subcommand.ts/1180/0/createRunSpec",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Drive launch/resume CLI validates persisted episode identity and constructs run specs; partial coverage leaves resume and invalid-run branches to characterize.",
+          "files": [
+            "cli/drive/subcommand.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/drive/subcommand.ts/522/0/prepareTerminalResumeEpisodeIdentity",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Drive launch/resume CLI validates persisted episode identity and constructs run specs; partial coverage leaves resume and invalid-run branches to characterize.",
+          "files": [
+            "cli/drive/subcommand.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/drive/subcommand.ts/569/0/prepareResume",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Drive launch/resume CLI validates persisted episode identity and constructs run specs; partial coverage leaves resume and invalid-run branches to characterize.",
+          "files": [
+            "cli/drive/subcommand.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/harness/subcommand.ts/101/13/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness command dispatch and sync-request parsing preserve CLI error behavior; partial coverage on the callback and unreported coverage on the parser require invalid-option and conflict cases before simplification.",
+          "files": [
+            "cli/harness/subcommand.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/main.ts/220/0/normalizeCliOptions",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Top-level option normalization routes CLI flags; partial coverage calls for conflicting and missing option cases before consolidating dispatch.",
+          "files": [
+            "cli/main.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/memory/judgment-provider.ts/184/0/parseCorpusJudgmentOutput",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Model judgment output is extracted, parsed, and shape-checked at an untrusted boundary; partial coverage calls for malformed-response and rejection cases.",
+          "files": [
+            "cli/memory/judgment-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/memory/judgment-provider.ts/246/0/isJudgedProposal",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Model judgment output is extracted, parsed, and shape-checked at an untrusted boundary; partial coverage calls for malformed-response and rejection cases.",
+          "files": [
+            "cli/memory/judgment-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/memory/judgment-provider.ts/69/13/judge",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Model judgment output is extracted, parsed, and shape-checked at an untrusted boundary; partial coverage calls for malformed-response and rejection cases.",
+          "files": [
+            "cli/memory/judgment-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/run/subcommand.ts/217/0/runChainCommand",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Chain CLI execution translates user input into a run; partial coverage defers restructuring until invalid expressions and failed launches are characterized.",
+          "files": [
+            "cli/run/subcommand.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/session.ts/90/0/toResourceLoaderOptions",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Session resource-loader options compose multiple configuration sources; partial coverage needs precedence and absent-resource assertions before refactoring.",
+          "files": [
+            "cli/session.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/sessions/subcommand.ts/349/0/listAction",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Session-list CLI renders persisted metadata and filters; partial coverage needs missing/corrupt session and filtering cases before simplification.",
+          "files": [
+            "cli/sessions/subcommand.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/skills/subcommand.ts/212/10/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Skill-command callback selects and formats export actions; partial coverage calls for invalid targets and empty skill selection cases before splitting it.",
+          "files": [
+            "cli/skills/subcommand.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/tasks/commands/create.ts/196/0/hasPerTaskOptions",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Batch task creation detects per-task flags; partial coverage leaves conflicting batch/single options to characterize before simplifying the predicate.",
+          "files": [
+            "cli/tasks/commands/create.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/cli/update/subcommand.ts/64/0/updateOne",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Update CLI coordinates one requested target and its failures; partial coverage needs missing target and failed update branches before decomposition.",
+          "files": [
+            "cli/update/subcommand.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/orchestration/spawn-tool.ts/524/20/resolved",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Spawn authorization and resolution enforce tool-level caller identity; partial coverage requires denied and unresolved-request cases before consolidation.",
+          "files": [
+            "domains/shared/extensions/orchestration/spawn-tool.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/orchestration/spawn-tool.ts/634/30/checkAuthorization",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Spawn authorization and resolution enforce tool-level caller identity; partial coverage requires denied and unresolved-request cases before consolidation.",
+          "files": [
+            "domains/shared/extensions/orchestration/spawn-tool.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/plans/index.ts/195/11/execute",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Plans tool execution dispatches user actions across the extension boundary; partial coverage needs invalid action and backend-failure cases before splitting.",
+          "files": [
+            "domains/shared/extensions/plans/index.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/project-tools/fallow-provider.ts/1728/0/validateFallowEnvelopeSchema",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Provider adapter validates envelopes, failure signals, capability arguments, and audit findings before exposing them to tools; partial coverage requires malformed provider output and contradictory verdict cases before refactoring.",
+          "files": [
+            "domains/shared/extensions/project-tools/fallow-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/project-tools/fallow-provider.ts/1874/0/findingLocations",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Provider adapter validates envelopes, failure signals, capability arguments, and audit findings before exposing them to tools; partial coverage requires malformed provider output and contradictory verdict cases before refactoring.",
+          "files": [
+            "domains/shared/extensions/project-tools/fallow-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/project-tools/fallow-provider.ts/2144/0/capabilityArgs",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Provider adapter validates envelopes, failure signals, capability arguments, and audit findings before exposing them to tools; partial coverage requires malformed provider output and contradictory verdict cases before refactoring.",
+          "files": [
+            "domains/shared/extensions/project-tools/fallow-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/project-tools/fallow-provider.ts/2317/0/reconcileVerdictEvidence",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Provider adapter validates envelopes, failure signals, capability arguments, and audit findings before exposing them to tools; partial coverage requires malformed provider output and contradictory verdict cases before refactoring.",
+          "files": [
+            "domains/shared/extensions/project-tools/fallow-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/project-tools/fallow-provider.ts/438/0/detectFallowSignal",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Provider adapter validates envelopes, failure signals, capability arguments, and audit findings before exposing them to tools; partial coverage requires malformed provider output and contradictory verdict cases before refactoring.",
+          "files": [
+            "domains/shared/extensions/project-tools/fallow-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/project-tools/fallow-provider.ts/711/0/validateSpawnPreconditions",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Provider adapter validates envelopes, failure signals, capability arguments, and audit findings before exposing them to tools; partial coverage requires malformed provider output and contradictory verdict cases before refactoring.",
+          "files": [
+            "domains/shared/extensions/project-tools/fallow-provider.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/project-tools/index.ts/261/0/traceTarget",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Project-tools discovery and trace routing bridge provider capabilities to Pi; partial coverage needs unbound-provider and invalid-target assertions.",
+          "files": [
+            "domains/shared/extensions/project-tools/index.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/project-tools/index.ts/535/27/discoverSnapshot",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Project-tools discovery and trace routing bridge provider capabilities to Pi; partial coverage needs unbound-provider and invalid-target assertions.",
+          "files": [
+            "domains/shared/extensions/project-tools/index.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/domains/shared/extensions/tasks/index.ts/254/11/execute",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Tasks tool dispatch handles task mutation and result presentation; partial coverage requires invalid edits and missing tasks before restructuring.",
+          "files": [
+            "domains/shared/extensions/tasks/index.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/agent-packages/definition.ts/55/0/validateAgentPackageDefinition",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Package definition validation guards the external export contract; partial coverage needs missing-field and invalid-shape cases before simplifying.",
+          "files": [
+            "lib/agent-packages/definition.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/architecture-map/config.ts/143/0/buildArchitectureMapConfig",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Architecture-map config combines project paths and options; partial coverage calls for invalid/missing configuration before changing its branch structure.",
+          "files": [
+            "lib/architecture-map/config.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/architecture-map/freshness.ts/242/0/collectSourceFiles",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Freshness scanning enumerates source files across configured roots; partial coverage requires exclusions and absent-root cases before simplification.",
+          "files": [
+            "lib/architecture-map/freshness.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/architecture-map/generator.ts/161/0/resolveModuleNarrative",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Map generation resolves module narratives and renders stable records; partial coverage needs fallback narratives and deterministic ordering assertions.",
+          "files": [
+            "lib/architecture-map/generator.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/architecture-map/generator.ts/324/0/renderStableRecord",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Map generation resolves module narratives and renders stable records; partial coverage needs fallback narratives and deterministic ordering assertions.",
+          "files": [
+            "lib/architecture-map/generator.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/architecture-map/retrieval.ts/342/0/collectModuleResources",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Map retrieval selects bounded module resources; partial coverage needs missing resources and duplicate-module cases before restructuring.",
+          "files": [
+            "lib/architecture-map/retrieval.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/architecture-map/store.ts/147/0/validateBundlePath",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Bundle path validation protects map storage against unsafe paths; partial coverage requires traversal and malformed path cases before simplification.",
+          "files": [
+            "lib/architecture-map/store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/artifacts/plan-conformance.ts/55/0/validateDecisionReferences",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Plan decision reference validation enforces artifact linkage; partial coverage requires unresolved and duplicate decision references before refactoring.",
+          "files": [
+            "lib/artifacts/plan-conformance.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/domains/loader.ts/99/0/loadSingleDomain",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Domain loader composes discovered manifests and load errors; partial coverage needs broken-manifest and missing-domain cases before restructuring.",
+          "files": [
+            "lib/domains/loader.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/domains/registry.ts/55/18/resolveCapability",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Capability registry resolves cross-domain provider names; partial coverage needs unknown and ambiguous capability cases before simplification.",
+          "files": [
+            "lib/domains/registry.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/drive-graph-runner.ts/1005/0/blockingTaskIdsForPendingTasks",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Graph runner records terminal episodes, blocked dependencies, and returned results; partial coverage needs replay and cancellation interleavings first.",
+          "files": [
+            "lib/driver/drive-graph-runner.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/drive-scheduler-backend.ts/197/0/runDriveTaskAttempt",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Scheduler backend executes task attempts with retry state; partial coverage needs backend failure and retry exhaustion cases before decomposition.",
+          "files": [
+            "lib/driver/drive-scheduler-backend.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/durable-steps.ts/617/0/upsertTaskStep",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Durable step projection and upserts preserve task/finalizer graph state; partial coverage needs replay, missing step, and duplicate-finalizer cases.",
+          "files": [
+            "lib/driver/durable-steps.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/durable-steps.ts/648/0/upsertFinalizerStep",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Durable step projection and upserts preserve task/finalizer graph state; partial coverage needs replay, missing step, and duplicate-finalizer cases.",
+          "files": [
+            "lib/driver/durable-steps.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/durable-steps.ts/69/15/project",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Durable step projection and upserts preserve task/finalizer graph state; partial coverage needs replay, missing step, and duplicate-finalizer cases.",
+          "files": [
+            "lib/driver/durable-steps.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/report-parser.ts/50/0/toReport",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Driver report parsing turns agent output into a terminal result; partial coverage needs absent and contradictory outcome markers before simplification.",
+          "files": [
+            "lib/driver/report-parser.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/run-one-task.ts/100/0/runTaskAttempt",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Single-task attempt manages worker lifecycle and result propagation; partial coverage needs timeout, blocked, and failed-backend branches.",
+          "files": [
+            "lib/driver/run-one-task.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/run-state.ts/263/0/isDriveTerminalRecord",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Run-state guards validate stamped completion and terminal records; partial coverage needs malformed persisted state and mismatched episode cases.",
+          "files": [
+            "lib/driver/run-state.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/run-state.ts/322/0/isStampedRunCompletion",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Run-state guards validate stamped completion and terminal records; partial coverage needs malformed persisted state and mismatched episode cases.",
+          "files": [
+            "lib/driver/run-state.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/driver/shell-command-finalizer.ts/157/0/runTaskStatusFinalizer",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Shell finalizer updates task status after command completion; partial coverage needs failed commands and repeated finalization cases.",
+          "files": [
+            "lib/driver/shell-command-finalizer.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/durable-runtime/file-store.ts/833/0/isStoredEvent",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Persisted event, diagnostic, graph-step, and scheduler-state guards reject corrupt files; partial coverage calls for malformed fields and old snapshots.",
+          "files": [
+            "lib/durable-runtime/file-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/durable-runtime/file-store.ts/853/0/isStoredDiagnostic",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Persisted event, diagnostic, graph-step, and scheduler-state guards reject corrupt files; partial coverage calls for malformed fields and old snapshots.",
+          "files": [
+            "lib/durable-runtime/file-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/durable-runtime/file-store.ts/887/0/isRunGraphStepLike",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Persisted event, diagnostic, graph-step, and scheduler-state guards reject corrupt files; partial coverage calls for malformed fields and old snapshots.",
+          "files": [
+            "lib/durable-runtime/file-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/durable-runtime/file-store.ts/923/0/isSchedulerStateLike",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Persisted event, diagnostic, graph-step, and scheduler-state guards reject corrupt files; partial coverage calls for malformed fields and old snapshots.",
+          "files": [
+            "lib/durable-runtime/file-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/durable-runtime/scheduler.ts/1519/0/isStepResult",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Scheduler recovery, step results, and finalization preserve durable ordering; partial coverage needs crashed-running and duplicate-completion cases.",
+          "files": [
+            "lib/durable-runtime/scheduler.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/durable-runtime/scheduler.ts/1687/0/finalizeRun",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Scheduler recovery, step results, and finalization preserve durable ordering; partial coverage needs crashed-running and duplicate-completion cases.",
+          "files": [
+            "lib/durable-runtime/scheduler.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/durable-runtime/scheduler.ts/653/0/blockPotentiallyCommittedRunningSteps",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Scheduler recovery, step results, and finalization preserve durable ordering; partial coverage needs crashed-running and duplicate-completion cases.",
+          "files": [
+            "lib/durable-runtime/scheduler.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/extensions/agent-memory/index.ts/720/0/renderRememberWithCapture",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Memory extension renders captured/remembered results for agents; partial coverage needs failed capture and mixed-memory result shapes.",
+          "files": [
+            "lib/extensions/agent-memory/index.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/extensions/architecture-memory/index.ts/211/0/renderArchitectureMapResult",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Architecture-map tool rendering exposes indexed results; partial coverage needs missing-map and malformed-resource cases before restructuring.",
+          "files": [
+            "lib/extensions/architecture-memory/index.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/extensions/knowledge-surface/knowledge-tools.ts/330/0/parseKnowledgeProposalRequest",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge tools handle recall and proposal requests at a user-input boundary; partial coverage needs malformed proposal and empty-recall cases.",
+          "files": [
+            "lib/extensions/knowledge-surface/knowledge-tools.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/extensions/knowledge-surface/knowledge-tools.ts/71/8/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge tools handle recall and proposal requests at a user-input boundary; partial coverage needs malformed proposal and empty-recall cases.",
+          "files": [
+            "lib/extensions/knowledge-surface/knowledge-tools.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/inventory.ts/138/0/escapeInventoryCell",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Inventory escaping preserves table cells from exported harness metadata; partial coverage needs delimiters and multiline cells before simplification.",
+          "files": [
+            "lib/harness-adapters/inventory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/provenance.ts/530/0/isOwnerIdentity",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Owner identity validation protects harness provenance; partial coverage needs missing and forged owner fields before simplifying the guard.",
+          "files": [
+            "lib/harness-adapters/provenance.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/render.ts/322/0/readRegisteredSource",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Registered source reading and generated-shape validation protect materialized exports; partial coverage needs stale registrations and malformed output cases.",
+          "files": [
+            "lib/harness-adapters/render.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/render.ts/465/0/validateGeneratedShape",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Registered source reading and generated-shape validation protect materialized exports; partial coverage needs stale registrations and malformed output cases.",
+          "files": [
+            "lib/harness-adapters/render.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/175/2/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/1947/0/assertLockedCommandPairMatchesEvidence",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/2013/0/validateCompleteCommandEvidence",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/2180/0/readCommandMigrationEvidence",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/2955/19/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/3000/19/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/3165/0/parseOwnerRootJournal",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/3229/0/isOwnerRootJournal",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/3372/0/verifyEvidenceReceipt",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/3400/0/canonicalizeOwnerRootReadOnly",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/3969/0/planForgets",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/4233/0/validateRequest",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/742/0/desiredDifference",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/810/0/observeRecordedTarget",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/harness-adapters/sync.ts/905/0/generatedWrapperMatches",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Harness sync plans and applies transactional command/assets transfers; high coverage on transaction apply still leaves many state transitions in one unit, while partial/unreported coverage elsewhere leaves owner-root, receipt, rollback, and migration failure branches to characterize before decomposition.",
+          "files": [
+            "lib/harness-adapters/sync.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/consolidation-proposals.ts/316/0/parseResolutionHistory",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Proposal evidence guards and resolution-history parsing preserve accepted judgments; partial coverage needs invalid references and repeated resolutions.",
+          "files": [
+            "lib/memory/consolidation-proposals.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/consolidation-proposals.ts/751/0/isEvidenceRef",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Proposal evidence guards and resolution-history parsing preserve accepted judgments; partial coverage needs invalid references and repeated resolutions.",
+          "files": [
+            "lib/memory/consolidation-proposals.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/consolidation-receipts.ts/291/0/normalizeReceipt",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Receipt parsing, normalization, and evidence validation protect persisted judgments; partial coverage needs corrupt and stale receipt cases.",
+          "files": [
+            "lib/memory/consolidation-receipts.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/consolidation-receipts.ts/335/0/parseReceipt",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Receipt parsing, normalization, and evidence validation protect persisted judgments; partial coverage needs corrupt and stale receipt cases.",
+          "files": [
+            "lib/memory/consolidation-receipts.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/consolidation-receipts.ts/408/0/isEvidenceRef",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Receipt parsing, normalization, and evidence validation protect persisted judgments; partial coverage needs corrupt and stale receipt cases.",
+          "files": [
+            "lib/memory/consolidation-receipts.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/consolidation-sources.ts/610/0/recoverEpisodePruneJournal",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Episode source collection/finalization and prune-journal recovery preserve accepted work across crashes; partial coverage needs recovery interleavings.",
+          "files": [
+            "lib/memory/consolidation-sources.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/episodic-records.ts/157/0/validateEvent",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Episodic event validation guards stored event shape; partial coverage needs malformed event variants and missing required fields.",
+          "files": [
+            "lib/memory/episodic-records.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/knowledge-records.ts/249/0/normalizeRetireWhen",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge record and proposal parsing enforce human-authored/retirement contracts; high coverage on the human parser does not remove its many field branches, while partial/unreported coverage calls for malformed frontmatter, retirement, and occupant variants before refactoring.",
+          "files": [
+            "lib/memory/knowledge-records.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/knowledge-store.ts/676/24/acceptBodyLine",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge-store scans files and accumulates frontmatter/body metadata; partial coverage needs truncated frontmatter and invalid files before splitting.",
+          "files": [
+            "lib/memory/knowledge-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/knowledge-store.ts/694/20/acceptBody",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge-store scans files and accumulates frontmatter/body metadata; partial coverage needs truncated frontmatter and invalid files before splitting.",
+          "files": [
+            "lib/memory/knowledge-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/knowledge-store.ts/768/0/knowledgeFrontmatterEnd",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge-store scans files and accumulates frontmatter/body metadata; partial coverage needs truncated frontmatter and invalid files before splitting.",
+          "files": [
+            "lib/memory/knowledge-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/living-memory.ts/1830/0/extractInventoryTargets",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/living-memory.ts/2078/0/isPathShaped",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/living-memory.ts/2138/0/retireWhenFromMetadata",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/living-memory.ts/2266/0/validateJudgmentOutput",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/living-memory.ts/2435/0/validateProposal",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/living-memory.ts/862/8/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Living-memory citation inventories, deterministic observation, proposal validation, and judgment selection span many source shapes; partial/unreported coverage needs missing citation, stale inventory, and rejected judgment cases.",
+          "files": [
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/markdown-store.ts/241/0/writeProfile",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Profile, playbook, and episode writers maintain stable markdown serialization; partial coverage needs escaping, duplicate-key, and write-failure cases.",
+          "files": [
+            "lib/memory/markdown-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/retirement-receipts.ts/539/0/parseRetiredEvent",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Retired-event parser reconstructs persisted retirement proof; partial coverage needs invalid event and missing evidence variants before splitting.",
+          "files": [
+            "lib/memory/retirement-receipts.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/retirement-store.ts/1300/0/isRetirementJournal",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Retirement preview, restore, journal recovery, and persisted journal guards preserve atomic moves; partial coverage needs interrupted restore and corrupt journal cases before decomposition.",
+          "files": [
+            "lib/memory/retirement-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/retirement-store.ts/1324/22/<arrow>",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Retirement preview, restore, journal recovery, and persisted journal guards preserve atomic moves; partial coverage needs interrupted restore and corrupt journal cases before decomposition.",
+          "files": [
+            "lib/memory/retirement-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/retirement-store.ts/273/0/restoreUnderLock",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Retirement preview, restore, journal recovery, and persisted journal guards preserve atomic moves; partial coverage needs interrupted restore and corrupt journal cases before decomposition.",
+          "files": [
+            "lib/memory/retirement-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/memory/retirement-store.ts/448/0/previewRetirements",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Retirement preview, restore, journal recovery, and persisted journal guards preserve atomic moves; partial coverage needs interrupted restore and corrupt journal cases before decomposition.",
+          "files": [
+            "lib/memory/retirement-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/orchestration/chain-event-adapter.ts/679/0/chainTopology",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Chain event adapter validates spawn events and derives topology; partial coverage needs malformed events and parallel-group lineage cases.",
+          "files": [
+            "lib/orchestration/chain-event-adapter.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/orchestration/chain-event-adapter.ts/771/0/isSpawnEvent",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Chain event adapter validates spawn events and derives topology; partial coverage needs malformed events and parallel-group lineage cases.",
+          "files": [
+            "lib/orchestration/chain-event-adapter.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/orchestration/chain-parser.ts/61/0/resolveStage",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Chain parser resolves stage syntax into executable roles; partial coverage needs invalid group expressions and unresolved roles.",
+          "files": [
+            "lib/orchestration/chain-parser.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/orchestration/chain-profiler.ts/99/12/handleEvent",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Profiler event handler updates run counters across event variants; partial coverage needs duplicate and out-of-order event assertions.",
+          "files": [
+            "lib/orchestration/chain-profiler.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/orchestration/chain-runner.ts/117/0/evaluateDefaultCompletionState",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Chain runner prepares execution, loop stages, and completion decisions; partial coverage needs failed stages, cancellation, and loop exhaustion.",
+          "files": [
+            "lib/orchestration/chain-runner.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/orchestration/chain-runner.ts/1297/0/prepareStageExecution",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Chain runner prepares execution, loop stages, and completion decisions; partial coverage needs failed stages, cancellation, and loop exhaustion.",
+          "files": [
+            "lib/orchestration/chain-runner.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/orchestration/chain-runner.ts/1448/0/runLoopStage",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Chain runner prepares execution, loop stages, and completion decisions; partial coverage needs failed stages, cancellation, and loop exhaustion.",
+          "files": [
+            "lib/orchestration/chain-runner.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/orchestration/durable-chain-runner.ts/250/0/executeChainStep",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Durable chain runner executes steps and reads persisted review decisions; partial coverage needs resumed failures and missing review artifacts.",
+          "files": [
+            "lib/orchestration/durable-chain-runner.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/orchestration/durable-chain-runner.ts/468/0/readPersistedPlanReview",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Durable chain runner executes steps and reads persisted review decisions; partial coverage needs resumed failures and missing review artifacts.",
+          "files": [
+            "lib/orchestration/durable-chain-runner.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/plans/plan-manager.ts/196/31/updatePlanLocked",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Locked plan updates protect concurrent artifact mutation; partial coverage needs stale edits and lock failure cases before splitting.",
+          "files": [
+            "lib/plans/plan-manager.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/plans/review-rounds.ts/349/0/readReviewEntries",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Review-round ingestion parses finding records and entries; partial coverage needs malformed findings and absent review files.",
+          "files": [
+            "lib/plans/review-rounds.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/plans/review-rounds.ts/522/0/parseFinding",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Review-round ingestion parses finding records and entries; partial coverage needs malformed findings and absent review files.",
+          "files": [
+            "lib/plans/review-rounds.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/runtime.ts/125/20/create",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Runtime creation assembles domains and extensions; partial coverage needs missing domain and disabled-extension cases before decomposition.",
+          "files": [
+            "lib/runtime.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/sessions/session-store.ts/63/0/extractAssistantParts",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Session store extracts assistant content from message variants; partial coverage needs tool-only messages and missing text parts.",
+          "files": [
+            "lib/sessions/session-store.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/lib/tasks/task-parser.ts/183/0/parseAcceptanceCriteria",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Task parser reads acceptance criteria from markdown; partial coverage needs malformed checkbox and nested criterion cases before simplification.",
+          "files": [
+            "lib/tasks/task-parser.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/check-reachability.ts/70/0/ownerLive",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Reachability checker classifies live entry owners; Fallow reports no coverage for this script, so ownerless and stale-owner cases must be exercised first.",
+          "files": [
+            "scripts/check-reachability.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/knowledge-surface-backfill.ts/599/0/validateSlugProposals",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Backfill reads indexed proposals and validates slugs before writing knowledge; partial/unreported coverage needs duplicate slug, corrupt index, and dry-run cases before restructuring.",
+          "files": [
+            "scripts/knowledge-surface-backfill.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/probe-census.ts/105/15/visit",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Census script resolves imports and walks declarations to classify production reach; Fallow reports no coverage for this script, so alias, unresolved import, and test-only declaration cases must be characterized before simplification.",
+          "files": [
+            "scripts/probe-census.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/probe-census.ts/131/0/census",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Census script resolves imports and walks declarations to classify production reach; Fallow reports no coverage for this script, so alias, unresolved import, and test-only declaration cases must be characterized before simplification.",
+          "files": [
+            "scripts/probe-census.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/probe-census.ts/27/0/resolveImport",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Census script resolves imports and walks declarations to classify production reach; Fallow reports no coverage for this script, so alias, unresolved import, and test-only declaration cases must be characterized before simplification.",
+          "files": [
+            "scripts/probe-census.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/probe-census.ts/40/7/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Census script resolves imports and walks declarations to classify production reach; Fallow reports no coverage for this script, so alias, unresolved import, and test-only declaration cases must be characterized before simplification.",
+          "files": [
+            "scripts/probe-census.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/probe-census.ts/46/0/productionReach",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Census script resolves imports and walks declarations to classify production reach; Fallow reports no coverage for this script, so alias, unresolved import, and test-only declaration cases must be characterized before simplification.",
+          "files": [
+            "scripts/probe-census.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/probe-census.ts/68/0/admit",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Census script resolves imports and walks declarations to classify production reach; Fallow reports no coverage for this script, so alias, unresolved import, and test-only declaration cases must be characterized before simplification.",
+          "files": [
+            "scripts/probe-census.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/probe-census.ts/89/0/isDeclarationCallee",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Census script resolves imports and walks declarations to classify production reach; Fallow reports no coverage for this script, so alias, unresolved import, and test-only declaration cases must be characterized before simplification.",
+          "files": [
+            "scripts/probe-census.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/validate-harness-exports.ts/1473/2/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Export validation compares installed bundles, proofs, and lineage evidence; partial coverage needs tampered bundle and mismatched proof cases first.",
+          "files": [
+            "scripts/validate-harness-exports.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/validate-harness-exports.ts/1652/0/makeInstalledExternalBundleEvidence",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Export validation compares installed bundles, proofs, and lineage evidence; partial coverage needs tampered bundle and mismatched proof cases first.",
+          "files": [
+            "scripts/validate-harness-exports.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/validate-harness-exports.ts/1848/21/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Export validation compares installed bundles, proofs, and lineage evidence; partial coverage needs tampered bundle and mismatched proof cases first.",
+          "files": [
+            "scripts/validate-harness-exports.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/scripts/validate-harness-exports.ts/2325/0/assertProofsMatchEvidence",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Export validation compares installed bundles, proofs, and lineage evidence; partial coverage needs tampered bundle and mismatched proof cases first.",
+          "files": [
+            "scripts/validate-harness-exports.ts"
+          ]
+        }
+      },
+      {
+        "identity": "crap/tests/cli/drive/run.test.ts/1216/81/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/cli/drive/run.test.ts/1523/97/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/cli/drive/run.test.ts/478/87/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/driver/driver-durable-steps.test.ts/288/76/<arrow>",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/extensions/project-tools-fallow.test.ts/2848/81/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/extensions/project-tools-fallow.test.ts/409/49/executeProcess",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/extensions/project-tools-fallow.test.ts/445/46/fixture",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/harness-adapters/provenance.test.ts/1119/1/walk",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/harness-adapters/sync.test.ts/146/92/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/helpers/domain-package-fixture.test.ts/12/80/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/helpers/packages.ts/208/0/writeSyntheticAgents",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/memory/interface.test.ts/2273/81/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/memory/interface.test.ts/2735/27/locateDestination",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/memory/interface.test.ts/780/92/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/memory/living-memory.test.ts/1837/81/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/memory/living-memory.test.ts/2853/90/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/orchestration/chain-runner.test.ts/2655/98/<arrow>",
+        "category": "complexity",
+        "severity": "high",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/orchestration/chain-runner.test.ts/3906/68/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "crap/tests/tasks/task-manager-concurrency.test.ts/76/87/<arrow>",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "escalated",
+          "reason": "Non-critical test complexity is outside D-011 retained-baseline ownership; measured and visible, with no suppression or source change authorized.",
+          "evidence": {
+            "invocationId": "after.complexity-all.diagnostic.1"
+          }
+        }
+      },
+      {
+        "identity": "cyclomatic/lib/memory/knowledge-records.ts/453/7/parseKnowledgeProposalOccupant",
+        "category": "complexity",
+        "severity": "moderate",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Knowledge record and proposal parsing enforce human-authored/retirement contracts; high coverage on the human parser does not remove its many field branches, while partial/unreported coverage calls for malformed frontmatter, retirement, and occupant variants before refactoring.",
+          "files": [
+            "lib/memory/knowledge-records.ts"
+          ]
+        }
+      },
+      {
+        "identity": "dupes\tcli/memory/judgment-provider.ts:304:332;lib/memory/consolidation-proposals.ts:813:841",
+        "category": "duplication",
+        "family": "family-9cbde3ce7625ca34",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Validation helpers remain local across CLI model output and persisted-record trust/error boundaries; two overlapping two-file reports are one ratified three-file family.",
+          "files": [
+            "cli/memory/judgment-provider.ts",
+            "lib/memory/consolidation-proposals.ts",
+            "lib/memory/retirement-receipts.ts"
+          ]
+        }
+      },
+      {
+        "identity": "dupes\tcli/memory/judgment-provider.ts:307:332;lib/memory/retirement-receipts.ts:677:702",
+        "category": "duplication",
+        "family": "family-9cbde3ce7625ca34",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "Validation helpers remain local across CLI model output and persisted-record trust/error boundaries; two overlapping two-file reports are one ratified three-file family.",
+          "files": [
+            "cli/memory/judgment-provider.ts",
+            "lib/memory/consolidation-proposals.ts",
+            "lib/memory/retirement-receipts.ts"
+          ]
+        }
+      },
+      {
+        "identity": "dupes\tlib/memory/consolidation-sources.ts:1560:1576;lib/memory/knowledge-store.ts:879:895;lib/memory/living-memory.ts:2634:2650",
+        "category": "duplication",
+        "family": "family-df7033b03bb73032",
+        "disposition": {
+          "kind": "baselined",
+          "reason": "readExactBytes stays local to each store to preserve distinct no-follow, consistency, validation and error semantics.",
+          "files": [
+            "lib/memory/consolidation-sources.ts",
+            "lib/memory/knowledge-store.ts",
+            "lib/memory/living-memory.ts"
+          ]
+        }
+      },
+      {
+        "identity": "unused-class-member\tlib/tasks/task-manager.ts\tTaskManager.getTaskDependencyStatusSnapshot",
+        "category": "dead-code",
+        "disposition": {
+          "kind": "false-positive",
+          "reason": "Q-005: live dependency-status method is used by Drive despite the provider class-member finding",
+          "reference": "lib/driver/drive-graph-runner.ts:593",
+          "evidence": {
+            "invocationId": "after.dead-code.surface.1",
+            "identity": "unused-class-member\tlib/tasks/task-manager.ts\tTaskManager.getTaskDependencyStatusSnapshot"
+          }
+        }
+      }
+    ],
     "suppressions": {
       "inline": 23,
-      "registered": 23,
+      "registered": 22,
       "stale": 0
     }
   },
   "reproduction": {
-    "commit": "16d1d3b53a3f5a39f75e355b9bcb479df5305d61",
-    "matched": false,
-    "mismatches": [
-      "dead-code: supplied 133 identities; fresh working tree 1 evidence-backed false positive",
-      "duplication: supplied 87 groups; fresh working tree 85 groups after TASK-768 removed two duplicate formatter groups",
-      "configuration: fresh working tree contains the TASK-768 provider reconciliation edit and is not a committed same-commit closeout snapshot"
-    ]
+    "commit": "ea27538ef242155767d64804111997e0e037ad1d",
+    "matched": true,
+    "mismatches": []
   },
   "closeout": {
-    "analyzedCommit": "not-yet-produced",
+    "analyzedCommit": "ea27538ef242155767d64804111997e0e037ad1d",
     "artifactPaths": [
+      ".fallow-baselines/dead-code.json",
+      ".fallow-baselines/dupes.json",
+      ".fallow-baselines/health.json",
+      ".fallow-baselines/manifest.json",
+      "docs/fallow-exceptions.md",
       "missions/reviews/project-health-audit.json",
       "missions/reviews/project-health-audit.md"
     ],
@@ -4432,31 +7441,118 @@
       "files": [
         {
           "path": ".fallow-baselines/dead-code.json",
-          "sha256": "ba9311b507cf396e77d193dcdc50590fc935e4e4821de6e42f6d8a43fa610be6"
+          "sha256": "5d658e49031aa2a92e39965f98acce151f1ee6bb59644018d78429b34f74185a"
         },
         {
           "path": ".fallow-baselines/dupes.json",
-          "sha256": "d0ed95beaba70c76f222f77d8876c51624d7528686d26f41217862ed9a1bdc96"
+          "sha256": "d2e6cf3423c71b2d303a67962b4040ef709a23c4eb4b0ba6dee35601529e002a"
         },
         {
           "path": ".fallow-baselines/health.json",
-          "sha256": "39e566a1cdc918640eaaac0174e64b4e1cc19a724dca4e291fdfd9e647b9e39b"
+          "sha256": "271787e1a1d9f0f3efb476d0249e8ae2879525a202f6a300e3cbe892450d7651"
         },
         {
           "path": ".fallow-baselines/manifest.json",
-          "sha256": "f2c55e762b3b0bc421d833772c38d391e63a21c70ac17b91375671a6f5310b0d"
+          "sha256": "4609fb95f97d56626be92445f9bb1244e61fff2482937276f06945a29a6ce512"
         }
       ],
-      "digest": "a3778c472126fd8d2c20b834128e02df41ecb540ac283d84d51e2669e5d3cf1c"
+      "digest": "31c0900c2272658befe9a587f636eef9c37a6d716f550f6e06f4d7d988140292"
     },
     "gateOwnedFilesChanged": [
       {
+        "path": ".cosmonauts/suppression-exceptions.json",
+        "justification": "TASK-776 removed the obsolete registered exception; 22 remain versus 23 on main, with zero stale directives."
+      },
+      {
+        "path": ".fallow-baselines/dead-code.json",
+        "justification": "Q-005 evidence-backed live class-member false positive is the only retained dead-code identity."
+      },
+      {
+        "path": ".fallow-baselines/dupes.json",
+        "justification": "The two ratified three-file families remain local across distinct trust and file-read ownership boundaries."
+      },
+      {
+        "path": ".fallow-baselines/health.json",
+        "justification": "The refreshed health floor covers 229 finding counts across 84 paths; 172 high/moderate and test-critical identities have file-specific justifications in docs/fallow-exceptions.md (complexity result 2f16bf07a204e05de16432d212621656a4ac8a913dbfdd1c2c890986e797368c)."
+      },
+      {
+        "path": ".fallow-baselines/manifest.json",
+        "justification": "One separate refresh per category records analyzed source commit, reason, and file digest."
+      },
+      {
         "path": "domains/shared/extensions/project-tools/fallow-provider.ts",
-        "justification": "Q-006(a): duplication exit 0 with normalized findings is a completed fail verdict"
+        "justification": "TASK-768/776 Q-006(a) reconciled exit-zero duplication findings to completed fail; warn-class changed-scope audit remains non-passing under D-023."
       }
     ]
   },
   "downstream": {
-    "executionLiveness": []
+    "executionLiveness": [
+      {
+        "path": "cli/drive/subcommand.ts",
+        "changes": [
+          "runDrive selection split into prepareDriveSelection/prepareDriveEpisode, with frozen worker/source identity retained; revalidate resume/cancellation before TASK-712."
+        ]
+      },
+      {
+        "path": "lib/driver/drive-finalization.ts",
+        "changes": [
+          "Moved partialReason formatting into exported formatPartialReport in new lib/driver/report-format.ts; finalization and task attempts now share it."
+        ]
+      },
+      {
+        "path": "lib/driver/drive-scheduler-backend.ts",
+        "changes": [
+          "Split backend result handling and retry paths; shares runtime process helpers with run-one-task via new lib/driver/runtime-helpers.ts."
+        ]
+      },
+      {
+        "path": "lib/driver/lock.ts",
+        "changes": [
+          "Moved lock acquisition, stale-owner checks and release details to lib/entity-file-lock.ts; driver lock delegates to shared lock primitive."
+        ]
+      },
+      {
+        "path": "lib/driver/run-one-task.ts",
+        "changes": [
+          "Split runBackend/runShellCommand into runTaskBackend and shared runtime helpers; partial report formatting uses lib/driver/report-format.ts."
+        ]
+      },
+      {
+        "path": "lib/durable-runtime/scheduler-state.ts",
+        "changes": [
+          "Exports newestHeartbeat for shared scheduler recovery decisions."
+        ]
+      },
+      {
+        "path": "lib/durable-runtime/scheduler.ts",
+        "changes": [
+          "Split recoverRunningSteps, reconcilePromotedAttempts, executePlannedSteps and finalizeSchedulerResult while retaining persisted scheduler state transitions."
+        ]
+      },
+      {
+        "path": "lib/entity-file-lock.ts",
+        "changes": [
+          "Split attemptLock and readLockFile; shared acquisition/stale-owner/release semantics serve driver and task locks."
+        ]
+      },
+      {
+        "path": "lib/memory/episode-transition-lock.ts",
+        "changes": [
+          "Delegates common lock behavior to entity-file-lock with episode transition ownership retained."
+        ]
+      },
+      {
+        "path": "lib/process/process-group.ts",
+        "changes": [
+          "Narrowed process liveness export; consumers use shared runtime process primitives."
+        ]
+      },
+      {
+        "path": "lib/tasks/lock.ts",
+        "changes": [
+          "Delegates task lock semantics to entity-file-lock shared primitive."
+        ]
+      }
+    ]
   }
 }
