@@ -86,23 +86,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. **TASK-776 attempt 1 (`run-6fe911a5`, gpt-6-sol) stopped `blocked`
-before any edit, 02:21Z — ESCALATED to Shepherd (refactor blocked on a seam).**
-The worker (correctly, per AC #3 / D-018 (2)) found two return sites of the
-owned high-tier `runDurableGraphScheduler` that no test reaches:
-`lib/durable-runtime/scheduler.ts:215-224` (`availableSlots === 0` →
-`waiting_for_fresh_external_work` with runnable ready work while running work
-fills the parallelism limit) and the missing-run throw at `scheduler.ts:40-42`.
-TASK-775 characterized only `summarizeEvent`/`isStepRecordLike` in that area
-(its AC #3 said the scheduler "remains unchanged under existing coverage",
-which TASK-776 AC #1 contradicts by requiring all ten below thresholds).
-No source/test edits; worker notes recovered from the transcript into the
-task (Drive had overwritten them: obs. 2 + obs. 19). Proposed route: a new
-dependent characterization task (stage 8b) adding two scheduler test cases
-(saturated slots with a ready step at `maxParallelSteps` 1 → waiting result,
-no backend start, ready step unmutated; missing run → rejection), then
-TASK-776 attempt 2 with 776 depending on it. Needs a human/Shepherd ruling
-because it adds a task to the D-016 backlog.
+Nothing. **Next: launch TASK-785 (stage 8b, characterization, created under
+Q-014 / D-030) on the Pi worker (gpt-6-sol) as in slice 7, then TASK-776
+attempt 2 with `C` = TASK-785's Drive commit.** TASK-776 is back to To Do and
+depends on TASK-785. Ready now: 785, 778, 780 (776 after 785; 781 after 780).
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -182,11 +169,10 @@ because it adds a task to the D-016 backlog.
 
 ## Blocked
 
-Nothing. Q-011 (human, relayed; rulings round 5; plan D-027) resolved the
-provider: worker `openrouter/deepseek/deepseek-v4-pro`, cosmo
-`openrouter/deepseek/deepseek-v4-flash`, commit `b1adbb7a`; probe `ok`.
-The D-025 Anthropic pins (`1bce4ac2`) failed their probe (claude.ai OAuth
-out of extra usage) and are superseded.
+Nothing. History: TASK-776 attempt 1 (`run-6fe911a5`, 02:21Z) stopped
+`blocked` on the two unreached `runDurableGraphScheduler` return sites
+(`scheduler.ts:215-224`, `:40-42`); resolved by Q-014 / D-030 = TASK-785.
+Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.
 
 ## Spend guard (Q-011; RETIRED by Q-013 / D-029 — table kept as record)
 
@@ -222,20 +208,19 @@ out of extra usage) and are superseded.
 
 ## HEAD
 
-`feature/project-health-audit`, record-only commit after TASK-779 (see
-`git log`), off local `main` `64dca3c`. Tree clean; nothing running. Needs the
-user: the OpenRouter top-up (or Codex/Claude quota) decision before any
-refactor slice; gate-owned R-013 sign-off at closeout.
+`feature/project-health-audit`, record-only commit after Q-014 (see `git log`),
+off local `main` `64dca3c`. Tree clean; nothing running. 9 of 18 tasks Done.
+Needs the user: nothing now; gate-owned R-013 sign-off at closeout.
 
 ## Successor handoff — continue implementation (refreshed by successor #2, 2026-09-29 02:15Z, after Q-013)
 
-State: `feature/project-health-audit`; rulings Q-001..Q-013 in
+State: `feature/project-health-audit`; rulings Q-001..Q-014 in
 `.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`, plan
-D-001..D-029. Pins: worker and cosmo `openai-codex/gpt-6-sol` (D-029). 9 of 17
-tasks Done (768-775, 777, 779). TASK-776 attempt 1 is running (see Running);
-if you inherit it mid-run, poll as described there and do the verdict.
+D-001..D-030. Pins: worker and cosmo `openai-codex/gpt-6-sol` (D-029). 9 of 18
+tasks Done (768-775, 777, 779). Nothing running.
 
-Remaining order: 776 (running) → 778, 780 (refactor, ready) → 781
+Remaining order: 785 (stage 8b characterization, ready) → 776 (refactor,
+`C` = 785's Drive commit plus 775's `7390f105`) → 778, 780 (refactor, ready) → 781
 (characterization, after 780; Pi worker, no claude-cli needed) → 782 (15a) →
 784 (15b) → 783 (16 closeout, D-018 (4)) → `/implement-plan` Phases 2-4:
 gates, QM (commit first, reconcile against local `main`, gate-owned files →

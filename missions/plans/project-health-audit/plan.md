@@ -216,6 +216,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: the human's ruling; GPT-backed Pi workers were the plan's original preference (Q-007 (a)).
   - Decided by: coordinator, derived under human ruling Q-013, 2026-09-29 (rulings file round 7, relayed by Shepherd)
 
+- **D-030 - Q-014: a dependent characterization task (stage 8b) precedes TASK-776 for two unreached `runDurableGraphScheduler` return sites** *(Added 2026-09-29 by the implementing coordinator, successor #2, after TASK-776 attempt 1)*
+  - Decision: TASK-776 attempt 1 (`run-6fe911a5`, gpt-6-sol) stopped `blocked` before any edit because two return sites of the owned high-tier `runDurableGraphScheduler` are reached by no test: `lib/durable-runtime/scheduler.ts:215-224` (`availableSlots === 0` → `waiting_for_fresh_external_work` with runnable ready work while running work fills the parallelism limit) and the missing-run throw at `scheduler.ts:40-42`. Stage 9 relied on the function's "high static coverage" (Implementation Order 9; TASK-775 AC #3 "remains unchanged under existing coverage"), but TASK-776 AC #1 requires it below thresholds and AC #3 / D-018 (2) forbid a refactor task from adding tests or a seam. Per D-018 (2) a new characterization task is created ("Stage 8b: Characterize runDurableGraphScheduler saturated-capacity and missing-run variants", new test file under `tests/durable-runtime/` only, depends on TASK-775), TASK-776 depends on it, and TASK-776's characterization base `C` becomes stage 8b's Drive commit. The backlog grows from 17 to 18 tasks (D-016 amended on record). Stage 8b runs on the Pi `cosmonauts-subagent` worker (gpt-6-sol, D-029).
+  - Alternatives: amend TASK-776 to leave `runDurableGraphScheduler` unchanged (amends plan stage 9 / B-005 scope, human ground, not taken); let the refactor touch the unreached sites (violates INV-002 / AC #3).
+  - Why: INV-002 (behavior-preserving refactors need characterization first) and the plan's own D-018 (2) route for a seam.
+  - Decided by: Shepherd, derived under INV-002, 2026-09-29 (rulings file round 8, relayed)
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible

@@ -1,7 +1,7 @@
 ---
 id: TASK-776
 title: 'Stage 9: Refactor runtime and extension criticals'
-status: Blocked
+status: To Do
 priority: medium
 assignee: worker
 labels:
@@ -10,8 +10,9 @@ labels:
   - 'plan:project-health-audit'
 dependencies:
   - TASK-775
+  - TASK-785
 createdAt: '2026-09-28T15:24:56.144Z'
-updatedAt: '2026-09-29T02:23:36.699Z'
+updatedAt: '2026-09-29T02:25:38.176Z'
 ---
 
 ## Description
@@ -57,3 +58,8 @@ Fresh project-scope `analysis_complexity` was called separately for cyclomatic, 
 Uncharacterized return site discovered before any production edit: `lib/durable-runtime/scheduler.ts:215-224`, `runDurableGraphScheduler`'s `availableSlots === 0` return (`waiting_for_fresh_external_work` with runnable ready work while existing running work fills the effective parallelism limit). TASK-775's `tests/durable-runtime/runtime-criticals-characterization.test.ts` only covers `summarizeEvent` and `isStepRecordLike`; existing `scheduler-parallelism.test.ts` tests fresh runs without a pre-existing running step, and `scheduler-recovery.test.ts:110-165` tests a sole externally running step without any ready step. Repository test search for saturated slots/ready + running found no case reaching this return. This is a separate observable scheduler result, not the `!runnable` waiting return; changing it during extraction would violate AC #3's return-site coverage rule and INV-002. The missing-run throw at scheduler.ts:40-42 likewise has no scheduler test (controller's missing-run test exercises a different entry), another failure variant to characterize. D-018(2) requires a separate characterization task/commit for the needed result variants; this refactor task may neither create a test file nor land a test-only seam. Route: halt without code edits and ask coordinator to create a dependent characterization task with a fixture for externally running plus ready step at maxParallelSteps 1 asserting waiting result, no new backend start and no mutation of the ready step, and a missing-run rejection fixture, then restart the return-site mapping. No threshold, suppression, configuration, source, or test edits were made; no stage-gate claim or task-close audit is made. This is a prerequisite characterization gap, not a failed analysis binding and not a request to change any test expectation.
 
 D-015 in-session evidence against C (2026-09-29): `git diff --name-status --diff-filter=MDR 7390f1053abff498419829ce9356a910d45f3daa -- tests/` => empty; `git status --porcelain -- tests/` => empty; `git diff -U0 7390f1053abff498419829ce9356a910d45f3daa -- tests/ | grep -E '^\+.*\.(skip|only|todo)\('` => empty (grep exit 1, command wrapped with `|| true`). `git diff --name-only --` all ten owned source files plus registry => empty. HEAD remains S. Unrelated dirty `missions/plans/project-health-audit/coordinator-status.md` was left untouched.
+
+
+### Coordinator note after attempt 1 (2026-09-29, successor #2; plan D-030 / Q-014)
+
+Attempt 1's blocker is accepted: the two unreached `runDurableGraphScheduler` return sites are characterized first by TASK-785 (stage 8b), which this task now depends on. For attempt 2 the characterization base `C` is TASK-785's Drive commit (the coordinator records it here before launch); TASK-775's Drive commit `7390f105` remains the base for the other nine functions. Everything in the attempt-1 note still applies. Restart the return-site mapping from the two characterization commits; the ten owned rows from your pre-edit evidence stand.
