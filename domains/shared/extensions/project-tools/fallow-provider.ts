@@ -2294,6 +2294,23 @@ interface NormalizedFallowAnalysis extends NormalizedAnalysisFindings {
 	readonly coverage: AnalysisGateCoverage;
 }
 
+type FallowVerdict = "pass" | "warn" | "fail";
+
+function isFallowVerdict(value: unknown): value is FallowVerdict {
+	return value === "pass" || value === "warn" || value === "fail";
+}
+
+/**
+ * Fallow's `warn` is a completed, non-passing verdict (warn-severity findings
+ * only). The analysis contract has no warn tier, so it is recorded as `fail`;
+ * the native payload keeps the original verdict for the record.
+ */
+function normalizeFallowVerdict(
+	verdict: FallowVerdict,
+): NormalizedAnalysisFindings["verdict"] {
+	return verdict === "pass" ? "pass" : "fail";
+}
+
 function findingsOutcome(
 	findings: readonly AnalysisFinding[],
 ): NormalizedAnalysisFindings {
@@ -2326,12 +2343,12 @@ function reconcileVerdictEvidence(
 			`provider verdict ${normalized.verdict} contradicts ${normalized.findings.length} normalized findings`,
 		);
 	}
-	if ("verdict" in payload) {
-		const assertedVerdict = payload.verdict;
-		if (assertedVerdict !== "pass" && assertedVerdict !== "fail") {
-			throw new Error("expected asserted verdict to be pass or fail");
+	const assertedVerdict = "verdict" in payload ? payload.verdict : undefined;
+	if (assertedVerdict !== undefined) {
+		if (!isFallowVerdict(assertedVerdict)) {
+			throw new Error("expected asserted verdict to be pass, warn, or fail");
 		}
-		if (assertedVerdict !== findingsVerdict) {
+		if (normalizeFallowVerdict(assertedVerdict) !== findingsVerdict) {
 			throw new Error(
 				`asserted verdict ${assertedVerdict} contradicts ${normalized.findings.length} normalized findings`,
 			);
@@ -2342,9 +2359,14 @@ function reconcileVerdictEvidence(
 		capability === "duplication" &&
 		outcome.code === 0 &&
 		findingsVerdict === "fail";
+	// Fallow exits 0 when only warn-level findings remain (docs/fallow.md, exit
+	// codes): a `warn` verdict beside exit 0 is its contract, not a contradiction.
+	const warnWithSuccessfulExit =
+		assertedVerdict === "warn" && outcome.code === 0;
 	if (
 		exitVerdict !== findingsVerdict &&
-		!duplicationFindingsWithSuccessfulExit
+		!duplicationFindingsWithSuccessfulExit &&
+		!warnWithSuccessfulExit
 	) {
 		throw new Error(
 			`provider exit ${outcome.code} contradicts ${normalized.findings.length} normalized findings`,
@@ -2425,10 +2447,11 @@ function auditFindings(
 			`expected audit base_ref ${JSON.stringify(request.scope.base)}, received ${JSON.stringify(payload.base_ref)}`,
 		);
 	}
-	const verdict = payload.verdict;
-	if (verdict !== "pass" && verdict !== "fail") {
-		throw new Error("expected audit verdict to be pass or fail");
+	const assertedVerdict = payload.verdict;
+	if (!isFallowVerdict(assertedVerdict)) {
+		throw new Error("expected audit verdict to be pass, warn, or fail");
 	}
+	const verdict = normalizeFallowVerdict(assertedVerdict);
 	const deadCode = auditEnvelope(payload, "dead_code");
 	const duplication = auditEnvelope(payload, "duplication");
 	const complexity = auditEnvelope(payload, "complexity");

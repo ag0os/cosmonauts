@@ -2248,6 +2248,106 @@ describe("Fallow capability execution", () => {
 		).not.toThrow();
 	});
 
+	test("records a warn audit verdict as a completed non-passing result", async () => {
+		/*
+		 * project-health-audit D-023: `fallow audit` exits 0 with the documented
+		 * verdict `warn` when only warn-severity findings remain (here clone
+		 * groups, no dead code, no complexity). The provider used to reject that
+		 * as invalid-output, so a task-close audit could neither pass nor be
+		 * recorded. The result is a completed `fail`, never `pass`, and the native
+		 * payload keeps Fallow's own verdict.
+		 */
+		const auditFixture = await loadCapabilityFixture("changed-scope-audit");
+		const duplicationFixture = await loadCapabilityFixture("duplication");
+		const auditPayload = auditFixture.envelope.payload as Record<
+			string,
+			unknown
+		>;
+		const deadCode = auditPayload.dead_code as Record<string, unknown>;
+		const cloneGroups = (
+			duplicationFixture.envelope.payload as Record<string, unknown>
+		).clone_groups as readonly unknown[];
+		const warnAudit = {
+			...auditPayload,
+			verdict: "warn",
+			summary: {
+				...(auditPayload.summary as Record<string, unknown>),
+				dead_code_issues: 0,
+				dead_code_has_errors: false,
+				duplication_clone_groups: cloneGroups.length,
+			},
+			dead_code: {
+				...deadCode,
+				total_issues: 0,
+				summary: {
+					...(deadCode.summary as Record<string, unknown>),
+					total_issues: 0,
+					unused_files: 0,
+					unused_exports: 0,
+				},
+				unused_files: [],
+				unused_exports: [],
+			},
+			duplication: {
+				...(auditPayload.duplication as Record<string, unknown>),
+				clone_groups: cloneGroups,
+			},
+		};
+		const runtime = await discoveredRuntimeWithFixtures({
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify(warnAudit),
+				stderr: "",
+			},
+		});
+
+		const result = await runtime.execute({
+			capability: "changed-scope-audit",
+			scope: { kind: "changed", base: "HEAD" },
+		});
+
+		expect(result).toMatchObject({
+			kind: "findings",
+			capability: "changed-scope-audit",
+			verdict: "fail",
+			native: { exitCode: 0, payload: { verdict: "warn" } },
+		});
+		if (result.kind !== "findings") throw new Error("expected findings");
+		expect(result.findings.length).toBe(cloneGroups.length);
+		expect(
+			result.findings.every(({ category }) => category === "duplication"),
+		).toBe(true);
+		expect(result.coverage).toContain("duplication");
+	});
+
+	test("rejects a warn audit verdict that carries no findings", async () => {
+		const zeroChange = JSON.parse(
+			await readFile(
+				join(FALLOW_FIXTURE_ROOT, "zero-change-audit.json"),
+				"utf8",
+			),
+		) as CapabilityFixture;
+		const runtime = await discoveredRuntimeWithFixtures({
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify({
+					...(zeroChange.envelope.payload as Record<string, unknown>),
+					verdict: "warn",
+				}),
+				stderr: "",
+			},
+		});
+
+		await expect(
+			runtime.execute({
+				capability: "changed-scope-audit",
+				scope: { kind: "changed", base: "HEAD" },
+			}),
+		).rejects.toThrow(/Failure class: invalid-output/u);
+	});
+
 	test("rejects structurally valid verdict evidence that contradicts the provider exit", async () => {
 		const duplicationFixture = await loadCapabilityFixture("duplication");
 		const auditFixture = await loadCapabilityFixture("changed-scope-audit");
