@@ -1,5 +1,6 @@
 /** Task-specific callers for the shared entity-file lock protocol. */
 
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { EntityFileLockOptions } from "../entity-file-lock.ts";
 import { withEntityFileLock } from "../entity-file-lock.ts";
@@ -12,6 +13,16 @@ import { withEntityFileLock } from "../entity-file-lock.ts";
  * running unlocked is not an option here — it would duplicate task ids.
  */
 export const TASK_CREATE_LOCK_WAIT_TIMEOUT_MS = 10_000;
+
+export const TASK_UPDATE_LOCK_WAIT_TIMEOUT_MS = 10_000;
+
+export function getTaskUpdateLockPath(projectRoot: string, id: string): string {
+	const canonicalId = id.toUpperCase();
+	const segment = /^[A-Z0-9._-]{1,64}$/.test(canonicalId)
+		? canonicalId
+		: createHash("sha256").update(canonicalId).digest("hex").slice(0, 32);
+	return join(projectRoot, ".cosmonauts", `task-update-${segment}.lock`);
+}
 
 export type { EntityFileLockOptions } from "../entity-file-lock.ts";
 export { withEntityFileLock } from "../entity-file-lock.ts";

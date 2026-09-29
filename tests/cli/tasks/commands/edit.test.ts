@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -338,6 +338,38 @@ describe("task edit command", () => {
 			id: "TASK-001",
 			status: "Blocked",
 		});
+	});
+
+	it("routes CLI append through the source-preserving editor and rejects both note options", async () => {
+		const manager = await createExistingTask(tempDir);
+		const file = join(
+			tempDir,
+			"missions",
+			"tasks",
+			"TASK-001 - Existing Task.md",
+		);
+		const original = await readFile(file, "utf8");
+		await writeFile(
+			file,
+			`${original}\n## Implementation Notes\r\n\r\nWorker  \r\n\r\n`,
+		);
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"edit",
+			"TASK-001",
+			"--append-notes",
+			"More",
+		]);
+		expect(await readFile(file, "utf8")).toContain("Worker  \r\n\r\nMore");
+		const result = buildTaskUpdate(
+			(await manager.getTask("TASK-001")) ?? renderedTask,
+			{
+				notes: "Replace",
+				appendNotes: "Append",
+			},
+		);
+		expect(result.ok).toBe(false);
 	});
 
 	it("appends plan and notes with blank-line separators", async () => {

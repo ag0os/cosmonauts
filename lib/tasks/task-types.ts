@@ -119,7 +119,7 @@ export interface TaskCreateInput {
  * Input for updating an existing task
  * All fields are optional; only provided fields will be updated
  */
-export interface TaskUpdateInput {
+export interface TaskUpdateFields {
 	/** Update title */
 	title?: string;
 	/** Update status */
@@ -138,11 +138,15 @@ export interface TaskUpdateInput {
 	description?: string;
 	/** Update implementation plan */
 	implementationPlan?: string;
-	/** Update implementation notes */
-	implementationNotes?: string;
 	/** Replace all acceptance criteria */
 	acceptanceCriteria?: AcceptanceCriterion[];
 }
+
+export type TaskUpdateInput = TaskUpdateFields &
+	(
+		| { implementationNotes?: string; appendImplementationNotes?: never }
+		| { implementationNotes?: never; appendImplementationNotes?: string }
+	);
 
 // ============================================================================
 // Filter and Query Interfaces

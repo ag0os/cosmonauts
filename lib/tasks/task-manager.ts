@@ -24,7 +24,13 @@ import {
 	saveTaskFile,
 } from "./file-system.ts";
 import { generateNextId } from "./id-generator.ts";
-import { withTaskCreateLock } from "./lock.ts";
+import {
+	getTaskUpdateLockPath,
+	TASK_UPDATE_LOCK_WAIT_TIMEOUT_MS,
+	withEntityFileLock,
+	withTaskCreateLock,
+} from "./lock.ts";
+import { hasTaskNoteBlock, preserveTaskNotes } from "./task-note-editor.ts";
 import { parseTask } from "./task-parser.ts";
 import { serializeTask } from "./task-serializer.ts";
 import type {
@@ -201,28 +207,46 @@ export class TaskManager {
 			this.assertValidDate(input.dueDate, "dueDate");
 		}
 
-		// Design §7 orders capture strictly after release. If the lock could not
-		// be confirmed released, skip capture rather than run it under a lock this
-		// process still owns; the update itself already persisted.
-		let releaseUnconfirmed = false;
-		const execution = await withEpisodeTransitionLock({
-			projectRoot: this.projectRoot,
-			lockPath: getTaskEpisodeTransitionLockPath(this.projectRoot, id),
-			hasEpisodeContext: Boolean(this.episodeContext?.episodeSource),
-			reportEpisodeWarning: this.episodeContext?.reportEpisodeWarning,
-			onReleaseUnconfirmed: () => {
-				releaseUnconfirmed = true;
-			},
-			action: () => this.updateTaskLocked(id, input),
-		});
-
-		if (!releaseUnconfirmed && execution.previousStatus !== undefined) {
-			await this.captureTaskStatusChanged(
-				execution.previousStatus,
-				execution.task,
+		if (
+			input.implementationNotes !== undefined &&
+			input.appendImplementationNotes !== undefined
+		) {
+			throw new Error(
+				"Cannot replace and append implementation notes together",
 			);
 		}
-		return execution.task;
+		if (
+			input.appendImplementationNotes !== undefined &&
+			!input.appendImplementationNotes.trim()
+		) {
+			throw new Error("Cannot append empty implementation notes");
+		}
+		return withEntityFileLock(
+			getTaskUpdateLockPath(this.projectRoot, id),
+			async () => {
+				// Capture must follow the episode lock release, while the task lock
+				// still protects the status transition from another task writer.
+				let releaseUnconfirmed = false;
+				const execution = await withEpisodeTransitionLock({
+					projectRoot: this.projectRoot,
+					lockPath: getTaskEpisodeTransitionLockPath(this.projectRoot, id),
+					hasEpisodeContext: Boolean(this.episodeContext?.episodeSource),
+					reportEpisodeWarning: this.episodeContext?.reportEpisodeWarning,
+					onReleaseUnconfirmed: () => {
+						releaseUnconfirmed = true;
+					},
+					action: () => this.updateTaskLocked(id, input),
+				});
+				if (!releaseUnconfirmed && execution.previousStatus !== undefined) {
+					await this.captureTaskStatusChanged(
+						execution.previousStatus,
+						execution.task,
+					);
+				}
+				return execution.task;
+			},
+			{ waitTimeoutMs: TASK_UPDATE_LOCK_WAIT_TIMEOUT_MS },
+		);
 	}
 
 	private async updateTaskLocked(
@@ -236,8 +260,15 @@ export class TaskManager {
 
 		const existingContent = await readTaskFile(this.projectRoot, targetFile);
 		const existingTask = existingContent ? parseTask(existingContent) : null;
-		if (!existingTask) {
+		if (!existingTask || !existingContent) {
 			throw new Error(`Task not found: ${id}`);
+		}
+		if (
+			input.appendImplementationNotes !== undefined &&
+			Object.keys(input).length === 1 &&
+			hasTaskNoteBlock(existingContent, input.appendImplementationNotes)
+		) {
+			return { task: existingTask };
 		}
 
 		// Find the old filename before updating
@@ -259,7 +290,16 @@ export class TaskManager {
 		};
 
 		// Serialize and save
-		const content = serializeTask(updatedTask);
+		const serialized = serializeTask(updatedTask);
+		const content =
+			input.implementationNotes === undefined
+				? preserveTaskNotes(
+						existingContent,
+						serialized,
+						input.appendImplementationNotes,
+					)
+				: serialized;
+		updatedTask.implementationNotes = parseTask(content).implementationNotes;
 		const newFilename = getTaskFilename(updatedTask);
 
 		if (oldFilename !== newFilename) {

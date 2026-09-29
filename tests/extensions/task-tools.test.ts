@@ -6,7 +6,7 @@
  * The task_create and task_edit tools are covered in task-plan-linkage.test.ts.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	type JsonObject,
@@ -45,6 +45,58 @@ beforeEach(async () => {
 	const manager = new TaskManager(tmp.path);
 	await manager.init();
 	pi = await setupExtension(tmp.path);
+});
+
+test("task_edit normalizes surrounding quotes and irregular whitespace before the canonical rename", async () => {
+	const manager = new TaskManager(tmp.path);
+	const task = await manager.createTask({ title: "Old" });
+	for (const [input, expected] of [
+		["  'Quoted'  ", "Quoted"],
+		["  `\"'Nested'\"`  ", "Nested"],
+		["  Loose  \t spaced  ", "Loose spaced"],
+	]) {
+		await pi.callTool("task_edit", { taskId: task.id, title: input });
+		expect((await manager.getTask(task.id))?.title).toBe(expected);
+		expect(
+			(await readdir(join(tmp.path, "missions", "tasks"))).filter((file) =>
+				file.endsWith(".md"),
+			),
+		).toEqual([`${task.id} - ${expected}.md`]);
+	}
+	const before = await readFile(
+		join(tmp.path, "missions", "tasks", `${task.id} - Loose spaced.md`),
+		"utf8",
+	);
+	await pi.callTool("task_edit", { taskId: task.id, title: "  '  '  " });
+	expect(
+		await readFile(
+			join(tmp.path, "missions", "tasks", `${task.id} - Loose spaced.md`),
+			"utf8",
+		),
+	).toBe(before);
+});
+
+test("task_edit append mode preserves notes and refuses simultaneous note modes", async () => {
+	const manager = new TaskManager(tmp.path);
+	const task = await manager.createTask({ title: "Old" });
+	const file = join(tmp.path, "missions", "tasks", `${task.id} - Old.md`);
+	await writeFile(
+		file,
+		`${await readFile(file, "utf8")}\n## Implementation Notes\r\n\r\nWorker  \r\n\r\n`,
+	);
+	await pi.callTool("task_edit", {
+		taskId: task.id,
+		implementationNotesMode: "append",
+		implementationNotes: "### Drive\n\nReason",
+	});
+	const first = await readFile(file, "utf8");
+	expect(first).toContain("Worker  \r\n\r\n### Drive\r\n\r\nReason");
+	await pi.callTool("task_edit", {
+		taskId: task.id,
+		implementationNotesMode: "append",
+		implementationNotes: "### Drive\n\nReason",
+	});
+	expect((await readFile(file, "utf8")).split("### Drive")).toHaveLength(2);
 });
 
 test("preserves task tool results while supplying episode actor and visible failure warning", async () => {

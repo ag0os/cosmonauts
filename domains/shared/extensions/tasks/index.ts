@@ -83,6 +83,18 @@ function taskNotFoundResult(taskId: string) {
 	return textResult(`Task not found: ${taskId}`, null);
 }
 
+function normalizeTaskEditTitle(title: string): string {
+	let normalized = title.trim();
+	while (
+		normalized.length >= 2 &&
+		["'", '"', "`"].includes(normalized[0] ?? "") &&
+		normalized[0] === normalized.at(-1)
+	) {
+		normalized = normalized.slice(1, -1).trim();
+	}
+	return normalized.replace(/\s+/g, " ");
+}
+
 function taskIdParameter(description: string) {
 	return Type.String({ description });
 }
@@ -312,7 +324,13 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				Type.String({ description: "New implementation plan" }),
 			),
 			implementationNotes: Type.Optional(
-				Type.String({ description: "New implementation notes" }),
+				Type.String({
+					description:
+						"Implementation notes (replace by default, or append in append mode)",
+				}),
+			),
+			implementationNotesMode: Type.Optional(
+				Type.Union([Type.Literal("replace"), Type.Literal("append")]),
 			),
 			checkAc: Type.Optional(
 				Type.Array(Type.Integer(), {
@@ -327,7 +345,18 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-			const { taskId, checkAc, uncheckAc, ...updateFields } = params;
+			const {
+				taskId,
+				checkAc,
+				uncheckAc,
+				implementationNotesMode,
+				...updateFields
+			} = params;
+			if (updateFields.title !== undefined) {
+				updateFields.title = normalizeTaskEditTitle(updateFields.title);
+				if (!updateFields.title)
+					return textResult("Task title cannot be empty", null);
+			}
 
 			// Validate plan label uniqueness if labels are being updated
 			if (updateFields.labels) {
@@ -340,9 +369,17 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				}
 			}
 
-			const update = Object.fromEntries(
+			const fields = Object.fromEntries(
 				Object.entries(updateFields).filter(([_, v]) => v !== undefined),
 			) as TaskUpdateInput;
+			const update: TaskUpdateInput =
+				implementationNotesMode === "append"
+					? {
+							...fields,
+							implementationNotes: undefined,
+							appendImplementationNotes: fields.implementationNotes,
+						}
+					: fields;
 			const { manager, warnings } = createTaskCaptureEdge(
 				ctx.cwd,
 				ctx.getSystemPrompt(),

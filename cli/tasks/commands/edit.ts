@@ -228,6 +228,12 @@ export function buildTaskUpdate(
 	}
 	changes.push(...basicFields.value);
 
+	if (options.notes !== undefined && options.appendNotes !== undefined) {
+		return {
+			ok: false,
+			error: "Cannot replace and append implementation notes together",
+		};
+	}
 	changes.push(...applyPlanEdits(existing, options, updateInput));
 	changes.push(...applyNotesEdits(existing, options, updateInput));
 	changes.push(...applyCollectionEdits(existing, options, updateInput));
@@ -551,7 +557,7 @@ function applyNotesEdits(
 	options: TaskEditCliOptions,
 	updateInput: TaskUpdateInput,
 ): FieldChange[] {
-	if (options.notes) {
+	if (options.notes !== undefined) {
 		updateInput.implementationNotes = processEscapedNewlines(options.notes);
 		return [
 			{
@@ -562,14 +568,13 @@ function applyNotesEdits(
 		];
 	}
 
-	if (!options.appendNotes) {
+	if (options.appendNotes === undefined) {
 		return [];
 	}
 
-	const currentNotes = existing.implementationNotes || "";
-	const separator = currentNotes ? "\n\n" : "";
-	updateInput.implementationNotes =
-		currentNotes + separator + processEscapedNewlines(options.appendNotes);
+	updateInput.appendImplementationNotes = processEscapedNewlines(
+		options.appendNotes,
+	);
 	return [{ field: "notes", oldValue: "", newValue: "" }];
 }
 
