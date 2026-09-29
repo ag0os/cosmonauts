@@ -7,7 +7,22 @@ Implementation started 2026-09-28.
 
 ## Needs the user
 
-Nothing now (Q-013 resolved the provider: Codex back, gpt-6-sol). At closeout:
+**Q-015 (escalated 2026-09-29 05:35Z): stage-13/15 collision on
+`recoverAcceptedEpisodeFinalization`.** TASK-780 AC #1 needs it below the
+partial-tier ceiling; AC #2 says its living-memory same-file clone instances
+stay untouched for stage 15. Three of the nine living-memory clone groups have an
+instance inside the function (`living-memory.ts:1090-1098`, `:1100-1107`,
+`:1130-1141`); extracting everything else leaves 21/31 (measured, reverted).
+Options from the worker: (A) relax "untouched" to "moved intact into a private
+helper, no internal change"; (B) defer the function to stage 15a (TASK-782,
+which owns `runPass` and the family in the same file) and drop it from
+TASK-780 AC #1/#2; (C) another explicit seam. **Coordinator recommends (B)**:
+the function and its clones are refactored together where the family is
+extracted; TASK-779's characterization still applies; no invariant relaxed.
+On (B) the coordinator patches TASK-780 AC #1/#2, TASK-782 AC/owned files,
+re-derives TASK-781's dependency (781 ← 780 was file-ordering on
+`living-memory.ts`, which 780 then no longer touches), records D-034, and
+relaunches 780 attempt 4 from the worktree state. Earlier: Q-013 resolved the provider (Codex back, gpt-6-sol). At closeout:
 gate-owned R-013 sign-off. Earlier: Q-008 ruled (a) 2026-09-28 (human, relayed; plan D-022, spec Q-008,
 rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 `plan.md` D-010/D-012/D-013/D-017.
@@ -111,9 +126,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-780 attempt 3** (stage 13 refactor, `C` = `86b44e34`; attempt 2 stopped on a
-coordinator mid-run commit, obs. 22) on the Pi worker.
-Then 781 → 782 → 784 → 783.
+Nothing. **Worktree is DIRTY on purpose**: TASK-780 attempt 3's partial refactor
+(six `lib/memory/*` files, uncommitted; tests/typecheck green, lint fails on two
+unused `errorCode` helpers + formatting). Do not `git checkout`/`stash`/`reset`
+it; attempt 4 resumes from it after Q-015. Nothing launches until Q-015.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -202,13 +218,17 @@ Then 781 → 782 → 784 → 783.
    (TASK-781 note during TASK-780 attempt 2) moved HEAD past the worker's
    recorded `S`; the worker correctly stopped `partial` (4 min lost). Rule: the
    coordinator commits nothing between `run_started` and the terminal event.
+23. Drive runs postflight and its in-run retry even when the worker reported
+   `task_blocked` (TASK-780 attempt 3): the retry worker started from the block
+   reason as its notes, re-derived the same human question in 4 minutes and
+   stopped. A `blocked` report should end the run without postflight or retry.
 12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
 
 ## Blocked
 
-Nothing (TASK-778/780 waits on 786/787 resolved). Both blocks were probe-confirmed unreached return sites, routed as characterization
+TASK-780 on Q-015 (human): see Needs the user. Earlier waits (778/786, 780/787) resolved. Both blocks were probe-confirmed unreached return sites, routed as characterization
 tasks with a full return-site sweep. History: TASK-776 attempt 1 (`run-6fe911a5`, 02:21Z) stopped
 `blocked` on the two unreached `runDurableGraphScheduler` return sites
 (`scheduler.ts:215-224`, `:40-42`); resolved by Q-014 / D-030 = TASK-785.
@@ -249,7 +269,7 @@ Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.
 ## HEAD
 
 `feature/project-health-audit`, record-only commit after slice 13 (see `git log`),
-off local `main` `64dca3c`. 14 of 20 tasks Done.
+off local `main` `64dca3c`. 14 of 20 tasks Done; worktree dirty (TASK-780 partial).
 Needs the user: nothing now; gate-owned R-013 sign-off at closeout.
 
 ## Successor handoff — continue implementation (refreshed by successor #2, 2026-09-29 02:15Z, after Q-013)

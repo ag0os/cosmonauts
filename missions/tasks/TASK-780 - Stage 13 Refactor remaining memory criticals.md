@@ -1,8 +1,9 @@
 ---
 id: TASK-780
 title: 'Stage 13: Refactor remaining memory criticals'
-status: To Do
+status: Blocked
 priority: medium
+assignee: worker
 labels:
   - backend
   - testing
@@ -12,7 +13,7 @@ dependencies:
   - TASK-787
   - TASK-787
 createdAt: '2026-09-28T15:26:11.527Z'
-updatedAt: '2026-09-29T04:08:23.344Z'
+updatedAt: '2026-09-29T05:23:14.272Z'
 ---
 
 ## Description
@@ -70,3 +71,19 @@ TASK-787 is Done: Drive commit `86b44e34` (contains TASK-779's `3cb2d2c3`) adds 
 ### Coordinator note after attempt 2 (2026-09-29, successor #3) — coordinator error, not a worker block
 
 Attempt 2 (`run-239807e6`, 4 min) stopped `partial` before any edit because HEAD moved from the recorded `S = 504d55c0` to `936c5703` while the worker was gathering pre-edit evidence: the coordinator committed TASK-781's record file mid-run, breaking the D-015 "parent must be `S`" invariant. The worker's stop was correct. No production or test file changed; the worker's `task_edit` carried only the status, so nothing was lost when Drive overwrote the notes (restored from HEAD). Rule restated for the coordinator: no commit of any kind while a run is live. Attempt 3 restarts with `S` = HEAD at launch; everything in the attempt-1 and attempt-2 notes applies unchanged (`C` = `86b44e34`).
+
+### Attempt 3 worker block (2026-09-29)
+
+S = `4be118d2fe5a4d593c6c359b4c83ca2e0789cb9f`; C = `86b44e34`. Fresh pre-edit complexity was confirmed for all eight functions; pre-edit direct duplication and exact-location trace reproduced the proposals/receipts family at `consolidation-proposals.ts:551-566` / `consolidation-receipts.ts:66-80`. `analysis_status` remained package-native Fallow 2.54.2, with dead-code, duplication, complexity, changed-scope audit, trace and fix-preview bound, boundary-conformance unbound. Fresh direct complexity and exact-location clone diagnostics preceded each edit. Trace of non-exported `errorCode` in receipts failed provider-exit 2; D-024 provider limitation, `rg` showed no remaining call sites. No test or expectation was edited.
+
+Partial, uncommitted work: `isEpisodePruneJournal`, `readProposalMaterializations`, `candidateConflict`, `retrieveKnowledge`, and `applyUnderLock` reduced below Fallow findings; shared directory helper wired in proposals and receipts and targeted clone absent in direct duplication. Focused characterization suites passed (prune, proposals 24 tests, receipt recovery 23, retirement 28, retrieval 15), and `bun run typecheck` passed after each affected change. Two unused local `errorCode` declarations remain in proposals and receipts; not shipped. `collectConsolidationSources` 36/85/40.4 and `readRetirementReceiptInventory` 40/87/45.4 remain unmodified. Six owned production files are modified and uncommitted: consolidation-proposals, consolidation-receipts, consolidation-sources, knowledge-store, proposal-files, retirement-store. `lib/memory/living-memory.ts` was returned exactly to HEAD (`git diff --quiet` exit 0), so no production edit for the blocked function remains.
+
+Halt-and-escalate under ratified AC #1/#2 and deviation protocol: `recoverAcceptedEpisodeFinalization` must fall below the partial-tier complexity ceiling, but its stage-15 same-file clone instance at `living-memory.ts:1090-1098` (and enclosing recovery block) must remain untouched. Extracting only the receipt-completion loop outside the clone reduced the function from cyclomatic/cognitive/CRAP 26/40/172 to 21/31/116.3; the helper stayed below its ceiling and all 23 focused cases passed. This still fails the ceiling; the extraction was reverted, returning 26/40/172. Further effective decomposition appears to require relocating or altering the cloned recovery loop, colliding with AC #2. Draft decision for human: (A) authorize moving the clone block intact into a private helper now, keeping its algorithm and stage-15 duplicate detectable while relaxing 'untouched' to mean no internal behavior change; (B) defer the finalization refactor to stage 15 and remove this function from stage-13 AC #1; or (C) approve another explicit seam that demonstrably lowers this function below threshold without touching its clone instance. Invariants: INV-002 behavior preservation, stage ordering/ownership, and ratified AC #1/#2. No option selected or plan changed. Do not dispatch next slice until the human resolves the collision. All acceptance criteria remain unchecked, no Drive commit, no full stage gates because task is blocked.
+
+D-015 in-session freeze (C=`86b44e34`, S=`4be118d2fe5a4d593c6c359b4c83ca2e0789cb9f`): `git diff --name-status --diff-filter=MDR 86b44e34 -- tests/` => empty output; `git status --porcelain -- tests/` => empty output; `git diff -U0 86b44e34 -- tests/ | grep -E '^\+.*\.(skip|only|todo)\('` => empty output. `analysis_audit({base:'4be118d2fe5a4d593c6c359b4c83ca2e0789cb9f'})` failed `invalid-output` (exit 0, expected pass/fail, Fallow returned warn). Verbatim direct command: `bunx fallow audit --base 4be118d2fe5a4d593c6c359b4c83ca2e0789cb9f --format json --quiet --no-cache --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json`; response `verdict:warn`, changed_files_count 7, summary dead_code_issues 0, complexity_findings 0, duplication_clone_groups 2; clone groups were pre-existing isNonEmpty/isRecord/isExactObject at cli/memory/judgment-provider.ts:307, consolidation-proposals.ts:815, retirement-receipts.ts:580, and readExactBytes at consolidation-sources.ts:1465, knowledge-store.ts:859, living-memory.ts:2460. Neither is the owned proposals/receipts group; the audit returned no findings and did not cover the unresolved complexity targets. Full post-edit surface checks and five stage-gate commands not run after stop.
+
+### Coordinator note after attempt 3 (2026-09-29, successor #3) — ESCALATED to Shepherd as Q-015
+
+Attempt 3 (`run-57fabb1f`): worker 1 refactored five functions (`isEpisodePruneJournal`, `readProposalMaterializations`, `candidateConflict`, `retrieveKnowledge`, `applyUnderLock`) and extracted the proposals/receipts family, then reported `task_blocked` on the stage-13/15 collision above; Drive's postflight ran anyway (test/typecheck/reachability/suppressions passed; lint failed on two unused `errorCode` helpers plus formatting in five files) and its in-run retry (worker 2, obs. 3) re-derived the same collision and stopped. The six-file partial refactor is **uncommitted in the worktree** (`consolidation-proposals`, `consolidation-receipts`, `consolidation-sources`, `knowledge-store`, `proposal-files`, `retirement-store`); `living-memory.ts` equals HEAD. Nobody runs `git checkout`/`stash`/`reset` on it. `collectConsolidationSources` (36/85) and `readRetirementReceiptInventory` (40/87) are untouched so far.
+
+The collision is real: the nine-group living-memory family has three instances inside `recoverAcceptedEpisodeFinalization` (`living-memory.ts:1090-1098`, `:1100-1107`, `:1130-1141`, paired with `:780-788`, `:790-797`, `:858-869` in `runPass`'s region), and the worker measured that extracting everything outside them leaves 21/31 (ceiling requires below the partial-tier thresholds). Amending which stage owns the function is human ground (D-030/D-032/D-033 precedent), so the coordinator escalates Q-015 with the worker's options (A) relax "untouched" to "moved intact into a private helper, no internal change"; (B) defer `recoverAcceptedEpisodeFinalization` to stage 15a (TASK-782, which already owns `runPass` and the living-memory family in this file); (C) another explicit seam. Coordinator recommendation: (B). No relaunch until ruled; attempt 4 then finishes the remaining functions from the worktree state, fixes the two unused helpers and formatting, and runs the full gates.
