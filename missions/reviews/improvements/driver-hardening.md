@@ -8,7 +8,7 @@ recordedAt: '2026-09-29'
 
 # Drive improvement observations — driver-hardening
 
-Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two live-acceptance runs), the 14 task notes, and the coordinator's implementation log. Bounded to eight rows; the plan's own defects (already fixed on the branch) are excluded unless they teach something about Drive or the process.
+Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two live-acceptance runs), the 14 task notes, and the coordinator's implementation log. Bounded to eight rows in the first pass; four rows (9-12) added by the review-phase coordinator after codex rounds 3-4 and coordinator finding C-001; the plan's own defects (already fixed on the branch) are excluded unless they teach something about Drive or the process.
 
 | Observed problem | What happened in this run | Suggested improvement | Why it helps |
 |---|---|---|---|
@@ -21,6 +21,11 @@ Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two l
 | Three test suites flaked during postflight or coordinator runs. | `tests/driver/driver-detached.test.ts` `startDetached > escalates an ignored SIGTERM to SIGKILL …` failed twice on unrelated slices and passed on rerun; `tests/driver/cross-plan-commit-lock.test.ts` timed out twice; `tests/driver/parity.test.ts` failed once under the first snapshot fix. Postflight treats one flake as a red gate. | Route to `suite-reliability`: bound the detached abort timing tests on a deterministic signal, and let postflight rerun a failed test file once before declaring the gate red (recording both results). | A slice should not block on a timing test it did not touch. |
 | Every run emits two `drive_finalization_evidence` diagnostics for the state-commit finalizer. | `orchestration-events.jsonl` logs "Drive finalize event has no task context for normalized activity" for `finalize` `state_commit` started and passed on every run, and cosmo reports "completed (2 diagnostics)". | Give run-scoped finalize events their own activity kind so they normalize without a task id, or downgrade the diagnostic to debug. | A diagnostic that fires on every healthy run hides real ones. |
 
+| A Drive host loads the source it was launched from, so a run always executes the previous slice's Drive code. | Runs `run-4ac4797c` and `run-fac5ed2b` each exhibited the defect their own task was fixing (unconditional ref deletion, then universal ref retention); the coordinator had to probe the new code by hand to see it live. | The Drive record for a run names the source commit the host loaded (`git rev-parse HEAD` at host start) next to the run id. | Removes a class of false "verified live" readings; the coordinator's own record in this plan contained one until corrected (C-001). |
+| A worktree snapshot is a full tree, but its containment check needs only the dirty delta. | D-034/D-035 compared every snapshot path against the final tree; every real Done task retained its ref (C-001), and three review rounds plus two fixtures missed it because no fixture had a worker edit a tracked file after a dirty snapshot. | Drive-path fixtures include a "worker edits a tracked file after a dirty snapshot" case as a standing shape (extends row 3). | The retention signal is only meaningful when ordinary success clears refs. |
+| Git text normalization inside the snapshot (codex round 3, finding 1, rejected as a D-020 residual). | Not observed in this repo (no `.gitattributes`, no `core.autocrlf`). | If a project with autocrlf adopts Drive, document in the README that a snapshot holds the bytes a commit would hold. | Sets expectations without replacing the ratified mechanism. |
+| A `run_status` polling loop on an aborted run never exits. | A cosmo host from TASK-803's aborted `run-18d6659d` polled for 1 h 40 min until killed by hand at handoff. | `run_status` returns terminal for `run_aborted` and the cosmo print-mode prompt stops on it. | Stale hosts hold the driver lock's pid namespace and burn tokens. |
+
 ## Ranked follow-ups
 
 1. Abort cause carries the failed step's summary (row 2) — smallest change, largest operator win.
@@ -31,9 +36,13 @@ Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two l
 6. README note on the snapshot mechanism (row 6).
 7. Flakes to `suite-reliability` (row 7).
 8. Finalize-event diagnostic noise (row 8).
+9. Host records the source commit it loaded (row 9) — every "verified live" reading in this plan depended on knowing it.
+10. Standing fixture shape: worker edits a tracked file after a dirty snapshot (row 10).
+11. `run_status` terminal on `run_aborted` (row 12).
+12. README note on text normalization for autocrlf projects (row 11).
 
 ## Non-goals
 
-- Re-litigating any decision D-001..D-033 or the ratified Intent; the plan's own defects are fixed on the branch and recorded in its Evidence table.
+- Re-litigating any decision D-001..D-036 or the ratified Intent; the plan's own defects are fixed on the branch and recorded in its Evidence table.
 - Changing `lib/durable-runtime/`, `drive-envelope`, or `execution-liveness` scope.
 - The observation-4 Biome behavior (Q-003) and the `fallow-provider.ts` warn verdict.
