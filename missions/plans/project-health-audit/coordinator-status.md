@@ -7,7 +7,7 @@ Implementation started 2026-09-28.
 
 ## Needs the user
 
-Nothing. Q-008 ruled (a) 2026-09-28 (human, relayed; plan D-022, spec Q-008,
+The top-up decision (Q-012 stop; see Running). Earlier: Q-008 ruled (a) 2026-09-28 (human, relayed; plan D-022, spec Q-008,
 rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 `plan.md` D-010/D-012/D-013/D-017.
 
@@ -42,6 +42,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
   Two new characterization files, nothing else; five gates passed after one
   in-run retry (quality-review settle-grace timing flake, passes in isolation).
   Attempt 1 stopped on export-only symbol traces → D-024.
+- **Slice 12 / TASK-779 Done** (2026-09-29 00:57Z, attempt 1 on claude-cli/sonnet,
+  launched by Shepherd): Drive commit `3cb2d2c3`, state `d59797e8`. Exactly five
+  new test files (125 cases, non-vacuity probes recorded); freeze clean from
+  `S = 2956e471`; five gates passed; no production or `missions/reviews/` paths.
 - **Slice 10 / TASK-777 Done** (2026-09-29 00:45Z, attempt 1 on claude-cli/sonnet,
   launched by Shepherd): Drive commit `203de10c`, state `76dfe503`. Exactly two
   new test files (52 cases); freeze clean from `S = e7843a47`; five gates
@@ -81,10 +85,14 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. Next: TASK-779 (stage 12 characterization) on claude-cli via
-`launch-next.sh TASK-779` (Shepherd runs it, obs. 15); TASK-777 done.
-**STOP before TASK-776** (first remaining refactor slice) per Q-012: the user
-decides an OpenRouter top-up first. Ready now: 776 (held), 778 (refactor, held), 779.
+Nothing. **STOPPED per Q-012 (2026-09-29 01:00Z).** All four characterization
+slices eligible for claude-cli are done except TASK-781, which depends on
+TASK-780 (a refactor slice) and cannot run yet. Ready tasks are exactly the
+three held refactor slices: TASK-776, TASK-778, TASK-780 (then 781 → 782 →
+784 → 783). Each refactor slice needs the Pi `cosmonauts-subagent` worker
+(INV-003 analysis tools), i.e. OpenRouter credit (slice 7 cost $2.99 on
+deepseek-v4-pro; $4.52 remains, guard $2) or a restored Codex/Claude quota.
+The user decides the top-up; Shepherd relays.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -171,6 +179,7 @@ out of extra usage) and are superseded.
 | 2026-09-29 00:05Z, after slice 7 (cost 2.99) | 10 | 4.9432 | 5.06 |
 | 2026-09-29 00:45Z, after slice 8 (launchers + surface record on flash, 0.29) | 10 | 5.2292 | 4.77 |
 | 2026-09-29 00:50Z, after slice 10 (launcher, 0.08; surface record follows) | 10 | 5.3114 | 4.69 |
+| 2026-09-29 01:00Z, after slice 12 (launcher + two surface records, 0.17) | 10 | 5.4777 | 4.52 |
 
 - History (predecessor): **Codex usage limit reached (20:45Z).** The print-mode cosmo launcher and the
   `coding/worker` role both pin `openai-codex/gpt-5.6-sol`; the relaunch of
@@ -196,11 +205,52 @@ out of extra usage) and are superseded.
 
 ## HEAD
 
-`feature/project-health-audit` at `a0b89e9` (record-only commit after the
-TASK-768 Drive commit `8b366a0` and state commit `8a768c7`), seventeen commits
-ahead of local `main` `64dca3c`. Worktree clean at launch of slice 2.
+`feature/project-health-audit`, record-only commit after TASK-779 (see
+`git log`), off local `main` `64dca3c`. Tree clean; nothing running. Needs the
+user: the OpenRouter top-up (or Codex/Claude quota) decision before any
+refactor slice; gate-owned R-013 sign-off at closeout.
 
-## Successor handoff — continue implementation (kept current by pha-implementer)
+## Successor handoff — resume after the top-up decision (written by successor #2, 2026-09-29 01:05Z)
+
+State: `feature/project-health-audit`, HEAD = the record-only commit after
+TASK-779; tree clean; nothing running; 9 of 17 tasks Done (768-775, 777,
+779). Rulings Q-001..Q-012 in `.shepherd/work/in-progress/project-health-audit/rulings-2026-09-28.md`
+and plan D-001..D-028. Model pins on the branch: worker
+`openrouter/deepseek/deepseek-v4-pro`, cosmo `openrouter/deepseek/deepseek-v4-flash`
+(D-027; revert to `openai-codex/gpt-5.6-sol` when the Codex cap lifts).
+
+Remaining order: TASK-776, TASK-778, TASK-780 (refactor, any order, ready) →
+TASK-781 (characterization, claude-cli eligible, after 780) → TASK-782 (15a)
+→ TASK-784 (15b) → TASK-783 (16 closeout, D-018 (4)) → `/implement-plan`
+Phases 2-4 with Claude-subagent + Kimi reviews, `codex exec` review pending.
+
+Two launch paths, both proven:
+
+A. **Refactor slice (Pi subagent worker, needs credit/quota):** from a clean
+   tree, the handoff-step-1 `nohup … cosmonauts -p -a cosmo "Call run_driver …
+   backend 'cosmonauts-subagent', mode 'inline' …"` line (see the original
+   handoff below). Costs about $3 per slice on deepseek-v4-pro; guard $2
+   (Q-011). Before launching: append a coordinator note to the task with the
+   D-024 one-metric-per-turn rule, "never git checkout/stash/reset", "never
+   pass `title` to task_edit", and the characterization task's residual-risk
+   variants (TASK-777 → 778, TASK-779 → 780, TASK-775 → 776: enumerate return
+   sites before editing). Expect 2-4 attempts per slice; on `task_blocked`
+   restore notes from the newest `worker-*.jsonl` (step 3 below).
+
+B. **Characterization slice (claude-cli, no credit):** the coordinator cannot
+   launch it (obs. 15); Shepherd runs
+   `.shepherd/work/in-progress/project-health-audit/launch-next.sh TASK-NNN`
+   (detached, `ANTHROPIC_MODEL=sonnet`, no `COSMONAUTS_DRIVER_CLAUDE_ARGS`,
+   obs. 16-18). Coordinator: add the D-028 pre-launch note, watch
+   `driver.lock` for the runId, poll the worker pid then the driver pid,
+   freeze check from `S`, trial checks, then add the surface record from a
+   one-turn `cosmonauts -p -a worker -m openrouter/deepseek/deepseek-v4-flash`
+   session (cents), write the verdict, commit record files.
+
+After every slice: `curl -s https://openrouter.ai/api/v1/credits -H "Authorization: Bearer <openrouter key from ~/.pi/agent/auth.json>"`
+→ row in the spend-guard table; stop below $2.
+
+## Previous handoff — continue implementation (pha-implementer; steps 1-5 still accurate)
 
 The loop that has closed slices 1-5 (repeat per ready task, one slice per run,
 dependency order from `cosmonauts task list --label plan:project-health-audit --ready`):
