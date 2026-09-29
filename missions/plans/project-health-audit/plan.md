@@ -252,6 +252,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: scope fidelity to Q-003; D-016 already accepts backlog growth for corrective slices (D-030, D-032, D-033).
   - Decided by: implementing coordinator, derived under Q-003 and D-016, 2026-09-29
 
+- **D-036 - Closeout path check excludes task-state and coordinator-record paths** *(Added 2026-09-29 by the implementing coordinator, successor #3, before TASK-783)*
+  - Decision: TASK-783 AC #2 / D-018 (4) require `git diff --name-only <analyzedCommit> <tip>` to list exactly seven closeout paths. Under `driver-commits` every slice also produces Drive's task-state commit (`missions/tasks/*`) and the coordinator's record-only commit (`missions/plans/project-health-audit/coordinator-status.md`, task notes), so the literal check cannot hold. The coordinator evaluates the check over all paths except `missions/tasks/` and `missions/plans/`, and records the raw list beside it. `analyzedCommit` = TASK-784's Drive commit `ea27538e` (last source change `c9db6260` plus the Stage 15b subsection).
+  - Alternatives: squash the state/record commits into the closeout (rewrites Drive history); leave the check literally failing (blocks a ratified closeout on bookkeeping).
+  - Why: D-010's intent is that the tip differs from the analyzed source only by closeout artifacts; task-state and coordinator records are not source, tests, floors or the exceptions doc.
+  - Decided by: implementing coordinator, derived under D-010 and D-018 (4), 2026-09-29
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
