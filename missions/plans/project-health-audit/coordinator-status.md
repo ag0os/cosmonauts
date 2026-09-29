@@ -15,6 +15,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Done
 
+- **Slice 19 / TASK-781 Done** (2026-09-29 06:29Z, attempt 1 on gpt-6-sol, 37 min):
+  Drive commit `1a9f62ce`, state `6677665e`. One new test file (10 cases); all 13
+  `runPass` return sites probed reached; freeze clean from `S = ee22aefe`; five
+  gates passed. `C` for TASK-782.
 - **Slice 18 / TASK-780 Done** (2026-09-29 05:50Z, attempt 4 on gpt-6-sol, 18 min, after
   Q-015 (B)): Drive commit `5f018779`, state `d405b5ca`. Seven owned sources,
   `living-memory.ts` untouched; freeze clean from `S = 66778c1d` and `C =
@@ -119,8 +123,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-781** (stage 14 characterization of `runPass`, depends on 779) on the Pi
-worker. Then 782 (+ deferred `recoverAcceptedEpisodeFinalization`) → 784 → 783.
+**TASK-788** (stage 4b corrective extraction, D-035) on the Pi worker. Then 782
+(`C` = `1a9f62ce`) → 784 (now also depends on 788) → 783.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -213,6 +217,11 @@ worker. Then 782 (+ deferred `recoverAcceptedEpisodeFinalization`) → 784 → 7
    `task_blocked` (TASK-780 attempt 3): the retry worker started from the block
    reason as its notes, re-derived the same human question in 4 minutes and
    stopped. A `blocked` report should end the run without postflight or retry.
+24. TASK-771's verdict (slice 4) checked complexity, gates and the freeze but
+   not duplication residue; eight of its nine owned same-file groups survived
+   its commit unnoticed until the stage-13 verdict looked at the whole dupes
+   inventory (D-035). Extraction-slice verdicts must diff the owned family
+   list against the post-commit `fallow dupes` inventory.
 12. Launching Drive through a print-mode cosmo session works but the launcher
    must be detached from the coordinator's tool timeout (`nohup … & disown`);
    killing it mid-run leaves a stale `running` record and an In-Progress task.
@@ -260,7 +269,7 @@ Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.
 ## HEAD
 
 `feature/project-health-audit`, record-only commit after slice 13 (see `git log`),
-off local `main` `64dca3c`. 15 of 20 tasks Done; tree clean.
+off local `main` `64dca3c`. 16 of 21 tasks Done; tree clean.
 Needs the user: nothing now; gate-owned R-013 sign-off at closeout.
 
 ## Successor handoff — continue implementation (refreshed by successor #2, 2026-09-29 02:15Z, after Q-013)

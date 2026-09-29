@@ -246,6 +246,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: same file, same family, no scope change; INV-002 preserved by the existing characterization.
   - Decided by: Shepherd, derived under the ratified Intent, 2026-09-29 (rulings file round 9)
 
+- **D-035 - Corrective stage 4b (TASK-788) extracts the `scripts/validate-harness-exports.ts` same-file family TASK-771 left behind; baseline family 1 may surface as two two-file groups** *(Added 2026-09-29 by the implementing coordinator, successor #3, after TASK-780's verdict)*
+  - Decision: the ratified `extract` family `family-917fb9ff1536e05a` (nine supplied same-file groups in `scripts/validate-harness-exports.ts`, TASK-771 stage 4) still has eight groups at TASK-771's Drive commit `ac8dbc1` and seven at `5f018779`; TASK-771's verdict checked complexity and gates, not duplication residue, and TASK-774 recorded "no moved families" on TASK-771's word. Q-003 and TASK-783 AC #8 both require the family gone, so TASK-788 ("Stage 4b", refactor-only, depends on TASK-774, script helpers cyclomatic ≤4) extracts it before stage 15b; TASK-784 depends on TASK-788 so the baseline rows are written at the final refactor tip. Order: 788 → 782 → 784 → 783. Backlog 20 → 21 (D-016 amended on record). Second ruling for closeout: at `5f018779` Fallow reports ratified baseline family 1 (`cli/memory/judgment-provider.ts` / `consolidation-proposals.ts` / `retirement-receipts.ts` validation helpers) as two overlapping two-file groups (`304-332/813-841` and `307-332/677-702`) because the refactored instances no longer match each other; TASK-783 records them as the ratified family's instances under its existing reason, not as new families.
+  - Alternatives: baseline the script family with a reason (amends Q-003, human ground); leave it for TASK-783 to discover (closeout would block).
+  - Why: scope fidelity to Q-003; D-016 already accepts backlog growth for corrective slices (D-030, D-032, D-033).
+  - Decided by: implementing coordinator, derived under Q-003 and D-016, 2026-09-29
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible

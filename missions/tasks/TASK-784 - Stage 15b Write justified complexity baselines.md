@@ -9,6 +9,7 @@ labels:
   - 'plan:project-health-audit'
 dependencies:
   - TASK-782
+  - TASK-788
 createdAt: '2026-09-28T15:43:15.532Z'
 updatedAt: '2026-09-28T18:33:28.499Z'
 ---
