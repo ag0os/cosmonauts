@@ -434,15 +434,25 @@ export interface AnalysisUnsupportedScopeResolution {
 	readonly supportedScopeKinds: readonly AnalysisScope["kind"][];
 }
 
-export interface AnalysisUnsupportedTargetResolution {
-	readonly kind: "unsupported-target";
-	readonly capability: "trace";
-	readonly providerId: string;
-	readonly requestedTargetKind: AnalysisTraceTarget["kind"];
-	readonly reason: "unsupported-kind" | "missing-identity";
-	readonly missingIdentityFields: readonly AnalysisTraceTargetIdentityField[];
-	readonly supportedTargets: readonly AnalysisTraceTargetSupport[];
-}
+export type AnalysisUnsupportedTargetResolution =
+	| {
+			readonly kind: "unsupported-target";
+			readonly capability: "trace";
+			readonly providerId: string;
+			readonly requestedTargetKind: AnalysisTraceTarget["kind"];
+			readonly reason: "unsupported-kind" | "missing-identity";
+			readonly missingIdentityFields: readonly AnalysisTraceTargetIdentityField[];
+			readonly supportedTargets: readonly AnalysisTraceTargetSupport[];
+	  }
+	| {
+			readonly kind: "unsupported-target";
+			readonly capability: "trace";
+			readonly providerId: string;
+			readonly requestedTargetKind: "symbol";
+			readonly reason: "provider-target-constraint";
+			readonly message: string;
+			readonly suggestedTarget: Extract<AnalysisTraceTarget, { kind: "file" }>;
+	  };
 
 export type AnalysisRequestResolution =
 	| AnalysisReadyResolution

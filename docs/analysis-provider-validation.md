@@ -63,7 +63,15 @@ and optionally combines that name with a file. A jscpd-backed adapter can use
 its clone-pair file ranges to resolve duplicate groups for a path and treat a
 supplied line as a disambiguator, while a dependency-cruiser adapter can
 advertise only file and dependency targets. Each provider therefore exposes
-only the generic target forms it can honor.
+only the generic target forms it can honor. Fallow's symbol trace resolves
+exports only. After generic binding resolution and before a provider spawn, the
+adapter checks a readable JS/TS source with the TypeScript compiler AST for
+known direct, aliased, default, and supported CommonJS exports. When a named
+local is confirmed not exported, it returns `unsupported-target` with
+`reason: "provider-target-constraint"` and a file-target suggestion. Re-exports,
+unreadable or other-language sources, and indeterminate export syntax proceed
+to Fallow instead of receiving a false unsupported classification. A file
+trace provides module context, not an internal symbol trace.
 
 For complexity and duplication, Fallow has no per-path CLI filter. The adapter
 reconciles the full exit, asserted verdict, and normalized findings before

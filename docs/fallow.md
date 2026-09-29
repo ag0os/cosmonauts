@@ -66,7 +66,7 @@ When bound, the adapter exposes:
 | `complexity` | Project or explicit paths; cyclomatic, cognitive, and CRAP metrics; path results are filtered after one full project run. |
 | `boundary-conformance` | Project or explicit paths, only when zones and rules are configured and the `boundary-violation` rule is not disabled. |
 | `changed-scope-audit` | Changed scope from a required explicit base. |
-| `trace` | Exactly one symbol (required project-relative path), file, dependency, or duplicate location (required positive line; optional column). |
+| `trace` | Exactly one symbol (required project-relative path), file, dependency, or duplicate location (required positive line; optional column). Symbol traces address exports only. |
 | `fix-preview` | Project-only dry-run proposals. |
 
 All provider invocations are shell-free and timeout-bounded. Analysis, config
@@ -76,6 +76,15 @@ stderr, and exit status. Invalid configuration, crashes, signals,
 cancellation, timeouts, unsupported schemas, and unclassifiable output surface
 as provider failures rather than clean results. The generic runtime never
 applies a Fallow fix.
+
+Fallow's `dead-code --trace FILE:EXPORT` traces exported names, not arbitrary
+internal functions. For a readable JS/TS source whose symbol is confirmed
+non-exported, `analysis_trace` returns an `unsupported-target` provider
+constraint before spawning Fallow, with a suggested file trace. File tracing
+shows module-level import/export context, not a proof of internal symbol
+reachability. Direct, aliased, default, and supported CommonJS exports go to
+Fallow; re-exports, unreadable sources, other languages, and ambiguous export
+forms go to the provider rather than being declared unsupported.
 
 For `analysis_duplication({ paths })` and `analysis_complexity({ metric, paths })`,
 Fallow still analyzes the whole project once. The adapter first checks the full

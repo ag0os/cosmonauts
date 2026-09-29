@@ -24,7 +24,7 @@ For clone-extraction work, call `analysis_duplication({ paths: [<owned project-r
 
 ## Investigate and remediate safely
 
-- **Trace first:** trace reachability and references before removing a file, export, type, dependency, or other structural element.
+- **Trace first:** trace reachability and references before removing a file, export, type, dependency, or other structural element. Some providers trace exported symbols only, not non-exported functions. When the adapter confirms a symbol is internal, `analysis_trace` returns an unsupported-target provider constraint and suggests a file target without running the provider. For re-exports, unreadable or non-JS/TS sources, and uncertain export status it defers to the provider; do not read that as proof the symbol is exported. Use a file trace for internal reachability context, not as a symbol-level proof.
 - **Preview only:** treat suggested changes as proposals for review, never as authorization to edit.
 - **Rerun before editing:** rerun the same capability request immediately before remediation and use the fresh structured result as ground truth. If the finding no longer reproduces, report it as unresolved instead of guessing.
 - Make only narrow, ordinary edits justified by the fresh evidence, preserve existing suppressions unless the underlying issue is fixed, and rerun the relevant analysis afterward.

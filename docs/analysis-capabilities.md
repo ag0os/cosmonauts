@@ -64,7 +64,15 @@ Bindings advertise supported scope kinds, complexity metrics, and trace target
 requirements. Unsupported scopes, metrics, target kinds, or missing
 provider-required target identity return a structured unsupported result before
 provider execution; they are never widened, misreported as provider invalid
-output, or represented as an empty clean result.
+output, or represented as an empty clean result. A provider may also classify a
+confirmed target limitation before execution: for Fallow, a symbol trace of a
+confirmed non-exported symbol returns `unsupported-target` with reason
+`provider-target-constraint` and a suggested file target. Fallow traces exports
+only; the file target offers context, not a symbol-level trace of an internal
+function. The adapter does not assert non-exported status for re-exports,
+unreadable or non-JS/TS files, or uncertain syntax; those requests continue to
+the provider and may still fail there. This constraint does not change the
+generic symbol target contract for other providers.
 
 Fallow advertises `paths` for complexity and duplication. The adapter runs each
 analysis once for the whole project, reconciles the complete provider result,

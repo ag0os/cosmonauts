@@ -495,6 +495,11 @@ function registerCapabilityTool(
 				);
 			}
 			try {
+				const constraint = await snapshot.runtime.classifyRequest(
+					request,
+					signal,
+				);
+				if (constraint !== undefined) return nonreadyResult(constraint);
 				const result = await snapshot.runtime.execute(request, signal);
 				return textResult(result, presentAnalysisResult(result));
 			} catch (error) {

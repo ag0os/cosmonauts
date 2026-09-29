@@ -16,7 +16,8 @@ import {
 	realpath,
 	stat,
 } from "node:fs/promises";
-import { isAbsolute, join, posix, resolve } from "node:path";
+import { extname, isAbsolute, join, posix, resolve } from "node:path";
+import ts from "typescript";
 import {
 	ANALYSIS_CAPABILITIES,
 	type AnalysisAction,
@@ -35,6 +36,7 @@ import {
 	type AnalysisResult,
 	type AnalysisScope,
 	type AnalysisTraceEdge,
+	type AnalysisUnsupportedTargetResolution,
 	type DetectedAnalysisCapability,
 	type DetectedAnalysisProvider,
 	type ProviderDetection,
@@ -125,6 +127,10 @@ interface FallowProviderRuntime {
 	readonly executeProcess: ProviderProcessExecutor;
 	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
 	readonly currentBindings: () => Promise<readonly AnalysisBinding[]>;
+	readonly classifyRequest: (
+		request: AnalysisRequest,
+		signal?: AbortSignal,
+	) => Promise<AnalysisUnsupportedTargetResolution | undefined>;
 	readonly execute: (
 		request: AnalysisRequest,
 		signal?: AbortSignal,
@@ -1545,6 +1551,8 @@ async function introspectProvider(
 		runtime: {
 			...runtimeBase,
 			currentBindings,
+			classifyRequest: (request, signal) =>
+				classifyFallowTraceRequest(options.projectRoot, request, signal),
 			execute: async (request, abortSignal) => {
 				const combined = combinedAbortSignal([
 					abortSignal,
@@ -2107,6 +2115,175 @@ function targetDescription(
 			return target.dependency;
 		case "duplicate-location":
 			return `${target.location.path}:${String(target.location.line ?? "")}`;
+	}
+}
+
+function hasExportModifier(node: ts.Node): boolean {
+	return (
+		ts.canHaveModifiers(node) &&
+		(ts
+			.getModifiers(node)
+			?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ??
+			false)
+	);
+}
+
+function referencesCommonJsExports(node: ts.Node): boolean {
+	if (ts.isIdentifier(node) && node.text === "exports") return true;
+	return ts.forEachChild(node, referencesCommonJsExports) ?? false;
+}
+
+function exportedNames(source: ts.SourceFile): {
+	names: Set<string>;
+	uncertain: boolean;
+	locals: Set<string>;
+} {
+	const names = new Set<string>();
+	const locals = new Set<string>();
+	let uncertain = false;
+	for (const statement of source.statements) {
+		if (ts.isExportDeclaration(statement)) {
+			if (
+				statement.moduleSpecifier ||
+				!statement.exportClause ||
+				ts.isNamespaceExport(statement.exportClause)
+			) {
+				uncertain = true;
+				continue;
+			}
+			for (const element of statement.exportClause.elements)
+				names.add(element.name.text);
+			continue;
+		}
+		if (ts.isExportAssignment(statement)) {
+			if (statement.isExportEquals) uncertain = true;
+			else names.add("default");
+			continue;
+		}
+		if (
+			ts.isFunctionDeclaration(statement) ||
+			ts.isClassDeclaration(statement) ||
+			ts.isInterfaceDeclaration(statement) ||
+			ts.isTypeAliasDeclaration(statement) ||
+			ts.isEnumDeclaration(statement)
+		) {
+			if (referencesCommonJsExports(statement)) uncertain = true;
+			if (statement.name) {
+				locals.add(statement.name.text);
+				if (hasExportModifier(statement)) names.add(statement.name.text);
+			}
+			if (
+				ts.canHaveModifiers(statement) &&
+				ts
+					.getModifiers(statement)
+					?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword)
+			)
+				names.add("default");
+			continue;
+		}
+		if (ts.isVariableStatement(statement)) {
+			if (referencesCommonJsExports(statement)) uncertain = true;
+			for (const declaration of statement.declarationList.declarations) {
+				if (!ts.isIdentifier(declaration.name)) {
+					uncertain = true;
+					continue;
+				}
+				locals.add(declaration.name.text);
+				if (hasExportModifier(statement)) names.add(declaration.name.text);
+			}
+			continue;
+		}
+		if (ts.isImportDeclaration(statement) || ts.isEmptyStatement(statement))
+			continue;
+		if (!ts.isExpressionStatement(statement)) {
+			uncertain = true;
+			continue;
+		}
+		const expression = statement.expression;
+		if (
+			!ts.isBinaryExpression(expression) ||
+			expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken
+		) {
+			uncertain = true;
+			continue;
+		}
+		const left = expression.left.getText(source);
+		if (left === "module.exports") {
+			if (!ts.isObjectLiteralExpression(expression.right)) {
+				uncertain = true;
+				continue;
+			}
+			for (const property of expression.right.properties) {
+				if (
+					(ts.isPropertyAssignment(property) ||
+						ts.isShorthandPropertyAssignment(property) ||
+						ts.isMethodDeclaration(property)) &&
+					(ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+				) {
+					names.add(property.name.text);
+				} else uncertain = true;
+			}
+		} else if (
+			left.startsWith("exports.") ||
+			left.startsWith("module.exports.")
+		) {
+			const name = left.slice(left.lastIndexOf(".") + 1);
+			if (/^[A-Za-z_$][\w$]*$/u.test(name)) names.add(name);
+			else uncertain = true;
+		} else {
+			uncertain = true;
+		}
+	}
+	return { names, uncertain, locals };
+}
+
+async function classifyFallowTraceRequest(
+	projectRoot: string,
+	request: AnalysisRequest,
+	signal?: AbortSignal,
+): Promise<AnalysisUnsupportedTargetResolution | undefined> {
+	if (request.capability !== "trace" || request.scope.target.kind !== "symbol")
+		return undefined;
+	const { path, symbol } = request.scope.target;
+	if (!path || !/\.[cm]?[jt]sx?$/iu.test(path) || signal?.aborted)
+		return undefined;
+	try {
+		const root = await realpath(projectRoot);
+		const file = await realpath(resolve(projectRoot, path));
+		if (!file.startsWith(`${root}/`) || signal?.aborted) return undefined;
+		const sourceText = await readFile(file, "utf8");
+		if (signal?.aborted) return undefined;
+		const extension = extname(file).toLowerCase();
+		const language = extension.endsWith("x")
+			? ts.ScriptKind.TSX
+			: extension === ".js" || extension === ".mjs" || extension === ".cjs"
+				? ts.ScriptKind.JS
+				: ts.ScriptKind.TS;
+		const source = ts.createSourceFile(
+			file,
+			sourceText,
+			ts.ScriptTarget.Latest,
+			true,
+			language,
+		);
+		const diagnostics = (
+			source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }
+		).parseDiagnostics;
+		if (diagnostics?.length || sourceText.includes("\uFFFD")) return undefined;
+		const { names, uncertain, locals } = exportedNames(source);
+		if (uncertain || names.has(symbol) || !locals.has(symbol)) return undefined;
+		return {
+			kind: "unsupported-target",
+			capability: "trace",
+			providerId: FALLOW_PROVIDER_ID,
+			requestedTargetKind: "symbol",
+			reason: "provider-target-constraint",
+			message:
+				"Fallow traces exports only; this symbol is not exported. Trace the file instead.",
+			suggestedTarget: { kind: "file", path },
+		};
+	} catch {
+		return undefined;
 	}
 }
 

@@ -104,6 +104,7 @@ const CAPABILITY_REQUESTS = [
 async function presentationPi(
 	capability: AnalysisRequest["capability"],
 	payload?: unknown,
+	onInvocation?: (invocation: ProviderProcessInvocation) => void,
 ) {
 	await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 	await recordConsent();
@@ -116,6 +117,7 @@ async function presentationPi(
 		userStateRoot,
 		injectedExecutablePath: executable,
 		executeProcess: async (invocation) => {
+			onInvocation?.(invocation);
 			if (invocation.args.includes("--version"))
 				return {
 					kind: "code-exit",
@@ -135,6 +137,121 @@ async function presentationPi(
 	})(pi as never);
 	return pi;
 }
+
+test("returns an exports-only constraint for a confirmed internal symbol without running Fallow", async () => {
+	const invocations: ProviderProcessInvocation[] = [];
+	const pi = await presentationPi("trace", undefined, (invocation) =>
+		invocations.push(invocation),
+	);
+	await mkdir(join(projectRoot, "src"), { recursive: true });
+	await writeFile(
+		join(projectRoot, "src/internal.ts"),
+		"function internal() {}\nexport const publicValue = 1;\n",
+	);
+	const result = (await pi.callTool("analysis_trace", {
+		target: { kind: "symbol", path: "src/internal.ts", symbol: "internal" },
+	})) as ToolResult;
+	expect(result.details).toMatchObject({
+		kind: "unsupported-target",
+		reason: "provider-target-constraint",
+		providerId: "fallow",
+		suggestedTarget: { kind: "file", path: "src/internal.ts" },
+	});
+	expect(result.content[0]?.text).toContain("exports only");
+	expect(
+		invocations.filter(({ args }) => args.includes("--trace")),
+	).toHaveLength(0);
+});
+
+test.each([
+	[
+		"direct",
+		"export function publicValue() {}\nfunction internal() {}\n",
+		"publicValue",
+	],
+	[
+		"alias",
+		"function internal() {}\nexport { internal as publicValue };\n",
+		"publicValue",
+	],
+	["default", "export default function publicValue() {}\n", "default"],
+	[
+		"CommonJS property",
+		"function internal() {}\nexports.publicValue = internal;\n",
+		"publicValue",
+	],
+	[
+		"CommonJS object",
+		"function internal() {}\nmodule.exports = { publicValue: internal };\n",
+		"publicValue",
+	],
+	[
+		"re-export",
+		"function internal() {}\nexport * from './other.ts';\n",
+		"internal",
+	],
+	[
+		"indeterminate export",
+		"function internal() {}\nmodule.exports = getExports();\n",
+		"internal",
+	],
+	["malformed source", "function internal() {}\nexport {\n", "internal"],
+	[
+		"dynamic CommonJS",
+		"function internal() {}\nexports['internal'] = internal;\n",
+		"internal",
+	],
+	[
+		"conditional CommonJS",
+		"function internal() {}\nif (enabled) exports.internal = internal;\n",
+		"internal",
+	],
+	[
+		"nested CommonJS",
+		"function internal() {}\nfunction expose() { exports.internal = internal; }\n",
+		"internal",
+	],
+	[
+		"computed module exports",
+		"function internal() {}\nmodule['exports'].internal = internal;\n",
+		"internal",
+	],
+])("passes %s symbols to the provider instead of asserting a constraint", async (_name, source, symbol) => {
+	const invocations: ProviderProcessInvocation[] = [];
+	const pi = await presentationPi("trace", undefined, (invocation) =>
+		invocations.push(invocation),
+	);
+	await mkdir(join(projectRoot, "src"), { recursive: true });
+	await writeFile(join(projectRoot, "src/target.ts"), source);
+	const result = (await pi.callTool("analysis_trace", {
+		target: { kind: "symbol", path: "src/target.ts", symbol },
+	})) as ToolResult;
+	expect(result.details).toMatchObject({ kind: "trace" });
+	expect(
+		invocations.filter(({ args }) => args.includes("--trace")),
+	).toHaveLength(1);
+});
+
+test.each([
+	"src/missing.ts",
+	"src/other.py",
+])("passes %s to the provider when export status is unknown", async (path) => {
+	const invocations: ProviderProcessInvocation[] = [];
+	const pi = await presentationPi("trace", undefined, (invocation) =>
+		invocations.push(invocation),
+	);
+	if (path.endsWith(".py")) {
+		await mkdir(join(projectRoot, "src"), { recursive: true });
+		await writeFile(join(projectRoot, path), "def internal(): pass\n");
+	}
+	const result = (await pi.callTool("analysis_trace", {
+		target: { kind: "symbol", path, symbol: "internal" },
+	})) as ToolResult;
+	expect(result.details).toMatchObject({ kind: "trace" });
+	expect(
+		invocations.filter(({ args }) => args.includes("--trace")),
+	).toHaveLength(1);
+});
 
 test("renders scoped duplication residue as named groups without native evidence", async () => {
 	const pi = await presentationPi("duplication");
