@@ -31,6 +31,8 @@ import {
 import {
 	appendDriveAttemptRecord,
 	authoritativeDriveTaskIds,
+	blockedReportEvidence,
+	blockedReportReason,
 	checkDrivePreflight,
 	driveRunExpectations,
 	uncheckedAcceptanceCriteriaReason as findUncheckedAcceptanceCriteriaReason,
@@ -197,7 +199,10 @@ async function runDriveTaskAttempt(
 		prepared,
 		appendedNote,
 	);
-	await headBeforeSpawn(spec.projectRoot, prepared.abortSignal);
+	const headBefore = await headBeforeSpawn(
+		spec.projectRoot,
+		prepared.abortSignal,
+	);
 	await emit(context, {
 		type: "spawn_started",
 		taskId,
@@ -235,6 +240,40 @@ async function runDriveTaskAttempt(
 		taskId,
 		report: parsedReport,
 	});
+
+	if (parsedReport.outcome === "blocked") {
+		const reason = blockedReportReason(parsedReport);
+		const evidence = await blockedReportEvidence({
+			projectRoot: spec.projectRoot,
+			signal: prepared.abortSignal,
+			commitPolicy: spec.commitPolicy,
+			headBefore,
+		});
+		await appendDriveAttemptRecord({
+			taskManager,
+			taskId,
+			runId: spec.runId,
+			outcome: "blocked",
+			attemptNumber,
+			body: evidence.note ? `${reason}\n\n${evidence.note}` : reason,
+		});
+		await taskManager.updateTask(taskId, { status: "Blocked" });
+		await emit(context, {
+			type: "task_blocked",
+			taskId,
+			reason,
+			...(evidence.unverifiedCommits
+				? { unverifiedCommits: evidence.unverifiedCommits }
+				: {}),
+		});
+		return {
+			kind: "outcome",
+			outcome: blockedStepResult(
+				reason,
+				outputArtifacts(taskId, prepared.attemptId),
+			),
+		};
+	}
 
 	if (parsedReport.outcome === "unknown") {
 		await appendDriveAttemptRecord({

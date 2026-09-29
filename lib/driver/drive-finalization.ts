@@ -181,6 +181,10 @@ export async function transitionDriveTaskStatus({
 	contradicted,
 	skipStatusTransition,
 }: TransitionDriveTaskStatusOptions): Promise<TaskOutcome> {
+	if (parsedReport.outcome === "blocked") {
+		await ctx.taskManager.updateTask(taskId, { status: "Blocked" });
+		return { status: "blocked", reason: failureReason };
+	}
 	try {
 		if (outcome === "success") {
 			if (spec.commitPolicy === "driver-commits") {
@@ -629,6 +633,15 @@ export function uniqueArtifacts(
 }
 
 export function parsedReportFromStepResult(result: StepResult): ParsedReport {
+	if (result.outcome === "blocked") {
+		return {
+			outcome: "blocked",
+			files: [],
+			verification: [],
+			notes: result.summary,
+			raw: result.summary,
+		};
+	}
 	const outcome = reportOutcomeFromStepResult(result);
 	return {
 		outcome,

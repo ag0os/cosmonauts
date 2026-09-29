@@ -11,6 +11,8 @@ import { formatPartialReport } from "./report-format.ts";
 import { parseReport } from "./report-parser.ts";
 import {
 	appendDriveAttemptRecord,
+	blockedReportEvidence,
+	blockedReportReason,
 	checkDrivePreflight,
 	driveRunExpectations,
 	uncheckedAcceptanceCriteriaReason as findUncheckedAcceptanceCriteriaReason,
@@ -121,7 +123,7 @@ async function runTaskAttempt(
 		},
 	);
 
-	await headBeforeSpawn(spec.projectRoot, ctx.abortSignal);
+	const headBefore = await headBeforeSpawn(spec.projectRoot, ctx.abortSignal);
 	await emit(ctx, spec, {
 		type: "spawn_started",
 		taskId,
@@ -158,6 +160,34 @@ async function runTaskAttempt(
 		taskId,
 		report: parsedReport,
 	});
+
+	if (parsedReport.outcome === "blocked") {
+		const reason = blockedReportReason(parsedReport);
+		const evidence = await blockedReportEvidence({
+			projectRoot: spec.projectRoot,
+			signal: ctx.abortSignal,
+			commitPolicy: spec.commitPolicy,
+			headBefore,
+		});
+		await appendDriveAttemptRecord({
+			taskManager: ctx.taskManager,
+			taskId,
+			runId: spec.runId,
+			outcome: "blocked",
+			attemptNumber,
+			body: evidence.note ? `${reason}\n\n${evidence.note}` : reason,
+		});
+		await ctx.taskManager.updateTask(taskId, { status: "Blocked" });
+		await emit(ctx, spec, {
+			type: "task_blocked",
+			taskId,
+			reason,
+			...(evidence.unverifiedCommits
+				? { unverifiedCommits: evidence.unverifiedCommits }
+				: {}),
+		});
+		return { kind: "outcome", outcome: { status: "blocked", reason } };
+	}
 
 	if (parsedReport.outcome === "unknown") {
 		await appendDriveAttemptRecord({
@@ -425,6 +455,9 @@ export function deriveOutcome(
 		return "failure";
 	}
 
+	if (report.outcome === "blocked") {
+		return "failure";
+	}
 	if (report.outcome === "unknown") {
 		return options.allowUnknownSuccess && postVerifyPassed(postVerifyResults)
 			? "success"

@@ -91,7 +91,15 @@ export interface Report {
 	progress?: { phase: number; of: number; remaining?: string };
 }
 
-export type ParsedReport = Report | { outcome: "unknown"; raw: string };
+export interface BlockedReport extends Omit<Report, "outcome"> {
+	outcome: "blocked";
+	raw: string;
+}
+
+export type ParsedReport =
+	| Report
+	| BlockedReport
+	| { outcome: "unknown"; raw: string };
 
 interface DriverEventBase {
 	runId: string;
@@ -202,6 +210,7 @@ export type DriverEvent =
 			type: "task_blocked";
 			taskId: string;
 			reason: string;
+			unverifiedCommits?: string;
 			progress?: { phase: number; of: number; remaining?: string };
 			contradicted?: ContradictedBlockAnnotation;
 	  })

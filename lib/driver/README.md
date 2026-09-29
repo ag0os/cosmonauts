@@ -58,6 +58,19 @@ default; it infers success only when postflight commands were configured and all
 passed. With `driver-commits`, the driver also requires committable source
 changes before making that inference.
 
+`blocked` is accepted in either fenced JSON or an outcome line. Drive retains the
+complete backend stdout; non-empty `notes` become the block reason verbatim, or
+stdout becomes the reason if notes are absent or empty. A blocked report ends
+the attempt immediately: no postflight, source commit, acceptance inference, or
+automatic contradicted-path retry. The task step appends the reason once under
+`### Drive — outcome blocked — attempt <n> — run <runId>` without replacing
+worker notes; the graph status finalizer only changes status. Both paths emit
+`task_blocked` with that reason and respect the existing run `partialMode`.
+A moved HEAD under `backend-commits` is named as unverified commits in the
+attempt note and event; `driver-commits` and `no-commit` list dirty paths in
+the attempt note instead. Workers on `backend-commits` should not commit before
+a blocked stop.
+
 ## Task Timeouts
 
 Each task backend invocation has a wall-clock timeout. The default is 1800000ms

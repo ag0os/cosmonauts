@@ -59,6 +59,91 @@ describe("run-one-task", () => {
 		});
 	});
 
+	test.each([
+		"driver-commits",
+		"no-commit",
+		"backend-commits",
+	] as const)("stops a blocked report before postflight or retry with %s", async (commitPolicy) => {
+		const fixture = await setupGitFixture();
+		await fixture.taskManager.updateTask(fixture.taskId, {
+			implementationNotes: "worker sentinel  \n",
+		});
+		await writeProjectFile(fixture, "existing.txt", "present");
+		const events: DriverEvent[] = [];
+		const reason = "Need human review of existing.txt\nsecond line";
+		const backend = createBackend(async () => ({
+			exitCode: 0,
+			stdout: `\`\`\`json\n${JSON.stringify({ outcome: "blocked", notes: reason })}\n\`\`\``,
+			durationMs: 1,
+		}));
+		const outcome = await runOneTask(
+			createSpec(fixture, {
+				commitPolicy,
+				postflightCommands: [nodeCommand("process.exit(9)")],
+			}),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+		const task = await fixture.taskManager.getTask(fixture.taskId);
+		expect(outcome).toEqual({ status: "blocked", reason });
+		expect(task?.status).toBe("Blocked");
+		expect(task?.implementationNotes).toContain(
+			`worker sentinel  \n\n### Drive — outcome blocked — attempt 1 — run run-255\n\n${reason}`,
+		);
+		expect(
+			task?.implementationNotes?.match(/### Drive — outcome blocked/g),
+		).toHaveLength(1);
+		if (commitPolicy !== "backend-commits") {
+			expect(task?.implementationNotes).toContain(
+				"Dirty paths:\n?? existing.txt",
+			);
+		}
+		expect(events.map((event) => event.type)).toEqual([
+			"task_started",
+			"preflight",
+			"preflight",
+			"spawn_started",
+			"spawn_completed",
+			"task_blocked",
+		]);
+		expect(events.find((event) => event.type === "task_blocked")).toMatchObject(
+			{ reason },
+		);
+		expect(backend.run).toHaveBeenCalledTimes(1);
+	});
+
+	test("records a backend commit as unverified when its report blocks", async () => {
+		const fixture = await setupGitFixture();
+		const before = (
+			await git(fixture.projectRoot, ["rev-parse", "HEAD"])
+		).trim();
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => {
+			await writeProjectFile(fixture, "work.txt", "unfinished");
+			await git(fixture.projectRoot, ["add", "work.txt"]);
+			await git(fixture.projectRoot, ["commit", "-m", "unfinished"]);
+			return { exitCode: 0, stdout: "outcome: blocked", durationMs: 1 };
+		});
+		const outcome = await runOneTask(
+			createSpec(fixture, { commitPolicy: "backend-commits" }),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+		const after = (
+			await git(fixture.projectRoot, ["rev-parse", "HEAD"])
+		).trim();
+		expect(outcome).toMatchObject({
+			status: "blocked",
+			reason: "outcome: blocked",
+		});
+		expect(
+			(await fixture.taskManager.getTask(fixture.taskId))?.implementationNotes,
+		).toContain(`Unverified commits: ${before}..${after}`);
+		expect(events.find((event) => event.type === "task_blocked")).toMatchObject(
+			{ unverifiedCommits: `${before}..${after}` },
+		);
+	});
+
 	test("run-one-task blocks success reports when acceptance criteria remain unchecked", async () => {
 		const fixture = await setupFixture();
 		const existing = await fixture.taskManager.getTask(fixture.taskId);

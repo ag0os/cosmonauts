@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
@@ -7,7 +8,11 @@ import type {
 	BackendInvocation,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
-import { transitionDriveTaskStatus } from "../../lib/driver/drive-finalization.ts";
+import {
+	parsedReportFromStepResult,
+	reportOutcomeFromStepResult,
+	transitionDriveTaskStatus,
+} from "../../lib/driver/drive-finalization.ts";
 import {
 	createDriveSchedulerBackend,
 	createDriveSchedulerBackendMap,
@@ -84,6 +89,131 @@ describe("Drive scheduler backend", () => {
 				),
 			),
 		).rejects.toThrow(/not in selected Drive task set/);
+	});
+
+	test.each([
+		"stop",
+		"continue",
+	] as const)("blocks a raw outcome-line report without graph postflight or retry in %s mode", async (partialMode) => {
+		const fixture = await setupFixture(`graph-blocked-${partialMode}`);
+		await fixture.taskManager.createTask({ title: "Needs human" });
+		await fixture.taskManager.updateTask("TASK-1", {
+			implementationNotes: "original  \n",
+		});
+		await writeFile(join(fixture.projectRoot, "existing.txt"), "present");
+		const raw = "existing.txt needs human input\noutcome: blocked";
+		const events: DriverEvent[] = [];
+		const backendRun = vi
+			.fn()
+			.mockResolvedValue({ exitCode: 0, stdout: raw, durationMs: 1 });
+		const spec = createSpec(fixture, {
+			partialMode,
+			postflightCommands: [nodeCommand("process.exit(8)")],
+		});
+		const prepared = await prepareTaskStep({
+			spec,
+			fixture,
+			backendRun,
+			events,
+		});
+		const result = await (await prepared.backend.start(prepared.step)).result;
+		expect(result).toMatchObject({
+			outcome: "blocked",
+			summary: raw,
+			nextAction: "wait_for_human",
+		});
+		expect((await fixture.taskManager.getTask("TASK-1"))?.status).toBe(
+			"Blocked",
+		);
+		const notes = (await fixture.taskManager.getTask("TASK-1"))
+			?.implementationNotes;
+		expect(notes).toContain(
+			`original  \n\n### Drive — outcome blocked — attempt 1 — run ${spec.runId}\n\n${raw}`,
+		);
+		expect(notes?.match(/### Drive — outcome blocked/g)).toHaveLength(1);
+		expect(events.map((event) => event.type)).toEqual([
+			"task_started",
+			"preflight",
+			"preflight",
+			"spawn_started",
+			"spawn_completed",
+			"task_blocked",
+		]);
+		expect(events.find((event) => event.type === "task_blocked")).toMatchObject(
+			{ reason: raw },
+		);
+		expect(backendRun).toHaveBeenCalledTimes(1);
+		await transitionDriveTaskStatus({
+			spec,
+			ctx: {
+				taskManager: fixture.taskManager,
+				eventSink: async (event) => {
+					events.push(event);
+				},
+				abortSignal: new AbortController().signal,
+			},
+			taskId: "TASK-1",
+			outcome: reportOutcomeFromStepResult(result),
+			parsedReport: parsedReportFromStepResult(result),
+			failureReason: raw,
+		});
+		expect(
+			(await fixture.taskManager.getTask("TASK-1"))?.implementationNotes,
+		).toBe(notes);
+		expect(
+			events.filter((event) => event.type === "task_blocked"),
+		).toHaveLength(1);
+	});
+
+	test("records moved HEAD as unverified on a graph blocked stop", async () => {
+		const fixture = await setupFixture("graph-blocked-commit");
+		await fixture.taskManager.createTask({ title: "Needs human" });
+		const git = (...args: string[]) =>
+			execFileSync("git", args, {
+				cwd: fixture.projectRoot,
+				encoding: "utf-8",
+			}).trim();
+		git("init", "-b", "main");
+		git(
+			"-c",
+			"user.name=Test",
+			"-c",
+			"user.email=test@example.com",
+			"commit",
+			"--allow-empty",
+			"-m",
+			"initial",
+		);
+		const before = git("rev-parse", "HEAD");
+		const events: DriverEvent[] = [];
+		const backendRun = vi.fn(async () => {
+			git(
+				"-c",
+				"user.name=Test",
+				"-c",
+				"user.email=test@example.com",
+				"commit",
+				"--allow-empty",
+				"-m",
+				"unfinished",
+			);
+			return { exitCode: 0, stdout: "outcome: blocked", durationMs: 1 };
+		});
+		const spec = createSpec(fixture, { commitPolicy: "backend-commits" });
+		const prepared = await prepareTaskStep({
+			spec,
+			fixture,
+			backendRun,
+			events,
+		});
+		await (await prepared.backend.start(prepared.step)).result;
+		const range = `${before}..${git("rev-parse", "HEAD")}`;
+		expect(
+			(await fixture.taskManager.getTask("TASK-1"))?.implementationNotes,
+		).toContain(`Unverified commits: ${range}`);
+		expect(events.find((event) => event.type === "task_blocked")).toMatchObject(
+			{ unverifiedCommits: range },
+		);
 	});
 
 	test("runs preflight backend postflight and report inference before returning StepResult", async () => {

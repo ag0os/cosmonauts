@@ -10,6 +10,7 @@ import type {
 	StepResult,
 	VerificationResult,
 } from "../durable-runtime/index.ts";
+import { blockedReportReason } from "./runtime-helpers.ts";
 import type {
 	BackendName,
 	DriverEvent,
@@ -802,6 +803,14 @@ function stepResultFromReport(
 		};
 	}
 
+	if (report.outcome === "blocked") {
+		return {
+			outcome: "blocked",
+			summary: blockedReportReason(report),
+			artifacts: outputArtifactsForAttempt(taskId, attemptId),
+			nextAction: "wait_for_human",
+		};
+	}
 	const outcome = stepOutcome(report.outcome);
 	return {
 		outcome,
@@ -1008,7 +1017,7 @@ function uniqueArtifacts(artifacts: readonly ArtifactRef[]): ArtifactRef[] {
 }
 
 function reportEvidence(report: ParsedReport): string {
-	if (report.outcome === "unknown") {
+	if (report.outcome === "unknown" || report.outcome === "blocked") {
 		return report.raw;
 	}
 	return `${JSON.stringify(report, null, 2)}\n`;

@@ -19,6 +19,45 @@ const RUN_ID = "run-durable-step-retry";
 const TASK_ID = "TASK-1";
 
 describe("Drive durable step projector", () => {
+	test("projects a blocked report and terminal event with the same verbatim reason", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const record = await store.createRun({
+			scope: PLAN_SLUG,
+			runId: RUN_ID,
+			metadata: { driveTaskIds: [TASK_ID], configuredBackendName: "codex" },
+		});
+		const projector = createProjector(store, record);
+		const raw = "human decision needed\noutcome: blocked";
+		await projector.project(event("task_started", { taskId: TASK_ID }));
+		await projector.project(
+			event("spawn_started", { taskId: TASK_ID, backend: "codex" }),
+		);
+		await projector.project(
+			event("spawn_completed", {
+				taskId: TASK_ID,
+				report: { outcome: "blocked", files: [], verification: [], raw },
+			}),
+		);
+		await projector.project(
+			event("task_blocked", { taskId: TASK_ID, reason: raw }),
+		);
+		const step = await requireStep(store, record);
+		expect(step).toMatchObject({
+			status: "blocked",
+			result: {
+				outcome: "blocked",
+				summary: raw,
+				nextAction: "wait_for_human",
+			},
+		});
+		expect(
+			await readFile(
+				join(record.stepsDir, TASK_ID, "attempts", "attempt-001", "output.md"),
+				"utf-8",
+			),
+		).toBe(raw);
+	});
+
 	test("appends a new attempt when Drive retries a task", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
 		const record = await store.createRun({

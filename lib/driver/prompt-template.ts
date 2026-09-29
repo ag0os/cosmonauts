@@ -53,11 +53,11 @@ const DRIVE_REPORT_CONTRACT = [
 	"The `outcome: success` line is the final line of the example response; it is outside the JSON and MUST match the JSON `outcome` field.",
 	"",
 	"Hard rules:",
-	"- The very last non-empty line of your response MUST be exactly one of: `outcome: success`, `outcome: failure`, `outcome: partial`, or `outcome: completed`.",
+	"- The very last non-empty line of your response MUST be exactly one of: `outcome: success`, `outcome: failure`, `outcome: partial`, `outcome: blocked`, or `outcome: completed`.",
 	"- Use `outcome: success` only when every acceptance criterion or explicit requested outcome is met and required verification passed, or you explicitly explain why verification was not run.",
-	"- Use `outcome: failure` for unmet acceptance criteria, blockers, or required gates that failed and could not be fixed in this work item.",
+	"- Use `outcome: failure` for unmet acceptance criteria or required gates that failed and could not be fixed in this work item.",
 	"- Use `outcome: partial` only when the report clearly identifies completed work and remaining work.",
-	"- Do not invent other values such as `outcome: blocked`; Drive will not recognize them.",
+	"- `outcome: blocked` is a human stop with no postflight or automatic retry. Include the reason in `notes`; otherwise Drive records the raw report as the reason.",
 	"- Do not write anything after the final outcome line.",
 ].join("\n");
 
@@ -190,7 +190,7 @@ function commitPolicyInstruction(
 		return "Do not run git add or git commit; leave committable changes for Drive to stage and commit after verification.";
 	}
 	if (policy === "backend-commits") {
-		return "Create a git commit for your completed implementation changes before the final report.";
+		return "Create a git commit for your completed implementation changes before a success report. Do not commit before a blocked stop.";
 	}
 	return "Do not create commits; leave completed changes in the worktree.";
 }

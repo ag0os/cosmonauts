@@ -2,23 +2,32 @@ import type { ParsedReport, Report, ReportOutcome } from "./types.ts";
 
 const JSON_FENCE_PATTERN = /```json\s*([\s\S]*?)```/gi;
 const OUTCOME_LINE_PATTERN =
-	/^\s*outcome:\s*(success|failure|partial|completed)\s*$/im;
+	/^\s*outcome:\s*(success|failure|partial|completed|blocked)\s*$/im;
 
 export function parseReport(stdout: string): ParsedReport {
 	const fencedReport = parseFencedReport(stdout);
 	if (fencedReport) {
-		return fencedReport;
+		return fencedReport.outcome === "blocked"
+			? { ...fencedReport, raw: stdout }
+			: fencedReport;
 	}
 
 	const outcome = parseOutcomeLine(stdout);
 	if (outcome) {
-		return { outcome, files: [], verification: [] };
+		return outcome === "blocked"
+			? { outcome, files: [], verification: [], raw: stdout }
+			: { outcome, files: [], verification: [] };
 	}
 
 	return { outcome: "unknown", raw: stdout };
 }
 
-function parseFencedReport(stdout: string): Report | undefined {
+function parseFencedReport(
+	stdout: string,
+):
+	| Report
+	| Omit<Extract<ParsedReport, { outcome: "blocked" }>, "raw">
+	| undefined {
 	for (const match of stdout.matchAll(JSON_FENCE_PATTERN)) {
 		const json = match[1];
 		if (!json) {
@@ -34,7 +43,12 @@ function parseFencedReport(stdout: string): Report | undefined {
 	return undefined;
 }
 
-function parseJsonReport(json: string): Report | undefined {
+function parseJsonReport(
+	json: string,
+):
+	| Report
+	| Omit<Extract<ParsedReport, { outcome: "blocked" }>, "raw">
+	| undefined {
 	try {
 		return toReport(JSON.parse(json));
 	} catch {
@@ -42,12 +56,19 @@ function parseJsonReport(json: string): Report | undefined {
 	}
 }
 
-function parseOutcomeLine(stdout: string): ReportOutcome | undefined {
+function parseOutcomeLine(
+	stdout: string,
+): ReportOutcome | "blocked" | undefined {
 	const value = stdout.match(OUTCOME_LINE_PATTERN)?.[1]?.toLowerCase();
 	return toReportOutcome(value);
 }
 
-function toReport(value: unknown): Report | undefined {
+function toReport(
+	value: unknown,
+):
+	| Report
+	| Omit<Extract<ParsedReport, { outcome: "blocked" }>, "raw">
+	| undefined {
 	if (!isRecord(value)) {
 		return undefined;
 	}
@@ -64,7 +85,9 @@ function toReport(value: unknown): Report | undefined {
 		return undefined;
 	}
 
-	const report: Report = {
+	const report:
+		| Report
+		| Omit<Extract<ParsedReport, { outcome: "blocked" }>, "raw"> = {
 		outcome,
 		files,
 		verification,
@@ -154,11 +177,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function toReportOutcome(value: unknown): ReportOutcome | undefined {
+function toReportOutcome(
+	value: unknown,
+): ReportOutcome | "blocked" | undefined {
 	if (value === "completed") {
 		return "success";
 	}
-	return value === "success" || value === "failure" || value === "partial"
+	return value === "success" ||
+		value === "failure" ||
+		value === "partial" ||
+		value === "blocked"
 		? value
 		: undefined;
 }

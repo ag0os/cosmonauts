@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { BackendRunResult } from "./backends/types.ts";
 import {
+	type BlockedReport,
 	type DriverRunSpec,
 	type ParsedReport,
 	resolveStateCommitPolicy,
@@ -223,7 +224,7 @@ export async function appendDriveAttemptRecord(options: {
 	taskManager: TaskManager;
 	taskId: string;
 	runId: string;
-	outcome: "failure" | "partial" | "unknown";
+	outcome: "failure" | "partial" | "unknown" | "blocked";
 	attemptNumber: number;
 	body: string;
 }): Promise<void> {
@@ -231,6 +232,42 @@ export async function appendDriveAttemptRecord(options: {
 	await taskManager.updateTask(taskId, {
 		appendImplementationNotes: `### Drive — outcome ${outcome} — attempt ${attemptNumber} — run ${runId}\n\n${body}`,
 	});
+}
+
+export function blockedReportReason(report: BlockedReport): string {
+	return report.notes?.trim() ? report.notes : report.raw;
+}
+
+export async function blockedReportEvidence(options: {
+	projectRoot: string;
+	signal: AbortSignal;
+	commitPolicy: DriverRunSpec["commitPolicy"];
+	headBefore: string | undefined;
+}): Promise<{ note: string; unverifiedCommits?: string }> {
+	const { projectRoot, signal, commitPolicy, headBefore } = options;
+	if (commitPolicy === "backend-commits") {
+		const after = await headBeforeSpawn(projectRoot, signal);
+		if (headBefore && after && headBefore !== after) {
+			const unverifiedCommits = `${headBefore}..${after}`;
+			return {
+				note: `Unverified commits: ${unverifiedCommits}`,
+				unverifiedCommits,
+			};
+		}
+		return { note: "" };
+	}
+	const status = await runCommand(
+		"git",
+		["status", "--porcelain", "--untracked-files=all"],
+		projectRoot,
+		signal,
+	);
+	return {
+		note:
+			status.exitCode === 0 && status.stdout.trim()
+				? `Dirty paths:\n${status.stdout.trimEnd()}`
+				: "",
+	};
 }
 
 export async function headBeforeSpawn(

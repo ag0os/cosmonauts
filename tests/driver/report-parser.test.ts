@@ -44,6 +44,24 @@ Done.`;
 		});
 	});
 
+	test("retains raw stdout and notes for a blocked fenced report", () => {
+		const stdout =
+			'before\n```json\n{"outcome":"blocked","notes":"Need human input"}\n```\nafter';
+		expect(parseReport(stdout)).toMatchObject({
+			outcome: "blocked",
+			notes: "Need human input",
+			raw: stdout,
+		});
+	});
+
+	test("retains raw stdout for a blocked outcome line", () => {
+		const stdout = "Need human input\noutcome: blocked";
+		expect(parseReport(stdout)).toMatchObject({
+			outcome: "blocked",
+			raw: stdout,
+		});
+	});
+
 	test("normalizes minimal completed JSON reports to success", () => {
 		const stdout = `\`\`\`json
 {"outcome":"completed"}

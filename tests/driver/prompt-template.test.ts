@@ -16,6 +16,36 @@ interface TestPromptLayers extends PromptLayers {
 const tmp = useTempDir("prompt-template-test-");
 
 describe("prompt-template renderPromptForTask", () => {
+	test.each([
+		"cosmonauts-subagent",
+		"codex",
+		"claude-cli",
+	] as const)("renders a blocked human stop for %s", async (backendName) => {
+		const { taskManager, taskId, envelopePath, workdir } =
+			await setupPromptTest({ envelope: "Envelope" });
+		const promptPath = await renderPromptForTask(
+			taskId,
+			{ envelopePath, workdir } as TestPromptLayers,
+			taskManager,
+			{
+				runExpectations: {
+					backendName,
+					commitPolicy: "backend-commits",
+					stateCommitPolicy: "none",
+					preflightCommands: [],
+					postflightCommands: [],
+					projectRoot: tmp.path,
+					workdir,
+				},
+			},
+		);
+		const rendered = await readFile(promptPath, "utf-8");
+		expect(rendered).toContain(
+			"`outcome: blocked` is a human stop with no postflight or automatic retry",
+		);
+		expect(rendered).toContain("Do not commit before a blocked stop.");
+	});
+
 	test("renders the envelope and task into the run prompts directory", async () => {
 		const { taskManager, taskId, envelopePath, workdir } =
 			await setupPromptTest({
