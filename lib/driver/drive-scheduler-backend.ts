@@ -220,13 +220,25 @@ async function runDriveTaskAttempt(
 		spec.projectRoot,
 		prepared.abortSignal,
 	);
-	const worktreeSnapshot = await snapshotWorktree({
-		projectRoot: spec.projectRoot,
-		runId: spec.runId,
-		taskId,
-		attemptNumber,
-		signal: prepared.abortSignal,
-	});
+	let worktreeSnapshot: string | undefined;
+	try {
+		worktreeSnapshot = await snapshotWorktree({
+			projectRoot: spec.projectRoot,
+			runId: spec.runId,
+			taskId,
+			attemptNumber,
+			signal: prepared.abortSignal,
+		});
+	} catch (error) {
+		return spawnFailureCandidate(
+			context,
+			taskId,
+			`worktree snapshot failed: ${error instanceof Error ? error.message : String(error)}`,
+			undefined,
+			attemptNumber,
+			undefined,
+		);
+	}
 	await beforeSpawn?.();
 	await emit(context, {
 		type: "spawn_started",

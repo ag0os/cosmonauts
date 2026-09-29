@@ -18,6 +18,7 @@ import {
 	EntityFileLockTimeoutError,
 	withEntityFileLock,
 } from "../entity-file-lock.ts";
+import { getTaskFilename } from "../tasks/file-system.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import { acquireRepoCommitLock } from "./lock.ts";
 import { formatPartialReport } from "./report-format.ts";
@@ -227,7 +228,7 @@ export async function transitionDriveTaskStatus({
 					...(commitSha ? { details: { sha: commitSha } } : {}),
 				});
 			}
-			await ctx.taskManager.updateTask(taskId, { status: "Done" });
+			const task = await ctx.taskManager.updateTask(taskId, { status: "Done" });
 			const retained = await removeDoneTaskSnapshots(
 				spec.projectRoot,
 				spec.runId,
@@ -235,6 +236,7 @@ export async function transitionDriveTaskStatus({
 				spec.commitPolicy,
 				commitSha,
 				ctx.abortSignal,
+				`missions/tasks/${getTaskFilename(task)}`,
 			);
 			if (spec.commitPolicy === "driver-commits") {
 				await emit(spec, ctx, {

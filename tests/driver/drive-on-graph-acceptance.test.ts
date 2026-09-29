@@ -61,6 +61,179 @@ describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
 		"driver-commits",
 		"backend-commits",
 		"no-commit",
+	] as const)("%s deletes a task-only snapshot after two worker source edits", async (policy) => {
+		const fixture = await setupFixture(`task-only-${policy}`, 1);
+		await writeFile(join(fixture.projectRoot, "second.txt"), "base\n");
+		await initGit(fixture.projectRoot);
+		fixture.spec = { ...fixture.spec, commitPolicy: policy };
+		const backend = createBackend({
+			onRun: async () => {
+				await writeFile(
+					join(fixture.projectRoot, "envelope.md"),
+					"worker edit\n",
+				);
+				await writeFile(
+					join(fixture.projectRoot, "second.txt"),
+					"worker edit\n",
+				);
+				if (policy === "backend-commits") {
+					await git(fixture.projectRoot, ["add", "envelope.md", "second.txt"]);
+					await git(fixture.projectRoot, ["commit", "-m", "worker edits"]);
+				}
+				return successfulBackendResult("done");
+			},
+		});
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, backend, new AbortController().signal),
+		);
+		expect(result.outcome).toBe("completed");
+		expect(result.retainedSnapshots).toBeUndefined();
+	});
+	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s deletes a preserved dirty snapshot despite later worker edits", async (policy) => {
+		const fixture = await setupFixture(`dirty-preserved-${policy}`, 1);
+		await writeFile(join(fixture.projectRoot, "other.txt"), "base\n");
+		await initGit(fixture.projectRoot);
+		fixture.spec = { ...fixture.spec, commitPolicy: policy };
+		await writeFile(join(fixture.projectRoot, "envelope.md"), "dirty X\n");
+		await writeFile(join(fixture.projectRoot, "Y.txt"), "dirty Y\n");
+		const backend = createBackend({
+			onRun: async () => {
+				await writeFile(join(fixture.projectRoot, "other.txt"), "new work\n");
+				if (policy === "backend-commits") {
+					await git(fixture.projectRoot, [
+						"add",
+						"envelope.md",
+						"Y.txt",
+						"other.txt",
+					]);
+					await git(fixture.projectRoot, ["commit", "-m", "worker edits"]);
+				}
+				return successfulBackendResult("done");
+			},
+		});
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, backend, new AbortController().signal),
+		);
+		expect(result.outcome).toBe("completed");
+		expect(result.retainedSnapshots).toBeUndefined();
+	});
+	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s removes a snapshot whose only non-task delta is a preserved deletion", async (policy) => {
+		const fixture = await setupFixture(`deletion-${policy}`, 1);
+		await writeFile(join(fixture.projectRoot, "obsolete.txt"), "old");
+		await initGit(fixture.projectRoot);
+		fixture.spec = { ...fixture.spec, commitPolicy: policy };
+		await rm(join(fixture.projectRoot, "obsolete.txt"));
+		const backend = createBackend({
+			onRun: async () => {
+				if (policy === "backend-commits") {
+					await git(fixture.projectRoot, ["add", "-u"]);
+					await git(fixture.projectRoot, ["commit", "-m", "keep deletion"]);
+				}
+				return successfulBackendResult("done");
+			},
+		});
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, backend, new AbortController().signal),
+		);
+		expect(result.retainedSnapshots).toBeUndefined();
+	});
+	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s records a retained ref when dirty X is reverted or Y is deleted", async (policy) => {
+		for (const discarded of ["X", "Y"] as const) {
+			const fixture = await setupFixture(`discard-${policy}-${discarded}`, 1);
+			await initGit(fixture.projectRoot);
+			fixture.spec = { ...fixture.spec, commitPolicy: policy };
+			await writeFile(join(fixture.projectRoot, "envelope.md"), "dirty X");
+			await writeFile(join(fixture.projectRoot, "Y.txt"), "dirty Y");
+			const backend = createBackend({
+				onRun: async () => {
+					if (discarded === "X")
+						await writeFile(
+							join(fixture.projectRoot, "envelope.md"),
+							"# Live Envelope\n",
+						);
+					else await rm(join(fixture.projectRoot, "Y.txt"));
+					return successfulBackendResult("done");
+				},
+			});
+			const result = await runDriveOnGraph(
+				fixture.spec,
+				createRunContext(fixture, backend, new AbortController().signal),
+			);
+			const ref = `refs/cosmonauts/drive/${fixture.spec.runId}/${fixture.taskIds[0]}/attempt-1`;
+			expect(result.retainedSnapshots).toEqual([ref]);
+			const record = JSON.parse(
+				await readFile(
+					join(fixture.spec.workdir, "run.completion.json"),
+					"utf8",
+				),
+			);
+			expect(record.retainedSnapshots).toEqual([ref]);
+		}
+	});
+	test("records the last of two blocked fenced reasons", async () => {
+		const fixture = await setupFixture("two-blocked", 1);
+		await initGit(fixture.projectRoot);
+		const report = (notes: string) =>
+			`\`\`\`json\n${JSON.stringify({ outcome: "blocked", notes })}\n\`\`\``;
+		const backend = createBackend({
+			onRun: async () => ({
+				exitCode: 0,
+				stdout: `${report("Old")}\n${report("New")}`,
+				durationMs: 1,
+			}),
+		});
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, backend, new AbortController().signal),
+		);
+		expect(result.outcome).toBe("blocked");
+		expect(JSON.stringify(result)).toContain("New");
+		expect(
+			(await fixture.taskManager.getTask(fixture.taskIds[0] ?? ""))
+				?.implementationNotes,
+		).toContain("New");
+	});
+	test("retains a deleted backup with the same task ID in terminal record", async () => {
+		const fixture = await setupFixture("backup-task-id", 1);
+		await initGit(fixture.projectRoot);
+		const backup = `missions/tasks/${fixture.taskIds[0]} - backup.md`;
+		await writeFile(join(fixture.projectRoot, backup), "backup bytes");
+		const backend = createBackend({
+			onRun: async () => {
+				await rm(join(fixture.projectRoot, backup));
+				return successfulBackendResult("done");
+			},
+		});
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, backend, new AbortController().signal),
+		);
+		const ref = `refs/cosmonauts/drive/${fixture.spec.runId}/${fixture.taskIds[0]}/attempt-1`;
+		expect(result.retainedSnapshots).toEqual([ref]);
+		const record = JSON.parse(
+			await readFile(join(fixture.spec.workdir, "run.completion.json"), "utf8"),
+		);
+		expect(record.retainedSnapshots).toEqual([ref]);
+	});
+	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
 	] as const)("%s compares Done snapshots with worker work, not Drive task state", async (policy) => {
 		for (const discarded of [
 			"none",

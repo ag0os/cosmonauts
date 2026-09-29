@@ -26,7 +26,8 @@ export function parseReport(stdout: string): ParsedReport {
 		}
 		return { outcome: "unknown", raw: stdout };
 	}
-	const fencedReport = fencedReports[0];
+	const fencedReport =
+		outcomes[0] === "blocked" ? fencedReports.at(-1) : fencedReports[0];
 	if (fencedReport) {
 		return fencedReport.outcome === "blocked"
 			? { ...fencedReport, raw: stdout }

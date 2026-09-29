@@ -22,6 +22,22 @@ async function fixture(notes = "## Implementation Notes\r\n\r\nOld  \r\n\r\n") {
 }
 
 describe("source-preserving task edits", () => {
+	it("preserves lower-case implementation notes byte for byte on status-only update", async () => {
+		const notes = "## implementation notes  \r\n\r\nKEEP THIS  \r\n";
+		const { manager, task, file } = await fixture(notes);
+		await manager.updateTask(task.id, { status: "In Progress" });
+		expect(await readFile(file, "utf8")).toContain(notes);
+	});
+	it("rejects duplicate headings regardless of case", async () => {
+		const { manager, task, file } = await fixture(
+			"## implementation notes\nKEEP THIS\n## Implementation Notes\nagain\n",
+		);
+		const before = await readFile(file, "utf8");
+		await expect(
+			manager.updateTask(task.id, { status: "Done" }),
+		).rejects.toThrow(/Duplicate/);
+		expect(await readFile(file, "utf8")).toBe(before);
+	});
 	it("preserves the complete raw CRLF notes section on status, criterion and title edits", async () => {
 		const { manager, task, notes } = await fixture();
 		await manager.updateTask(task.id, { status: "In Progress" });

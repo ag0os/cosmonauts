@@ -24,6 +24,25 @@ describe("report-parser", () => {
 			raw,
 		});
 	});
+	test("uses the last blocked fenced notes when every report agrees", () => {
+		const raw =
+			'```json\n{"outcome":"blocked","notes":"Old"}\n```\n```json\n{"outcome":"blocked","notes":"New"}\n```';
+		expect(parseReport(raw)).toMatchObject({
+			outcome: "blocked",
+			notes: "New",
+			raw,
+		});
+	});
+	test("uses raw text when the last of agreeing blocked reports has no notes", () => {
+		const raw =
+			'```json\n{"outcome":"blocked","notes":"Old"}\n```\n```json\n{"outcome":"blocked"}\n```';
+		expect(parseReport(raw)).toEqual({
+			outcome: "blocked",
+			files: [],
+			verification: [],
+			raw,
+		});
+	});
 	test("falls back to raw text when the last blocked report has no notes", () => {
 		const raw =
 			'```json\n{"outcome":"blocked","notes":"Stale approval"}\n```\n```json\n{"outcome":"blocked"}\n```\noutcome: success';

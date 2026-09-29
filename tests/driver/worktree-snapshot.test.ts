@@ -171,8 +171,14 @@ describe("snapshotWorktree", () => {
 				sha,
 				new AbortController().signal,
 			);
+			// J1 / INV-006 / D-036: after the first commit, tracked.txt is no longer a snapshot delta.
 			expect(retained, `${policy}: ${discarded}`).toEqual(
-				discarded === "none" ? [] : [ref],
+				discarded === "none" ||
+					(policy !== "no-commit" &&
+						(discarded === "tracked.txt" ||
+							(discarded === missionFile && policy === "backend-commits")))
+					? []
+					: [ref],
 			);
 		}
 	});
@@ -262,7 +268,7 @@ describe("snapshotWorktree", () => {
 		]);
 		git(["commit", "-q", "-m", "track submodule"]);
 		await writeFile(join(root, "new.txt"), "retained");
-		const ref = await snapshotWorktree({
+		await snapshotWorktree({
 			projectRoot: root,
 			runId: "run-1",
 			taskId: "TASK-1",
@@ -279,7 +285,8 @@ describe("snapshotWorktree", () => {
 			undefined,
 			new AbortController().signal,
 		);
-		expect(retained).toEqual([ref]);
+		// J1 / INV-006 / D-036: the gitlink existed in the parent; dropping it later does not discard snapshot delta.
+		expect(retained).toEqual([]);
 	});
 
 	it("returns undefined and writes no ref on a clean tree", async () => {

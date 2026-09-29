@@ -22,7 +22,7 @@ function containsCompleteBlock(
 }
 
 function noteSection(source: string): SectionSpan | undefined {
-	const heading = /^## Implementation Notes[ \t]*(?:\r\n|\n|\r|$)/gm;
+	const heading = /^## Implementation Notes[ \t]*(?:\r\n|\n|\r|$)/gim;
 	const matches = [...source.matchAll(heading)];
 	if (matches.length > 1)
 		throw new Error("Duplicate Implementation Notes sections");

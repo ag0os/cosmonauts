@@ -108,6 +108,159 @@ describe("run-one-task", () => {
 		}
 	});
 	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s deletes a task-only snapshot after worker source edits", async (policy) => {
+		const fixture = await setupGitFixture();
+		await writeProjectFile(fixture, "second.txt", "base\n");
+		await git(fixture.projectRoot, ["add", "-A"]);
+		await git(fixture.projectRoot, ["commit", "-m", "track task and sources"]);
+		const backend = createBackend(async () => {
+			await writeProjectFile(fixture, "README.md", "worker edit\n");
+			await writeProjectFile(fixture, "second.txt", "worker edit\n");
+			if (policy === "backend-commits") {
+				await git(fixture.projectRoot, ["add", "README.md", "second.txt"]);
+				await git(fixture.projectRoot, ["commit", "-m", "worker edits"]);
+			}
+			return successfulResult();
+		});
+		const outcome = await runOneTask(
+			createSpec(fixture, { commitPolicy: policy }),
+			createCtx(fixture, backend, []),
+			fixture.taskId,
+		);
+		expect(outcome).toMatchObject({ status: "done" });
+		expect(
+			outcome.status === "done" && outcome.retainedSnapshots,
+		).toBeUndefined();
+	});
+	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s deletes a preserved dirty snapshot despite later source edits", async (policy) => {
+		const fixture = await setupGitFixture();
+		await writeProjectFile(fixture, "other.txt", "base\n");
+		await git(fixture.projectRoot, ["add", "-A"]);
+		await git(fixture.projectRoot, ["commit", "-m", "track task"]);
+		await writeProjectFile(fixture, "README.md", "dirty X\n");
+		await writeProjectFile(fixture, "Y.txt", "dirty Y\n");
+		const backend = createBackend(async () => {
+			await writeProjectFile(fixture, "other.txt", "new work\n");
+			if (policy === "backend-commits") {
+				await git(fixture.projectRoot, [
+					"add",
+					"README.md",
+					"Y.txt",
+					"other.txt",
+				]);
+				await git(fixture.projectRoot, ["commit", "-m", "worker edits"]);
+			}
+			return successfulResult();
+		});
+		const outcome = await runOneTask(
+			createSpec(fixture, { commitPolicy: policy }),
+			createCtx(fixture, backend, []),
+			fixture.taskId,
+		);
+		expect(
+			outcome.status === "done" && outcome.retainedSnapshots,
+		).toBeUndefined();
+	});
+	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s removes a snapshot whose only non-task delta is a preserved deletion", async (policy) => {
+		const fixture = await setupGitFixture();
+		await writeProjectFile(fixture, "obsolete.txt", "old");
+		await git(fixture.projectRoot, ["add", "-A"]);
+		await git(fixture.projectRoot, ["commit", "-m", "track obsolete"]);
+		await rm(join(fixture.projectRoot, "obsolete.txt"));
+		const backend = createBackend(async () => {
+			if (policy === "backend-commits") {
+				await git(fixture.projectRoot, ["add", "-u"]);
+				await git(fixture.projectRoot, ["commit", "-m", "keep deletion"]);
+			}
+			return successfulResult();
+		});
+		const outcome = await runOneTask(
+			createSpec(fixture, { commitPolicy: policy }),
+			createCtx(fixture, backend, []),
+			fixture.taskId,
+		);
+		expect(
+			outcome.status === "done" && outcome.retainedSnapshots,
+		).toBeUndefined();
+	});
+	test.each([
+		"driver-commits",
+		"backend-commits",
+		"no-commit",
+	] as const)("%s retains a ref when dirty X is reverted or Y is deleted", async (policy) => {
+		for (const discarded of ["X", "Y"] as const) {
+			const fixture = await setupGitFixture();
+			await git(fixture.projectRoot, ["add", "-A"]);
+			await git(fixture.projectRoot, ["commit", "-m", "track task"]);
+			await writeProjectFile(fixture, "README.md", "dirty X");
+			await writeProjectFile(fixture, "Y.txt", "dirty Y");
+			const backend = createBackend(async () => {
+				if (discarded === "X")
+					await writeProjectFile(fixture, "README.md", "initial\n");
+				else await rm(join(fixture.projectRoot, "Y.txt"));
+				return successfulResult();
+			});
+			const outcome = await runOneTask(
+				createSpec(fixture, { commitPolicy: policy }),
+				createCtx(fixture, backend, []),
+				fixture.taskId,
+			);
+			expect(outcome.status === "done" && outcome.retainedSnapshots).toEqual([
+				`refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1`,
+			]);
+			await rm(fixture.projectRoot, { recursive: true, force: true });
+		}
+	});
+	test("records the last of two blocked fenced reasons", async () => {
+		const fixture = await setupGitFixture();
+		const report = (notes: string) =>
+			`\`\`\`json\n${JSON.stringify({ outcome: "blocked", notes })}\n\`\`\``;
+		const stdout = `${report("Old")}\n${report("New")}`;
+		const outcome = await runOneTask(
+			createSpec(fixture),
+			createCtx(
+				fixture,
+				createBackend(async () => ({ exitCode: 0, stdout, durationMs: 1 })),
+				[],
+			),
+			fixture.taskId,
+		);
+		expect(outcome).toMatchObject({ status: "blocked", reason: "New" });
+	});
+	test("retains a deleted backup with the same task ID in terminal outcome", async () => {
+		const fixture = await setupGitFixture();
+		await git(fixture.projectRoot, ["add", "-A"]);
+		await git(fixture.projectRoot, ["commit", "-m", "track task"]);
+		const backup = `missions/tasks/${fixture.taskId} - backup.md`;
+		await writeProjectFile(fixture, backup, "backup bytes");
+		const outcome = await runOneTask(
+			createSpec(fixture),
+			createCtx(
+				fixture,
+				createBackend(async () => {
+					await rm(join(fixture.projectRoot, backup));
+					return successfulResult();
+				}),
+				[],
+			),
+			fixture.taskId,
+		);
+		expect(outcome.status === "done" && outcome.retainedSnapshots).toEqual([
+			`refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1`,
+		]);
+	});
+	test.each([
 		"blocked",
 		"success",
 	] as const)("snapshots tracked and untracked bytes before spawn and %s retains only unfinished refs", async (result) => {

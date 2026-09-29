@@ -21,6 +21,7 @@ interface CommandResult {
 	readonly exitCode: number;
 	readonly stdout: string;
 	readonly stderr: string;
+	readonly termination: "exit" | "timeout" | "abort";
 }
 
 export interface SpawnSuccess {
@@ -207,15 +208,25 @@ export function runCommand(
 		child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
 		let closeTimer: NodeJS.Timeout | undefined;
 		let abortError: string | undefined;
+		let settled = false;
 		const finish = (
 			code: number | null,
 			closeSignal: NodeJS.Signals | null,
 		) => {
+			if (settled) return;
+			settled = true;
 			if (closeTimer) clearTimeout(closeTimer);
 			child.stdout?.destroy();
 			child.stderr?.destroy();
+			const termination =
+				signal.aborted || abortError
+					? "abort"
+					: closeSignal && options?.timeoutMs
+						? "timeout"
+						: "exit";
 			resolve({
-				exitCode: abortError ? 124 : (code ?? 1),
+				termination,
+				exitCode: termination !== "exit" ? 124 : (code ?? 1),
 				stdout: Buffer.concat(stdout).toString(),
 				stderr:
 					Buffer.concat(stderr).toString() ||
@@ -340,6 +351,8 @@ export async function blockedReportEvidence(options: {
 	};
 }
 
+class GitInterruptedError extends Error {}
+
 async function boundedGit(
 	projectRoot: string,
 	signal: AbortSignal,
@@ -355,9 +368,14 @@ async function boundedGit(
 	} catch (error) {
 		throw new Error(`git ${args.join(" ")} failed: ${formatError(error)}`);
 	}
-	if (result.exitCode !== 0 || signal.aborted) {
+	if (result.termination !== "exit") {
+		throw new GitInterruptedError(
+			`git ${args.join(" ")} failed: ${result.termination === "abort" ? "aborted" : "timed out"}`,
+		);
+	}
+	if (result.exitCode !== 0) {
 		throw new Error(
-			`git ${args.join(" ")} failed: ${signal.aborted ? "aborted" : result.stderr.trim() || `exit ${result.exitCode}`}`,
+			`git ${args.join(" ")} failed: ${result.stderr.trim() || `exit ${result.exitCode}`}`,
 		);
 	}
 	return result.stdout.trim();
@@ -384,12 +402,11 @@ export async function snapshotWorktree(options: {
 			return undefined;
 	} catch (error) {
 		if (
-			signal.aborted ||
-			String(error).includes("timed out") ||
-			String(error).includes("aborted")
+			error instanceof Error &&
+			/fatal: not a git repository/u.test(error.message)
 		)
-			throw error;
-		return undefined;
+			return undefined;
+		throw error;
 	}
 	if (!(await git(["status", "--porcelain", "--untracked-files=all"])))
 		return undefined;
@@ -406,12 +423,7 @@ export async function snapshotWorktree(options: {
 		try {
 			globalExcludes = await git(["config", "--get", "core.excludesFile"]);
 		} catch (error) {
-			if (
-				signal.aborted ||
-				String(error).includes("timed out") ||
-				String(error).includes("aborted")
-			)
-				throw error;
+			if (error instanceof GitInterruptedError) throw error;
 			globalExcludes = join(
 				process.env.XDG_CONFIG_HOME || join(homedir(), ".config"),
 				"git",
@@ -465,14 +477,19 @@ export async function removeDoneTaskSnapshots(
 	commitPolicy: DriverRunSpec["commitPolicy"],
 	commitSha: string | undefined,
 	signal: AbortSignal,
+	taskFile = `missions/tasks/${taskId}.md`,
 ): Promise<string[]> {
 	const git = (args: string[]) => boundedGit(projectRoot, signal, args);
 	try {
 		if ((await git(["rev-parse", "--is-inside-work-tree"])) !== "true")
 			return [];
 	} catch (error) {
-		if (signal.aborted || String(error).includes("timed out")) throw error;
-		return [];
+		if (
+			error instanceof Error &&
+			/fatal: not a git repository/u.test(error.message)
+		)
+			return [];
+		throw error;
 	}
 	const prefix = `refs/cosmonauts/drive/${runId}/${taskId}/`;
 	const refs = (await git(["for-each-ref", "--format=%(refname)", prefix]))
@@ -487,13 +504,21 @@ export async function removeDoneTaskSnapshots(
 	const retained: string[] = [];
 	for (const ref of refs) {
 		const snapshot = await treeEntries(git, ref);
+		const delta = await git([
+			"diff-tree",
+			"-r",
+			"--name-status",
+			"-z",
+			`${ref}^`,
+			ref,
+		]);
+		const changes = delta.split("\0");
 		let contained = true;
-		for (const [path, hash] of snapshot) {
-			if (
-				path === `missions/tasks/${taskId}.md` ||
-				(path.startsWith(`missions/tasks/${taskId} - `) && path.endsWith(".md"))
-			)
-				continue;
+		for (let index = 0; index + 1 < changes.length; index += 2) {
+			const status = changes[index];
+			const path = changes[index + 1];
+			if (!path || !status || path === taskFile) continue;
+			const hash = status === "D" ? undefined : snapshot.get(path);
 			let finalHash: string | undefined;
 			if (
 				commitPolicy === "no-commit" ||
@@ -509,9 +534,9 @@ export async function removeDoneTaskSnapshots(
 					false,
 					{ timeoutMs: 60_000 },
 				);
-				if (signal.aborted || result.stderr.includes("timed out"))
-					throw new Error(
-						`git hash-object -- ${path} failed: ${signal.aborted ? "aborted" : result.stderr.trim()}`,
+				if (result.termination !== "exit")
+					throw new GitInterruptedError(
+						`git hash-object -- ${path} failed: ${result.termination === "abort" ? "aborted" : "timed out"}`,
 					);
 				finalHash = result.exitCode === 0 ? result.stdout.trim() : undefined;
 			} else finalHash = finalEntries.get(path);
