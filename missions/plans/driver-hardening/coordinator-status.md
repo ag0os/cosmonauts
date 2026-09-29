@@ -49,6 +49,7 @@ suite-reliability → execution-liveness resumes.
 - **Quality Manager: refused to start from this worktree** — `cosmonauts run chain "coding/quality-manager"` failed in 18 ms with `Private workspace preparation refused: Unsupported linked worktree layout` (chain `chain-91fa32ce`). This checkout is a linked `git worktree` of `/Users/cosmos/Projects/cosmonauts`. Codex review round 1 launched in parallel (`codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only`, correctness/liveness framing). QM disposition recorded below once resolved.
 - **Quality Manager, second attempt in a plain clone** (`<scratchpad>/qm-clone`, branch at `bf0dfc9c`, `bun install`ed; the QM requires `.git` to be a directory, `lib/orchestration/quality-review-workspace.ts` `verifyLayout`): ran 4 m 16 s and failed with `Missing reviewer evidence: reviewer, security-reviewer, performance-reviewer, ux-reviewer` — its four reviewers produced no artifacts. Same failure mode as recorded for `analysis-gate-coverage` (codex rounds substituted, human accepted). **No QM verdict exists for this plan; codex rounds substitute. Human-decision item for the final report.**
 - **Codex round 1 (`missions/reviews/codex/driver-hardening-round-1.md`): DO-NOT-SHIP, 9 findings (3 P1, 6 P2).** All verified against the code: 1–8 accepted and routed to remediation task **TASK-804** (one Drive run, red-first per finding); 9 rejected (INV-003 requires the announcement before the re-spawn; a re-spawn that then fails is recorded by its own failure). Round 2 re-reviews after TASK-804.
+- **TASK-804 — DONE** (run `run-d1ffe594`, 2026-09-29 21:07–21:28Z, one attempt, worker `success`). Drive commit `abe43347` (parent `417ea374`). Five `verify` `passed`. Change set: probe (termination-error keeps the journal), Fallow scope path canonicalization, guard global-option skip list, finalization (probe lock held through staging+commit), parser (last outcome line), runtime helpers (bounded git, merged user excludes, selected-line summary classification); new `tests/driver/worktree-snapshot-timeout.test.ts`; additive tests in seven suites; one probe assertion strengthened to the `--no-pager` form (F4). All 9 ACs checked; D-030 RED/GREEN rows for F1..F8 with mutation checks. Codex round 2 launched on `e55040de..HEAD`.
 
 ## Blocked
 
@@ -76,7 +77,7 @@ Nothing. H-001 ruled (a),(a) and applied (spec AC-012 amended on record; plan D-
 | TASK-800 | 11 boundary hygiene (now depends on TASK-803) | B-010, B-011 rest | yes — DONE `3b5c1b88` |
 | TASK-801 | 12 worker persona alignment | B-015 | yes — DONE `363169bd` |
 | TASK-802 | 13 coordinator closeout + live acceptance | B-012 | **no — coordinator-run** — DONE (live run `run-f79d00a4` accepted) |
-| TASK-804 | 14 codex round-1 remediation (F1..F8) | B-005/007/008/009/011/013 fixes | yes |
+| TASK-804 | 14 codex round-1 remediation (F1..F8) | B-005/007/008/009/011/013 fixes | yes — DONE `abe43347` |
 
 Phase 6 compliance review: 18 verified findings (3 lenses), 0 refuted, all applied (commit `git log -1`). Key: coordinator-only actions were written as worker ACs, which Drive would have blocked as unchecked (D-031).
 
