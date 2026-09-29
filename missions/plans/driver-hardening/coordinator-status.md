@@ -47,6 +47,8 @@ suite-reliability → execution-liveness resumes.
 - **Phase 1 complete.** 14 Drive runs for 13 Drive tasks (TASK-790..801 + TASK-803) plus 2 live-acceptance runs; 3 worker blocks (TASK-796, TASK-803, TASK-804 probe), all on coordinator-owned or derived ground, none escalated; one hand fix (`f2d6242c`, snapshot pathspecs) as a launch-path repair with a red-first test. Phase 2 (gates + Quality Manager) follows.
 - **Phase 2 gates (ground truth at `6cbdae2c`):** `bun run test` 4082/4082 (292 files), lint clean (652 files), typecheck clean, reachability 214/214, `check:suppressions -- --base main` passed, `cosmonauts plan check-artifacts driver-hardening` Issues: 0. Improvement pass written to `missions/reviews/improvements/driver-hardening.md` (8 rows).
 - **Quality Manager: refused to start from this worktree** — `cosmonauts run chain "coding/quality-manager"` failed in 18 ms with `Private workspace preparation refused: Unsupported linked worktree layout` (chain `chain-91fa32ce`). This checkout is a linked `git worktree` of `/Users/cosmos/Projects/cosmonauts`. Codex review round 1 launched in parallel (`codex exec -m gpt-6-sol -c model_reasoning_effort=high --sandbox read-only`, correctness/liveness framing). QM disposition recorded below once resolved.
+- **Quality Manager, second attempt in a plain clone** (`<scratchpad>/qm-clone`, branch at `bf0dfc9c`, `bun install`ed; the QM requires `.git` to be a directory, `lib/orchestration/quality-review-workspace.ts` `verifyLayout`): ran 4 m 16 s and failed with `Missing reviewer evidence: reviewer, security-reviewer, performance-reviewer, ux-reviewer` — its four reviewers produced no artifacts. Same failure mode as recorded for `analysis-gate-coverage` (codex rounds substituted, human accepted). **No QM verdict exists for this plan; codex rounds substitute. Human-decision item for the final report.**
+- **Codex round 1 (`missions/reviews/codex/driver-hardening-round-1.md`): DO-NOT-SHIP, 9 findings (3 P1, 6 P2).** All verified against the code: 1–8 accepted and routed to remediation task **TASK-804** (one Drive run, red-first per finding); 9 rejected (INV-003 requires the announcement before the re-spawn; a re-spawn that then fails is recorded by its own failure). Round 2 re-reviews after TASK-804.
 
 ## Blocked
 
@@ -74,6 +76,7 @@ Nothing. H-001 ruled (a),(a) and applied (spec AC-012 amended on record; plan D-
 | TASK-800 | 11 boundary hygiene (now depends on TASK-803) | B-010, B-011 rest | yes — DONE `3b5c1b88` |
 | TASK-801 | 12 worker persona alignment | B-015 | yes — DONE `363169bd` |
 | TASK-802 | 13 coordinator closeout + live acceptance | B-012 | **no — coordinator-run** — DONE (live run `run-f79d00a4` accepted) |
+| TASK-804 | 14 codex round-1 remediation (F1..F8) | B-005/007/008/009/011/013 fixes | yes |
 
 Phase 6 compliance review: 18 verified findings (3 lenses), 0 refuted, all applied (commit `git log -1`). Key: coordinator-only actions were written as worker ACs, which Drive would have blocked as unchecked (D-031).
 
