@@ -34,16 +34,19 @@ scopes:
   changed-scope floors. The duplication baseline exists even though the
   2026-09-10 full-project duplication scan was below its failure threshold.
 
-The three files were adopted as-is at their last-writer commits (dead-code
-`eb55243`; health and dupes `6b36c80`), then re-anchored once at local `main`
-`29fc0ce` under human ruling N-001 (plan D-029). The coordinator's probe found
-the adopted floors missed 3 dead-code, 15 duplication, and 217 health findings
-already on `main`; the re-anchoring keeps inherited debt from failing a
-changed-scope audit. The current committed floors record 27 unused exports,
-103 unused types, 1 unused class member, 2 duplicate-export pairs, 295 health
-finding counts, and 92 clone groups. `.fallow-baselines/manifest.json` records
-each digest, last-writer commit, and the re-anchoring reason. Review never
-refreshes these files.
+The current floors were refreshed separately against analyzed source commit
+`ea27538ef242155767d64804111997e0e037ad1d` after the project-health
+paydown. They contain one unused class member (the evidence-backed Q-005 false
+positive), three clone groups in two retained three-file families, and 229
+health finding counts across 84 paths. `.fallow-baselines/manifest.json`
+records one closeout refresh reason and digest per category at that commit:
+`dead-code` `5d658e49031aa2a92e39965f98acce151f1ee6bb59644018d78429b34f74185a`,
+`dupes` `d2e6cf3423c71b2d303a67962b4040ef709a23c4eb4b0ba6dee35601529e002a`,
+and `health` `271787e1a1d9f0f3efb476d0249e8ae2879525a202f6a300e3cbe892450d7651`.
+The earlier N-001 re-anchoring at `29fc0ce` remains historical provenance,
+not the current floor. See [the whole-project health record](../missions/reviews/project-health-audit.md)
+for the analyzed inventory, unresolved binding, dispositions, and sign-off packet.
+Review never refreshes these files.
 To refresh selected floors after deliberate debt work, run
 `bun run refresh:fallow-baselines -- --base <revision> --reason '<reason>' --category dead-code`
 (repeat `--category` for `health` or `dupes`). The script analyzes the resolved

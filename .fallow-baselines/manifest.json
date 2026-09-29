@@ -3,7 +3,7 @@
   "baselines": {
     "dead-code": {
       "path": ".fallow-baselines/dead-code.json",
-      "sha256": "ba9311b507cf396e77d193dcdc50590fc935e4e4821de6e42f6d8a43fa610be6",
+      "sha256": "5d658e49031aa2a92e39965f98acce151f1ee6bb59644018d78429b34f74185a",
       "provenance": [
         {
           "action": "adopted as-is",
@@ -16,12 +16,20 @@
           "sha256": "ba9311b507cf396e77d193dcdc50590fc935e4e4821de6e42f6d8a43fa610be6",
           "reason": "N-001 (human ruling 2026-09-24, relayed by Shepherd): re-anchor all three changed-scope floors at local main 29fc0ce, this plan's merge-base, so inherited debt in touched files never fails the gate (INV-005). main exceeded the adopted floors: dead-code 3, dupes 15, health 217 unbaselined findings.",
           "recordedAt": "2026-09-24T13:24:33.575Z"
+        },
+        {
+          "action": "refresh",
+          "base": "ea27538ef242155767d64804111997e0e037ad1d",
+          "baseCommit": "ea27538ef242155767d64804111997e0e037ad1d",
+          "sha256": "5d658e49031aa2a92e39965f98acce151f1ee6bb59644018d78429b34f74185a",
+          "reason": "Project-health closeout: retain Q-005 TaskManager.getTaskDependencyStatusSnapshot false positive; live call lib/driver/drive-graph-runner.ts:593; no other dead-code findings.",
+          "recordedAt": "2026-09-29T07:53:43.251Z"
         }
       ]
     },
     "health": {
       "path": ".fallow-baselines/health.json",
-      "sha256": "39e566a1cdc918640eaaac0174e64b4e1cc19a724dca4e291fdfd9e647b9e39b",
+      "sha256": "271787e1a1d9f0f3efb476d0249e8ae2879525a202f6a300e3cbe892450d7651",
       "provenance": [
         {
           "action": "adopted as-is",
@@ -34,12 +42,20 @@
           "sha256": "39e566a1cdc918640eaaac0174e64b4e1cc19a724dca4e291fdfd9e647b9e39b",
           "reason": "N-001 (human ruling 2026-09-24, relayed by Shepherd): re-anchor all three changed-scope floors at local main 29fc0ce, this plan's merge-base, so inherited debt in touched files never fails the gate (INV-005). main exceeded the adopted floors: dead-code 3, dupes 15, health 217 unbaselined findings.",
           "recordedAt": "2026-09-24T13:24:33.445Z"
+        },
+        {
+          "action": "refresh",
+          "base": "ea27538ef242155767d64804111997e0e037ad1d",
+          "baseCommit": "ea27538ef242155767d64804111997e0e037ad1d",
+          "sha256": "271787e1a1d9f0f3efb476d0249e8ae2879525a202f6a300e3cbe892450d7651",
+          "reason": "Project-health closeout: 172 justified identities in ### Baselined complexity (project-health-audit); after-snapshot complexity result digest 2f16bf07a204e05de16432d212621656a4ac8a913dbfdd1c2c890986e797368c at analyzedCommit ea27538ef242155767d64804111997e0e037ad1d.",
+          "recordedAt": "2026-09-29T07:54:12.434Z"
         }
       ]
     },
     "dupes": {
       "path": ".fallow-baselines/dupes.json",
-      "sha256": "d0ed95beaba70c76f222f77d8876c51624d7528686d26f41217862ed9a1bdc96",
+      "sha256": "d2e6cf3423c71b2d303a67962b4040ef709a23c4eb4b0ba6dee35601529e002a",
       "provenance": [
         {
           "action": "adopted as-is",
@@ -52,6 +68,14 @@
           "sha256": "d0ed95beaba70c76f222f77d8876c51624d7528686d26f41217862ed9a1bdc96",
           "reason": "N-001 (human ruling 2026-09-24, relayed by Shepherd): re-anchor all three changed-scope floors at local main 29fc0ce, this plan's merge-base, so inherited debt in touched files never fails the gate (INV-005). main exceeded the adopted floors: dead-code 3, dupes 15, health 217 unbaselined findings.",
           "recordedAt": "2026-09-24T13:24:33.716Z"
+        },
+        {
+          "action": "refresh",
+          "base": "ea27538ef242155767d64804111997e0e037ad1d",
+          "baseCommit": "ea27538ef242155767d64804111997e0e037ad1d",
+          "sha256": "d2e6cf3423c71b2d303a67962b4040ef709a23c4eb4b0ba6dee35601529e002a",
+          "reason": "Project-health closeout: retain only validation family cli/memory/judgment-provider.ts, lib/memory/consolidation-proposals.ts, lib/memory/retirement-receipts.ts (two overlapping groups) and readExactBytes family lib/memory/consolidation-sources.ts, lib/memory/knowledge-store.ts, lib/memory/living-memory.ts; cross-boundary trust and store-local TOCTOU semantics preclude extraction.",
+          "recordedAt": "2026-09-29T07:54:02.733Z"
         }
       ]
     }
