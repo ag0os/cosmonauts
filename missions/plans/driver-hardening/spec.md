@@ -35,6 +35,30 @@ are the coordinator's list). The code paths named were read at
 | Small (obs. 6, 16, 17) | `eventLogPath` only in tool `details`, not in the text the model sees; `COSMONAUTS_DRIVER_*` inherited by postflight; schema text says "for detached runs" while the code rejects inline | `domains/shared/extensions/orchestration/driver-tool.ts` `runDriverResult`; `runtime-helpers.ts` `runCommand` spawns with the inherited env; `driver-tool.ts` backend description vs `Unsupported driver backend in inline mode` |
 | Roadmap bullet | Drive commit subjects never carry raw report JSON | `runtime-helpers.ts` `reportSummary` takes the first non-empty line of `raw` for `unknown` reports, which can be a JSON fence |
 
+Re-derived from the 41 archived run records
+(`missions/archive/sessions/project-health-audit/runs/`, main checkout,
+gitignored; read 2026-09-29 after the archive step moved them):
+
+- Of 40 `spawn_completed` reports, 24 parsed `success`, 8 `failure`, 1
+  `partial`, 7 `unknown`. Of the 7 unknown, three ended with `outcome: blocked`
+  (TASK-768, TASK-776, TASK-782), one with `outcome: task_blocked` (TASK-780),
+  and three had no outcome line. Every unknown report reached `task_blocked`
+  with the reason `report outcome unknown` or `task failed`, and the worker's
+  notes were replaced by that reason (rows 2-3).
+- Every `spawn_completed`, including the four with a blocked outcome line, is
+  followed by ten `verify` events (five postflight commands, started plus
+  passed or failed) before `task_blocked` (row 4).
+- Four runs contain two `spawn_started` events with no event between the first
+  `task_blocked` and the second `spawn_started` (`run-57fabb1f` TASK-780,
+  `run-76487eb0` TASK-768 on `claude-cli`, `run-aaee3993`, `run-fbbd2445`
+  TASK-773, the last of which then succeeded). The retry is invisible except by
+  counting (row 4, AC-005).
+- Three `commit_made` subjects carry report prose or JSON instead of a title:
+  TASK-788's subject begins `{"outcome":"success",...`; TASK-780's and
+  TASK-778's carry a sentence of the report (roadmap bullet, AC-015).
+- The two `task_blocked` reasons `acceptance criteria still unchecked` are both
+  `cosmonauts-subagent` runs (TASK-768, TASK-769), matching row 1.
+
 ## Intent
 
 Goal: a Drive run never loses what a worker recorded, never acts on a report
@@ -76,9 +100,11 @@ destructive git command is preferred to a prompt rule the worker may ignore.
 Provenance. The scope (the roadmap item's six bullets; ranked follow-ups 1-3
 must-have, 4-7 in scope unless argued out) is a human ruling of 2026-09-29
 typed to Shepherd and relayed. The invariant wording was drafted by the
-coordinator on 2026-09-29 and awaits ratification (coordinator-status Q-001).
-Until ratified it is a draft; once ratified it is ground that changes only by
-human decision.
+coordinator on 2026-09-29 and **ratified as drafted by the human on
+2026-09-29** (typed to Shepherd, relayed; recorded in
+`.shepherd/work/in-progress/driver-hardening/rulings.md`, Q-001: goal,
+INV-001..006, and the Ranking paragraph). These invariants and their ranking
+are ratified ground and change only by human decision.
 
 ## Users
 
@@ -246,8 +272,8 @@ In scope (human ruling 2026-09-29, relayed; ratified ground):
 - Ranked follow-ups 1-3 (rows 2-4, 1, 5) are must-have.
 - Ranked follow-ups 4-7 (rows 6-8 and the small items) are in scope.
 
-Argued out, with the reason (coordinator, derived; confirm or overrule under
-coordinator-status Q-003):
+Argued out, with the reason (coordinator-proposed; **confirmed by the human
+on 2026-09-29**, Q-003 (a), rulings file above):
 
 - Observation 4 (`bun run lint` reads `.git/info/exclude`-ignored paths and
   formats machine-canonical JSON under `missions/reviews/`). It is a
@@ -275,12 +301,15 @@ Non-goals:
 
 ## Assumptions
 
-- The improvement review is the evidence base and its rows are accurate as
-  written; the raw run records under `missions/sessions/project-health-audit/runs/`
-  are gitignored and were **not present** in this worktree or the main checkout
-  when this spec was written (2026-09-29), so no row was re-derived from a run
-  record. If a row is contradicted during implementation, the deviation
-  protocol applies and the review is amended on the record.
+- The improvement review is the evidence base. Its rows were re-derived
+  against the 41 archived run records on 2026-09-29 (see the Purpose section);
+  the records confirm rows 1-4 and the commit-subject bullet directly and are
+  consistent with the rest. If a row is contradicted during implementation,
+  the deviation protocol applies and the review is amended on the record.
+- The execution-probe helper (AC-012) may make a temporary source edit inside
+  the worker's session, with digest-verified byte-identical restore and a
+  refusal to run on a dirty file (human ruling 2026-09-29, Q-002 (a); ratified
+  ground for the helper's mechanism).
 - Fallow 2.54.2 `health` has no per-file filter (its help lists only
   `--changed-since`), so AC-008's path scope is applied by the adapter after a
   project run; the cost of one provider run per call is unchanged. Fallow
@@ -300,7 +329,20 @@ Non-goals:
 
 ## Open Questions
 
-Listed for the human in `coordinator-status.md` under "Needs the user"
-(Q-001 Intent ratification; Q-002 the execution-probe helper may write to the
-working tree; Q-003 confirm the observation-4 exclusion). Everything else is
-decided in this spec as derived ground and may be overridden freely.
+None open. All three were ruled by the human on 2026-09-29 (typed to
+Shepherd, relayed; `.shepherd/work/in-progress/driver-hardening/rulings.md`).
+The rulings are ratified ground:
+
+- Q-001 - Intent INV-001..006 and the ranking: **ratified as drafted**.
+- Q-002 - Execution-probe helper mechanism: **(a)**, a temporary source edit
+  inside the worker's session with digest-verified byte-identical restore and
+  a refusal on a dirty file. Rejected: (b) a throwaway worktree copy of HEAD
+  (cannot probe uncommitted refactors); (c) keeping D-031 manual.
+- Q-003 - Observation 4 (Biome and `.git/info/exclude`): **excluded** as a
+  lint-configuration matter.
+
+Everything else in this spec is derived ground and may be overridden freely.
+Note for planning: the branch was rebased onto `main` `e55040de` on
+2026-09-29, which includes the `fallow-provider.ts` `warn` verdict fix
+(completed non-passing result) and tab-separated `--plain` rows; neither
+touches this plan's files.

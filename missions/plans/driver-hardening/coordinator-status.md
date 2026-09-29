@@ -19,61 +19,35 @@ suite-reliability → execution-liveness resumes.
 
 ## Running
 
-Nothing. No Drive run, no chain, no agent.
+Nothing yet. Next action: `/spec-to-backlog driver-hardening`.
 
 ## Blocked
 
-Waiting on the human rulings below (step 1 stop point per the brief).
+Nothing.
 
-## Needs the user
+## Rulings (human, 2026-09-29, typed to Shepherd, relayed; `.shepherd/work/in-progress/driver-hardening/rulings.md`)
 
-- **Q-001 - Ratify the Intent.** `spec.md` `## Intent`: goal, INV-001..006,
-  and the Ranking paragraph. Ratify as drafted, or edit. Until ratified the
-  invariants are a draft; `/spec-to-backlog` must not start before this.
-  Options: (a) ratify as drafted; (b) ratify with edits (say which).
-- **Q-002 - The execution-probe helper writes to the working tree.** AC-012
-  asks for a worker-invocable helper that instruments named source locations,
-  runs a test command, reports hit counts, and restores the tree
-  byte-identical. The only known-reliable mechanism (D-031: Vitest v8 coverage
-  had duplicated function-map entries) is a temporary source edit with a
-  backup copy, run inside the worker's own session. Options: (a) allow it,
-  with byte-identical restore verified by digest and a refusal to run on a
-  dirty file (recommended default); (b) restrict the helper to a throwaway
-  `git worktree` copy of HEAD, which cannot probe uncommitted refactors and so
-  would not have covered the audit's cases; (c) drop AC-012 and keep D-031 as a
-  documented manual procedure.
-- **Q-003 - Confirm the one exclusion from ranked follow-up 7.** Observation 4
-  (`bun run lint` reads `.git/info/exclude`-ignored paths) is argued out in
-  `spec.md` `## Scope` as a lint-configuration matter, not a Drive defect.
-  Options: (a) confirm the exclusion (recommended); (b) keep it in scope.
+- Q-001 Intent ratified as drafted. Q-002 (a). Q-003 (a). Recorded in
+  `spec.md` (Intent provenance, Scope, Assumptions, Open Questions).
+- Branch rebased onto `main` `e55040de` (chore/base-small-fixes merged) before
+  `/spec-to-backlog`, per Shepherd.
 
-Everything else is decided in `spec.md` as derived ground: `outcome: blocked`
-becomes a first-class outcome (replacing the contract line that forbids it);
-AC-003's run-level consequence follows the existing `partialMode` rule; the
-retry event is emitted by the existing contradicted-path loop only; AC-008's
-path scope is adapter-side filtering because Fallow `health` has no per-file
-filter; AC-014 uses a Pi `tool_call` block in Drive worker sessions only.
+## Evidence
 
-## Evidence gap
-
-The brief says the run records under
-`missions/sessions/project-health-audit/runs/` are present locally. They are
-not: the directory does not exist in this worktree or in the main checkout
-(checked 2026-09-29). The spec relies on the improvement review and the
-archived observation list; no row was re-derived from a run record. Recorded
-in `spec.md` `## Assumptions`.
+The run records exist under `missions/archive/sessions/project-health-audit/runs/`
+(main checkout, 41 runs, gitignored); the archive step had moved them. Rows
+re-derived and recorded in `spec.md` Purpose (outcome tally, retry runs,
+commit subjects). The earlier "not present" note is withdrawn.
 
 ## HEAD
 
-`feature/driver-hardening`; see `git log -1` for the commit carrying this
-file. Tree otherwise clean except the pre-existing untracked
-`PI-UPGRADE-STATUS.md`, which is not this plan's file and is left alone.
+`feature/driver-hardening`, rebased onto `main` `e55040de`; see `git log -1`.
+Tree clean except the pre-existing untracked `PI-UPGRADE-STATUS.md` (not this
+plan's file).
 
 ## Successor handoff
 
-After the human relays Q-001..Q-003: apply any Intent edits to `spec.md`
-(record ratification with date and provenance under `## Intent` Provenance),
-then run `/spec-to-backlog driver-hardening`, then `/implement-plan` per the
+Rulings applied. Run `/spec-to-backlog driver-hardening`, then `/implement-plan` per the
 brief's step 2 (Drive on `cosmonauts-subagent` inline, worker
 `openai-codex/gpt-6-sol`, one slice per run, print-mode cosmo `run_driver`
 with the five postflight gates: test, lint, typecheck, check:reachability,
