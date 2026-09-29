@@ -3,7 +3,10 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
-import { readRetryableDriveFinalizerFailure } from "../../lib/driver/drive-finalization.ts";
+import {
+	finalizeDriveSourceCommit,
+	readRetryableDriveFinalizerFailure,
+} from "../../lib/driver/drive-finalization.ts";
 import { compileDriveRunToGraph } from "../../lib/driver/drive-graph-compiler.ts";
 import { createDriveShellCommandBackend } from "../../lib/driver/shell-command-finalizer.ts";
 import type { DriverEvent, DriverRunSpec } from "../../lib/driver/types.ts";
@@ -26,6 +29,39 @@ const PARENT_SESSION_ID = "shell-finalizer-parent";
 const TASK_ID = "TASK-1";
 
 describe("Drive shell-command finalizer", () => {
+	test("keeps one finalization-failure record across retries", async () => {
+		const fixture = await setupFixture("idempotent-finalization");
+		await fixture.taskManager.updateTask(TASK_ID, {
+			implementationNotes: "worker sentinel  ",
+		});
+		await installFailingCommitHook(fixture.projectRoot);
+		await writeProjectFile(fixture.projectRoot, "src/fails.txt", "commit\n");
+		for (let attempt = 0; attempt < 2; attempt++) {
+			const result = await finalizeDriveSourceCommit({
+				spec: fixture.spec,
+				ctx: {
+					taskManager: fixture.taskManager,
+					eventSink: fixture.recordEvent,
+					abortSignal: new AbortController().signal,
+				},
+				taskId: TASK_ID,
+				outcome: "success",
+				report: {
+					outcome: "success",
+					files: [],
+					verification: [],
+					notes: "work completed",
+				},
+			});
+			expect(result.status).toBe("finalization_failed");
+		}
+		const notes = (await fixture.taskManager.getTask(TASK_ID))
+			?.implementationNotes;
+		expect(notes).toContain("worker sentinel  ");
+		expect(
+			notes?.match(/### Drive — outcome failure — attempt unknown/g),
+		).toHaveLength(1);
+	});
 	test("commits source changes and marks task status through shell finalizer steps", async () => {
 		const fixture = await setupFixture("success");
 		await writeProjectFile(fixture.projectRoot, "src/changed.txt", "commit\n");

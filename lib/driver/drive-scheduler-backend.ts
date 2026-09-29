@@ -29,10 +29,12 @@ import {
 	type RunOneTaskCtx,
 } from "./run-one-task.ts";
 import {
+	appendDriveAttemptRecord,
 	authoritativeDriveTaskIds,
 	checkDrivePreflight,
 	driveRunExpectations,
 	uncheckedAcceptanceCriteriaReason as findUncheckedAcceptanceCriteriaReason,
+	headBeforeSpawn,
 	type RetriableTaskAttempt,
 	runContradictedAttempts,
 	runShellCommand,
@@ -173,24 +175,12 @@ async function runDriveTaskStep(
 	}
 
 	await taskManager.updateTask(taskId, { status: "In Progress" });
-	await emit(context, {
-		type: "spawn_started",
-		taskId,
-		backend: context.backend.name,
-	});
-
 	return runContradictedAttempts({
 		spec,
-		attempt: (appendedNote) =>
-			runDriveTaskAttempt(context, prepared, appendedNote),
+		attempt: (appendedNote, attemptNumber) =>
+			runDriveTaskAttempt(context, prepared, appendedNote, attemptNumber),
 		find: findContradictedPath,
 		buildNote: buildContradictionNote,
-		onRetry: () =>
-			emit(context, {
-				type: "spawn_started",
-				taskId,
-				backend: context.backend.name,
-			}),
 	});
 }
 
@@ -198,6 +188,7 @@ async function runDriveTaskAttempt(
 	context: DriveSchedulerBackendContext,
 	prepared: DrivePreparedStep,
 	appendedNote: string | undefined,
+	attemptNumber: number,
 ): Promise<DriveTaskAttemptResult> {
 	const { spec, taskManager } = context;
 	const taskId = prepared.taskId;
@@ -206,6 +197,12 @@ async function runDriveTaskAttempt(
 		prepared,
 		appendedNote,
 	);
+	await headBeforeSpawn(spec.projectRoot, prepared.abortSignal);
+	await emit(context, {
+		type: "spawn_started",
+		taskId,
+		backend: context.backend.name,
+	});
 	const spawnResult = await runBackendWithTimeout(
 		context.backend,
 		invocation,
@@ -218,6 +215,7 @@ async function runDriveTaskAttempt(
 			taskId,
 			spawnResult.error,
 			spawnResult.exitCode,
+			attemptNumber,
 		);
 	}
 	if (spawnResult.result.exitCode !== 0) {
@@ -227,6 +225,7 @@ async function runDriveTaskAttempt(
 			taskId,
 			reason,
 			spawnResult.result.exitCode,
+			attemptNumber,
 		);
 	}
 
@@ -237,6 +236,16 @@ async function runDriveTaskAttempt(
 		report: parsedReport,
 	});
 
+	if (parsedReport.outcome === "unknown") {
+		await appendDriveAttemptRecord({
+			taskManager,
+			taskId,
+			runId: spec.runId,
+			outcome: "unknown",
+			attemptNumber,
+			body: parsedReport.raw,
+		});
+	}
 	const postVerifyResults = await runPostVerify(
 		context,
 		taskId,
@@ -279,11 +288,16 @@ async function runDriveTaskAttempt(
 			kind: "block-candidate",
 			reason,
 			finalize: async (contradicted, options) => {
-				if (!options?.skipTaskUpdate) {
-					await taskManager.updateTask(taskId, {
-						status: "In Progress",
-						implementationNotes: reason,
-					});
+				await appendDriveAttemptRecord({
+					taskManager,
+					taskId,
+					runId: spec.runId,
+					outcome: "partial",
+					attemptNumber,
+					body: reason,
+				});
+				if (!options?.skipStatusTransition) {
+					await taskManager.updateTask(taskId, { status: "In Progress" });
 				}
 				await emit(context, {
 					type: "task_blocked",
@@ -303,11 +317,18 @@ async function runDriveTaskAttempt(
 		kind: "block-candidate",
 		reason: failureReason,
 		finalize: async (contradicted, options) => {
-			if (!options?.skipTaskUpdate) {
-				await taskManager.updateTask(taskId, {
-					status: "Blocked",
-					implementationNotes: failureReason,
+			if (parsedReport.outcome !== "unknown") {
+				await appendDriveAttemptRecord({
+					taskManager,
+					taskId,
+					runId: spec.runId,
+					outcome: "failure",
+					attemptNumber,
+					body: failureReason,
 				});
+			}
+			if (!options?.skipStatusTransition) {
+				await taskManager.updateTask(taskId, { status: "Blocked" });
 			}
 			await emit(context, {
 				type: "task_blocked",
@@ -352,11 +373,20 @@ function spawnFailureCandidate(
 	taskId: string,
 	error: string,
 	exitCode: number | undefined,
+	attemptNumber: number,
 ): DriveTaskBlockCandidate {
 	return {
 		kind: "block-candidate",
 		reason: error,
 		finalize: async (contradicted, options) => {
+			await appendDriveAttemptRecord({
+				taskManager: context.taskManager,
+				taskId,
+				runId: context.spec.runId,
+				outcome: "failure",
+				attemptNumber,
+				body: error,
+			});
 			await emit(context, {
 				type: "spawn_failed",
 				taskId,
@@ -364,7 +394,7 @@ function spawnFailureCandidate(
 				exitCode,
 				...(contradicted ? { contradicted } : {}),
 			});
-			if (!options?.skipTaskUpdate) {
+			if (!options?.skipStatusTransition) {
 				await blockTask(context, taskId, error);
 			}
 			return blockedStepResult(error);
@@ -521,7 +551,6 @@ async function blockTask(
 ): Promise<void> {
 	await context.taskManager.updateTask(taskId, {
 		status: "Blocked",
-		implementationNotes: reason,
 	});
 	await emit(context, { type: "task_blocked", taskId, reason });
 }

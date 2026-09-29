@@ -7,6 +7,7 @@ import type {
 	BackendInvocation,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
+import { transitionDriveTaskStatus } from "../../lib/driver/drive-finalization.ts";
 import {
 	createDriveSchedulerBackend,
 	createDriveSchedulerBackendMap,
@@ -387,6 +388,105 @@ describe("Drive scheduler backend", () => {
 		expect((await fixture.taskManager.getTask("TASK-1"))?.status).toBe(
 			"In Progress",
 		);
+		const notes = (await fixture.taskManager.getTask("TASK-1"))
+			?.implementationNotes;
+		expect(notes).toContain(
+			"### Drive — outcome failure — attempt 1 — run run-graph-contradicted-retry",
+		);
+		expect(notes?.match(/### Drive — outcome failure/g)).toHaveLength(1);
+	});
+
+	test("orders both retry records without changing status before the second spawn", async () => {
+		const fixture = await setupFixture("retry-record-order");
+		await fixture.taskManager.createTask({ title: "Retry records" });
+		await fixture.taskManager.updateTask("TASK-1", {
+			implementationNotes: "worker sentinel  ",
+		});
+		await mkdir(join(fixture.projectRoot, "design"), { recursive: true });
+		await writeFile(
+			join(fixture.projectRoot, "design", "README.md"),
+			"exists\n",
+		);
+		const spec = createSpec(fixture, { runId: "run-retry-record-order" });
+		let statusBeforeSecond: string | undefined;
+		let calls = 0;
+		const prepared = await prepareTaskStep({
+			spec,
+			fixture,
+			events: [],
+			backendRun: async () => {
+				calls++;
+				if (calls === 2)
+					statusBeforeSecond = (await fixture.taskManager.getTask("TASK-1"))
+						?.status;
+				return blockedBackendResult("design/README.md does not exist");
+			},
+		});
+		const handle = await prepared.backend.start(prepared.step);
+		expect((await handle.result).outcome).toBe("blocked");
+		expect(statusBeforeSecond).toBe("In Progress");
+		const notes =
+			(await fixture.taskManager.getTask("TASK-1"))?.implementationNotes ?? "";
+		expect(notes).toContain("worker sentinel  ");
+		const first = notes.indexOf(
+			"### Drive — outcome failure — attempt 1 — run run-retry-record-order",
+		);
+		const second = notes.indexOf(
+			"### Drive — outcome failure — attempt 2 — run run-retry-record-order",
+		);
+		expect(first).toBeGreaterThan(-1);
+		expect(second).toBeGreaterThan(first);
+		expect(notes.match(/### Drive — outcome failure/g)).toHaveLength(2);
+	});
+
+	test("keeps worker notes and writes one record for a partial continue attempt", async () => {
+		const fixture = await setupFixture("partial-notes");
+		await fixture.taskManager.createTask({ title: "Partial work" });
+		await fixture.taskManager.updateTask("TASK-1", {
+			implementationNotes: "sentinel  \nworker line",
+		});
+		const spec = createSpec(fixture, {
+			runId: "run-partial-notes",
+			partialMode: "continue",
+		});
+		const prepared = await prepareTaskStep({
+			spec,
+			fixture,
+			backendRun: async () => partialBackendResult(),
+			events: [],
+		});
+		const handle = await prepared.backend.start(prepared.step);
+		expect((await handle.result).outcome).toBe("success");
+		const notes = (await fixture.taskManager.getTask("TASK-1"))
+			?.implementationNotes;
+		expect(notes).toContain("sentinel  \nworker line");
+		expect(notes).toContain(
+			"### Drive — outcome partial — attempt 1 — run run-partial-notes",
+		);
+		expect(notes?.match(/### Drive — outcome partial/g)).toHaveLength(1);
+		expect(notes).not.toContain("partial: partial:");
+		for (let retry = 0; retry < 2; retry++) {
+			await transitionDriveTaskStatus({
+				spec,
+				ctx: {
+					taskManager: fixture.taskManager,
+					eventSink: fixture.recordEvent,
+					abortSignal: new AbortController().signal,
+				},
+				taskId: "TASK-1",
+				outcome: "partial",
+				parsedReport: {
+					outcome: "partial",
+					files: [],
+					verification: [],
+					notes: "needs follow-up",
+				},
+				failureReason: "needs follow-up",
+			});
+		}
+		expect(
+			(await fixture.taskManager.getTask("TASK-1"))?.implementationNotes,
+		).toBe(notes);
 	});
 
 	test("does not retry a contradicted graph task when retryOnContradictedBlock is false", async () => {

@@ -627,15 +627,20 @@ describe("driver e2e run_driver integration", () => {
 			task?.status,
 			`${specDebug}\n${events.map((event) => JSON.stringify(event)).join("\n")}`,
 		).toBe("Blocked");
-		expect(task?.implementationNotes).toContain("post-verify failed");
-		expect(updateStatuses(updateSpy)).toEqual(["In Progress", "Blocked"]);
+		// AC-020: unknown raw output is recorded before postflight; the finalizer is status-only.
+		expect(task?.implementationNotes).toContain(
+			"### Drive — outcome unknown — attempt 1",
+		);
+		expect(task?.implementationNotes).toContain("no structured report");
+		expect(updateStatuses(updateSpy)).toEqual([
+			"In Progress",
+			undefined,
+			"Blocked",
+		]);
 		const blockedUpdate = updateSpy.mock.calls.at(-1)?.[1] as
 			| TaskUpdateInput
 			| undefined;
-		expect(blockedUpdate).toMatchObject({
-			status: "Blocked",
-			implementationNotes: expect.stringContaining("verify failed"),
-		});
+		expect(blockedUpdate).toEqual({ status: "Blocked" });
 		expect(blockedUpdate).not.toHaveProperty("note");
 		expect(events).toContainEqual(
 			expect.objectContaining({

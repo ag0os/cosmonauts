@@ -10,9 +10,11 @@ import { renderPromptForTask } from "./prompt-template.ts";
 import { formatPartialReport } from "./report-format.ts";
 import { parseReport } from "./report-parser.ts";
 import {
+	appendDriveAttemptRecord,
 	checkDrivePreflight,
 	driveRunExpectations,
 	uncheckedAcceptanceCriteriaReason as findUncheckedAcceptanceCriteriaReason,
+	headBeforeSpawn,
 	type RetriableTaskAttempt,
 	reportSummary,
 	runBackendWithTimeout,
@@ -85,7 +87,8 @@ export async function runOneTask(
 
 	return runContradictedAttempts({
 		spec,
-		attempt: (appendedNote) => runTaskAttempt(spec, ctx, taskId, appendedNote),
+		attempt: (appendedNote, attemptNumber) =>
+			runTaskAttempt(spec, ctx, taskId, appendedNote, attemptNumber),
 		find: findContradictedPath,
 		buildNote: buildContradictionNote,
 	});
@@ -102,6 +105,7 @@ async function runTaskAttempt(
 	ctx: RunOneTaskCtx,
 	taskId: string,
 	appendedNote: string | undefined,
+	attemptNumber: number,
 ): Promise<TaskAttemptResult> {
 	const promptLayers: PromptLayersWithWorkdir = {
 		...spec.promptTemplate,
@@ -117,6 +121,7 @@ async function runTaskAttempt(
 		},
 	);
 
+	await headBeforeSpawn(spec.projectRoot, ctx.abortSignal);
 	await emit(ctx, spec, {
 		type: "spawn_started",
 		taskId,
@@ -131,6 +136,7 @@ async function runTaskAttempt(
 			taskId,
 			spawnResult.error,
 			spawnResult.exitCode,
+			attemptNumber,
 		);
 	}
 
@@ -142,6 +148,7 @@ async function runTaskAttempt(
 			taskId,
 			reason,
 			spawnResult.result.exitCode,
+			attemptNumber,
 		);
 	}
 
@@ -152,6 +159,16 @@ async function runTaskAttempt(
 		report: parsedReport,
 	});
 
+	if (parsedReport.outcome === "unknown") {
+		await appendDriveAttemptRecord({
+			taskManager: ctx.taskManager,
+			taskId,
+			runId: spec.runId,
+			outcome: "unknown",
+			attemptNumber,
+			body: parsedReport.raw,
+		});
+	}
 	const postVerifyResults = await runPostVerify(spec, ctx, taskId);
 	const allowUnknownSuccess = await canInferUnknownSuccess(
 		spec,
@@ -176,6 +193,20 @@ async function runTaskAttempt(
 	const failureReason =
 		uncheckedAcceptanceCriteriaReason ??
 		deriveFailureReason(effectiveReport, postVerifyResults);
+	const reason =
+		effectiveOutcome === "partial"
+			? formatPartialReport(effectiveReport)
+			: failureReason;
+	if (effectiveOutcome !== "success" && parsedReport.outcome !== "unknown") {
+		await appendDriveAttemptRecord({
+			taskManager: ctx.taskManager,
+			taskId,
+			runId: spec.runId,
+			outcome: effectiveOutcome,
+			attemptNumber,
+			body: reason,
+		});
+	}
 	let commitSha: string | undefined;
 	try {
 		commitSha = await maybeCommit(
@@ -210,15 +241,11 @@ async function runTaskAttempt(
 		};
 	}
 
-	const reason =
-		effectiveOutcome === "partial"
-			? formatPartialReport(effectiveReport)
-			: failureReason;
 	return {
 		kind: "block-candidate",
 		reason,
-		finalize: (contradicted, options) =>
-			transitionTaskStatus({
+		finalize: async (contradicted, options) => {
+			return transitionTaskStatus({
 				spec,
 				ctx,
 				taskId,
@@ -227,8 +254,9 @@ async function runTaskAttempt(
 				failureReason,
 				commitSha,
 				contradicted,
-				skipTaskUpdate: options?.skipTaskUpdate,
-			}),
+				skipStatusTransition: options?.skipStatusTransition,
+			});
+		},
 	};
 }
 
@@ -238,11 +266,20 @@ function spawnFailureCandidate(
 	taskId: string,
 	error: string,
 	exitCode: number | undefined,
+	attemptNumber: number,
 ): TaskAttemptBlockCandidate {
 	return {
 		kind: "block-candidate",
 		reason: error,
 		finalize: async (contradicted, options) => {
+			await appendDriveAttemptRecord({
+				taskManager: ctx.taskManager,
+				taskId,
+				runId: spec.runId,
+				outcome: "failure",
+				attemptNumber,
+				body: error,
+			});
 			await emit(ctx, spec, {
 				type: "spawn_failed",
 				taskId,
@@ -250,7 +287,7 @@ function spawnFailureCandidate(
 				exitCode,
 				...(contradicted ? { contradicted } : {}),
 			});
-			if (options?.skipTaskUpdate) {
+			if (options?.skipStatusTransition) {
 				return { status: "blocked", reason: error };
 			}
 			return blockTask(ctx, spec, taskId, error);
@@ -595,8 +632,8 @@ interface TransitionOptions {
 	failureReason: string;
 	commitSha?: string;
 	contradicted?: ContradictedBlockAnnotation;
-	/** When set, emit the terminal event but skip the TaskManager status write (a retry follows). */
-	skipTaskUpdate?: boolean;
+	/** A retry follows; retain the current In Progress status. */
+	skipStatusTransition?: boolean;
 }
 
 async function transitionTaskStatus({
@@ -608,7 +645,7 @@ async function transitionTaskStatus({
 	failureReason,
 	commitSha,
 	contradicted,
-	skipTaskUpdate,
+	skipStatusTransition,
 }: TransitionOptions): Promise<TaskOutcome> {
 	return transitionDriveTaskStatus({
 		spec,
@@ -619,7 +656,7 @@ async function transitionTaskStatus({
 		failureReason,
 		commitSha,
 		contradicted,
-		skipTaskUpdate,
+		skipStatusTransition,
 	});
 }
 
@@ -631,7 +668,6 @@ async function blockTask(
 ): Promise<TaskOutcome> {
 	await ctx.taskManager.updateTask(taskId, {
 		status: "Blocked",
-		implementationNotes: reason,
 	});
 	await emit(ctx, spec, { type: "task_blocked", taskId, reason });
 	return { status: "blocked", reason };

@@ -143,6 +143,72 @@ describe("run-one-task", () => {
 		});
 	});
 
+	test("preserves worker notes and records unknown output before inferred success", async () => {
+		const fixture = await setupFixture();
+		await fixture.taskManager.updateTask(fixture.taskId, {
+			implementationNotes: "worker sentinel  \nsecond line",
+		});
+		const raw = "Unstructured output\nline two";
+		const events: DriverEvent[] = [];
+		const outcome = await runOneTask(
+			createSpec(fixture, {
+				postflightCommands: [nodeCommand("process.exit(0)")],
+			}),
+			createCtx(
+				fixture,
+				createBackend(async () => ({
+					exitCode: 0,
+					stdout: raw,
+					durationMs: 1,
+				})),
+				events,
+			),
+			fixture.taskId,
+		);
+		const notes = (await fixture.taskManager.getTask(fixture.taskId))
+			?.implementationNotes;
+		expect(outcome.status).toBe("done");
+		expect(notes).toContain("worker sentinel  \nsecond line");
+		expect(notes).toContain(
+			"### Drive — outcome unknown — attempt 1 — run run-255\n\nUnstructured output\nline two",
+		);
+		expect(notes?.match(/### Drive — outcome unknown/g)).toHaveLength(1);
+	});
+
+	test("aborts unknown inference if the raw record cannot be appended", async () => {
+		const fixture = await setupRecordingFixture();
+		const events: DriverEvent[] = [];
+		const originalUpdate = fixture.taskManager.updateTask.bind(
+			fixture.taskManager,
+		);
+		fixture.taskManager.updateTask = async (id, input) => {
+			if (input.appendImplementationNotes)
+				throw new Error("note persistence failed");
+			return originalUpdate(id, input);
+		};
+		await expect(
+			runOneTask(
+				createSpec(fixture, {
+					postflightCommands: [nodeCommand("process.exit(0)")],
+				}),
+				createCtx(
+					fixture,
+					createBackend(async () => ({
+						exitCode: 0,
+						stdout: "raw",
+						durationMs: 1,
+					})),
+					events,
+				),
+				fixture.taskId,
+			),
+		).rejects.toThrow("note persistence failed");
+		expect(events.some((event) => event.type === "verify")).toBe(false);
+		expect((await fixture.taskManager.getTask(fixture.taskId))?.status).toBe(
+			"In Progress",
+		);
+	});
+
 	test("driver task fields literal uses Title Case and implementationNotes, never note", async () => {
 		const fixture = await setupRecordingFixture();
 		const events: DriverEvent[] = [];
@@ -155,9 +221,14 @@ describe("run-one-task", () => {
 		);
 
 		expect(outcome).toMatchObject({ status: "blocked" });
+		// AC-020: the former replace-note expectation pinned the note-loss defect.
 		expect(fixture.taskManager.updates).toEqual([
 			{ status: "In Progress" },
-			{ status: "Blocked", implementationNotes: "needs follow-up" },
+			{
+				appendImplementationNotes:
+					"### Drive — outcome failure — attempt 1 — run run-255\n\nneeds follow-up",
+			},
+			{ status: "Blocked" },
 		]);
 		for (const update of fixture.taskManager.updates) {
 			expect(update).not.toHaveProperty("note");
@@ -455,10 +526,50 @@ describe("run-one-task", () => {
 		});
 		const task = await fixture.taskManager.getTask(fixture.taskId);
 		expect(task?.status).toBe("In Progress");
+		// AC-020: finalization failures now retain the worker's note and append a Drive record.
 		expect(task?.implementationNotes).toContain(
-			"backend and postflight succeeded",
+			"### Drive — outcome failure — attempt unknown — run run-255",
 		);
-		expect(task?.implementationNotes).toContain("commit finalization failed");
+		expect(task?.implementationNotes).toContain(
+			"commit failed: commit rejected by test hook",
+		);
+	});
+
+	test("retains the partial attempt record when commit finalization fails", async () => {
+		const fixture = await setupGitFixture();
+		await fixture.taskManager.updateTask(fixture.taskId, {
+			implementationNotes: "worker sentinel  ",
+		});
+		await installFailingCommitHook(fixture.projectRoot);
+		const backend = createBackend(async () => {
+			await writeProjectFile(fixture, "src/partial-fails.txt", "partial\n");
+			return {
+				exitCode: 0,
+				stdout: fencedReport({
+					outcome: "partial",
+					files: [],
+					verification: [],
+					notes: "needs work",
+				}),
+				durationMs: 1,
+			};
+		});
+		const result = await runOneTask(
+			createSpec(fixture, { commitPolicy: "driver-commits" }),
+			createCtx(fixture, backend, []),
+			fixture.taskId,
+		);
+		expect(result.status).toBe("blocked");
+		const notes =
+			(await fixture.taskManager.getTask(fixture.taskId))
+				?.implementationNotes ?? "";
+		expect(notes).toContain("worker sentinel  ");
+		expect(notes).toContain(
+			"### Drive — outcome partial — attempt 1 — run run-255",
+		);
+		expect(notes).toContain(
+			"### Drive — outcome failure — attempt unknown — run run-255",
+		);
 	});
 
 	test("records finalization_failed with commit sha when task status update fails after commit", async () => {
@@ -698,7 +809,10 @@ describe("run-one-task", () => {
 		);
 		expect(outcome).toMatchObject({ status: "blocked" });
 		expect(task?.status).toBe("Blocked");
-		expect(task?.implementationNotes).toContain("report outcome unknown");
+		// AC-020: unknown raw output, rather than a synthetic reason, is the durable record.
+		expect(task?.implementationNotes).toContain(
+			"I inspected the task but did not change files.",
+		);
 		expect(events.map((event) => event.type)).not.toContain("commit_made");
 	});
 });
@@ -937,7 +1051,7 @@ class RecordingTaskManager extends TaskManager {
 		if (id !== this.task.id) {
 			throw new Error(`Task not found: ${id}`);
 		}
-		if (this.failFinalUpdate && this.updates.length > 0) {
+		if (this.failFinalUpdate && input.status === "Done") {
 			throw new Error("update failed");
 		}
 

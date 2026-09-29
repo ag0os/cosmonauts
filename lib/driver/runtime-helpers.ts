@@ -219,6 +219,33 @@ export function runBackendWithTimeout(
 	});
 }
 
+export async function appendDriveAttemptRecord(options: {
+	taskManager: TaskManager;
+	taskId: string;
+	runId: string;
+	outcome: "failure" | "partial" | "unknown";
+	attemptNumber: number;
+	body: string;
+}): Promise<void> {
+	const { taskManager, taskId, runId, outcome, attemptNumber, body } = options;
+	await taskManager.updateTask(taskId, {
+		appendImplementationNotes: `### Drive — outcome ${outcome} — attempt ${attemptNumber} — run ${runId}\n\n${body}`,
+	});
+}
+
+export async function headBeforeSpawn(
+	projectRoot: string,
+	signal: AbortSignal,
+): Promise<string | undefined> {
+	const result = await runCommand(
+		"git",
+		["rev-parse", "HEAD"],
+		projectRoot,
+		signal,
+	);
+	return result.exitCode === 0 ? result.stdout.trim() : undefined;
+}
+
 export type RetriableTaskAttempt<T> =
 	| { readonly kind: "outcome"; readonly outcome: T }
 	| {
@@ -228,7 +255,7 @@ export type RetriableTaskAttempt<T> =
 				contradicted:
 					| { readonly path: string; readonly existsOnDisk: true }
 					| undefined,
-				options?: { readonly skipTaskUpdate?: boolean },
+				options?: { readonly skipStatusTransition?: boolean },
 			) => Promise<T>;
 	  };
 
@@ -241,6 +268,7 @@ export async function runContradictedAttempts<
 	readonly spec: DriverRunSpec;
 	readonly attempt: (
 		appendedNote: string | undefined,
+		attemptNumber: number,
 	) => Promise<RetriableTaskAttempt<T>>;
 	readonly find: (
 		reason: string,
@@ -251,8 +279,9 @@ export async function runContradictedAttempts<
 }): Promise<T> {
 	let appendedNote: string | undefined;
 	let retried = false;
+	let attemptNumber = 1;
 	while (true) {
-		const attempt = await options.attempt(appendedNote);
+		const attempt = await options.attempt(appendedNote, attemptNumber);
 		if (attempt.kind === "outcome") return attempt.outcome;
 		const contradicted =
 			!retried && (options.spec.retryOnContradictedBlock ?? true)
@@ -261,8 +290,9 @@ export async function runContradictedAttempts<
 		if (!contradicted) return attempt.finalize(undefined);
 		retried = true;
 		await attempt.finalize(contradicted.annotation, {
-			skipTaskUpdate: true,
+			skipStatusTransition: true,
 		});
+		attemptNumber++;
 		appendedNote = options.buildNote(contradicted);
 		await options.onRetry?.();
 	}

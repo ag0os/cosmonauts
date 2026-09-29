@@ -166,7 +166,7 @@ interface TransitionDriveTaskStatusOptions {
 	commitSha?: string;
 	commitSubject?: string;
 	contradicted?: ContradictedBlockAnnotation;
-	skipTaskUpdate?: boolean;
+	skipStatusTransition?: boolean;
 }
 
 export async function transitionDriveTaskStatus({
@@ -179,7 +179,7 @@ export async function transitionDriveTaskStatus({
 	commitSha,
 	commitSubject,
 	contradicted,
-	skipTaskUpdate,
+	skipStatusTransition,
 }: TransitionDriveTaskStatusOptions): Promise<TaskOutcome> {
 	try {
 		if (outcome === "success") {
@@ -208,11 +208,8 @@ export async function transitionDriveTaskStatus({
 
 		if (outcome === "partial") {
 			const reason = formatPartialReport(parsedReport);
-			if (!skipTaskUpdate) {
-				await ctx.taskManager.updateTask(taskId, {
-					status: "In Progress",
-					implementationNotes: reason,
-				});
+			if (!skipStatusTransition) {
+				await ctx.taskManager.updateTask(taskId, { status: "In Progress" });
 			}
 			await emit(spec, ctx, {
 				type: "task_blocked",
@@ -224,11 +221,8 @@ export async function transitionDriveTaskStatus({
 			return { status: "partial", reason, commitSha };
 		}
 
-		if (!skipTaskUpdate) {
-			await ctx.taskManager.updateTask(taskId, {
-				status: "Blocked",
-				implementationNotes: failureReason,
-			});
+		if (!skipStatusTransition) {
+			await ctx.taskManager.updateTask(taskId, { status: "Blocked" });
 		}
 		await emit(spec, ctx, {
 			type: "task_blocked",
@@ -280,10 +274,8 @@ async function recordCommitFinalizationFailure({
 		commitSubject: subject,
 		verifiedAt: new Date().toISOString(),
 	});
-	await ctx.taskManager.updateTask(taskId, {
-		status: "In Progress",
-		implementationNotes: `backend and postflight succeeded, but commit finalization failed: ${reason}`,
-	});
+	await appendFinalizationFailure(ctx.taskManager, taskId, spec.runId, reason);
+	await ctx.taskManager.updateTask(taskId, { status: "In Progress" });
 	await emit(spec, ctx, {
 		type: "finalize",
 		taskId,
@@ -334,6 +326,7 @@ async function recordTaskStatusFinalizationFailure({
 		commitSha,
 		...(commitSubject ? { commitSubject } : {}),
 	});
+	await appendFinalizationFailure(ctx.taskManager, taskId, spec.runId, reason);
 	await emit(spec, ctx, {
 		type: "finalize",
 		taskId,
@@ -357,6 +350,17 @@ async function recordTaskStatusFinalizationFailure({
 		finalizationCommitSha: commitSha,
 		pendingFinalizationPath: pendingFinalizationPath(spec.workdir),
 	};
+}
+
+async function appendFinalizationFailure(
+	taskManager: TaskManager,
+	taskId: string,
+	runId: string,
+	reason: string,
+): Promise<void> {
+	await taskManager.updateTask(taskId, {
+		appendImplementationNotes: `### Drive — outcome failure — attempt unknown — run ${runId}\n\nFinalization failed (local attempt unavailable): ${reason}`,
+	});
 }
 
 export type StateCommitResult =
@@ -703,10 +707,8 @@ async function blockTask(
 	taskId: string,
 	reason: string,
 ): Promise<TaskOutcome> {
-	await ctx.taskManager.updateTask(taskId, {
-		status: "Blocked",
-		implementationNotes: reason,
-	});
+	await appendFinalizationFailure(ctx.taskManager, taskId, spec.runId, reason);
+	await ctx.taskManager.updateTask(taskId, { status: "Blocked" });
 	await emit(spec, ctx, { type: "task_blocked", taskId, reason });
 	return { status: "blocked", reason };
 }
