@@ -7406,8 +7406,8 @@
         "category": "dead-code",
         "disposition": {
           "kind": "false-positive",
-          "reason": "Q-005: live dependency-status method is used by Drive despite the provider class-member finding",
-          "reference": "lib/driver/drive-graph-runner.ts:593",
+          "reason": "Q-005: live dependency-status method is used by Drive despite the provider class-member finding (line 593 at main 64dca3c, 578 since TASK-768)",
+          "reference": "lib/driver/drive-graph-runner.ts:578",
           "evidence": {
             "invocationId": "after.dead-code.surface.1",
             "identity": "unused-class-member\tlib/tasks/task-manager.ts\tTaskManager.getTaskDependencyStatusSnapshot"

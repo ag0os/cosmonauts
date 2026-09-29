@@ -1,7 +1,7 @@
 # Project health audit record
 
 Schema-v1 machine record: `missions/reviews/project-health-audit.json`  
-SHA-256: `d9314187dcd943d37c3228ba35e279807021dec095e3698fbc25ba4126c21eeb`
+SHA-256: `0530274984fd8df184f225f882eff33096f132016762ad061cd975b59efa6615` (closeout value `d9314187dcd943d37c3228ba35e279807021dec095e3698fbc25ba4126c21eeb`; changed only by the codex round-1 reference correction, see plan D-037)
 
 The JSON companion is canonical. This Markdown file summarizes it and does not supersede its identities, digests, invocation objects, or dispositions.
 

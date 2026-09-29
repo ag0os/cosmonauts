@@ -9,7 +9,10 @@ Implementation started 2026-09-28.
 
 ## Needs the user
 
-Nothing now. Q-015 ruled (B) by Shepherd 2026-09-29 (rulings round 9, plan D-034).
+- **Q-016 (from codex round 1, High):** D-010 (ratified Q-004(a)) says the record "proves that the tip differs from [the analyzed commit] only by those closeout artifacts". Under `driver-commits` the tip also carries Drive's task-state commit and the coordinator's record-only commits, so `git diff --name-only ea27538e <tip>` lists the seven closeout paths plus `missions/plans/project-health-audit/{coordinator-status,plan}.md` and the TASK-783/TASK-784 files. D-036 (coordinator, derived) evaluates the check excluding `missions/tasks/` and `missions/plans/`. Ratify D-036's reading, or rule otherwise (the alternative is rewriting Drive history). Recommended: (a) ratify D-036.
+- At closeout: gate-owned R-013 sign-off (`.fallow-baselines/*`, `fallow-provider.ts` incl. the D-023 `warn` gap, `.cosmonauts/suppression-exceptions.json`), plus the cosmetic stale `:593` reference in `.fallow-baselines/manifest.json` provenance text (D-037 (2)).
+
+Earlier: nothing pending. Q-015 ruled (B) by Shepherd 2026-09-29 (rulings round 9, plan D-034).
 At closeout: gate-owned R-013 sign-off. Earlier: Q-013 resolved the provider (Codex back, gpt-6-sol). At closeout:
 gate-owned R-013 sign-off. Earlier: Q-008 ruled (a) 2026-09-28 (human, relayed; plan D-022, spec Q-008,
 rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
@@ -148,8 +151,13 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. Implementation complete (21/21). Next: `/implement-plan` Phases 2-4 by a
-fresh session (see the successor handoff below).
+`/implement-plan` Phases 2-4, successor #4 (2026-09-29). Quality Manager run `qm-a509325b-14f3-42d6-a7bf-aa2acb0de59e` (launched 08:20Z, snapshot at `3209fa00`, `nohup` pid in scratch) — assessing. Codex round 2 launches after the round-1 fix commit.
+
+## Review phase log (successor #4)
+
+**Phase 2 ground truth at `3209fa00` (all exit 0):** `bun run test` 287 files / 3920 tests (EXIT=0 captured); lint 643 files; typecheck; reachability 212/212 + 13 exempt, 0 staged; suppressions passed (`--base main`); `plan check-artifacts` Issues: 0. Guarantees: (a) health 192 rows, 4 critical all under `tests/` at the four named sites, 55 high, 133 moderate, 84 paths; (b) dupes 3 groups = the two ratified three-file families; (c) dead-code only `getTaskDependencyStatusSnapshot`; (d) audit `pass` 0/0/0 at `head_sha 3209fa00`; (e) seven closeout paths exactly; (f) MDR under `tests/` = the three pre-declared files plus `tests/domains/coding-agents.test.ts` (regex widening, D-027/D-029 under Q-011 — on record, omitted from the handoff list), no `.skip/.only/.todo` additions; with the broadened D-037 grep one `skipIf` root guard (accepted). Health floor recount 229 counts / 84 paths; all three manifest digests verified; record JSON SHA matched the Markdown line. No mismatches between the fresh Fallow runs and the record.
+
+**Codex round 1** (`missions/reviews/codex/project-health-audit-round-1.md`, gpt-6-sol high, read-only, 216k tokens): DO-NOT-SHIP on two items. High: D-036 vs D-010 literal wording → Q-016 (human). Medium: `skipIf` missed by the freeze grep → D-037 (1), accepted guard. Low: stale `:593` reference → D-037 (2), fixed in the record. No correctness or liveness finding in the refactored modules.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -300,7 +308,7 @@ Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.
 
 `feature/project-health-audit`, record-only commit after slice 13 (see `git log`),
 off local `main` `64dca3c`. 21 of 21 tasks Done; tree clean after the record-only commit.
-Needs the user: nothing now; gate-owned R-013 sign-off at closeout.
+Needs the user: Q-016 (D-036 ratification); gate-owned R-013 sign-off at closeout.
 
 ## Successor handoff — run `/implement-plan` Phases 2-4 (written by successor #3, 2026-09-29 08:30Z, at 40% context)
 

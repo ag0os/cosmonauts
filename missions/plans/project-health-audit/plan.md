@@ -258,6 +258,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: D-010's intent is that the tip differs from the analyzed source only by closeout artifacts; task-state and coordinator records are not source, tests, floors or the exceptions doc.
   - Decided by: implementing coordinator, derived under D-010 and D-018 (4), 2026-09-29
 
+- **D-037 - Codex round-1 dispositions: freeze grep covers `skipIf`, dead-code reference corrected, D-036 escalated for ratification** *(Added 2026-09-29 by the implementing coordinator, successor #4, after `missions/reviews/codex/project-health-audit-round-1.md`)*
+  - Decision: (1) The D-015 skip grep is `\.(skip|only|todo)(If)?\(` from now on. Its single match on the branch, `test.skipIf(process.getuid?.() === 0)` in the new file `tests/skills/exporter-sync-characterization.test.ts:373`, is a root-user guard on a chmod-based write-failure case (the case cannot fail as root); it was reviewed and recorded in TASK-777's notes at the time and is accepted as an environment guard in an added file, not a skipped expectation. (2) The `after` dead-code disposition in the machine record cited `lib/driver/drive-graph-runner.ts:593`, the Q-005 line at `main` `64dca3c`; TASK-768 moved the live call to line 578 (unchanged since `8b366a00`). The reference is corrected to 578 in `missions/reviews/project-health-audit.json`, the Markdown SHA-256 line is updated with the closeout value retained. The same `:593` text in `.fallow-baselines/manifest.json` provenance is gate-owned and left for the R-013 packet. (3) Codex's High finding that D-036's path-check reading does not satisfy D-010's ratified wording ("proves that the tip differs from it only by those closeout artifacts") is a question about ratified text, so it is escalated as Q-016 instead of decided here; the raw eleven-path list is on record in TASK-783.
+  - Alternatives: leave the record stale; treat the `skipIf` as a Q-002 hard stop (it pins no existing expectation); decide Q-016 as derived.
+  - Why: INV-005 requires an accurate reference; D-015's observer role belongs to the coordinator between slices; ratified wording is human ground under the deviation protocol.
+  - Decided by: implementing coordinator, derived, 2026-09-29; Q-016 pending the human.
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible
