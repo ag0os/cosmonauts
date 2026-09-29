@@ -92,8 +92,18 @@ describe("Pi architecture narrative provider", () => {
 			noPromptTemplates: true,
 			noThemes: true,
 			noContextFiles: true,
-			systemPrompt: expect.stringContaining("architecture-map narratives"),
+			systemPrompt: expect.any(String),
 		});
+		const resourceOptions = piMocks.resourceOptions.at(-1) as {
+			systemPrompt: string;
+		};
+		expect(resourceOptions.systemPrompt).toContain(
+			"architecture-map narratives",
+		);
+		expect(resourceOptions.systemPrompt).toContain(
+			"strict JSON with keys oneLiner and text",
+		);
+		expect(resourceOptions.systemPrompt).toContain("Do not invent behavior");
 		expect(piMocks.createAgentSession).toHaveBeenCalledWith(
 			expect.objectContaining({
 				cwd: "/fixture/project",
@@ -104,8 +114,10 @@ describe("Pi architecture narrative provider", () => {
 			}),
 		);
 		expect(session.prompts).toHaveLength(1);
-		expect(JSON.parse(session.prompts[0] ?? "")).toMatchObject({
-			module: { resource: "lib/alpha", skeletonHash: "skeleton-hash" },
+		expect(JSON.parse(session.prompts[0] ?? "")).toEqual({
+			task: "Generate an architecture-map narrative for this module skeleton.",
+			module: input.skeleton,
+			output: { oneLiner: "single sentence", text: "short paragraph" },
 		});
 	});
 
@@ -121,7 +133,16 @@ describe("Pi architecture narrative provider", () => {
 			oneLiner: "Beta summary line",
 			text: "Beta summary line\nmore detail",
 		});
-		await provider.generate(input);
+		const priorNarrative = {
+			status: "generated" as const,
+			oneLiner: "Old line.",
+			text: "Old text.",
+		};
+		await provider.generate({ ...input, priorNarrative });
+		expect(JSON.parse(session.prompts[1] ?? "")).toMatchObject({
+			module: input.skeleton,
+			priorNarrative,
+		});
 
 		expect(piMocks.createAgentSession.mock.calls.length - sessionsBefore).toBe(
 			1,

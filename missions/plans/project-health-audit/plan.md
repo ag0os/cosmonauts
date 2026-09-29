@@ -275,6 +275,13 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Alternatives: leave the gap as pre-existing (QM already excluded the pre-existing `warn` gap that way, but this caller's contract is exactly what B-011 promises); inject a `createSession` seam like the judgment provider (a production change for a test-only need).
   - Why: B-011 says behavior-sensitive clone extractions keep their edge contracts, and the shared helper now carries two callers' contracts; the second caller had no observer.
   - Decided by: implementing coordinator, derived, 2026-09-29
+  - *(Superseded 2026-09-29 by D-040 after codex round 4: the test post-dates the analyzed commit; held as a proposal pending Q-017.)*
+
+- **D-040 - Post-closeout test additions are held, not landed; F-002 escalated as Q-017** *(Added 2026-09-29 by the implementing coordinator, successor #4, after codex round 4)*
+  - Decision: D-010 (ratified) fixes the analyzed commit as the final source and test tree. The D-039 test file landed after `ea27538e`, so the tip no longer matched the closeout claim. Restamping `after.commit`/`closeout.analyzedCommit` in the record would attribute evidence produced at `ea27538e` to another commit, which INV-005 forbids. The test is removed from the tree in the same review round and preserved verbatim (with the round-4 Medium strengthening applied) at `missions/reviews/qm/project-health-audit-run-2/proposed-narrative-provider.test.ts.txt`. The tip again differs from `ea27538e` only by the seven closeout paths under the D-036/D-038 reading. Q-017 asks the human to choose: (a) land the test as a post-plan follow-up task after archive (recommended; the gap is pre-existing on `main` and the extraction is byte-verified by codex rounds 1-4 and QM run 2), or (b) re-run the stage-16 closeout (floors refresh + record regeneration by a Drive worker) at a new analyzed commit that includes the test.
+  - Alternatives: hand-edit the record's commit fields (rejected: falsified provenance); leave the test in place with a mismatched record (rejected: D-010 is ratified).
+  - Why: a review-phase remediation must not silently reopen the ratified closeout; the human owns that trade-off.
+  - Decided by: implementing coordinator, derived, 2026-09-29; Q-017 pending the human.
 
 ## Behaviors
 
