@@ -97,9 +97,8 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-**TASK-780 attempt 1** (stage 13 refactor, `C` = `3cb2d2c3`, `run-dc7558e3`) on the Pi
-worker. Then TASK-786 (stage 11b characterization, created under D-032) → 778
-attempt 2 → 781 → 782 → 784 → 783.
+**TASK-786** (stage 11b characterization) next on the Pi worker, then TASK-787
+(stage 13b) → 778 attempt 2 → 780 attempt 2 → 781 → 782 → 784 → 783.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -190,8 +189,9 @@ attempt 2 → 781 → 782 → 784 → 783.
 
 ## Blocked
 
-TASK-778 waits on TASK-786 (D-032; probe-confirmed unreached exporter return
-sites). History: TASK-776 attempt 1 (`run-6fe911a5`, 02:21Z) stopped
+TASK-778 waits on TASK-786 (D-032) and TASK-780 waits on TASK-787 (D-033); both
+blocks are probe-confirmed unreached return sites, routed as characterization
+tasks with a full return-site sweep. History: TASK-776 attempt 1 (`run-6fe911a5`, 02:21Z) stopped
 `blocked` on the two unreached `runDurableGraphScheduler` return sites
 (`scheduler.ts:215-224`, `:40-42`); resolved by Q-014 / D-030 = TASK-785.
 Earlier provider blocks (Codex cap, claude.ai OAuth) resolved by Q-011/Q-013.

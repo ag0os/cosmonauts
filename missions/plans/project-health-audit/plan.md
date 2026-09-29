@@ -234,6 +234,12 @@ Dependency direction for this work stays inward: CLI and provider adapters may d
   - Why: INV-002 and D-018 (2); D-031 rule 5 satisfied by the coordinator's probe.
   - Decided by: implementing coordinator, derived under INV-002, D-030 and D-031, 2026-09-29
 
+- **D-033 - A dependent characterization task (stage 13b) precedes TASK-780 for a probe-confirmed unreached `collectConsolidationSources` contract-error arm, and characterization tasks now sweep all return sites** *(Added 2026-09-29 by the implementing coordinator, successor #3, after TASK-780 attempt 1)*
+  - Decision: TASK-780 attempt 1 (`run-dc7558e3`, gpt-6-sol) applied D-031 rule 5 and proved (zero full-suite hits) that the incomplete-inventory contract error at `lib/memory/consolidation-sources.ts:937-943` is reached by no test. Per D-030's route TASK-787 ("Stage 13b", new test files under `tests/memory/` only, depends on TASK-779) pins it. To stop the one-site-per-attempt bounce (three refactor slices, three blocks), TASK-787 and TASK-786 also carry a return-site sweep criterion: enumerate every return/throw site of the stage's owned functions, probe each unmapped one, pin every zero-hit site a shipped entry point can reach, and list the rest as Q-002 residual risk. TASK-780 depends on TASK-787; its `C` for attempt 2 is TASK-787's Drive commit. Backlog 19 → 20 (D-016 amended on record).
+  - Alternatives: refactor with the arm byte-identical (it sits inside the function being decomposed; moving it verbatim is still a hunk in an uncharacterized site); amend stage 13 scope (human ground).
+  - Why: INV-002, D-018 (2), D-030; the sweep amortizes the probe cost into the characterization slice where tests may be added.
+  - Decided by: implementing coordinator, derived under INV-002, D-030 and D-031, 2026-09-29
+
 ## Behaviors
 
 ### B-001 - Complete capability evidence stays visible

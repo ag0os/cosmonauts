@@ -13,7 +13,7 @@ labels:
 dependencies:
   - TASK-777
 createdAt: '2026-09-29T03:58:49.357Z'
-updatedAt: '2026-09-29T03:58:49.357Z'
+updatedAt: '2026-09-29T04:10:03.523Z'
 ---
 
 ## Description
@@ -27,6 +27,7 @@ Characterization-only prerequisite for TASK-778 (plan D-032). TASK-778 attempt 1
 - [ ] #4 D-015 freeze check. Base is the slice-start commit `S` (HEAD at launch). The worker records `S` and the verbatim outputs of `git diff --name-status --diff-filter=MDR S -- tests/`, `git status --porcelain -- tests/`, and `git diff -U0 S -- tests/ | grep -E '^\+.*\.(skip|only|todo)\('`; only newly added test files are allowed; anything else blocks for human review. The freeze verdict comes from the coordinator after Drive commits (parent must be `S`); worker-recorded output alone never satisfies this criterion (D-020 ticking rule applies). The worker performs no git operation on `missions/reviews/`.
 - [ ] #5 Stage gate: `bun run test`, `bun run lint`, `bun run typecheck`, `bun run check:reachability`, and `bun run check:suppressions -- --base main` all exit 0; each new case fails when its guarded branch is removed or short-circuited (cp-backed non-vacuity probe, restored, `lib/` clean after) and this is recorded.
 - [ ] #6 `## Implementation Notes` maps each pinned variant to its test case through the shipped entry point, records the fresh metrics for both functions, lists every variant left unreached with its reason as a Q-002 residual-risk item for TASK-778, and reports the probe hit counts (D-031 rule 5) for any site it re-checked.
+- [ ] #7 Return-site sweep: for `runHarnessSync`, `groupCatalogue`, `enhancedRows` and `visit` the worker enumerates every return and throw site, probes each one not already mapped to a TASK-777 or existing case (cp-backed backup, `appendFileSync` tag to a file under `/tmp`, full `bun run test`, restore from the cp, `git status --short -- lib/` empty), records the hit count verbatim, and pins every zero-hit site reachable through a shipped entry point; sites no shipped entry point can reach are listed as Q-002 residual-risk items for TASK-778.
 <!-- AC:END -->
 
 ## Implementation Notes
