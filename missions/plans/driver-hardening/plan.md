@@ -257,6 +257,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Decided by: coordinator, amend-on-record, 2026-09-29
   - Supersedes: D-034's definition of the final tree; D-034's rule otherwise stands.
 
+- **D-036 - The containment set is the snapshot's delta from its parent, not its whole tree** *(Added 2026-09-29 by the review-phase coordinator after coordinator finding C-001)*
+  - Decision: `removeDoneTaskSnapshots` compares only the paths that differ between a snapshot ref and its parent commit (`git diff-tree -r --name-status <ref>^ <ref>`: added and modified entries; a deleted entry is satisfied when the path is absent from the final tree). The final tree per path stays as D-035 defines it (commit for committable paths, working tree for `missions/**`, `memory/**`, `.cosmonauts/*.lock` and under `no-commit`; the task's own file exempt). A snapshot with an empty delta is deleted on Done without any comparison.
+  - Alternatives: keep the whole-tree comparison (verified at `fe06186f`: every Done task whose worker edited any tracked file keeps its ref forever, because the snapshot is the whole tree at spawn and the worker's own edits differ from it); compare against the snapshot's parent instead of the final tree (would delete a ref whose dirty bytes the worker discarded, the D-034 failure).
+  - Why: the snapshot exists to protect the dirty worktree state at spawn (D-020); the bytes it protects are exactly its delta from HEAD at that moment. Files the worker edits afterwards on purpose are its work product, not protected state, and a check that treats them as discarded retains every ref and makes retention meaningless as a signal.
+  - Decided by: coordinator, amend-on-record, 2026-09-29
+  - Supersedes: D-034's "every path in that snapshot's tree" and D-035's per-path rule as far as either applied to paths outside the snapshot's delta.
+
 ## Behaviors
 
 ### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts
