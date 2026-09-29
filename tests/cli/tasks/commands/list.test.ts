@@ -71,7 +71,7 @@ describe("renderTaskList", () => {
 
 	it("returns rows for plain mode", () => {
 		expect(renderTaskList([renderedTask], "plain")).toEqual([
-			"TASK-001 | To Do | high | Rendered Task",
+			"TASK-001\tTo Do\thigh\tRendered Task",
 		]);
 	});
 
@@ -90,8 +90,31 @@ describe("renderTaskList", () => {
 describe("renderTaskRow", () => {
 	it("falls back to a dash when priority is missing", () => {
 		expect(renderTaskRow({ ...renderedTask, priority: undefined })).toBe(
-			"TASK-001 | To Do | - | Rendered Task",
+			"TASK-001\tTo Do\t-\tRendered Task",
 		);
+	});
+
+	it("keeps a pipe in the title inside the title column", () => {
+		const row = renderTaskRow({ ...renderedTask, title: "Parse a | b" });
+
+		expect(row).toBe("TASK-001\tTo Do\thigh\tParse a | b");
+		expect(row.split("\t")).toEqual([
+			"TASK-001",
+			"To Do",
+			"high",
+			"Parse a | b",
+		]);
+	});
+
+	it("keeps a title with a tab or line break to one column", () => {
+		const row = renderTaskRow({ ...renderedTask, title: "Alpha\tBeta\nGamma" });
+
+		expect(row.split("\t")).toEqual([
+			"TASK-001",
+			"To Do",
+			"high",
+			"Alpha Beta Gamma",
+		]);
 	});
 });
 
@@ -167,7 +190,7 @@ describe("task list command", () => {
 
 		await createProgram().parseAsync(["node", "test", "--plain", "list"]);
 
-		expect(output.stdout()).toBe("TASK-001 | To Do | medium | Plain Task\n");
+		expect(output.stdout()).toBe("TASK-001\tTo Do\tmedium\tPlain Task\n");
 		expectNoCommandDiagnostics(output, exit);
 	});
 

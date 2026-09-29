@@ -5,7 +5,7 @@ description: Create, list, view, edit, delete, and search cosmonauts tasks from 
 
 # `cosmonauts task`
 
-CRUD for cosmonauts tasks. All commands accept `--json` (parseable) and `--plain` (tab-separated). Default human output is for terminals — never parse it.
+CRUD for cosmonauts tasks. All commands accept `--json` (parseable) and `--plain` (tab-separated). `--plain` rows from `list` and `search` are `id<TAB>status<TAB>priority<TAB>title` (priority is `-` when unset); split on tabs, never on `|`, because titles may contain a pipe (a tab or line break inside a title is replaced by a space). Default human output is for terminals — never parse it.
 
 ## The task file
 

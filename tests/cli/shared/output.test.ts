@@ -8,6 +8,7 @@ import {
 	getOutputMode,
 	printJson,
 	printLines,
+	renderPlainRow,
 	renderTable,
 } from "../../../cli/shared/output.ts";
 
@@ -93,5 +94,34 @@ describe("CLI output helpers", () => {
 
 		expect(result.value).toBe("parsed");
 		expect(mode).toBe("human");
+	});
+
+	it("renders a plain row as tab-separated fields", () => {
+		expect(renderPlainRow(["a", "b | c", "d"])).toBe("a\tb | c\td");
+	});
+
+	it("replaces tabs and line breaks inside a plain field with a space", () => {
+		const row = renderPlainRow(["id", "one\ttwo\r\nthree\nfour"]);
+
+		expect(row).toBe("id\tone two three four");
+		expect(row.split("\t")).toHaveLength(2);
+	});
+
+	it("replaces Unicode line terminators inside a plain field with a space", () => {
+		const row = renderPlainRow(["id", "one\u2028two\u2029three\u0085four"]);
+
+		expect(row).toBe("id\tone two three four");
+		expect(/[\u0085\u2028\u2029]/u.test(row)).toBe(false);
+	});
+
+	it("replaces every control character inside a plain field with a space", () => {
+		const row = renderPlainRow([
+			"id",
+			"vt\u000Bff\u000Cdel\u007Fc1\u009Fnul\u0000end",
+		]);
+
+		expect(row).toBe("id\tvt ff del c1 nul end");
+		expect(/[\p{Cc}\u2028\u2029]/u.test(row.replaceAll("\t", ""))).toBe(false);
+		expect(row.split("\t")).toHaveLength(2);
 	});
 });

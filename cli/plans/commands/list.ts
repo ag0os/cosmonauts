@@ -8,6 +8,7 @@ import {
 	getOutputMode,
 	printJson,
 	printLines,
+	renderPlainRow,
 	renderTable,
 } from "../../shared/output.ts";
 
@@ -116,7 +117,12 @@ function printPlanSummaries(
 }
 
 function renderPlanSummaryRow(summary: PlanSummary): string {
-	return `${summary.slug} | ${summary.status} | ${summary.taskCount} tasks | ${summary.title}`;
+	return renderPlainRow([
+		summary.slug,
+		summary.status,
+		`${summary.taskCount} tasks`,
+		summary.title,
+	]);
 }
 
 function renderPlanSummaryTable(summaries: readonly PlanSummary[]): string[] {

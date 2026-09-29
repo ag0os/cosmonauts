@@ -5,7 +5,7 @@ description: Create, list, view, edit, delete, and archive cosmonauts plans from
 
 # `cosmonauts plan`
 
-CRUD for cosmonauts plans. All commands accept `--json` (parseable) and `--plain` (tab-separated).
+CRUD for cosmonauts plans. All commands accept `--json` (parseable) and `--plain` (tab-separated). `--plain` rows from `list` are `slug<TAB>status<TAB>N tasks<TAB>title`; split on tabs, never on `|`, because titles may contain a pipe (a tab or line break inside a title is replaced by a space).
 
 ## What a plan is
 

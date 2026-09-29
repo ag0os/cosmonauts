@@ -47,7 +47,7 @@ Every JSON-emitting cosmonauts command accepts `--json` (machine output) or `--p
 ## Output conventions
 
 - `--json` on **task**, **plan**, **skills**, **packages**, **session**, **scaffold**, and the top-level `--list-*` flags: parseable JSON to stdout, errors to stderr. Exit code 0 = success, 1 = failure.
-- `--plain` on the same set: tab-separated, no headers, no padding. Good for piping.
+- `--plain` on the same set: one row per line, fields separated by a single tab, no headers, no padding. Split on `\t` only — titles may contain `|` and other punctuation; a tab or line break inside a field is replaced by a space, so a row always splits into exactly its columns. Each sub-skill lists its column order.
 - Default (neither flag): human-formatted with headers and dashed separators. Don't parse this — use `--json`.
 - **`cosmonauts run` commands are different.** `run chain`, `run drive`, `run status`, `run watch`, and `run list` emit JSON natively and do **not** accept `--json` / `--plain`. Parse their stdout directly.
 - Long-running Drive ops (`cosmonauts run drive`) accept `--mode detached` to fork and return a `runId` immediately; poll status with `cosmonauts run status <runId> --scope <plan>`.

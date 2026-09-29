@@ -133,7 +133,7 @@ describe("renderTaskSearchResults", () => {
 	it("returns rows for plain mode", () => {
 		expect(
 			renderTaskSearchResults([renderedTask], "rendered", "plain"),
-		).toEqual(["TASK-001 | To Do | high | Rendered Task"]);
+		).toEqual(["TASK-001\tTo Do\thigh\tRendered Task"]);
 	});
 
 	it("returns empty human output", () => {
@@ -176,9 +176,9 @@ describe("task search command", () => {
 
 		const lines = output.stdout().trimEnd().split("\n");
 		expect(lines).toEqual([
-			"TASK-003 | To Do | - | auth",
-			"TASK-002 | To Do | - | auth service",
-			"TASK-001 | To Do | - | Build auth middleware",
+			"TASK-003\tTo Do\t-\tauth",
+			"TASK-002\tTo Do\t-\tauth service",
+			"TASK-001\tTo Do\t-\tBuild auth middleware",
 		]);
 		expectNoCommandDiagnostics(output, exit);
 	});
@@ -187,7 +187,7 @@ describe("task search command", () => {
 		await runPlainAuthSearch("--limit", "2");
 
 		expect(output.stdout()).toBe(
-			"TASK-003 | To Do | - | auth\nTASK-002 | To Do | - | auth service\n",
+			"TASK-003\tTo Do\t-\tauth\nTASK-002\tTo Do\t-\tauth service\n",
 		);
 		expectNoCommandDiagnostics(output, exit);
 	});
@@ -269,7 +269,7 @@ describe("task search command", () => {
 			"search",
 		]);
 
-		expect(output.stdout()).toBe("TASK-001 | To Do | low | Plain search\n");
+		expect(output.stdout()).toBe("TASK-001\tTo Do\tlow\tPlain search\n");
 		expectNoCommandDiagnostics(output, exit);
 	});
 

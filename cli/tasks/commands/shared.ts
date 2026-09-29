@@ -5,7 +5,7 @@ import type {
 	TaskStatus,
 } from "../../../lib/tasks/task-types.ts";
 import type { CliParseResult } from "../../shared/output.ts";
-import { renderTable } from "../../shared/output.ts";
+import { renderPlainRow, renderTable } from "../../shared/output.ts";
 
 const TASK_STATUS_ALIASES = new Map<string, TaskStatus>([
 	["todo", "To Do"],
@@ -94,7 +94,12 @@ export function parseTaskFilterOptions(
 }
 
 export function renderTaskSummaryRow(task: Task): string {
-	return `${task.id} | ${task.status} | ${task.priority ?? "-"} | ${task.title}`;
+	return renderPlainRow([
+		task.id,
+		task.status,
+		task.priority ?? "-",
+		task.title,
+	]);
 }
 
 export function renderTaskSummaryTable(tasks: readonly Task[]): string[] {

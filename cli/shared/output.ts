@@ -27,6 +27,23 @@ export function getOutputMode(options: CliGlobalOptions): CliOutputMode {
 	return "human";
 }
 
+const PLAIN_ROW_SEPARATOR = "\t";
+
+/**
+ * Renders one `--plain` row: fields separated by a single tab, one row per
+ * line. A field may contain a pipe or any other punctuation; any control
+ * character (Unicode `Cc`: tab, VT, FF, CR, LF, NEL, DEL, the C0 and C1
+ * ranges) or Unicode line/paragraph separator (U+2028, U+2029) inside a field
+ * (a title, typically) is replaced by a space, so the row always splits back
+ * into exactly the emitted fields and never spans two lines under any
+ * line-splitting convention.
+ */
+export function renderPlainRow(fields: readonly string[]): string {
+	return fields
+		.map((field) => field.replace(/[\p{Cc}\u2028\u2029]+/gu, " "))
+		.join(PLAIN_ROW_SEPARATOR);
+}
+
 export function printJson(value: unknown): void {
 	process.stdout.write(`${String(JSON.stringify(value, null, 2))}\n`);
 }

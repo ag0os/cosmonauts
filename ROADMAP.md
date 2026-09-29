@@ -43,17 +43,6 @@ orphans, and added the `Cancelled` task status; it superseded
 ahead of `execution-liveness`). Once it establishes a trustworthy
 static-health baseline, resume the existing dependency order.
 
-### `plain-listing-pipe-defect`: `--plain` Rows Corrupt on a Pipe in a Title
-
-Defect, small (~30 min). `cli/plans/commands/list.ts:119` and
-`cli/tasks/commands/shared.ts:96` join fields with an unescaped `" | "`, and
-plan and task titles may legally contain a pipe, so a caller parsing `--plain`
-output gets silently shifted columns. Ruled 2026-09-19 (Q-003, recorded in
-`TASK-701`): a tab is the contract for multi-column row listings. Change both
-renderers and correct the three skill documents that describe the format.
-Nothing blocks it: the original deferral ("moves the counted-guardrail set")
-was an artifact of the discarded audit's counting method.
-
 ### `observational-memory-adoption`: OM as a Switch, Shipped Off
 
 *Added 2026-09-14 from a human design dialogue; placement immediately after the quality pause is the human's stated preference ("probably after the pause") — confirm against the resumed dependency order (`execution-liveness` → `drive-envelope`) when the pause lifts. Off by default and neutral to the portable-harness spine, so it blocks nothing and nothing blocks it.*

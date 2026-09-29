@@ -68,7 +68,35 @@ describe("renderPlanSummaries", () => {
 
 	it("returns rows for plain mode", () => {
 		expect(renderPlanSummaries([renderedSummary], "plain")).toEqual([
-			"rendered-plan | active | 3 tasks | Rendered Plan",
+			"rendered-plan\tactive\t3 tasks\tRendered Plan",
+		]);
+	});
+
+	it("keeps a pipe in the title inside the title column", () => {
+		const [row] = renderPlanSummaries(
+			[{ ...renderedSummary, title: "Drive | Graph" }],
+			"plain",
+		) as string[];
+
+		expect(row?.split("\t")).toEqual([
+			"rendered-plan",
+			"active",
+			"3 tasks",
+			"Drive | Graph",
+		]);
+	});
+
+	it("keeps a title with a tab or line break to one column", () => {
+		const [row] = renderPlanSummaries(
+			[{ ...renderedSummary, title: "Alpha\tBeta\r\nGamma" }],
+			"plain",
+		) as string[];
+
+		expect(row?.split("\t")).toEqual([
+			"rendered-plan",
+			"active",
+			"3 tasks",
+			"Alpha Beta Gamma",
 		]);
 	});
 
@@ -202,7 +230,7 @@ describe("plan list command output", () => {
 				createPlanWithTask(projectRoot, "plain-plan", "Plain Plan"),
 		);
 
-		expect(result.stdout).toBe("plain-plan | active | 1 tasks | Plain Plan\n");
+		expect(result.stdout).toBe("plain-plan\tactive\t1 tasks\tPlain Plan\n");
 		expect(result.stderr).toBe("");
 		expect(result.exitCalls).toEqual([]);
 	});
