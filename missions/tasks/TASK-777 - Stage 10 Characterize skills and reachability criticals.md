@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-772
 createdAt: '2026-09-28T15:25:14.192Z'
-updatedAt: '2026-09-29T00:45:22.277Z'
+updatedAt: '2026-09-29T00:47:22.154Z'
 ---
 
 ## Description
@@ -105,3 +105,12 @@ Exporter clone family not edited; exporter duplication capability/diagnostic pai
 - `generatingProjectRoot` / `previousGeneratingProjectRoot` conditional spreads and `foreign-owner`/`owner-transfer`/`source-unavailable`/`transaction-aborted-incomplete-inventory` reasons: not exercised (owner-transfer/foreign-owner need authority-owned manifests; generating-root needs link/generated-wrapper mode) → residual-risk items for Q-002.
 
 `visit` (check-reachability-visit.test.ts): reached forms — side-effect, default, namespace, mixed named, default+type-only names, export-all, namespace re-export, mixed re-export, require(), dynamic import(), runnerModule string, extension-less specifier; not reached — import type, import type default, all-type named import, export type, all-type re-export, export type *, bare specifier, two-arg require, non-literal import(), non-string runnerModule, other property name, unresolved relative import; plus transitivity, cycle termination, and "reaches every runtime lib module under the committed staged-code registry" (real repo verdict: exit 0, N/N reached, staged count = `[[staged]]` rows in `missions/architecture/staged-code.toml`).
+
+
+### Coordinator D-015 verdict (2026-09-29 00:55Z, successor #2) — PASS
+
+- Run `run-f95c0802-77ea-4221-a2fc-0cbaab9cef25` (claude-cli, detached, `ANTHROPIC_MODEL=sonnet`, launched by Shepherd; D-028). Drive commit `203de10c9fe047e79fc1e5d689a07e89e0c39f32`; parent `S = e7843a472351a40ba1b1843726cded47da8fd4bd` (confirmed). State commit `76dfe503`.
+- Freeze from `S`: MDR under `tests/` → empty; porcelain `tests/` → empty; `\.(skip|only|todo)\(` grep → none. Commit paths: exactly `A tests/scripts/check-reachability-visit.test.ts`, `A tests/skills/exporter-sync-characterization.test.ts`; no production path, no `missions/reviews/` path. The new exporter file contains one `test.skipIf(process.getuid?.() === 0)` guard on a chmod-based case: a conditional skip inside a newly added file (allowed class (a)), recorded here, not a skip of an existing test. Five `verify` `passed` events (test 00:43:51→00:45:06, lint, typecheck, check:reachability, check:suppressions). Title/path intact.
+- AC #3: production files unedited; owned ranges and metrics equal `S` by construction; no seam.
+- Surface record (D-028, coordinator, one-turn Pi `worker` on `openrouter/deepseek/deepseek-v4-flash` at `76dfe503`): `analysis_status` → duplication bound (project), complexity bound (cyclomatic, cognitive, crap), boundary-conformance unbound (provider-not-configured), changed-scope-audit bound (changed), trace bound (target), fix-preview bound (project), all Fallow 2.54.2. `analysis_complexity` cyclomatic / cognitive / crap: each state=bound verdict=fail count=216 (thresholds 20/15/30). Owned rows in all three: runHarnessSync lib/skills/exporter.ts:228 26/56/— critical (coverage tier missing in the surface payload; the worker's diagnostic lists tier `missing`); groupCatalogue :436 24/45/148.4 critical partial; enhancedRows :567 21/20/116.3 critical partial; visit scripts/check-reachability.ts:141 26/17/702 critical none. Identical to the worker's direct diagnostic.
+- AC #8: the worker's map names Q-002 residual-risk variants unreachable through entry points (the `withOwnerRootTransaction` catch branch and the `write-failure:` rows of `runHarnessSync`; the descriptor/unimplemented/no-adapter skip in `groupCatalogue`; `enhancedRows`' `generatingProjectRoot` spreads and `foreign-owner`/`owner-transfer`/`source-unavailable`/`transaction-aborted-incomplete-inventory` reasons). These are recorded for TASK-778: the refactor worker treats those branches as uncharacterized and may not land a hunk inside them without a seam task (AC #3 of TASK-778).

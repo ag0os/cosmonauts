@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-772
 createdAt: '2026-09-28T15:25:50.870Z'
-updatedAt: '2026-09-28T19:32:00.387Z'
+updatedAt: '2026-09-29T00:46:53.684Z'
 ---
 
 ## Description
@@ -37,3 +37,8 @@ Drive commits this task only when **every** acceptance criterion is checked; an 
 Addendum (2026-09-28, plan D-023): a task-close `analysis_audit` that returns `failed` (e.g. `invalid-output` because Fallow answered `warn`) is recorded in these notes with its failure class, the verbatim direct diagnostic `fallow audit --base <sha> --format json --quiet --no-cache --dead-code-baseline .fallow-baselines/dead-code.json --health-baseline .fallow-baselines/health.json --dupes-baseline .fallow-baselines/dupes.json`, and the owning slice of each flagged finding; it is not a completion blocker when the five stage-gate commands pass and every owned finding is dispositioned. Do not edit `fallow-provider.ts` for it.
 
 Addendum (2026-09-28, plan D-024): for critical-complexity functions the INV-003 pre-edit confirmation is the fresh project-scope `analysis_complexity` run per metric that still lists the function row; a symbol `analysis_trace` exit 2 for a non-exported function is a recorded provider limitation (`fallow dead-code --trace` resolves exports only), not a D-013 hard stop. If the surface complexity output is truncated, record its state/count/digest and confirm your owned rows with the direct diagnostic `fallow health --complexity --format json --quiet --no-cache` filtered locally by path and name, recorded verbatim as diagnosis.
+
+
+### Coordinator note before attempt 1 (2026-09-29, successor #2; plan D-028 / Q-012): backend and rules
+
+This slice runs on the `claude-cli` backend (Claude Code, `ANTHROPIC_MODEL=sonnet`), detached mode, not the Pi subagent. You have no `analysis_*` tools: for AC #4/#7 record the direct diagnostic `bunx fallow health --complexity --format json --quiet --no-cache` filtered to your owned functions (path, name, line, cyclomatic, cognitive, CRAP, coverage tier), verbatim as diagnosis; the coordinator adds the `analysis_status` and surface-capability record at verdict time (D-028), so tick #7 once the five gate commands exit 0 and your rows are recorded. Mark acceptance criteria by editing the checkboxes in this task file and append your evidence under `## Implementation Notes` (never rewrite earlier sections, never change the title line). New test files only; never modify an existing test (Q-002 hard stop → report `blocked`); never touch production files except a seam the ACs allow and you name here first; never touch `missions/reviews/`; never run git write operations; the driver commits. Record the slice-start `S` (HEAD at launch) and the D-015 in-session check verbatim. For AC #8 include a per-owned-function variant → test map and list unreachable variants as Q-002 residual-risk items.

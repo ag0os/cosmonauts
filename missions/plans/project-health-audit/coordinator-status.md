@@ -42,6 +42,11 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
   Two new characterization files, nothing else; five gates passed after one
   in-run retry (quality-review settle-grace timing flake, passes in isolation).
   Attempt 1 stopped on export-only symbol traces → D-024.
+- **Slice 10 / TASK-777 Done** (2026-09-29 00:45Z, attempt 1 on claude-cli/sonnet,
+  launched by Shepherd): Drive commit `203de10c`, state `76dfe503`. Exactly two
+  new test files (52 cases); freeze clean from `S = e7843a47`; five gates
+  passed; no production or `missions/reviews/` paths. Worker recorded Q-002
+  residual-risk variants (unreachable through entry points) for stage 11.
 - **Slice 8 / TASK-775 Done** (2026-09-29 00:33Z, attempt 2 on claude-cli/sonnet,
   launched by Shepherd): Drive commit `7390f105`, state `6905a633`. Exactly
   seven new test files; freeze clean from `S = 0292eaa0`; five gates passed;
@@ -76,10 +81,10 @@ rulings file round 3). Earlier rulings: Q-001..003 in `spec.md`; Q-004..007 in
 
 ## Running
 
-Nothing. Next: TASK-777 (stage 10 characterization) on claude-cli via
-`launch-next.sh TASK-777` (Shepherd runs it, obs. 15); then TASK-779.
+Nothing. Next: TASK-779 (stage 12 characterization) on claude-cli via
+`launch-next.sh TASK-779` (Shepherd runs it, obs. 15); TASK-777 done.
 **STOP before TASK-776** (first remaining refactor slice) per Q-012: the user
-decides an OpenRouter top-up first. Ready now: 776 (held), 777, 779.
+decides an OpenRouter top-up first. Ready now: 776 (held), 778 (refactor, held), 779.
 
 ## Improvement observations (for the Phase-4 pass; keep adding)
 
@@ -165,6 +170,7 @@ out of extra usage) and are superseded.
 | 2026-09-28 20:20Z, before slice 7 attempt 3 | 10 | 1.9529 | 8.05 |
 | 2026-09-29 00:05Z, after slice 7 (cost 2.99) | 10 | 4.9432 | 5.06 |
 | 2026-09-29 00:45Z, after slice 8 (launchers + surface record on flash, 0.29) | 10 | 5.2292 | 4.77 |
+| 2026-09-29 00:50Z, after slice 10 (launcher, 0.08; surface record follows) | 10 | 5.3114 | 4.69 |
 
 - History (predecessor): **Codex usage limit reached (20:45Z).** The print-mode cosmo launcher and the
   `coding/worker` role both pin `openai-codex/gpt-5.6-sol`; the relaunch of
