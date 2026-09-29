@@ -46,6 +46,14 @@ export function driveRunExpectations(spec: DriverRunSpec) {
 export function reportSummary(report: ParsedReport): string | undefined {
 	const text = report.outcome === "unknown" ? report.raw : report.notes;
 	if (!text) return undefined;
+	const trimmed = text.trim();
+	if (
+		/```/u.test(trimmed) ||
+		/^\{[\s\S]*\}$/u.test(trimmed) ||
+		/^outcome\s*:/imu.test(trimmed) ||
+		/Outcome inferred from passing postflight/u.test(trimmed)
+	)
+		return undefined;
 	const line = text
 		.split(/\r?\n/)
 		.map((item) => item.trim())
@@ -139,6 +147,14 @@ export async function checkDrivePreflight(
 	return { passed: true };
 }
 
+function projectCommandEnvironment(): NodeJS.ProcessEnv {
+	const env = { ...process.env };
+	for (const key of Object.keys(env)) {
+		if (key.startsWith("COSMONAUTS_DRIVER_")) delete env[key];
+	}
+	return env;
+}
+
 export function runShellCommand(
 	command: string,
 	cwd: string,
@@ -158,6 +174,7 @@ export function runCommand(
 		const child = spawn(command, args, {
 			cwd,
 			shell,
+			...(shell ? { env: projectCommandEnvironment() } : {}),
 			signal,
 			stdio: ["ignore", "pipe", "pipe"],
 		});

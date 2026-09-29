@@ -76,10 +76,10 @@ interface RunDriverActive {
 	activeAt: string;
 }
 
-interface RunDriverUnsupportedDetachedBackend {
-	error: "detached_backend_not_supported";
+interface RunDriverUnsupportedBackendMode {
+	error: "detached_backend_not_supported" | "inline_backend_not_supported";
 	backend: BackendName;
-	mode: "detached";
+	mode: DriverMode;
 	message: string;
 }
 
@@ -87,11 +87,34 @@ type RunDriverResponse =
 	| RunDriverStarted
 	| RunDriverActive
 	| RunDriverReservedScope
-	| RunDriverUnsupportedDetachedBackend;
+	| RunDriverUnsupportedBackendMode;
 
 type DriverMode = "inline" | "detached";
 
+const BACKEND_MODE_GUIDANCE =
+	"`cosmonauts-subagent` is inline-only; `codex` and `claude-cli` are detached-only.";
 const activeRuns = new Map<string, ActiveDriverRun>();
+
+function isSupportedBackendMode(
+	backend: BackendName,
+	mode: DriverMode,
+): boolean {
+	return backend === "cosmonauts-subagent"
+		? mode === "inline"
+		: mode === "detached";
+}
+
+function unsupportedBackendMode(backend: BackendName, mode: DriverMode) {
+	return runDriverResult({
+		error:
+			mode === "detached"
+				? "detached_backend_not_supported"
+				: "inline_backend_not_supported",
+		backend,
+		mode,
+		message: BACKEND_MODE_GUIDANCE,
+	});
+}
 
 async function driverCallerDenial(
 	callerRole: string | undefined,
@@ -150,8 +173,7 @@ export function registerDriverTool(
 					Type.Literal("claude-cli"),
 				],
 				{
-					description:
-						"Backend that executes each task's rendered prompt. `cosmonauts-subagent` runs in-process and is inline-only; `codex` and `claude-cli` are external CLI agents (use them for detached runs).",
+					description: `Backend that executes each task's rendered prompt. ${BACKEND_MODE_GUIDANCE}`,
 				},
 			),
 			mode: Type.Optional(
@@ -244,14 +266,8 @@ export function registerDriverTool(
 			}
 
 			let mode = params.mode;
-			if (mode === "detached" && params.backend === "cosmonauts-subagent") {
-				return runDriverResult({
-					error: "detached_backend_not_supported",
-					backend: params.backend,
-					mode,
-					message:
-						"Backend cosmonauts-subagent is not supported for detached mode.",
-				});
+			if (mode && !isSupportedBackendMode(params.backend, mode)) {
+				return unsupportedBackendMode(params.backend, mode);
 			}
 
 			const activeKey = activeRunKey(ctx.cwd, planSlug);
@@ -280,15 +296,9 @@ export function registerDriverTool(
 					);
 					await assertDriveTasksNotCancelled(taskManager, taskIds);
 					mode = mode ?? resolveDefaultMode(taskIds);
-					if (mode === "detached" && params.backend === "cosmonauts-subagent") {
+					if (!isSupportedBackendMode(params.backend, mode)) {
 						clearActiveRun(activeKey, runId);
-						return runDriverResult({
-							error: "detached_backend_not_supported",
-							backend: params.backend,
-							mode,
-							message:
-								"Backend cosmonauts-subagent is not supported for detached mode.",
-						});
+						return unsupportedBackendMode(params.backend, mode);
 					}
 
 					const resolveEpisodeCapture = async () => {
@@ -327,7 +337,6 @@ export function registerDriverTool(
 					});
 					const backend = createBackend(
 						params.backend,
-						mode,
 						runtime,
 						ctx.cwd,
 						episodeWorker,
@@ -486,18 +495,12 @@ function resolveEnvelopePath(
 
 function createBackend(
 	backendName: BackendName,
-	mode: DriverMode,
 	runtime: CosmonautsRuntime | undefined,
 	cwd: string,
 	workerResolution?: SpawnAgentResolution,
 ): Backend {
 	switch (backendName) {
 		case "cosmonauts-subagent": {
-			if (mode === "detached") {
-				throw new Error(
-					`Unsupported driver backend in detached mode: ${backendName}`,
-				);
-			}
 			if (!runtime) {
 				throw new Error(
 					"Cosmonauts runtime is required for cosmonauts-subagent backend",
@@ -520,22 +523,12 @@ function createBackend(
 			});
 		}
 		case "codex":
-			if (mode === "inline") {
-				throw new Error(
-					`Unsupported driver backend in inline mode: ${backendName}`,
-				);
-			}
 			return createCodexBackend({
 				binary: process.env.COSMONAUTS_DRIVER_CODEX_BINARY,
 				globalArgs: readCodexArgsFromEnv(),
 				extraArgs: readCodexExecArgsFromEnv(),
 			});
 		case "claude-cli":
-			if (mode === "inline") {
-				throw new Error(
-					`Unsupported driver backend in inline mode: ${backendName}`,
-				);
-			}
 			return createClaudeCliBackend({
 				binary: process.env.COSMONAUTS_DRIVER_CLAUDE_BINARY,
 				args: readClaudeArgsFromEnv(),
@@ -623,7 +616,7 @@ function runDriverResult(response: RunDriverResponse) {
 		content: [
 			{
 				type: "text" as const,
-				text: `Started driver run ${response.runId} for ${response.planSlug}`,
+				text: `Started driver run ${response.runId} for ${response.planSlug}\nworkdir: ${response.workdir}\neventLogPath: ${response.eventLogPath}`,
 			},
 		],
 		details: response,

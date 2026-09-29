@@ -32,6 +32,34 @@ const temp = useTempDir("run-one-task-test-");
 const execFileAsync = promisify(execFile);
 
 describe("run-one-task", () => {
+	test("keeps driver metadata in backend but not legacy project commands", async () => {
+		const fixture = await setupFixture();
+		const key = "COSMONAUTS_DRIVER_TEST_SENTINEL";
+		const previous = process.env[key];
+		process.env[key] = "backend-only";
+		try {
+			const check = nodeCommand(
+				`if (Object.keys(process.env).some(key => key.startsWith('COSMONAUTS_DRIVER_'))) process.exit(8)`,
+			);
+			const backend = createBackend(async () => {
+				expect(process.env[key]).toBe("backend-only");
+				return successfulResult();
+			});
+			const result = await runOneTask(
+				createSpec(fixture, {
+					preflightCommands: [check],
+					postflightCommands: [check],
+				}),
+				createCtx(fixture, backend, []),
+				fixture.taskId,
+			);
+			expect(result.status).toBe("done");
+			expect(backend.run).toHaveBeenCalledOnce();
+		} finally {
+			if (previous === undefined) delete process.env[key];
+			else process.env[key] = previous;
+		}
+	});
 	test.each([
 		"blocked",
 		"success",
@@ -609,6 +637,35 @@ describe("run-one-task", () => {
 		);
 	});
 
+	test.each([
+		"Implemented the requested change",
+		'```json\n{"outcome":"success"}\n```',
+		'{"outcome":"success","files":[]}',
+		"outcome: success",
+	])("uses safe prose or task title for legacy commit subject: %s", async (notes) => {
+		const fixture = await setupGitFixture();
+		const backend = createBackend(async () => {
+			await writeProjectFile(fixture, "src/subject.txt", "commit\n");
+			return {
+				exitCode: 0,
+				stdout: fencedReport({
+					outcome: "success",
+					files: [],
+					verification: [],
+					notes,
+				}),
+				durationMs: 1,
+			};
+		});
+		await runDriverCommitTask(fixture, backend);
+		const subject = (
+			await git(fixture.projectRoot, ["show", "--format=%s", "--no-patch"])
+		).trim();
+		expect(subject).toBe(
+			`${fixture.taskId}: ${notes === "Implemented the requested change" ? notes : "Run One Task Fixture"}`,
+		);
+	});
+
 	test("uses task title as driver commit subject when report summary is generic", async () => {
 		const fixture = await setupGitFixture();
 		const backend = createBackend(async () => {
@@ -1034,9 +1091,10 @@ describe("run-one-task", () => {
 		});
 		expect(task?.status).toBe("Done");
 		expect(events.map((event) => event.type)).toContain("commit_made");
+		// AC-015: inferred report prose is not a source-commit subject.
 		expect(
 			await git(fixture.projectRoot, ["show", "--format=%s", "--no-patch"]),
-		).toContain("changed src/uncommitted.txt");
+		).toContain(`${fixture.taskId}: Run One Task Fixture`);
 		const staged = await git(fixture.projectRoot, [
 			"diff",
 			"--cached",

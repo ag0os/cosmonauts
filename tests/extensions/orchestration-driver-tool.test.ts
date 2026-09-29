@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { chmod, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -253,7 +253,7 @@ describe("driver e2e run_driver integration", () => {
 		}
 	});
 
-	test("keeps launch-failure fallback completion and warning text", async () => {
+	test("rejects external inline backends before constructing them with the schema's mode rule", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const pi = createMockPi(fixture.projectRoot, {
 			sessionId: PARENT_SESSION_ID,
@@ -269,34 +269,22 @@ describe("driver e2e run_driver integration", () => {
 			fixture.projectRoot,
 		);
 
-		await expect(
-			pi.callTool("run_driver", {
+		// AC-018: wrong-mode validation now precedes backend construction.
+		for (const backend of ["codex", "claude-cli"] as const) {
+			const result = (await pi.callTool("run_driver", {
 				planSlug: fixture.planSlug,
 				taskIds: fixture.taskIds,
-				backend: "codex",
+				backend,
 				mode: "inline",
 				envelopePath: fixture.envelopePath,
 				commitPolicy: "no-commit",
-			}),
-		).rejects.toThrow("Unsupported driver backend in inline mode: codex");
-
-		const runsDir = join(
-			fixture.projectRoot,
-			"missions",
-			"sessions",
-			fixture.planSlug,
-			"runs",
-		);
-		const runIds = await readdir(runsDir);
-		expect(runIds).toHaveLength(1);
-		const completion = await waitForCompletion(
-			join(runsDir, runIds[0] as string),
-		);
-		expect(completion).toMatchObject({
-			runId: runIds[0],
-			outcome: "aborted",
-			blockedReason: "Unsupported driver backend in inline mode: codex",
-		});
+			})) as { details: { error: string; message: string } };
+			expect(result.details).toMatchObject({
+				error: "inline_backend_not_supported",
+				message:
+					"`cosmonauts-subagent` is inline-only; `codex` and `claude-cli` are detached-only.",
+			});
+		}
 	});
 
 	test("driver branch mismatch emits structured preflight failure before transitions", async () => {

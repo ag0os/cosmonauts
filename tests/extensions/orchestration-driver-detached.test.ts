@@ -88,11 +88,48 @@ describe("run_driver detached mode", () => {
 		expect(tool?.execute).toBeTypeOf("function");
 		expect(tool?.label).toBe("Run Driver");
 		const schema = JSON.stringify(tool?.parameters);
+		expect(schema).toContain(
+			"`cosmonauts-subagent` is inline-only; `codex` and `claude-cli` are detached-only.",
+		);
 		expect(schema).toContain("cosmonauts-subagent");
 		expect(schema).toContain("codex");
 		expect(schema).toContain("claude-cli");
 		expect(schema).toContain("inline");
 		expect(schema).toContain("detached");
+	});
+
+	test("reads backend control variables during detached backend construction", async () => {
+		const fixture = await setupFixture("backend-env");
+		const pi = createMockPi(fixture.projectRoot, {
+			sessionId: PARENT_SESSION_ID,
+		});
+		registerDriverTool(
+			pi as never,
+			vi.fn(async () => authorizedRuntime()) as never,
+			fixture.projectRoot,
+		);
+		const previous = process.env.COSMONAUTS_DRIVER_CODEX_BINARY;
+		process.env.COSMONAUTS_DRIVER_CODEX_BINARY = "/tmp/driver-selected-codex";
+		try {
+			await pi.callTool("run_driver", {
+				planSlug: fixture.planSlug,
+				taskIds: fixture.taskIds,
+				backend: "codex",
+				mode: "detached",
+				envelopePath: fixture.envelopePath,
+			});
+			const [, deps] = driverMocks.startDetached.mock.calls[0] as [
+				DriverRunSpec,
+				DriverDeps,
+			];
+			expect(deps.backend.livenessCheck?.()).toMatchObject({
+				argv: ["/tmp/driver-selected-codex", "--version"],
+			});
+		} finally {
+			if (previous === undefined)
+				delete process.env.COSMONAUTS_DRIVER_CODEX_BINARY;
+			else process.env.COSMONAUTS_DRIVER_CODEX_BINARY = previous;
+		}
 	});
 
 	test("routes detached codex runs to startDetached and returns handle details", async () => {
@@ -110,7 +147,7 @@ describe("run_driver detached mode", () => {
 			mode: "detached",
 			envelopePath: fixture.envelopePath,
 			commitPolicy: "no-commit",
-		})) as { details: DriverRunDetails };
+		})) as { details: DriverRunDetails; content: [{ text: string }] };
 
 		expect(response.details).toMatchObject({
 			runId: expect.stringMatching(/^run-/),
@@ -120,6 +157,9 @@ describe("run_driver detached mode", () => {
 		});
 		expect(response.details.workdir).toContain(
 			join("missions", "sessions", fixture.planSlug, "runs"),
+		);
+		expect(response.content[0].text).toContain(
+			`workdir: ${response.details.workdir}\neventLogPath: ${response.details.eventLogPath}`,
 		);
 		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
@@ -179,7 +219,7 @@ describe("run_driver detached mode", () => {
 			content: [
 				{
 					type: "text",
-					text: `Started driver run ${spec.runId} for ${fixture.planSlug}`,
+					text: `Started driver run ${spec.runId} for ${fixture.planSlug}\nworkdir: ${spec.workdir}\neventLogPath: ${spec.eventLogPath}`,
 				},
 			],
 			details,
@@ -364,6 +404,7 @@ describe("run_driver detached mode", () => {
 		expect(getRuntime).toHaveBeenCalledTimes(2);
 	});
 
+	// AC-018: the previous wrong-mode wording contradicted the schema.
 	test("rejects cosmonauts-subagent detached runs before startDetached", async () => {
 		const fixture = await setupFixture("unsupported");
 		const pi = createMockPi(fixture.projectRoot);
@@ -383,7 +424,7 @@ describe("run_driver detached mode", () => {
 			backend: "cosmonauts-subagent",
 			mode: "detached",
 			message:
-				"Backend cosmonauts-subagent is not supported for detached mode.",
+				"`cosmonauts-subagent` is inline-only; `codex` and `claude-cli` are detached-only.",
 		});
 		expect(driverMocks.startDetached).not.toHaveBeenCalled();
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
@@ -421,7 +462,7 @@ describe("run_driver detached mode", () => {
 			backend: "cosmonauts-subagent",
 			mode: "detached",
 			message:
-				"Backend cosmonauts-subagent is not supported for detached mode.",
+				"`cosmonauts-subagent` is inline-only; `codex` and `claude-cli` are detached-only.",
 		});
 		expect(driverMocks.startDetached).not.toHaveBeenCalled();
 		expect(driverMocks.runInline).not.toHaveBeenCalled();

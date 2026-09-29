@@ -10,6 +10,7 @@ import type {
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
 import {
+	finalizeDriveSourceCommit,
 	parsedReportFromStepResult,
 	reportOutcomeFromStepResult,
 	transitionDriveTaskStatus,
@@ -33,6 +34,82 @@ const PLAN_SLUG = "durable-frontend-migration";
 const PARENT_SESSION_ID = "drive-scheduler-parent";
 
 describe("Drive scheduler backend", () => {
+	test("keeps driver metadata in graph backend but not project commands", async () => {
+		const fixture = await setupFixture("graph-env");
+		await fixture.taskManager.createTask({ title: "Graph env fixture" });
+		const key = "COSMONAUTS_DRIVER_TEST_SENTINEL";
+		const previous = process.env[key];
+		process.env[key] = "backend-only";
+		try {
+			const check = `node -e "if (Object.keys(process.env).some(key => key.startsWith('COSMONAUTS_DRIVER_'))) process.exit(8)"`;
+			const run = vi.fn(async () => {
+				expect(process.env[key]).toBe("backend-only");
+				return successfulBackendResult();
+			});
+			const prepared = await prepareTaskStep({
+				fixture,
+				spec: createSpec(fixture, {
+					preflightCommands: [check],
+					postflightCommands: [check],
+				}),
+				events: [],
+				backendRun: run,
+			});
+			const result = await (await prepared.backend.start(prepared.step)).result;
+			expect(result.outcome).toBe("success");
+			expect(run).toHaveBeenCalledOnce();
+		} finally {
+			if (previous === undefined) delete process.env[key];
+			else process.env[key] = previous;
+		}
+	});
+	test.each([
+		"Implemented the requested change",
+		'```json\n{"outcome":"success"}\n```',
+		'{"outcome":"success","files":[]}',
+		"outcome: success",
+		"Outcome inferred from passing postflight.",
+	])("uses safe prose or task title for graph commit subject: %s", async (summary) => {
+		const fixture = await setupFixture(`graph-subject-${summary.length}`);
+		await fixture.taskManager.createTask({ title: "Graph subject fixture" });
+		const git = (...args: string[]) =>
+			execFileSync("git", args, {
+				cwd: fixture.projectRoot,
+				encoding: "utf8",
+			}).trim();
+		git("init", "-b", "main");
+		git(
+			"-c",
+			"user.name=Test",
+			"-c",
+			"user.email=test@example.com",
+			"commit",
+			"--allow-empty",
+			"-m",
+			"initial",
+		);
+		await writeFile(join(fixture.projectRoot, "change.txt"), "changed");
+		const result = await finalizeDriveSourceCommit({
+			spec: createSpec(fixture, { commitPolicy: "driver-commits" }),
+			ctx: {
+				taskManager: fixture.taskManager,
+				eventSink: async () => {},
+				abortSignal: new AbortController().signal,
+			},
+			taskId: "TASK-1",
+			outcome: "success",
+			report: parsedReportFromStepResult({
+				outcome: "success",
+				summary,
+				artifacts: [],
+				nextAction: "continue",
+			}),
+		});
+		expect(result.status).toBe("committed");
+		expect(git("show", "--format=%s", "--no-patch")).toBe(
+			`TASK-1: ${summary === "Implemented the requested change" ? summary : "Graph subject fixture"}`,
+		);
+	});
 	test.each([
 		"blocked",
 		"success",
