@@ -144,7 +144,10 @@ describe("prompt-template renderPromptForTask", () => {
 		expect(rendered).toContain("Expected branch: feature/run");
 	});
 
-	test("instructs external CLI backends to check acceptance criteria via the cosmonauts CLI", async () => {
+	test.each([
+		"codex",
+		"claude-cli",
+	] as const)("instructs %s workers to check acceptance criteria via the cosmonauts CLI", async (backendName) => {
 		const { taskManager, taskId, envelopePath, workdir } =
 			await setupPromptTest({
 				envelope: "Envelope instructions",
@@ -154,7 +157,7 @@ describe("prompt-template renderPromptForTask", () => {
 
 		const promptPath = await renderPromptForTask(taskId, layers, taskManager, {
 			runExpectations: {
-				backendName: "codex",
+				backendName,
 				commitPolicy: "driver-commits",
 				stateCommitPolicy: "final-state-commit",
 				preflightCommands: [],
@@ -167,15 +170,14 @@ describe("prompt-template renderPromptForTask", () => {
 		const rendered = await readFile(promptPath, "utf-8");
 		expect(rendered).toContain("## Task Completion Protocol");
 		expect(rendered).toContain(`cosmonauts task edit ${taskId} --check-ac`);
-		// The completion protocol must precede the report contract.
 		expect(rendered.indexOf("## Task Completion Protocol")).toBeLessThan(
 			rendered.indexOf("## Drive Report Contract"),
 		);
-		// Clarifies the CLI edit is not a commit (so a cautious agent does not skip it).
 		expect(rendered).toContain("is NOT a source commit");
 	});
 
-	test("omits the CLI completion protocol for internal subagent workers", async () => {
+	// AC-007: the previous expectation pinned the missing in-process completion protocol.
+	test("instructs internal subagent workers to check acceptance criteria via task_edit", async () => {
 		const { taskManager, taskId, envelopePath, workdir } =
 			await setupPromptTest({
 				envelope: "Envelope instructions",
@@ -196,8 +198,35 @@ describe("prompt-template renderPromptForTask", () => {
 		});
 
 		const rendered = await readFile(promptPath, "utf-8");
-		expect(rendered).not.toContain("## Task Completion Protocol");
+		expect(rendered).toContain("## Task Completion Protocol");
+		expect(rendered).toContain(`taskId: "${taskId}"`);
+		expect(rendered).toContain("task_edit");
+		expect(rendered).toContain("checkAc: [index]");
 		expect(rendered).not.toContain("--check-ac");
+	});
+
+	test.each([
+		"cosmonauts-subagent",
+		"codex",
+		"claude-cli",
+	] as const)("omits the completion protocol for %s when the task has no criteria", async (backendName) => {
+		const { taskManager, taskId, envelopePath, workdir } =
+			await setupPromptTest({ envelope: "Envelope instructions" });
+		const layers = { envelopePath, workdir } satisfies TestPromptLayers;
+		const promptPath = await renderPromptForTask(taskId, layers, taskManager, {
+			runExpectations: {
+				backendName,
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "none",
+				preflightCommands: [],
+				postflightCommands: [],
+				projectRoot: tmp.path,
+				workdir,
+			},
+		});
+		expect(await readFile(promptPath, "utf-8")).not.toContain(
+			"## Task Completion Protocol",
+		);
 	});
 
 	test("renders state commit policy expectations without changing the report contract", async () => {

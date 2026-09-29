@@ -133,15 +133,17 @@ function renderTaskCompletionProtocol(
 	task: Task,
 	backendName: BackendName,
 ): string | undefined {
-	// Internal subagent workers mark acceptance criteria through their native task
-	// tool, so they need no CLI instruction. Only external CLI backends (codex,
-	// claude-cli) must be told to check criteria via the cosmonauts CLI — without
-	// this, their acceptance criteria stay unchecked and Drive blocks every task.
-	if (backendName === "cosmonauts-subagent") {
-		return undefined;
-	}
 	if (task.acceptanceCriteria.length === 0) {
 		return undefined;
+	}
+	if (backendName === "cosmonauts-subagent") {
+		return [
+			"## Task Completion Protocol",
+			"",
+			`As you verify each acceptance criterion, call \`task_edit\` with \`taskId: "${taskId}"\` and \`checkAc: [index]\` (the 1-based \`#N\` index in the Task section above) before writing your final report. Only mark criteria you have verified; leave unmet criteria unchecked and report \`outcome: failure\` or \`outcome: partial\` with the reason.`,
+			"",
+			"Drive blocks a `success` report while any acceptance criterion remains unchecked. Checking criteria updates task state, not a source commit.",
+		].join("\n");
 	}
 	return [
 		"## Task Completion Protocol",
