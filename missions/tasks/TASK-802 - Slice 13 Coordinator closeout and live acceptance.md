@@ -1,7 +1,7 @@
 ---
 id: TASK-802
 title: 'Slice 13: Coordinator closeout and live acceptance'
-status: To Do
+status: In Progress
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-801
 createdAt: '2026-09-29T16:58:42.614Z'
-updatedAt: '2026-09-29T16:58:42.614Z'
+updatedAt: '2026-09-29T20:51:09.280Z'
 ---
 
 ## Description
@@ -25,3 +25,16 @@ Implementation Order slice 13 (plan D-031). Owns B-012 from AC-019 and AC-020. C
 - [ ] #5 D-026 hand-off: the closeout report copies the execution-liveness hand-off from TASK-790's implementation notes (the per-task lock in `lib/tasks/task-manager.ts` and `lib/tasks/lock.ts`) for that plan's re-validation, without editing that plan's artifacts.
 - [ ] #6 No `lib/durable-runtime/` change; no `drive-envelope` or `execution-liveness` work; no suppression, threshold, baseline, ignore-pattern, or configuration change to clear a finding; no push, merge, or pull request. Ratified ground binds exactly: INV-001..INV-006 and the Ranking as written in `spec.md`; any collision is stop-and-escalate ground.
 <!-- AC:END -->
+
+## Implementation Notes
+
+### Coordinator closeout (2026-09-29, implementing coordinator)
+
+**AC #1 — host restart (D-028 second checkpoint).** TASK-801's Drive commit is `363169bd` (run run-1a2af012); its cosmo host (pid 33694) exited at ~20:48:40Z. Every Drive run in this plan is its own print-mode `cosmonauts -p -a cosmo` host launched from the worktree binary `/Users/cosmos/Projects/cosmonauts-framework-health/bin/cosmonauts`, so the live acceptance run below is a fresh session that loads slices 1-12 as committed. `bin/cosmonauts-drive-step` does not exist (checked 2026-09-29T20:49:24Z; `bin/` holds `cosmonauts` and `cosmo-worker-codex` only). HEAD at this record: `9bd68fbd` (slice-12 record commit on top of `363169bd`). The live run's fresh-session start time is its `startedAt` in `missions/sessions/driver-hardening/driver.lock`, copied into the AC #4 evidence below.
+
+**AC #3 — AC-020 change-set audit, base `e55040de` (local main) to HEAD `9bd68fbd`, 53 commits.** Commands and results:
+- `git diff --name-only e55040de HEAD | grep -E '^(\.fallow-baselines/|\.cosmonauts/|biome\.json|tsconfig|vitest\.config|package\.json|bun\.lock|\.gitignore|scripts/)'` → none.
+- `bun run check:suppressions -- --base main` → `suppression check passed`.
+- `git diff e55040de HEAD -- tests/ | grep -E '^\+.*\.(skip|only|todo)\('` → none.
+- `git diff e55040de HEAD | grep -E '^\+.*(biome-ignore|@ts-ignore|@ts-expect-error|eslint-disable)'` → none.
+- `git diff e55040de HEAD -- tests/ | awk '/^diff --git/{f=$3} /^-/ && !/^---/ && /expect|toBe|toEqual|toContain|toThrow|toMatch|toHaveLength/{print f": "$0}'` → 16 deleted expectation lines, each verified at its slice against the criterion cited inline in the replacing test: `prompt-template.test.ts` 1 (AC-007, slice 5); `run-one-task.test.ts` 3 (AC-020 ×2 slice 2, AC-015 slice 11); `orchestration-driver-tool.test.ts` 8 (AC-020 ×3 slice 2; AC-018 ×2 slice 11; the `updateStatuses` sequence lines INV-001/D-033 in TASK-803); `project-tools-fallow.test.ts` 4 (AC-009/D-024, slice 7, the pre-declared text-equals-details change); plus `project-tools.test.ts` 1 (`scopes: ["project"]` → AC-008, slice 6). Remaining deletions in `edit.test.ts`, `task-tools.test.ts`, `shell-command-finalizer.test.ts` (1 each), `contradicted-block-retry.test.ts` (5), `orchestration-driver-detached.test.ts` (4), `drive-scheduler-backend.test.ts` (1) are import or call-site reshapes with no expectation removed. `tests/pi-contract/` untouched (D-032). Result: no suppression, threshold, baseline, ignore-pattern, or configuration change; every changed expectation cites its criterion.
