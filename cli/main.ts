@@ -56,6 +56,7 @@ import {
 	isCosmonautsFrameworkRepo,
 } from "../lib/packages/dev-bundled.ts";
 import type { CosmonautsRuntime } from "../lib/runtime.ts";
+import { createAnalysisProgram } from "./analysis/subcommand.ts";
 import { createArchitectureProgram } from "./architecture/subcommand.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
@@ -792,9 +793,11 @@ if (runInvocation) {
 	subcommand === "session" ||
 	subcommand === "architecture" ||
 	subcommand === "arch" ||
+	subcommand === "analysis" ||
 	subcommand === "memory"
 ) {
 	const programs: Record<string, () => Command> = {
+		analysis: createAnalysisProgram,
 		architecture: createArchitectureProgram,
 		arch: createArchitectureProgram,
 		memory: createMemoryProgram,
