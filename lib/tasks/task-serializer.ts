@@ -69,6 +69,22 @@ function serializeAcceptanceCriteria(criteria: AcceptanceCriterion[]): string {
 	return `${AC_BEGIN_MARKER}\n${lines.join("\n")}\n${AC_END_MARKER}`;
 }
 
+/** Serialized task text with the offsets where the serializer placed the notes. */
+export interface SerializedTask {
+	text: string;
+	/**
+	 * The notes section, from its heading to where the raw content begins (or
+	 * the end of the text), including the separator before the raw content.
+	 */
+	notes?: { start: number; end: number };
+}
+
+interface BodyLayout {
+	body: string;
+	notesStart?: number;
+	rawStart?: number;
+}
+
 /**
  * Build the markdown body content from Task sections
  *
@@ -83,8 +99,11 @@ function serializeAcceptanceCriteria(criteria: AcceptanceCriterion[]): string {
  * captures content until the next ## header or end of content. AC markers don't
  * have headers, so they must come before Implementation Notes to parse correctly.
  */
-function buildBodyContent(task: Task): string {
+function buildBodyContent(task: Task): BodyLayout {
 	const sections: string[] = [];
+	const layout: Omit<BodyLayout, "body"> = {};
+	const offset = () =>
+		sections.reduce((total, section) => total + section.length + 2, 0);
 
 	// Description section
 	if (task.description) {
@@ -104,15 +123,17 @@ function buildBodyContent(task: Task): string {
 
 	// Implementation Notes section (last ## section to avoid capturing AC markers)
 	if (task.implementationNotes) {
+		layout.notesStart = offset();
 		sections.push(`## Implementation Notes\n\n${task.implementationNotes}`);
 	}
 
 	// Raw content at the end (if any)
 	if (task.rawContent) {
+		layout.rawStart = offset();
 		sections.push(task.rawContent);
 	}
 
-	return sections.join("\n\n");
+	return { body: sections.join("\n\n"), ...layout };
 }
 
 // ============================================================================
@@ -150,14 +171,30 @@ function buildBodyContent(task: Task): string {
  * ```
  */
 export function serializeTask(task: Task): string {
-	const frontmatter = buildFrontmatter(task);
-	const bodyContent = buildBodyContent(task);
+	return serializeTaskLayout(task).text;
+}
 
-	// Use gray-matter to stringify with frontmatter
-	const serialized = matter.stringify(bodyContent, frontmatter);
+/** Serialize a task and report where the notes section sits in the text. */
+export function serializeTaskLayout(task: Task): SerializedTask {
+	const frontmatter = buildFrontmatter(task);
+	const { body, notesStart, rawStart } = buildBodyContent(task);
+
+	// Pass a file object so gray-matter appends the body verbatim, never parsing it
+	const serialized = matter.stringify({ content: body }, frontmatter);
 
 	// Ensure there's a blank line between frontmatter and content
 	// gray-matter.stringify adds content right after the closing ---
 	// We want: ---\n\n## Description (with blank line)
-	return serialized.replace(/^(---\n[\s\S]*?\n---)\n(?!\n)/, "$1\n\n");
+	const text = serialized.replace(/^(---\n[\s\S]*?\n---)\n(?!\n)/, "$1\n\n");
+	if (notesStart === undefined) return { text };
+
+	// gray-matter ends the text with the body plus a newline if it lacked one
+	const bodyStart = text.length - body.length - (body.endsWith("\n") ? 0 : 1);
+	return {
+		text,
+		notes: {
+			start: bodyStart + notesStart,
+			end: rawStart === undefined ? text.length : bodyStart + rawStart,
+		},
+	};
 }

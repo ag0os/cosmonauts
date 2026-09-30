@@ -446,6 +446,13 @@ test.each([
 	"git checkout -f",
 	"git checkout --force",
 	"git -C . checkout -f",
+	// TASK-812 Q3 / review R2-3 / INV-006: abbreviated long options too.
+	"git checkout --forc",
+	"git checkout --for",
+	"git checkout --fo",
+	"git checkout --f",
+	"git switch --disc other",
+	"git switch --discard other",
 ])("refuses destructive probe test command %s without changing the source", async (testCommand) => {
 	expect(await probe({ testCommand })).toMatchObject({ refused: true });
 	expect(await readFile(source, "utf8")).toBe(original);

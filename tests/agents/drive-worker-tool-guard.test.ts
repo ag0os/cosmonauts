@@ -68,6 +68,19 @@ describe("destructive Git command classifier", () => {
 	])("refuses forced or path checkout %s", (command) => {
 		expect(isDestructiveGitCommand(command)).toBe(true);
 	});
+	// TASK-812 Q3 / review R2-3 / INV-006 / B-009: Git accepts any unambiguous
+	// prefix of a long option, so an abbreviation discards changes too.
+	test.each([
+		"git checkout --forc",
+		"git checkout --for",
+		"git checkout --fo",
+		// Git 2.53 accepts a one-character abbreviation when it is unique.
+		"git checkout --f",
+		"git switch --disc other",
+		"git switch --discard other",
+	])("refuses abbreviated destructive option %s", (command) => {
+		expect(isDestructiveGitCommand(command)).toBe(true);
+	});
 	test.each([
 		"git status --short",
 		"git stash list",

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { appendDriveAttemptRecord } from "../../lib/driver/runtime-helpers.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { sectionHeadings } from "../../lib/tasks/task-note-editor.ts";
 import { parseTask } from "../../lib/tasks/task-parser.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -61,5 +62,30 @@ describe("appendDriveAttemptRecord", () => {
 		).toHaveLength(2);
 		expect(task.rawContent).toBeUndefined();
 		expect(content).not.toMatch(/record(?:\n```)?## /);
+	});
+
+	it("records a blocked reason verbatim after worker notes that end inside an open fence", async () => {
+		// TASK-812 Q2 / review R2-2 / AC-004 / INV-002
+		const fixture = await taskWithNotes();
+		await fixture.taskManager.updateTask(fixture.taskId, {
+			appendImplementationNotes: "see:\n```ts\nfoo()",
+		});
+		const reason =
+			"Blocked because:\n```\n## Implementation Notes\nreason text";
+		await appendDriveAttemptRecord({
+			taskManager: fixture.taskManager,
+			taskId: fixture.taskId,
+			runId: "run-812",
+			outcome: "blocked",
+			attemptNumber: 1,
+			body: reason,
+		});
+		const content = await readFile(fixture.file, "utf8");
+		const notesHeadings = sectionHeadings(content).filter(
+			(heading) =>
+				heading.title.trim().toLowerCase() === "implementation notes",
+		);
+		expect(notesHeadings).toHaveLength(1);
+		expect(parseTask(content).implementationNotes).toContain(reason);
 	});
 });

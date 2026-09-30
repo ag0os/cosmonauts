@@ -1,3 +1,5 @@
+import type { SerializedTask } from "./task-serializer.ts";
+
 const HEADING = "## Implementation Notes";
 
 interface SectionSpan {
@@ -30,6 +32,26 @@ function closesFence(text: string, fence: string): boolean {
 	return (
 		close !== undefined && close[0] === fence[0] && close.length >= fence.length
 	);
+}
+
+/** The fence still open after `text`, whose first line starts outside any fence. */
+function trailingOpenFence(text: string): string | undefined {
+	let fence: string | undefined;
+	for (const line of text.matchAll(LINE)) {
+		if (!line[0]) break;
+		const content = line[0].replace(/(?:\r\n|\n|\r)$/, "");
+		if (!fence) fence = openedFence(content);
+		else if (closesFence(content, fence)) fence = undefined;
+	}
+	return fence;
+}
+
+/** Terminate a fence the notes left open, so nothing after them is swallowed. */
+function closeOpenFence(section: string, lineEnding: string): string {
+	const fence = trailingOpenFence(section);
+	if (!fence) return section;
+	const separator = /(?:\r\n|\n|\r)$/.test(section) ? "" : lineEnding;
+	return `${section}${separator}${fence}${lineEnding}`;
 }
 
 function isNotesTitle(title: string): boolean {
@@ -116,16 +138,20 @@ function endWithBlankLine(text: string, lineEnding: string): string {
 	);
 }
 
-/** Preserve the original section, including its boundary whitespace, across serialization. */
+/**
+ * Preserve the original section, including its boundary whitespace, across
+ * serialization. The section replaces the span the serializer reports; when
+ * anything follows it, an open fence is closed and a blank line ends it.
+ */
 export function preserveTaskNotes(
 	original: string,
-	serialized: string,
+	serialized: SerializedTask,
 	append?: string,
 ): string {
 	if (append !== undefined && !append.trim())
 		throw new Error("Cannot append empty implementation notes");
+	const { text, notes: canonical } = serialized;
 	const old = taskNoteSection(original);
-	const canonical = taskNoteSection(serialized);
 	const lineEnding = old
 		? (original.slice(old.start, old.end).match(/\r\n|\n|\r/)?.[0] ??
 			original.match(/\r\n|\n|\r/)?.[0] ??
@@ -134,18 +160,16 @@ export function preserveTaskNotes(
 	let section = old ? original.slice(old.start, old.end) : "";
 	if (append !== undefined) {
 		const block = append.replace(/\r\n|\r|\n/g, lineEnding);
-		if (!containsCompleteBlock(section, block, lineEnding)) {
-			section = endWithBlankLine(section || HEADING, lineEnding) + block;
-			if (canonical && canonical.end < serialized.length)
-				section = endWithBlankLine(section, lineEnding);
-		}
+		if (!containsCompleteBlock(section, block, lineEnding))
+			section =
+				endWithBlankLine(
+					closeOpenFence(section || HEADING, lineEnding),
+					lineEnding,
+				) + block;
 	}
-	if (canonical)
-		return (
-			serialized.slice(0, canonical.start) +
-			section +
-			serialized.slice(canonical.end)
-		);
-	if (!section) return serialized;
-	return `${serialized.trimEnd()}\n\n${section}`;
+	if (!canonical) return section ? `${text.trimEnd()}\n\n${section}` : text;
+	const rest = text.slice(canonical.end);
+	if (rest)
+		section = endWithBlankLine(closeOpenFence(section, lineEnding), lineEnding);
+	return text.slice(0, canonical.start) + section + rest;
 }

@@ -43,9 +43,25 @@ function shellTokens(command: string): string[] {
 	return tokens;
 }
 
-/** `-f`, `--force`, or a short-option cluster such as `-qf`: all discard tracked changes. */
+/**
+ * Git accepts any unambiguous prefix of a long option, even one character after
+ * `--`. Every prefix counts here: an ambiguous one fails in Git anyway.
+ */
+function spellsLongOption(arg: string, option: string): boolean {
+	return arg.length > 2 && option.startsWith(arg);
+}
+
+/** `-f`, `--force` or its prefix, or a short-option cluster such as `-qf`: all discard tracked changes. */
 function forcesCheckout(arg: string): boolean {
-	return arg === "--force" || /^-[a-zA-Z]*f/.test(arg);
+	return spellsLongOption(arg, "--force") || /^-[a-zA-Z]*f/.test(arg);
+}
+
+function discardsOnSwitch(arg: string): boolean {
+	return (
+		arg === "-f" ||
+		spellsLongOption(arg, "--force") ||
+		spellsLongOption(arg, "--discard-changes")
+	);
 }
 
 function gitOperation(words: string[]): boolean {
@@ -131,10 +147,7 @@ function gitOperation(words: string[]): boolean {
 			args.includes("--") ||
 			args.some((arg) => !arg.startsWith("-") || forcesCheckout(arg))
 		);
-	if (verb === "switch")
-		return args.some((arg) =>
-			["--discard-changes", "-f", "--force"].includes(arg),
-		);
+	if (verb === "switch") return args.some(discardsOnSwitch);
 	if (verb === "stash") return !["list", "show"].includes(args[0] ?? "");
 	if (verb === "apply")
 		return args.includes("-R") || args.includes("--reverse");

@@ -32,7 +32,7 @@ import {
 } from "./lock.ts";
 import { hasTaskNoteBlock, preserveTaskNotes } from "./task-note-editor.ts";
 import { parseTask } from "./task-parser.ts";
-import { serializeTask } from "./task-serializer.ts";
+import { serializeTask, serializeTaskLayout } from "./task-serializer.ts";
 import type {
 	AcceptanceCriterion,
 	ForgeTasksConfig,
@@ -290,7 +290,7 @@ export class TaskManager {
 		};
 
 		// Serialize and save
-		const serialized = serializeTask(updatedTask);
+		const serialized = serializeTaskLayout(updatedTask);
 		const content =
 			input.implementationNotes === undefined
 				? preserveTaskNotes(
@@ -298,7 +298,7 @@ export class TaskManager {
 						serialized,
 						input.appendImplementationNotes,
 					)
-				: serialized;
+				: serialized.text;
 		updatedTask.implementationNotes = parseTask(content).implementationNotes;
 		const newFilename = getTaskFilename(updatedTask);
 

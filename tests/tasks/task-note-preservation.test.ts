@@ -22,6 +22,65 @@ async function fixture(notes = "## Implementation Notes\r\n\r\nOld  \r\n\r\n") {
 	return { manager, task, file, notes };
 }
 
+const FRONTMATTER = (status: string, updatedAt: string) =>
+	`---\nid: TASK-001\ntitle: Structural\nstatus: ${status}\nlabels: []\ndependencies: []\ncreatedAt: '2026-01-01T00:00:00.000Z'\nupdatedAt: '${updatedAt}'\n---\n\n`;
+
+/** One status update through the real TaskManager on an exact file body. */
+async function statusUpdate(body: string) {
+	const manager = new TaskManager(tmp.path);
+	const task = await manager.createTask({ title: "Structural" });
+	const file = join(
+		tmp.path,
+		"missions",
+		"tasks",
+		`${task.id} - Structural.md`,
+	);
+	await writeFile(
+		file,
+		FRONTMATTER("To Do", "2026-01-01T00:00:00.000Z") + body,
+	);
+	const before = parseTask(await readFile(file, "utf8"));
+	await manager.updateTask(task.id, { status: "In Progress" });
+	const updated = await readFile(file, "utf8");
+	const updatedAt = /updatedAt: '([^']+)'/.exec(updated)?.[1] ?? "";
+	return { before, updated, updatedAt, after: parseTask(updated) };
+}
+
+// TASK-812 Q1 / review R2-1 / INV-001 / B-003: the notes span in the serialized
+// file ends where the serializer placed the raw content, never where a re-scan
+// finds the next heading.
+describe("structural notes boundary on a status update", () => {
+	it("keeps untitled preamble text before the first heading", async () => {
+		const { updated, updatedAt } = await statusUpdate(
+			"PREAMBLE-KEEP\n\n## Description\n\nDesc\n\n## Implementation Notes\n\nplain note\n",
+		);
+		// The serializer places raw content after the notes (pre-existing layout).
+		expect(updated).toBe(
+			`${FRONTMATTER("In Progress", updatedAt)}## Description\n\nDesc\n\n## Implementation Notes\n\nplain note\n\nPREAMBLE-KEEP\n`,
+		);
+	});
+	it("keeps an unrecognized section when the worker notes end inside an open fence", async () => {
+		const { before, updated, updatedAt, after } = await statusUpdate(
+			"## Description\n\nDesc\n\n## Context\n\nCONTEXT-KEEP\n\n## Implementation Notes\n\nworker note\n```ts\nconst x = 1;\n",
+		);
+		expect(updated).toBe(
+			`${FRONTMATTER("In Progress", updatedAt)}## Description\n\nDesc\n\n## Implementation Notes\n\nworker note\n\`\`\`ts\nconst x = 1;\n\`\`\`\n\n## Context\n\nCONTEXT-KEEP\n`,
+		);
+		expect(after.rawContent).toBe(before.rawContent);
+	});
+	it("keeps an unrecognized section when a Drive record left a tilde fence open", async () => {
+		const record =
+			"### Drive — outcome failure — attempt unknown — run r1\n\nFinalization failed (local attempt unavailable): output\n~~~\npartial\n";
+		const { before, updated, updatedAt, after } = await statusUpdate(
+			`## Description\n\nDesc\n\n## Context\n\nCONTEXT-KEEP\n\n## Implementation Notes\n\nworker note\n\n${record}`,
+		);
+		expect(updated).toBe(
+			`${FRONTMATTER("In Progress", updatedAt)}## Description\n\nDesc\n\n## Implementation Notes\n\nworker note\n\n${record}~~~\n\n## Context\n\nCONTEXT-KEEP\n`,
+		);
+		expect(after.rawContent).toBe(before.rawContent);
+	});
+});
+
 describe("source-preserving task edits", () => {
 	it("preserves a three-space-indented notes heading read by the parser on a status update", async () => {
 		const notes = "   ## Implementation Notes  \r\nKEEP THIS  \r\n";
