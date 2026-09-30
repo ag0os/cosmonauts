@@ -8,7 +8,7 @@ recordedAt: '2026-09-29'
 
 # Drive improvement observations — driver-hardening
 
-Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two live-acceptance runs), the 14 task notes, and the coordinator's implementation log. Bounded to eight rows in the first pass; four rows (9-12) added by the review-phase coordinator after codex rounds 3-4 and coordinator finding C-001; the plan's own defects (already fixed on the branch) are excluded unless they teach something about Drive or the process.
+Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two live-acceptance runs), the 14 task notes, and the coordinator's implementation log. Bounded to eight rows in the first pass; four rows (9-12) added by the review-phase coordinator after codex rounds 3-4 and coordinator finding C-001, four more (13-16) after Claude review 1; the plan's own defects (already fixed on the branch) are excluded unless they teach something about Drive or the process.
 
 | Observed problem | What happened in this run | Suggested improvement | Why it helps |
 |---|---|---|---|
@@ -25,6 +25,10 @@ Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two l
 | A worktree snapshot is a full tree, but its containment check needs only the dirty delta. | D-034/D-035 compared every snapshot path against the final tree; every real Done task retained its ref (C-001), and three review rounds plus two fixtures missed it because no fixture had a worker edit a tracked file after a dirty snapshot. | Drive-path fixtures include a "worker edits a tracked file after a dirty snapshot" case as a standing shape (extends row 3). | The retention signal is only meaningful when ordinary success clears refs. |
 | Git text normalization inside the snapshot (codex round 3, finding 1, rejected as a D-020 residual). | Not observed in this repo (no `.gitattributes`, no `core.autocrlf`). | If a project with autocrlf adopts Drive, document in the README that a snapshot holds the bytes a commit would hold. | Sets expectations without replacing the ratified mechanism. |
 | A `run_status` polling loop on an aborted run never exits. | A cosmo host from TASK-803's aborted `run-18d6659d` polled for 1 h 40 min until killed by hand at handoff. | `run_status` returns terminal for `run_aborted` and the cosmo print-mode prompt stops on it. | Stale hosts hold the driver lock's pid namespace and burn tokens. |
+| The shared provider runner (`domains/shared/extensions/project-tools/process-runner.ts`) never settles when a descendant escapes the process group holding stdio (Claude review 1, F3, pre-existing half). | Reproduced by the reviewer with a `setsid` child; the probe-local runner inherited the same gap (fixed in TASK-811 P3). | Bounded settle deadline after termination, as `runCommand` has since TASK-808 L2. | Every analysis capability call can hang a Pi session today. |
+| The containment check compares symlinks and group-only execute bits through `hash-object`/`mode & 0o111`, which never equal the tree entry (Claude review 1, F5, P3). | Conservative over-retention of refs for symlinks under worktree-compared paths. | `readlink` + `hash-object --stdin`; Git's owner-x rule; respect `core.fileMode`. | Retention stays a signal only when ordinary success clears refs. |
+| The probe does not detect a test command that moves HEAD (Claude review 1, F6, P3). | A command that commits instrumented bytes is reported `restored: true` although HEAD holds probe code. | Record `rev-parse HEAD` before and after; report movement as a side effect. | Closes the last visible way probe statements can reach history. |
+| The probe journal lives under `os.tmpdir()` by plan flow step 4 (Claude review 1, F7, P3, design residual). | A temp-directory purge after a host crash removes the only copy of git-dirty originals and the journal that blocks commit. | Human decision: journal under the project (e.g. `.cosmonauts/probe/`, ignored) or keep as ruled. | Defeats "refuse while a journal is outstanding" only after a crash plus a purge. |
 
 ## Ranked follow-ups
 
@@ -40,9 +44,13 @@ Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two l
 10. Standing fixture shape: worker edits a tracked file after a dirty snapshot (row 10).
 11. `run_status` terminal on `run_aborted` (row 12).
 12. README note on text normalization for autocrlf projects (row 11).
+13. Shared provider runner settle deadline (row 13) — a Pi-session hang today.
+14. Probe HEAD-movement detection (row 15).
+15. Symlink/mode containment identity (row 14).
+16. Journal location (row 16) — human decision.
 
 ## Non-goals
 
-- Re-litigating any decision D-001..D-036 or the ratified Intent; the plan's own defects are fixed on the branch and recorded in its Evidence table.
+- Re-litigating any decision D-001..D-038 or the ratified Intent; the plan's own defects are fixed on the branch and recorded in its Evidence table.
 - Changing `lib/durable-runtime/`, `drive-envelope`, or `execution-liveness` scope.
 - The observation-4 Biome behavior (Q-003) and the `fallow-provider.ts` warn verdict.

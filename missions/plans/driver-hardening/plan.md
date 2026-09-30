@@ -271,6 +271,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Decided by: coordinator, amend-on-record, 2026-09-30
   - Supersedes: nothing; narrows the mechanism TASK-810 N2 may use.
 
+- **D-038 - Remediation may run through a non-Drive worker while the Drive backend's provider is unavailable** *(Added 2026-09-30 by the review-phase coordinator on Shepherd's instruction)*
+  - Decision: while Codex (the provider of `bundled/coding/agents/worker.ts` and of the QM reviewers) is out of usage (until 2026-10-05), a remediation slice may be implemented by a Claude subagent worker in the worktree under the same rules a Drive worker follows (failing test first per finding, notes appended, no forbidden paths), with the coordinator running the freeze check and the full gate set with exit codes and committing with explicit paths. The task record names the mechanism. Independent review of such a slice runs on a Claude reviewer (round 2 of the Claude channel).
+  - Alternatives: wait for the provider (blocks the plan five days); switch the Drive worker model (a config change to clear a finding, forbidden by the brief).
+  - Why: the plan's guarantees come from the criteria, the red-first evidence, the gates and the independent review, not from which harness typed the code; Drive's own process guarantees (snapshot, guard, records) are the plan's subject and are already verified live.
+  - Decided by: coordinator, amend-on-record, 2026-09-30 (Shepherd-instructed)
+  - Supersedes: nothing; a bounded exception for TASK-811 and any further slice before the provider returns.
+
 ## Behaviors
 
 ### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts
