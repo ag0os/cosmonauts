@@ -182,7 +182,23 @@ async function collectSourceFileSnapshots(
 	config: ArchitectureMapConfig,
 	observer?: ArchitectureMapScanObserver,
 ): Promise<readonly SourceFileSnapshot[]> {
-	const paths = await collectSourceFilePaths(projectRoot, config);
+	return collectFileSnapshots({
+		projectRoot,
+		roots: config.sourceRoots,
+		exclude: config.exclude,
+		observer,
+	});
+}
+
+/** Snapshots every .ts/.tsx file under `roots`, sorted by repo-relative path. */
+export async function collectFileSnapshots(options: {
+	readonly projectRoot: string;
+	readonly roots: readonly string[];
+	readonly exclude: readonly string[];
+	readonly observer?: ArchitectureMapScanObserver;
+}): Promise<readonly SourceFileSnapshot[]> {
+	const { projectRoot, observer } = options;
+	const paths = await collectFilePaths(options);
 	const files: SourceFileSnapshot[] = [];
 	for (const path of paths) {
 		const absolute = join(projectRoot, path);
@@ -207,7 +223,11 @@ async function collectSourceFileStats(
 	config: ArchitectureMapConfig,
 	observer?: ArchitectureMapScanObserver,
 ): Promise<readonly StatFingerprintFile[]> {
-	const paths = await collectSourceFilePaths(projectRoot, config);
+	const paths = await collectFilePaths({
+		projectRoot,
+		roots: config.sourceRoots,
+		exclude: config.exclude,
+	});
 	const files: StatFingerprintFile[] = [];
 	for (const path of paths) {
 		const absolute = join(projectRoot, path);
@@ -222,17 +242,17 @@ async function collectSourceFileStats(
 	return files;
 }
 
-async function collectSourceFilePaths(
-	projectRoot: string,
-	config: ArchitectureMapConfig,
-): Promise<readonly string[]> {
+async function collectFilePaths(options: {
+	readonly projectRoot: string;
+	readonly roots: readonly string[];
+	readonly exclude: readonly string[];
+}): Promise<readonly string[]> {
 	const paths = new Set<string>();
-	for (const sourceRoot of config.sourceRoots) {
-		const absoluteRoot = resolve(projectRoot, sourceRoot);
+	for (const root of options.roots) {
 		await collectSourceFiles({
-			projectRoot,
-			root: absoluteRoot,
-			exclude: config.exclude,
+			projectRoot: options.projectRoot,
+			root: resolve(options.projectRoot, root),
+			exclude: options.exclude,
 			paths,
 		});
 	}

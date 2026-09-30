@@ -125,7 +125,7 @@ async function analyzeTypeScriptSources(
 	return { modules: modules.sort(compareByResource), diagnostics: [] };
 }
 
-function loadCompilerOptions(projectRoot: string): ts.CompilerOptions {
+export function loadCompilerOptions(projectRoot: string): ts.CompilerOptions {
 	const configPath = ts.findConfigFile(projectRoot, ts.sys.fileExists);
 	const defaults = defaultCompilerOptions(projectRoot);
 	if (!configPath) return defaults;
@@ -295,7 +295,9 @@ function selectPublicDeclaration(
 	);
 }
 
-function publicExportKind(declaration: ts.Declaration): PublicExport["kind"] {
+export function publicExportKind(
+	declaration: ts.Declaration,
+): PublicExport["kind"] {
 	if (ts.isFunctionDeclaration(declaration)) return "function";
 	if (ts.isClassDeclaration(declaration)) return "class";
 	if (ts.isInterfaceDeclaration(declaration)) return "interface";

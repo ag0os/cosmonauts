@@ -2,6 +2,8 @@ import { access, readdir, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import matter from "gray-matter";
 import { resolveArchitectureMapConfig } from "./config.ts";
+import { type BuildFileGraphOptions, buildFileGraph } from "./file-graph.ts";
+import { readFileGraphText, renderFileGraph } from "./file-graph-store.ts";
 import {
 	computeArchitectureMapStatFingerprint,
 	createProjectSnapshot,
@@ -15,6 +17,7 @@ import {
 import {
 	ARCHITECTURE_MAP_GENERATOR_VERSION,
 	ARCHITECTURE_MAP_OUTPUT_DIR,
+	FILE_GRAPH_PATH,
 	type GenerateArchitectureMapOptions,
 	type GenerateArchitectureMapResult,
 	type ModuleDependent,
@@ -95,9 +98,18 @@ export async function generateArchitectureMap(
 			priorRecords,
 			now: new Date().toISOString(),
 		});
+		const fileGraphFiles = options.fileGraph
+			? [
+					await renderFileGraphBundleFile({
+						projectRoot: options.projectRoot,
+						config,
+						snapshot,
+					}),
+				]
+			: await existingFileGraphBundleFile(options.projectRoot);
 		const stored = await storeArchitectureMapBundle({
 			projectRoot: options.projectRoot,
-			files: bundle.files,
+			files: [...bundle.files, ...fileGraphFiles],
 		});
 
 		if (stored.kind === "unchanged") return { kind: "unchanged" };
@@ -116,6 +128,20 @@ export async function generateArchitectureMap(
 				hadPreviousMap && (await hasArchitectureMap(options.projectRoot)),
 		};
 	}
+}
+
+async function renderFileGraphBundleFile(
+	options: BuildFileGraphOptions,
+): Promise<ArchitectureMapBundleFile> {
+	const graph = await buildFileGraph(options);
+	return { path: FILE_GRAPH_PATH, content: renderFileGraph(graph) };
+}
+
+async function existingFileGraphBundleFile(
+	projectRoot: string,
+): Promise<readonly ArchitectureMapBundleFile[]> {
+	const content = await readFileGraphText({ projectRoot });
+	return content === undefined ? [] : [{ path: FILE_GRAPH_PATH, content }];
 }
 
 async function buildModuleRecords(options: {

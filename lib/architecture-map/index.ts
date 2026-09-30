@@ -7,6 +7,18 @@ export {
 	loadArchitectureMapConfig,
 	resolveArchitectureMapConfig,
 } from "./config.ts";
+export type { BuildFileGraphOptions } from "./file-graph.ts";
+export {
+	buildFileGraph,
+	DEFAULT_FILE_GRAPH_TEST_ROOTS,
+} from "./file-graph.ts";
+export {
+	checkFileGraphFreshness,
+	dependenciesOf,
+	dependentsOf,
+	loadFileGraph,
+	renderFileGraph,
+} from "./file-graph-store.ts";
 export {
 	checkArchitectureMapFreshness,
 	checkArchitectureMapStatFreshness,
@@ -33,6 +45,12 @@ export type {
 	ArchitectureMapFreshness,
 	ArchitectureMapIndex,
 	ArchitectureMapScanObserver,
+	FileGraph,
+	FileGraphEdge,
+	FileGraphExport,
+	FileGraphExportKind,
+	FileGraphNode,
+	FileGraphNodeKind,
 	GenerateArchitectureMapOptions,
 	GenerateArchitectureMapResult,
 	GeneratedNarrative,
@@ -55,6 +73,8 @@ export type {
 export {
 	ARCHITECTURE_MAP_GENERATOR_VERSION,
 	ARCHITECTURE_MAP_OUTPUT_DIR,
+	FILE_GRAPH_PATH,
+	FILE_GRAPH_SCHEMA_VERSION,
 	OKF_RECORD_TYPES,
 	OKF_REQUIRED_FRONTMATTER_KEYS,
 } from "./types.ts";

@@ -179,6 +179,8 @@ export interface GenerateArchitectureMapOptions {
 	/** Absent means --no-narrative semantics. */
 	readonly narrativeProvider?: NarrativeProvider;
 	readonly configOverrides?: Partial<ArchitectureMapConfig>;
+	/** Regenerate the file-level graph (`graph.json`); when off, an existing one is kept as is. */
+	readonly fileGraph?: boolean;
 }
 
 export type ArchitectureMapFreshness =
@@ -202,4 +204,47 @@ export interface StatFingerprintFile {
 	readonly path: string;
 	readonly size: number;
 	readonly mtimeMs: number;
+}
+
+/** Bundle path, relative to memory/architecture, of the file-level graph. */
+export const FILE_GRAPH_PATH = "graph.json" as const;
+
+export const FILE_GRAPH_SCHEMA_VERSION = 1 as const;
+
+export type FileGraphNodeKind = "source" | "test";
+
+export type FileGraphExportKind = Exclude<PublicExport["kind"], "other">;
+
+export interface FileGraphExport {
+	readonly name: string;
+	readonly kind: FileGraphExportKind;
+	/** One line; interface, type, class, and enum bodies are elided. */
+	readonly signature: string;
+}
+
+export interface FileGraphNode {
+	/** Repo-relative posix path. */
+	readonly path: string;
+	readonly kind: FileGraphNodeKind;
+	/** Declarations this file itself exports; re-exports are edges instead. */
+	readonly exports: readonly FileGraphExport[];
+}
+
+export interface FileGraphEdge {
+	readonly from: string;
+	readonly to: string;
+	/** Imported names: named specifiers count one each; default, namespace, star, and side-effect imports count one. */
+	readonly weight: number;
+	/** True when every import from `from` to `to` is type-only. */
+	readonly typeOnly: boolean;
+}
+
+export interface FileGraph {
+	readonly schemaVersion: typeof FILE_GRAPH_SCHEMA_VERSION;
+	/** The same snapshot hash index.md records; covers config and source roots. */
+	readonly projectHash: string;
+	/** sha256 over projectHash plus every test-root file; the graph's freshness key. */
+	readonly graphHash: string;
+	readonly nodes: readonly FileGraphNode[];
+	readonly edges: readonly FileGraphEdge[];
 }
