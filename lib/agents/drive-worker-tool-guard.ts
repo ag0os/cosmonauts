@@ -43,6 +43,11 @@ function shellTokens(command: string): string[] {
 	return tokens;
 }
 
+/** `-f`, `--force`, or a short-option cluster such as `-qf`: all discard tracked changes. */
+function forcesCheckout(arg: string): boolean {
+	return arg === "--force" || /^-[a-zA-Z]*f/.test(arg);
+}
+
 function gitOperation(words: string[]): boolean {
 	let index = 0;
 	while (index < words.length) {
@@ -122,7 +127,10 @@ function gitOperation(words: string[]): boolean {
 	const verb = words[index];
 	const args = words.slice(index + 1);
 	if (verb === "checkout")
-		return args.includes("--") || args.some((arg) => !arg.startsWith("-"));
+		return (
+			args.includes("--") ||
+			args.some((arg) => !arg.startsWith("-") || forcesCheckout(arg))
+		);
 	if (verb === "switch")
 		return args.some((arg) =>
 			["--discard-changes", "-f", "--force"].includes(arg),

@@ -21,7 +21,10 @@ import {
 	probeJournalDirectory,
 	probeLockPath,
 } from "../../../../lib/agents/drive-worker-tool-guard.ts";
-import { withEntityFileLock } from "../../../../lib/entity-file-lock.ts";
+import {
+	EntityFileLockTimeoutError,
+	withEntityFileLock,
+} from "../../../../lib/entity-file-lock.ts";
 import type { ProbeCommandOutcome } from "./command-runner.ts";
 import { runProbeCommand } from "./command-runner.ts";
 
@@ -430,6 +433,24 @@ function exitCode(outcome: ProbeCommandOutcome): number | null {
 	return outcome.kind === "code-exit" ? outcome.code : null;
 }
 
+const PROBE_LOCK_WAIT_MS = 2_000;
+
+async function withProbeLock(
+	root: string,
+	action: () => Promise<Result>,
+): Promise<Result> {
+	try {
+		return await withEntityFileLock(probeLockPath(root), action, {
+			waitTimeoutMs: PROBE_LOCK_WAIT_MS,
+		});
+	} catch (error) {
+		if (!(error instanceof EntityFileLockTimeoutError)) throw error;
+		return refusal(
+			`probe lock busy: another execution_probe run held ${error.lockPath} for ${PROBE_LOCK_WAIT_MS}ms; retry after it finishes`,
+		);
+	}
+}
+
 async function runProbe(
 	root: string,
 	input: Input,
@@ -439,7 +460,7 @@ async function runProbe(
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	if (((await lstat(directory)).mode & 0o777) !== 0o700)
 		return refusal("probe journal directory must be mode 0700");
-	return withEntityFileLock(probeLockPath(root), async () => {
+	return withProbeLock(root, async () => {
 		const outstanding = outstandingProbeJournal(root);
 		if (outstanding) {
 			const failure = await recover(root, outstanding);

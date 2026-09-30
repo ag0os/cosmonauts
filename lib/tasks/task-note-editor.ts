@@ -6,8 +6,64 @@ interface SectionSpan {
 	end: number;
 }
 
+interface SectionHeading {
+	start: number;
+	contentStart: number;
+	title: string;
+}
+
 // Markdown ATX headings may be indented by at most three spaces.
-const SECTION_HEADING = /^ {0,3}##[ \t]+([^\r\n]*?)[ \t]*(?:\r\n|\n|\r|$)/gim;
+const SECTION_HEADING = /^ {0,3}##[ \t]+(.*?)[ \t]*$/;
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+const LINE = /[^\r\n]*(?:\r\n|\n|\r|$)/g;
+
+function openedFence(text: string): string | undefined {
+	const match = FENCE_OPEN.exec(text);
+	if (!match?.[1]) return undefined;
+	if (match[1].startsWith("`") && match[2]?.includes("`")) return undefined;
+	return match[1];
+}
+
+function closesFence(text: string, fence: string): boolean {
+	const close = FENCE_CLOSE.exec(text)?.[1];
+	return (
+		close !== undefined && close[0] === fence[0] && close.length >= fence.length
+	);
+}
+
+function isNotesTitle(title: string): boolean {
+	return title.trim().toLowerCase() === "implementation notes";
+}
+
+/**
+ * `## ` headings. From the notes heading on, where Drive records worker text,
+ * a heading within a fenced code block is inert; earlier sections keep the
+ * plain line grammar so existing task files parse as before.
+ */
+export function sectionHeadings(source: string): SectionHeading[] {
+	const headings: SectionHeading[] = [];
+	let inNotes = false;
+	let fence: string | undefined;
+	for (const line of source.matchAll(LINE)) {
+		if (!line[0] || line.index === undefined) break;
+		const text = line[0].replace(/(?:\r\n|\n|\r)$/, "");
+		if (fence) {
+			if (closesFence(text, fence)) fence = undefined;
+			continue;
+		}
+		if (inNotes) fence = openedFence(text);
+		const title = fence ? undefined : SECTION_HEADING.exec(text)?.[1];
+		if (title === undefined) continue;
+		headings.push({
+			start: line.index,
+			contentStart: line.index + line[0].length,
+			title,
+		});
+		inNotes ||= isNotesTitle(title);
+	}
+	return headings;
+}
 
 function containsCompleteBlock(
 	section: string,
@@ -26,19 +82,17 @@ function containsCompleteBlock(
 }
 
 export function taskNoteSection(source: string): SectionSpan | undefined {
-	const headings = [...source.matchAll(SECTION_HEADING)];
-	const matches = headings.filter(
-		(match) => match[1]?.trim().toLowerCase() === "implementation notes",
-	);
+	const headings = sectionHeadings(source);
+	const matches = headings.filter((heading) => isNotesTitle(heading.title));
 	if (matches.length > 1)
 		throw new Error("Duplicate Implementation Notes sections");
 	const match = matches[0];
-	if (!match || match.index === undefined) return undefined;
-	const next = headings.find((heading) => (heading.index ?? 0) > match.index);
+	if (!match) return undefined;
+	const next = headings.find((heading) => heading.start > match.start);
 	return {
-		start: match.index,
-		contentStart: match.index + match[0].length,
-		end: next?.index ?? source.length,
+		start: match.start,
+		contentStart: match.contentStart,
+		end: next?.start ?? source.length,
 	};
 }
 
@@ -51,6 +105,14 @@ export function hasTaskNoteBlock(source: string, append: string): boolean {
 		section,
 		append.replace(/\r\n|\r|\n/g, lineEnding),
 		lineEnding,
+	);
+}
+
+function endWithBlankLine(text: string, lineEnding: string): string {
+	if (text.endsWith(`${lineEnding}${lineEnding}`)) return text;
+	return (
+		text +
+		(text.endsWith(lineEnding) ? lineEnding : `${lineEnding}${lineEnding}`)
 	);
 }
 
@@ -73,12 +135,9 @@ export function preserveTaskNotes(
 	if (append !== undefined) {
 		const block = append.replace(/\r\n|\r|\n/g, lineEnding);
 		if (!containsCompleteBlock(section, block, lineEnding)) {
-			if (!section) section = `${HEADING}${lineEnding}${lineEnding}`;
-			else if (!section.endsWith(`${lineEnding}${lineEnding}`))
-				section += section.endsWith(lineEnding)
-					? lineEnding
-					: `${lineEnding}${lineEnding}`;
-			section += block;
+			section = endWithBlankLine(section || HEADING, lineEnding) + block;
+			if (canonical && canonical.end < serialized.length)
+				section = endWithBlankLine(section, lineEnding);
 		}
 	}
 	if (canonical)

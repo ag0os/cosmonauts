@@ -493,8 +493,9 @@ describe("Drive scheduler backend", () => {
 		);
 		const notes = (await fixture.taskManager.getTask("TASK-1"))
 			?.implementationNotes;
+		// TASK-811 P2 / AC-004: the raw blocked report is recorded verbatim inside a fence.
 		expect(notes).toContain(
-			`original  \n\n### Drive — outcome blocked — attempt 1 — run ${spec.runId}\n\n${raw}`,
+			`original  \n\n### Drive — outcome blocked — attempt 1 — run ${spec.runId}\n\n\`\`\`text\n${raw}\n\`\`\``,
 		);
 		expect(notes?.match(/### Drive — outcome blocked/g)).toHaveLength(1);
 		expect(events.map((event) => event.type)).toEqual([

@@ -54,6 +54,20 @@ describe("destructive Git command classifier", () => {
 	])("refuses destructive invocation %s", (command) => {
 		expect(isDestructiveGitCommand(command)).toBe(true);
 	});
+	// TASK-811 P4 / review F4 / B-009 / INV-006: forced checkout discards
+	// tracked changes with or without a target, like switch -f.
+	test.each([
+		"git checkout -f",
+		"git checkout --force",
+		"git checkout -qf",
+		"git -C . checkout -f",
+		"git --no-pager -c core.a=b checkout --force",
+		"sh -c 'git checkout -f'",
+		"git checkout -b topic",
+		"git checkout -- src/a.ts",
+	])("refuses forced or path checkout %s", (command) => {
+		expect(isDestructiveGitCommand(command)).toBe(true);
+	});
 	test.each([
 		"git status --short",
 		"git stash list",

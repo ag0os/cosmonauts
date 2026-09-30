@@ -4,7 +4,7 @@
  */
 
 import matter from "gray-matter";
-import { taskNoteSection } from "./task-note-editor.ts";
+import { sectionHeadings, taskNoteSection } from "./task-note-editor.ts";
 import type {
 	AcceptanceCriterion,
 	Task,
@@ -145,6 +145,33 @@ function stripAcBlocks(content: string): string {
 	return content.replace(acRegex, "").trim();
 }
 
+interface SectionRange {
+	start: number;
+	contentStart: number;
+	end: number;
+}
+
+/**
+ * Sections whose title is one of `titles`, each running to the next heading
+ * the note editor also recognizes, so no text can fall between a section and
+ * the raw content.
+ */
+function sectionRanges(content: string, titles: string[]): SectionRange[] {
+	const headings = sectionHeadings(content);
+	const wanted = new Set(titles.map((title) => title.toLowerCase()));
+	return headings.flatMap((heading, index) =>
+		wanted.has(heading.title.trim().toLowerCase())
+			? [
+					{
+						start: heading.start,
+						contentStart: heading.contentStart,
+						end: headings[index + 1]?.start ?? content.length,
+					},
+				]
+			: [],
+	);
+}
+
 /**
  * Extract a section from markdown content by header name
  * Returns the content between the header and the next header (or end of content)
@@ -155,18 +182,13 @@ function extractSection(
 	sectionTitle: string,
 ): string | undefined {
 	const normalized = normalizeLineEndings(content);
-
-	// Match the section header and capture content until next ## header or end
-	const regex = new RegExp(
-		`## ${escapeRegex(sectionTitle)}\\s*\\n([\\s\\S]*?)(?=\\n {0,3}##[ \\t]+|$)`,
-		"i",
-	);
-
-	const match = normalized.match(regex);
-	if (!match?.[1]) return undefined;
+	const range = sectionRanges(normalized, [sectionTitle])[0];
+	if (!range) return undefined;
 
 	// Strip AC blocks from section content to prevent duplication on re-serialization
-	const sectionContent = stripAcBlocks(match[1]);
+	const sectionContent = stripAcBlocks(
+		normalized.slice(range.contentStart, range.end),
+	);
 	return sectionContent || undefined;
 }
 
@@ -262,20 +284,9 @@ function extractRawContent(
 	const frontmatterRegex = /^---\n[\s\S]*?\n---\n?/;
 	let remaining = normalized.replace(frontmatterRegex, "");
 
-	const notes = taskNoteSection(remaining);
-	if (notes)
-		remaining = remaining.slice(0, notes.start) + remaining.slice(notes.end);
-
-	// Remove recognized sections
-	for (const section of recognizedSections.filter(
-		(section) => section !== "Implementation Notes",
-	)) {
-		const sectionRegex = new RegExp(
-			`## ${escapeRegex(section)}\\s*\\n[\\s\\S]*?(?=\\n## |$)`,
-			"gi",
-		);
-		remaining = remaining.replace(sectionRegex, "");
-	}
+	// Remove recognized sections, found in one pass so they share one grammar
+	for (const range of sectionRanges(remaining, recognizedSections).reverse())
+		remaining = remaining.slice(0, range.start) + remaining.slice(range.end);
 
 	// Remove AC markers and their content
 	const acRegex = new RegExp(

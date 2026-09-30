@@ -47,6 +47,41 @@ describe("source-preserving task edits", () => {
 		expect(updated).toContain(notes);
 		expect(updated.split("KEEP THIS")).toHaveLength(2);
 	});
+	it("keeps description text after an indented heading across a status update", async () => {
+		// TASK-811 P1 / review F1 / INV-001
+		const manager = new TaskManager(tmp.path);
+		const task = await manager.createTask({
+			title: "Indented",
+			description:
+				"Intro line\n\n1. Step one\n   ## Sub heading in list\n   KEEP-ME detail line\n\nTrailing paragraph KEEP-TOO",
+		});
+		const file = join(
+			tmp.path,
+			"missions",
+			"tasks",
+			`${task.id} - Indented.md`,
+		);
+		const before = parseTask(await readFile(file, "utf8"));
+		await manager.updateTask(task.id, { status: "In Progress" });
+		const updated = await readFile(file, "utf8");
+		const after = parseTask(updated);
+		expect(updated).toContain("   KEEP-ME detail line");
+		expect(updated).toContain("Trailing paragraph KEEP-TOO");
+		expect(after.description).toBe(before.description);
+		expect(after.rawContent).toBe(before.rawContent);
+	});
+	it("ends an appended notes section with a blank line before a following section", async () => {
+		// TASK-811 P2 / review F2: an append must not glue onto the next heading.
+		const { manager, task, file } = await fixture(
+			"## Implementation Notes\n\nOld\n\n## Other\nkept\n",
+		);
+		await manager.updateTask(task.id, { appendImplementationNotes: "New" });
+		const updated = await readFile(file, "utf8");
+		expect(updated).toContain("Old\n\nNew\n\n## Other\nkept");
+		const parsed = parseTask(updated);
+		expect(parsed.implementationNotes).toBe("Old\n\nNew");
+		expect(parsed.rawContent).toBe("## Other\nkept");
+	});
 	it("does not read or edit a four-space-indented code heading as notes", async () => {
 		const { manager, task, file } = await fixture(
 			"    ## Implementation Notes\nKEEP THIS\n",

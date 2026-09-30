@@ -104,7 +104,9 @@ import executionProbe from "../../bundled/coding/extensions/execution-probe/inde
 import {
 	outstandingProbeJournal,
 	probeJournalDirectory,
+	probeLockPath,
 } from "../../lib/agents/drive-worker-tool-guard.ts";
+import { withEntityFileLock } from "../../lib/entity-file-lock.ts";
 import { createMockPi } from "../helpers/mocks/extension-api.ts";
 
 let root: string;
@@ -212,6 +214,64 @@ test("retains the journal when process-tree termination cannot be verified", asy
 		journal: result.journal,
 	});
 	expect(outstandingProbeJournal(root)).toBe(result.journal);
+});
+
+test("returns a lock failure within a bound while another probe holds the lock", async () => {
+	// TASK-811 P3 / review F3 / B-008: the probe lock wait is bounded.
+	const guardMs = 8_000;
+	await mkdir(probeJournalDirectory(root), { recursive: true, mode: 0o700 });
+	const started = Date.now();
+	let pending: ReturnType<typeof probe> | undefined;
+	const settled = await withEntityFileLock(probeLockPath(root), async () => {
+		pending = probe();
+		return Promise.race([
+			pending,
+			new Promise<"unsettled">((resolve) =>
+				setTimeout(() => resolve("unsettled"), guardMs),
+			),
+		]);
+	});
+	const elapsed = Date.now() - started;
+	await pending;
+	expect(settled).toMatchObject({
+		refused: true,
+		reason: expect.stringContaining("probe lock"),
+	});
+	expect(elapsed).toBeLessThan(guardMs);
+	expect(await readFile(source, "utf8")).toBe(original);
+});
+
+test("keeps the journal and marker when a descendant escapes the command's process group", async () => {
+	// TASK-811 P3 / review F3 / B-008: an escaped descendant cannot hang the probe.
+	const pidFile = join(root, "escaped.pid");
+	const body = `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 20000)`;
+	await writeFile(
+		join(root, "escape.cjs"),
+		`require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(body)}], { detached: true, stdio: "inherit" }).unref();`,
+	);
+	try {
+		const result = await probe({
+			testCommand: `${JSON.stringify(process.execPath)} escape.cjs`,
+			timeoutMs: 500,
+		});
+		expect(result).toMatchObject({
+			status: "recovery-required",
+			journal: expect.stringContaining("journal-"),
+			reason: expect.stringContaining("termination-error marker"),
+		});
+		expect(outstandingProbeJournal(root)).toBe(result.journal);
+		expect(
+			await readFile(join(String(result.journal), "termination-error"), "utf8"),
+		).toContain("descendant");
+		expect(await readFile(source, "utf8")).toBe(original);
+	} finally {
+		const pid = Number(await readFile(pidFile, "utf8").catch(() => ""));
+		if (pid > 0) {
+			try {
+				process.kill(pid, "SIGKILL");
+			} catch {}
+		}
+	}
 });
 
 test("stops output exceeding the probe capture limit and restores source", async () => {
@@ -382,6 +442,10 @@ test("refuses duplicate locations and destructive commands without touching the 
 test.each([
 	"git switch -f main",
 	"git switch --force main",
+	// TASK-811 P4 / review F4 / B-009: forced checkout is refused on the probe path too.
+	"git checkout -f",
+	"git checkout --force",
+	"git -C . checkout -f",
 ])("refuses destructive probe test command %s without changing the source", async (testCommand) => {
 	expect(await probe({ testCommand })).toMatchObject({ refused: true });
 	expect(await readFile(source, "utf8")).toBe(original);

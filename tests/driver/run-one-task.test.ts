@@ -544,8 +544,9 @@ describe("run-one-task", () => {
 		expect(outcome).toEqual({ status: "blocked", reason });
 		expect(task?.status).toBe("Blocked");
 		// INV-001, D-033: replace the slice-10 standalone snapshot expectation.
+		// TASK-811 P2 / AC-004: the worker's reason is now fenced so its headings stay inert.
 		expect(task?.implementationNotes).toContain(
-			`worker sentinel  \n\n### Drive — outcome blocked — attempt 1 — run run-255\n\nWorktree snapshot: refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1\n${reason}`,
+			`worker sentinel  \n\n### Drive — outcome blocked — attempt 1 — run run-255\n\nWorktree snapshot: refs/cosmonauts/drive/run-255/${fixture.taskId}/attempt-1\n\`\`\`text\n${reason}`,
 		);
 		expect(
 			task?.implementationNotes?.match(/### Drive — outcome blocked/g),
@@ -771,8 +772,9 @@ describe("run-one-task", () => {
 			?.implementationNotes;
 		expect(outcome.status).toBe("done");
 		expect(notes).toContain("worker sentinel  \nsecond line");
+		// TASK-811 P2 / AC-004: raw unknown output is recorded verbatim inside a fence.
 		expect(notes).toContain(
-			"### Drive — outcome unknown — attempt 1 — run run-255\n\nUnstructured output\nline two",
+			"### Drive — outcome unknown — attempt 1 — run run-255\n\n```text\nUnstructured output\nline two\n```",
 		);
 		expect(notes?.match(/### Drive — outcome unknown/g)).toHaveLength(1);
 	});
@@ -827,8 +829,9 @@ describe("run-one-task", () => {
 		expect(fixture.taskManager.updates).toEqual([
 			{ status: "In Progress" },
 			{
+				// TASK-811 P2 / AC-004: failure text is fenced so its headings stay inert.
 				appendImplementationNotes:
-					"### Drive — outcome failure — attempt 1 — run run-255\n\nneeds follow-up",
+					"### Drive — outcome failure — attempt 1 — run run-255\n\n```text\nneeds follow-up\n```",
 			},
 			{ status: "Blocked" },
 		]);

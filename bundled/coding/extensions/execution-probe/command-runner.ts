@@ -3,6 +3,8 @@ import { reapProcessGroup } from "../../../../lib/process/process-group.ts";
 
 export const PROBE_OUTPUT_LIMIT = 1_048_576;
 const OUTPUT_TAIL = 2_000;
+// Longer than stopTree's own SIGTERM and SIGKILL grace, so a normal reap settles first.
+const SETTLE_AFTER_TERMINATION_MS = 3_000;
 
 type ProbeOutcome =
 	| { kind: "code-exit"; code: number }
@@ -45,6 +47,16 @@ async function stopTree(pid: number | undefined): Promise<string | undefined> {
 	return result.kind === "survived" ? result.reason : undefined;
 }
 
+/** Output still open after termination means a process outside the group may hold it. */
+function unsettledAfter(kind: ProbeOutcome["kind"]): ProbeOutcome {
+	return {
+		kind: "termination-error",
+		error: new Error(
+			`${kind}: command output stayed open ${SETTLE_AFTER_TERMINATION_MS}ms after termination; a descendant that left the process group may still be running`,
+		),
+	};
+}
+
 export async function runProbeCommand(
 	command: string,
 	cwd: string,
@@ -62,6 +74,7 @@ export async function runProbeCommand(
 		let cleanupStarted = false;
 		let cleanupDone = false;
 		let natural: ProbeOutcome | undefined;
+		let settleDeadline: NodeJS.Timeout | undefined;
 		const child = spawn(
 			process.platform === "win32" ? "cmd.exe" : "/bin/sh",
 			process.platform === "win32" ? ["/c", command] : ["-c", command],
@@ -84,6 +97,7 @@ export async function runProbeCommand(
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
+			clearTimeout(settleDeadline);
 			signal.removeEventListener("abort", abort);
 			child.stdout?.destroy();
 			child.stderr?.destroy();
@@ -124,6 +138,10 @@ export async function runProbeCommand(
 		function terminate(reason: ProbeOutcome): void {
 			if (initiated || settled) return;
 			initiated = reason;
+			settleDeadline = setTimeout(
+				() => finish(unsettledAfter(reason.kind)),
+				SETTLE_AFTER_TERMINATION_MS,
+			);
 			clean();
 		}
 

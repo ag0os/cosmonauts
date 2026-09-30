@@ -325,8 +325,19 @@ export async function appendDriveAttemptRecord(options: {
 		? `Worktree snapshot: ${worktreeSnapshot}\n`
 		: "";
 	await taskManager.updateTask(taskId, {
-		appendImplementationNotes: `### Drive — outcome ${outcome} — attempt ${attemptNumber} — run ${runId}\n\n${snapshotLine}${body}`,
+		appendImplementationNotes: `### Drive — outcome ${outcome} — attempt ${attemptNumber} — run ${runId}\n\n${snapshotLine}${fenceRecordBody(body)}`,
 	});
+}
+
+/** Worker text stays verbatim but inert: a heading inside the fence cannot open or close a task section. */
+function fenceRecordBody(body: string): string {
+	if (!body.trim()) return body;
+	const longestRun = Math.max(
+		0,
+		...(body.match(/`+/g) ?? []).map((run) => run.length),
+	);
+	const fence = "`".repeat(Math.max(3, longestRun + 1));
+	return `${fence}text\n${body.replace(/(?:\r\n|\n|\r)$/, "")}\n${fence}`;
 }
 
 export function blockedReportReason(report: BlockedReport): string {
