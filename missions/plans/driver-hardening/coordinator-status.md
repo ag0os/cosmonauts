@@ -31,20 +31,20 @@ Nothing. Handed off 2026-09-29 ~21:40Z at ~42% context on Shepherd's instruction
 
 **Lessons this session (already recorded inline):** a Drive host executes the source it was launched from, so a slice's own run always shows the *previous* code's behavior (three runs in a row exhibited the defect they were fixing); a coordinator probe of a new helper must pass every argument Drive passes (two wrong probes here, both corrected on record); never claim a live verification before observing it.
 
-## Final report — `/implement-plan driver-hardening` review phase (review-phase coordinator 2, 2026-09-30)
+## Final report — `/implement-plan driver-hardening` review phase (review-phase coordinator 2, 2026-09-30, supersedes the 2026-09-30 00:58Z version)
 
-**Verdict: implementation complete and gate-green; independent review NOT closed.** Every planned slice, the coordinator closeout, the live acceptance run, and six remediation slices (five codex rounds + Quality Manager run 1) are Done on `feature/driver-hardening` at the commit carrying this file (HEAD; nothing pushed, no merge, no PR). The last three remediation slices (TASK-808/809/810) have no independent re-review because the Codex account hit its usage limit during round 6; the human decides whether the task-note evidence plus the final gates close the phase, or whether round 6 re-runs after Oct 5.
+**Verdict: implementation complete, gate-green, independent review closed on the substitute channel — SHIP per Claude review round 3.** Every planned slice, the coordinator closeout, the live acceptance run and eight remediation slices are Done on `feature/driver-hardening` at the commit carrying this file (97+ commits over local `main` `e55040de`; nothing pushed, no merge, no PR). Codex round 6, ruled the cap of the codex loop, could not run (Codex usage limit until 2026-10-05); Shepherd substituted an independent Claude reviewer for three rounds, the last of which returned SHIP. Whether the substitute channel closes the phase is the user's merge sign-off.
 
 ### Tasks
-TASK-790..801 (12 Drive slices), TASK-803 (D-033 follow-up), TASK-802 (coordinator-run closeout, live acceptance `run-f79d00a4` accepted 19/19), TASK-804..808 (codex rounds 1–5), TASK-809/810 (QM run 1) — **all Done**, 21 tasks, 22 Drive runs (four second attempts after honest worker blocks: TASK-796, 803, 804-probe, 810), zero escalations for ratified-ground collisions. Every Drive commit's parent was its slice start; five postflight `verify` passed on every accepted run; every changed pre-existing test expectation cites its finding or criterion inline; no `.skip/.only/.todo`, `lib/durable-runtime/`, config, baseline, suppression or ignore change anywhere in `e55040de..HEAD`.
+TASK-790..801 (12 Drive slices), TASK-803 (D-033 follow-up), TASK-802 (coordinator-run closeout; live acceptance `run-f79d00a4` accepted 19/19), TASK-804..808 (codex rounds 1–5), TASK-809/810 (QM run 1), TASK-811/812 (Claude rounds 1–2, implemented by Claude subagent workers under D-038 while Codex is out) — **all 23 Done**. 24 Drive runs (five second attempts after honest worker blocks: TASK-796, 803, 804-probe, 810 and the stopped 805), zero escalations for ratified-ground collisions. Every Drive commit's parent was its slice start; five postflight `verify` passed on every accepted run; every changed pre-existing test expectation cites its finding or criterion inline; no `.skip/.only/.todo`, `lib/durable-runtime/`, `domains/shared/extensions/`, config, baseline, suppression or ignore change anywhere in `e55040de..HEAD`.
 
 ### Gates on HEAD (ground truth, this coordinator)
-Measured at `d33ed772` (source identical to HEAD; only records changed after it), 2026-09-30 ~00:50–00:58Z, each command run literally with its exit code captured:
+Measured on the tree that became `ee003176` (TASK-812 slice; the two record commits after it change no source), 2026-09-30 ~02:50Z, each command run literally with its exit code captured:
 
 | Gate | Result | Exit |
 |---|---|---|
-| `bun run test` | 293 files, 4225 tests passed | 0 |
-| `bun run lint` | 654 files, no fixes | 0 |
+| `bun run test` | 295 files, 4261 tests passed | 0 |
+| `bun run lint` | clean | 0 |
 | `bun run typecheck` | clean | 0 |
 | `bun run check:reachability` | 214/214 runtime lib modules reached | 0 |
 | `bun run check:suppressions -- --base main` | passed | 0 |
@@ -60,27 +60,31 @@ Measured at `d33ed772` (source identical to HEAD; only records changed after it)
 | codex 4 | DO-NOT-SHIP | 4 | all accepted → TASK-807 |
 | codex 5 | DO-NOT-SHIP | 3 | all accepted → TASK-808 |
 | QM run 1 | not-ready | 22 | 9 accepted → TASK-809/810 (+D-037); 12 rejected on record; 1 self-dismissed; QM-001 human item |
-| codex 6 (cap) | **no verdict** | — | Codex usage limit until 2026-10-05; L/M/N slices unreviewed |
-| QM run 2 | **failed in 23 s** | — | fresh clone of `e8c5d668`; `Codex error: The usage limit has been reached` (same outage as round 6) |
+| codex 6 (cap) | **no verdict** | — | Codex usage limit until 2026-10-05 |
+| QM run 2 | failed (23 s) | — | same Codex limit |
+| Claude 1 (substitute) | HOLD | 4 P2, 3 P3 | P2s → TASK-811 (+D-038, D-039); P3s → improvement rows 13–16 |
+| Claude 2 | HOLD | 1 P2, 3 P3 | R2-1..R2-3 → TASK-812 (+D-040); R2-4 tidied by the coordinator |
+| Claude 3 | **SHIP** | 2 P3 | improvement rows 20–21; no remediation |
 
-Records: `missions/reviews/codex/driver-hardening-round-{1..6}.md`, `missions/reviews/qm/driver-hardening-run-1/` (and `-run-2/` if produced), dispositions at the end of each. Coordinator amendments D-032..D-037 in plan.md, all `coordinator, amend-on-record`.
+Records: `missions/reviews/codex/driver-hardening-round-{1..6}.md`, `missions/reviews/qm/driver-hardening-run-1/`, `missions/reviews/claude/driver-hardening-round-{1..3}.md`, dispositions at the end of each (Claude rounds: dispositions in this log). Coordinator amendments D-032..D-040 in plan.md, all `coordinator, amend-on-record`; D-038 (subagent worker while Codex is out) and the round-6 cap are Shepherd-instructed and pending the user's confirmation.
 
 ### Human items
-1. **Independent review not closed** (codex round 6 outage; QM run 2 failed on the same limit). Accept task-note evidence + gates, re-run after Oct 5, or substitute a reviewer.
-2. **Convergence bound exceeded**: rounds 3/4/5 returned 5/4/3 findings; Shepherd's derived ruling (round 6 caps) awaits the user's confirmation.
+1. **Merge sign-off**: the closing independent review is the Claude substitute channel (round 3 SHIP); codex round 6 remains possible after 2026-10-05 if the user wants the original channel's verdict.
+2. **Convergence bound**: codex rounds 3/4/5 returned 5/4/3 findings; Shepherd's derived ruling (round 6 caps the codex loop) awaits the user's confirmation.
 3. **QM-001** (index-only staged content is outside D-020's snapshot scope) — rejected on record; the user may widen D-020.
 4. **`domains/shared/extensions/project-tools/fallow-provider.ts`** changed by slice 6 (B-005/B-007, planned) — gate-owned path, pending sign-off.
 5. **No analysis-audit binding** in the QM's private clone (Fallow `execution-not-consented`) — unavailable evidence on every QM run of every plan so far.
-6. **`PI-UPGRADE-STATUS.md`** was swept into slice 1's commit and un-tracked again; still on disk, not this plan's file.
+6. **Journal location** (improvement row 16): the probe journal under `os.tmpdir()` is a plan-decided residual a temp purge can defeat.
+7. **`PI-UPGRADE-STATUS.md`** was swept into slice 1's commit and un-tracked again; still on disk, not this plan's file.
 
 ### Follow-ups (not remediation)
-`missions/reviews/improvements/driver-hardening.md` — 12 rows; rejected-on-record QM findings PF-002..006 (performance), QM-002 (Windows paths), F-001/SR-003 (D-019 residual) are follow-up candidates named there or in the QM README.
+`missions/reviews/improvements/driver-hardening.md` — 21 rows, ranked; rejected-on-record QM findings (PF-002..006, QM-002, F-001/SR-003) are named there or in the QM README.
 
 ### Refs left in the repo on purpose (unpushed, outside `refs/heads`)
 `refs/cosmonauts/coordinator/TASK-796-attempt-1`, `…/TASK-805-attempt-1` (stopped run, informational); blocked-attempt snapshots `refs/cosmonauts/drive/run-9f8e9d40…/TASK-803/attempt-1`, `…/run-d8550075…/TASK-804/attempt-1`, `…/run-f79d00a4…/TASK-805/attempt-{1,2}`, `…/run-0b77042c…/TASK-805/attempt-1`, `…/run-bdda7db3…/TASK-810/attempt-1`; D-036-retained `…/run-7fc89152…/TASK-810/attempt-1` (attempt 2 edited attempt 1's dirty files further). Delete with `git update-ref -d` after merge if unwanted.
 
 ### Next
-Human decisions above; then (not this coordinator) merge to local `main`, archive + distill (`/skill:archive`). The D-026 hand-off to `execution-liveness` is in TASK-802's notes.
+The user's merge sign-off (human items 1–2 first). Then, not this coordinator: merge to local `main`, archive + distill (`/skill:archive`) — **do not archive before the sign-off**. The D-026 hand-off to `execution-liveness` is in TASK-802's notes.
 
 ## Successor handoff — finish `/implement-plan driver-hardening` (written 2026-09-29 by the implementing coordinator)
 
@@ -149,6 +153,7 @@ Human decisions above; then (not this coordinator) merge to local `main`, archiv
 - **TASK-811 — DONE (D-038 path: Claude subagent worker `task-811-worker`, 2026-09-30 ~01:10–01:57Z, one attempt).** Slice commit `eb955eeb` (parent `c0e6e421` = slice start; coordinator-made from explicit paths, source + tests only). Change set: shared heading scanner (P1), fenced Drive records + notes termination + fence-aware grammar from the notes heading onward (P2, **D-039**; 781-file parser parity re-verified by the coordinator, 0 diffs), probe runner settle deadline + bounded lock wait (P3), `checkout -f/--force` guard incl. `-qf` clusters and `-C` (P4). `tests/`: two new files + additive cases; seven pinned unfenced-record literals updated with inline `TASK-811 P2 / AC-004`; no `.skip/.only/.todo`, no forbidden paths. All 5 ACs checked; D-030 RED/GREEN + mutation rows for P1..P4 in the notes. **Gates (coordinator, on the tree that became `eb955eeb`):** test 295 files / 4245 passed (exit 0), lint 0, typecheck 0, reachability 214/214 (0), suppressions vs main (0), check-artifacts Issues: 0 (0). Worker residuals → improvement rows 17–18 (finalization-failure reason unfenced; AC marker `indexOf`). Ready for Claude review round 2.
 - **Claude review round 2 (`missions/reviews/claude/driver-hardening-round-2.md`): HOLD.** All four TASK-811 fixes verified closed, no regression of TASK-808/809/810. New: R2-1 (P2, INV-001) `preserveTaskNotes` re-scans for the notes end; with an unclosed fence (D-039) the scan runs over the raw sections the serializer places after the notes and a routine status update deletes them (a pre-existing preamble trigger from TASK-790 too; the coordinator's parse-only parity check could not see an update-path defect); R2-2 (P3) the record fence assumes balanced preceding notes; R2-3 (P3) guard misses git long-option abbreviations; R2-4 (P3) TASK-811's task file split on `## ` fragments in worker notes. Shepherd's instruction: structural fix (boundary from the serializer or notes always fence-closed), not another scan patch; R2-3 included; R2-4 tidied by the coordinator (three stray lines indented four spaces, no bytes removed). Routed to **TASK-812** (Q1..Q4), same D-038 path; Claude review 3 follows.
 - **TASK-812 — DONE (D-038 path: Claude subagent worker `task-812-worker`, 2026-09-30 ~02:05–02:44Z, one attempt).** Slice commit `ee003176` (parent `d0c4fb14` = slice start; coordinator-made from explicit paths). Change set: `serializeTaskLayout` reports the notes span; `preserveTaskNotes` splices only that span (no re-scan), closes an open fence and adds a blank line when content follows (Q1, **D-040**); Q2 falls out of the boundary close (runtime-helpers untouched); guard refuses any prefix of `--force`/`--discard-changes` incl. `--f` (Git 2.53 accepts it) and ambiguous prefixes (Q3, accepted deviation from the two-character floor); Q4 notes hygiene verified by parse. `tests/`: additive only, no pre-existing expectation changed; no forbidden paths. All 5 ACs checked; D-030 RED/GREEN + mutation rows for Q1..Q3. **Coordinator verification:** corpus round-trip through the real `TaskManager` (one status update per file, 782 files, HEAD archive vs tree): 0 errors, 0 byte differences except this task's own file; gates on the tree that became `ee003176`: test 295 files / 4261 passed (exit 0), lint 0, typecheck 0, reachability 214/214 (0), suppressions vs main (0), check-artifacts Issues: 0. Residual → improvement row 19 (preamble re-parses as notes after an update; bytes survive). Ready for Claude review round 3.
+- **Claude review round 3 (`missions/reviews/claude/driver-hardening-round-3.md`): SHIP.** R2-1 structurally closed (fuzzed 4,000 generated files + all 782 real files, no new loss), R2-2/R2-3 closed, no regressions, 16 new tests fail on pre-fix code. Two P3 residuals → improvement rows 20 (guard: `switch -qf`, `--no-advice`, wrappers, prefixes, absolute path) and 21 (pre-existing on base: an unfenced recognized heading in appended worker notes). Shepherd's instruction: record, update the final report, commit, stop; **no archive until the user's merge sign-off.**
 
 ## Blocked
 

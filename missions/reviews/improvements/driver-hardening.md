@@ -8,7 +8,7 @@ recordedAt: '2026-09-29'
 
 # Drive improvement observations — driver-hardening
 
-Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two live-acceptance runs), the 14 task notes, and the coordinator's implementation log. Bounded to eight rows in the first pass; four rows (9-12) added by the review-phase coordinator after codex rounds 3-4 and coordinator finding C-001, four more (13-16) after Claude review 1, two (17-18) from TASK-811 residuals, one (19) from TASK-812; the plan's own defects (already fixed on the branch) are excluded unless they teach something about Drive or the process.
+Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two live-acceptance runs), the 14 task notes, and the coordinator's implementation log. Bounded to eight rows in the first pass; four rows (9-12) added by the review-phase coordinator after codex rounds 3-4 and coordinator finding C-001, four more (13-16) after Claude review 1, two (17-18) from TASK-811 residuals, one (19) from TASK-812, two (20-21) from Claude review 3; the plan's own defects (already fixed on the branch) are excluded unless they teach something about Drive or the process.
 
 | Observed problem | What happened in this run | Suggested improvement | Why it helps |
 |---|---|---|---|
@@ -32,6 +32,8 @@ Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two l
 | `appendFinalizationFailure` in `drive-finalization.ts` still embeds its reason unfenced (TASK-811 residual 1; same class as Claude review F2). | The reason can carry git hook output; a `## ` line in it could restructure the notes. Not worker text, so outside TASK-811 P2. | Route through the same fenced record writer. | One choke point for every Drive-written raw text. |
 | `parseAcceptanceCriteria` finds `AC:BEGIN`/`AC:END` with `indexOf` over the whole body (TASK-811 residual 2). | A literal marker inside recorded worker text can be misread when the task has no real AC block. | Anchor marker detection to column-0 lines outside fences. | Closes the last unfenced-text parse hazard. |
 | The serializer always moves untitled preamble text after the notes, so after one update it re-parses as notes text rather than raw content (TASK-812 residual; bytes survive). | Present since base; TASK-812 Q1 keeps the bytes but not the field. | Serialize raw content where it was found, or forbid untitled preamble in the task format. | Field fidelity, not just byte fidelity, across updates. |
+| The Git guard misses `switch -qf`/`-fq` clusters, `git --no-advice checkout -f`, subshell and `bash -lc` wrappers, `exec`/`time`/`timeout` prefixes and an absolute git path (Claude review 3, R3-1, P3). | Each form discards tracked edits; the pre-spawn snapshot does not cover the current attempt's own edits. | Tokenize with git's own option grammar for every verb; unwrap common wrappers; match the binary by basename. | INV-006 ranks the refusing guard above recovery. |
+| An unfenced `## Description` / `## Acceptance Criteria` line inside appended worker notes deletes what follows at the next status change (Claude review 3, R3-2, P3, pre-existing on base). | Not observed in the corpus; the worker `task_edit` append path is unfenced by design (D-039). | Fence worker appends the way Drive records are fenced, or reject appends that contain a recognized heading. | Closes the last unfenced-text loss path in the task format. |
 
 ## Ranked follow-ups
 
@@ -54,6 +56,8 @@ Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two l
 17. Fence the finalization-failure reason (row 17).
 18. Anchor AC marker detection (row 18).
 19. Preamble field fidelity (row 19).
+20. Guard: full git option grammar + wrappers (row 20).
+21. Fence or reject worker appends with recognized headings (row 21).
 
 ## Non-goals
 
