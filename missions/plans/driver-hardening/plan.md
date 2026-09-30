@@ -264,6 +264,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Decided by: coordinator, amend-on-record, 2026-09-29
   - Supersedes: D-034's "every path in that snapshot's tree" and D-035's per-path rule as far as either applied to paths outside the snapshot's delta.
 
+- **D-037 - The execution probe owns its command runner** *(Added 2026-09-30 by the review-phase coordinator after TASK-810 attempt 1 blocked on QM finding SR-002)*
+  - Decision: the probe runs its test command through a bounded runner inside `bundled/coding/extensions/execution-probe/` (attempt signal, timeout, aggregate stdout+stderr byte cap with process-group termination on overflow), not through the shared provider runner in `domains/shared/extensions/project-tools/`. Journal, lock, restore and marker semantics are unchanged.
+  - Alternatives: add an output cap to the shared provider runner (touches `domains/shared/extensions/`, which D-025 keeps free of probe concerns and which every Fallow capability shares); leave SR-002 as a residual (an unbounded `yes` inside an instrumented tree can exhaust storage while source is modified).
+  - Why: the cap is a probe-specific safety property; the shared runner serves analysis providers whose output is bounded by their own contracts.
+  - Decided by: coordinator, amend-on-record, 2026-09-30
+  - Supersedes: nothing; narrows the mechanism TASK-810 N2 may use.
+
 ## Behaviors
 
 ### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts
