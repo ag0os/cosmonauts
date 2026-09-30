@@ -1,6 +1,6 @@
 ---
 title: Fix the Drive Defects the Health Audit Exposed
-status: active
+status: completed
 createdAt: '2026-09-29T13:31:06.260Z'
 updatedAt: '2026-09-29T17:25:00.000Z'
 ---
@@ -291,6 +291,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Why: the serializer knows where it put the raw content; a scan can only guess, and every guess so far has had a silent-loss case. Closing the fence at the boundary keeps D-039's fence-aware parse from swallowing what follows.
   - Decided by: coordinator, amend-on-record, 2026-09-30 (worker-proposed design A + boundary close; evidence in TASK-812 notes; corpus round-trip 782 files, 0 byte differences versus HEAD)
   - Supersedes: D-039's implicit "the notes end at the next recognized heading" — D-039's fence-aware grammar stands for parsing.
+
+- **R-013 - Merge approved; fallow-provider.ts changes signed off; codex round cap confirmed** *(Human ruling 2026-09-30, typed to Shepherd "merge, sign off, confirm", relayed; `.shepherd/work/in-progress/driver-hardening/rulings.md` round 3)*
+  - Decision: (1) merge of `feature/driver-hardening` at `9e2a2c57` into local `main` APPROVED, with codex round 6 recorded as pending until 2026-10-05 and Claude reviews 1–3 accepted as the substitute independent channel; (2) the driver-hardening changes to `domains/shared/extensions/project-tools/fallow-provider.ts` (paths scope + scoped findings, slice 6, ~230 lines) SIGNED OFF as a gate-owned path; (3) Shepherd's derived round-6 cap on the codex loop CONFIRMED after the fact (the loop converged at Claude round 3).
+  - Alternatives: wait for Codex to return before merging; keep the fallow-provider change as an open human item.
+  - Why: the human's call; recorded here so the plan's ratified ground is complete before archive.
+  - Decided by: human, 2026-09-30, relayed by Shepherd
+  - Supersedes: the "pending sign-off" status of the fallow-provider change and the "pending the user's confirmation" status of D-038's cap in this log.
 
 ## Behaviors
 
