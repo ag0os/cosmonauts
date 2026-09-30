@@ -31,6 +31,57 @@ Nothing. Handed off 2026-09-29 ~21:40Z at ~42% context on Shepherd's instruction
 
 **Lessons this session (already recorded inline):** a Drive host executes the source it was launched from, so a slice's own run always shows the *previous* code's behavior (three runs in a row exhibited the defect they were fixing); a coordinator probe of a new helper must pass every argument Drive passes (two wrong probes here, both corrected on record); never claim a live verification before observing it.
 
+## Final report — `/implement-plan driver-hardening` review phase (review-phase coordinator 2, 2026-09-30)
+
+**Verdict: implementation complete and gate-green; independent review NOT closed.** Every planned slice, the coordinator closeout, the live acceptance run, and six remediation slices (five codex rounds + Quality Manager run 1) are Done on `feature/driver-hardening` at the commit carrying this file (HEAD; nothing pushed, no merge, no PR). The last three remediation slices (TASK-808/809/810) have no independent re-review because the Codex account hit its usage limit during round 6; the human decides whether the task-note evidence plus the final gates close the phase, or whether round 6 re-runs after Oct 5.
+
+### Tasks
+TASK-790..801 (12 Drive slices), TASK-803 (D-033 follow-up), TASK-802 (coordinator-run closeout, live acceptance `run-f79d00a4` accepted 19/19), TASK-804..808 (codex rounds 1–5), TASK-809/810 (QM run 1) — **all Done**, 21 tasks, 22 Drive runs (four second attempts after honest worker blocks: TASK-796, 803, 804-probe, 810), zero escalations for ratified-ground collisions. Every Drive commit's parent was its slice start; five postflight `verify` passed on every accepted run; every changed pre-existing test expectation cites its finding or criterion inline; no `.skip/.only/.todo`, `lib/durable-runtime/`, config, baseline, suppression or ignore change anywhere in `e55040de..HEAD`.
+
+### Gates on HEAD (ground truth, this coordinator)
+Measured at `d33ed772` (source identical to HEAD; only records changed after it), 2026-09-30 ~00:50–00:58Z, each command run literally with its exit code captured:
+
+| Gate | Result | Exit |
+|---|---|---|
+| `bun run test` | 293 files, 4225 tests passed | 0 |
+| `bun run lint` | 654 files, no fixes | 0 |
+| `bun run typecheck` | clean | 0 |
+| `bun run check:reachability` | 214/214 runtime lib modules reached | 0 |
+| `bun run check:suppressions -- --base main` | passed | 0 |
+| `cosmonauts plan check-artifacts driver-hardening` | Issues: 0 | 0 |
+
+### Review rounds
+| Round | Verdict | Findings | Disposition |
+|---|---|---|---|
+| codex 1 | DO-NOT-SHIP | 9 | 8 accepted → TASK-804; 1 rejected (reversed by round 2) |
+| codex 2 | DO-NOT-SHIP | 7 | 5 accepted → TASK-805 (+D-034); 2 rejected on record |
+| codex 3 | DO-NOT-SHIP | 5 | 4 accepted → TASK-806 (+D-035); 1 rejected (Git normalization = D-020 mechanism) |
+| coordinator C-001 | — | 1 | whole-tree containment retained every real Done task's ref → D-036, TASK-807 |
+| codex 4 | DO-NOT-SHIP | 4 | all accepted → TASK-807 |
+| codex 5 | DO-NOT-SHIP | 3 | all accepted → TASK-808 |
+| QM run 1 | not-ready | 22 | 9 accepted → TASK-809/810 (+D-037); 12 rejected on record; 1 self-dismissed; QM-001 human item |
+| codex 6 (cap) | **no verdict** | — | Codex usage limit until 2026-10-05; L/M/N slices unreviewed |
+| QM run 2 | **failed in 23 s** | — | fresh clone of `e8c5d668`; `Codex error: The usage limit has been reached` (same outage as round 6) |
+
+Records: `missions/reviews/codex/driver-hardening-round-{1..6}.md`, `missions/reviews/qm/driver-hardening-run-1/` (and `-run-2/` if produced), dispositions at the end of each. Coordinator amendments D-032..D-037 in plan.md, all `coordinator, amend-on-record`.
+
+### Human items
+1. **Independent review not closed** (codex round 6 outage; QM run 2 failed on the same limit). Accept task-note evidence + gates, re-run after Oct 5, or substitute a reviewer.
+2. **Convergence bound exceeded**: rounds 3/4/5 returned 5/4/3 findings; Shepherd's derived ruling (round 6 caps) awaits the user's confirmation.
+3. **QM-001** (index-only staged content is outside D-020's snapshot scope) — rejected on record; the user may widen D-020.
+4. **`domains/shared/extensions/project-tools/fallow-provider.ts`** changed by slice 6 (B-005/B-007, planned) — gate-owned path, pending sign-off.
+5. **No analysis-audit binding** in the QM's private clone (Fallow `execution-not-consented`) — unavailable evidence on every QM run of every plan so far.
+6. **`PI-UPGRADE-STATUS.md`** was swept into slice 1's commit and un-tracked again; still on disk, not this plan's file.
+
+### Follow-ups (not remediation)
+`missions/reviews/improvements/driver-hardening.md` — 12 rows; rejected-on-record QM findings PF-002..006 (performance), QM-002 (Windows paths), F-001/SR-003 (D-019 residual) are follow-up candidates named there or in the QM README.
+
+### Refs left in the repo on purpose (unpushed, outside `refs/heads`)
+`refs/cosmonauts/coordinator/TASK-796-attempt-1`, `…/TASK-805-attempt-1` (stopped run, informational); blocked-attempt snapshots `refs/cosmonauts/drive/run-9f8e9d40…/TASK-803/attempt-1`, `…/run-d8550075…/TASK-804/attempt-1`, `…/run-f79d00a4…/TASK-805/attempt-{1,2}`, `…/run-0b77042c…/TASK-805/attempt-1`, `…/run-bdda7db3…/TASK-810/attempt-1`; D-036-retained `…/run-7fc89152…/TASK-810/attempt-1` (attempt 2 edited attempt 1's dirty files further). Delete with `git update-ref -d` after merge if unwanted.
+
+### Next
+Human decisions above; then (not this coordinator) merge to local `main`, archive + distill (`/skill:archive`). The D-026 hand-off to `execution-liveness` is in TASK-802's notes.
+
 ## Successor handoff — finish `/implement-plan driver-hardening` (written 2026-09-29 by the implementing coordinator)
 
 **State.** Worktree `/Users/cosmos/Projects/cosmonauts-framework-health`, branch `feature/driver-hardening` off local `main` `e55040de`; HEAD = the commit carrying this file (see `git log -1`); 60+ commits on the branch, none pushed. Gates at `abe43347`/`0a0c722c`: full suite green (postflight of TASK-804), lint, typecheck, reachability 214/214, suppressions vs main, `plan check-artifacts` Issues: 0. Plan: `spec.md` (ratified Intent, AC-012 amended by H-001), `plan.md` (D-001..**D-034**, B-001..B-015, `## Evidence` table B-001..B-015 filled incl. B-012). Reviews: `missions/reviews/codex/driver-hardening-round-1.md` and `-round-2.md` (each with coordinator dispositions at the end); improvement pass `missions/reviews/improvements/driver-hardening.md` (8 rows, may gain a row for round-2 finding 3 as a follow-up candidate). Brief and rulings: `/Users/cosmos/Projects/cosmonauts/.shepherd/work/in-progress/driver-hardening/{brief-implementer.md,rulings.md}` (Q-001..003, H-001 (a),(a); settled).
@@ -93,6 +144,8 @@ Nothing. Handed off 2026-09-29 ~21:40Z at ~42% context on Shepherd's instruction
 - **TASK-810 launched** as `run-bdda7db3` (2026-09-30 00:25Z, slice start `45a571e5`).
 - **TASK-810 attempt 1 BLOCKED on N2** (run `run-bdda7db3`, 00:25–00:4xZ): the probe's command goes through the shared provider runner, which the task forbids changing and which has no output cap; N1, N3, N4, N5 implemented, N2 red (`commandStatus: timeout` instead of `output-overflow`), no commit. Blocked path held again (notes intact, Drive record appended, no postflight, no retry, snapshot ref retained). Derived ground: ruled **D-037** (probe-owned bounded runner in `bundled/coding/extensions/execution-probe/`; `domains/shared/extensions/` untouched per D-025). Coordinator note written, status reset to To Do, attempt-1 work left in the tree; relaunching.
 - **TASK-810 — DONE on attempt 2** (run `run-7fc89152`, 2026-09-30 00:37–00:45Z, worker `success`; attempt-1 work carried forward). Drive commit `c3492c86` (parent `360ab8bd` = attempt-2 start); Drive state commit `cac63c6d`. Five `verify` `passed`. Change set: new `bundled/coding/extensions/execution-probe/command-runner.ts` (161 lines, D-037: attempt signal, timeout, aggregate byte cap, process-group termination), probe index (index-entry side effects N1, atomic writes N3, stdout tail N5, `output-overflow` N2), capability doc (N4 recovery procedure); the test command runs only through the new runner (`runProbeCommand`); the shared provider runner is still used by the probe's own `git` helper for status/digest queries, which D-037 does not cover (checked at `ca8f40ea`); `domains/shared/` untouched. `tests/`: additive only; no `.skip/.only/.todo`, no `lib/durable-runtime/`, no config. All 6 ACs checked; D-030 RED/GREEN + mutation rows for N1..N5. Ref hygiene as designed: the blocked attempt's ref `refs/cosmonauts/drive/run-bdda7db3…/TASK-810/attempt-1` retained (D-020); the attempt-2 ref retained by D-036 because its delta (the four files attempt 1 left dirty) was edited further by attempt 2 — the check cannot tell improvement from discard, which D-034 accepts. All tasks TASK-790..810 Done. **Codex round 6 (the cap) launched on `e55040de..HEAD`.**
+- **Codex round 6 — NO VERDICT (provider outage).** Started, then `ERROR: You've hit your usage limit … try again at Oct 5th, 2026` after 12,769 tokens; recorded as `missions/reviews/codex/driver-hardening-round-6.md`. **QM attempt 2** from a fresh clone of `e8c5d668` failed in 23 s on the same limit (`Quality Manager final message rejected: … Codex error: The usage limit has been reached`; chain log only, no artifacts). Final gates on `d33ed772` all green (table in the final report). Escalated to Shepherd as a provider outage.
+
 
 ## Blocked
 
