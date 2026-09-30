@@ -285,6 +285,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Decided by: coordinator, amend-on-record, 2026-09-30 (worker-proposed, evidence in TASK-811 notes)
   - Supersedes: nothing; narrows the mechanism of TASK-811 P2.
 
+- **D-040 - The notes boundary is structural: the serializer reports it and an open fence is closed at it** *(Added 2026-09-30 by the review-phase coordinator after TASK-812 Q1)*
+  - Decision: `serializeTaskLayout` returns the serialized text together with the span of the Implementation Notes section (heading to where `rawContent` was placed, or end of text); `preserveTaskNotes` splices only that span and never re-scans the serialized text for a heading. When anything follows the span, the preserved section ends with a closing fence line if its notes end inside an open fence, and with a blank line. The guard treats any prefix (one or more characters after `--`) of a destructive long option as destructive, including prefixes Git rejects as ambiguous.
+  - Alternatives: keep locating the canonical span by scanning (the third defect in a row on that heuristic: F1, D-039's R2-1, plus the untitled-preamble trigger present since TASK-790); close open fences only (cannot find an untitled preamble, which is not a heading).
+  - Why: the serializer knows where it put the raw content; a scan can only guess, and every guess so far has had a silent-loss case. Closing the fence at the boundary keeps D-039's fence-aware parse from swallowing what follows.
+  - Decided by: coordinator, amend-on-record, 2026-09-30 (worker-proposed design A + boundary close; evidence in TASK-812 notes; corpus round-trip 782 files, 0 byte differences versus HEAD)
+  - Supersedes: D-039's implicit "the notes end at the next recognized heading" — D-039's fence-aware grammar stands for parsing.
+
 ## Behaviors
 
 ### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts
