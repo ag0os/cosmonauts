@@ -53,7 +53,7 @@ P2 (F2) RED at c0e6e421: tests/driver/runtime-helpers.test.ts 'appendDriveAttemp
 
 New
 
-## Other' (glued).
+    ## Other' (glued).
 P2 GREEN: appendDriveAttemptRecord fences every non-empty body in a text fence one backtick longer than the longest backtick run, minimum three. The one choke point covers both Drive paths. sectionHeadings treats a heading inside a fenced block as inert from the notes heading onward. Earlier sections keep the plain line grammar, so existing files parse as before. preserveTaskNotes ends an appended section with a line ending plus a blank line when another section follows. All three tests pass.
 Corpus check: old and new parseTask agree on description, plan, notes and rawContent for all 781 files in missions/tasks and missions/archive/tasks, with zero differences and no errors. A globally fence-aware grammar changed archived TASK-185, whose description opens a fence that closes at EOF, so fence tracking is scoped to the notes onward.
 Pre-existing expectations updated with inline 'TASK-811 P2 / AC-004' comments. They pinned the unfenced body: run-one-task 'stops a blocked report before postflight or retry' (3 cases), 'preserves worker notes and records unknown output before inferred success', and 'driver task fields literal uses Title Case and implementationNotes, never note'; drive-scheduler-backend 'blocks a raw outcome-line report without graph postflight or retry' (2 cases).
