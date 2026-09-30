@@ -1,0 +1,15 @@
+                minThreads: 1,
+            };
+        }
+        if (semver.satisfies(version, '<4.1.0')) {
+            return {
+                pool: process.env.STRYKER_VITEST_POOL === 'forks' ? 'forks' : 'threads',
+                poolOptions: { threads: { maxThreads: 1, minThreads: 1 }, forks: { singleFork: true, maxForks: 1, minForks: 1 } },
+            };
+        }
+        return {
+            pool: 'threads',
+            maxWorkers: 1,
+        };
+    }
+    /**

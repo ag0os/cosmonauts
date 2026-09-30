@@ -1,0 +1,12 @@
+tests/domains/main-domain.test.ts
+tests/episodic/pre-w3-disabled-baselines.test.ts
+tests/episodic/w3-contract.test.ts
+tests/extensions/agent-memory.test.ts
+tests/harness-adapters/inventory.test.ts
+tests/harness-adapters/provenance.test.ts
+tests/harness-adapters/registry.test.ts
+tests/harness-adapters/render.test.ts
+tests/harness-adapters/sync.test.ts
+tests/scripts/validate-harness-exports.test.ts
+tests/skills/exporter.test.ts
+tests/extensions/architecture-memory.test.ts

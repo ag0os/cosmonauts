@@ -1,0 +1,1 @@
+cli/tasks/commands/edit.ts:215-252,cli/tasks/commands/edit.ts:555-579,lib/tasks/lock.ts:19-25,lib/tasks/task-manager.ts:203-250,lib/tasks/task-manager.ts:252-319,lib/tasks/task-note-editor.ts:8-22,lib/tasks/task-note-editor.ts:24-36,lib/tasks/task-note-editor.ts:38-48,lib/tasks/task-note-editor.ts:51-85
