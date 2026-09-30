@@ -1,7 +1,7 @@
 ---
 id: TASK-810
 title: 'Quality Manager run 1 remediation: execution-probe findings'
-status: To Do
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-809
 createdAt: '2026-09-29T23:22:19.911Z'
-updatedAt: '2026-09-30T00:37:07.055Z'
+updatedAt: '2026-09-30T00:44:54.261Z'
 ---
 
 ## Description
@@ -20,11 +20,11 @@ Remediation slice for plan driver-hardening after Quality Manager run 1 (`missio
 
 <!-- AC:BEGIN -->
 - [x] #1 N1 (UR-001, B-008, AC-012/H-001): the probe records each instrumented path's index entry (git ls-files -s) before instrumenting and compares after the command; a changed entry (for example the command ran git add on the instrumented file) is reported in sideEffects, restored to the recorded entry, and makes usableZero false; the journal is still cleared only after worktree and index are restored. Test: a command that stages the instrumented file and exits 0 yields usableZero false with the path in sideEffects and leaves the index entry equal to the pre-probe entry; red on the current code (usableZero true, probe code staged).
-- [ ] #2 N2 (SR-002, B-008): probe command stdout and stderr capture is bounded in aggregate bytes (a documented limit); on overflow the process tree is terminated, the result reports the overflow as the command status, and every instrumented file is restored. Test: a command that writes past the limit is stopped, files restored, usableZero false; red on the current code.
+- [x] #2 N2 (SR-002, B-008): probe command stdout and stderr capture is bounded in aggregate bytes (a documented limit); on overflow the process tree is terminated, the result reports the overflow as the command status, and every instrumented file is restored. Test: a command that writes past the limit is stopped, files restored, usableZero false; red on the current code.
 - [x] #3 N3 (SR-004, B-008, AC-012): instrumented and restored file contents are written to a temporary file in the same directory and renamed into place, so an interrupted write never leaves a partial file at the target path; recovery verifies the sidecar digest and restores from it. Test: a simulated short write (fault-injected writeFile) leaves the original bytes at the path and the sidecar intact; red on the current code.
 - [x] #4 N4 (UR-002, docs): the execution-probe capability doc and the extension's termination-error message describe what a termination-error marker means (D-019: no process identity, so a possibly surviving test process), the manual verification the human performs (confirm no process of the test command is alive), and the recovery step (remove the marker and journal after the instrumented files are verified restored); no promise of automatic recovery remains.
 - [x] #5 N5 (UR-003, B-008): a failed or overflowed probe command result carries a bounded stdout tail next to the stderr tail. Test: a failing command whose runner prints the failure to stdout returns that text; red on the current code.
-- [ ] #6 D-030: implementation notes record, per finding N1..N5, one failing run before the change (test name, commit, one-line failure) and one passing run after, plus a mutation check; bun run test, bun run lint, bun run typecheck, bun run check:reachability, bun run check:suppressions -- --base main all pass; no .skip/.only/.todo; no lib/durable-runtime/ or domains/shared/extensions/ change; no config, suppression, threshold, baseline, or ignore change.
+- [x] #6 D-030: implementation notes record, per finding N1..N5, one failing run before the change (test name, commit, one-line failure) and one passing run after, plus a mutation check; bun run test, bun run lint, bun run typecheck, bun run check:reachability, bun run check:suppressions -- --base main all pass; no .skip/.only/.todo; no lib/durable-runtime/ or domains/shared/extensions/ change; no config, suppression, threshold, baseline, or ignore change.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -56,3 +56,7 @@ Dirty paths:
 ### Coordinator note before attempt 2 (2026-09-30, review-phase coordinator 2)
 
 Attempt 1 blocked on N2: the probe runs its command through the shared provider runner (`domains/shared/extensions/project-tools/process-runner.ts`), which this task forbids changing, and that runner has no aggregate output cap. Ruled as derived ground (plan **D-037**): the execution probe runs its test command through its **own bounded runner inside `bundled/coding/extensions/execution-probe/`** (spawn with the attempt signal, the existing timeout, an aggregate stdout+stderr byte cap, process-group termination on overflow or timeout, journal/restore semantics unchanged), and no longer imports the shared provider runner for the command; `domains/shared/extensions/` stays untouched (D-025). `commandStatus: output-overflow` as your test expects. N1, N3, N4, N5 from attempt 1 are in the tree uncommitted and snapshotted at `refs/cosmonauts/drive/run-bdda7db3…/TASK-810/attempt-1`; carry them forward, do not redo them, and keep their red rows. Criterion N2 stands as written with this mechanism.
+
+Attempt 2 (start HEAD 360ab8bdf9f947aa8594c4cb7889078feae199d7): D-037 authorizes a probe-local bounded command runner. N2 RED `stops output exceeding the probe capture limit and restores source` at attempt-2 HEAD: `bun run test -- tests/extensions/execution-probe.test.ts -t 'stops output exceeding'` expected output-overflow, received timeout. GREEN focused suite 25/25 after probe-local runner with aggregate 1,048,576-byte limit and bounded 2,000-byte per-stream tails; added combined stdout+stderr and surviving-child regression GREEN 1/1. Mutation: raised PROBE_OUTPUT_LIMIT to 2,048,576; `bun run test -- tests/extensions/execution-probe.test.ts -t 'caps stdout and stderr together'` RED expected output-overflow, received timeout; restored cap and tests 25/25 GREEN. D-037 followed; no changes to shared extension.
+
+Attempt 2 final verification at HEAD 360ab8bdf9f947aa8594c4cb7889078feae199d7: `bun run test` 293 files/4225 tests passed; `bun run lint` passed; `bun run typecheck` passed; `bun run check:reachability` 214/214 lib modules reached; `bun run check:suppressions -- --base main` passed. `analysis_audit` with literal base 360ab8bdf9f947aa8594c4cb7889078feae199d7 returned unbound (`execution-not-consented`), evidence unavailable rather than clean. No .skip/.only/.todo in touched tests; no changes under lib/durable-runtime/ or domains/shared/extensions/, nor to config, suppression, thresholds, baselines, ignores. N1/N3/N4/N5 RED/GREEN/mutation evidence preserved in attempt-1 notes (slice-start HEAD 45a571e5ddc5f8427d5aa43e88ad2dfd5374d7e2); N2 valid GREEN/mutation evidence is attempt-2 probe-local runner, NOT earlier temporary forbidden shared-runner implementation. D-037 followed. Driver-commits: left worktree unstaged/uncommitted.
