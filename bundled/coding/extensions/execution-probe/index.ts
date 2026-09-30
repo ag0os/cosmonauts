@@ -6,6 +6,7 @@ import {
 	open,
 	readFile,
 	realpath,
+	rename,
 	rm,
 	stat,
 	writeFile,
@@ -13,7 +14,6 @@ import {
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { ProviderProcessOutcome } from "../../../../domains/shared/extensions/project-tools/process-runner.ts";
 import { runProviderProcess } from "../../../../domains/shared/extensions/project-tools/process-runner.ts";
 import {
 	isDestructiveGitCommand,
@@ -22,6 +22,8 @@ import {
 	probeLockPath,
 } from "../../../../lib/agents/drive-worker-tool-guard.ts";
 import { withEntityFileLock } from "../../../../lib/entity-file-lock.ts";
+import type { ProbeCommandOutcome } from "./command-runner.ts";
+import { runProbeCommand } from "./command-runner.ts";
 
 interface Location {
 	path: string;
@@ -40,6 +42,7 @@ interface FileRecord {
 	original: string;
 	instrumented: string;
 	mode: number;
+	indexEntry: string;
 }
 interface Manifest {
 	root: string;
@@ -74,6 +77,28 @@ async function durableWrite(
 	}
 }
 
+async function replaceSource(
+	path: string,
+	bytes: Buffer,
+	mode: number,
+): Promise<void> {
+	const temporary = join(resolve(path, ".."), `.probe-${randomUUID()}`);
+	try {
+		await writeFile(temporary, bytes, { flag: "wx", mode });
+		const file = await open(temporary, "r+");
+		try {
+			await file.chmod(mode);
+			await file.sync();
+		} finally {
+			await file.close();
+		}
+		await rename(temporary, path);
+		await syncDirectory(resolve(path, ".."));
+	} finally {
+		await rm(temporary, { force: true });
+	}
+}
+
 async function syncDirectory(path: string): Promise<void> {
 	const directory = await open(path, "r");
 	try {
@@ -92,6 +117,41 @@ async function git(root: string, args: string[]): Promise<string> {
 	if (result.kind !== "code-exit" || result.code !== 0)
 		throw new Error(`git ${args[0]} failed: ${result.stderr}`);
 	return result.stdout;
+}
+
+async function targetIndex(
+	root: string,
+	files: FileRecord[],
+): Promise<Map<string, string>> {
+	const entries = new Map<string, string>();
+	for (const file of files) {
+		entries.set(
+			file.path,
+			await git(root, ["ls-files", "-s", "--", file.path]),
+		);
+	}
+	return entries;
+}
+
+async function restoreTargetIndex(
+	root: string,
+	before: Map<string, string>,
+): Promise<string[]> {
+	const changed: string[] = [];
+	for (const [path, entry] of before) {
+		if ((await git(root, ["ls-files", "-s", "--", path])) === entry) continue;
+		changed.push(path);
+		const match = /^(\d+) ([a-f0-9]+) 0\t/.exec(entry);
+		if (!match) throw new Error(`cannot restore index entry: ${path}`);
+		await git(root, [
+			"update-index",
+			"--cacheinfo",
+			`${match[1]},${match[2]},${path}`,
+		]);
+		if ((await git(root, ["ls-files", "-s", "--", path])) !== entry)
+			throw new Error(`index restore verification failed: ${path}`);
+	}
+	return changed;
 }
 
 async function trackedSnapshot(root: string): Promise<Map<string, string>> {
@@ -267,6 +327,7 @@ async function prepare(
 				original: digest(group.bytes),
 				instrumented: digest(modified),
 				mode: group.mode,
+				indexEntry: "",
 			},
 		});
 	}
@@ -319,11 +380,7 @@ async function restore(
 			)
 				throw new Error("source changed since instrumentation");
 			if (current !== record.original)
-				await writeFile(
-					absolute,
-					backup,
-					current === undefined ? { flag: "wx" } : undefined,
-				);
+				await replaceSource(absolute, backup, record.mode);
 			await chmod(absolute, record.mode);
 			if (digest(await readFile(absolute)) !== record.original)
 				throw new Error("restored digest mismatch");
@@ -344,6 +401,14 @@ async function recover(
 		) as Manifest;
 		const failure = await restore(root, journal, manifest);
 		if (failure) return failure;
+		await restoreTargetIndex(
+			root,
+			new Map(
+				manifest.files
+					.filter((file) => file.indexEntry !== undefined)
+					.map((file) => [file.path, file.indexEntry]),
+			),
+		);
 		if (
 			await readFile(join(journal, "termination-error"), "utf8").then(
 				() => true,
@@ -353,7 +418,7 @@ async function recover(
 				},
 			)
 		)
-			return "process tree not verified stopped";
+			return "termination-error marker: the test command may still be running (no durable process identity). Manually confirm no process of the test command is alive; verify instrumented files and index entries restored from digest-verified sidecars, then remove the marker and journal";
 		await rm(journal, { recursive: true, force: true });
 		return undefined;
 	} catch (error) {
@@ -361,7 +426,7 @@ async function recover(
 	}
 }
 
-function exitCode(outcome: ProviderProcessOutcome): number | null {
+function exitCode(outcome: ProbeCommandOutcome): number | null {
 	return outcome.kind === "code-exit" ? outcome.code : null;
 }
 
@@ -394,16 +459,24 @@ async function runProbe(
 		}
 		const before = await trackedSnapshot(root);
 		const beforeStatus = await trackedStatus(root);
+		const beforeIndex = await targetIndex(
+			root,
+			prepared.files.map(({ record }) => record),
+		);
 		await mkdir(journal, { mode: 0o700 });
 		const manifest: Manifest = {
 			root,
-			files: prepared.files.map(({ record }) => record),
+			files: prepared.files.map(({ record }) => ({
+				...record,
+				indexEntry: beforeIndex.get(record.path) ?? "",
+			})),
 		};
 		let instrumenting = false;
-		let outcome: ProviderProcessOutcome | undefined;
+		let outcome: ProbeCommandOutcome | undefined;
 		let failure: string | undefined;
 		let restoreFailure: string | undefined;
 		const modifiedByCommand: string[] = [];
+		let changedIndex: string[] = [];
 		try {
 			for (const file of prepared.files) {
 				await durableWrite(join(journal, file.record.sidecar), file.bytes);
@@ -432,21 +505,15 @@ async function runProbe(
 				if (digest(await readFile(absolute)) !== file.record.original)
 					throw new Error("source changed since validation");
 				instrumenting = true;
-				await writeFile(absolute, file.modified);
+				await replaceSource(absolute, file.modified, file.record.mode);
 				if (digest(await readFile(absolute)) !== file.record.instrumented)
 					throw new Error("instrumentation verification failed");
 			}
-			outcome = await runProviderProcess(
-				{
-					executablePath: process.platform === "win32" ? "cmd.exe" : "/bin/sh",
-					args:
-						process.platform === "win32"
-							? ["/c", input.testCommand]
-							: ["-c", input.testCommand],
-					cwd: root,
-				},
+			outcome = await runProbeCommand(
+				input.testCommand,
+				root,
 				signal,
-				{ timeoutMs: input.timeoutMs ?? 30_000 },
+				input.timeoutMs ?? 30_000,
 			);
 			if (outcome.kind === "termination-error") {
 				await durableWrite(
@@ -476,13 +543,18 @@ async function runProbe(
 					manifest,
 					outcome !== undefined,
 				);
+				try {
+					changedIndex = await restoreTargetIndex(root, beforeIndex);
+				} catch (error) {
+					restoreFailure = `${restoreFailure ?? ""} ${String(error)}`.trim();
+				}
 			}
 		}
 		if (restoreFailure) return recoveryRequired(journal, restoreFailure);
 		if (outcome?.kind === "termination-error") {
 			return recoveryRequired(
 				journal,
-				`process tree not verified stopped: ${outcome.error.message}`,
+				`termination-error marker: the test command may still be running (no durable process identity). Manually confirm no process of the test command is alive; verify instrumented files and index entries restored from digest-verified sidecars, then remove the marker and journal. ${outcome.error.message}`,
 			);
 		}
 		if (failure || !outcome) {
@@ -501,6 +573,7 @@ async function runProbe(
 					new Set(manifest.files.map((file) => file.path)),
 				),
 				...modifiedByCommand,
+				...changedIndex,
 			]),
 		].sort();
 		const hitText = await readFile(join(journal, "hits"), "utf8").catch(
@@ -516,7 +589,8 @@ async function runProbe(
 			hits,
 			exitCode: exitCode(outcome),
 			commandStatus: outcome.kind,
-			stderr: outcome.stderr.slice(-2000),
+			stdout: Buffer.from(outcome.stdout).subarray(-2000).toString("utf8"),
+			stderr: Buffer.from(outcome.stderr).subarray(-2000).toString("utf8"),
 			sideEffects: changed,
 			restored: true,
 			usableZero:

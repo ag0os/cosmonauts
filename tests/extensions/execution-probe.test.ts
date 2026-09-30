@@ -15,8 +15,39 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const snapshotHook = vi.hoisted(() => ({
 	terminationError: false,
+	shortWrite: false,
+	sidecarAtFault: undefined as Buffer | undefined,
+	sourceAtFault: undefined as string | undefined,
 	callback: undefined as undefined | (() => Promise<void>),
 }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+	return {
+		...actual,
+		writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
+			if (
+				snapshotHook.shortWrite &&
+				(String(args[0]).includes(".probe-") ||
+					String(args[0]).endsWith("entry.js"))
+			) {
+				snapshotHook.shortWrite = false;
+				const journalRoot = probeJournalDirectory(root);
+				const names = await actual.readdir(journalRoot);
+				snapshotHook.sidecarAtFault = await actual.readFile(
+					join(
+						journalRoot,
+						names.find((name) => name.startsWith("journal-")) ?? "",
+						"sidecar-0",
+					),
+				);
+				await actual.writeFile(args[0], "short");
+				snapshotHook.sourceAtFault = await actual.readFile(source, "utf8");
+				throw new Error("simulated short write");
+			}
+			return actual.writeFile(...args);
+		},
+	};
+});
 vi.mock(
 	"../../domains/shared/extensions/project-tools/process-runner.ts",
 	async (importOriginal) => {
@@ -29,21 +60,6 @@ vi.mock(
 			runProviderProcess: async (
 				...args: Parameters<typeof actual.runProviderProcess>
 			) => {
-				if (snapshotHook.terminationError && args[0].executablePath !== "git") {
-					return {
-						kind: "termination-error" as const,
-						initiated: {
-							kind: "timeout" as const,
-							reason: "timeout",
-							timeoutMs: 100,
-						},
-						error: Object.assign(new Error("tree not stopped"), {
-							code: "PROCESS_TREE_CLEANUP_FAILED",
-						}),
-						stdout: "",
-						stderr: "tree not stopped",
-					};
-				}
 				const outcome = await actual.runProviderProcess(...args);
 				if (
 					args[0].executablePath === "git" &&
@@ -56,6 +72,30 @@ vi.mock(
 				}
 				return outcome;
 			},
+		};
+	},
+);
+
+vi.mock(
+	"../../bundled/coding/extensions/execution-probe/command-runner.ts",
+	async (importOriginal) => {
+		const actual =
+			await importOriginal<
+				typeof import("../../bundled/coding/extensions/execution-probe/command-runner.ts")
+			>();
+		return {
+			...actual,
+			runProbeCommand: async (
+				...args: Parameters<typeof actual.runProbeCommand>
+			) =>
+				snapshotHook.terminationError
+					? {
+							kind: "termination-error" as const,
+							error: new Error("tree not stopped"),
+							stdout: "",
+							stderr: "tree not stopped",
+						}
+					: actual.runProbeCommand(...args),
 		};
 	},
 );
@@ -85,6 +125,9 @@ beforeEach(async () => {
 afterEach(async () => {
 	snapshotHook.callback = undefined;
 	snapshotHook.terminationError = false;
+	snapshotHook.shortWrite = false;
+	snapshotHook.sidecarAtFault = undefined;
+	snapshotHook.sourceAtFault = undefined;
 	await rm(probeJournalDirectory(root), { recursive: true, force: true });
 	await rm(root, { recursive: true, force: true });
 });
@@ -142,6 +185,17 @@ test.each([
 	expect(await readFile(source, "utf8")).toBe(original);
 });
 
+test("returns the stdout tail for a failing test command", async () => {
+	const result = await probe({
+		testCommand:
+			"node -e 'console.log(\"failure-on-stdout\"); process.exit(7)'",
+	});
+	expect(result).toMatchObject({
+		exitCode: 7,
+		stdout: expect.stringContaining("failure-on-stdout"),
+	});
+});
+
 test("retains the journal when process-tree termination cannot be verified", async () => {
 	snapshotHook.terminationError = true;
 	const result = await probe();
@@ -158,6 +212,44 @@ test("retains the journal when process-tree termination cannot be verified", asy
 		journal: result.journal,
 	});
 	expect(outstandingProbeJournal(root)).toBe(result.journal);
+});
+
+test("stops output exceeding the probe capture limit and restores source", async () => {
+	const result = await probe({
+		testCommand:
+			"node -e 'process.stdout.write(\"x\".repeat(1100000)); setInterval(() => {}, 1000)'",
+		timeoutMs: 5000,
+	});
+	expect(result).toMatchObject({
+		commandStatus: "output-overflow",
+		restored: true,
+		usableZero: false,
+	});
+	expect(Buffer.byteLength(result.stdout as string)).toBeLessThanOrEqual(2000);
+	expect(result.stdout).toMatch(/^x+$/);
+	expect(await readFile(source, "utf8")).toBe(original);
+});
+
+test("caps stdout and stderr together and stops the command tree", async () => {
+	const marker = join(root, "survived");
+	const command = `node -e 'const fs=require("fs");setTimeout(()=>fs.writeFileSync(${JSON.stringify(marker)},"survived"),600);process.stdout.write("a".repeat(600000));process.stderr.write("b".repeat(600000));setInterval(()=>{},1000)'`;
+	const result = await probe({ testCommand: command, timeoutMs: 5_000 });
+	expect(result).toMatchObject({
+		commandStatus: "output-overflow",
+		restored: true,
+		usableZero: false,
+	});
+	await new Promise((resolve) => setTimeout(resolve, 750));
+	expect(await readFile(marker, "utf8").catch(() => undefined)).toBeUndefined();
+	expect(await readFile(source, "utf8")).toBe(original);
+});
+
+test("keeps original source and verified sidecar after a short instrumentation write", async () => {
+	snapshotHook.shortWrite = true;
+	await probe();
+	expect(await readFile(source, "utf8")).toBe(original);
+	expect(snapshotHook.sidecarAtFault).toEqual(Buffer.from(original));
+	expect(snapshotHook.sourceAtFault).toBe(original);
 });
 
 test("restores after abort", async () => {
@@ -218,6 +310,23 @@ test("reports tracked index side effects even when worktree bytes do not change"
 		sideEffects: ["other.js"],
 		usableZero: false,
 	});
+});
+
+test("restores the instrumented path's index entry when a command stages probe code", async () => {
+	const before = execFileSync("git", ["ls-files", "-s", "--", "entry.js"], {
+		cwd: root,
+	});
+	const result = await probe({ testCommand: "git add entry.js" });
+	expect(result).toMatchObject({
+		hits: [{ count: 0 }],
+		sideEffects: ["entry.js"],
+		usableZero: false,
+		restored: true,
+	});
+	expect(
+		execFileSync("git", ["ls-files", "-s", "--", "entry.js"], { cwd: root }),
+	).toEqual(before);
+	expect(await readFile(source, "utf8")).toBe(original);
 });
 
 test("invalidates zero when the command removes instrumentation by restoring original bytes", async () => {
