@@ -278,6 +278,13 @@ This plan covers all eight audit rows and ranked follow-ups 1–7. It introduces
   - Decided by: coordinator, amend-on-record, 2026-09-30 (Shepherd-instructed)
   - Supersedes: nothing; a bounded exception for TASK-811 and any further slice before the provider returns.
 
+- **D-039 - Task section grammar is fence-aware from the Implementation Notes heading onward** *(Added 2026-09-30 by the review-phase coordinator after TASK-811 P2)*
+  - Decision: Drive attempt records embed raw worker text inside a code fence longer than any backtick run in the body, and the shared section scanner (`sectionHeadings` in `task-note-editor.ts`, used by `extractSection`, `extractRawContent` and `preserveTaskNotes`) treats a `## ` line inside a fenced block as inert **only from the notes heading onward**; sections before the notes keep the plain line grammar. `preserveTaskNotes` terminates an appended notes section with a line ending plus a blank line when another section follows.
+  - Alternatives: a globally fence-aware grammar (changes the parse of archived TASK-185, whose description opens a fence that closes at end of file; the corpus would no longer round-trip); escaping headings instead of fencing (alters the verbatim bytes AC-004 protects).
+  - Why: the worker's raw text must stay verbatim and inert; the corpus of 781 task files (`missions/tasks` + `missions/archive/tasks`) parses identically under the old and new grammar (coordinator re-verified, zero differences), which a global rule would break.
+  - Decided by: coordinator, amend-on-record, 2026-09-30 (worker-proposed, evidence in TASK-811 notes)
+  - Supersedes: nothing; narrows the mechanism of TASK-811 P2.
+
 ## Behaviors
 
 ### B-001 - Worker records survive failure, partial, unknown, and spawn-failure attempts

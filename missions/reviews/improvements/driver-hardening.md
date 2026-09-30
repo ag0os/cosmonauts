@@ -8,7 +8,7 @@ recordedAt: '2026-09-29'
 
 # Drive improvement observations — driver-hardening
 
-Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two live-acceptance runs), the 14 task notes, and the coordinator's implementation log. Bounded to eight rows in the first pass; four rows (9-12) added by the review-phase coordinator after codex rounds 3-4 and coordinator finding C-001, four more (13-16) after Claude review 1; the plan's own defects (already fixed on the branch) are excluded unless they teach something about Drive or the process.
+Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two live-acceptance runs), the 14 task notes, and the coordinator's implementation log. Bounded to eight rows in the first pass; four rows (9-12) added by the review-phase coordinator after codex rounds 3-4 and coordinator finding C-001, four more (13-16) after Claude review 1, two (17-18) from TASK-811 residuals; the plan's own defects (already fixed on the branch) are excluded unless they teach something about Drive or the process.
 
 | Observed problem | What happened in this run | Suggested improvement | Why it helps |
 |---|---|---|---|
@@ -29,6 +29,8 @@ Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two l
 | The containment check compares symlinks and group-only execute bits through `hash-object`/`mode & 0o111`, which never equal the tree entry (Claude review 1, F5, P3). | Conservative over-retention of refs for symlinks under worktree-compared paths. | `readlink` + `hash-object --stdin`; Git's owner-x rule; respect `core.fileMode`. | Retention stays a signal only when ordinary success clears refs. |
 | The probe does not detect a test command that moves HEAD (Claude review 1, F6, P3). | A command that commits instrumented bytes is reported `restored: true` although HEAD holds probe code. | Record `rev-parse HEAD` before and after; report movement as a side effect. | Closes the last visible way probe statements can reach history. |
 | The probe journal lives under `os.tmpdir()` by plan flow step 4 (Claude review 1, F7, P3, design residual). | A temp-directory purge after a host crash removes the only copy of git-dirty originals and the journal that blocks commit. | Human decision: journal under the project (e.g. `.cosmonauts/probe/`, ignored) or keep as ruled. | Defeats "refuse while a journal is outstanding" only after a crash plus a purge. |
+| `appendFinalizationFailure` in `drive-finalization.ts` still embeds its reason unfenced (TASK-811 residual 1; same class as Claude review F2). | The reason can carry git hook output; a `## ` line in it could restructure the notes. Not worker text, so outside TASK-811 P2. | Route through the same fenced record writer. | One choke point for every Drive-written raw text. |
+| `parseAcceptanceCriteria` finds `AC:BEGIN`/`AC:END` with `indexOf` over the whole body (TASK-811 residual 2). | A literal marker inside recorded worker text can be misread when the task has no real AC block. | Anchor marker detection to column-0 lines outside fences. | Closes the last unfenced-text parse hazard. |
 
 ## Ranked follow-ups
 
@@ -48,9 +50,11 @@ Read-only pass over the 16 Drive runs (12 slices, one follow-up run twice, two l
 14. Probe HEAD-movement detection (row 15).
 15. Symlink/mode containment identity (row 14).
 16. Journal location (row 16) — human decision.
+17. Fence the finalization-failure reason (row 17).
+18. Anchor AC marker detection (row 18).
 
 ## Non-goals
 
-- Re-litigating any decision D-001..D-038 or the ratified Intent; the plan's own defects are fixed on the branch and recorded in its Evidence table.
+- Re-litigating any decision D-001..D-039 or the ratified Intent; the plan's own defects are fixed on the branch and recorded in its Evidence table.
 - Changing `lib/durable-runtime/`, `drive-envelope`, or `execution-liveness` scope.
 - The observation-4 Biome behavior (Q-003) and the `fallow-provider.ts` warn verdict.
