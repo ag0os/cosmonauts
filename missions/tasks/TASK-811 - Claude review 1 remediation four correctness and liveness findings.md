@@ -47,7 +47,7 @@ Residuals observed, not fixed because they are outside P1..P4: (1) drive-finaliz
 
 Uncommitted tree diffed against slice start c0e6e421: 12 modified + 2 new test files; tests additive (0 removed/changed expect lines; the 7 pinned-record updates are string literals each cited 'TASK-811 P2 / AC-004'); no .skip/.only/.todo; no lib/durable-runtime/, domains/shared/extensions/, config, baseline, suppression or ignore change. Parser parity re-verified by the coordinator: old (c0e6e421) vs new parseTask over 781 files in missions/tasks + missions/archive/tasks, 0 diffs. Grammar deviation ruled D-039. Coordinator's own gates on this tree: bun run test 295 files / 4245 tests exit 0; lint exit 0; typecheck exit 0; check:reachability 214/214 exit 0; check:suppressions --base main exit 0; plan check-artifacts Issues: 0 exit 0. Residuals 1-2 recorded as improvement rows 17-18; residual 3 was row 13. Committed by the coordinator as the slice commit that follows.
 
-## ' removal regex in extractRawContent turned the P1 test red again with the same KEEP-ME failure; restored from a cp backup.
+    ## ' removal regex in extractRawContent turned the P1 test red again with the same KEEP-ME failure; restored from a cp backup.
 
 P2 (F2) RED at c0e6e421: tests/driver/runtime-helpers.test.ts 'appendDriveAttemptRecord > records raw text containing a notes heading verbatim' threw 'Duplicate Implementation Notes sections'. 'keeps later records and headings intact after raw text with a section heading' failed because the notes lacked the raw text: the section ended at '## Summary'. tests/tasks/task-note-preservation.test.ts 'ends an appended notes section with a blank line before a following section' failed because the file lacked 'Old
 
@@ -59,4 +59,4 @@ Corpus check: old and new parseTask agree on description, plan, notes and rawCon
 Pre-existing expectations updated with inline 'TASK-811 P2 / AC-004' comments. They pinned the unfenced body: run-one-task 'stops a blocked report before postflight or retry' (3 cases), 'preserves worker notes and records unknown output before inferred success', and 'driver task fields literal uses Title Case and implementationNotes, never note'; drive-scheduler-backend 'blocks a raw outcome-line report without graph postflight or retry' (2 cases).
 P2 mutations, each restored from a cp backup: (a) body unfenced turned both runtime-helpers tests red (Duplicate; notes missing raw); (b) glue termination removed turned the glue test red; (c) notes fence tracking disabled turned both runtime-helpers tests red.
 
-## |$)' end rule in extractRawContent turned the test red with the same KEEP-ME failure; restored from a cp backup.
+    ## |$)' end rule in extractRawContent turned the test red with the same KEEP-ME failure; restored from a cp backup.
