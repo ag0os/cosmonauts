@@ -229,7 +229,14 @@ level: `openai-codex/gpt-5.6-sol` for every role, at `medium` for the builder an
 `max` for `xhigh`, and a role with no thinking level gets no effort flag.
 A model from another provider is not passed, so Codex uses its own
 configuration. `claude-cli` gets no model flag. Custom arguments that set
-a model or an effort win, and neither is added twice.
+a model (`--model`, `-m`, `-c model=`) or an effort
+(`-c model_reasoning_effort=`) win, and neither is added twice; so do
+arguments that pick the model through a profile or another provider
+(`--profile`, `-p`, `--oss`, `--local-provider`, `-c model_provider=`),
+which get no `--model` and are recorded as `caller: <argument>`. Codex
+takes the last of repeated `-c` flags, and custom arguments come after
+the ones lean adds, so a custom effort wins even in a form lean does not
+recognise.
 
 `run.json` records, per role, what the harness was asked for, as
 `models`, for example `{ "builder": { "model": "gpt-5.6-sol", "effort":

@@ -4,6 +4,12 @@ import type { DetachedProcess, PatchFailure, RunRecord } from "./types.ts";
 const NAMED_CANDIDATES = 3;
 /** The command characters the summary keeps per candidate; run.json has more. */
 const CANDIDATE_COMMAND_CHARS = 80;
+/**
+ * The characters kept from the end of a cut command. A candidate's command
+ * in run.json is already cut to end at the clone path it names (or just
+ * before a `...`), so its tail is what says why it matched.
+ */
+const CANDIDATE_TAIL_CHARS = 47;
 
 /**
  * One line for the lead: status, reason or the last review's verdict, and
@@ -50,9 +56,9 @@ function detachedNote(
 }
 
 function truncated(command: string): string {
-	return command.length > CANDIDATE_COMMAND_CHARS
-		? `${command.slice(0, CANDIDATE_COMMAND_CHARS - 3)}...`
-		: command;
+	if (command.length <= CANDIDATE_COMMAND_CHARS) return command;
+	const head = CANDIDATE_COMMAND_CHARS - 3 - CANDIDATE_TAIL_CHARS;
+	return `${command.slice(0, head)}...${command.slice(-CANDIDATE_TAIL_CHARS)}`;
 }
 
 /** Empty when the reason already names the patch, as a failed apply's does. */

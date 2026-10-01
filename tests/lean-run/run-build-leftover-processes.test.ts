@@ -61,11 +61,12 @@ const LEFTOVER_SCRIPT = [
  * daemon, which writes its pid to ARGV[0] and keeps ARGV[1] (a path in the
  * clone) on its command line. The parent exits only once that file exists,
  * so its group is empty when it exits: the runner lists nothing and the
- * daemon is never in the tree.
+ * daemon is never in the tree. A daemon that dies first leaves no file, so
+ * the parent gives up after 5 s and says so on stderr.
  */
 const DAEMON_SCRIPT = [
 	"use POSIX;",
-	"if (fork) { select(undef, undef, undef, 0.02) until -e $ARGV[0]; exit 0; }",
+	'if (fork) { for (1 .. 250) { exit 0 if -e $ARGV[0]; select(undef, undef, undef, 0.02); } die "daemon wrote no pid file within 5 s\\n"; }',
 	"POSIX::setsid() or die;",
 	"fork and exit;",
 	'open(my $f, ">", "$ARGV[0].tmp") or die; print $f "$$\\n"; close $f;',
@@ -77,6 +78,8 @@ const DAEMON_SCRIPT = [
 let root: string;
 let scratch: string;
 const leftovers: number[] = [];
+/** One test points `TMPDIR` into `scratch`; a timed-out run would leave it there. */
+const originalTmpdir = process.env.TMPDIR;
 
 function git(...args: string[]): string {
 	return execFileSync("git", args, { cwd: root, encoding: "utf8" });
@@ -99,10 +102,16 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	restoreTmpdir();
 	killAll(leftovers.splice(0));
 	await rm(root, { recursive: true, force: true });
 	await rm(scratch, { recursive: true, force: true });
 });
+
+function restoreTmpdir(): void {
+	if (originalTmpdir === undefined) delete process.env.TMPDIR;
+	else process.env.TMPDIR = originalTmpdir;
+}
 
 function killAll(pids: readonly number[]): void {
 	for (const pid of pids) {
@@ -217,6 +226,17 @@ const refreshGraph: RefreshFileGraph = async () => ({
 		edges: [],
 	},
 });
+
+/**
+ * The real listing, tried up to three times: under load one `ps` can pass
+ * its 1 s bound, and a run whose last listing fails skips the detached scan.
+ */
+const patientListing: ListProcesses = async () => {
+	let listing = await listProcesses();
+	for (let tries = 1; tries < 3 && listing instanceof Error; tries += 1)
+		listing = await listProcesses();
+	return listing;
+};
 
 function build(extra: Partial<RunBuildOptions> = {}): Promise<RunRecord> {
 	return runBuild({
@@ -412,6 +432,7 @@ describe.skipIf(process.platform === "win32")(
 			await mkdir(realTmp);
 			await symlink(realTmp, linkedTmp);
 			const pidFile = join(scratch, "daemon.pid");
+			const stderr = join(scratch, "daemon.stderr.log");
 			let clone = "";
 			let realClone = "";
 			const builder: BuilderBackend = {
@@ -423,38 +444,43 @@ describe.skipIf(process.platform === "win32")(
 						command: "perl",
 						args: ["-e", DAEMON_SCRIPT, pidFile, `${realClone}/daemon-marker`],
 						cwd: input.worktree,
-						output: {
-							stdout: join(scratch, "daemon.stdout.log"),
-							stderr: join(scratch, "daemon.stderr.log"),
-						},
+						output: { stdout: join(scratch, "daemon.stdout.log"), stderr },
 					});
+					if (!existsSync(pidFile))
+						throw new Error(
+							`daemon not started: ${await readFile(stderr, "utf8")}`,
+						);
 					const daemon = await waitForMatch(pidFile, /^(\d+)\n/u);
 					leftovers.push(daemon);
 					return backend(DONE, true).run(input);
 				},
 			};
-			const savedTmp = process.env.TMPDIR;
 			process.env.TMPDIR = linkedTmp;
 			let record: RunRecord;
 			try {
-				record = await build({ backend: builder });
+				record = await build({
+					backend: builder,
+					listProcesses: patientListing,
+				});
 			} finally {
-				if (savedTmp === undefined) delete process.env.TMPDIR;
-				else process.env.TMPDIR = savedTmp;
+				restoreTmpdir();
 			}
 
 			const [daemon] = leftovers;
+			expect(record.manifest.reason).toBeUndefined();
 			if (!daemon) throw new Error("daemon not started");
 			expect(clone.startsWith(linkedTmp)).toBe(true);
 			expect(realClone.includes(clone)).toBe(false);
-			expect(record.manifest.detachedCandidates).toEqual([
-				{ pid: daemon, command: expect.stringContaining(realClone) },
-			]);
+			expect(
+				record.manifest.detachedCandidates,
+				`warnings: ${JSON.stringify(record.manifest.warnings)}`,
+			).toEqual([{ pid: daemon, command: expect.stringContaining(realClone) }]);
 			expect(record.manifest.cleanupUnconfirmed).toBeUndefined();
 			expect(record.manifest.status).toBe("done");
 			expect(summarizeRun(record)).toContain(
 				`1 detached process candidate(s) still name the builder clone, not confirmed gone: pids ${daemon} (`,
 			);
+			expect(summarizeRun(record)).toContain(`${realClone.slice(-30)}...)`);
 			expect(existsSync(lockPath())).toBe(false);
 			expect((await build()).manifest.status).toBe("done");
 		}, 30_000);

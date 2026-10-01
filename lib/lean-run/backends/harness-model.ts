@@ -22,8 +22,20 @@ const CODEX_EFFORT = {
 	max: "xhigh",
 } as const satisfies Record<ThinkingLevel, string>;
 
-const MODEL_FLAGS: ReadonlySet<string> = new Set(["--model", "-m"]);
-const CONFIG_FLAGS: ReadonlySet<string> = new Set(["--config", "-c"]);
+const CODEX_MODEL_FLAGS: ReadonlySet<string> = new Set(["--model", "-m"]);
+const CODEX_CONFIG_FLAGS: ReadonlySet<string> = new Set(["--config", "-c"]);
+const CODEX_PROFILE_FLAGS: ReadonlySet<string> = new Set(["--profile", "-p"]);
+const CODEX_LOCAL_PROVIDER_FLAGS: ReadonlySet<string> = new Set([
+	"--local-provider",
+]);
+const CODEX_VALUE_FLAGS: readonly ReadonlySet<string>[] = [
+	CODEX_MODEL_FLAGS,
+	CODEX_CONFIG_FLAGS,
+	CODEX_PROFILE_FLAGS,
+	CODEX_LOCAL_PROVIDER_FLAGS,
+];
+/** Claude's only model flag; its `-c` is the boolean `--continue`. */
+const CLAUDE_MODEL_FLAGS: ReadonlySet<string> = new Set(["--model"]);
 
 export interface HarnessModel {
 	/** Arguments to add before the caller's own. */
@@ -36,27 +48,36 @@ export interface HarnessModel {
  * for in all. Codex gets `--model` and `model_reasoning_effort` only for an
  * `openai-codex/` model; Claude gets no mapping. A model or effort the
  * caller's arguments already set is not added again, and is what the
- * record names.
+ * record names; a caller who picks the model through a profile or another
+ * provider gets no `--model` either, and the record names that argument.
  */
 export function harnessModel(options: {
 	kind: Exclude<LeanBackendKind, "pi">;
 	agentPackage: AgentPackage;
 	extraArgs: readonly string[];
 }): HarnessModel {
-	const caller = callerModel(options.extraArgs);
 	if (options.kind === "claude-cli")
 		return {
 			args: [],
-			requested: { model: caller.model ?? HARNESS_DEFAULT_MODEL },
+			requested: {
+				model: claudeCallerModel(options.extraArgs) ?? HARNESS_DEFAULT_MODEL,
+			},
 		};
+	const caller = codexCallerChoice(options.extraArgs);
 	const own = codexModel(options.agentPackage);
+	const callerPicksModel =
+		caller.model !== undefined || caller.route !== undefined;
 	const args = [
-		...(own.model && caller.model === undefined ? ["--model", own.model] : []),
+		...(own.model && !callerPicksModel ? ["--model", own.model] : []),
 		...(own.effort && caller.effort === undefined
 			? ["-c", `${EFFORT_KEY}=${own.effort}`]
 			: []),
 	];
-	const model = caller.model ?? own.model ?? HARNESS_DEFAULT_MODEL;
+	const model =
+		caller.model ??
+		(caller.route === undefined ? undefined : `caller: ${caller.route}`) ??
+		own.model ??
+		HARNESS_DEFAULT_MODEL;
 	const effort = caller.effort ?? own.effort;
 	return { args, requested: effort ? { model, effort } : { model } };
 }
@@ -73,32 +94,74 @@ function codexModel(agentPackage: AgentPackage): {
 		: { model: id };
 }
 
-/** `--model x`, `-m x`, `--model=x`, `-c model=x` and `-c model_reasoning_effort=y`, up to `--`. */
-function callerModel(args: readonly string[]): {
+interface CodexCallerChoice {
 	model?: string;
 	effort?: string;
-} {
-	const found: { model?: string; effort?: string } = {};
+	/**
+	 * The argument that picks the model without naming it: a profile, a
+	 * local provider or a `model_provider`.
+	 */
+	route?: string;
+}
+
+/**
+ * What the caller's codex arguments choose, up to `--`: a model
+ * (`--model`, `-m`, `-c model=`), an effort (`-c model_reasoning_effort=`)
+ * or a route to a model (`--profile`, `-p`, `--oss`, `--local-provider`,
+ * `-c model_provider=`).
+ */
+function codexCallerChoice(args: readonly string[]): CodexCallerChoice {
+	const found: CodexCallerChoice = {};
 	for (let index = 0; index < args.length; index += 1) {
 		const arg = args[index] ?? "";
 		if (arg === "--") break;
-		const next = args[index + 1];
-		const model = flagValue(MODEL_FLAGS, arg, next);
-		const config = flagValue(CONFIG_FLAGS, arg, next);
-		if (model !== undefined) found.model = model;
-		if (config !== undefined) Object.assign(found, configModel(config));
-		if (MODEL_FLAGS.has(arg) || CONFIG_FLAGS.has(arg)) index += 1;
+		Object.assign(found, codexArgChoice(arg, args[index + 1]));
+		if (CODEX_VALUE_FLAGS.some((flags) => flags.has(arg))) index += 1;
 	}
 	return found;
 }
 
-function configModel(config: string): { model?: string; effort?: string } {
-	const [key, value] = splitConfig(config);
-	if (key === "model") return { model: value };
-	if (key === EFFORT_KEY) return { effort: value };
+function codexArgChoice(
+	arg: string,
+	next: string | undefined,
+): CodexCallerChoice {
+	if (arg === "--oss") return { route: "--oss" };
+	const model = flagValue(CODEX_MODEL_FLAGS, arg, next);
+	if (model !== undefined) return { model };
+	const config = flagValue(CODEX_CONFIG_FLAGS, arg, next);
+	if (config !== undefined) return configChoice(config);
+	const profile = flagValue(CODEX_PROFILE_FLAGS, arg, next);
+	if (profile !== undefined) return { route: `--profile ${profile}` };
+	const provider = flagValue(CODEX_LOCAL_PROVIDER_FLAGS, arg, next);
+	if (provider !== undefined) return { route: `--local-provider ${provider}` };
 	return {};
 }
 
+function configChoice(config: string): CodexCallerChoice {
+	const [key, value] = splitConfig(config);
+	if (key === "model") return { model: value };
+	if (key === EFFORT_KEY) return { effort: value };
+	if (key === "model_provider") return { route: `-c model_provider=${value}` };
+	return {};
+}
+
+/** `--model x` or `--model=x`, up to `--`. */
+function claudeCallerModel(args: readonly string[]): string | undefined {
+	let model: string | undefined;
+	for (let index = 0; index < args.length; index += 1) {
+		const arg = args[index] ?? "";
+		if (arg === "--") break;
+		model = flagValue(CLAUDE_MODEL_FLAGS, arg, args[index + 1]) ?? model;
+		if (CLAUDE_MODEL_FLAGS.has(arg)) index += 1;
+	}
+	return model;
+}
+
+/**
+ * The value `arg` gives one of `flags`, as clap reads it: the next
+ * argument, the part after `=`, or, for a short flag, the rest of the
+ * argument (`-mgpt-x`).
+ */
 function flagValue(
 	flags: ReadonlySet<string>,
 	arg: string,
@@ -106,8 +169,11 @@ function flagValue(
 ): string | undefined {
 	if (flags.has(arg)) return next;
 	const equals = arg.indexOf("=");
-	if (equals === -1 || !flags.has(arg.slice(0, equals))) return undefined;
-	return arg.slice(equals + 1);
+	if (equals !== -1 && flags.has(arg.slice(0, equals)))
+		return arg.slice(equals + 1);
+	if (arg.length > 2 && !arg.startsWith("--") && flags.has(arg.slice(0, 2)))
+		return arg.slice(2);
+	return undefined;
 }
 
 /** `key=value`, with TOML string quotes taken off the value. */

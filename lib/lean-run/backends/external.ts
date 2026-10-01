@@ -80,7 +80,8 @@ export interface ExternalBuilderBackendOptions {
 	 * `--tools`) with `--disallowedTools` and `CLAUDE_DENIED_TOOLS`; codex none
 	 * (sandbox comes from the package). Custom arguments replace the deny list too.
 	 * Codex also gets the role's `openai-codex/` model and reasoning effort
-	 * unless these arguments set them (`harnessModel`).
+	 * unless these arguments set them or pick the model through a profile or
+	 * another provider (`harnessModel`).
 	 */
 	extraArgs?: readonly string[];
 	env?: NodeJS.ProcessEnv;
@@ -273,6 +274,8 @@ function materialize(
 			...(options.binary ? { claudeBinary: options.binary } : {}),
 		});
 	const model = harnessModel(modelOptions(options, agentPackage));
+	// The caller's arguments come after ours: codex `-c` is last-wins, so a
+	// caller effort the detector misses still overrides the one we add.
 	return createCodexCliInvocation(agentPackage, {
 		...shared,
 		codexArgs: ["exec", ...model.args, ...extraArgs],

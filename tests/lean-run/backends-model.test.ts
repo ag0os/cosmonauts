@@ -137,11 +137,25 @@ describe("codex-cli model and effort from the agent definition", () => {
 		expect(args.indexOf("--model")).toBeLessThan(args.indexOf("--json"));
 	});
 
+	// Codex takes the last of repeated `-c` flags, so the caller's arguments
+	// coming after ours is what lets a caller effort the detector misses win.
+	test("puts the model flags before the caller's arguments", async () => {
+		const args = await argvFor({ extraArgs: ["--color", "never"] });
+
+		expect(args.indexOf("--model")).toBeGreaterThan(-1);
+		expect(args.indexOf("--model")).toBeLessThan(args.indexOf("--color"));
+		expect(args.indexOf("model_reasoning_effort=medium")).toBeLessThan(
+			args.indexOf("--color"),
+		);
+	});
+
 	test.each([
 		[["--model", "gpt-caller"]],
 		[["--model=gpt-caller"]],
 		[["-m", "gpt-caller"]],
+		[["-mgpt-caller"]],
 		[["-c", 'model="gpt-caller"']],
+		[["-cmodel=gpt-caller"]],
 	])("keeps the caller's model from %j and adds no second one", async (extraArgs) => {
 		const backend = createExternalBuilderBackend({
 			kind: "codex-cli",
@@ -163,6 +177,7 @@ describe("codex-cli model and effort from the agent definition", () => {
 		[["-c", "model_reasoning_effort=high"]],
 		[["--config", 'model_reasoning_effort="high"']],
 		[["-c=model_reasoning_effort=high"]],
+		[["-cmodel_reasoning_effort=high"]],
 	])("keeps the caller's effort from %j and adds no second one", async (extraArgs) => {
 		const backend = createExternalBuilderBackend({
 			kind: "codex-cli",
@@ -179,6 +194,56 @@ describe("codex-cli model and effort from the agent definition", () => {
 			model: "gpt-5.6-sol",
 			effort: "high",
 		});
+	});
+});
+
+describe("codex-cli caller who picks the model through a profile or provider", () => {
+	test.each([
+		[["--profile", "fast"], "caller: --profile fast"],
+		[["--profile=fast"], "caller: --profile fast"],
+		[["-p", "fast"], "caller: --profile fast"],
+		[["-pfast"], "caller: --profile fast"],
+		[["--oss"], "caller: --oss"],
+		[["--local-provider", "ollama"], "caller: --local-provider ollama"],
+		[["--local-provider=ollama"], "caller: --local-provider ollama"],
+		[["-c", "model_provider=ollama"], "caller: -c model_provider=ollama"],
+		[["-cmodel_provider=ollama"], "caller: -c model_provider=ollama"],
+	])("adds no model for %j and records %s", async (extraArgs, model) => {
+		const backend = createExternalBuilderBackend({
+			kind: "codex-cli",
+			resolvePackage: async () => PACKAGE,
+			extraArgs,
+		});
+		const args = await argvFor({ extraArgs });
+
+		expect(args).not.toContain("--model");
+		expect(args).not.toContain("gpt-5.6-sol");
+		expect(efforts(args)).toEqual(["model_reasoning_effort=medium"]);
+		expect(await backend.requestedModel?.("lean/builder")).toEqual({
+			model,
+			effort: "medium",
+		});
+	});
+
+	test("records the caller's named model over its profile", async () => {
+		const backend = createExternalBuilderBackend({
+			kind: "codex-cli",
+			resolvePackage: async () => PACKAGE,
+			extraArgs: ["--profile", "fast", "--model", "gpt-caller"],
+		});
+
+		expect(await backend.requestedModel?.("lean/builder")).toEqual({
+			model: "gpt-caller",
+			effort: "medium",
+		});
+	});
+
+	test("adds no effort when the caller sets one alongside a profile", async () => {
+		const extraArgs = ["-p", "fast", "-c", "model_reasoning_effort=low"];
+		const args = await argvFor({ extraArgs });
+
+		expect(args).not.toContain("--model");
+		expect(efforts(args)).toEqual(["model_reasoning_effort=low"]);
 	});
 });
 
@@ -214,6 +279,22 @@ describe("claude-cli model", () => {
 			kind: "claude-cli",
 			resolvePackage: async () => PACKAGE,
 			extraArgs: ["--model", "opus", "--dangerously-skip-permissions"],
+		});
+
+		expect(await backend.requestedModel?.("lean/builder")).toEqual({
+			model: "opus",
+		});
+	});
+
+	// Claude's `-c` is the boolean `--continue`, not codex's `--config`.
+	test.each([
+		[["-c", "--model", "opus"]],
+		[["--continue", "--model=opus"]],
+	])("records the caller's model from %j by claude's grammar", async (extraArgs) => {
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			extraArgs,
 		});
 
 		expect(await backend.requestedModel?.("lean/builder")).toEqual({

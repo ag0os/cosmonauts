@@ -96,10 +96,26 @@ describe("summarizeRun", () => {
 				})),
 			}),
 		);
-		const cut = `${long.slice(0, 77)}...`;
+		const cut = `${long.slice(0, 30)}...${long.slice(-47)}`;
 		expect(summary).toBe(
 			`failed: boom (1 re-entry); 5 detached process candidate(s) still name the builder clone, not confirmed gone: pids 51 (${cut}); 52 (${cut}); 53 (${cut}); and 2 more (see run.json)`,
 		);
+	});
+
+	test("keeps the clone path that ends a long recorded command", () => {
+		const clone = "/private/var/T/cosmonauts-lean-builder-Ab12/checkout";
+		const summary = summarizeRun(
+			record({
+				status: "failed",
+				reason: "boom",
+				detachedCandidates: [
+					{ pid: 51, command: `perl -e ${"y".repeat(150)}...${clone}...` },
+				],
+			}),
+		);
+
+		expect(summary).toContain("pids 51 (perl -e yyy");
+		expect(summary).toContain("cosmonauts-lean-builder-Ab12/checkout...)");
 	});
 
 	test("reports the re-review's verdict after a findings re-entry", () => {

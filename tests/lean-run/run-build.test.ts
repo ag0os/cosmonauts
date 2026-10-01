@@ -58,6 +58,7 @@ import {
 	type SignalProvider,
 } from "../../lib/lean-run/types.ts";
 import type { SpawnStats } from "../../lib/orchestration/types.ts";
+import type { ListProcesses } from "../../lib/process/process-tree.ts";
 
 const PLAN_PATH = "missions/lean/demo/plan.md";
 const PLAN = `# Demo
@@ -302,7 +303,25 @@ function blockPatch(stage: string, reply: Reply): Reply {
 	};
 }
 
-/** A run whose last patch was not written keeps its builder clone; the test cleans it up. */
+/**
+ * A listing with only this process. Every builder run lists processes at
+ * its end, and a real `ps` past its time bound adds a "detached process
+ * scan skipped" warning that the exact-warning pins would see.
+ */
+const listOnlyThisProcess: ListProcesses = async () => [
+	{
+		pid: process.pid,
+		ppid: 1,
+		pgid: process.pid,
+		stat: "S",
+		command: "vitest",
+	},
+];
+
+/**
+ * A run whose last patch was not written keeps its builder clone; the test
+ * cleans it up. Tests that need a real process listing pass their own.
+ */
 async function build(
 	options: {
 		builder: StubBackend;
@@ -320,6 +339,7 @@ async function build(
 		refreshGraph: stubRefresh(),
 		// Most tests stub verify alone; "runBuild required signals" pins the default.
 		requiredSignals: [],
+		listProcesses: listOnlyThisProcess,
 		...rest,
 	});
 	const kept = record.manifest.patchFailure?.keptWorktree;
