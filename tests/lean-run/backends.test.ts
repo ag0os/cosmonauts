@@ -337,7 +337,10 @@ const CLAUDE_RESULT = {
 	},
 };
 
-/** `codex exec --json` events as codex-cli 0.159 prints them. */
+/**
+ * `codex exec --json` events for one turn; the `turn.completed` usage is
+ * verbatim from a live codex-cli 0.159.3 run.
+ */
 const CODEX_EVENTS = [
 	{ type: "thread.started", thread_id: "t" },
 	{ type: "turn.started" },
@@ -348,9 +351,11 @@ const CODEX_EVENTS = [
 	{
 		type: "turn.completed",
 		usage: {
-			input_tokens: 9_000,
-			cached_input_tokens: 6_000,
-			output_tokens: 500,
+			input_tokens: 18_924,
+			cached_input_tokens: 11_136,
+			cache_write_input_tokens: 0,
+			output_tokens: 5,
+			reasoning_output_tokens: 0,
 		},
 	},
 ]
@@ -369,7 +374,12 @@ describe("createExternalBuilderBackend token usage", () => {
 		});
 	}
 
-	function codexBackend(stdout: string, requests: ProcessRequest[] = []) {
+	function codexBackend(
+		stdout: string,
+		requests: ProcessRequest[] = [],
+		/** Null leaves the last-message file unwritten. */
+		lastMessage: string | null = ENVELOPE,
+	) {
 		return createExternalBuilderBackend({
 			kind: "codex-cli",
 			resolvePackage: async () => ({ ...PACKAGE, target: "codex" }),
@@ -377,7 +387,7 @@ describe("createExternalBuilderBackend token usage", () => {
 				requests.push(request);
 				const file =
 					request.args[request.args.indexOf("--output-last-message") + 1];
-				await writeFile(file ?? "", ENVELOPE);
+				if (lastMessage !== null) await writeFile(file ?? "", lastMessage);
 				return { exitCode: 0, stdout, stderr: "" };
 			},
 		});
@@ -449,6 +459,35 @@ describe("createExternalBuilderBackend token usage", () => {
 		expect(result.stats?.tokens.input).toBe(1_200);
 	});
 
+	test("reads claude's result element from the message array verbose mode prints", async () => {
+		const verbose = [
+			{ type: "system", subtype: "init", session_id: "session" },
+			{
+				type: "assistant",
+				message: { content: [{ type: "text", text: ENVELOPE }] },
+			},
+			CLAUDE_RESULT,
+		];
+
+		const result = await claudeBackend(`${JSON.stringify(verbose)}\n`).run(
+			input,
+		);
+
+		expect(result.text).toBe(`Built it.\n${ENVELOPE}`);
+		expect(result.stats?.tokens).toMatchObject({ input: 1_200, output: 340 });
+	});
+
+	test("returns claude's stdout as plain text with no stats when its message array has no result", async () => {
+		const stdout = JSON.stringify([
+			{ type: "system", subtype: "init" },
+			{ type: "assistant", message: { content: [] } },
+		]);
+
+		const result = await claudeBackend(stdout).run(input);
+
+		expect(result).toEqual({ text: stdout });
+	});
+
 	test("runs codex with JSONL events and counts the uncached input and the output", async () => {
 		const requests: ProcessRequest[] = [];
 
@@ -460,11 +499,11 @@ describe("createExternalBuilderBackend token usage", () => {
 		expect(result.text).toBe(ENVELOPE);
 		expect(result.stats).toMatchObject({
 			tokens: {
-				input: 3_000,
-				output: 500,
-				cacheRead: 6_000,
+				input: 7_788,
+				output: 5,
+				cacheRead: 11_136,
 				cacheWrite: 0,
-				total: 9_500,
+				total: 18_929,
 			},
 			cost: 0,
 			turns: 1,
@@ -473,16 +512,94 @@ describe("createExternalBuilderBackend token usage", () => {
 		expect(result.stats?.durationMs).toBeGreaterThanOrEqual(0);
 	});
 
-	test("sums the usage of every completed codex turn", async () => {
+	test("leaves codex's cache writes out of the counted input", async () => {
 		const turn = JSON.stringify({
 			type: "turn.completed",
-			usage: { input_tokens: 100, output_tokens: 10 },
+			usage: {
+				input_tokens: 10_000,
+				cached_input_tokens: 4_000,
+				cache_write_input_tokens: 1_000,
+				output_tokens: 50,
+			},
 		});
 
-		const result = await codexBackend(`${turn}\n${turn}`).run(input);
+		const result = await codexBackend(turn).run(input);
 
-		expect(result.stats?.tokens).toMatchObject({ input: 200, output: 20 });
+		expect(result.stats?.tokens).toEqual({
+			input: 5_000,
+			output: 50,
+			cacheRead: 4_000,
+			cacheWrite: 1_000,
+			total: 10_050,
+		});
+	});
+
+	test("sums the usage of every completed codex turn", async () => {
+		const turn = (inputTokens: number, outputTokens: number) =>
+			JSON.stringify({
+				type: "turn.completed",
+				usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+			});
+
+		const result = await codexBackend(`${turn(100, 10)}\n${turn(150, 20)}`).run(
+			input,
+		);
+
+		expect(result.stats?.tokens).toMatchObject({ input: 250, output: 30 });
 		expect(result.stats?.turns).toBe(2);
+	});
+
+	test("reads codex turns as running totals when a later turn repeats an earlier one's counts", async () => {
+		const turn = (inputTokens: number, outputTokens: number) =>
+			JSON.stringify({
+				type: "turn.completed",
+				usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+			});
+
+		const result = await codexBackend(
+			[turn(100, 10), turn(150, 20), turn(150, 20)].join("\n"),
+		).run(input);
+
+		expect(result.stats?.tokens).toMatchObject({ input: 150, output: 20 });
+		expect(result.stats?.turns).toBe(3);
+	});
+
+	test("ignores a codex turn that reports zero usage next to one that reports some", async () => {
+		const zero = JSON.stringify({
+			type: "turn.completed",
+			usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 },
+		});
+
+		const result = await codexBackend(`${zero}\n${CODEX_EVENTS}`).run(input);
+
+		expect(result.stats?.tokens).toMatchObject({ input: 7_788, output: 5 });
+		expect(result.stats?.turns).toBe(1);
+	});
+
+	test("falls back to codex's last agent message when the last-message file is missing", async () => {
+		const earlier = JSON.stringify({
+			type: "item.completed",
+			item: { id: "item_e", type: "agent_message", text: "thinking" },
+		});
+		const command = JSON.stringify({
+			type: "item.completed",
+			item: { id: "item_c", type: "command_execution", text: "ls" },
+		});
+
+		const result = await codexBackend(
+			[earlier, CODEX_EVENTS, command].join("\n"),
+			[],
+			null,
+		).run(input);
+
+		expect(result.text).toBe(ENVELOPE);
+		expect(result.stats?.tokens.output).toBe(5);
+	});
+
+	test("falls back to codex's stdout when there is neither a last-message file nor an agent message", async () => {
+		const result = await codexBackend("plain output", [], null).run(input);
+
+		expect(result).toEqual({ text: "plain output" });
 	});
 
 	test.each([
@@ -494,6 +611,19 @@ describe("createExternalBuilderBackend token usage", () => {
 		[
 			"a completed turn without usage counts",
 			JSON.stringify({ type: "turn.completed", usage: { input_tokens: "x" } }),
+		],
+		[
+			"a completed turn whose usage is all zero",
+			JSON.stringify({
+				type: "turn.completed",
+				usage: {
+					input_tokens: 0,
+					cached_input_tokens: 0,
+					cache_write_input_tokens: 0,
+					output_tokens: 0,
+					reasoning_output_tokens: 0,
+				},
+			}),
 		],
 	])("reports no codex stats for %s", async (_name, stdout) => {
 		const result = await codexBackend(stdout).run(input);

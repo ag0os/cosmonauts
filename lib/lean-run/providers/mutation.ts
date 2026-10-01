@@ -424,10 +424,6 @@ async function loadGraph(worktree: string): Promise<FileGraph | undefined> {
 }
 
 /**
- * The `verify` signal of this pass when it ran and did not pass: mutants
- * cannot be judged against tests that fail, so Stryker is not started.
- */
-/**
  * Mutants are only worth counting against passing tests: a verify signal that
  * did not pass, or blast-radius tests that failed, skip the run. A skipped
  * mutation signal did not run, so it can still earn its own re-entry once

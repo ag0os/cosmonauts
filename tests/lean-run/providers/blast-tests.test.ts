@@ -183,21 +183,113 @@ describe("blast-tests provider with an injected runner", () => {
 		}
 	});
 
-	test("fails and re-enters when a listed test fails, and leaves tier 2 unrun", async () => {
+	test("fails and re-enters when a listed test fails twice, and leaves tier 2 unrun", async () => {
 		await writeFixture();
 		const runner = stubRunner([exited(1)]);
 
 		const signal = await provider(runner).run(context());
 
-		expect(runner.calls).toHaveLength(1);
+		expect(runner.calls.map((call) => call.invocation.args.at(-1))).toEqual([
+			DIRECT,
+			DIRECT,
+		]);
 		expect(signal).toMatchObject({
 			status: "fail",
 			summary: `tier 1 failed (exit 1): ${DIRECT}`,
 			reenter: true,
 		});
+		expect(dataOf(signal).runs?.[0]?.attempts).toMatchObject([
+			{ verdict: "failed", exitCode: 1 },
+			{ verdict: "failed", exitCode: 1 },
+		]);
 		expect(dataOf(signal).notRun).toEqual([
 			{ tests: [TRANSITIVE], reason: "tier 1 failed" },
 		]);
+	});
+
+	test("passes when a failed tier passes on its second run, and records both runs", async () => {
+		await writeFixture();
+		const runner = stubRunner([exited(1), exited(0), exited(0)]);
+
+		const signal = await provider(runner).run(context());
+
+		expect(runner.calls).toHaveLength(3);
+		expect(signal).toMatchObject({
+			status: "pass",
+			summary:
+				"2 blast-radius tests passed; passed on a second run after failing once: tier 1",
+			reenter: false,
+		});
+		expect(dataOf(signal).runs).toMatchObject([
+			{
+				tier: 1,
+				verdict: "passed",
+				exitCode: 0,
+				attempts: [
+					{ verdict: "failed", exitCode: 1 },
+					{ verdict: "passed", exitCode: 0 },
+				],
+			},
+			{ tier: 2, verdict: "passed" },
+		]);
+		expect(dataOf(signal).runs?.[1]?.attempts).toBeUndefined();
+	});
+
+	test("keeps the first failure when the second run cannot start", async () => {
+		await writeFixture();
+		const controller = new AbortController();
+		const runner: StubRunner = {
+			calls: [],
+			run: async (invocation) => {
+				runner.calls.push({ invocation });
+				controller.abort();
+				return exited(1);
+			},
+		};
+
+		const signal = await provider(runner).run(
+			context({ signal: controller.signal }),
+		);
+
+		expect(runner.calls).toHaveLength(1);
+		expect(signal).toMatchObject({ status: "fail", reenter: true });
+		expect(dataOf(signal).runs?.[0]).toMatchObject({
+			verdict: "failed",
+			exitCode: 1,
+			attempts: [
+				{ verdict: "failed", exitCode: 1 },
+				{ verdict: "not-run", outcome: "aborted" },
+			],
+		});
+	});
+
+	test.each([
+		["vitest on stderr", "", "No test files found, exiting with code 1"],
+		["vitest on stdout", "No test files found, exiting with code 1", ""],
+		["jest", "", "No tests found, exiting with code 1"],
+	])("is info, not fail, when the runner selects none of a tier's files (%s)", async (_name, stdout, stderr) => {
+		await writeFixture();
+		const runner = stubRunner([
+			{ kind: "code-exit", code: 1, stdout, stderr },
+			exited(0),
+		]);
+
+		const signal = await provider(runner).run(context());
+
+		expect(runner.calls.map((call) => call.invocation.args.at(-1))).toEqual([
+			DIRECT,
+			TRANSITIVE,
+		]);
+		expect(signal).toMatchObject({
+			status: "info",
+			summary: `1 blast-radius tests passed; tier 1 not run: the test runner selected none of the listed files: ${DIRECT}`,
+			reenter: false,
+		});
+		expect(dataOf(signal).runs?.[0]).toMatchObject({
+			verdict: "not-run",
+			reason: "the test runner selected none of the listed files",
+			exitCode: 1,
+		});
 	});
 
 	test("fails on a test that verification ran too", async () => {
@@ -482,6 +574,54 @@ describe("blast-tests provider, real vitest run", { timeout: 60_000 }, () => {
 			{ tier: 1, tests: [DIRECT], exitCode: 0 },
 			{ tier: 2, tests: [TRANSITIVE], exitCode: 0 },
 		]);
+	});
+
+	test("is skipped info when the project's config excludes every listed file", async () => {
+		const excluded = "e2e/x.test.ts";
+		await writeFiles({
+			"package.json": JSON.stringify({
+				type: "module",
+				scripts: { test: "vitest run" },
+			}),
+			"vitest.config.ts": [
+				'import { defineConfig } from "vitest/config";',
+				'export default defineConfig({ test: { include: ["tests/**/*.test.ts"] } });',
+				"",
+			].join("\n"),
+			[excluded]: 'import { test } from "vitest";\ntest("x", () => {});\n',
+		});
+		await symlink(
+			join(REPO_ROOT, "node_modules"),
+			join(tmp.path, "node_modules"),
+		);
+		const radius = blastRadius([excluded]);
+		const priorSignals: Signal[] = [
+			{
+				...radius,
+				data: {
+					graph: "current",
+					radius: { changed: [excluded], tests: [excluded] },
+				},
+			},
+		];
+
+		const signal = await createBlastTestsProvider({
+			loadGraph: async () => undefined,
+		}).run(context({ changedFiles: [excluded], priorSignals }));
+
+		expect(signal).toMatchObject({
+			status: "info",
+			summary: `0 blast-radius tests passed; tier 1 not run: the test runner selected none of the listed files: ${excluded}`,
+			reenter: false,
+		});
+		expect(dataOf(signal)).toMatchObject({
+			skipped: true,
+			tier1: [excluded],
+			runs: [{ tier: 1, tests: [excluded], verdict: "not-run", exitCode: 1 }],
+		});
+		expect(dataOf(signal).runs?.[0]?.outputTail).toContain(
+			"No test files found",
+		);
 	});
 
 	test("fails and re-enters when a listed test fails", async () => {

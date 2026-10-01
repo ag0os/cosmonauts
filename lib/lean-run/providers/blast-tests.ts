@@ -5,12 +5,14 @@
  * mutation provider selects them: tier 1 is the changed files' own tests
  * (changed spec files, mirrored tests and tests that import a changed file
  * directly), tier 2 the rest of the radius, run only when enough time is
- * left after tier 1. A listed test that exits non-zero fails the signal and
- * re-enters the builder once, even when verification ran it too: the
+ * left after tier 1. A tier that exits non-zero is run once more, as verify
+ * retries a failed command; only a second failure fails the signal and
+ * re-enters the builder once, even when verification ran the test too: the
  * explicit run is what counts. Everything that keeps the list from running
  * (no list, a graph that is missing or not known to be current, no test
- * runner, the count or time bound, a run that could not finish) is `info`,
- * never `fail`, and `data.skipped` when no listed test ran. Never throws.
+ * runner, a runner that selects none of the listed files, the count or time
+ * bound, a run that could not finish) is `info`, never `fail`, and
+ * `data.skipped` when no listed test ran. Never throws.
  */
 
 import { existsSync } from "node:fs";
@@ -34,6 +36,15 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 /** Below this much time left after tier 1, tier 2 does not start. */
 const DEFAULT_TIER2_MIN_MS = 60_000;
 const OUTPUT_TAIL_CHARS = 4_000;
+/**
+ * What vitest (`No test files found, exiting with code 1`) and jest (`No
+ * tests found, exiting with code 1`) print when their own include/exclude
+ * config filters out every file argument. No re-entry can fix that.
+ */
+const NOTHING_SELECTED =
+	/No test files found, exiting with code 1|No tests found, exiting with code 1/u;
+const NOTHING_SELECTED_REASON =
+	"the test runner selected none of the listed files";
 
 export interface BlastTestsCommand {
 	readonly executable: string;
@@ -56,15 +67,26 @@ export interface BlastTestsProviderOptions {
 
 type TierVerdict = "passed" | "failed" | "not-run";
 
-export interface BlastTestsRun {
-	readonly tier: 1 | 2;
-	readonly tests: readonly string[];
+export interface BlastTestsAttempt {
 	readonly outcome: ProviderProcessOutcome["kind"];
 	/** Null when the runner did not exit on its own. */
 	readonly exitCode: number | null;
 	readonly verdict: TierVerdict;
+	/** Why a `not-run` tier did not run, when the runner said so. */
+	readonly reason?: string;
 	readonly durationMs: number;
 	readonly outputTail: string;
+}
+
+/**
+ * The deciding attempt of a tier. A tier that failed was run once more;
+ * `attempts` then holds both runs in order, and the second decides unless it
+ * could not run, when the first failure stands.
+ */
+export interface BlastTestsRun extends BlastTestsAttempt {
+	readonly tier: 1 | 2;
+	readonly tests: readonly string[];
+	readonly attempts?: readonly BlastTestsAttempt[];
 }
 
 /** Listed tests that did not run, and why. */
@@ -253,11 +275,11 @@ async function runTiers(
 	const notRun: BlastTestsLeftOut[] = [];
 	if (overCap.length > 0)
 		notRun.push({ tests: overCap, reason: "over the test count cap" });
-	if (tier1.length > 0) runs.push(await runTier(options, 1, tier1));
+	if (tier1.length > 0) runs.push(await runTierWithRetry(options, 1, tier1));
 	if (tier2.length === 0) return { runs, notRun };
 	const skip = tier2SkipReason(options, runs[0]);
 	if (skip) notRun.push({ tests: tier2, reason: skip });
-	else runs.push(await runTier(options, 2, tier2));
+	else runs.push(await runTierWithRetry(options, 2, tier2));
 	return { runs, notRun };
 }
 
@@ -265,12 +287,31 @@ function tier2SkipReason(
 	options: RunTiersOptions,
 	tier1: BlastTestsRun | undefined,
 ): string | undefined {
-	if (tier1 !== undefined && tier1.verdict !== "passed")
-		return `tier 1 ${tier1.verdict === "failed" ? "failed" : "did not run"}`;
+	if (tier1?.verdict === "failed") return "tier 1 failed";
+	if (tier1?.verdict === "not-run" && tier1.reason === undefined)
+		return "tier 1 did not run";
 	const left = options.deadline - Date.now();
 	if (left < options.tier2MinMs)
 		return `time: ${Math.max(0, left)} ms left, tier 2 needs ${options.tier2MinMs} ms`;
 	return undefined;
+}
+
+/** The second run decides, unless it could not run: then the first failure stands. */
+async function runTierWithRetry(
+	options: RunTiersOptions,
+	tier: 1 | 2,
+	tests: readonly string[],
+): Promise<BlastTestsRun> {
+	const first = await runTier(options, tier, tests);
+	if (first.verdict !== "failed") return first;
+	const second = await runTier(options, tier, tests);
+	const deciding = second.verdict === "not-run" ? first : second;
+	return { ...deciding, attempts: [attemptOf(first), attemptOf(second)] };
+}
+
+function attemptOf(run: BlastTestsRun): BlastTestsAttempt {
+	const { tier: _tier, tests: _tests, attempts: _attempts, ...attempt } = run;
+	return attempt;
 }
 
 async function runTier(
@@ -292,15 +333,26 @@ async function runTier(
 		ctx.signal,
 		{ timeoutMs: remainingMs },
 	);
+	const nothingSelected = selectedNothing(outcome);
 	return {
 		tier,
 		tests,
 		outcome: outcome.kind,
 		exitCode: outcome.kind === "code-exit" ? outcome.code : null,
-		verdict: verdictOf(outcome),
+		verdict: nothingSelected ? "not-run" : verdictOf(outcome),
+		...(nothingSelected ? { reason: NOTHING_SELECTED_REASON } : {}),
 		durationMs: Date.now() - started,
 		outputTail: outputTail(outcome),
 	};
+}
+
+function selectedNothing(outcome: ProviderProcessOutcome): boolean {
+	return (
+		outcome.kind === "code-exit" &&
+		outcome.code !== 0 &&
+		(NOTHING_SELECTED.test(outcome.stdout) ||
+			NOTHING_SELECTED.test(outcome.stderr))
+	);
 }
 
 function notStarted(
@@ -336,19 +388,34 @@ function verdict(data: BlastTestsData): Signal {
 	const ran = runs.filter((run) => run.verdict === "passed");
 	const count = ran.reduce((sum, run) => sum + run.tests.length, 0);
 	const unrun = [
-		...runs
-			.filter((run) => run.verdict === "not-run")
-			.map((run) => `tier ${run.tier} did not finish (${run.outcome})`),
+		...runs.filter((run) => run.verdict === "not-run").map(describeUnrun),
 		...(data.notRun ?? []).map(
 			(entry) => `${entry.tests.length} not run: ${entry.reason}`,
 		),
 	];
 	if (unrun.length === 0)
-		return signal("pass", `${count} blast-radius tests passed`, data);
+		return signal(
+			"pass",
+			`${count} blast-radius tests passed${retried(runs)}`,
+			data,
+		);
 	const reason = unrun.join("; ");
 	const summary = `${count} blast-radius tests passed; ${reason}`;
 	if (count === 0) return info(summary, { ...data, reason });
 	return signal("info", summary, { ...data, reason });
+}
+
+function describeUnrun(run: BlastTestsRun): string {
+	if (run.reason !== undefined)
+		return `tier ${run.tier} not run: ${run.reason}: ${run.tests.join(", ")}`;
+	return `tier ${run.tier} did not finish (${run.outcome})`;
+}
+
+function retried(runs: readonly BlastTestsRun[]): string {
+	const recovered = runs.filter((run) => run.attempts !== undefined);
+	if (recovered.length === 0) return "";
+	const tiers = recovered.map((run) => `tier ${run.tier}`).join(", ");
+	return `; passed on a second run after failing once: ${tiers}`;
 }
 
 function describeRun(run: BlastTestsRun): string {

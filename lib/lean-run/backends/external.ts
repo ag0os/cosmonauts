@@ -27,6 +27,7 @@ import type {
 } from "../types.ts";
 import {
 	claudeResult,
+	codexLastMessage,
 	codexStats,
 	type HarnessResult,
 } from "./harness-usage.ts";
@@ -252,7 +253,11 @@ function outputArgs(
 	];
 }
 
-/** Claude's result object, or Codex's last-message file (stdout when it is missing) with the JSONL events' usage. */
+/**
+ * Claude's result object, or Codex's last-message file with the JSONL
+ * events' usage. When the file is missing, Codex's text is its last
+ * `agent_message` event, then stdout.
+ */
 async function finalResult(options: {
 	kind: ExternalBackendKind;
 	invocation: MaterializedInvocation;
@@ -262,7 +267,9 @@ async function finalResult(options: {
 	const { stdout } = options.outcome;
 	if (options.kind === "claude-cli") return claudeResult(stdout);
 	const lastMessage = join(options.invocation.tempDir, CODEX_LAST_MESSAGE);
-	const text = await readFile(lastMessage, "utf-8").catch(() => stdout);
+	const text = await readFile(lastMessage, "utf-8").catch(
+		() => codexLastMessage(stdout) ?? stdout,
+	);
 	const stats = codexStats(stdout, options.durationMs);
 	return stats ? { text, stats } : { text };
 }

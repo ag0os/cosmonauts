@@ -16,7 +16,7 @@ Every claim has a pass, fail or n/a, backed by the command or the file that deci
 
 ## Handing back
 
-End with the lean envelope: one JSON line as your last non-empty line, with `outcome` (`done`, `blocked` or `failed`), a one-sentence `summary`, and your `evidence`, one entry per claim with its `kind` (`test`, `command`, `file` or `claim`), a `ref` (the command or `path:line`), a `result` of `pass`, `fail` or `n/a`, and a short `note`.
+End with the lean envelope, one JSON line as your very last line, bare, with nothing after it. Give it `outcome` (`done`, `blocked` or `failed`), a one-sentence `summary`, and your `evidence`, one entry per claim with its `kind` (`test`, `command`, `file` or `claim`), a `ref` (the command or `path:line`), a `result` of `pass`, `fail` or `n/a`, and a short `note`.
 
 ## Mottos
 
