@@ -17,6 +17,8 @@ export interface PrBodyOptions {
 	readonly verification: readonly Signal[];
 	readonly blastRadius: BlastRadius;
 	readonly planVersusActual: PlanVersusActual;
+	/** Said in place of the three lists when the change came with no plan. */
+	readonly noPlan?: string;
 	readonly findings: readonly DispositionedFinding[];
 }
 
@@ -29,7 +31,9 @@ export function renderPrBody(options: PrBodyOptions): string {
 		),
 		verificationSection(options.verification),
 		blastRadiusSection(options.blastRadius),
-		planVersusActualSection(options.planVersusActual),
+		options.noPlan === undefined
+			? planVersusActualSection(options.planVersusActual)
+			: `## Plan versus actual\n\n${singleLine(options.noPlan)}`,
 		findingsSection(options.findings),
 	];
 	return `${sections.join("\n\n")}\n`;

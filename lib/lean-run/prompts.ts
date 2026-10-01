@@ -1,4 +1,10 @@
-import type { Envelope, Finding } from "../envelope/index.ts";
+import {
+	type Envelope,
+	EVIDENCE_KINDS,
+	EVIDENCE_RESULTS,
+	FINDING_SEVERITIES,
+	type Finding,
+} from "../envelope/index.ts";
 import type {
 	LeanLens,
 	ParsedPlan,
@@ -11,9 +17,23 @@ import type {
 const BARE_LINE =
 	"The envelope must be the bare last line, not fenced, quoted or prefixed.";
 
-const BUILDER_ENVELOPE_INSTRUCTION = `End with the lean envelope: one JSON line as your last non-empty line, with "outcome" ("done", "blocked" or "failed"), a one-sentence "summary", your "evidence" (kind, ref, result), every file you changed in "touched", and a "reason" when you are not done. ${BARE_LINE}`;
+/** `"a", "b" or "c"`: an enumeration as the instruction states it. */
+function oneOf(values: readonly string[]): string {
+	const quoted = values.map((value) => `"${value}"`);
+	return `${quoted.slice(0, -1).join(", ")} or ${quoted.at(-1)}`;
+}
 
-const REVIEWER_ENVELOPE_INSTRUCTION = `End with the lean envelope: one JSON line as your last non-empty line, with "outcome" ("done", "blocked" or "failed"), a one-sentence "summary", your "findings" (id, severity, file, summary, fix), and a "reason" when you are not done. ${BARE_LINE}`;
+/**
+ * The schema's enumerations, one clause each: agents that were told only the
+ * field names invented kinds and wrote free-text results (live runs 1 to 3).
+ */
+const EVIDENCE_ENUMERATIONS = `Each evidence "kind" is one of ${oneOf(EVIDENCE_KINDS)}; each evidence "result" is one of ${oneOf(EVIDENCE_RESULTS)}.`;
+
+const SEVERITY_ENUMERATION = `Each finding "severity" is one of ${oneOf(FINDING_SEVERITIES)}.`;
+
+const BUILDER_ENVELOPE_INSTRUCTION = `End with the lean envelope: one JSON line as your last non-empty line, with "outcome" ("done", "blocked" or "failed"), a one-sentence "summary", your "evidence" (kind, ref, result), every file you changed in "touched", and a "reason" when you are not done. ${EVIDENCE_ENUMERATIONS} ${BARE_LINE}`;
+
+const REVIEWER_ENVELOPE_INSTRUCTION = `End with the lean envelope: one JSON line as your last non-empty line, with "outcome" ("done", "blocked" or "failed"), a one-sentence "summary", your "findings" (id, severity, file, summary, fix), and a "reason" when you are not done. ${SEVERITY_ENUMERATION} ${BARE_LINE}`;
 
 /** Inline diff cap for the reviewer prompt; the full diff is a file in the review workspace. */
 export const REVIEW_DIFF_INLINE_BYTES = 60 * 1024;

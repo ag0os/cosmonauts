@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 import type { FileGraph } from "../../lib/architecture-map/index.ts";
 import {
 	buildContextPack,
+	planPathWarnings,
 	readVerificationCommands,
 } from "../../lib/lean-run/context-pack.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -132,6 +133,61 @@ describe("buildContextPack", () => {
 
 		expect(pack).not.toContain("# Repository conventions");
 		expect(pack).not.toContain("# Verification commands");
+	});
+
+	test("puts each warning on its own line above the plan", async () => {
+		const pack = await buildContextPack({
+			planSection: PLAN_SECTION,
+			touches: ["src/fetch.ts"],
+			reuses: [],
+			graph: GRAPH,
+			budget: 500,
+			projectRoot: tmp.path,
+			warnings: ["plan path not found: src/typo.ts", "second"],
+		});
+
+		expect(
+			pack.startsWith(
+				"Warning: plan path not found: src/typo.ts\nWarning: second\n\n# Plan\n",
+			),
+		).toBe(true);
+	});
+});
+
+describe("planPathWarnings", () => {
+	test("warns about a path that is neither on disk nor in the graph", async () => {
+		expect(
+			planPathWarnings({
+				touches: ["src/fetch.ts"],
+				reuses: ["tests/helpers/mermaid-structure.ts"],
+				graph: GRAPH,
+				projectRoot: tmp.path,
+			}),
+		).toEqual(["plan path not found: tests/helpers/mermaid-structure.ts"]);
+	});
+
+	test("warns in other words about a file on disk the graph does not hold", async () => {
+		await writeFile(join(tmp.path, "notes.md"), "# Notes\n");
+
+		expect(
+			planPathWarnings({
+				touches: ["notes.md"],
+				reuses: [],
+				graph: GRAPH,
+				projectRoot: tmp.path,
+			}),
+		).toEqual(["plan path is not in the file graph: notes.md"]);
+	});
+
+	test("accepts a graph file, a directory holding one, and a glob", () => {
+		expect(
+			planPathWarnings({
+				touches: ["src/fetch.ts", "src/", "src/**/*.ts"],
+				reuses: ["src/retry.ts"],
+				graph: GRAPH,
+				projectRoot: tmp.path,
+			}),
+		).toEqual([]);
 	});
 });
 

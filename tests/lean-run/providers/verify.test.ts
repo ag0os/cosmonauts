@@ -112,6 +112,68 @@ describe("verify provider", { timeout: 30_000 }, () => {
 		expect(lint?.durationMs).toBeGreaterThanOrEqual(0);
 	});
 
+	test("passes when a failed command passes on its one re-run, recording both runs", async () => {
+		const marker = join(tmp.path, "ran-once");
+		const flaky = sh(
+			`if [ -f '${marker}' ]; then echo second; exit 0; fi; touch '${marker}'; echo first; exit 1`,
+		);
+
+		const signal = await createVerifyProvider({
+			commands: [sh("exit 0"), flaky],
+		}).run(context());
+
+		expect(signal).toMatchObject({ status: "pass", reenter: false });
+		expect(signal.summary).toBe(
+			`2 passed; passed on a second run after failing once: ${flaky.executable} ${flaky.args.join(" ")}`,
+		);
+		const [steady, retried] = commandData(signal.data);
+		expect(steady).not.toHaveProperty("attempts");
+		expect(retried).toMatchObject({
+			exitCode: 0,
+			verdict: "passed",
+			attempts: [
+				{ exitCode: 1, verdict: "failed", outputTail: "first\n" },
+				{ exitCode: 0, verdict: "passed", outputTail: "second\n" },
+			],
+		});
+	});
+
+	test("fails and re-enters only when a command fails on both runs", async () => {
+		const signal = await createVerifyProvider({
+			commands: [sh("echo broke; exit 2")],
+		}).run(context());
+
+		expect(signal).toMatchObject({ status: "fail", reenter: true });
+		expect(commandData(signal.data)[0]).toMatchObject({
+			exitCode: 2,
+			attempts: [
+				{ exitCode: 2, verdict: "failed" },
+				{ exitCode: 2, verdict: "failed" },
+			],
+		});
+	});
+
+	test("re-runs only the failed commands", async () => {
+		const runs: string[] = [];
+		const runProcess = vi.fn(async (request: { args: readonly string[] }) => {
+			const script = request.args.at(-1) ?? "";
+			runs.push(script);
+			return {
+				kind: "code-exit",
+				code: script === "fail" ? 1 : 0,
+				stdout: "",
+				stderr: "",
+			} as ProviderProcessOutcome;
+		});
+
+		await createVerifyProvider({
+			commands: [sh("pass"), sh("fail"), sh("pass too")],
+			runProcess,
+		}).run(context());
+
+		expect(runs).toEqual(["pass", "fail", "pass too", "fail"]);
+	});
+
 	test("runs the project's configured quality checks before package.json scripts", async () => {
 		await writeScripts({ typecheck: "exit 1" });
 		await writeChecks([
@@ -190,6 +252,10 @@ describe("verify provider", { timeout: 30_000 }, () => {
 		const data = commandData(signal.data);
 		expect(data.map((entry) => entry.outcome)).toEqual(["timeout", "skipped"]);
 		expect(data[0]?.durationMs).toBeLessThan(4_000);
+		expect(verifyData(signal.data).commands[0]?.attempts).toMatchObject([
+			{ outcome: "timeout", verdict: "failed" },
+			{ outcome: "skipped", verdict: "not-run" },
+		]);
 		expect(signal.status).toBe("fail");
 		expect(signal.reenter).toBe(true);
 	});

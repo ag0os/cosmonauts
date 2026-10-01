@@ -22,11 +22,14 @@ import {
 	summarizeMutationReport,
 } from "../../../lib/lean-run/providers/mutation.ts";
 import {
+	type CoverageInput,
+	coveringTests,
 	DEFAULT_SANDBOX_UNSAFE_TESTS,
 	isSandboxUnsafeTest,
 	mirroredTestPath,
 	selectMutationTests,
 	type TestSelectionInput,
+	untestableFiles,
 } from "../../../lib/lean-run/providers/mutation-tests.ts";
 import type { Signal, SignalContext } from "../../../lib/lean-run/types.ts";
 import { useTempDir } from "../../helpers/fs.ts";
@@ -539,6 +542,119 @@ describe("isSandboxUnsafeTest", () => {
 			}),
 		).toBe(false);
 	});
+
+	describe("with git aimed at a temp fixture", () => {
+		const fixture = [
+			'const root = await mkdtemp(join(tmpdir(), "repo-"));',
+			cloneCall,
+		].join("\n");
+
+		test("accepts a test whose git commands run in a temp fixture it builds", () => {
+			expect(
+				isSandboxUnsafeTest({
+					path: "tests/a.test.ts",
+					content: fixture,
+					denyList: [],
+				}),
+			).toBe(false);
+		});
+
+		test("accepts a fixture made through the useTempDir helper", () => {
+			const content = [
+				'const tmp = useTempDir("changed-functions-");',
+				['git("work', 'tree", "a', 'dd", checkout)'].join(""),
+			].join("\n");
+
+			expect(
+				isSandboxUnsafeTest({ path: "tests/a.test.ts", content, denyList: [] }),
+			).toBe(false);
+		});
+
+		test("flags it when the test also names the checkout it lives in", () => {
+			for (const root of [
+				"process.cwd()",
+				"fileURLToPath(import.meta.url)",
+				"__dirname",
+			]) {
+				expect(
+					isSandboxUnsafeTest({
+						path: "tests/a.test.ts",
+						content: `${fixture}\nconst here = ${root};`,
+						denyList: [],
+					}),
+				).toBe(true);
+			}
+		});
+
+		test("still flags a deny-listed path", () => {
+			expect(
+				isSandboxUnsafeTest({
+					path: "tests/a.test.ts",
+					content: fixture,
+					denyList: ["tests/a.test.ts"],
+				}),
+			).toBe(true);
+		});
+
+		test("accepts the resolver test that live run 1 denied", async () => {
+			const path = "tests/code-health/changed-functions.test.ts";
+			const content = await readFile(join(REPOSITORY_ROOT, path), "utf8");
+
+			expect(
+				isSandboxUnsafeTest({
+					path,
+					content,
+					denyList: DEFAULT_SANDBOX_UNSAFE_TESTS,
+				}),
+			).toBe(false);
+		});
+	});
+});
+
+describe("untestableFiles", () => {
+	function coverage(overrides: Partial<CoverageInput> = {}): CoverageInput {
+		return {
+			sourceFiles: ["lib/calc.ts"],
+			graph: GRAPH,
+			blastRadiusTests: ["tests/user-extra.test.ts", "tests/other.test.ts"],
+			exists: () => true,
+			isDenied: () => false,
+			...overrides,
+		};
+	}
+
+	test("covers a file with its own tests and the blast-radius tests that reach it", () => {
+		expect(coveringTests("lib/calc.ts", coverage())).toEqual([
+			"tests/calc-direct.test.ts",
+			"tests/calc.test.ts",
+			"tests/user-extra.test.ts",
+		]);
+	});
+
+	test("lists a file whose every covering test is denied, with those tests", () => {
+		expect(untestableFiles(coverage({ isDenied: () => true }))).toEqual([
+			{
+				file: "lib/calc.ts",
+				covering: [
+					"tests/calc-direct.test.ts",
+					"tests/calc.test.ts",
+					"tests/user-extra.test.ts",
+				],
+			},
+		]);
+	});
+
+	test("does not list a file one covering test can still run against", () => {
+		const isDenied = (path: string) => path !== "tests/user-extra.test.ts";
+
+		expect(untestableFiles(coverage({ isDenied }))).toEqual([]);
+	});
+
+	test("does not list a file with no covering test at all", () => {
+		expect(
+			untestableFiles(coverage({ exists: () => false, isDenied: () => true })),
+		).toEqual([]);
+	});
 });
 
 describe("mirroredTestPath", () => {
@@ -784,6 +900,87 @@ describe(
 			);
 
 			expect(signal).toMatchObject({ status: "pass", reenter: false });
+		});
+
+		// CALC_CHANGED rewrites line 2 of `add` (lines 1-4) into lines 2-3.
+		test("reports survivors only on unchanged lines of a changed function as info", async () => {
+			const signal = await runWith(
+				report({
+					"lib/calc.ts": [
+						{ id: "1", status: "Killed", line: 2 },
+						{ id: "2", status: "Survived", line: 1 },
+					],
+				}),
+			);
+
+			expect(signal).toMatchObject({
+				status: "info",
+				reenter: false,
+				data: {
+					survivorsOutsideDiff: [
+						{ file: "lib/calc.ts", function: "add", id: "2", startLine: 1 },
+					],
+				},
+			});
+			expect(signal.summary).toMatch(
+				/^1 mutants survived, all on unchanged lines of changed functions/u,
+			);
+		});
+
+		test("re-enters on a survivor inside a hunk and lists the unchanged-line ones apart", async () => {
+			const signal = await runWith(
+				report({
+					"lib/calc.ts": [
+						{ id: "1", status: "Survived", line: 3 },
+						{ id: "2", status: "Survived", line: 1 },
+					],
+				}),
+			);
+
+			expect(signal).toMatchObject({ status: "fail", reenter: true });
+			expect(signal.summary).toMatch(
+				/^1 mutants survived on changed lines of changed functions \(1 more on unchanged lines\)/u,
+			);
+			const data = signal.data as { survivorsOutsideDiff: { id: string }[] };
+			expect(data.survivorsOutsideDiff.map((entry) => entry.id)).toEqual(["2"]);
+		});
+
+		test("reports info without running Stryker when every covering test is sandbox-unsafe", async () => {
+			const strykerBin = await fakeStryker(tools.path, report({}));
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				denyListTests: ["tests/calc.test.ts"],
+			}).run(context(project.path));
+
+			expect(signal).toMatchObject({
+				status: "info",
+				reenter: false,
+				summary: "untestable under mutation: covering tests are sandbox-unsafe",
+				data: {
+					denied: ["tests/calc.test.ts"],
+					untestable: [
+						{ file: "lib/calc.ts", covering: ["tests/calc.test.ts"] },
+					],
+				},
+			});
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+		});
+
+		test("runs a covering test whose worktree commands target a temp fixture", async () => {
+			await writeFile(
+				join(project.path, "tests/calc.test.ts"),
+				[
+					CALC_TEST,
+					'const fixture = await mkdtemp(join(tmpdir(), "calc-"));',
+					['git("work', 'tree", "a', 'dd", fixture);'].join(""),
+				].join("\n"),
+			);
+
+			await runWith(report({ "lib/calc.ts": [] }));
+
+			const call = await readCall(tools.path);
+			expect(argAfter(call, "--testFiles")).toBe("tests/calc.test.ts");
 		});
 
 		test("reports info when no mutant in changed functions was covered", async () => {

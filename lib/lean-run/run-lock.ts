@@ -45,7 +45,8 @@ type RunLockResult =
 /**
  * One lean run per worktree: two runs would share the base-sha marker and mix
  * their diffs. The lock is created with its content in one step (a temp file
- * hard-linked onto the lock path), so it is never seen half-written. A lock
+ * hard-linked onto the lock path, or an exclusive create where hard links are
+ * not supported), so it is never seen half-written by a linking starter. A lock
  * whose process is gone, or one that has been unreadable for a while, is
  * reclaimed under a claim file that only one starter holds at a time; the
  * claimant removes the lock only when it still holds the bytes it judged
@@ -86,7 +87,20 @@ function createLock(path: string, holder: LockHolder): Promise<boolean> {
 	return createExclusive(path, `${JSON.stringify(holder)}\n`);
 }
 
-/** Writes `content` to a temp file and links it onto `path`: content and creation in one step. */
+/** `link()` errors from file systems without hard links (exFAT, some network mounts). */
+const NO_HARD_LINKS: ReadonlySet<unknown> = new Set([
+	"ENOTSUP",
+	"EPERM",
+	"ENOSYS",
+	"EXDEV",
+]);
+
+/**
+ * Writes `content` to a temp file and links it onto `path`: content and
+ * creation in one step. Where the file system has no hard links, the file is
+ * created exclusively and written in one call; a reader can then see it
+ * briefly empty, which the lock treats as a young unreadable lock.
+ */
 async function createExclusive(
 	path: string,
 	content: string,
@@ -98,9 +112,24 @@ async function createExclusive(
 		return true;
 	} catch (error) {
 		if (errorCode(error) === "EEXIST") return false;
+		if (NO_HARD_LINKS.has(errorCode(error)))
+			return createWithoutLink(path, content);
 		throw error;
 	} finally {
 		await rm(temp, { force: true });
+	}
+}
+
+async function createWithoutLink(
+	path: string,
+	content: string,
+): Promise<boolean> {
+	try {
+		await writeFile(path, content, { flag: "wx" });
+		return true;
+	} catch (error) {
+		if (errorCode(error) === "EEXIST") return false;
+		throw error;
 	}
 }
 

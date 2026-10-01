@@ -18,10 +18,12 @@ import type {
 	FileGraphRefresh,
 	RefreshFileGraph,
 } from "../../lib/lean-run/graph-refresh.ts";
+import { appendHealthHookEntries } from "../../lib/lean-run/health-hook-log.ts";
 import {
 	REPAIR_HEADING,
 	REVIEW_DIFF_INLINE_BYTES,
 } from "../../lib/lean-run/prompts.ts";
+import { planVersusActualProvider } from "../../lib/lean-run/providers/plan-vs-actual.ts";
 import { loadRunRecord } from "../../lib/lean-run/record.ts";
 import {
 	DEFAULT_RUN_BUDGET,
@@ -31,6 +33,7 @@ import {
 	runBuild,
 	runReview,
 } from "../../lib/lean-run/run-build.ts";
+import { summarizeRun } from "../../lib/lean-run/summary.ts";
 import type {
 	BackendRunInput,
 	BuilderBackend,
@@ -403,6 +406,28 @@ describe("runBuild context pack", () => {
 			ENVELOPE_TAIL,
 		);
 		expect(record.manifest.contextPack).toBe("built");
+	});
+
+	test("warns in the manifest and atop the pack about plan paths the slice cannot show", async () => {
+		await writeFile(
+			join(root, PLAN_PATH),
+			PLAN.replace(
+				"## Behaviors",
+				"## Reuses\n- `tests/helpers/mermaid-structure.ts`\n- `README.md`\n\n## Behaviors",
+			),
+		);
+		const builder = stubBackend([DONE]);
+
+		const record = await build({ builder });
+
+		const warnings = [
+			"plan path is not in the file graph: README.md",
+			"plan path not found: tests/helpers/mermaid-structure.ts",
+		];
+		expect(record.manifest.warnings).toEqual(warnings);
+		expect(builder.calls[0]?.prompt).toMatch(
+			/^Warning: plan path is not in the file graph: README\.md\nWarning: plan path not found: tests\/helpers\/mermaid-structure\.ts\n\n# Plan\n/u,
+		);
 	});
 
 	test("takes the repo-map budget from the project config", async () => {
@@ -1034,6 +1059,19 @@ describe("runBuild budgets", () => {
 		}
 	});
 
+	test("fails the run with the reason when taking the lock throws", async () => {
+		await writeFile(join(root, ".git/lean-run"), "not a directory\n");
+		const builder = stubBackend([DONE]);
+
+		const record = await build({ builder });
+
+		expect(builder.calls).toHaveLength(0);
+		expect((await onDisk(record)).manifest).toMatchObject({
+			status: "failed",
+			reason: expect.stringMatching(/^runner error: E(EXIST|NOTDIR)/u),
+		});
+	});
+
 	test("warns once that the token budget is not enforced when the backend reports no stats", async () => {
 		const record = await build({
 			builder: stubBackend([DONE], "codex-cli", null),
@@ -1485,6 +1523,25 @@ describe("runBuild direct request", () => {
 		);
 	});
 
+	test("seeds the touch set from the paths the request names", async () => {
+		const builder = stubBackend([editGreet(DONE)]);
+		const provider = stubProvider([{}]);
+
+		await direct({
+			builder,
+			providers: [provider],
+			request: "Make `src/greet.ts` return the string hi.",
+		});
+
+		expect(builder.calls[0]?.prompt).toContain(
+			`# Repo map\n\nsrc/greet.ts [touch]\n  ${GREET_SIGNATURE}`,
+		);
+		expect(provider.contexts[0]).toMatchObject({
+			tier: "direct",
+			plan: { touches: ["src/greet.ts"] },
+		});
+	});
+
 	test("saves the request in the run directory", async () => {
 		const record = await direct({ builder: stubBackend([DONE]) });
 
@@ -1533,6 +1590,120 @@ describe("runBuild direct request", () => {
 		await expect(
 			direct({ builder: stubBackend([DONE]), request: undefined }),
 		).rejects.toThrow("exactly one of planPath and request");
+	});
+});
+
+describe("runBuild PR body", () => {
+	const DIAGRAM_PLAN = `${PLAN}
+## Diagram
+\`\`\`mermaid
+graph LR
+  greet["src/greet.ts"] --> fresh["src/new.ts"]
+\`\`\`
+`;
+
+	const RADIUS: Partial<Signal> = {
+		status: "info",
+		summary: "Blast radius: 2 changed, 1 dependents, 1 tests.",
+		data: {
+			graph: "current",
+			radius: {
+				changed: ["src/greet.ts", "src/new.ts"],
+				dependents: ["src/app.ts"],
+				tests: ["tests/greet.test.ts"],
+				hubs: [],
+				truncated: false,
+			},
+		},
+	};
+
+	function greetAndAdd(text: string): Reply {
+		return async (input) => {
+			await writeGreet(input.worktree);
+			await writeFile(join(input.worktree, "src/new.ts"), "export {};\n");
+			return text;
+		};
+	}
+
+	async function prBody(record: RunRecord): Promise<string> {
+		const path = (await onDisk(record)).manifest.prBodyPath ?? "";
+		expect(path).toBe(
+			`missions/sessions/lean/runs/${record.manifest.id}/pr-body.md`,
+		);
+		return readFile(join(root, path), "utf-8");
+	}
+
+	test("writes the plan's restyled diagram, the checks, the blast radius and the open findings", async () => {
+		await writeFile(join(root, PLAN_PATH), DIAGRAM_PLAN);
+
+		const record = await build({
+			builder: stubBackend([greetAndAdd(DONE)]),
+			providers: [
+				stubProvider([{}]),
+				stubProvider([RADIUS], "blast-radius"),
+				planVersusActualProvider,
+			],
+		});
+
+		const body = await prBody(record);
+		expect(body.startsWith("# Demo\n\n## Change diagram\n```mermaid\n")).toBe(
+			true,
+		);
+		expect(body).toContain('greet["src/greet.ts"] --> fresh["src/new.ts"]');
+		expect(body).toContain("class fresh added");
+		expect(body).toContain("class greet modified");
+		expect(body).toContain("| verify | pass | tests pass |");
+		expect(body).toContain("| blast-radius | info |");
+		expect(body).toContain("2 changed, 1 dependents, 1 tests.");
+		expect(body).toContain("**Unplanned** (1)\n\n- `src/new.ts`");
+		expect(body).toContain("| F-1 | low | open | `src/greet.ts:1` | name |");
+	});
+
+	test("says a direct request had no plan and marks no file unplanned", async () => {
+		const record = await runBuild({
+			projectRoot: root,
+			request: "Make `src/greet.ts` say hi\nand nothing else.",
+			backend: stubBackend([greetAndAdd(DONE)]),
+			reviewerBackend: stubBackend([REVIEW]),
+			providers: [stubProvider([{}]), planVersusActualProvider],
+			refreshGraph: stubRefresh(),
+		});
+
+		const body = await prBody(record);
+		expect(body.startsWith("# Make `src/greet.ts` say hi\n")).toBe(true);
+		expect(body).toContain(
+			"## Plan versus actual\n\nNo plan (direct tier): nothing to compare the 2 changed file(s) against.",
+		);
+		expect(body).not.toContain("(unplanned)");
+	});
+
+	test("writes one for a review too", async () => {
+		const base = git("rev-parse", "HEAD").trim();
+		await writeGreet(root);
+
+		const record = await runReview({
+			projectRoot: root,
+			base,
+			reviewerBackend: stubBackend([HIGH_REVIEW]),
+			providers: [stubProvider([{}])],
+		});
+
+		const body = await prBody(record);
+		expect(body).toContain(`# Change against ${base.slice(0, 7)}`);
+		expect(body).toContain("| F-1 | high | open |");
+	});
+
+	test("is not written when no stage ran", async () => {
+		const controller = new AbortController();
+		controller.abort();
+
+		const record = await build({
+			builder: stubBackend([DONE]),
+			signal: controller.signal,
+		});
+
+		expect(record.manifest.prBodyPath).toBeUndefined();
+		expect(existsSync(join(record.dir, "pr-body.md"))).toBe(false);
 	});
 });
 
@@ -1714,6 +1885,60 @@ describe("runBuild health hook coverage", () => {
 			],
 		});
 	});
+
+	const ENTRY = {
+		timestamp: "2026-10-01T00:00:00.000Z",
+		file: "src/greet.ts",
+		function: "greet",
+		startLine: 1,
+		endLine: 1,
+		metrics: { cyclomatic: 2, cognitive: 1, crap: null },
+		baseMetrics: { cyclomatic: 1, cognitive: 0, crap: null },
+		base: "abc",
+	};
+
+	/** What the hook does inside a Pi builder session: logs the finding it injects. */
+	function hookFinding(fn: string, text: string): Reply {
+		return async (input) => {
+			await appendHealthHookEntries({
+				worktree: input.worktree,
+				entries: [{ ...ENTRY, function: fn }],
+			});
+			return text;
+		};
+	}
+
+	test("keeps what the hook logged in each builder stage, then clears the log", async () => {
+		const leftover = join(root, ".git/lean-run/health-hook.jsonl");
+		await mkdir(join(root, ".git/lean-run"), { recursive: true });
+		await writeFile(leftover, `${JSON.stringify(ENTRY)}\n`);
+
+		const record = await build({
+			builder: stubBackend([
+				hookFinding("first", DONE),
+				hookFinding("second", DONE),
+			]),
+			providers: [stubProvider([FAILING, {}])],
+		});
+
+		const kept = await readFile(join(record.dir, "health-hook.jsonl"), "utf8");
+		expect(
+			kept
+				.trimEnd()
+				.split("\n")
+				.map((line) => JSON.parse(line)),
+		).toEqual([
+			{ stage: "builder-1", ...ENTRY, function: "first" },
+			{ stage: "builder-2", ...ENTRY, function: "second" },
+		]);
+		expect(existsSync(leftover)).toBe(false);
+	});
+
+	test("writes no hook log into a record whose builder logged nothing", async () => {
+		const record = await build({ builder: stubBackend([DONE]) });
+
+		expect(existsSync(join(record.dir, "health-hook.jsonl"))).toBe(false);
+	});
 });
 
 describe("runReview", () => {
@@ -1731,8 +1956,120 @@ describe("runReview", () => {
 		options: { reviewer: StubBackend } & Partial<RunReviewOptions>,
 	) {
 		const { reviewer, ...rest } = options;
-		return runReview({ projectRoot: root, reviewerBackend: reviewer, ...rest });
+		return runReview({
+			projectRoot: root,
+			reviewerBackend: reviewer,
+			providers: [stubProvider([{}])],
+			refreshGraph: stubRefresh(),
+			...rest,
+		});
 	}
+
+	test("runs verification before the reviewer and hands it the signal", async () => {
+		await featureChange();
+		const provider = stubProvider([{}]);
+		const reviewer = stubBackend([REVIEW]);
+
+		const record = await review({ reviewer, providers: [provider] });
+
+		expect(record.manifest.status).toBe("done");
+		expect(provider.contexts[0]).toMatchObject({
+			tier: "review",
+			changedFiles: ["src/extra.ts", "src/greet.ts"],
+		});
+		expect(record.facts.passes).toHaveLength(1);
+		expect(reviewer.calls[0]?.prompt).toContain(
+			"# Verification facts\n\n## Pass 1\n\n### verify (pass)",
+		);
+	});
+
+	test("ends blocked as unverified when verification did not pass", async () => {
+		await featureChange();
+		const reviewer = stubBackend([REVIEW]);
+
+		const record = await review({
+			reviewer,
+			providers: [stubProvider([FAILING])],
+		});
+
+		expect(reviewer.calls).toHaveLength(1);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "unverified: verification did not pass (fail): 1 test failed",
+		});
+		expect(summarizeRun(record)).toMatch(/^blocked: unverified: /u);
+	});
+
+	test("ends blocked as unverified when no verify signal was produced", async () => {
+		await featureChange();
+
+		const record = await review({
+			reviewer: stubBackend([REVIEW]),
+			providers: [stubProvider([{ status: "info" }], "health")],
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "unverified: no verify signal",
+		});
+	});
+
+	test("ends blocked as unverified when no providers are configured", async () => {
+		await featureChange();
+
+		const record = await review({
+			reviewer: stubBackend([REVIEW]),
+			providers: [],
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "unverified: no providers configured",
+		});
+	});
+
+	test("keeps the reviewer's outcome and adds the verification gap", async () => {
+		await featureChange();
+
+		const record = await review({
+			reviewer: stubBackend([
+				'{"outcome":"blocked","summary":"no access","reason":"checkout unreadable"}',
+			]),
+			providers: [stubProvider([FAILING])],
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason:
+				"reviewer: checkout unreadable; unverified: verification did not pass (fail): 1 test failed",
+		});
+	});
+
+	test("runs the project's verification commands by default", async () => {
+		await featureChange();
+		await mkdir(join(root, ".cosmonauts"));
+		await writeFile(
+			join(root, ".cosmonauts/config.json"),
+			JSON.stringify({
+				qualityReview: {
+					checks: [{ id: "ok", command: "sh", args: ["-c", "exit 0"] }],
+				},
+			}),
+		);
+		const refresh = stubRefresh();
+
+		const record = await runReview({
+			projectRoot: root,
+			reviewerBackend: stubBackend([REVIEW]),
+			refreshGraph: refresh,
+		});
+
+		expect(record.manifest.status).toBe("done");
+		expect(record.facts.passes[0]?.signals).toMatchObject([
+			{ kind: "verify", status: "pass", summary: "1 passed" },
+		]);
+		expect(refresh.calls).toHaveLength(0);
+	});
 
 	test("reviews the branch's change against its merge-base with main and records the envelope", async () => {
 		const base = await featureChange();
@@ -1750,7 +2087,7 @@ describe("runReview", () => {
 		});
 		expect(record.manifest.healthHook).toBeUndefined();
 		expect(record.envelopes).toEqual({ reviewer: JSON.parse(REVIEW) });
-		expect(record.facts.passes).toEqual([]);
+		expect(record.facts.passes.map((pass) => pass.pass)).toEqual([1]);
 		expect(await onDisk(record)).toEqual(record);
 		const call = reviewer.calls[0];
 		expect(call).toMatchObject({ role: "lean/code-reviewer" });

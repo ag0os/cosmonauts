@@ -209,6 +209,23 @@ describe("resolveChangedFunctions", { timeout: 60_000 }, () => {
 		]);
 	});
 
+	test("reports the diff hunks of each changed file", async () => {
+		await writeSource(
+			SAMPLE,
+			source(
+				LEGACY.map((line) => line.replace("total += 3;", "total += 30;")),
+				SIMPLE_RAISED,
+				ADDED,
+			),
+		);
+
+		const report = await resolveAgainst("HEAD");
+
+		expect(report.hunks).toEqual({
+			[SAMPLE]: [{ oldStart: 6, oldCount: 1, newStart: 6, newCount: 1 }],
+		});
+	});
+
 	test("reports a touched legacy function without flagging complexity it already had", async () => {
 		await writeSource(
 			SAMPLE,

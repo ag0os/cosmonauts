@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import { parsePlan } from "../../lib/lean-run/plan.ts";
 import {
 	boundDiff,
+	builderPrompt,
 	REPAIR_HEADING,
 	REVIEW_DIFF_INLINE_BYTES,
 	repairPrompt,
@@ -103,5 +104,42 @@ describe("reviewerPrompt", () => {
 		expect(prompt).not.toContain("# Request");
 		expect(prompt).toContain("# Changed files\n\nsrc/x.ts");
 		expect(prompt).toContain("```diff\n+x\n```");
+	});
+});
+
+describe("envelope instructions", () => {
+	const plan = parsePlan("# Demo\n\n## Approach\nAdd a greeting.\n");
+
+	test("state the evidence kind and result enumerations to the builder", () => {
+		const prompt = builderPrompt({ plan });
+
+		expect(prompt).toContain(
+			'Each evidence "kind" is one of "test", "command", "file" or "claim"; each evidence "result" is one of "pass", "fail" or "n/a".',
+		);
+	});
+
+	test("state the severity enumeration to the reviewer", () => {
+		const prompt = reviewerPrompt({
+			plan,
+			facts: { passes: [] },
+			diff: "",
+			changedFiles: [],
+			lenses: ["general"],
+			fullDiffPath: "/tmp/full.diff",
+		});
+
+		expect(prompt).toContain(
+			'Each finding "severity" is one of "high", "medium" or "low".',
+		);
+	});
+
+	test("repeat the enumerations in the repair turn", () => {
+		const prompt = repairPrompt({
+			reviewer: false,
+			reason: "evidence[0].kind must be one of test, command, file, claim",
+			output: "done",
+		});
+
+		expect(prompt).toContain('"result" is one of "pass", "fail" or "n/a"');
 	});
 });

@@ -36,14 +36,23 @@ interface VerifyProviderOptions {
 type CommandOutcome = ProviderProcessOutcome["kind"] | "skipped";
 type CommandVerdict = "passed" | "failed" | "not-run";
 
-interface CommandResult {
-	readonly command: string;
+interface CommandAttempt {
 	/** Null when the command did not exit on its own. */
 	readonly exitCode: number | null;
 	readonly outcome: CommandOutcome;
 	readonly verdict: CommandVerdict;
 	readonly durationMs: number;
 	readonly outputTail: string;
+}
+
+/**
+ * The deciding attempt's outcome. A command that failed was run once more;
+ * `attempts` then holds both runs in order, and the second decides unless it
+ * could not run, when the first failure stands.
+ */
+interface CommandResult extends CommandAttempt {
+	readonly command: string;
+	readonly attempts?: readonly CommandAttempt[];
 }
 
 export interface VerifyData {
@@ -66,9 +75,10 @@ const OUTPUT_TAIL_CHARS = 4_000;
 
 /**
  * Runs the project's verification commands in the run worktree, in order,
- * within `ctx.budget.timeMs` in total. A command that ran and did not exit 0
- * (including a timeout) makes the signal `fail` and re-enters the builder
- * (ruling D-4). When nothing failed but some command never ran (missing
+ * within `ctx.budget.timeMs` in total. Each command that ran and did not exit
+ * 0 (including a timeout) is run once more, alone, within the same budget, so
+ * a load-sensitive test does not send a correct change back. A command that
+ * fails twice makes the signal `fail` and re-enters the builder (ruling D-4). When nothing failed but some command never ran (missing
  * executable, abort, exhausted budget, no commands at all), the signal is
  * `info` without re-entry and `data.unverified` is true with `data.reason`.
  * The lean runner treats any verify signal other than `pass` as not done.
@@ -98,7 +108,16 @@ export function createVerifyProvider(
 			for (const command of commands) {
 				results.push(await runCommand({ command, ctx, deadline, runProcess }));
 			}
-			return toSignal(results);
+			const settled: CommandResult[] = [];
+			for (const [index, result] of results.entries()) {
+				const command = commands[index] as VerifyCommand;
+				settled.push(
+					result.verdict === "failed"
+						? await retry(result, { command, ctx, deadline, runProcess })
+						: result,
+				);
+			}
+			return toSignal(settled);
 		},
 	};
 }
@@ -176,6 +195,21 @@ async function runCommand(options: RunCommandOptions): Promise<CommandResult> {
 	};
 }
 
+/** The second run decides, unless it could not run: then the first failure stands. */
+async function retry(
+	first: CommandResult,
+	options: RunCommandOptions,
+): Promise<CommandResult> {
+	const second = await runCommand(options);
+	const deciding = second.verdict === "not-run" ? first : second;
+	return { ...deciding, attempts: [attemptOf(first), attemptOf(second)] };
+}
+
+function attemptOf(result: CommandResult): CommandAttempt {
+	const { exitCode, outcome, verdict, durationMs, outputTail } = result;
+	return { exitCode, outcome, verdict, durationMs, outputTail };
+}
+
 function verdictOf(outcome: ProviderProcessOutcome): CommandVerdict {
 	switch (outcome.kind) {
 		case "code-exit":
@@ -223,8 +257,13 @@ function toSignal(results: readonly CommandResult[]): Signal {
 		const names = unrun.map(describeResult).join(", ");
 		return unverifiedSignal(`could not run: ${names}`, results);
 	}
+	const recovered = results.filter((result) => result.attempts !== undefined);
+	const retried =
+		recovered.length > 0
+			? `; passed on a second run after failing once: ${recovered.map((result) => result.command).join(", ")}`
+			: "";
 	return verifySignal("pass", {
-		summary: `${results.length} passed`,
+		summary: `${results.length} passed${retried}`,
 		data: { commands: results },
 	});
 }

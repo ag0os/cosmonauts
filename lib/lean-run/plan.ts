@@ -95,6 +95,26 @@ function looksLikePath(value: string): boolean {
 	return !/\s/.test(value) && /\/|\.[A-Za-z0-9]+$/.test(value);
 }
 
+/** Punctuation prose puts around a bare path. */
+const WRAPPING = /^[("'[{<]+|[)"'\]}>.,;:!?]+$/gu;
+
+/**
+ * The paths a direct request names: every backticked span that looks like a
+ * path, by the plan's rule, and every bare word that has both a directory
+ * and an extension (`lib/x.ts`), so prose like "and/or" or "e.g." is not one.
+ */
+export function requestPaths(request: string): string[] {
+	const quoted = [...request.matchAll(BACKTICKED)]
+		.map((match) => (match[1] ?? "").trim())
+		.filter(looksLikePath);
+	const bare = request
+		.replace(BACKTICKED, " ")
+		.split(/\s+/)
+		.map((word) => word.replace(WRAPPING, ""))
+		.filter((word) => /\/.*\.[A-Za-z0-9]+$/u.test(word) && looksLikePath(word));
+	return [...new Set([...quoted, ...bare])];
+}
+
 function behaviorList(lines: readonly string[]): PlanBehavior[] {
 	return lines.flatMap((line) => {
 		const match = BEHAVIOR.exec(line);

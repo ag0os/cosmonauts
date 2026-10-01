@@ -79,16 +79,77 @@ export async function readStagedChange(
  * The working tree against `base`, untracked files included, read through a
  * throwaway copy of the index so the real one is untouched.
  */
-export async function readWorktreeChange(
+export function readWorktreeChange(
 	options: GitOptions & { base: string },
 ): Promise<WorktreeChange> {
+	return withWorktreeIndex(options, (env) =>
+		readStagedChange({ ...options, env }),
+	);
+}
+
+/** A changed file's `git diff --name-status` letter, read as a diagram class. */
+export type FileStatusClass = "added" | "modified" | "removed";
+
+/**
+ * The working tree's change against `base` per file, untracked files
+ * included: A and C are `added`, D is `removed`, and M, T and R are
+ * `modified`, a rename keyed by its new path as the changed-file list has it.
+ */
+export function readWorktreeStatus(
+	options: GitOptions & { base: string },
+): Promise<Record<string, FileStatusClass>> {
+	return withWorktreeIndex(options, async (env) => {
+		const output = await git(
+			[
+				"diff",
+				"--name-status",
+				"-z",
+				"--find-renames",
+				"--cached",
+				options.base,
+				"--",
+				...DIFF_EXCLUDES,
+			],
+			{ ...options, env },
+		);
+		return parseNameStatus(output);
+	});
+}
+
+function parseNameStatus(output: string): Record<string, FileStatusClass> {
+	const fields = output.split("\0").filter(Boolean);
+	const classes: Record<string, FileStatusClass> = {};
+	let index = 0;
+	while (index < fields.length) {
+		const letter = (fields[index] ?? "").charAt(0);
+		// Renames and copies name the source path, then the destination.
+		const paths = letter === "R" || letter === "C" ? 2 : 1;
+		const path = fields[index + paths];
+		if (path !== undefined)
+			classes[path] = STATUS_CLASSES[letter] ?? "modified";
+		index += paths + 1;
+	}
+	return classes;
+}
+
+const STATUS_CLASSES: Readonly<Record<string, FileStatusClass>> = {
+	A: "added",
+	C: "added",
+	D: "removed",
+};
+
+/** Runs `read` against a throwaway copy of the index holding the whole working tree. */
+async function withWorktreeIndex<T>(
+	options: GitOptions,
+	read: (env: NodeJS.ProcessEnv) => Promise<T>,
+): Promise<T> {
 	const dir = await mkdtemp(join(tmpdir(), "cosmonauts-lean-index-"));
 	try {
 		const index = join(dir, "index");
 		await seedIndex(options, index);
 		const env = { ...process.env, GIT_INDEX_FILE: index };
 		await git(["add", "-A"], { ...options, env });
-		return await readStagedChange({ ...options, env });
+		return await read(env);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

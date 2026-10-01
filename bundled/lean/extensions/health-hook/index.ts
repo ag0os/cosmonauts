@@ -7,6 +7,9 @@
  * a fresh session compares against the same base), then `LEAN_RUN_BASE_SHA`,
  * then HEAD pinned at this session's first check.
  *
+ * Every finding it injects is also appended to `<git dir>/lean-run/
+ * health-hook.jsonl`, which the runner copies into the run record.
+ *
  * Writes made through `bash` raise no edit or write `tool_result` and are not
  * checked (ruling P-2). External harnesses run the same check through
  * `cosmonauts analysis changed-functions --base <rev> --file <path>`.
@@ -34,6 +37,7 @@ import {
 	resolveChangedFunctions,
 } from "../../../../lib/code-health/changed-functions.ts";
 import { readRunBaseSha } from "../../../../lib/lean-run/base-sha.ts";
+import { appendHealthHookEntries } from "../../../../lib/lean-run/health-hook-log.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -97,7 +101,12 @@ export default function healthHook(
 					: { fallowExecutable: deps.fallowExecutable }),
 				...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
 			});
-			return injectFinding(event, report);
+			const injected = injectFinding(event, report);
+			if (injected)
+				await persistFinding(ctx.cwd, report).catch((error: unknown) =>
+					logOnce(String(event.input.path), error),
+				);
+			return injected;
 		} catch (error) {
 			logOnce(String(event.input.path), error);
 			return undefined;
@@ -163,6 +172,33 @@ function injectFinding(
 	return {
 		content: [...event.content, { type: "text", text: lines.join("\n") }],
 	};
+}
+
+/** One line per regressed function in the run's hook log, which the lean runner copies into the run record. */
+function persistFinding(
+	worktree: string,
+	report: ChangedFunctionsReport,
+): Promise<void> {
+	const timestamp = new Date().toISOString();
+	return appendHealthHookEntries({
+		worktree,
+		entries: report.functions
+			.filter((fn) => fn.regressed)
+			.map((fn) => ({
+				timestamp,
+				file: fn.file,
+				function: fn.name,
+				startLine: fn.startLine,
+				endLine: fn.endLine,
+				metrics: {
+					cyclomatic: fn.cyclomatic,
+					cognitive: fn.cognitive,
+					crap: fn.crap,
+				},
+				baseMetrics: fn.base,
+				base: report.baseCommit,
+			})),
+	});
 }
 
 function describeRegression(fn: ChangedFunction): string {

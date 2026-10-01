@@ -2,7 +2,7 @@
  * Tests for parsePlan: the plan.md contract read by its headings.
  */
 import { describe, expect, test } from "vitest";
-import { parsePlan } from "../../lib/lean-run/plan.ts";
+import { parsePlan, requestPaths } from "../../lib/lean-run/plan.ts";
 
 const FULL_PLAN = `# Add retry to the fetcher
 
@@ -151,5 +151,27 @@ describe("parsePlan heading handling", () => {
 		expect(parsePlan("## Diagram\n```mermaid\ngraph TD\n").diagram).toBe(
 			"graph TD",
 		);
+	});
+});
+
+describe("requestPaths", () => {
+	test("reads backticked paths by the plan's rule", () => {
+		expect(
+			requestPaths(
+				"Fix `linkDependencies` in `lib/code-health/changed-functions.ts` and `README.md`.",
+			),
+		).toEqual(["lib/code-health/changed-functions.ts", "README.md"]);
+	});
+
+	test("reads a bare path with a directory and an extension, without its punctuation", () => {
+		expect(
+			requestPaths("Update lib/x.ts, then (tests/x.test.ts). Keep it small."),
+		).toEqual(["lib/x.ts", "tests/x.test.ts"]);
+	});
+
+	test("ignores prose that only looks path-like", () => {
+		expect(
+			requestPaths("Use one and/or the other, e.g. a 1.5 s delay."),
+		).toEqual([]);
 	});
 });

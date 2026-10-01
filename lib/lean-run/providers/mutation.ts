@@ -3,6 +3,14 @@
  * only the changed functions and runs only the selected tests. A survivor
  * inside a changed function fails the signal and re-enters the builder once.
  * Operational failures never throw; they become an `info` signal.
+ *
+ * Two refinements of 4.7B.5 under the brief's principle that thresholds are
+ * regression against the base, never absolute (ruling W3-6). Only survivors
+ * on lines the diff added or rewrote re-enter; survivors on unchanged lines
+ * of a changed function predate the change and are listed in
+ * `survivorsOutsideDiff` as `info`. And a changed file whose covering tests
+ * are all sandbox-unsafe is not mutated: no test could kill its mutants, so
+ * it is reported in `untestable` rather than failed.
  */
 
 import { spawn } from "node:child_process";
@@ -14,6 +22,10 @@ import { fileURLToPath } from "node:url";
 import { loadFileGraph } from "../../architecture-map/index.ts";
 import type { FileGraph } from "../../architecture-map/types.ts";
 import { resolveChangedFunctions } from "../../code-health/changed-functions.ts";
+import {
+	type DiffHunk,
+	rangeIntersectsHunks,
+} from "../../code-health/diff-hunks.ts";
 import { reapProcessGroup } from "../../process/process-group.ts";
 import type {
 	Signal,
@@ -23,6 +35,7 @@ import type {
 } from "../types.ts";
 import {
 	type ChangedFunctionRange,
+	type MutantLocation,
 	type MutationSummary,
 	summarizeMutationReport,
 } from "./mutation-report.ts";
@@ -32,6 +45,8 @@ import {
 	isTestFile,
 	selectMutationTests,
 	type TestSelection,
+	type UntestableFile,
+	untestableFiles,
 } from "./mutation-tests.ts";
 
 export type {
@@ -72,6 +87,10 @@ interface StrykerPlan {
 	readonly ranges: readonly ChangedFunctionRange[];
 	readonly mutate: string[];
 	readonly tests: TestSelection;
+	/** The diff's hunks per changed file; undefined when the resolver gave none. */
+	readonly hunks?: Readonly<Record<string, readonly DiffHunk[]>>;
+	/** Changed files left out because every covering test is denied. */
+	readonly untestable: readonly UntestableFile[];
 }
 
 type StrykerOutcome =
@@ -118,27 +137,43 @@ async function runMutation(
 		});
 	}
 	ctx.signal?.throwIfAborted();
-	const ranges = await changedSourceFunctions(ctx);
-	if (ranges.length === 0) {
+	const changed = await changedSourceFunctions(ctx);
+	if (changed.ranges.length === 0) {
 		return signal("pass", "no changed functions to mutate", {
 			changedFunctions: [],
 		});
 	}
-	const timeoutMs = effectiveTimeout(options.timeoutMs, ctx.budget.timeMs);
-	const tests = selectMutationTests({
-		sourceFiles: unique(ranges.map((range) => range.file)),
-		changedFiles: ctx.changedFiles,
+	const coverage = {
 		graph: await loadGraph(ctx.worktree),
 		blastRadiusTests: blastRadiusTests(ctx),
-		includeTier2: timeoutMs >= TIER2_MIN_BUDGET_MS,
-		maxTests: options.maxTests ?? DEFAULT_MAX_TESTS,
-		exists: (path) => existsSync(join(ctx.worktree, path)),
+		exists: (path: string) => existsSync(join(ctx.worktree, path)),
 		isDenied: denyPredicate(
 			ctx.worktree,
 			options.denyListTests ?? DEFAULT_SANDBOX_UNSAFE_TESTS,
 		),
+	};
+	const untestable = untestableFiles({
+		...coverage,
+		sourceFiles: unique(changed.ranges.map((range) => range.file)),
 	});
-	const plan = { ranges, mutate: mutateArguments(ranges), tests };
+	const skip = new Set(untestable.map((entry) => entry.file));
+	const ranges = changed.ranges.filter((range) => !skip.has(range.file));
+	if (ranges.length === 0) return untestableSignal(changed.ranges, untestable);
+	const timeoutMs = effectiveTimeout(options.timeoutMs, ctx.budget.timeMs);
+	const tests = selectMutationTests({
+		...coverage,
+		sourceFiles: unique(ranges.map((range) => range.file)),
+		changedFiles: ctx.changedFiles,
+		includeTier2: timeoutMs >= TIER2_MIN_BUDGET_MS,
+		maxTests: options.maxTests ?? DEFAULT_MAX_TESTS,
+	});
+	const plan: StrykerPlan = {
+		ranges,
+		mutate: mutateArguments(ranges),
+		tests,
+		hunks: changed.hunks,
+		untestable,
+	};
 	if (tests.selected.length === 0) {
 		return infoSignal("no tests selected for the changed functions", {
 			...planData(plan),
@@ -146,6 +181,21 @@ async function runMutation(
 		});
 	}
 	return runStrykerPlan(ctx, options, plan, { timeoutMs, started });
+}
+
+/** Every changed file's covering tests are denied: nothing to run Stryker for. */
+function untestableSignal(
+	ranges: readonly ChangedFunctionRange[],
+	untestable: readonly UntestableFile[],
+): Signal {
+	return infoSignal(
+		"untestable under mutation: covering tests are sandbox-unsafe",
+		{
+			changedFunctions: ranges,
+			untestable,
+			denied: unique(untestable.flatMap((entry) => entry.covering)).sort(),
+		},
+	);
 }
 
 async function runStrykerPlan(
@@ -187,12 +237,23 @@ async function runStrykerPlan(
 		});
 	}
 	const report: unknown = JSON.parse(await readFile(reportPath, "utf8"));
-	return verdict(
-		summarizeMutationReport(report, plan.ranges, {
-			projectRoot: ctx.worktree,
-		}),
-		data,
-	);
+	const summary = summarizeMutationReport(report, plan.ranges, {
+		projectRoot: ctx.worktree,
+	});
+	return withUntestable(verdict(summary, data, plan.hunks), plan.untestable);
+}
+
+/** Names the files left out as untestable in the summary, when there are any. */
+function withUntestable(
+	result: Signal,
+	untestable: readonly UntestableFile[],
+): Signal {
+	if (untestable.length === 0) return result;
+	const files = untestable.map((entry) => entry.file).join(", ");
+	return {
+		...result,
+		summary: `${result.summary}; not mutated, covering tests are sandbox-unsafe: ${files}`,
+	};
 }
 
 /**
@@ -212,16 +273,17 @@ async function withoutSandbox<T>(
 	}
 }
 
-/** Changed functions outside test files, with Stryker-ready repo-relative paths. */
-async function changedSourceFunctions(
-	ctx: SignalContext,
-): Promise<ChangedFunctionRange[]> {
+/** Changed functions outside test files, with Stryker-ready repo-relative paths, and the diff's hunks. */
+async function changedSourceFunctions(ctx: SignalContext): Promise<{
+	ranges: ChangedFunctionRange[];
+	hunks?: Readonly<Record<string, readonly DiffHunk[]>>;
+}> {
 	const report = await resolveChangedFunctions({
 		cwd: ctx.worktree,
 		base: ctx.baseSha,
 		signal: ctx.signal,
 	});
-	return report.functions
+	const ranges = report.functions
 		.filter((fn) => !isTestFile(fn.file))
 		.map((fn) => ({
 			file: fn.file,
@@ -229,6 +291,9 @@ async function changedSourceFunctions(
 			startLine: fn.startLine,
 			endLine: fn.endLine,
 		}));
+	return report.hunks === undefined
+		? { ranges }
+		: { ranges, hunks: report.hunks };
 }
 
 /** `file:start-end` per changed function, nested and overlapping ranges merged. */
@@ -253,23 +318,45 @@ export function mutateArguments(
 	);
 }
 
-function verdict(summary: MutationSummary, data: object): Signal {
+interface OutsideDiffSurvivor extends MutantLocation {
+	readonly file: string;
+	readonly function: string;
+}
+
+function verdict(
+	summary: MutationSummary,
+	data: object,
+	hunks: Readonly<Record<string, readonly DiffHunk[]>> | undefined,
+): Signal {
 	const { inRange } = summary;
 	const detected = inRange.killed + inRange.timeout;
 	const counts = `${detected} killed (${inRange.timeout} by timeout), ${inRange.survived} survived, ${inRange.noCoverage} no coverage`;
+	const outsideDiff = survivorsOutsideDiff(summary, hunks);
 	const payload = {
 		...data,
 		changedFunctions: summary.functions,
 		inRange,
 		outsideRange: summary.outsideRange,
 		testFilesKillingNothing: summary.testFilesKillingNothing,
+		...(outsideDiff.length > 0 ? { survivorsOutsideDiff: outsideDiff } : {}),
 	};
-	if (inRange.survived > 0) {
+	const inDiff = inRange.survived - outsideDiff.length;
+	if (inDiff > 0) {
+		const unchanged =
+			outsideDiff.length > 0
+				? ` (${outsideDiff.length} more on unchanged lines)`
+				: "";
 		return signal(
 			"fail",
-			`${inRange.survived} mutants survived in changed functions: ${counts}`,
+			`${inDiff} mutants survived on changed lines of changed functions${unchanged}: ${counts}`,
 			payload,
 			true,
+		);
+	}
+	if (outsideDiff.length > 0) {
+		return infoSignal(
+			`${outsideDiff.length} mutants survived, all on unchanged lines of changed functions: ${counts}`,
+			payload,
 		);
 	}
 	if (detected > 0) {
@@ -285,6 +372,23 @@ function verdict(summary: MutationSummary, data: object): Signal {
 			: `no mutant in changed functions was covered by the selected tests: ${counts}`,
 		payload,
 	);
+}
+
+/**
+ * Survivors whose lines no hunk added or rewrote. A file the resolver gave
+ * no hunks for keeps every survivor in the diff, as before hunks existed.
+ */
+function survivorsOutsideDiff(
+	summary: MutationSummary,
+	hunks: Readonly<Record<string, readonly DiffHunk[]>> | undefined,
+): OutsideDiffSurvivor[] {
+	return summary.functions.flatMap((fn) => {
+		const fileHunks = hunks?.[fn.file];
+		if (fileHunks === undefined) return [];
+		return fn.survivors
+			.filter((mutant) => !rangeIntersectsHunks(mutant, fileHunks))
+			.map((mutant) => ({ file: fn.file, function: fn.name, ...mutant }));
+	});
 }
 
 function effectiveTimeout(
@@ -481,7 +585,11 @@ function describeOutcome(outcome: StrykerOutcome): string {
 }
 
 function planData(plan: StrykerPlan): object {
-	return { mutate: plan.mutate, tests: plan.tests };
+	return {
+		mutate: plan.mutate,
+		tests: plan.tests,
+		...(plan.untestable.length > 0 ? { untestable: plan.untestable } : {}),
+	};
 }
 
 function signal(

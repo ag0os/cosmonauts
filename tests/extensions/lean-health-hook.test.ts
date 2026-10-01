@@ -5,7 +5,8 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import healthHook from "../../bundled/lean/extensions/health-hook/index.ts";
@@ -73,6 +74,10 @@ function contextFor(role: string) {
 }
 
 type HookDeps = NonNullable<Parameters<typeof healthHook>[1]>;
+
+function hookLog(): string {
+	return join(tmp.path, ".git/lean-run/health-hook.jsonl");
+}
 
 function installHook(deps: HookDeps = {}) {
 	const pi = createMockPi({ cwd: tmp.path });
@@ -144,6 +149,36 @@ describe("lean health hook", { timeout: 60_000 }, () => {
 		const finding = result.content[1]?.text ?? "";
 		expect(finding).toContain(`${SAMPLE}:1-6 simple`);
 		expect(finding).toContain("cyclomatic 1→2");
+	});
+
+	test("logs each injected finding to the worktree's hook log", async () => {
+		const pi = installHook();
+		await writeSample(SIMPLE_RAISED);
+
+		await fireWrite(pi);
+
+		const log = await readFile(hookLog(), "utf8");
+		const lines = log.trimEnd().split("\n");
+		expect(lines).toHaveLength(1);
+		expect(JSON.parse(lines[0] ?? "")).toEqual({
+			timestamp: expect.any(String),
+			file: SAMPLE,
+			function: "simple",
+			startLine: 1,
+			endLine: 6,
+			metrics: expect.objectContaining({ cyclomatic: 2 }),
+			baseMetrics: expect.objectContaining({ cyclomatic: 1 }),
+			base: git("rev-parse", "HEAD"),
+		});
+	});
+
+	test("logs nothing when the check stays silent", async () => {
+		const pi = installHook();
+		await writeSample(SIMPLE_RENAMED_CONSTANT);
+
+		await fireWrite(pi, { tool: "edit" });
+
+		expect(existsSync(hookLog())).toBe(false);
 	});
 
 	test("ignores writes by any role other than lean/builder", async () => {

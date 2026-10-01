@@ -31,6 +31,44 @@ describe("planVersusActualProvider", () => {
 		});
 	});
 
+	test("says a direct request has no plan instead of calling every file unplanned", async () => {
+		const base = stubContext();
+		const signal = await planVersusActualProvider.run(
+			stubContext({
+				tier: "direct",
+				plan: { ...base.plan, touches: ["lib/a.ts"] },
+				envelope: { outcome: "done", touched: ["lib/a.ts"] },
+				changedFiles: ["lib/a.ts", "tests/a.test.ts"],
+			}),
+		);
+		expect(signal).toEqual({
+			kind: "plan-vs-actual",
+			status: "info",
+			summary: "Plan versus actual: direct tier: no plan; 2 changed.",
+			data: {
+				planned: [],
+				unplanned: [],
+				untouched: [],
+				changed: ["lib/a.ts", "tests/a.test.ts"],
+			},
+			reenter: false,
+		});
+	});
+
+	test("compares a review run's files against the plan it came with", async () => {
+		const base = stubContext();
+		const signal = await planVersusActualProvider.run(
+			stubContext({
+				tier: "plan",
+				plan: { ...base.plan, touches: ["lib/a.ts"] },
+				changedFiles: ["lib/a.ts"],
+			}),
+		);
+		expect(signal.summary).toBe(
+			"Plan versus actual: 1 planned, 0 unplanned, 0 untouched.",
+		);
+	});
+
 	test("treats a missing envelope touched list as empty", async () => {
 		const signal = await planVersusActualProvider.run(
 			stubContext({ changedFiles: ["lib/a.ts"] }),

@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { DEFAULT_SLICE_BUDGET_TOKENS } from "../architecture-map/index.ts";
 import { loadProjectConfig } from "../config/index.ts";
 import type { ProjectLeanConfig } from "../config/types.ts";
 import type { Envelope, Finding } from "../envelope/index.ts";
 import { clearRunBaseSha, writeRunBaseSha } from "./base-sha.ts";
-import { buildContextPack } from "./context-pack.ts";
+import { buildContextPack, planPathWarnings } from "./context-pack.ts";
 import { parseStageEnvelope } from "./envelope.ts";
 import {
 	builderTaskId,
@@ -21,7 +21,8 @@ import {
 	type RefreshFileGraph,
 	refreshFileGraph,
 } from "./graph-refresh.ts";
-import { parsePlan } from "./plan.ts";
+import { takeHealthHookLog } from "./health-hook-log.ts";
+import { parsePlan, requestPaths } from "./plan.ts";
 import {
 	builderPrompt,
 	findingsPrompt,
@@ -29,6 +30,7 @@ import {
 	repairPrompt,
 	reviewerPrompt,
 } from "./prompts.ts";
+import { createVerifyProvider } from "./providers/verify.ts";
 import {
 	createRunRecord,
 	saveEnvelope,
@@ -39,6 +41,7 @@ import {
 } from "./record.ts";
 import { openReviewCheckout, type ReviewCheckout } from "./review-checkout.ts";
 import { acquireRunLock } from "./run-lock.ts";
+import { writeRunPrBody } from "./run-pr-body.ts";
 import type {
 	BackendRunInput,
 	BackendRunResult,
@@ -58,6 +61,7 @@ import type {
 	SignalKind,
 	SignalProvider,
 } from "./types.ts";
+import { RUN_RECORD_FILES } from "./types.ts";
 
 export interface RunBuildOptions {
 	projectRoot: string;
@@ -204,13 +208,23 @@ export interface RunReviewOptions {
 	lenses?: readonly LeanLens[];
 	budget?: Partial<RunBudget>;
 	signal?: AbortSignal;
+	/**
+	 * Run once over the change before the reviewer, which gets their signals
+	 * as facts; `[createVerifyProvider()]` when omitted. The full default set
+	 * (`createDefaultProviders()`) is allowed.
+	 */
+	providers?: readonly SignalProvider[];
+	/** As in `runBuild`; called only when a provider reads the file graph. */
+	refreshGraph?: RefreshFileGraph;
 }
 
 /**
  * Reviews a change that already exists: the working tree against `base`,
  * through `runBuild`'s reviewer stage (review checkout, bounded diff, envelope
- * repair) with no builder and no providers. The record's tier is `review`;
- * the run is `done` when the reviewer finished, whatever it found, and its
+ * repair) with no builder, after one pass of the providers. The record's tier
+ * is `review`. The run is `done` when the reviewer finished, whatever it
+ * found, and the pass's verify signal passed; with no verify signal or one
+ * that did not pass it is `blocked` with an "unverified: …" reason. The
  * findings are in the `reviewer` envelope. An empty change is `blocked`
  * before any session starts. Only a bad plan source, an unknown base or a
  * non-git project throws.
@@ -241,18 +255,24 @@ export async function runReview(options: RunReviewOptions): Promise<RunRecord> {
 	if (lean.warning) warn(record, lean.warning);
 	if (options.request !== undefined)
 		await saveRequest(record, projectRoot, source.plan.raw);
-	const { reviewerBackend, base: _base, ...rest } = options;
+	const { reviewerBackend, base: _base, providers, ...rest } = options;
 	const runOptions: RunBuildOptions = {
 		...rest,
 		backend: reviewerBackend,
 		reviewerBackend,
-		providers: [],
+		providers: providers ?? [createVerifyProvider()],
 	};
 	return underRunLock(
 		{ options: runOptions, record, source, lean: lean.config },
 		(run) => reviewOnce(run, base),
 	);
 }
+
+/** Stands in for the builder's envelope in a review's provider pass. */
+const UNDER_REVIEW: Envelope = {
+	outcome: "done",
+	summary: "an existing change under review",
+};
 
 async function reviewOnce(run: Run, base: string): Promise<void> {
 	await saveManifest(run.record);
@@ -267,10 +287,23 @@ async function reviewOnce(run: Run, base: string): Promise<void> {
 			"blocked",
 			`nothing to review: no change against ${base}`,
 		);
+	if (run.options.providers.length > 0 && !(await checkPass(run, UNDER_REVIEW)))
+		return;
 	const review = await runReviewer(run, "reviewer");
 	if (!review) return;
-	if (review.outcome === "done") return finish(run, "done");
-	return finish(run, review.outcome, `reviewer: ${review.reason}`);
+	const gap = reviewGap(run);
+	if (review.outcome !== "done") {
+		const reasons = [`reviewer: ${review.reason}`, ...(gap ? [gap] : [])];
+		return finish(run, review.outcome, reasons.join("; "));
+	}
+	return gap ? finish(run, "blocked", gap) : finish(run, "done");
+}
+
+/** `runBuild`'s verification gap, always worded as unverified: a review never re-enters. */
+function reviewGap(run: Run): string | undefined {
+	const gap = verificationGap(run, [], "");
+	if (gap === undefined || gap.startsWith("unverified")) return gap;
+	return `unverified: ${gap}`;
 }
 
 /** The merge-base of HEAD with local `main`, else `master`; `HEAD` when neither branch exists. */
@@ -291,24 +324,26 @@ interface RunStart {
 
 /**
  * Runs `body` holding the worktree's run lock. The lock is released however
- * the body ends, and anything it throws, including starting the run, ends
- * the run `failed`.
+ * the body ends, and anything it throws, including taking the lock and
+ * starting the run, ends the run `failed`.
  */
 async function underRunLock(
 	start: RunStart,
 	body: (run: Run) => Promise<void>,
 ): Promise<RunRecord> {
 	const { options, record } = start;
-	const lock = await acquireRunLock({
-		worktree: options.projectRoot,
-		runId: record.manifest.id,
-	});
-	if (!lock.acquired) {
-		await finishRecord(record, "blocked", lockedOut(lock.holder));
-		return record;
-	}
 	let run: Run | undefined;
+	let release: (() => Promise<void>) | undefined;
 	try {
+		const lock = await acquireRunLock({
+			worktree: options.projectRoot,
+			runId: record.manifest.id,
+		});
+		if (!lock.acquired) {
+			await finishRecord(record, "blocked", lockedOut(lock.holder));
+			return record;
+		}
+		release = lock.release;
 		run = startRun(start);
 		await body(run);
 	} catch (error) {
@@ -319,9 +354,37 @@ async function underRunLock(
 			aborted ?? `runner error: ${errorMessage(error)}`,
 		);
 	} finally {
-		await lock.release();
+		if (run) await recordPrBody(run);
+		await release?.();
 	}
 	return record;
+}
+
+/**
+ * Writes `pr-body.md` once a stage left an envelope or a provider pass ran;
+ * a run that produced nothing has nothing to describe. Never fails the run.
+ */
+async function recordPrBody(run: Run): Promise<void> {
+	const { record } = run;
+	const ranAnything =
+		Object.keys(record.envelopes).length > 0 || record.facts.passes.length > 0;
+	if (!ranAnything) return;
+	try {
+		await writeRunPrBody({
+			record,
+			projectRoot: run.options.projectRoot,
+			plan: run.plan,
+			tier: planTier(run),
+		});
+	} catch (error) {
+		warn(record, `pr body not written: ${errorMessage(error)}`);
+	}
+	await saveManifest(record);
+}
+
+/** `plan` when a plan document came with the change, else the run's own tier. */
+function planTier(run: Run): RunTier {
+	return run.options.planPath === undefined ? run.tier : "plan";
 }
 
 function lockedOut(holder: string): string {
@@ -353,12 +416,15 @@ async function readPlanSource(
 	return { tier: "direct", plan: directPlan(request) };
 }
 
-/** A direct request reads as a plan whose approach is the request and whose lists are empty. */
+/**
+ * A direct request reads as a plan whose approach is the request and whose
+ * touches are the paths it names, so the context pack has a repo map.
+ */
 function directPlan(request: string): ParsedPlan {
 	return {
 		title: "Direct request",
 		approach: request,
-		touches: [],
+		touches: requestPaths(request),
 		reuses: [],
 		behaviors: [],
 		risks: [],
@@ -461,14 +527,20 @@ async function useContextPack(
 			run.record,
 			`${PLAN_ONLY}; graph.json unavailable: ${refresh.reason}`,
 		);
+	const paths = {
+		touches: run.plan.touches,
+		reuses: run.plan.reuses,
+		graph: refresh.graph,
+		projectRoot: run.options.projectRoot,
+	};
+	const warnings = planPathWarnings(paths);
+	for (const warning of warnings) warn(run.record, warning);
 	try {
 		const pack = await buildContextPack({
+			...paths,
 			planSection: run.plan.raw,
-			touches: run.plan.touches,
-			reuses: run.plan.reuses,
-			graph: refresh.graph,
 			budget: run.lean.repoMapBudgetTokens ?? DEFAULT_SLICE_BUDGET_TOKENS,
-			projectRoot: run.options.projectRoot,
+			warnings,
 		});
 		run.basePrompt = builderPrompt({
 			plan: run.plan,
@@ -583,12 +655,25 @@ async function checkPass(
 	envelope: Envelope,
 ): Promise<Signal[] | undefined> {
 	const pass = run.record.facts.passes.length + 1;
-	if (run.options.providers.length > 0) await refreshGraph(run, `pass-${pass}`);
+	if (readsGraph(run)) await refreshGraph(run, `pass-${pass}`);
 	const signals = await runProviders(run, envelope, pass);
 	if (!signals) return undefined;
 	const failing = reentering(run, signals, pass);
 	await saveManifest(run.record);
 	return failing;
+}
+
+/** Providers that walk graph.json; only they need it refreshed before a review's pass. */
+const GRAPH_KINDS: ReadonlySet<SignalKind> = new Set([
+	"blast-radius",
+	"mutation",
+]);
+
+/** A build refreshes before every pass; a review, only for a provider that reads the graph. */
+function readsGraph(run: Run): boolean {
+	const { providers } = run.options;
+	if (run.tier !== "review") return providers.length > 0;
+	return providers.some((provider) => GRAPH_KINDS.has(provider.kind));
 }
 
 async function runBuilder(
@@ -599,6 +684,7 @@ async function runBuilder(
 	if (await stopBeforeStage(run, stage)) return undefined;
 	await snapshotAttempt(run, stage);
 	const worktree = run.options.projectRoot;
+	await takeHealthHookLog({ worktree });
 	await writeRunBaseSha({ worktree, baseSha: diffBase(run) });
 	try {
 		const envelope = await runStage(run, stage, run.options.backend, {
@@ -611,8 +697,43 @@ async function runBuilder(
 			await finish(run, envelope.outcome, `${stage}: ${envelope.reason}`);
 		return undefined;
 	} finally {
+		await keepHealthHookLog(run, stage);
 		await clearRunBaseSha({ worktree });
 	}
+}
+
+/**
+ * Moves what the health hook logged during `stage` into the run record's
+ * `health-hook.jsonl`, each line tagged with the stage. Never fails the run.
+ */
+async function keepHealthHookLog(run: Run, stage: BuilderStage): Promise<void> {
+	try {
+		const text = await takeHealthHookLog({
+			worktree: run.options.projectRoot,
+		});
+		const lines = text
+			.split("\n")
+			.filter((line) => line.trim() !== "")
+			.map((line) => `${tagStage(line, stage)}\n`);
+		if (lines.length === 0) return;
+		await appendFile(
+			join(run.record.dir, RUN_RECORD_FILES.healthHook),
+			lines.join(""),
+		);
+	} catch (error) {
+		warn(run.record, `health hook log not kept: ${errorMessage(error)}`);
+		await saveManifest(run.record);
+	}
+}
+
+/** `{"stage":…,…entry}`; a line that is not a JSON object is kept as it is. */
+function tagStage(line: string, stage: BuilderStage): string {
+	try {
+		const entry: unknown = JSON.parse(line);
+		if (typeof entry === "object" && entry !== null && !Array.isArray(entry))
+			return JSON.stringify({ stage, ...entry });
+	} catch {}
+	return line;
 }
 
 const ATTEMPTS: Record<BuilderStage, number> = {
@@ -685,6 +806,7 @@ async function signalContext(
 		worktree,
 		baseSha: base,
 		plan: run.plan,
+		tier: planTier(run),
 		envelope,
 		changedFiles,
 		budget: run.budget,

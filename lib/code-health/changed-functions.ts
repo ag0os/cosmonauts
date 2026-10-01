@@ -66,6 +66,8 @@ export interface ChangedFunctionsReport {
 	readonly base: string;
 	readonly baseCommit: string;
 	readonly functions: readonly ChangedFunction[];
+	/** The `git diff -U0` hunks of each changed file, keyed by its path in the working tree. */
+	readonly hunks?: Readonly<Record<string, readonly DiffHunk[]>>;
 }
 
 export interface ResolveChangedFunctionsOptions {
@@ -103,7 +105,11 @@ export async function resolveChangedFunctions(
 			? undefined
 			: await repoRelativePath(root, options.cwd, options.file),
 	);
-	const report = { base: options.base, baseCommit };
+	const report = {
+		base: options.base,
+		baseCommit,
+		hunks: Object.fromEntries(files.map((file) => [file.newPath, file.hunks])),
+	};
 	if (files.length === 0) return { ...report, functions: [] };
 
 	// A whole-project inventory, not `--changed-since`: Fallow selects files

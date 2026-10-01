@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -5,6 +6,7 @@ import {
 	loadSliceSources,
 	repoMapSlice,
 } from "../architecture-map/index.ts";
+import { isGlob, normalizeRepoPaths } from "./graph/paths.ts";
 
 /** The package.json scripts rendered as verification commands, in order. */
 const VERIFICATION_SCRIPTS = ["test", "lint", "typecheck"] as const;
@@ -20,13 +22,42 @@ export interface BuildContextPackOptions {
 	readonly projectRoot: string;
 	/** Overrides the commands read from package.json scripts. */
 	readonly verificationCommands?: readonly string[];
+	/** One line each at the top of the pack, before the plan (see `planPathWarnings`). */
+	readonly warnings?: readonly string[];
+}
+
+/**
+ * A `Touches` or `Reuses` path the slice cannot show: missing from both the
+ * project and the file graph (a typo, or a file still to be written), or on
+ * disk but not in the graph (a file the map does not analyze). Globs are not
+ * checked; a directory is in the graph when a file under it is.
+ */
+export function planPathWarnings(options: {
+	readonly touches: readonly string[];
+	readonly reuses: readonly string[];
+	readonly graph: FileGraph;
+	readonly projectRoot: string;
+}): string[] {
+	const paths = normalizeRepoPaths([...options.touches, ...options.reuses]);
+	return paths.flatMap((path) => {
+		if (isGlob(path) || inGraph(options.graph, path)) return [];
+		return existsSync(join(options.projectRoot, path))
+			? [`plan path is not in the file graph: ${path}`]
+			: [`plan path not found: ${path}`];
+	});
+}
+
+function inGraph(graph: FileGraph, path: string): boolean {
+	return graph.nodes.some(
+		(node) => node.path === path || node.path.startsWith(`${path}/`),
+	);
 }
 
 /**
  * The text every builder receives (lean brief 4.6): the plan section, a
  * repo-map slice around `touches` and `reuses` (files to change render as
  * `[touch]`, helpers to use as `[reuse]`), the project's AGENTS.md, and the
- * verification commands. Empty parts are left out.
+ * verification commands, after any warnings. Empty parts are left out.
  */
 export async function buildContextPack(
 	options: BuildContextPackOptions,
@@ -49,7 +80,11 @@ export async function buildContextPack(
 	const commands =
 		options.verificationCommands ??
 		(await readVerificationCommands(options.projectRoot));
+	const warnings = (options.warnings ?? []).map(
+		(warning) => `Warning: ${warning}`,
+	);
 	return [
+		warnings.length > 0 ? warnings.join("\n") : undefined,
 		section("Plan", options.planSection),
 		section("Repo map", slice.text),
 		section("Repository conventions (AGENTS.md)", conventions ?? ""),

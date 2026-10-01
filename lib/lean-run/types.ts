@@ -75,6 +75,12 @@ export interface SignalContext {
 	 */
 	baseSha: string;
 	plan: ParsedPlan;
+	/**
+	 * `plan` when a plan document came with the change, else the run's tier
+	 * (`direct`, or `review`): then `plan` stands in for one and has no
+	 * contract to compare against. Absent: treat as `plan`.
+	 */
+	tier?: RunTier;
 	envelope: Envelope;
 	changedFiles: readonly string[];
 	/** Signals already produced earlier in the same pass, in provider order. */
@@ -139,6 +145,9 @@ export const RUN_RECORD_FILES = {
 	envelopes: "envelopes",
 	facts: "facts.json",
 	stats: "stats.json",
+	prBody: "pr-body.md",
+	/** What the Pi post-edit health hook injected, one JSON line per finding with its stage. */
+	healthHook: "health-hook.jsonl",
 } as const;
 
 /**
@@ -226,6 +235,8 @@ export interface RunManifest {
 	/** Where the post-edit health hook ran: in Pi sessions, or nowhere for an external harness. */
 	healthHook?: "pi" | "none (external backend)";
 	repairs?: EnvelopeRepair[];
+	/** The pull-request body written at the end of the run, relative to the project root. */
+	prBodyPath?: string;
 }
 
 export interface SignalPass {

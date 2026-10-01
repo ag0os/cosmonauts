@@ -118,6 +118,17 @@ Tests:
 		expect(body).toContain("## Findings\n\nNo findings.\n");
 	});
 
+	test("says there was no plan instead of listing three empty sets", () => {
+		const body = renderPrBody({
+			...FULL,
+			noPlan: "No plan (direct tier).",
+		});
+		expect(body).toContain(
+			"## Plan versus actual\n\nNo plan (direct tier).\n\n## Findings",
+		);
+		expect(body).not.toContain("**Planned**");
+	});
+
 	test("omits the truncation line when the walk was complete", () => {
 		const body = renderPrBody({
 			...FULL,

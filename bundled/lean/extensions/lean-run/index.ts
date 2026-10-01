@@ -169,7 +169,7 @@ function registerLeanReview(
 		name: "lean_review",
 		label: "Lean review",
 		description:
-			"Review a change that already exists: the working tree against a base ref, read by lean/code-reviewer in a read-only checkout with the diff and the changed files. Runs no builder and changes nothing. Returns the run id, status, a summary, the findings and the run directory.",
+			"Review a change that already exists: the host runs the project's verification commands over the working tree, then lean/code-reviewer reads the change against a base ref in a read-only checkout with the diff, the changed files and the verification facts. Runs no builder and changes nothing; the run is blocked as unverified when verification did not pass. Returns the run id, status, a summary, the findings and the run directory.",
 		parameters: LeanReviewParameters,
 		execute: async (_id, params: LeanReviewInput, signal, _onUpdate, ctx) => {
 			if (params.planPath !== undefined && params.request !== undefined)
