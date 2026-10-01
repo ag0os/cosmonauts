@@ -19,9 +19,17 @@ verbs that write history or move refs (`push`, `commit`, `merge`, `rebase`,
 `stash`) and `gh pr`; `run.json` records the list as `deniedTools`.
 
 Only a `done` run applies the builder's patch, to your working tree and
-never the index. A run during which your branch, HEAD or stash moved, or
-a branch or tag of yours was added, deleted or moved, ends `blocked` with
-nothing applied, and the reason names the refs.
+never the index. A run during which your branch, HEAD or stash moved ends
+`blocked` with nothing applied. So does a run in which one of your
+branches or tags was added or moved to an object the builder made: one
+that exists in the builder's clone and that none of your refs, HEAD or
+reflogs reached when the clone opened. The reason names those refs and
+the `git update-ref` command that restores each; a blocked run does not
+undo the change itself. Any other branch or tag drift, such as a commit
+in a sibling worktree, a fetched tag, a deleted ref or a ref moved to an
+object you already had, is a warning and does not stop the run.
+`run.json` records every drifted ref with its old and new object as
+`callerRefDrift`, each `blocked` or `warned`.
 
 The checks need files git does not carry, so the clone also gets:
 
@@ -30,8 +38,9 @@ The checks need files git does not carry, so the clone also gets:
   `.git` and `.stryker-tmp` are never copied, at any depth. Ignored files
   and directories are copied smallest first, and one that would take the
   total past `lean.ignoredInputsCapBytes` (default 50 MB) is skipped
-  whole. A symlink is copied only when it leads inside the checkout; an
-  absolute one is rewritten to point at the clone's file, not yours. The
+  whole. A symlink is copied only when it leads inside the checkout, and
+  its target is rewritten as the shortest relative path, so it points at
+  the clone's file, not yours. The
   copies stay out of the builder's patch. `run.json` lists what was copied
   (`builderInputs.carried`) and what was skipped and why
   (`builderInputs.skipped`).
@@ -44,13 +53,21 @@ records them as `builderInputs.residuals`.
 - **Push by path or URL.** The clone has no configured remote, but a
   builder that names a repository by path or URL, yours or your remote's,
   can still push to it, and the `claude-cli` deny list matches only
-  commands that start with `git push`. A push that adds, deletes or moves
-  one of your branches or tags ends the run `blocked`; a push to a remote
-  is not detected.
+  commands that start with `git push`. A push that points one of your
+  branches or tags at an object the builder made ends the run `blocked`.
+  A builder that deletes one of your refs, or moves one to an object you
+  already had, is reported in `run.json` and the warnings, not blocked:
+  the threat model is accidental damage, and the check cannot tell that
+  drift from your own work in another worktree. An object you had only
+  unreferenced (reached by no ref, HEAD or reflog) counts as the
+  builder's. A push to a remote is not detected.
 - **The dependency tree is writable through the link.** What the builder
   writes or deletes under a linked `node_modules` lands in yours. A run
   whose builder removed entries from one ends `blocked`; other writes (an
   edited installed package) are not detected.
+
+Submodules are not populated in the builder clone, so a check that needs
+one ends `blocked`.
 
 The clone is deleted when the run ends. When the last builder patch could
 not be written, its work exists only in the clone, which is kept; the
@@ -103,7 +120,7 @@ read, since no portable lookup of them is cheap.
 | `health`         | fallow                                                    | unavailable                         |
 | `dupes`          | fallow, and `.fallow-baselines/dupes.json` committed at the base | unavailable                   |
 | `blast-radius`   | `graph.json` from `cosmonauts architecture generate --file-graph` | unavailable                 |
-| `blast-tests`    | the `blast-radius` signal with a current graph, a `test` script in `package.json`, and a runner that prints a vitest or jest run summary | unavailable whenever no listed test ran: no graph, a stale graph, no test script, no tests in the radius, or a run that executed none |
+| `blast-tests`    | the `blast-radius` signal with a current graph, a `test` script in `package.json`, and a runner that prints a vitest or jest run summary and names each file it ran (not vitest's `dot` reporter) | unavailable whenever no listed test ran: no graph, a stale graph, no test script, no tests in the radius, or a run that executed none |
 | `plan-vs-actual` | nothing                                                   | always runs                         |
 | `mutation`       | fallow (to find the changed functions), Stryker with its vitest runner, vitest in the project, and the graph to select tests | unavailable                         |
 
@@ -123,10 +140,12 @@ for example ones its config excludes, are recorded under `notRun` and keep
 the signal from a clean `pass`; when no listed test ran at all the signal
 is unavailable. A runner that names only other files (vitest's substring
 filter matching a different path, or a script that ignores its arguments)
-ran none of the listed ones. Only a reporter that names no file at all is
-taken at its summary: when it ran at least as many files as were listed,
-all of them count as run, which a script that ignores its arguments would
-also satisfy.
+ran none of the listed ones. A reporter that names no file (for example
+`--reporter=dot`) reports no listed file as run, whatever its summary
+counts: the run is `not-run`, with the reason "the test runner named no
+files", the signal is unavailable, and it is a gap when required.
+`blast-tests` needs a reporter that names files: vitest's default or
+`verbose` (not `dot`), or jest's default.
 
 ## Installing from npm
 
@@ -233,7 +252,9 @@ a model (`--model`, `-m`, `-c model=`) or an effort
 (`-c model_reasoning_effort=`) win, and neither is added twice; so do
 arguments that pick the model through a profile or another provider
 (`--profile`, `-p`, `--oss`, `--local-provider`, `-c model_provider=`),
-which get no `--model` and are recorded as `caller: <argument>`. Codex
+which get neither `--model` nor the role's effort (that effort was mapped
+for the role's own model, and a profile carries its own) and are recorded
+as `caller: <argument>`, with an effort only when the caller set one. Codex
 takes the last of repeated `-c` flags, and custom arguments come after
 the ones lean adds, so a custom effort wins even in a form lean does not
 recognise.

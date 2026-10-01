@@ -44,19 +44,21 @@ export const listProcesses: ListProcesses = () =>
 				killSignal: "SIGKILL",
 				maxBuffer: 64 * 1024 * 1024,
 			},
-			(error, stdout) => {
-				if (error) return resolve(error);
-				const entries = parseProcessListing(stdout);
-				resolve(
-					entries.some((entry) => entry.pid === process.pid)
-						? entries
-						: new Error(
-								`the ps listing does not include this process (${process.pid})`,
-							),
-				);
-			},
+			(error, stdout) => resolve(error ?? readProcessListing(stdout)),
 		);
 	});
+
+/** The entries of a `ps` listing, or an error when it lacks this process. */
+export function readProcessListing(
+	text: string,
+): readonly ProcessEntry[] | Error {
+	const entries = parseProcessListing(text);
+	return entries.some((entry) => entry.pid === process.pid)
+		? entries
+		: new Error(
+				`the ps listing does not include this process (${process.pid})`,
+			);
+}
 
 export function parseProcessListing(text: string): ProcessEntry[] {
 	const entries: ProcessEntry[] = [];

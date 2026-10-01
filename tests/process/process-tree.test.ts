@@ -11,6 +11,7 @@ import {
 	PROCESS_LISTING_TIMEOUT_MS,
 	type ProcessEntry,
 	parseProcessListing,
+	readProcessListing,
 	reapProcessTree,
 } from "../../lib/process/process-tree.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -245,13 +246,32 @@ describe("listProcesses", () => {
 			PROCESS_LISTING_TIMEOUT_MS + 1_000,
 		);
 	});
+});
 
-	test("treats a listing without this process as an error", async () => {
-		await fakePs("echo '    1     0     1 Ss   /sbin/launchd'");
-
-		const listed = await listProcesses();
+describe("readProcessListing", () => {
+	test("treats a listing without this process as an error", () => {
+		const listed = readProcessListing("    1     0     1 Ss   /sbin/launchd\n");
 
 		expect(listed).toBeInstanceOf(Error);
-		expect((listed as Error).message).toContain(String(process.pid));
+		expect((listed as Error).message).toBe(
+			`the ps listing does not include this process (${process.pid})`,
+		);
+	});
+
+	test("returns every entry of a listing that includes this process", () => {
+		const listed = readProcessListing(
+			`    1     0     1 Ss   /sbin/launchd\n ${process.pid}     1 ${process.pid} S    vitest\n`,
+		);
+
+		expect(listed).toEqual([
+			{ pid: 1, ppid: 0, pgid: 1, stat: "Ss", command: "/sbin/launchd" },
+			{
+				pid: process.pid,
+				ppid: 1,
+				pgid: process.pid,
+				stat: "S",
+				command: "vitest",
+			},
+		]);
 	});
 });

@@ -324,6 +324,26 @@ test("keeps an ignored relative symlink inside the checkout as it is", async () 
 	expect(await readlink(join(clone.root, "alias"))).toBe("a.ts");
 });
 
+test("points an ignored relative symlink that climbs past / and back down at the clone's file, not the caller's", async () => {
+	await ignore("node_modules/\nlinks/\n");
+	await mkdir(join(repo.path, "links"));
+	const real = realpathSync(repo.path);
+	const climb = "../".repeat(real.split("/").length + 5);
+	await symlink(`${climb}${real.slice(1)}/a.ts`, join(repo.path, "links/a"));
+
+	const clone = await open();
+	await writeFile(join(clone.root, "links/a"), "written by the builder\n");
+
+	expect(clone.inputs.carried).toEqual(["links/"]);
+	expect(await readlink(join(clone.root, "links/a"))).toBe("../a.ts");
+	expect(await readFile(join(clone.root, "a.ts"), "utf8")).toBe(
+		"written by the builder\n",
+	);
+	expect(await readFile(join(repo.path, "a.ts"), "utf8")).toBe(
+		"export const a = 1;\n",
+	);
+});
+
 test("links the project's node_modules into the clone and records the residual", async () => {
 	await mkdir(join(repo.path, "node_modules/dep"), { recursive: true });
 

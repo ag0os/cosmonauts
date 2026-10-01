@@ -208,7 +208,7 @@ describe("codex-cli caller who picks the model through a profile or provider", (
 		[["--local-provider=ollama"], "caller: --local-provider ollama"],
 		[["-c", "model_provider=ollama"], "caller: -c model_provider=ollama"],
 		[["-cmodel_provider=ollama"], "caller: -c model_provider=ollama"],
-	])("adds no model for %j and records %s", async (extraArgs, model) => {
+	])("adds neither model nor effort for %j and records only %s", async (extraArgs, model) => {
 		const backend = createExternalBuilderBackend({
 			kind: "codex-cli",
 			resolvePackage: async () => PACKAGE,
@@ -218,14 +218,13 @@ describe("codex-cli caller who picks the model through a profile or provider", (
 
 		expect(args).not.toContain("--model");
 		expect(args).not.toContain("gpt-5.6-sol");
-		expect(efforts(args)).toEqual(["model_reasoning_effort=medium"]);
+		expect(efforts(args)).toEqual([]);
 		expect(await backend.requestedModel?.("lean/builder")).toEqual({
 			model,
-			effort: "medium",
 		});
 	});
 
-	test("records the caller's named model over its profile", async () => {
+	test("records the caller's named model over its profile, with no effort", async () => {
 		const backend = createExternalBuilderBackend({
 			kind: "codex-cli",
 			resolvePackage: async () => PACKAGE,
@@ -234,16 +233,24 @@ describe("codex-cli caller who picks the model through a profile or provider", (
 
 		expect(await backend.requestedModel?.("lean/builder")).toEqual({
 			model: "gpt-caller",
-			effort: "medium",
 		});
 	});
 
-	test("adds no effort when the caller sets one alongside a profile", async () => {
+	test("records the effort the caller sets alongside a profile and adds none", async () => {
 		const extraArgs = ["-p", "fast", "-c", "model_reasoning_effort=low"];
+		const backend = createExternalBuilderBackend({
+			kind: "codex-cli",
+			resolvePackage: async () => PACKAGE,
+			extraArgs,
+		});
 		const args = await argvFor({ extraArgs });
 
 		expect(args).not.toContain("--model");
 		expect(efforts(args)).toEqual(["model_reasoning_effort=low"]);
+		expect(await backend.requestedModel?.("lean/builder")).toEqual({
+			model: "caller: --profile fast",
+			effort: "low",
+		});
 	});
 });
 

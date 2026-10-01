@@ -15,8 +15,10 @@ import {
 } from "./builder-workspace.ts";
 import {
 	type CallerState,
-	callerStateChange,
+	checkCallerState,
+	describeDrift,
 	readCallerState,
+	restoreCommand,
 } from "./caller-state.ts";
 import {
 	confirmGone,
@@ -74,6 +76,7 @@ import type {
 	BackendRunInput,
 	BackendRunResult,
 	BuilderBackend,
+	CallerRefDrift,
 	DetachedProcess,
 	EnvelopeRepair,
 	GraphRefreshPoint,
@@ -1184,9 +1187,11 @@ async function runBuilder(
  * Why the builder's patch cannot go to the caller, if so: the builder
  * clone left the run's snapshot behind, so its patch would undo work that
  * predates the run, or the caller's branch, HEAD or stash moved, a branch
- * or tag of the caller was added, deleted or moved, or a linked
- * `node_modules` lost entries, since the clone opened. Nothing is
- * repaired. A check that cannot run counts.
+ * or tag of the caller now names an object the builder made, or a linked
+ * `node_modules` lost entries, since the clone opened. Every branch or tag
+ * drift is recorded as `callerRefDrift`, and drift that is not the
+ * builder's is a warning. Nothing is repaired. A check that cannot run
+ * counts.
  */
 async function isolationBreach(run: Run): Promise<string | undefined> {
 	const { callerState } = run;
@@ -1200,10 +1205,33 @@ async function isolationBreach(run: Run): Promise<string | undefined> {
 		});
 		if (!descends)
 			return `the builder clone no longer descends from the run's snapshot ${base}`;
-		return await callerStateChange(callerState, run.options.projectRoot);
+		const check = await checkCallerState(callerState, {
+			projectRoot: run.options.projectRoot,
+			clone: run.worktree,
+		});
+		recordRefDrift(run, check.drift);
+		return check.breach;
 	} catch (error) {
 		return `could not check the builder clone against the caller: ${errorMessage(error)}`;
 	}
+}
+
+/** Keeps the latest state of every drifted ref in `run.json` and warns once per drift that was not the builder's. */
+function recordRefDrift(run: Run, drift: readonly CallerRefDrift[]): void {
+	if (drift.length === 0) return;
+	const { manifest } = run.record;
+	const byRef = new Map(
+		(manifest.callerRefDrift ?? []).map((change) => [change.ref, change]),
+	);
+	for (const change of drift) {
+		byRef.set(change.ref, change);
+		if (change.action === "warned")
+			warnOnce(
+				run.record,
+				`the caller's branches or tags drifted during the run, not to the builder's objects (reported, not blocked): ${describeDrift(change)}; restore with: ${restoreCommand(change)}`,
+			);
+	}
+	manifest.callerRefDrift = [...byRef.values()];
 }
 
 /** Keeps the hook log, clears the base-sha marker and records the attempt's patch, whatever the stage did. */

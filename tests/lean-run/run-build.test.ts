@@ -240,6 +240,25 @@ function gitIn(cwd: string, ...args: string[]): string {
 	return execFileSync("git", args, { cwd, encoding: "utf8" });
 }
 
+/** Commits in `cwd`, which need not have an identity configured; resolves to the commit. */
+function builderCommit(cwd: string, message = "the builder's"): string {
+	gitIn(
+		cwd,
+		"-c",
+		"user.email=test@example.com",
+		"-c",
+		"user.name=Test",
+		"-c",
+		"commit.gpgsign=false",
+		"commit",
+		"-q",
+		"--allow-empty",
+		"-m",
+		message,
+	);
+	return gitIn(cwd, "rev-parse", "HEAD").trim();
+}
+
 beforeEach(async () => {
 	root = await mkdtemp(join(tmpdir(), "lean-run-"));
 	git("init", "-q", "-b", "main");
@@ -1056,33 +1075,64 @@ describe("runBuild shared repository state", () => {
 		});
 	});
 
-	test("ends blocked naming the branch when the builder pushes one to the caller's repository by path", async () => {
-		let pushed = false;
+	test("ends blocked naming the branch and how to remove it when the builder pushes its commit to the caller's repository by path", async () => {
+		let made = "";
 		const record = await build({
 			builder: stubBackend([
 				async (input) => {
 					await writeGreet(input.worktree);
+					made = builderCommit(input.worktree);
 					gitIn(input.worktree, "push", "-q", root, "HEAD:refs/heads/injected");
-					pushed = true;
 					return DONE;
 				},
 			]),
 		});
 
-		expect(pushed).toBe(true);
 		expect(record.manifest).toMatchObject({
 			status: "blocked",
-			reason:
-				"builder-1: the caller's branches or tags changed (refs/heads/injected added); nothing was applied",
+			reason: `builder-1: the builder's objects reached the caller's branches or tags (refs/heads/injected added at ${made}), which stay as they are; restore with: git update-ref -d refs/heads/injected; nothing was applied`,
+			callerRefDrift: [
+				{ ref: "refs/heads/injected", after: made, action: "blocked" },
+			],
 		});
 		expect(record.manifest.patchApplied).toBeUndefined();
+		expect(git("rev-parse", "refs/heads/injected").trim()).toBe(made);
 		expect(git("status", "--porcelain")).toBe("");
 		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
 			"export const greet = 1;\n",
 		);
 	});
 
-	test("ends blocked naming the branch when the caller creates one during the run", async () => {
+	test("only warns when the builder moves a caller branch to a commit the caller already had", async () => {
+		const base = git("rev-parse", "HEAD").trim();
+		git("commit", "-q", "--allow-empty", "-m", "second");
+		const second = git("rev-parse", "HEAD").trim();
+		git("branch", "x");
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					gitIn(input.worktree, "push", "-q", root, `+${base}:refs/heads/x`);
+					return DONE;
+				},
+			]),
+		});
+
+		const drift = { ref: "refs/heads/x", before: second, after: base };
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			callerRefDrift: [{ ...drift, action: "warned" }],
+		});
+		expect(record.manifest.warnings).toContain(
+			`the caller's branches or tags drifted during the run, not to the builder's objects (reported, not blocked): refs/heads/x moved from ${second} to ${base}; restore with: git update-ref refs/heads/x ${second}`,
+		);
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			'export const greet = "hi";\n',
+		);
+	});
+
+	test("only warns when the caller creates a branch during the run", async () => {
+		const head = git("rev-parse", "HEAD").trim();
 		const record = await build({
 			builder: stubBackend([
 				async (input) => {
@@ -1094,13 +1144,107 @@ describe("runBuild shared repository state", () => {
 		});
 
 		expect(record.manifest).toMatchObject({
-			status: "blocked",
-			reason:
-				"builder-1: the caller's branches or tags changed (refs/heads/made-by-the-user added); nothing was applied",
+			status: "done",
+			callerRefDrift: [
+				{ ref: "refs/heads/made-by-the-user", after: head, action: "warned" },
+			],
 		});
-		expect(record.manifest.patchApplied).toBeUndefined();
-		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
-			"export const greet = 1;\n",
+		expect(record.manifest.warnings).toContain(
+			`the caller's branches or tags drifted during the run, not to the builder's objects (reported, not blocked): refs/heads/made-by-the-user added at ${head}; restore with: git update-ref -d refs/heads/made-by-the-user`,
+		);
+	});
+
+	test("only warns when a sibling worktree commits on its own branch during the run", async () => {
+		const head = git("rev-parse", "HEAD").trim();
+		const sibling = join(await mkdtemp(join(tmpdir(), "lean-sibling-")), "wt");
+		extraDirs.push(dirname(sibling));
+		git("worktree", "add", "-q", "-b", "side", sibling);
+		let committed = "";
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					gitIn(sibling, "commit", "-q", "--allow-empty", "-m", "elsewhere");
+					committed = gitIn(sibling, "rev-parse", "HEAD").trim();
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			callerRefDrift: [
+				{
+					ref: "refs/heads/side",
+					before: head,
+					after: committed,
+					action: "warned",
+				},
+			],
+		});
+		expect(record.manifest.warnings).toContain(
+			`the caller's branches or tags drifted during the run, not to the builder's objects (reported, not blocked): refs/heads/side moved from ${head} to ${committed}; restore with: git update-ref refs/heads/side ${head}`,
+		);
+	});
+
+	test("only warns when the caller fetches a new tag during the run", async () => {
+		const upstream = await mkdtemp(join(tmpdir(), "lean-upstream-"));
+		extraDirs.push(upstream);
+		gitIn(upstream, "init", "-q", "-b", "main");
+		builderCommit(upstream, "upstream");
+		gitIn(
+			upstream,
+			"-c",
+			"user.email=test@example.com",
+			"-c",
+			"user.name=Test",
+			"tag",
+			"-a",
+			"v9",
+			"-m",
+			"release",
+		);
+		const tag = gitIn(upstream, "rev-parse", "v9").trim();
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					git("fetch", "-q", upstream, "refs/tags/v9:refs/tags/v9");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			callerRefDrift: [{ ref: "refs/tags/v9", after: tag, action: "warned" }],
+		});
+		expect(record.manifest.warnings).toContain(
+			`the caller's branches or tags drifted during the run, not to the builder's objects (reported, not blocked): refs/tags/v9 added at ${tag}; restore with: git update-ref -d refs/tags/v9`,
+		);
+	});
+
+	test("only warns, with the old commit, when the caller deletes a branch during the run", async () => {
+		git("branch", "doomed");
+		const was = git("rev-parse", "doomed").trim();
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					git("branch", "-q", "-D", "doomed");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			callerRefDrift: [
+				{ ref: "refs/heads/doomed", before: was, action: "warned" },
+			],
+		});
+		expect(record.manifest.warnings).toContain(
+			`the caller's branches or tags drifted during the run, not to the builder's objects (reported, not blocked): refs/heads/doomed deleted (was ${was}); restore with: git update-ref refs/heads/doomed ${was}`,
 		);
 	});
 

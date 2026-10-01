@@ -423,16 +423,16 @@ function classify(
 	if (report.tests === 0)
 		return notRun("no tests executed (runner reported 0 tests)");
 	const executed = executedFiles(tests, report);
-	if (executed === undefined) return notRun(unnamedReason(tests, report));
+	if (executed === undefined) return notRun(unnamedReason(report));
 	return { verdict: "passed", executed };
 }
 
 /** Why none of the listed files counts as run; the caller lists them. */
-function unnamedReason(tests: readonly string[], report: RunReport): string {
+function unnamedReason(report: RunReport): string {
 	const others = report.named.size;
 	if (others > 0)
 		return `the test runner named none of the listed files (it named only ${others} other file${others === 1 ? "" : "s"})`;
-	return `the test runner ran ${report.files} of ${tests.length} listed files without naming any of them`;
+	return "the test runner named no files; blast-tests needs a reporter that names files (vitest default or verbose, not dot)";
 }
 
 function notRun(reason: string): Classified {
@@ -462,20 +462,16 @@ function readRunReport(output: string): RunReport | undefined {
 }
 
 /**
- * The listed files the runner named as run. Only when it named no file at
- * all (a reporter without per-file lines) and ran at least as many files as
- * were listed are all of them taken as run; otherwise, with none of them
- * named, it cannot be told which ran: undefined.
+ * The listed files the runner named as run; undefined when it named none
+ * of them. A file count without names is not attribution: a filter or a
+ * wrapper can run other files to the same count.
  */
 function executedFiles(
 	tests: readonly string[],
 	report: RunReport,
 ): string[] | undefined {
 	const named = tests.filter((test) => report.named.has(withoutDotSlash(test)));
-	if (named.length > 0) return named;
-	if (report.named.size === 0 && report.files >= tests.length)
-		return [...tests];
-	return undefined;
+	return named.length > 0 ? named : undefined;
 }
 
 function lastMatch(pattern: RegExp, text: string): string | undefined {

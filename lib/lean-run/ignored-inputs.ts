@@ -189,11 +189,11 @@ async function walk(
 
 /**
  * The target the link at `path` gets in the clone, or undefined when it
- * leads out of the checkout (`from`, a real path). A relative target that
- * stays inside is kept as it is. An absolute one names the caller's file
- * even inside the checkout, so a builder writing through it would write
- * the caller's, so it is rewritten relative to the link and then names the
- * clone's file.
+ * leads out of the checkout (`from`, a real path). A target inside is
+ * always rewritten as the shortest path from the link, which never climbs
+ * above `from` and so names the clone's file. An absolute target names the
+ * caller's file, and so does a relative one whose surplus `..` stop at `/`
+ * and climb back down by the caller's absolute path.
  */
 async function linkTargetInClone(
 	from: string,
@@ -201,9 +201,9 @@ async function linkTargetInClone(
 ): Promise<string | undefined> {
 	const link = join(from, path);
 	const target = await readlink(link);
-	if (!isAbsolute(target))
-		return inside(from, resolve(dirname(link), target)) ? target : undefined;
-	const resolved = await realpath(target).catch(() => target);
+	const resolved = isAbsolute(target)
+		? await realpath(target).catch(() => target)
+		: resolve(dirname(link), target);
 	if (!inside(from, resolved)) return undefined;
 	return relative(dirname(link), resolved) || ".";
 }

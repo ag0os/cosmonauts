@@ -215,6 +215,24 @@ const VITEST_IGNORED_ARGUMENTS = `
    Duration  636ms (transform 24ms, setup 0ms, collect 31ms, tests 105ms, environment 0ms, prepare 205ms)
 `;
 
+/**
+ * A real vitest 3.2.4 capture with `--reporter=dot`: the one listed file
+ * ran, and the reporter names no file.
+ */
+const VITEST_DOT_REPORTER = `
+ RUN  v3.2.4 /repo
+
+·
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:53:42
+   Duration  255ms (transform 18ms, setup 0ms, collect 12ms, tests 1ms, environment 0ms, prepare 69ms)
+`;
+
+const NAMED_NO_FILES =
+	"the test runner named no files; blast-tests needs a reporter that names files (vitest default or verbose, not dot)";
+
 type StubOutcome =
 	| ProviderProcessOutcome
 	| ((invocation: ProviderProcessInvocation) => ProviderProcessOutcome);
@@ -702,29 +720,35 @@ describe("blast-tests provider counting only the tests the runner ran", () => {
 		expect(signal.status).toBe("info");
 	});
 
-	test("counts every listed file when the runner ran as many without naming them", async () => {
-		const signal = await tierOf(
-			[DIRECT, OTHER],
-			printed(0, " Test Files  2 passed (2)\n      Tests  5 passed (5)\n"),
-		);
-
-		expect(signal).toMatchObject({
-			status: "pass",
-			summary: "2 blast-radius tests passed",
-		});
-		expect(dataOf(signal).runs?.[0]?.executed).toEqual([DIRECT, OTHER]);
-	});
-
-	test("does not pass a tier when the runner ran fewer files than listed without naming them", async () => {
-		const signal = await tierOf(
-			[DIRECT, OTHER],
-			printed(0, " Test Files  1 passed (1)\n      Tests  1 passed (1)\n"),
-		);
+	test("does not count a listed file as run from a real dot-reporter capture that names no file", async () => {
+		const signal = await tierOf([DIRECT], printed(0, VITEST_DOT_REPORTER));
 
 		expect(dataOf(signal).runs?.[0]).toMatchObject({
 			verdict: "not-run",
-			reason:
-				"the test runner ran 1 of 2 listed files without naming any of them",
+			reason: NAMED_NO_FILES,
+		});
+		expect(dataOf(signal).runs?.[0]?.executed).toBeUndefined();
+		expect(signal.status).toBe("info");
+		expect(requiredGap(signal)).toBe(
+			`unverified (blast-tests unavailable: no tests executed: tier 1 not run: ${NAMED_NO_FILES}: ${DIRECT})`,
+		);
+	});
+
+	test.each([
+		[
+			"as many files as listed",
+			" Test Files  2 passed (2)\n      Tests  5 passed (5)\n",
+		],
+		[
+			"fewer files than listed",
+			" Test Files  1 passed (1)\n      Tests  1 passed (1)\n",
+		],
+	])("does not pass a tier when the runner ran %s without naming them", async (_name, stdout) => {
+		const signal = await tierOf([DIRECT, OTHER], printed(0, stdout));
+
+		expect(dataOf(signal).runs?.[0]).toMatchObject({
+			verdict: "not-run",
+			reason: NAMED_NO_FILES,
 		});
 		expect(requiredGap(signal)).toMatch(
 			/^unverified \(blast-tests unavailable: /u,

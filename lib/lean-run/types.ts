@@ -304,6 +304,20 @@ export interface GraphRefreshRecord {
 /** Where the builder prompt came from: the caller, the host's context pack, or the plan alone. */
 export type ContextPackSource = "supplied" | "built" | "plan-only";
 
+/**
+ * A caller branch or tag that changed during a run. `before` is absent for
+ * an added ref, `after` for a deleted one. `blocked`: the ref names an
+ * object that exists in the builder clone and that no caller ref, HEAD or
+ * reflog reached when the clone opened, so the builder put it there.
+ * `warned`: anything else, which is reported and does not stop the run.
+ */
+export interface CallerRefDrift {
+	ref: string;
+	before?: string;
+	after?: string;
+	action: "blocked" | "warned";
+}
+
 /** One envelope repair turn: the stage's output had no valid envelope. */
 export interface EnvelopeRepair {
 	stage: RunStage;
@@ -385,6 +399,12 @@ export interface RunManifest {
 	patchFailure?: PatchFailure;
 	/** Applying the last patch to the caller's working tree; only a `done` run tries. */
 	patchApplied?: PatchApplication;
+	/**
+	 * Every branch or tag of the caller added, deleted or moved since the
+	 * builder clone opened, as of the last check. `blocked` only when the
+	 * ref now names an object the builder made.
+	 */
+	callerRefDrift?: CallerRefDrift[];
 	/** How the builder harness gated its tool calls. */
 	permissions?: BackendPermissions;
 	/**

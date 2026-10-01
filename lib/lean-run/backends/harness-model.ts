@@ -49,7 +49,8 @@ export interface HarnessModel {
  * `openai-codex/` model; Claude gets no mapping. A model or effort the
  * caller's arguments already set is not added again, and is what the
  * record names; a caller who picks the model through a profile or another
- * provider gets no `--model` either, and the record names that argument.
+ * provider gets neither `--model` nor the role's effort, and the record
+ * names that argument and only an effort the caller set.
  */
 export function harnessModel(options: {
 	kind: Exclude<LeanBackendKind, "pi">;
@@ -65,20 +66,22 @@ export function harnessModel(options: {
 		};
 	const caller = codexCallerChoice(options.extraArgs);
 	const own = codexModel(options.agentPackage);
-	const callerPicksModel =
-		caller.model !== undefined || caller.route !== undefined;
+	const routed = caller.route !== undefined;
+	const callerPicksModel = caller.model !== undefined || routed;
+	// The role's effort is mapped for its own model: a route picks another.
+	const ownEffort = routed ? undefined : own.effort;
 	const args = [
 		...(own.model && !callerPicksModel ? ["--model", own.model] : []),
-		...(own.effort && caller.effort === undefined
-			? ["-c", `${EFFORT_KEY}=${own.effort}`]
+		...(ownEffort && caller.effort === undefined
+			? ["-c", `${EFFORT_KEY}=${ownEffort}`]
 			: []),
 	];
 	const model =
 		caller.model ??
-		(caller.route === undefined ? undefined : `caller: ${caller.route}`) ??
+		(routed ? `caller: ${caller.route}` : undefined) ??
 		own.model ??
 		HARNESS_DEFAULT_MODEL;
-	const effort = caller.effort ?? own.effort;
+	const effort = caller.effort ?? ownEffort;
 	return { args, requested: effort ? { model, effort } : { model } };
 }
 
