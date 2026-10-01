@@ -106,6 +106,20 @@ async function seedIndex(options: GitOptions, target: string): Promise<void> {
 	);
 }
 
+/** The merge-base of HEAD and `ref`; undefined when `ref` does not exist or shares no history. */
+export async function readMergeBase(
+	options: GitOptions & { ref: string },
+): Promise<string | undefined> {
+	try {
+		return (
+			(await git(["merge-base", "HEAD", options.ref], options)).trim() ||
+			undefined
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 export function snapshotBeforeBuilder(options: {
 	projectRoot: string;
 	runId: string;

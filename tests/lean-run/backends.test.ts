@@ -203,6 +203,29 @@ describe("createExternalBuilderBackend", () => {
 		expect(args[args.indexOf("--tools") + 1]).toBe("Read,Glob,Grep");
 	});
 
+	test("drops a package's allowed tools in a claude envelope repair turn", async () => {
+		const requests: ProcessRequest[] = [];
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => ({
+				...PACKAGE,
+				targetOptions: { allowedTools: ["Read", "Edit", "Write", "Bash"] },
+			}),
+			runProcess: async (request) => {
+				requests.push(request);
+				return { exitCode: 0, stdout: ENVELOPE, stderr: "" };
+			},
+		});
+		await backend.run({
+			prompt: "p",
+			worktree: "/repo",
+			role: "lean/builder",
+			readonly: true,
+		});
+		const args = requests[0]?.args ?? [];
+		expect(args[args.indexOf("--tools") + 1]).toBe("Read,Glob,Grep");
+	});
+
 	test("runs a codex envelope repair turn in the read-only sandbox", async () => {
 		const requests: ProcessRequest[] = [];
 		const backend = createExternalBuilderBackend({

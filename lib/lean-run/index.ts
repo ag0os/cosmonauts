@@ -59,8 +59,12 @@ export {
 } from "./record.ts";
 export {
 	DEFAULT_RUN_BUDGET,
+	defaultReviewBase,
+	MAX_RUN_TIME_MS,
 	type RunBuildOptions,
+	type RunReviewOptions,
 	runBuild,
+	runReview,
 } from "./run-build.ts";
 export { summarizeRun } from "./summary.ts";
 export * from "./types.ts";

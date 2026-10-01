@@ -1,5 +1,6 @@
 /**
- * Tests for the lean_build tool registered by the lean-run extension.
+ * Tests for the lean_build and lean_review tools registered by the lean-run
+ * extension.
  */
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -9,8 +10,13 @@ import { describe, expect, test } from "vitest";
 import {
 	createLeanRunExtension,
 	LeanBuildParameters,
+	LeanReviewParameters,
 } from "../../bundled/lean/extensions/lean-run/index.ts";
-import type { RunBuildOptions } from "../../lib/lean-run/run-build.ts";
+import {
+	MAX_RUN_TIME_MS,
+	type RunBuildOptions,
+	type RunReviewOptions,
+} from "../../lib/lean-run/run-build.ts";
 import type {
 	BuilderBackend,
 	LeanBackendKind,
@@ -43,8 +49,42 @@ function record(): RunRecord {
 	};
 }
 
+const REVIEWER: BuilderBackend = {
+	kind: "pi",
+	run: async () => ({ text: "" }),
+};
+
+function reviewRecord(): RunRecord {
+	const base = record();
+	return {
+		...base,
+		manifest: {
+			...base.manifest,
+			tier: "review",
+			status: "done",
+			reason: undefined,
+		},
+		envelopes: {
+			reviewer: {
+				outcome: "done",
+				summary: "one issue",
+				findings: [
+					{
+						id: "F-1",
+						severity: "medium",
+						file: "src/x.ts:3",
+						summary: "unchecked input",
+						fix: "validate it",
+					},
+				],
+			},
+		},
+	};
+}
+
 function setup() {
 	const calls: RunBuildOptions[] = [];
+	const reviews: RunReviewOptions[] = [];
 	const kinds: LeanBackendKind[] = [];
 	const pi = createMockPi({ cwd: "/project" });
 	createLeanRunExtension({
@@ -52,12 +92,25 @@ function setup() {
 			calls.push(options);
 			return record();
 		},
+		runReview: async (options) => {
+			reviews.push(options);
+			return reviewRecord();
+		},
 		createBackends: async (kind) => {
 			kinds.push(kind);
-			return { builder: BACKEND, reviewer: BACKEND };
+			return { builder: BACKEND, reviewer: REVIEWER };
 		},
 	})(pi as never);
-	return { pi, calls, kinds };
+	return { pi, calls, reviews, kinds };
+}
+
+interface RegisteredTool {
+	description: string;
+	parameters: {
+		type: string;
+		required?: string[];
+		properties: Record<string, { maximum?: number }>;
+	};
 }
 
 describe("lean_build tool", () => {
@@ -148,6 +201,31 @@ describe("lean_build tool", () => {
 		).rejects.toThrow("budgetTimeMs must be a positive integer");
 	});
 
+	test("refuses a time budget longer than a timer can wait", async () => {
+		const { pi, calls } = setup();
+		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
+
+		expect(tool.parameters.properties.budgetTimeMs?.maximum).toBe(
+			MAX_RUN_TIME_MS,
+		);
+		await expect(
+			pi.callTool("lean_build", {
+				planPath: "p.md",
+				budgetTimeMs: MAX_RUN_TIME_MS + 1,
+			}),
+		).rejects.toThrow(
+			`budgetTimeMs must be a positive integer up to ${MAX_RUN_TIME_MS}`,
+		);
+		expect(calls).toHaveLength(0);
+	});
+
+	test("states the 60-minute default time budget", () => {
+		const { pi } = setup();
+		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
+
+		expect(tool.description).toContain("60 minutes");
+	});
+
 	test("returns the run id, status, summary and run directory", async () => {
 		const { pi } = setup();
 		const result = (await pi.callTool("lean_build", {
@@ -233,5 +311,87 @@ describe("lean_build tool", () => {
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("lean_review tool", () => {
+	test("declares an object-root parameter schema with nothing required", () => {
+		const { pi } = setup();
+		const tool = pi.tools.get("lean_review") as unknown as RegisteredTool;
+
+		expect(tool.parameters).toBe(LeanReviewParameters);
+		expect(tool.parameters.type).toBe("object");
+		expect(tool.parameters.required ?? []).toEqual([]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(
+			expect.arrayContaining([
+				"base",
+				"planPath",
+				"request",
+				"backend",
+				"lenses",
+			]),
+		);
+	});
+
+	test("reviews the session's project with the reviewer backend and the runner's defaults", async () => {
+		const { pi, calls, reviews, kinds } = setup();
+
+		await pi.callTool("lean_review", {});
+
+		expect(calls).toHaveLength(0);
+		expect(kinds).toEqual(["pi"]);
+		expect(reviews).toEqual([
+			{ projectRoot: "/project", reviewerBackend: REVIEWER },
+		]);
+	});
+
+	test("passes the base, the context and the lenses through", async () => {
+		const { pi, reviews } = setup();
+
+		await pi.callTool("lean_review", {
+			base: "origin/main",
+			request: "Validate the input.",
+			lenses: ["security"],
+			backend: "claude-cli",
+		});
+
+		expect(reviews[0]).toMatchObject({
+			base: "origin/main",
+			request: "Validate the input.",
+			lenses: ["security"],
+		});
+	});
+
+	test("refuses a plan path and a request together", async () => {
+		const { pi, reviews } = setup();
+
+		await expect(
+			pi.callTool("lean_review", { planPath: "p.md", request: "fix it" }),
+		).rejects.toThrow("lean_review takes planPath or request, not both");
+		expect(reviews).toHaveLength(0);
+	});
+
+	test("refuses a lens outside the four", async () => {
+		const { pi } = setup();
+
+		await expect(
+			pi.callTool("lean_review", { lenses: ["style"] }),
+		).rejects.toThrow("lenses must be one or more of");
+	});
+
+	test("returns the run id, status, summary, findings and run directory", async () => {
+		const { pi } = setup();
+
+		const result = (await pi.callTool("lean_review", {})) as {
+			details: unknown;
+		};
+
+		expect(result.details).toEqual({
+			runId: "r-1",
+			status: "done",
+			summary: "done: one issue; 1 finding(s), 0 high (0 re-entries)",
+			findings: reviewRecord().envelopes.reviewer?.findings,
+			runDir: "/project/missions/sessions/lean/runs/r-1",
+		});
 	});
 });

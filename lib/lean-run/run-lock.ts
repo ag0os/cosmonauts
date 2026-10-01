@@ -1,14 +1,41 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+	link,
+	mkdir,
+	readFile,
+	rm,
+	stat,
+	unlink,
+	writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { runStatePath } from "./base-sha.ts";
 
 /** Beside the base-sha marker, in the worktree's own git dir. */
 const LOCK_PATH = join("lean-run", "lock");
 
+/**
+ * An unreadable lock, or a reclaim claim, younger than this belongs to a
+ * starter that may still be alive; older, it is abandoned.
+ */
+const ABANDONED_AFTER_MS = 5_000;
+
+/** Bounds the retries while another starter reclaims or replaces the lock. */
+const MAX_ATTEMPTS = 20;
+const RETRY_DELAY_MS = 10;
+
 interface LockHolder {
 	runId: string;
 	pid: number;
 	createdAt: string;
+}
+
+/** What a starter saw at the lock path: its exact bytes, and the holder when they parse. */
+interface SeenLock {
+	raw: string;
+	holder?: LockHolder;
+	ageMs: number;
 }
 
 type RunLockResult =
@@ -17,8 +44,16 @@ type RunLockResult =
 
 /**
  * One lean run per worktree: two runs would share the base-sha marker and mix
- * their diffs. A lock whose process is gone is reclaimed; `release` removes
- * the lock only while it is still this run's.
+ * their diffs. The lock is created with its content in one step (a temp file
+ * hard-linked onto the lock path), so it is never seen half-written. A lock
+ * whose process is gone, or one that has been unreadable for a while, is
+ * reclaimed under a claim file that only one starter holds at a time; the
+ * claimant removes the lock only when it still holds the bytes it judged
+ * stale. `release` removes the lock only while it is still this run's.
+ *
+ * Accepted gap: a reclaimer that dies holding the claim leaves it for
+ * `ABANDONED_AFTER_MS`; two starters that judge it abandoned in the same
+ * instant could then both reclaim.
  */
 export async function acquireRunLock(options: {
 	worktree: string;
@@ -31,44 +66,109 @@ export async function acquireRunLock(options: {
 		pid: process.pid,
 		createdAt: new Date().toISOString(),
 	};
-	for (let attempt = 0; attempt < 2; attempt++) {
+	let last: SeenLock | undefined;
+	for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
 		if (await createLock(path, holder))
 			return {
 				acquired: true,
 				release: () => releaseLock(path, options.runId),
 			};
-		const current = await readHolder(path);
-		if (current && isAlive(current.pid))
-			return { acquired: false, holder: current.runId };
-		await rm(path, { force: true });
+		last = await readLock(path);
+		if (!last) continue;
+		if (!isStale(last))
+			return { acquired: false, holder: last.holder?.runId ?? "unknown" };
+		if (!(await reclaim(path, last))) await delay(RETRY_DELAY_MS);
 	}
-	const current = await readHolder(path);
-	return { acquired: false, holder: current?.runId ?? "unknown" };
+	return { acquired: false, holder: last?.holder?.runId ?? "unknown" };
 }
 
-async function createLock(path: string, holder: LockHolder): Promise<boolean> {
+function createLock(path: string, holder: LockHolder): Promise<boolean> {
+	return createExclusive(path, `${JSON.stringify(holder)}\n`);
+}
+
+/** Writes `content` to a temp file and links it onto `path`: content and creation in one step. */
+async function createExclusive(
+	path: string,
+	content: string,
+): Promise<boolean> {
+	const temp = `${path}.${randomUUID()}.tmp`;
+	await writeFile(temp, content);
 	try {
-		await writeFile(path, `${JSON.stringify(holder)}\n`, { flag: "wx" });
+		await link(temp, path);
 		return true;
 	} catch (error) {
 		if (errorCode(error) === "EEXIST") return false;
 		throw error;
+	} finally {
+		await rm(temp, { force: true });
 	}
 }
 
-/** Undefined for a missing or unreadable lock, which counts as stale. */
-async function readHolder(path: string): Promise<LockHolder | undefined> {
+function isStale(seen: SeenLock): boolean {
+	if (seen.holder) return !isAlive(seen.holder.pid);
+	return seen.ageMs >= ABANDONED_AFTER_MS;
+}
+
+/**
+ * Removes the stale lock `seen` unless another starter got there first.
+ * Resolves true when this starter removed it, false when it should wait and
+ * look again.
+ */
+async function reclaim(path: string, seen: SeenLock): Promise<boolean> {
+	const claim = `${path}.reclaim`;
+	const token = `${randomUUID()}\n`;
+	if (!(await createExclusive(claim, token))) {
+		if ((await ageMs(claim)) >= ABANDONED_AFTER_MS)
+			await rm(claim, { force: true });
+		return false;
+	}
 	try {
-		const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
-		return isHolder(parsed) ? parsed : undefined;
+		// Only the claimant removes a stale lock, and none can be created while
+		// one exists, so the lock cannot change between this read and the unlink.
+		const current = await readLock(path);
+		if (current?.raw !== seen.raw) return false;
+		await unlink(path).catch(ignoreMissing);
+		return true;
+	} finally {
+		const held = await readFile(claim, "utf8").catch(() => undefined);
+		if (held === token) await rm(claim, { force: true });
+	}
+}
+
+/** Undefined when the lock is missing. */
+async function readLock(path: string): Promise<SeenLock | undefined> {
+	try {
+		const raw = await readFile(path, "utf8");
+		const age = await ageMs(path);
+		return { raw, ageMs: age, ...parseHolder(raw) };
+	} catch (error) {
+		if (errorCode(error) === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
+function parseHolder(raw: string): { holder?: LockHolder } {
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		return isHolder(parsed) ? { holder: parsed } : {};
 	} catch {
-		return undefined;
+		return {};
+	}
+}
+
+/** Since the file was written; a missing file is infinitely old. */
+async function ageMs(path: string): Promise<number> {
+	try {
+		return Date.now() - (await stat(path)).mtimeMs;
+	} catch (error) {
+		if (errorCode(error) === "ENOENT") return Number.POSITIVE_INFINITY;
+		throw error;
 	}
 }
 
 async function releaseLock(path: string, runId: string): Promise<void> {
-	const current = await readHolder(path);
-	if (current?.runId === runId) await rm(path, { force: true });
+	const current = await readLock(path).catch(() => undefined);
+	if (current?.holder?.runId === runId) await rm(path, { force: true });
 }
 
 function isHolder(value: unknown): value is LockHolder {
@@ -89,6 +189,10 @@ function isAlive(pid: number): boolean {
 	} catch (error) {
 		return errorCode(error) === "EPERM";
 	}
+}
+
+function ignoreMissing(error: unknown): void {
+	if (errorCode(error) !== "ENOENT") throw error;
 }
 
 function errorCode(error: unknown): unknown {

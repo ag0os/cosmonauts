@@ -1,13 +1,15 @@
 /**
- * Tests for the host-owned lean prompts: the reviewer diff bound and the
- * envelope repair prompt.
+ * Tests for the host-owned lean prompts: the reviewer diff bound, the
+ * reviewer prompt's subject and the envelope repair prompt.
  */
 import { describe, expect, test } from "vitest";
+import { parsePlan } from "../../lib/lean-run/plan.ts";
 import {
 	boundDiff,
 	REPAIR_HEADING,
 	REVIEW_DIFF_INLINE_BYTES,
 	repairPrompt,
+	reviewerPrompt,
 } from "../../lib/lean-run/prompts.ts";
 
 describe("boundDiff", () => {
@@ -51,5 +53,55 @@ describe("repairPrompt", () => {
 		expect(prompt.startsWith(REPAIR_HEADING)).toBe(true);
 		expect(prompt).toContain("END");
 		expect(prompt).not.toContain("START");
+	});
+
+	test("fences the quote with more backticks than any run inside it", () => {
+		const output = 'Done.\n```json\n{"outcome":"done"}\n```\nand a ```` run';
+		const prompt = repairPrompt({
+			reviewer: true,
+			reason: "the envelope is fenced",
+			output,
+		});
+
+		expect(prompt).toContain(`\`\`\`\`\`text\n${output}\n\`\`\`\`\`\n`);
+	});
+
+	test("uses a plain three-backtick fence for a reply without backticks", () => {
+		const prompt = repairPrompt({
+			reviewer: false,
+			reason: "no envelope line found",
+			output: "I changed it.",
+		});
+
+		expect(prompt).toContain("```text\nI changed it.\n```\n");
+	});
+});
+
+describe("reviewerPrompt", () => {
+	const plan = parsePlan("# Demo\n\n## Approach\nAdd a greeting.\n");
+	const base = {
+		plan,
+		facts: { passes: [] },
+		diff: "+x\n",
+		changedFiles: ["src/x.ts"],
+		lenses: ["general" as const],
+		fullDiffPath: "/tmp/full.diff",
+	};
+
+	test("reads the change against its plan", () => {
+		const prompt = reviewerPrompt({ ...base, tier: "plan" });
+
+		expect(prompt).toContain("Review this change against its plan.");
+		expect(prompt).toContain("# Plan\n\n# Demo");
+	});
+
+	test("has no plan section for a review with neither a plan nor a request", () => {
+		const prompt = reviewerPrompt({ ...base, tier: "review" });
+
+		expect(prompt).toContain("no plan or request came with it");
+		expect(prompt).not.toContain("# Plan");
+		expect(prompt).not.toContain("# Request");
+		expect(prompt).toContain("# Changed files\n\nsrc/x.ts");
+		expect(prompt).toContain("```diff\n+x\n```");
 	});
 });

@@ -116,9 +116,7 @@ export function createExternalBuilderBackend(
 		kind: options.kind,
 		async run(input) {
 			const resolved = await options.resolvePackage(input.role);
-			const agentPackage: AgentPackage = input.readonly
-				? { ...resolved, tools: "readonly" }
-				: resolved;
+			const agentPackage = input.readonly ? readOnly(resolved) : resolved;
 			const invocation = await materialize(options, agentPackage, input);
 			try {
 				const args =
@@ -143,6 +141,17 @@ export function createExternalBuilderBackend(
 			}
 		},
 	};
+}
+
+/**
+ * The readonly tool set, with any package-level `allowedTools` dropped: the
+ * Claude invocation prefers that list over the tool set, so keeping it could
+ * re-enable editing in an envelope repair turn.
+ */
+function readOnly(agentPackage: AgentPackage): AgentPackage {
+	const { allowedTools: _dropped, ...targetOptions } =
+		agentPackage.targetOptions;
+	return { ...agentPackage, tools: "readonly", targetOptions };
 }
 
 function materialize(

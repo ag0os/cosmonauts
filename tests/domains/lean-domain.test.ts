@@ -1,6 +1,6 @@
 /**
  * Tests for the bundled lean domain: discovery beside coding, agent
- * validation, prompt budgets, chain resolution in the orchestration
+ * validation, prompt budgets, role resolution in the orchestration
  * extension's runtime, and coexistence with coding's unqualified role lookups.
  */
 
@@ -17,7 +17,6 @@ import {
 import { loadDomainsFromSources } from "../../lib/domains/loader.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { validateDomains } from "../../lib/domains/validator.ts";
-import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { getModelForRole } from "../../lib/orchestration/model-resolution.ts";
 import { resolveSpawnAgent } from "../../lib/orchestration/spawn-resolution.ts";
 import {
@@ -102,24 +101,12 @@ describe("lean domain", () => {
 		}
 	});
 
-	it("resolves every chain stage to a lean agent through a qualified id", () => {
-		expect(lean.chains.map((chain) => chain.name)).toEqual(["review"]);
+	it("ships no chains: builds and reviews go through the lean_build and lean_review tools", () => {
+		expect(lean.chains).toEqual([]);
+	});
 
-		for (const chain of lean.chains) {
-			const steps = parseChain(chain.chain, registry, "lean");
-			for (const step of steps) {
-				const stages = "kind" in step ? step.stages : [step];
-				for (const stage of stages) {
-					expect(stage.name).toMatch(/^lean\//);
-					const result = registry.resolveReferenceResult(
-						stage.name,
-						"lean",
-						"lean",
-					);
-					expect(result.kind, stage.name).toBe("found");
-				}
-			}
-		}
+	it("gives the lead the lean-run extension that registers lean_build and lean_review", () => {
+		expect(lean.agents.get("lead")?.extensions).toContain("lean-run");
 	});
 
 	it.each([
@@ -136,19 +123,18 @@ describe("lean domain", () => {
 		).toBe(`lean/lead cannot start ${target}`);
 	});
 
-	it("lets the lead start every stage of its chains", () => {
-		for (const chain of lean.chains) {
-			for (const stage of chain.chain.split("->").map((s) => s.trim())) {
-				expect(
-					authorizeAgentStart({
-						registry,
-						domainContext: "lean",
-						callerRole: "lean/lead",
-						targetRole: stage,
-					}),
-				).toBeUndefined();
-			}
-		}
+	it.each([
+		"lean/code-reviewer",
+		"lean/checker",
+	])("lets the lead start %s", (target) => {
+		expect(
+			authorizeAgentStart({
+				registry,
+				domainContext: "lean",
+				callerRole: "lean/lead",
+				targetRole: target,
+			}),
+		).toBeUndefined();
 	});
 });
 
@@ -211,30 +197,12 @@ describe("lean roles in the orchestration extension's runtime", () => {
 		await rm(projectRoot, { recursive: true, force: true });
 	});
 
-	function chainStages(): string[] {
-		return lean.chains.flatMap((chain) =>
-			chain.chain.split("->").map((stage) => stage.trim()),
-		);
-	}
-
 	function leadSubagents(): readonly string[] {
 		return lean.agents.get("lead")?.subagents ?? [];
 	}
 
 	it("runs without a domain context", () => {
 		expect(runtime.domainContext).toBeUndefined();
-	});
-
-	it("resolves every chain stage to a lean definition at execution time", () => {
-		for (const stage of chainStages()) {
-			const resolution = resolveSpawnAgent(runtime.agentRegistry, {
-				role: stage,
-				domainContext: runtime.domainContext,
-			});
-
-			expect(resolution?.qualifiedId, stage).toBe(stage);
-			expect(resolution?.definition.domain, stage).toBe("lean");
-		}
 	});
 
 	it("resolves every lead subagent the way spawn_agent does", () => {
@@ -265,7 +233,7 @@ describe("lean roles in the orchestration extension's runtime", () => {
 	});
 
 	it("uses each lean role's own model rather than the fallback", () => {
-		for (const role of new Set([...chainStages(), ...leadSubagents()])) {
+		for (const role of leadSubagents()) {
 			const definition = lean.agents.get(role.replace(/^lean\//, ""));
 
 			expect(

@@ -61,8 +61,11 @@ export const LEAN_LENSES = [
 ] as const;
 export type LeanLens = (typeof LEAN_LENSES)[number];
 
-/** Direct: a request with no plan document. Plan: a plan.md (and maybe a spec). */
-export type RunTier = "direct" | "plan";
+/**
+ * Direct: a request with no plan document. Plan: a plan.md (and maybe a
+ * spec). Review: a reviewer-only run over an existing change (`runReview`).
+ */
+export type RunTier = "direct" | "plan" | "review";
 
 export interface SignalContext {
 	worktree: string;

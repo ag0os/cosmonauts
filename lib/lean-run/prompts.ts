@@ -95,7 +95,10 @@ function renderFinding(finding: Finding): string {
 
 interface ReviewerPromptOptions {
 	plan: ParsedPlan;
-	/** A direct request is reviewed against the request, not a plan. */
+	/**
+	 * A direct request is reviewed against the request, not a plan; `review`
+	 * means neither came with the change, so the prompt has no plan section.
+	 */
 	tier?: RunTier;
 	facts: RunFacts;
 	diff: string;
@@ -108,13 +111,8 @@ interface ReviewerPromptOptions {
 }
 
 export function reviewerPrompt(options: ReviewerPromptOptions): string {
-	const against = options.tier === "direct" ? "Request" : "Plan";
 	return [
-		`Review this change against its ${against.toLowerCase()}. The host's verification facts are below; you have the checkout read-only.`,
-		"# Lenses",
-		options.lenses.join(", "),
-		`# ${against}`,
-		options.plan.raw.trim(),
+		...reviewSubject(options),
 		"# Verification facts",
 		renderFacts(options.facts),
 		...(options.earlier ? renderEarlierReview(options.earlier) : []),
@@ -124,6 +122,25 @@ export function reviewerPrompt(options: ReviewerPromptOptions): string {
 		renderDiff(options.diff, options.fullDiffPath),
 		REVIEWER_ENVELOPE_INSTRUCTION,
 	].join("\n\n");
+}
+
+/** The opening line and lenses, then the plan or request the change answers, when there is one. */
+function reviewSubject(options: ReviewerPromptOptions): string[] {
+	const facts =
+		"The host's verification facts are below; you have the checkout read-only.";
+	const lenses = ["# Lenses", options.lenses.join(", ")];
+	if (options.tier === "review")
+		return [
+			`Review this change on its own merits; no plan or request came with it. ${facts}`,
+			...lenses,
+		];
+	const against = options.tier === "direct" ? "Request" : "Plan";
+	return [
+		`Review this change against its ${against.toLowerCase()}. ${facts}`,
+		...lenses,
+		`# ${against}`,
+		options.plan.raw.trim(),
+	];
 }
 
 function renderEarlierReview(earlier: {
@@ -180,19 +197,24 @@ export function repairPrompt(options: {
 	const instruction = options.reviewer
 		? REVIEWER_ENVELOPE_INSTRUCTION
 		: BUILDER_ENVELOPE_INSTRUCTION;
+	const quoted = options.output.slice(-REPAIR_QUOTE_CHARS).trimEnd();
+	const fence = fenceFor(quoted);
 	return [
 		REPAIR_HEADING,
 		`Your last session ended without a valid lean envelope: ${options.reason}. Do not change anything and do not call tools; this turn only re-emits the envelope for the work already done.`,
 		"## The end of your last reply",
-		[
-			"```text",
-			options.output.slice(-REPAIR_QUOTE_CHARS).trimEnd(),
-			"```",
-		].join("\n"),
+		[`${fence}text`, quoted, fence].join("\n"),
 		"## The envelope",
 		instruction,
 		"Reply with only the envelope line, nothing else.",
 	].join("\n\n");
+}
+
+/** A backtick fence longer than any backtick run in `text`, so the quote cannot close it. */
+function fenceFor(text: string): string {
+	const runs = text.match(/`+/g) ?? [];
+	const longest = Math.max(0, ...runs.map((run) => run.length));
+	return "`".repeat(Math.max(3, longest + 1));
 }
 
 function renderFacts(facts: RunFacts): string {

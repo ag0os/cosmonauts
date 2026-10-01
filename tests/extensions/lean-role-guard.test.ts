@@ -108,6 +108,24 @@ describe("commandWritesHistory", () => {
 		"GIT_EDITOR=true git merge feature",
 		"env git cherry-pick abc",
 		"gh pr create --fill",
+		"git -c user.name=x commit -m y",
+		"git --git-dir .git --work-tree . commit -m y",
+		"git add -A\ngit commit -m y",
+		"(git commit -m y)",
+		"{ git commit -m y; }",
+		"if true; then git commit -m y; fi",
+		"for f in a; do git push; done",
+		"true || ! git commit -m y",
+		"/usr/bin/git commit -m y",
+		"time git commit -m y",
+		"nice -n 10 git commit -m y",
+		"nohup git push &",
+		"exec git push",
+		"echo x | xargs -0 git commit -m",
+		"sudo git push",
+		"echo $(git commit -m y)",
+		"echo `git commit -m y`",
+		"/opt/bin/gh pr merge 3",
 	])("flags %s", (command) => {
 		expect(commandWritesHistory(command)).toBe(true);
 	});
@@ -119,6 +137,10 @@ describe("commandWritesHistory", () => {
 		"echo git commit",
 		"gh pr view 12",
 		"bun run test",
+		"time bun run test",
+		"(cd x && git status)",
+		"echo $(git rev-parse HEAD)",
+		"rg 'git commit' docs",
 	])("lets %s through", (command) => {
 		expect(commandWritesHistory(command)).toBe(false);
 	});

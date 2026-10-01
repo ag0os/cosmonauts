@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	DEFAULT_SLICE_BUDGET_TOKENS,
 	type FileGraph,
@@ -25,8 +25,11 @@ import {
 import { loadRunRecord } from "../../lib/lean-run/record.ts";
 import {
 	DEFAULT_RUN_BUDGET,
+	MAX_RUN_TIME_MS,
 	type RunBuildOptions,
+	type RunReviewOptions,
 	runBuild,
+	runReview,
 } from "../../lib/lean-run/run-build.ts";
 import type {
 	BackendRunInput,
@@ -90,6 +93,8 @@ const SESSION_TOKENS = 128_000;
 function stubBackend(
 	replies: Reply[],
 	kind: BuilderBackend["kind"] = "pi",
+	/** `null` for a harness that reports no stats. */
+	stats: SpawnStats | null = SESSION_STATS,
 ): StubBackend {
 	const calls: BackendRunInput[] = [];
 	return {
@@ -99,7 +104,7 @@ function stubBackend(
 			calls.push(input);
 			const reply = replies[calls.length - 1] ?? replies.at(-1) ?? "";
 			const text = typeof reply === "string" ? reply : await reply(input);
-			return { text, stats: SESSION_STATS };
+			return stats ? { text, stats } : { text };
 		},
 	};
 }
@@ -992,6 +997,58 @@ describe("runBuild budgets", () => {
 		});
 	});
 
+	test("defaults to an hour, room for a run that reaches the re-review", () => {
+		expect(DEFAULT_RUN_BUDGET.timeMs).toBe(60 * 60_000);
+	});
+
+	test("cuts a time budget longer than a timer can wait to the longest one", async () => {
+		const record = await build({
+			builder: stubBackend([DONE]),
+			budget: { timeMs: 5e9 },
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			budget: { timeMs: MAX_RUN_TIME_MS },
+		});
+	});
+
+	test("fails the run and releases the lock when the run cannot start", async () => {
+		const timeout = vi
+			.spyOn(AbortSignal, "timeout")
+			.mockImplementationOnce(() => {
+				throw new RangeError('The value of "delay" is out of range');
+			});
+		try {
+			const builder = stubBackend([DONE]);
+			const record = await build({ builder });
+
+			expect(builder.calls).toHaveLength(0);
+			expect((await onDisk(record)).manifest).toMatchObject({
+				status: "failed",
+				reason: 'runner error: The value of "delay" is out of range',
+			});
+			expect(existsSync(join(root, ".git/lean-run/lock"))).toBe(false);
+		} finally {
+			timeout.mockRestore();
+		}
+	});
+
+	test("warns once that the token budget is not enforced when the backend reports no stats", async () => {
+		const record = await build({
+			builder: stubBackend([DONE], "codex-cli", null),
+			reviewer: stubBackend([HIGH_REVIEW, REVIEW], "codex-cli", null),
+		});
+
+		expect(record.stats).toHaveLength(4);
+		expect(record.manifest.tokensUsed).toBeUndefined();
+		expect(
+			record.manifest.warnings?.filter((warning) =>
+				warning.startsWith("token budget not enforced"),
+			),
+		).toEqual(["token budget not enforced: codex-cli reports no token stats"]);
+	});
+
 	test("fails at the running stage when the caller aborts", async () => {
 		const controller = new AbortController();
 		const record = await build({
@@ -1656,5 +1713,169 @@ describe("runBuild health hook coverage", () => {
 				"claude-cli: the post-edit health hook and the lean role guard run only in Pi sessions (brief 4.7A)",
 			],
 		});
+	});
+});
+
+describe("runReview", () => {
+	/** A feature branch with one committed change and one uncommitted one. */
+	async function featureChange(): Promise<string> {
+		const base = git("rev-parse", "HEAD").trim();
+		git("checkout", "-q", "-b", "feature");
+		await writeGreet(root);
+		git("commit", "-q", "-am", "greet");
+		await writeFile(join(root, "src/extra.ts"), "export const extra = 2;\n");
+		return base;
+	}
+
+	function review(
+		options: { reviewer: StubBackend } & Partial<RunReviewOptions>,
+	) {
+		const { reviewer, ...rest } = options;
+		return runReview({ projectRoot: root, reviewerBackend: reviewer, ...rest });
+	}
+
+	test("reviews the branch's change against its merge-base with main and records the envelope", async () => {
+		const base = await featureChange();
+		const reviewer = stubBackend([REVIEW]);
+
+		const record = await review({ reviewer, lenses: ["security"] });
+
+		expect(record.manifest).toMatchObject({
+			tier: "review",
+			status: "done",
+			diffBase: base,
+			backend: "pi",
+			reentries: 0,
+			lenses: ["security"],
+		});
+		expect(record.manifest.healthHook).toBeUndefined();
+		expect(record.envelopes).toEqual({ reviewer: JSON.parse(REVIEW) });
+		expect(record.facts.passes).toEqual([]);
+		expect(await onDisk(record)).toEqual(record);
+		const call = reviewer.calls[0];
+		expect(call).toMatchObject({ role: "lean/code-reviewer" });
+		expect(call?.prompt).toContain("no plan or request came with it");
+		expect(call?.prompt).toContain("# Lenses\n\nsecurity");
+		expect(call?.prompt).toContain(
+			"# Changed files\n\nsrc/extra.ts\nsrc/greet.ts",
+		);
+		expect(call?.prompt).toContain('+export const greet = "hi";');
+		expect(call?.prompt).toContain("+export const extra = 2;");
+		expect(call?.prompt).not.toContain("# Plan");
+	});
+
+	test("bounds the inline diff and points at the full diff", async () => {
+		await featureChange();
+		const line = `${"x".repeat(99)}\n`;
+		await writeFile(
+			join(root, "src/big.ts"),
+			line.repeat(Math.ceil(REVIEW_DIFF_INLINE_BYTES / line.length) + 50),
+		);
+		const reviewer = stubBackend([REVIEW]);
+
+		await review({ reviewer });
+
+		const prompt = reviewer.calls[0]?.prompt ?? "";
+		expect(prompt).toContain(`(truncated at ${REVIEW_DIFF_INLINE_BYTES} bytes`);
+		expect(prompt).toContain("src/big.ts\nsrc/extra.ts\nsrc/greet.ts");
+	});
+
+	test("reviews against a given base ref", async () => {
+		await featureChange();
+		const reviewer = stubBackend([REVIEW]);
+
+		const record = await review({ reviewer, base: "HEAD" });
+
+		expect(record.manifest.diffBase).toBe(git("rev-parse", "HEAD").trim());
+		const prompt = reviewer.calls[0]?.prompt ?? "";
+		expect(prompt).toContain("# Changed files\n\nsrc/extra.ts\n");
+		expect(prompt).not.toContain("src/greet.ts");
+	});
+
+	test("reads the change against the request it answers", async () => {
+		await featureChange();
+		const reviewer = stubBackend([REVIEW]);
+
+		const record = await review({ reviewer, request: "Make greet say hi." });
+
+		expect(record.manifest).toMatchObject({
+			tier: "review",
+			requestPath: expect.stringMatching(/request\.md$/),
+		});
+		const prompt = reviewer.calls[0]?.prompt ?? "";
+		expect(prompt).toContain("Review this change against its request.");
+		expect(prompt).toContain("# Request\n\nMake greet say hi.");
+	});
+
+	test("reads the change against its plan", async () => {
+		await featureChange();
+		const reviewer = stubBackend([REVIEW]);
+
+		const record = await review({ reviewer, planPath: PLAN_PATH });
+
+		expect(record.manifest).toMatchObject({
+			tier: "review",
+			planPath: PLAN_PATH,
+		});
+		expect(reviewer.calls[0]?.prompt).toContain("# Plan\n\n# Demo");
+	});
+
+	test("repairs a reply with no envelope in a read-only turn", async () => {
+		await featureChange();
+		const reviewer = stubBackend(["Looks fine to me.", REVIEW]);
+
+		const record = await review({ reviewer });
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			repairs: [
+				{ stage: "reviewer", reason: "no envelope line found", repaired: true },
+			],
+		});
+		expect(reviewer.calls[1]).toMatchObject({ readonly: true });
+		expect(reviewer.calls[1]?.prompt.startsWith(REPAIR_HEADING)).toBe(true);
+	});
+
+	test("ends with the reviewer's outcome when it could not review", async () => {
+		await featureChange();
+		const reviewer = stubBackend([
+			'{"outcome":"blocked","summary":"no access","reason":"checkout unreadable"}',
+		]);
+
+		const record = await review({ reviewer });
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "reviewer: checkout unreadable",
+		});
+	});
+
+	test("blocks without a session when there is nothing to review", async () => {
+		const reviewer = stubBackend([REVIEW]);
+
+		const record = await review({ reviewer });
+
+		expect(reviewer.calls).toHaveLength(0);
+		expect(record.manifest.status).toBe("blocked");
+		expect(record.manifest.reason).toMatch(
+			/^nothing to review: no change against /,
+		);
+		expect(existsSync(join(root, ".git/lean-run/lock"))).toBe(false);
+	});
+
+	test("refuses a plan path and a request together", async () => {
+		await expect(
+			review({
+				reviewer: stubBackend([REVIEW]),
+				planPath: PLAN_PATH,
+				request: "fix it",
+			}),
+		).rejects.toThrow("runReview takes planPath or request, not both");
+	});
+
+	test("refuses a base that is not a commit", async () => {
+		await expect(
+			review({ reviewer: stubBackend([REVIEW]), base: "no-such-ref" }),
+		).rejects.toThrow();
 	});
 });

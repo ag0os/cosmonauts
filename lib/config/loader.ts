@@ -420,24 +420,38 @@ function parseLeanBudget(value: unknown): ProjectLeanBudgetConfig | undefined {
 		return undefined;
 	}
 	const tokens = leanPositiveInteger(value, "tokens", "lean.budget.tokens");
-	const timeMs = leanPositiveInteger(value, "timeMs", "lean.budget.timeMs");
+	const timeMs = leanPositiveInteger(
+		value,
+		"timeMs",
+		"lean.budget.timeMs",
+		MAX_TIMER_MS,
+	);
 	return {
 		...(tokens === undefined ? {} : { tokens }),
 		...(timeMs === undefined ? {} : { timeMs }),
 	};
 }
 
-/** The field when present and a positive integer; a warning and undefined otherwise. */
+/** The longest delay a timer honours; `lean.budget.timeMs` above it would fire at once or throw. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/** The field when present and a positive integer up to `max`; a warning and undefined otherwise. */
 function leanPositiveInteger(
 	obj: Record<string, unknown>,
 	key: string,
 	label: string,
+	max = Number.MAX_SAFE_INTEGER,
 ): number | undefined {
 	if (!(key in obj)) return undefined;
 	const value = obj[key];
-	if (typeof value === "number" && positiveInteger(value)) return value;
+	if (typeof value === "number" && positiveInteger(value) && value <= max)
+		return value;
+	const expected =
+		max === Number.MAX_SAFE_INTEGER
+			? "a positive integer"
+			: `a positive integer up to ${max}`;
 	console.error(
-		`[warning] Skipping malformed ${label}: expected a positive integer, got ${formatConfigValue(value)}.`,
+		`[warning] Skipping malformed ${label}: expected ${expected}, got ${formatConfigValue(value)}.`,
 	);
 	return undefined;
 }

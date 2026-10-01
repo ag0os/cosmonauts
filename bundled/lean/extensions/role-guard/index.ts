@@ -8,8 +8,11 @@
  * - An envelope repair turn, whose prompt starts with `REPAIR_HEADING`, can
  *   call no tool at all: it only re-emits the envelope.
  *
- * Writes through `bash`, and git reached through `sh -c` or `eval`, are not
- * parsed (the accepted gap P-2). External harnesses do not load Pi
+ * The commit guard parses shell lexically, one command word per part (the
+ * accepted gap P-2): file writes through `bash`, git reached through `sh -c`,
+ * `eval` or a script, git aliases (`git -c alias.ci=commit ci`), plumbing such
+ * as `git commit-tree`, `gh api`, and wrapper options that take a value
+ * (`sudo -u user git push`) are not caught. External harnesses do not load Pi
  * extensions; the run manifest says so for those runs.
  */
 
@@ -91,17 +94,45 @@ function writesGitHistory(event: ToolCallEvent): boolean {
 	return typeof command === "string" && commandWritesHistory(command);
 }
 
-/** True when any `;`, `&`, `|` or newline separated part runs a history verb or `gh pr create|merge`. */
+/** Shell keywords that can stand before a command word. */
+const SHELL_KEYWORDS = new Set([
+	"!",
+	"if",
+	"then",
+	"elif",
+	"else",
+	"while",
+	"until",
+	"do",
+]);
+
+/** Programs that run the command after them. */
+const WRAPPERS = new Set([
+	"env",
+	"command",
+	"time",
+	"nice",
+	"nohup",
+	"exec",
+	"xargs",
+	"sudo",
+]);
+
+/**
+ * True when any part runs a history verb or `gh pr create|merge`. Parts are
+ * split at `;`, `&`, `|`, newlines, parentheses, braces, backticks and `$(`,
+ * so subshells, groups and command substitutions are parts of their own.
+ */
 export function commandWritesHistory(command: string): boolean {
 	return command
-		.split(/[;&|\n]+/)
+		.split(/[;&|\n(){}`]+|\$\(/)
 		.map((part) => part.trim().split(/\s+/))
 		.some((words) => gitHistoryVerb(words) || ghPullRequest(words));
 }
 
 function gitHistoryVerb(words: readonly string[]): boolean {
 	let index = programIndex(words);
-	if (words[index] !== "git") return false;
+	if (!isProgram(words[index], "git")) return false;
 	index++;
 	while (index < words.length) {
 		const word = words[index] ?? "";
@@ -115,20 +146,34 @@ function gitHistoryVerb(words: readonly string[]): boolean {
 function ghPullRequest(words: readonly string[]): boolean {
 	const index = programIndex(words);
 	return (
-		words[index] === "gh" &&
+		isProgram(words[index], "gh") &&
 		words[index + 1] === "pr" &&
 		["create", "merge"].includes(words[index + 2] ?? "")
 	);
 }
 
-/** The command word, past `VAR=value` assignments and `env` or `command`. */
+/** By basename, so `/usr/bin/git` is git. */
+function isProgram(word: string | undefined, name: string): boolean {
+	return word?.split("/").at(-1) === name;
+}
+
+/**
+ * The command word, past `VAR=value` assignments, shell keywords, and
+ * wrappers with their flags and numeric arguments (`nice -n 10`).
+ */
 function programIndex(words: readonly string[]): number {
 	let index = 0;
-	while (
-		index < words.length &&
-		(/^[A-Za-z_]\w*=/.test(words[index] ?? "") ||
-			["env", "command"].includes(words[index] ?? ""))
-	)
+	let wrapped = false;
+	while (index < words.length) {
+		const word = words[index] ?? "";
+		const skip =
+			/^[A-Za-z_]\w*=/.test(word) ||
+			SHELL_KEYWORDS.has(word) ||
+			WRAPPERS.has(word) ||
+			(wrapped && /^(-|\d+$)/.test(word));
+		if (!skip) break;
+		wrapped ||= WRAPPERS.has(word);
 		index++;
+	}
 	return index;
 }

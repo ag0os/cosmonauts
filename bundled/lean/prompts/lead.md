@@ -20,7 +20,7 @@ Write the spec and plan with the `contract` skill, alone or with the user; the u
 
 ## Your team
 
-Every build goes through the `lean_build` tool: give it the plan's path, or the request text for a direct fix. The host runs the builder, the checks, the review, one remediation with the findings and the re-review, then returns the run id, status and summary for you to bring to the user. To review a change that already exists, run `lean/code-reviewer` alone (the `review` chain); spawn `lean/checker` to check explicit claims.
+Every build goes through the `lean_build` tool: give it the plan's path, or the request text for a direct fix. The host runs the builder, the checks, the review, one remediation with the findings and the re-review, then returns the run id, status and summary for you to bring to the user. To review a change that already exists, call `lean_review` with its base ref; spawn `lean/checker` to check explicit claims.
 
 ## Done
 

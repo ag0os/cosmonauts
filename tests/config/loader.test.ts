@@ -217,6 +217,28 @@ describe("loadProjectConfig", () => {
 		}
 	});
 
+	test("skips a lean time budget longer than a timer can wait", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+			await writeFile(
+				join(tmp.path, ".cosmonauts", "config.json"),
+				JSON.stringify({
+					lean: { budget: { tokens: 10, timeMs: 2 ** 31 } },
+				}),
+			);
+
+			expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+				budget: { tokens: 10 },
+			});
+			expect(warn).toHaveBeenCalledWith(
+				"[warning] Skipping malformed lean.budget.timeMs: expected a positive integer up to 2147483647, got 2147483648.",
+			);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	test("skips a lean budget that is not an object", async () => {
 		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {

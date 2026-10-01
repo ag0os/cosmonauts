@@ -11,6 +11,7 @@ import { parseStageEnvelope } from "./envelope.ts";
 import {
 	builderTaskId,
 	readHeadSha,
+	readMergeBase,
 	readWorktreeChange,
 	resolveCommit,
 	snapshotBeforeBuilder,
@@ -91,12 +92,16 @@ const PLAN_ONLY = "context pack: the builder got the plan alone";
 
 /**
  * Input + output tokens across every session of a run. Cache reads are not
- * counted: Pi sessions read hundreds of thousands of cached tokens each.
+ * counted: Pi sessions read hundreds of thousands of cached tokens each. A
+ * run that reaches the re-review is estimated at 29 to 63 minutes.
  */
 export const DEFAULT_RUN_BUDGET: RunBudget = {
 	tokens: 1_000_000,
-	timeMs: 30 * 60_000,
+	timeMs: 60 * 60_000,
 };
+
+/** The longest timer delay Node and Bun honour; a longer `timeMs` is cut to it. */
+export const MAX_RUN_TIME_MS = 2 ** 31 - 1;
 
 const DEFAULT_LENSES: readonly LeanLens[] = ["general"];
 
@@ -178,6 +183,122 @@ export async function runBuild(options: RunBuildOptions): Promise<RunRecord> {
 	if (lean.warning) warn(record, lean.warning);
 	if (options.request !== undefined)
 		await saveRequest(record, options.projectRoot, source.plan.raw);
+	return underRunLock(
+		{ options, record, source, lean: lean.config },
+		async (run) => {
+			await prepareBuilder(run);
+			await executeRun(run);
+		},
+	);
+}
+
+export interface RunReviewOptions {
+	projectRoot: string;
+	/** The git ref the change is diffed against; defaults to `defaultReviewBase`. */
+	base?: string;
+	/** Optional context for the reviewer: a plan.md path or the request text, not both. */
+	planPath?: string;
+	request?: string;
+	reviewerBackend: BuilderBackend;
+	/** Reviewer lenses; `["general"]` when omitted. */
+	lenses?: readonly LeanLens[];
+	budget?: Partial<RunBudget>;
+	signal?: AbortSignal;
+}
+
+/**
+ * Reviews a change that already exists: the working tree against `base`,
+ * through `runBuild`'s reviewer stage (review checkout, bounded diff, envelope
+ * repair) with no builder and no providers. The record's tier is `review`;
+ * the run is `done` when the reviewer finished, whatever it found, and its
+ * findings are in the `reviewer` envelope. An empty change is `blocked`
+ * before any session starts. Only a bad plan source, an unknown base or a
+ * non-git project throws.
+ */
+export async function runReview(options: RunReviewOptions): Promise<RunRecord> {
+	const { projectRoot } = options;
+	const source = await readReviewSource(options);
+	const base = options.base ?? (await defaultReviewBase(projectRoot));
+	const diffBase = await resolveCommit({ cwd: projectRoot, ref: base });
+	const lean = await readLeanConfig(projectRoot);
+	const record = await createRunRecord({
+		projectRoot,
+		manifest: {
+			id: newRunId(),
+			baseSha: await readHeadSha(projectRoot),
+			diffBase,
+			...(options.planPath
+				? { planPath: projectPath(projectRoot, options.planPath) }
+				: {}),
+			tier: "review",
+			backend: options.reviewerBackend.kind,
+			reentries: 0,
+			snapshotRefs: [],
+			status: "running",
+			createdAt: new Date().toISOString(),
+		},
+	});
+	if (lean.warning) warn(record, lean.warning);
+	if (options.request !== undefined)
+		await saveRequest(record, projectRoot, source.plan.raw);
+	const { reviewerBackend, base: _base, ...rest } = options;
+	const runOptions: RunBuildOptions = {
+		...rest,
+		backend: reviewerBackend,
+		reviewerBackend,
+		providers: [],
+	};
+	return underRunLock(
+		{ options: runOptions, record, source, lean: lean.config },
+		(run) => reviewOnce(run, base),
+	);
+}
+
+async function reviewOnce(run: Run, base: string): Promise<void> {
+	await saveManifest(run.record);
+	const { changedFiles } = await readWorktreeChange({
+		cwd: run.options.projectRoot,
+		base: diffBase(run),
+		signal: run.signal,
+	});
+	if (changedFiles.length === 0)
+		return finish(
+			run,
+			"blocked",
+			`nothing to review: no change against ${base}`,
+		);
+	const review = await runReviewer(run, "reviewer");
+	if (!review) return;
+	if (review.outcome === "done") return finish(run, "done");
+	return finish(run, review.outcome, `reviewer: ${review.reason}`);
+}
+
+/** The merge-base of HEAD with local `main`, else `master`; `HEAD` when neither branch exists. */
+export async function defaultReviewBase(projectRoot: string): Promise<string> {
+	for (const branch of ["main", "master"]) {
+		const base = await readMergeBase({ cwd: projectRoot, ref: branch });
+		if (base) return base;
+	}
+	return "HEAD";
+}
+
+interface RunStart {
+	options: RunBuildOptions;
+	record: RunRecord;
+	source: PlanSource;
+	lean: ProjectLeanConfig;
+}
+
+/**
+ * Runs `body` holding the worktree's run lock. The lock is released however
+ * the body ends, and anything it throws, including starting the run, ends
+ * the run `failed`.
+ */
+async function underRunLock(
+	start: RunStart,
+	body: (run: Run) => Promise<void>,
+): Promise<RunRecord> {
+	const { options, record } = start;
 	const lock = await acquireRunLock({
 		worktree: options.projectRoot,
 		runId: record.manifest.id,
@@ -186,15 +307,16 @@ export async function runBuild(options: RunBuildOptions): Promise<RunRecord> {
 		await finishRecord(record, "blocked", lockedOut(lock.holder));
 		return record;
 	}
-	const run = startRun({ options, record, source, lean: lean.config });
+	let run: Run | undefined;
 	try {
-		await prepareBuilder(run);
-		await executeRun(run);
+		run = startRun(start);
+		await body(run);
 	} catch (error) {
-		await finish(
-			run,
+		const aborted = run && abortReason(run);
+		await finishRecord(
+			record,
 			"failed",
-			abortReason(run) ?? `runner error: ${errorMessage(error)}`,
+			aborted ?? `runner error: ${errorMessage(error)}`,
 		);
 	} finally {
 		await lock.release();
@@ -206,7 +328,20 @@ function lockedOut(holder: string): string {
 	return `another lean run (${holder}) is active in this worktree`;
 }
 
-async function readPlanSource(options: RunBuildOptions): Promise<PlanSource> {
+/** The plan or request a review is read against; with neither, the tier is `review`. */
+async function readReviewSource(
+	options: RunReviewOptions,
+): Promise<PlanSource> {
+	if (options.planPath !== undefined && options.request !== undefined)
+		throw new Error("runReview takes planPath or request, not both");
+	if (options.planPath === undefined && options.request === undefined)
+		return { tier: "review", plan: directPlan("") };
+	return readPlanSource(options);
+}
+
+async function readPlanSource(
+	options: Pick<RunBuildOptions, "projectRoot" | "planPath" | "request">,
+): Promise<PlanSource> {
 	if ((options.planPath === undefined) === (options.request === undefined))
 		throw new Error("runBuild needs exactly one of planPath and request");
 	if (options.planPath !== undefined) {
@@ -249,37 +384,25 @@ function resolveBudget(
 	options: RunBuildOptions,
 	lean: ProjectLeanConfig,
 ): RunBudget {
+	const timeMs =
+		options.budget?.timeMs ?? lean.budget?.timeMs ?? DEFAULT_RUN_BUDGET.timeMs;
 	return {
 		tokens:
 			options.budget?.tokens ??
 			lean.budget?.tokens ??
 			DEFAULT_RUN_BUDGET.tokens,
-		timeMs:
-			options.budget?.timeMs ??
-			lean.budget?.timeMs ??
-			DEFAULT_RUN_BUDGET.timeMs,
+		timeMs: Math.min(timeMs, MAX_RUN_TIME_MS),
 	};
 }
 
-function startRun(start: {
-	options: RunBuildOptions;
-	record: RunRecord;
-	source: PlanSource;
-	lean: ProjectLeanConfig;
-}): Run {
+function startRun(start: RunStart): Run {
 	const { options, record, source, lean } = start;
 	const budget = resolveBudget(options, lean);
 	const deadline = AbortSignal.timeout(budget.timeMs);
 	const { manifest } = record;
 	manifest.budget = budget;
 	manifest.lenses = [...(options.lenses ?? DEFAULT_LENSES)];
-	manifest.healthHook =
-		options.backend.kind === "pi" ? "pi" : "none (external backend)";
-	if (options.backend.kind !== "pi")
-		warn(
-			record,
-			`${options.backend.kind}: the post-edit health hook and the lean role guard run only in Pi sessions (brief 4.7A)`,
-		);
+	if (manifest.tier !== "review") recordHealthHook(record, options.backend);
 	return {
 		options,
 		record,
@@ -298,6 +421,17 @@ function startRun(start: {
 			: deadline,
 		stage: "builder-1",
 	};
+}
+
+/** The builder's post-edit health hook runs only in Pi sessions (brief 4.7A). */
+function recordHealthHook(record: RunRecord, backend: BuilderBackend): void {
+	record.manifest.healthHook =
+		backend.kind === "pi" ? "pi" : "none (external backend)";
+	if (backend.kind !== "pi")
+		warn(
+			record,
+			`${backend.kind}: the post-edit health hook and the lean role guard run only in Pi sessions (brief 4.7A)`,
+		);
 }
 
 /**
@@ -798,7 +932,7 @@ async function runSession(
 	const result = await untilAborted(work, run.signal).catch(
 		(error: unknown) => new Error(errorMessage(error)),
 	);
-	await recordStats(run, { stage, repair }, Date.now() - started, result);
+	await recordStats(run, session, Date.now() - started, result);
 	if (!(result instanceof Error)) return result.text;
 	const reason =
 		abortReason(run) ?? `${run.stage}: backend error: ${result.message}`;
@@ -820,10 +954,14 @@ async function recordRepair(run: Run, repair: EnvelopeRepair): Promise<void> {
 	await saveManifest(run.record);
 }
 
-/** Counts input + output tokens; cache reads and writes do not spend the budget. */
+/**
+ * Counts input + output tokens; cache reads and writes do not spend the
+ * budget. A session that reports no stats (Claude Code, Codex) spends none,
+ * which the manifest says once.
+ */
 async function recordStats(
 	run: Run,
-	session: { stage: RunStage; repair: boolean },
+	session: { stage: RunStage; repair: boolean; backend: BuilderBackend },
 	durationMs: number,
 	result: BackendRunResult | Error,
 ): Promise<void> {
@@ -838,7 +976,11 @@ async function recordStats(
 		const used = run.record.manifest.tokensUsed ?? 0;
 		run.record.manifest.tokensUsed =
 			used + spawn.tokens.input + spawn.tokens.output;
-	}
+	} else if (!(result instanceof Error))
+		warnOnce(
+			run.record,
+			`token budget not enforced: ${session.backend.kind} reports no token stats`,
+		);
 	await saveStats(run.record);
 	await saveManifest(run.record);
 }
@@ -883,6 +1025,10 @@ async function stopWith(run: Run, reason: string): Promise<undefined> {
 function warn(record: RunRecord, warning: string): void {
 	const { manifest } = record;
 	manifest.warnings = [...(manifest.warnings ?? []), warning];
+}
+
+function warnOnce(record: RunRecord, warning: string): void {
+	if (!record.manifest.warnings?.includes(warning)) warn(record, warning);
 }
 
 function finish(
