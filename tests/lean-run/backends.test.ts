@@ -94,6 +94,11 @@ describe("createPiBuilderBackend", () => {
 			}),
 		).rejects.toThrow("lean/builder spawn failed: no model");
 	});
+
+	test("reports guarded permissions: the role guard and the destructive-git guard", () => {
+		const spawner = stubSpawner({});
+		expect(createPiBuilderBackend({ spawner }).permissions).toBe("guarded");
+	});
 });
 
 const PACKAGE: AgentPackage = {
@@ -262,6 +267,31 @@ describe("createExternalBuilderBackend", () => {
 			role: "lean/code-reviewer",
 		});
 		expect(roles).toEqual(["lean/code-reviewer"]);
+	});
+
+	test("reports skipped permissions for claude, which runs with --dangerously-skip-permissions", () => {
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+		});
+		expect(backend.permissions).toBe("skipped");
+	});
+
+	test("reports the harness's own permissions for claude run without that flag", () => {
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			extraArgs: [],
+		});
+		expect(backend.permissions).toBe("harness");
+	});
+
+	test("reports the sandbox for codex", () => {
+		const backend = createExternalBuilderBackend({
+			kind: "codex-cli",
+			resolvePackage: async () => PACKAGE,
+		});
+		expect(backend.permissions).toBe("sandbox");
 	});
 });
 

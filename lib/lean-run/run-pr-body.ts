@@ -20,6 +20,8 @@ import {
 export interface RunPrBodyOptions {
 	readonly record: RunRecord;
 	readonly projectRoot: string;
+	/** Where the change is read: a build's builder worktree; the project root when omitted. */
+	readonly worktree?: string;
 	readonly plan: ParsedPlan;
 	/** `plan` when a plan document came with the change, else the run's tier. */
 	readonly tier: RunTier;
@@ -41,9 +43,10 @@ export async function writeRunPrBody(
 ): Promise<string> {
 	const { record, projectRoot } = options;
 	const base = record.manifest.diffBase ?? record.manifest.baseSha;
+	const cwd = options.worktree ?? projectRoot;
 	const [{ changedFiles }, classes] = await Promise.all([
-		readWorktreeChange({ cwd: projectRoot, base }),
-		readWorktreeStatus({ cwd: projectRoot, base }),
+		readWorktreeChange({ cwd, base }),
+		readWorktreeStatus({ cwd, base }),
 	]);
 	const signals = record.facts.passes.at(-1)?.signals ?? [];
 	const radius = radiusOf(signals);

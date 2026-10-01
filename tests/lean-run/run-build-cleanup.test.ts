@@ -1,6 +1,7 @@
 /**
  * Tests for runBuild's cleanup when the run record cannot be written: the
- * run lock and the base-sha marker are released whatever the last saves do.
+ * run lock, the base-sha marker and the builder worktree are released
+ * whatever the last saves do.
  * Saving the manifest and reading the hook log fail on demand through
  * module mocks; everything else is real, in a temporary git repository.
  */
@@ -67,8 +68,14 @@ const REVIEW = '{"outcome":"done","summary":"fine","findings":[]}';
 
 let root: string;
 
-function git(...args: string[]): void {
-	execFileSync("git", args, { cwd: root });
+function git(...args: string[]): string {
+	return execFileSync("git", args, { cwd: root, encoding: "utf8" });
+}
+
+function worktreeCount(): number {
+	return (
+		git("worktree", "list", "--porcelain").match(/^worktree /gmu)?.length ?? 0
+	);
 }
 
 beforeEach(async () => {
@@ -146,6 +153,7 @@ describe("runBuild cleanup when the record cannot be saved", () => {
 
 		await expect(build()).rejects.toThrow("disk full");
 
+		expect(worktreeCount()).toBe(1);
 		faults.saveFails = undefined;
 		const next = await build();
 		expect(next.manifest.status).toBe("done");
@@ -169,7 +177,7 @@ describe("runBuild cleanup when the record cannot be saved", () => {
 		);
 	});
 
-	test("clears the base sha and releases the lock when the manifest cannot be saved after a lost hook log", async () => {
+	test("clears the base sha, removes the builder worktree and releases the lock when the manifest cannot be saved after a lost hook log", async () => {
 		faults.takeFails = new Set([2]);
 		faults.saveFails = (manifest) =>
 			(manifest.warnings ?? []).some((warning) =>
@@ -179,6 +187,7 @@ describe("runBuild cleanup when the record cannot be saved", () => {
 		await expect(build()).rejects.toThrow("disk full");
 
 		expect(await readRunBaseSha({ worktree: root })).toBeUndefined();
+		expect(worktreeCount()).toBe(1);
 		faults.saveFails = undefined;
 		faults.takeFails = new Set();
 		expect((await build()).manifest.status).toBe("done");

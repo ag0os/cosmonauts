@@ -125,7 +125,7 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 			name: "lean_build",
 			label: "Lean build",
 			description:
-				"Run a lean build for a plan or a direct request: builder, host checks, at most one re-entry per failing check kind (two in all), the code reviewer, and at most one findings re-entry with a re-review. The run's wall-time limit defaults to 60 minutes. Returns the run id, status, a summary and the run directory.",
+				"Run a lean build for a plan or a direct request: builder, host checks, at most one re-entry per failing check kind (two in all), the code reviewer, and at most one findings re-entry with a re-review. The builder works in an isolated git worktree, and only a done run applies its patch to this working tree, unstaged. The run's wall-time limit defaults to 60 minutes. Returns the run id, status, a summary and the run directory.",
 			parameters: LeanBuildParameters,
 			execute: async (_id, params: LeanBuildInput, signal, _onUpdate, ctx) => {
 				const source = planSource(params);

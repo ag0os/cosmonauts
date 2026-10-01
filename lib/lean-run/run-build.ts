@@ -1,18 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, readFile, writeFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 import { DEFAULT_SLICE_BUDGET_TOKENS } from "../architecture-map/index.ts";
 import { loadProjectConfig } from "../config/index.ts";
 import type { ProjectLeanConfig } from "../config/types.ts";
 import type { Envelope, Finding } from "../envelope/index.ts";
 import { clearRunBaseSha, writeRunBaseSha } from "./base-sha.ts";
+import { openBuilderWorktree, type TempWorktree } from "./builder-worktree.ts";
 import { buildContextPack, planPathWarnings } from "./context-pack.ts";
 import { parseStageEnvelope } from "./envelope.ts";
 import {
+	applyPatch,
 	builderTaskId,
 	readHeadSha,
 	readMergeBase,
 	readWorktreeChange,
+	readWorktreePatch,
 	resolveCommit,
 	snapshotBeforeBuilder,
 } from "./git.ts";
@@ -39,7 +42,11 @@ import {
 	saveRequest,
 	saveStats,
 } from "./record.ts";
-import { openReviewCheckout, type ReviewCheckout } from "./review-checkout.ts";
+import {
+	openBuilderReviewCheckout,
+	openReviewCheckout,
+	type ReviewCheckout,
+} from "./review-checkout.ts";
 import { acquireRunLock } from "./run-lock.ts";
 import { writeRunPrBody } from "./run-pr-body.ts";
 import type {
@@ -141,6 +148,14 @@ interface Run {
 	/** The caller's signal combined with the deadline. */
 	signal: AbortSignal;
 	stage: string;
+	/**
+	 * Where builders, providers and the graph refresh run: the builder
+	 * worktree once it is open, the project root before that and in a review.
+	 */
+	worktree: string;
+	builder?: TempWorktree;
+	/** The last builder attempt's patch; undefined when it could not be written. */
+	patch?: string;
 }
 
 interface PlanSource {
@@ -158,6 +173,13 @@ interface Verified {
 type StageInput = Omit<BackendRunInput, "signal" | "taskId" | "readonly">;
 
 /**
+ * Every builder stage runs in a detached worktree of the attempt-1 snapshot
+ * (HEAD for a clean tree), never in the caller's: the providers check it
+ * there, `patches/builder-N.patch` records it after each attempt, and only
+ * a `done` run applies the last patch to the caller's working tree, never
+ * its index. A patch that does not apply blocks the run; the caller's tree
+ * is left as it was.
+ *
  * graph.json refresh and context pack → builder → host signals → (a
  * re-entry on `reenter` signals, at most one per signal kind, each followed
  * by host signals) → reviewer with every pass as
@@ -364,12 +386,31 @@ async function underRunLock(
 		);
 	} finally {
 		try {
-			if (run) await recordPrBody(run);
+			if (run) await closeRun(run);
 		} finally {
 			await release?.();
 		}
 	}
 	return record;
+}
+
+/** Writes the pr body, then removes the builder worktree. */
+async function closeRun(run: Run): Promise<void> {
+	try {
+		await recordPrBody(run);
+	} finally {
+		await disposeBuilder(run);
+	}
+}
+
+/** A cleanup failure is a warning, never a throw. */
+async function disposeBuilder(run: Run): Promise<void> {
+	if (!run.builder) return;
+	const warnings = await run.builder.dispose();
+	if (warnings.length === 0) return;
+	for (const warning of warnings)
+		warn(run.record, `builder worktree cleanup: ${warning}`);
+	await saveManifest(run.record).catch(() => undefined);
 }
 
 /**
@@ -386,6 +427,7 @@ async function recordPrBody(run: Run): Promise<void> {
 		await writeRunPrBody({
 			record,
 			projectRoot: run.options.projectRoot,
+			worktree: run.worktree,
 			plan: run.plan,
 			tier: planTier(run),
 		});
@@ -497,7 +539,11 @@ function startRun(start: RunStart): Run {
 	const { manifest } = record;
 	manifest.budget = budget;
 	manifest.lenses = [...(options.lenses ?? DEFAULT_LENSES)];
-	if (manifest.tier !== "review") recordHealthHook(record, options.backend);
+	if (manifest.tier !== "review") {
+		recordHealthHook(record, options.backend);
+		if (options.backend.permissions)
+			manifest.permissions = options.backend.permissions;
+	}
 	return {
 		options,
 		record,
@@ -515,6 +561,7 @@ function startRun(start: RunStart): Run {
 			? AbortSignal.any([options.signal, deadline])
 			: deadline,
 		stage: "builder-1",
+		worktree: options.projectRoot,
 	};
 }
 
@@ -530,16 +577,50 @@ function recordHealthHook(record: RunRecord, backend: BuilderBackend): void {
 }
 
 /**
- * Refreshes graph.json, then replaces the plan-only prompt with the context
- * pack unless the caller supplied one. An already-aborted run skips this so
- * the builder stage reports the abort.
+ * Opens the builder worktree, refreshes graph.json there, then replaces the
+ * plan-only prompt with the context pack unless the caller supplied one. An
+ * already-aborted run skips this so the builder stage reports the abort.
  */
 async function prepareBuilder(run: Run): Promise<void> {
 	await saveManifest(run.record);
 	if (abortReason(run)) return;
+	await isolateBuilder(run);
 	const refresh = await refreshGraph(run, "start");
 	if (run.options.contextPack === undefined) await useContextPack(run, refresh);
 	else run.record.manifest.contextPack = "supplied";
+	await saveManifest(run.record);
+}
+
+/**
+ * Takes the attempt-1 snapshot of the caller's tree, which becomes the diff
+ * base so work that predates the run is not the builder's, and opens the
+ * builder worktree on it (on HEAD when the tree was clean).
+ */
+async function isolateBuilder(run: Run): Promise<void> {
+	run.stage = "builder worktree";
+	const { manifest } = run.record;
+	const { projectRoot } = run.options;
+	const ref = await snapshotBeforeBuilder({
+		projectRoot,
+		runId: manifest.id,
+		attempt: 1,
+		signal: run.signal,
+	});
+	if (ref) {
+		manifest.snapshotRefs.push(ref);
+		manifest.diffBase = await resolveCommit({
+			cwd: projectRoot,
+			ref,
+			signal: run.signal,
+		});
+	}
+	run.builder = await openBuilderWorktree({
+		projectRoot,
+		ref: diffBase(run),
+		signal: run.signal,
+	});
+	run.worktree = run.builder.projectDir;
+	manifest.builderWorktree = run.worktree;
 	await saveManifest(run.record);
 }
 
@@ -560,7 +641,7 @@ async function useContextPack(
 		touches: run.plan.touches,
 		reuses: run.plan.reuses,
 		graph: refresh.graph,
-		projectRoot: run.options.projectRoot,
+		projectRoot: run.worktree,
 	};
 	const warnings = planPathWarnings(paths);
 	for (const warning of warnings) warn(run.record, warning);
@@ -593,7 +674,7 @@ async function refreshGraph(
 ): Promise<FileGraphRefresh> {
 	run.stage = `graph refresh (${at})`;
 	const refresh = run.options.refreshGraph ?? refreshFileGraph;
-	const work = refresh({ projectRoot: run.options.projectRoot }).catch(
+	const work = refresh({ projectRoot: run.worktree }).catch(
 		(error: unknown): FileGraphRefresh => ({
 			outcome: "unavailable",
 			reason: errorMessage(error),
@@ -765,7 +846,7 @@ async function runBuilder(
 ): Promise<Envelope | undefined> {
 	if (await stopBeforeStage(run, stage)) return undefined;
 	await snapshotAttempt(run, stage);
-	const worktree = run.options.projectRoot;
+	const { worktree } = run;
 	await dropHealthHookLeftover(run, stage);
 	await writeRunBaseSha({ worktree, baseSha: diffBase(run) });
 	try {
@@ -779,12 +860,49 @@ async function runBuilder(
 			await finish(run, envelope.outcome, `${stage}: ${envelope.reason}`);
 		return undefined;
 	} finally {
+		await afterBuilder(run, stage);
+	}
+}
+
+/** Keeps the hook log, clears the base-sha marker and records the attempt's patch, whatever the stage did. */
+async function afterBuilder(run: Run, stage: BuilderStage): Promise<void> {
+	try {
+		await keepHealthHookLog(run, stage);
+	} finally {
 		try {
-			await keepHealthHookLog(run, stage);
+			await clearRunBaseSha({ worktree: run.worktree });
 		} finally {
-			await clearRunBaseSha({ worktree });
+			await recordPatch(run, stage);
 		}
 	}
+}
+
+/**
+ * Writes `patches/<stage>.patch`: the builder worktree against the diff base,
+ * so each patch holds every attempt so far. A failure is a warning, and
+ * leaves the run with no current patch to apply.
+ */
+async function recordPatch(run: Run, stage: BuilderStage): Promise<void> {
+	if (!run.builder) return;
+	run.patch = undefined;
+	const path = join(run.record.dir, RUN_RECORD_FILES.patches, `${stage}.patch`);
+	try {
+		const patch = await readWorktreePatch({
+			cwd: run.worktree,
+			base: diffBase(run),
+		});
+		await mkdir(dirname(path), { recursive: true });
+		await writeFile(path, patch);
+		run.patch = path;
+		const { manifest } = run.record;
+		manifest.patches = [
+			...(manifest.patches ?? []),
+			relative(run.options.projectRoot, path),
+		];
+	} catch (error) {
+		warn(run.record, `${stage} patch not written: ${errorMessage(error)}`);
+	}
+	await saveManifest(run.record);
 }
 
 /** Drops what an earlier stage or run left in the hook log; a failure is a warning. */
@@ -793,7 +911,7 @@ async function dropHealthHookLeftover(
 	stage: BuilderStage,
 ): Promise<void> {
 	try {
-		await takeHealthHookLog({ worktree: run.options.projectRoot });
+		await takeHealthHookLog({ worktree: run.worktree });
 	} catch (error) {
 		warn(
 			run.record,
@@ -809,9 +927,7 @@ async function dropHealthHookLeftover(
  */
 async function keepHealthHookLog(run: Run, stage: BuilderStage): Promise<void> {
 	try {
-		const text = await takeHealthHookLog({
-			worktree: run.options.projectRoot,
-		});
+		const text = await takeHealthHookLog({ worktree: run.worktree });
 		const lines = text
 			.split("\n")
 			.filter((line) => line.trim() !== "")
@@ -844,23 +960,18 @@ const ATTEMPTS: Record<BuilderStage, number> = {
 	"builder-4": 4,
 };
 
-/** The attempt-1 snapshot becomes the diff base, so work that predates the run is not the builder's. */
+/** Snapshots the builder worktree before a later attempt; `isolateBuilder` took attempt 1. */
 async function snapshotAttempt(run: Run, stage: BuilderStage): Promise<void> {
+	if (stage === "builder-1") return;
 	const { manifest } = run.record;
 	const ref = await snapshotBeforeBuilder({
-		projectRoot: run.options.projectRoot,
+		projectRoot: run.worktree,
 		runId: manifest.id,
 		attempt: ATTEMPTS[stage],
 		signal: run.signal,
 	});
 	if (!ref) return;
 	manifest.snapshotRefs.push(ref);
-	if (stage === "builder-1")
-		manifest.diffBase = await resolveCommit({
-			cwd: run.options.projectRoot,
-			ref,
-			signal: run.signal,
-		});
 	await saveManifest(run.record);
 }
 
@@ -897,7 +1008,7 @@ async function signalContext(
 	run: Run,
 	envelope: Envelope,
 ): Promise<SignalContext> {
-	const worktree = run.options.projectRoot;
+	const { worktree } = run;
 	const base = diffBase(run);
 	const { changedFiles } = await readWorktreeChange({
 		cwd: worktree,
@@ -961,11 +1072,7 @@ async function runReviewer(
 	earlier?: { review: Envelope; builder: Envelope },
 ): Promise<Envelope | undefined> {
 	if (await stopBeforeStage(run, stage)) return undefined;
-	const checkout = await openReviewCheckout({
-		projectRoot: run.options.projectRoot,
-		base: diffBase(run),
-		signal: run.signal,
-	});
+	const checkout = await openCheckout(run);
 	try {
 		await recordCheckout(run, checkout);
 		const fullDiffPath = await writeFullDiff(run, stage, checkout);
@@ -992,8 +1099,23 @@ async function runReviewer(
 	}
 }
 
+/** A build's reviewer reads the builder's patch; a review's, the caller's tree. */
+function openCheckout(run: Run): Promise<ReviewCheckout> {
+	const base = diffBase(run);
+	const { projectRoot } = run.options;
+	if (!run.builder)
+		return openReviewCheckout({ projectRoot, base, signal: run.signal });
+	return openBuilderReviewCheckout({
+		projectRoot,
+		base,
+		patchPath: run.patch,
+		builderDir: run.worktree,
+		signal: run.signal,
+	});
+}
+
 /**
- * `full.diff` at the root of a private clone; in place, `<stage>.diff` in the
+ * `full.diff` at the root of a private checkout; in place, `<stage>.diff` in the
  * run directory, which the reviewer can read and git ignores.
  */
 async function writeFullDiff(
@@ -1256,12 +1378,45 @@ function warnOnce(record: RunRecord, warning: string): void {
 	if (!record.manifest.warnings?.includes(warning)) warn(record, warning);
 }
 
-function finish(
+/** A build is `done` only once its last patch is in the caller's working tree. */
+async function finish(
 	run: Run,
 	status: Exclude<RunStatus, "running">,
 	reason?: string,
 ): Promise<void> {
+	if (status === "done" && run.builder) {
+		const failure = await applyFinalPatch(run);
+		if (failure) return finishRecord(run.record, "blocked", failure);
+	}
 	return finishRecord(run.record, status, reason);
+}
+
+/**
+ * `git apply` of the last builder patch to the caller's working tree; never
+ * the index. git applies a patch whole or not at all, so a failure leaves
+ * the tree as it was. Resolves to why the patch is not in the tree, if so.
+ */
+async function applyFinalPatch(run: Run): Promise<string | undefined> {
+	run.stage = "patch apply";
+	const { projectRoot } = run.options;
+	const path = run.patch;
+	if (path === undefined)
+		return "the builder's last patch was not written, so nothing was applied to the worktree";
+	const patchPath = relative(projectRoot, path);
+	const { manifest } = run.record;
+	try {
+		if ((await stat(path)).size > 0)
+			await applyPatch({ cwd: projectRoot, patchPath: path });
+		manifest.patchApplied = { path: patchPath, ok: true };
+		return undefined;
+	} catch (error) {
+		manifest.patchApplied = {
+			path: patchPath,
+			ok: false,
+			error: errorMessage(error),
+		};
+		return `builder patch did not apply to the worktree, which is unchanged: ${patchPath}`;
+	}
 }
 
 async function finishRecord(

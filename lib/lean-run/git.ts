@@ -11,12 +11,16 @@ const execFileAsync = promisify(execFile);
 /**
  * Drive snapshots leave session paths out, so a diff against one must too.
  * The architecture map is the host's: it regenerates it before each
- * provider pass, so those files are never the builder's change.
+ * provider pass, so those files are never the builder's change. A builder
+ * worktree links the project's top-level `node_modules`, which a
+ * `node_modules/` ignore rule does not cover: git sees a symlink, not a
+ * directory.
  */
 const DIFF_EXCLUDES = [
 	":(exclude)missions/sessions",
 	":(exclude)missions/archive/sessions",
 	`:(exclude)${ARCHITECTURE_MAP_OUTPUT_DIR}`,
+	":(exclude)node_modules",
 ];
 
 export interface WorktreeChange {
@@ -92,6 +96,104 @@ export function readWorktreeChange(
 	return withWorktreeIndex(options, (env) =>
 		readStagedChange({ ...options, env }),
 	);
+}
+
+/**
+ * The working tree against `base` as a patch for `git apply`, binary files
+ * included and untracked files as new files, read through a throwaway index.
+ * Prefixes, colour, external diff drivers and textconv are pinned so user
+ * config cannot change the patch.
+ */
+export function readWorktreePatch(
+	options: GitOptions & { base: string },
+): Promise<string> {
+	return withWorktreeIndex(options, (env) =>
+		git(
+			[
+				"diff",
+				"--binary",
+				NO_RENAMES,
+				"--no-color",
+				"--no-ext-diff",
+				"--no-textconv",
+				"--src-prefix=a/",
+				"--dst-prefix=b/",
+				"--cached",
+				options.base,
+				"--",
+				...DIFF_EXCLUDES,
+			],
+			{ ...options, env },
+		),
+	);
+}
+
+/**
+ * Applies a patch file to the working tree of `cwd`'s checkout, from its top
+ * level. Never `--index`, `--cached` or `--3way`: the index is left as it was.
+ */
+export async function applyPatch(
+	options: GitOptions & { patchPath: string },
+): Promise<void> {
+	const top = await readTopLevel(options);
+	await git(["apply", "--binary", options.patchPath], { ...options, cwd: top });
+}
+
+export async function readTopLevel(options: GitOptions): Promise<string> {
+	return (await git(["rev-parse", "--show-toplevel"], options)).trim();
+}
+
+/** `cwd` relative to its checkout's top level, with a trailing slash; `""` at the top. */
+export async function readPrefix(options: GitOptions): Promise<string> {
+	return (await git(["rev-parse", "--show-prefix"], options)).trim();
+}
+
+/**
+ * Adds a detached worktree of `ref` at `path`. The repository gains only the
+ * worktree's metadata; `cwd`'s own index and working tree are not touched.
+ */
+export async function addDetachedWorktree(
+	options: GitOptions & { path: string; ref: string },
+): Promise<void> {
+	await git(
+		["worktree", "add", "--detach", "--quiet", options.path, options.ref],
+		options,
+	);
+}
+
+/**
+ * Removes a worktree added by `addDetachedWorktree`, then prunes stale
+ * worktree metadata. Never throws: each failure is returned as a warning,
+ * and a worktree git cannot remove has its directory deleted instead.
+ */
+export async function removeWorktree(
+	options: GitOptions & { path: string },
+): Promise<string[]> {
+	const warnings: string[] = [];
+	try {
+		await git(["worktree", "remove", "--force", options.path], options);
+	} catch (error) {
+		warnings.push(
+			`could not remove worktree ${options.path}: ${errorMessage(error)}`,
+		);
+		await rm(options.path, { recursive: true, force: true }).catch(
+			(rmError: unknown) => {
+				warnings.push(
+					`could not delete ${options.path}: ${errorMessage(rmError)}`,
+				);
+			},
+		);
+	}
+	try {
+		await git(["worktree", "prune"], options);
+	} catch (error) {
+		warnings.push(`git worktree prune failed: ${errorMessage(error)}`);
+	}
+	return warnings;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 /** A changed file's `git diff --name-status` letter, read as a diagram class. */

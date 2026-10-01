@@ -87,6 +87,37 @@ describe("summarizeRun", () => {
 		);
 	});
 
+	test("names the latest builder patch of a run that did not finish", () => {
+		expect(
+			summarizeRun(
+				record({
+					status: "blocked",
+					reason: "verification did not pass",
+					patches: [
+						"runs/r/patches/builder-1.patch",
+						"runs/r/patches/builder-2.patch",
+					],
+				}),
+			),
+		).toBe(
+			"blocked: verification did not pass; builder patch not applied: runs/r/patches/builder-2.patch (1 re-entry)",
+		);
+	});
+
+	test("does not repeat a patch the reason already names", () => {
+		const reason =
+			"builder patch did not apply to the worktree, which is unchanged: runs/r/patches/builder-1.patch";
+		expect(
+			summarizeRun(
+				record({
+					status: "blocked",
+					reason,
+					patches: ["runs/r/patches/builder-1.patch"],
+				}),
+			),
+		).toBe(`blocked: ${reason} (1 re-entry)`);
+	});
+
 	test("says so when an unfinished run has no reason", () => {
 		expect(summarizeRun(record({ status: "running" }))).toBe(
 			"running: no reason recorded (1 re-entry)",

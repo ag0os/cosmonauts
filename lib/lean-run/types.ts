@@ -68,6 +68,7 @@ export type LeanLens = (typeof LEAN_LENSES)[number];
 export type RunTier = "direct" | "plan" | "review";
 
 export interface SignalContext {
+	/** In a build, the builder worktree; in a review, the caller's worktree. */
 	worktree: string;
 	/**
 	 * The revision to diff against: the run's `diffBase`, which is the
@@ -108,6 +109,7 @@ export type LeanRole = (typeof LEAN_ROLES)[number];
 
 export interface BackendRunInput {
 	prompt: string;
+	/** A builder's is the run's builder worktree; a reviewer's, its review checkout. */
 	worktree: string;
 	role: LeanRole;
 	/** Names the run's snapshot refs for the destructive-git guard. */
@@ -133,8 +135,27 @@ export interface BackendRunResult {
  */
 export interface BuilderBackend {
 	readonly kind: LeanBackendKind;
+	/** How the harness gates the session's tool calls; the run manifest records it. */
+	readonly permissions?: BackendPermissions;
 	run(input: BackendRunInput): Promise<BackendRunResult>;
 }
+
+/**
+ * How a builder harness gates tool calls. Whatever it is, the builder runs
+ * in its own worktree. `guarded`: Pi, with the lean role guard and the
+ * destructive-git guard. `skipped`: Claude Code with
+ * `--dangerously-skip-permissions`, which `-p` needs to edit unattended:
+ * every call to a tool in its `--tools` set runs unprompted. `sandbox`:
+ * Codex, confined by the sandbox mode its agent package sets. `harness`: the
+ * harness's own permission settings, from custom arguments.
+ */
+export const BACKEND_PERMISSIONS = [
+	"guarded",
+	"skipped",
+	"sandbox",
+	"harness",
+] as const;
+export type BackendPermissions = (typeof BACKEND_PERMISSIONS)[number];
 
 /** Gitignored run directory root (ruling R-3), relative to the project root. */
 export const LEAN_RUN_ROOT = "missions/sessions/lean/runs" as const;
@@ -148,6 +169,8 @@ export const RUN_RECORD_FILES = {
 	prBody: "pr-body.md",
 	/** What the Pi post-edit health hook injected, one JSON line per finding with its stage. */
 	healthHook: "health-hook.jsonl",
+	/** `builder-N.patch`: the builder worktree against the diff base after attempt N. */
+	patches: "patches",
 } as const;
 
 /**
@@ -254,6 +277,28 @@ export interface RunManifest {
 	repairs?: EnvelopeRepair[];
 	/** The pull-request body written at the end of the run, relative to the project root. */
 	prBodyPath?: string;
+	/**
+	 * The detached worktree every builder stage and provider pass ran in; it
+	 * is removed when the run ends. Absent for a review.
+	 */
+	builderWorktree?: string;
+	/**
+	 * `builder-N.patch` after each builder attempt, relative to the project
+	 * root and cumulative against `diffBase`; the last is the run's change.
+	 */
+	patches?: string[];
+	/** Applying the last patch to the caller's working tree; only a `done` run tries. */
+	patchApplied?: PatchApplication;
+	/** How the builder harness gated its tool calls. */
+	permissions?: BackendPermissions;
+}
+
+/** `git apply` of the final builder patch to the working tree only, never the index. */
+export interface PatchApplication {
+	/** Relative to the project root. */
+	path: string;
+	ok: boolean;
+	error?: string;
 }
 
 export interface SignalPass {

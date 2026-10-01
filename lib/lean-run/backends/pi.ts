@@ -32,6 +32,7 @@ export function createPiBuilderBackend(
 				});
 	return {
 		kind: "pi",
+		permissions: "guarded",
 		async run(input) {
 			const result = await spawner.spawn({
 				role: input.role,

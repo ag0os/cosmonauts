@@ -4,7 +4,15 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -34,14 +42,15 @@ import {
 	runReview,
 } from "../../lib/lean-run/run-build.ts";
 import { summarizeRun } from "../../lib/lean-run/summary.ts";
-import type {
-	BackendRunInput,
-	BuilderBackend,
-	RunRecord,
-	Signal,
-	SignalContext,
-	SignalKind,
-	SignalProvider,
+import {
+	type BackendRunInput,
+	type BuilderBackend,
+	LEAN_RUN_ROOT,
+	type RunRecord,
+	type Signal,
+	type SignalContext,
+	type SignalKind,
+	type SignalProvider,
 } from "../../lib/lean-run/types.ts";
 import type { SpawnStats } from "../../lib/orchestration/types.ts";
 
@@ -203,7 +212,11 @@ let root: string;
 const extraDirs: string[] = [];
 
 function git(...args: string[]): string {
-	return execFileSync("git", args, { cwd: root, encoding: "utf8" });
+	return gitIn(root, ...args);
+}
+
+function gitIn(cwd: string, ...args: string[]): string {
+	return execFileSync("git", args, { cwd, encoding: "utf8" });
 }
 
 beforeEach(async () => {
@@ -238,6 +251,22 @@ async function writeGreet(worktree: string): Promise<void> {
 function editGreet(text: string): Reply {
 	return async (input) => {
 		await writeGreet(input.worktree);
+		return text;
+	};
+}
+
+/** The run directory of the one run in the fixture repo. */
+async function onlyRunDir(): Promise<string> {
+	const runs = join(root, LEAN_RUN_ROOT);
+	const [id] = await readdir(runs);
+	return join(runs, id ?? "");
+}
+
+/** Runs `reply`, then puts a file where the patches directory goes, so no patch can be written. */
+function blockPatches(reply: Reply): Reply {
+	return async (input) => {
+		const text = typeof reply === "string" ? reply : await reply(input);
+		await writeFile(join(await onlyRunDir(), "patches"), "not a directory\n");
 		return text;
 	};
 }
@@ -313,20 +342,21 @@ describe("runBuild on clean output", () => {
 		expect(builder.calls[0]?.taskId).toBe(`lean-${id}`);
 	});
 
-	test("hands providers the builder's changed files, the diff base and the envelope", async () => {
+	test("hands providers the builder worktree, its changed files, the diff base and the envelope", async () => {
 		const provider = stubProvider([{}]);
 		const record = await build({
 			builder: stubBackend([
 				async (input) => {
-					await writeFile(join(root, "src/new.ts"), "export {};\n");
+					await writeFile(join(input.worktree, "src/new.ts"), "export {};\n");
 					await writeGreet(input.worktree);
 					return DONE;
 				},
 			]),
 			providers: [provider],
 		});
+		expect(record.manifest.builderWorktree).not.toBe(root);
 		expect(provider.contexts[0]).toMatchObject({
-			worktree: root,
+			worktree: record.manifest.builderWorktree,
 			baseSha: record.manifest.baseSha,
 			changedFiles: ["src/greet.ts", "src/new.ts"],
 			envelope: { outcome: "done", summary: "built" },
@@ -362,15 +392,268 @@ describe("runBuild on clean output", () => {
 		expect(record.manifest.tokensUsed).toBe(2 * SESSION_TOKENS);
 	});
 
-	test("prompts the builder with the plan and the envelope instruction", async () => {
+	test("prompts the builder in its own worktree with the plan and the envelope instruction", async () => {
 		const builder = stubBackend([DONE]);
-		await build({ builder });
+		const record = await build({ builder });
 		expect(builder.calls[0]).toMatchObject({
 			role: "lean/builder",
-			worktree: root,
+			worktree: record.manifest.builderWorktree,
 		});
+		expect(builder.calls[0]?.worktree).not.toBe(root);
 		expect(builder.calls[0]?.prompt).toContain("## Approach\nAdd a greeting.");
 		expect(builder.calls[0]?.prompt).toContain("End with the lean envelope");
+	});
+});
+
+/** The caller's HEAD, branch, index and working-tree state, as git reports them. */
+function callerState() {
+	return {
+		head: git("rev-parse", "HEAD"),
+		main: git("rev-parse", "main"),
+		index: git("ls-files", "-s"),
+		staged: git("diff", "--cached"),
+		unstaged: git("diff"),
+		status: git("status", "--porcelain").split("\n").filter(Boolean).sort(),
+	};
+}
+
+/** Uncommitted work of every kind: an edited tracked file, a staged new file, an untracked file. */
+async function dirtyCallerTree(): Promise<Record<string, string>> {
+	const files = {
+		"README.md": "edited by the user\n",
+		"src/staged.ts": "export const staged = 1;\n",
+		"notes.txt": "untracked notes\n",
+	};
+	for (const [path, text] of Object.entries(files))
+		await writeFile(join(root, path), text);
+	git("add", "src/staged.ts");
+	return files;
+}
+
+async function readFiles(
+	paths: readonly string[],
+): Promise<Record<string, string>> {
+	const entries = await Promise.all(
+		paths.map(async (path) => [path, await readFile(join(root, path), "utf8")]),
+	);
+	return Object.fromEntries(entries);
+}
+
+function worktreeList(): string[] {
+	return git("worktree", "list", "--porcelain")
+		.split("\n")
+		.filter((line) => line.startsWith("worktree "));
+}
+
+describe("runBuild builder worktree", () => {
+	test("keeps the caller's HEAD, index and uncommitted files when the builder runs destructive git", async () => {
+		const files = await dirtyCallerTree();
+		const before = callerState();
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					gitIn(input.worktree, "reset", "--hard");
+					gitIn(input.worktree, "clean", "-fdx");
+					await writeFile(
+						join(input.worktree, "src/after.ts"),
+						"export const after = 1;\n",
+					);
+					gitIn(input.worktree, "add", "-A");
+					gitIn(input.worktree, "commit", "-q", "-m", "builder");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest.status).toBe("done");
+		const after = callerState();
+		expect(after).toEqual({
+			...before,
+			status: [...before.status, "?? src/after.ts"].sort(),
+		});
+		expect(await readFiles(Object.keys(files))).toEqual(files);
+		expect(await readFile(join(root, "src/after.ts"), "utf8")).toBe(
+			"export const after = 1;\n",
+		);
+	});
+
+	test("applies a done run's patch to the working tree only, unstaged", async () => {
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					await writeFile(join(input.worktree, "src/new.ts"), "export {};\n");
+					return DONE;
+				},
+			]),
+		});
+
+		const patch = `missions/sessions/lean/runs/${record.manifest.id}/patches/builder-1.patch`;
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			patches: [patch],
+			patchApplied: { path: patch, ok: true },
+		});
+		expect(git("diff", "--cached")).toBe("");
+		expect(callerState().status).toEqual([" M src/greet.ts", "?? src/new.ts"]);
+		const text = await readFile(join(root, patch), "utf8");
+		expect(text).toContain(
+			"diff --git a/src/new.ts b/src/new.ts\nnew file mode 100644",
+		);
+		expect(text).toContain('+export const greet = "hi";');
+		git("apply", "--check", "--reverse", patch);
+	});
+
+	test("leaves the caller's tree as it was and names the patch when the run is blocked", async () => {
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [stubProvider([FAILING])],
+		});
+
+		const { id } = record.manifest;
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			patches: [
+				`missions/sessions/lean/runs/${id}/patches/builder-1.patch`,
+				`missions/sessions/lean/runs/${id}/patches/builder-2.patch`,
+			],
+		});
+		expect(record.manifest.patchApplied).toBeUndefined();
+		expect(callerState().status).toEqual([]);
+		expect(summarizeRun(record)).toContain(
+			`builder patch not applied: missions/sessions/lean/runs/${id}/patches/builder-2.patch`,
+		);
+	});
+
+	test("ends blocked naming the patch, with the tree unchanged, when the patch does not apply", async () => {
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					await writeFile(join(input.worktree, "src/new.ts"), "export {};\n");
+					await writeFile(
+						join(root, "src/greet.ts"),
+						"export const greet = 2;\n",
+					);
+					return DONE;
+				},
+			]),
+		});
+
+		const patch = `missions/sessions/lean/runs/${record.manifest.id}/patches/builder-1.patch`;
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: `builder patch did not apply to the worktree, which is unchanged: ${patch}`,
+			patchApplied: { path: patch, ok: false },
+		});
+		expect(record.manifest.patchApplied?.error).toContain("patch");
+		expect(callerState().status).toEqual([" M src/greet.ts"]);
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			"export const greet = 2;\n",
+		);
+	});
+
+	test("continues a re-entry in the same worktree, with a patch cumulative against the diff base", async () => {
+		const seen: string[] = [];
+		const builder = stubBackend([
+			editGreet(DONE),
+			async (input) => {
+				seen.push(await readFile(join(input.worktree, "src/greet.ts"), "utf8"));
+				await writeFile(join(input.worktree, "src/second.ts"), "export {};\n");
+				return DONE;
+			},
+		]);
+		const record = await build({
+			builder,
+			providers: [stubProvider([FAILING, {}])],
+		});
+
+		expect(builder.calls[1]?.worktree).toBe(builder.calls[0]?.worktree);
+		expect(seen).toEqual(['export const greet = "hi";\n']);
+		const [first, second] = await Promise.all(
+			(record.manifest.patches ?? []).map((path) =>
+				readFile(join(root, path), "utf8"),
+			),
+		);
+		expect(first).not.toContain("src/second.ts");
+		expect(second).toContain("diff --git a/src/greet.ts b/src/greet.ts");
+		expect(second).toContain("diff --git a/src/second.ts b/src/second.ts");
+		expect(record.manifest.status).toBe("done");
+	});
+
+	test("removes the builder worktree when the run is done, blocked or failed", async () => {
+		const runs = [
+			await build({ builder: stubBackend([editGreet(DONE)]) }),
+			await build({
+				builder: stubBackend([editGreet(DONE)]),
+				providers: [stubProvider([FAILING])],
+			}),
+			await build({
+				builder: stubBackend([
+					async () => {
+						throw new Error("harness crashed");
+					},
+				]),
+			}),
+		];
+
+		expect(runs.map((run) => run.manifest.status)).toEqual([
+			"done",
+			"blocked",
+			"failed",
+		]);
+		for (const run of runs) {
+			expect(run.manifest.builderWorktree).toBeDefined();
+			expect(existsSync(run.manifest.builderWorktree ?? "")).toBe(false);
+		}
+		expect(worktreeList()).toHaveLength(1);
+	});
+
+	test("links the project's node_modules into the builder worktree and leaves it intact", async () => {
+		await writeFile(
+			join(root, ".gitignore"),
+			"missions/sessions/\nnode_modules/\n",
+		);
+		git("commit", "-q", "-am", "ignore node_modules");
+		await mkdir(join(root, "node_modules/dep"), { recursive: true });
+		await writeFile(join(root, "node_modules/dep/index.js"), "dep\n");
+		const seen: string[] = [];
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					seen.push(
+						await readFile(
+							join(input.worktree, "node_modules/dep/index.js"),
+							"utf8",
+						),
+					);
+					gitIn(input.worktree, "clean", "-fdx");
+					await writeGreet(input.worktree);
+					return DONE;
+				},
+			]),
+		});
+
+		expect(seen).toEqual(["dep\n"]);
+		expect(record.manifest.status).toBe("done");
+		expect(record.manifest.patches).toHaveLength(1);
+		const patch = await readFile(
+			join(root, record.manifest.patches?.[0] ?? ""),
+			"utf8",
+		);
+		expect(patch).not.toContain("node_modules");
+		expect(
+			await readFile(join(root, "node_modules/dep/index.js"), "utf8"),
+		).toBe("dep\n");
+		expect((await stat(join(root, "node_modules"))).isDirectory()).toBe(true);
+	});
+
+	test("records how the builder harness gates its tool calls", async () => {
+		const record = await build({
+			builder: { ...stubBackend([DONE], "claude-cli"), permissions: "skipped" },
+		});
+
+		expect(record.manifest.permissions).toBe("skipped");
 	});
 });
 
@@ -512,7 +795,9 @@ describe("runBuild file graph refresh", () => {
 			refreshGraph,
 		});
 
-		expect(refreshGraph.calls).toEqual([root, root, root]);
+		const worktree = record.manifest.builderWorktree;
+		expect(worktree).toBeDefined();
+		expect(refreshGraph.calls).toEqual([worktree, worktree, worktree]);
 		expect(record.manifest.graph).toEqual([
 			{ at: "start", outcome: "regenerated", reason: "missing" },
 			{ at: "pass-1", outcome: "regenerated", reason: "stale" },
@@ -678,10 +963,13 @@ describe("runBuild diff base", () => {
 		const reviewer = stubBackend([REVIEW]);
 		await build({
 			builder: stubBackend([
-				async () => {
-					await writeFile(join(root, "src/built.ts"), "export const b = 1;\n");
-					git("add", "-A");
-					git("commit", "-q", "-m", "builder");
+				async (input) => {
+					await writeFile(
+						join(input.worktree, "src/built.ts"),
+						"export const b = 1;\n",
+					);
+					gitIn(input.worktree, "add", "-A");
+					gitIn(input.worktree, "commit", "-q", "-m", "builder");
 					return DONE;
 				},
 			]),
@@ -692,24 +980,25 @@ describe("runBuild diff base", () => {
 		expect(prompt).not.toContain("earlier.ts");
 	});
 
-	test("writes the diff base marker for the builder and clears it afterwards", async () => {
+	test("writes the diff base marker in the builder worktree's own git dir only", async () => {
 		await writeFile(join(root, "src/pending.ts"), "export {};\n");
 		const seen: Array<string | undefined> = [];
 		const record = await build({
 			builder: stubBackend([
-				async () => {
+				async (input) => {
+					seen.push(await readRunBaseSha({ worktree: input.worktree }));
 					seen.push(await readRunBaseSha({ worktree: root }));
 					return DONE;
 				},
 			]),
 		});
-		expect(seen).toEqual([record.manifest.diffBase]);
+		expect(seen).toEqual([record.manifest.diffBase, undefined]);
 		expect(await readRunBaseSha({ worktree: root })).toBeUndefined();
 	});
 });
 
 describe("runBuild review workspace", () => {
-	test("reviews in place when no main, master or origin/main ref exists", async () => {
+	test("reviews in a private checkout with no main, master or origin/main ref", async () => {
 		git("branch", "-m", "main", "trunk");
 		const reviewer = stubBackend([REVIEW]);
 		const record = await build({
@@ -718,17 +1007,58 @@ describe("runBuild review workspace", () => {
 		});
 		expect(record.manifest).toMatchObject({
 			status: "done",
-			reviewWorkspace: "in-place",
+			reviewWorkspace: "private",
 		});
-		expect(record.manifest.warnings?.[0]).toContain(
-			"private review workspace unavailable",
-		);
-		expect(reviewer.calls[0]?.worktree).toBe(root);
+		expect(record.manifest.warnings).toBeUndefined();
 		expect(reviewer.calls[0]?.prompt).toContain('+export const greet = "hi";');
 		expect(await onDisk(record)).toEqual(record);
 	});
 
-	test("reviews a linked worktree in place, with the marker in its own git dir", async () => {
+	test("hands the reviewer a checkout of the diff base holding the builder's change", async () => {
+		let seen = "";
+		const reviewer = stubBackend([
+			async (input) => {
+				seen = await readFile(join(input.worktree, "src/greet.ts"), "utf8");
+				return REVIEW;
+			},
+		]);
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			reviewer,
+		});
+		const call = reviewer.calls[0];
+		expect(call?.worktree).not.toBe(record.manifest.builderWorktree);
+		expect(call?.worktree).not.toBe(root);
+		expect(seen).toBe('export const greet = "hi";\n');
+		expect(call?.prompt).toContain("# Changed files\n\nsrc/greet.ts");
+	});
+
+	test("reviews the builder worktree in place when its patch was not written", async () => {
+		const reviewer = stubBackend([REVIEW]);
+		const record = await build({
+			builder: stubBackend([blockPatches(editGreet(DONE))]),
+			reviewer,
+		});
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason:
+				"the builder's last patch was not written, so nothing was applied to the worktree",
+			reviewWorkspace: "in-place",
+		});
+		expect(record.manifest.warnings?.[0]).toMatch(
+			/^builder-1 patch not written: /u,
+		);
+		expect(record.manifest.warnings?.[1]).toContain(
+			"private review checkout unavailable, reviewed in the builder worktree",
+		);
+		expect(reviewer.calls[0]?.worktree).toBe(record.manifest.builderWorktree);
+		expect(reviewer.calls[0]?.prompt).toContain('+export const greet = "hi";');
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			"export const greet = 1;\n",
+		);
+	});
+
+	test("builds from a linked worktree, with the marker in the builder's own git dir", async () => {
 		const parent = await mkdtemp(join(tmpdir(), "lean-run-linked-"));
 		extraDirs.push(parent);
 		const linked = join(parent, "wt");
@@ -740,6 +1070,7 @@ describe("runBuild review workspace", () => {
 			planPath: PLAN_PATH,
 			backend: stubBackend([
 				async (input) => {
+					seen.push(await readRunBaseSha({ worktree: input.worktree }));
 					seen.push(await readRunBaseSha({ worktree: linked }));
 					seen.push(await readRunBaseSha({ worktree: root }));
 					await writeGreet(input.worktree);
@@ -752,12 +1083,15 @@ describe("runBuild review workspace", () => {
 		});
 		expect(record.manifest).toMatchObject({
 			status: "done",
-			reviewWorkspace: "in-place",
+			reviewWorkspace: "private",
+			patchApplied: { ok: true },
 		});
-		expect(seen).toEqual([record.manifest.diffBase, undefined]);
-		expect(reviewer.calls[0]?.worktree).toBe(linked);
+		expect(seen).toEqual([record.manifest.diffBase, undefined, undefined]);
 		expect(reviewer.calls[0]?.prompt).toContain(
 			"# Changed files\n\nsrc/greet.ts",
+		);
+		expect(await readFile(join(linked, "src/greet.ts"), "utf8")).toBe(
+			'export const greet = "hi";\n',
 		);
 		expect(await onDisk(record, linked)).toEqual(record);
 	});
@@ -1979,14 +2313,13 @@ describe("runBuild reviewer diff bound", () => {
 	});
 
 	test("in place, writes the full diff to the run directory", async () => {
-		git("branch", "-m", "main", "trunk");
 		const reviewer = stubBackend([REVIEW]);
 		const record = await build({
 			builder: stubBackend([
-				async (input) => {
+				blockPatches(async (input) => {
 					await writeLargeChange(input.worktree);
 					return DONE;
-				},
+				}),
 			]),
 			reviewer,
 		});
@@ -2109,7 +2442,7 @@ describe("runBuild health hook coverage", () => {
 		};
 	}
 
-	test("keeps what the hook logged in each builder stage, then clears the log", async () => {
+	test("keeps what the hook logged in the builder worktree in each stage, never the caller's log", async () => {
 		const leftover = join(root, ".git/lean-run/health-hook.jsonl");
 		await mkdir(join(root, ".git/lean-run"), { recursive: true });
 		await writeFile(leftover, `${JSON.stringify(ENTRY)}\n`);
@@ -2132,7 +2465,7 @@ describe("runBuild health hook coverage", () => {
 			{ stage: "builder-1", ...ENTRY, function: "first" },
 			{ stage: "builder-2", ...ENTRY, function: "second" },
 		]);
-		expect(existsSync(leftover)).toBe(false);
+		expect(await readFile(leftover, "utf8")).toBe(`${JSON.stringify(ENTRY)}\n`);
 	});
 
 	test("writes no hook log into a record whose builder logged nothing", async () => {

@@ -13,6 +13,7 @@ import { AgentRegistry } from "../../agents/resolver.ts";
 import type { AgentDefinition } from "../../agents/types.ts";
 import type { DomainResolver } from "../../domains/resolver.ts";
 import type {
+	BackendPermissions,
 	BackendRunInput,
 	BuilderBackend,
 	LeanBackendKind,
@@ -96,10 +97,27 @@ function withoutPiOnlyParts(agent: AgentDefinition): AgentDefinition {
 	return { ...agent, extensions: [], subagents: [] };
 }
 
+/**
+ * `claude -p` cannot approve an edit without `--dangerously-skip-permissions`,
+ * so a builder keeps it: `--tools` still limits what it can call, and the run
+ * gives it a worktree of its own instead of the caller's.
+ */
 const DEFAULT_EXTRA_ARGS = {
 	"claude-cli": ["--dangerously-skip-permissions"],
 	"codex-cli": [],
 } as const satisfies Record<ExternalBackendKind, readonly string[]>;
+
+const SKIP_PERMISSIONS = "--dangerously-skip-permissions";
+
+function externalPermissions(
+	options: ExternalBuilderBackendOptions,
+): BackendPermissions {
+	if (options.kind === "codex-cli")
+		return options.extraArgs === undefined ? "sandbox" : "harness";
+	const args: readonly string[] =
+		options.extraArgs ?? DEFAULT_EXTRA_ARGS[options.kind];
+	return args.includes(SKIP_PERMISSIONS) ? "skipped" : "harness";
+}
 
 const CODEX_LAST_MESSAGE = "last-message.txt";
 
@@ -114,6 +132,7 @@ export function createExternalBuilderBackend(
 	const runProcess = options.runProcess ?? runChildProcess;
 	return {
 		kind: options.kind,
+		permissions: externalPermissions(options),
 		async run(input) {
 			const resolved = await options.resolvePackage(input.role);
 			const agentPackage = input.readonly ? readOnly(resolved) : resolved;

@@ -226,6 +226,15 @@ describe("lean_build tool", () => {
 		expect(tool.description).toContain("60 minutes");
 	});
 
+	test("states that the builder works in an isolated worktree and only a done run applies its patch", () => {
+		const { pi } = setup();
+		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
+
+		expect(tool.description).toContain(
+			"The builder works in an isolated git worktree, and only a done run applies its patch to this working tree, unstaged.",
+		);
+	});
+
 	test("returns the run id, status, summary and run directory", async () => {
 		const { pi } = setup();
 		const result = (await pi.callTool("lean_build", {
@@ -304,10 +313,10 @@ describe("lean_build tool", () => {
 			const result = (await pi.callTool("lean_build", {
 				planPath: "missions/lean/x/plan.md",
 			})) as { details: { status: string; summary: string } };
-			expect(result.details).toMatchObject({
-				status: "blocked",
-				summary: "blocked: unverified: no providers configured (0 re-entries)",
-			});
+			expect(result.details.status).toBe("blocked");
+			expect(result.details.summary).toMatch(
+				/^blocked: unverified: no providers configured; builder patch not applied: missions\/sessions\/lean\/runs\/[^/]+\/patches\/builder-1\.patch \(0 re-entries\)$/u,
+			);
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}

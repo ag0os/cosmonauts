@@ -1,13 +1,23 @@
 /**
- * Tests for readWorktreeStatus and readWorktreeChange: the working tree's
- * change against a base, per file, as the change diagram's classes.
+ * Tests for readWorktreeStatus, readWorktreeChange and readWorktreePatch:
+ * the working tree's change against a base, per file, as the change
+ * diagram's classes, and as a patch applyPatch puts back.
  */
 import { execFileSync } from "node:child_process";
-import { rename, rm, utimes, writeFile } from "node:fs/promises";
+import {
+	readFile,
+	rename,
+	rm,
+	symlink,
+	utimes,
+	writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import {
+	applyPatch,
 	readWorktreeChange,
+	readWorktreePatch,
 	readWorktreeStatus,
 } from "../../lib/lean-run/git.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -71,6 +81,39 @@ test("sees a same-size edit made in the same second as the index write", async (
 
 	expect(change.changedFiles).toEqual(["kept.ts"]);
 	expect(status).toEqual({ "kept.ts": "modified" });
+});
+
+test("reads a patch that recreates binary, untracked and deleted files in the working tree only", async () => {
+	const binary = Buffer.from([0, 1, 2, 255, 0, 10, 13, 0]);
+	await writeFile(join(repo.path, "image.bin"), binary);
+	await writeFile(join(repo.path, "kept.ts"), "export const kept = 2;\n");
+	await rm(join(repo.path, "gone.ts"));
+	const patch = await readWorktreePatch({ cwd: repo.path, base: "HEAD" });
+	const patchPath = join(repo.path, ".git", "test.patch");
+	await writeFile(patchPath, patch);
+	git("reset", "-q", "--hard");
+	git("clean", "-q", "-fd");
+
+	await applyPatch({ cwd: repo.path, patchPath });
+
+	expect(await readFile(join(repo.path, "image.bin"))).toEqual(binary);
+	expect(git("diff", "--cached")).toBe("");
+	expect(
+		git("status", "--porcelain").split("\n").filter(Boolean).sort(),
+	).toEqual([" D gone.ts", " M kept.ts", "?? image.bin"]);
+});
+
+test("leaves a top-level node_modules link out of the change and the patch", async () => {
+	await symlink(join(repo.path, "kept.ts"), join(repo.path, "node_modules"));
+	await writeFile(join(repo.path, "kept.ts"), "export const kept = 2;\n");
+
+	const [change, patch] = await Promise.all([
+		readWorktreeChange({ cwd: repo.path, base: "HEAD" }),
+		readWorktreePatch({ cwd: repo.path, base: "HEAD" }),
+	]);
+
+	expect(change.changedFiles).toEqual(["kept.ts"]);
+	expect(patch).not.toContain("node_modules");
 });
 
 test.each([
