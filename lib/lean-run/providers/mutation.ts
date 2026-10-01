@@ -188,13 +188,35 @@ async function runMutation(
 		hunks: changed.hunks,
 		untestable,
 	};
-	if (tests.selected.length === 0) {
-		return infoSignal("no tests selected for the changed functions", {
-			...planData(plan),
-			durationMs: Date.now() - started,
-		});
-	}
+	if (tests.selected.length === 0) return noTestsSignal(ctx, plan, started);
 	return runStrykerPlan(ctx, options, plan, { timeoutMs, started });
+}
+
+/**
+ * No covering test to run: plain `info`, unless the blast radius had no
+ * graph to select tests from, which leaves the signal unavailable.
+ */
+function noTestsSignal(
+	ctx: SignalContext,
+	plan: StrykerPlan,
+	started: number,
+): Signal {
+	const data = { ...planData(plan), durationMs: Date.now() - started };
+	const graph = blastRadiusGraphGap(ctx);
+	if (graph === undefined)
+		return infoSignal("no tests selected for the changed functions", data);
+	const reason = `no tests selected for the changed functions: graph.json is ${graph}`;
+	return infoSignal(reason, { ...data, ...unavailableData(reason) });
+}
+
+function blastRadiusGraphGap(
+	ctx: SignalContext,
+): "missing" | "unreadable" | undefined {
+	const blast = ctx.priorSignals?.find(
+		(entry) => entry.kind === "blast-radius",
+	);
+	const graph = isRecord(blast?.data) ? blast.data.graph : undefined;
+	return graph === "missing" || graph === "unreadable" ? graph : undefined;
 }
 
 /** Every changed file's covering tests are denied: nothing to run Stryker for. */

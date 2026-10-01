@@ -46,6 +46,8 @@ export interface ProjectLeanConfig {
 	 * `done` (default verify, mutation, health); a tool parameter overrides it.
 	 */
 	readonly requiredSignals?: readonly SignalKind[];
+	/** `lean.requiredSignals` entries that are not signal kinds, as written. */
+	readonly unknownRequiredSignals?: readonly string[];
 }
 
 /** Lean run limits. Tokens count input + output only, never cache reads or writes. */

@@ -59,7 +59,7 @@ import {
 } from "./review-checkout.ts";
 import { acquireRunLock } from "./run-lock.ts";
 import { writeRunPrBody } from "./run-pr-body.ts";
-import { requiredSignalGap } from "./signal-availability.ts";
+import { requiredSignalGap, unavailableData } from "./signal-availability.ts";
 import type {
 	BackendRunInput,
 	BackendRunResult,
@@ -570,18 +570,35 @@ function directPlan(request: string): ParsedPlan {
 	};
 }
 
-/** `lean` from the project config; an unreadable config leaves defaults and a warning. */
+/**
+ * `lean` from the project config, with a warning for unknown required kinds;
+ * an unreadable config leaves defaults and a warning.
+ */
 async function readLeanConfig(
 	projectRoot: string,
 ): Promise<{ config: ProjectLeanConfig; warning?: string }> {
 	try {
-		return { config: (await loadProjectConfig(projectRoot)).lean ?? {} };
+		const config = (await loadProjectConfig(projectRoot)).lean ?? {};
+		const warning = unknownRequiredSignalsWarning(config);
+		return { config, ...(warning ? { warning } : {}) };
 	} catch (error) {
 		return {
 			config: {},
-			warning: `lean config: ${errorMessage(error)}; using the default budgets`,
+			warning: `lean config: ${errorMessage(error)}; using the defaults`,
 		};
 	}
+}
+
+function unknownRequiredSignalsWarning(
+	lean: ProjectLeanConfig,
+): string | undefined {
+	const unknown = lean.unknownRequiredSignals ?? [];
+	if (unknown.length === 0) return undefined;
+	const fallback =
+		lean.requiredSignals === undefined
+			? "; using the default required signals"
+			: "";
+	return `lean.requiredSignals: ignored unknown signal kinds ${unknown.join(", ")}${fallback}`;
 }
 
 function resolveBudget(
@@ -1152,8 +1169,8 @@ async function signalContext(
 }
 
 /**
- * A provider that throws informs the reviewer as a `fail`; it never
- * re-enters the builder. A stopped provider is waited for like any stage.
+ * A provider that throws informs the reviewer as a `fail` marked
+ * unavailable, so a required kind is a gap; it never re-enters the builder. A stopped provider is waited for like any stage.
  */
 async function runProvider(
 	run: Run,
@@ -1170,11 +1187,12 @@ async function runProvider(
 	if (result.kind === "value") return result.value;
 	const message =
 		result.kind === "error" ? errorMessage(result.error) : "aborted";
+	const summary = `${provider.kind} provider threw: ${message}`;
 	return {
 		kind: provider.kind,
 		status: "fail",
-		summary: `${provider.kind} provider threw: ${message}`,
-		data: { error: message },
+		summary,
+		data: { error: message, ...unavailableData(summary) },
 		reenter: false,
 	};
 }

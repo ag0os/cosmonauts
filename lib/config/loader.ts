@@ -410,35 +410,46 @@ function parseLeanConfig(value: unknown): ProjectLeanConfig | undefined {
 	const requiredSignals =
 		"requiredSignals" in value
 			? parseLeanRequiredSignals(value.requiredSignals)
-			: undefined;
+			: {};
 	return {
 		...(repoMapBudgetTokens === undefined ? {} : { repoMapBudgetTokens }),
 		...(budget === undefined ? {} : { budget }),
-		...(requiredSignals === undefined ? {} : { requiredSignals }),
+		...requiredSignals,
 	};
 }
 
-/** The known signal kinds, each once; a warning for each other entry. */
-function parseLeanRequiredSignals(
-	value: unknown,
-): readonly SignalKind[] | undefined {
+type LeanRequiredSignalFields = Pick<
+	ProjectLeanConfig,
+	"requiredSignals" | "unknownRequiredSignals"
+>;
+
+/**
+ * The known signal kinds, each once, and the other entries with a warning
+ * for each. A list with entries but no known kind leaves the default.
+ */
+function parseLeanRequiredSignals(value: unknown): LeanRequiredSignalFields {
 	if (!Array.isArray(value)) {
 		console.error(
 			`[warning] Skipping malformed lean.requiredSignals: expected an array of signal kinds, got ${formatConfigValue(value)}.`,
 		);
-		return undefined;
+		return {};
 	}
 	const kinds = new Set<SignalKind>();
+	const unknown: string[] = [];
 	for (const entry of value as readonly unknown[]) {
 		if (isSignalKind(entry)) {
 			kinds.add(entry);
 			continue;
 		}
+		unknown.push(formatConfigValue(entry));
 		console.error(
 			`[warning] Skipping malformed lean.requiredSignals entry: expected one of ${SIGNAL_KINDS.join(", ")}, got ${formatConfigValue(entry)}.`,
 		);
 	}
-	return [...kinds];
+	const unknownFields =
+		unknown.length > 0 ? { unknownRequiredSignals: unknown } : {};
+	if (kinds.size === 0 && unknown.length > 0) return unknownFields;
+	return { requiredSignals: [...kinds], ...unknownFields };
 }
 
 function isSignalKind(value: unknown): value is SignalKind {

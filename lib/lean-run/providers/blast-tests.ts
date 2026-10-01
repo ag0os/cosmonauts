@@ -12,7 +12,9 @@
  * (no list, a graph that is missing or not known to be current, no test
  * runner, a runner that selects none of the listed files, the count or time
  * bound, a run that could not finish) is `info`, never `fail`, and
- * `data.skipped` when no listed test ran. Never throws.
+ * `data.skipped` when no listed test ran. When the check cannot run at all
+ * (a missing or unreadable graph, no test runner, an error) the signal is
+ * also marked unavailable. Never throws.
  */
 
 import { existsSync } from "node:fs";
@@ -27,6 +29,7 @@ import {
 	type FileGraph,
 	loadFileGraph,
 } from "../../architecture-map/index.ts";
+import { unavailableData } from "../signal-availability.ts";
 import type { Signal, SignalContext, SignalProvider } from "../types.ts";
 import { isSpecFile, mirroredTestPath } from "./mutation-tests.ts";
 import { readScripts } from "./verify.ts";
@@ -98,6 +101,8 @@ export interface BlastTestsLeftOut {
 export interface BlastTestsData {
 	/** Set when no listed test ran. */
 	readonly skipped?: true;
+	/** Set, with `reason`, when the check could not run at all. */
+	readonly unavailable?: true;
 	readonly reason?: string;
 	readonly command?: string;
 	readonly tier1?: readonly string[];
@@ -142,7 +147,7 @@ export function createBlastTestsProvider(
 			try {
 				return await runBlastTests(ctx, options, started);
 			} catch (error) {
-				return info(`blast-radius tests not run: ${messageOf(error)}`, {
+				return unavailable(`blast-radius tests not run: ${messageOf(error)}`, {
 					durationMs: Date.now() - started,
 				});
 			}
@@ -156,7 +161,8 @@ async function runBlastTests(
 	started: number,
 ): Promise<Signal> {
 	const radius = readRadius(ctx);
-	if (typeof radius === "string") return info(radius, {});
+	if (typeof radius === "string")
+		return graphUnavailable(ctx) ? unavailable(radius, {}) : info(radius, {});
 	const maxTests = options.maxTests ?? DEFAULT_MAX_TESTS;
 	const loadGraph = options.loadGraph ?? loadGraphAt;
 	const selection = selectTests({
@@ -172,7 +178,7 @@ async function runBlastTests(
 		});
 	const command = options.command ?? (await defaultCommand(ctx.worktree));
 	if (command === undefined)
-		return info("no test runner: package.json has no test script", {
+		return unavailable("no test runner: package.json has no test script", {
 			tier1: selection.tier1,
 			tier2: selection.tier2,
 		});
@@ -209,6 +215,15 @@ function readRadius(ctx: SignalContext): Radius | string {
 		return `graph.json is ${graphState(data.graph)}; the blast-radius test list cannot be trusted`;
 	const radius = isRecord(data.radius) ? data.radius : {};
 	return { changed: strings(radius.changed), tests: strings(radius.tests) };
+}
+
+/** The blast-radius signal had no graph to read: missing or unreadable, not merely stale. */
+function graphUnavailable(ctx: SignalContext): boolean {
+	const blast = ctx.priorSignals?.find(
+		(entry) => entry.kind === "blast-radius",
+	);
+	if (blast === undefined || !isRecord(blast.data)) return false;
+	return blast.data.graph === "missing" || blast.data.graph === "unreadable";
 }
 
 function graphState(graph: unknown): string {
@@ -456,6 +471,15 @@ async function loadGraphAt(
  */
 function info(summary: string, data: BlastTestsData): Signal {
 	return signal("info", summary, { reason: summary, ...data, skipped: true });
+}
+
+/** No listed test ran because the check could not run: skipped and unavailable. */
+function unavailable(summary: string, data: BlastTestsData): Signal {
+	return signal("info", summary, {
+		...data,
+		skipped: true,
+		...unavailableData(summary),
+	});
 }
 
 function signal(

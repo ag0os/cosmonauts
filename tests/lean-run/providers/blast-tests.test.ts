@@ -12,6 +12,7 @@ import {
 	type BlastTestsProviderOptions,
 	createBlastTestsProvider,
 } from "../../../lib/lean-run/providers/blast-tests.ts";
+import { unavailableReason } from "../../../lib/lean-run/signal-availability.ts";
 import type { Signal, SignalContext } from "../../../lib/lean-run/types.ts";
 import { useTempDir } from "../../helpers/fs.ts";
 import { stubContext } from "./context.ts";
@@ -404,11 +405,6 @@ describe("blast-tests provider with an injected runner", () => {
 describe("blast-tests provider when there is nothing to run", () => {
 	test.each([
 		[
-			"no blast-radius signal ran",
-			[] as Signal[],
-			"no blast-radius signal ran in this pass",
-		],
-		[
 			"graph.json is missing",
 			[
 				{
@@ -422,6 +418,28 @@ describe("blast-tests provider when there is nothing to run", () => {
 			"graph.json is unreadable",
 			[{ ...blastRadius([]), data: { graph: "unreadable", reason: "x" } }],
 			"graph.json is unreadable; the blast-radius test list cannot be trusted",
+		],
+	])("is unavailable when %s", async (_name, priorSignals, summary) => {
+		await writeFixture();
+		const runner = stubRunner();
+
+		const signal = await provider(runner).run(context({ priorSignals }));
+
+		expect(runner.calls).toHaveLength(0);
+		expect(signal).toEqual({
+			kind: "blast-tests",
+			status: "info",
+			summary,
+			data: { reason: summary, skipped: true, unavailable: true },
+			reenter: false,
+		});
+	});
+
+	test.each([
+		[
+			"no blast-radius signal ran",
+			[] as Signal[],
+			"no blast-radius signal ran in this pass",
 		],
 		[
 			"graph.json is stale",
@@ -462,6 +480,7 @@ describe("blast-tests provider when there is nothing to run", () => {
 			status: "info",
 			summary: "no tests in the blast radius",
 		});
+		expect(unavailableReason(signal)).toBeUndefined();
 	});
 
 	test("lists radius paths that are not spec files in the worktree as missing", async () => {
@@ -484,7 +503,7 @@ describe("blast-tests provider when there is nothing to run", () => {
 		]);
 	});
 
-	test("is info when the project has no test script and no command is configured", async () => {
+	test("is unavailable when the project has no test script and no command is configured", async () => {
 		await writeFiles({ [DIRECT]: "", [TRANSITIVE]: "" });
 		const runner = stubRunner();
 
@@ -496,6 +515,9 @@ describe("blast-tests provider when there is nothing to run", () => {
 			summary: "no test runner: package.json has no test script",
 			reenter: false,
 		});
+		expect(unavailableReason(signal)).toBe(
+			"no test runner: package.json has no test script",
+		);
 	});
 
 	test("does not start a tier once the run is aborted", async () => {
@@ -515,7 +537,7 @@ describe("blast-tests provider when there is nothing to run", () => {
 		]);
 	});
 
-	test("turns a throwing runner into info", async () => {
+	test("turns a throwing runner into an unavailable info", async () => {
 		await writeFixture();
 		const signal = await createBlastTestsProvider({
 			loadGraph: async () => GRAPH,
@@ -529,6 +551,9 @@ describe("blast-tests provider when there is nothing to run", () => {
 			summary: "blast-radius tests not run: spawn exploded",
 			reenter: false,
 		});
+		expect(unavailableReason(signal)).toBe(
+			"blast-radius tests not run: spawn exploded",
+		);
 	});
 });
 

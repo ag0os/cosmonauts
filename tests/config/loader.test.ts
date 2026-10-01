@@ -297,11 +297,25 @@ describe("loadProjectConfig", () => {
 
 			expect((await loadProjectConfig(tmp.path)).lean).toEqual({
 				requiredSignals: ["mutation"],
+				unknownRequiredSignals: ['"coverage"', "3"],
 			});
 			expect(warn).toHaveBeenCalledWith(
 				`[warning] Skipping malformed lean.requiredSignals entry: expected one of ${SIGNAL_KINDS.join(", ")}, got "coverage".`,
 			);
 			expect(warn).toHaveBeenCalledTimes(2);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	test("leaves the default required signals when every listed kind is unknown", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			await writeLean({ requiredSignals: ["mutaton"] });
+
+			expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+				unknownRequiredSignals: ['"mutaton"'],
+			});
 		} finally {
 			warn.mockRestore();
 		}

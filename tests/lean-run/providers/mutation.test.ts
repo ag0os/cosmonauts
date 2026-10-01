@@ -1386,6 +1386,31 @@ describe(
 			expect(unavailableReason(signal)).toBeUndefined();
 		});
 
+		test.each([
+			"missing",
+			"unreadable",
+		])("reports itself unavailable when no tests are selected and graph.json is %s", async (graph) => {
+			gitIn(project.path, "rm", "-q", "tests/calc.test.ts");
+			const strykerBin = await fakeStryker(tools.path, report({}));
+			const blast: Signal = {
+				kind: "blast-radius",
+				status: "info",
+				summary: "",
+				data: { graph, unavailable: true, reason: "x" },
+				reenter: false,
+			};
+
+			const signal = await createMutationProvider({ strykerBin }).run(
+				context(project.path, { priorSignals: [blast] }),
+			);
+
+			expect(signal).toMatchObject({ status: "info", reenter: false });
+			expect(unavailableReason(signal)).toBe(
+				`no tests selected for the changed functions: graph.json is ${graph}`,
+			);
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+		});
+
 		test("reports itself unavailable instead of throwing when the Stryker binary is missing", async () => {
 			const signal = await createMutationProvider({
 				strykerBin: join(tools.path, "missing", "stryker"),

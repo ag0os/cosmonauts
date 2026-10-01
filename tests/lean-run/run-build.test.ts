@@ -1697,7 +1697,11 @@ describe("runBuild verification verdict", () => {
 			kind: "verify",
 			status: "fail",
 			summary: "verify provider threw: vitest crashed",
-			data: { error: "vitest crashed" },
+			data: {
+				error: "vitest crashed",
+				unavailable: true,
+				reason: "verify provider threw: vitest crashed",
+			},
 			reenter: false,
 		});
 		expect(builder.calls).toHaveLength(1);
@@ -1850,6 +1854,58 @@ describe("runBuild required signals", () => {
 
 		expect(record.manifest.reason).toBe(
 			"unverified (verify unavailable: no verification commands configured)",
+		);
+	});
+
+	test("ends blocked when a required provider throws", async () => {
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [
+				stubProvider([{}]),
+				stubProvider([new Error("fallow crashed")], "health"),
+				stubProvider([{}], "mutation"),
+			],
+			requiredSignals: undefined,
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason:
+				"unverified (health unavailable: health provider threw: fallow crashed)",
+		});
+	});
+
+	test("records the unknown kinds the config named and keeps the known ones", async () => {
+		await writeLeanConfig({ requiredSignals: ["verify", "helth"] });
+
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: providers({}),
+			requiredSignals: undefined,
+		});
+
+		expect(record.manifest.requiredSignals).toEqual(["verify"]);
+		expect(record.manifest.warnings).toContain(
+			'lean.requiredSignals: ignored unknown signal kinds "helth"',
+		);
+	});
+
+	test("falls back to the default when every configured kind is unknown", async () => {
+		await writeLeanConfig({ requiredSignals: ["mutaton"] });
+
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: providers(unavailableSignal(STRYKER_MISSING)),
+			requiredSignals: undefined,
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			requiredSignals: ["verify", "mutation", "health"],
+			reason: `unverified (mutation unavailable: ${STRYKER_MISSING})`,
+		});
+		expect(record.manifest.warnings).toContain(
+			'lean.requiredSignals: ignored unknown signal kinds "mutaton"; using the default required signals',
 		);
 	});
 
@@ -3514,6 +3570,24 @@ describe("runReview", () => {
 		expect(record.manifest).toMatchObject({
 			status: "blocked",
 			reason: "unverified (health unavailable: fallow is not installed)",
+		});
+	});
+
+	test("ends blocked when a required provider it ran throws", async () => {
+		await featureChange();
+
+		const record = await review({
+			reviewer: stubBackend([REVIEW]),
+			providers: [
+				stubProvider([{}]),
+				stubProvider([new Error("fallow crashed")], "health"),
+			],
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason:
+				"unverified (health unavailable: health provider threw: fallow crashed)",
 		});
 	});
 
