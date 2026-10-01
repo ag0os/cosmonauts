@@ -50,7 +50,7 @@ export function createBlastRadiusProvider(
 			}
 			if (graph === undefined) {
 				return info(
-					"graph.json is missing; run `cosmonauts architecture generate` to compute the blast radius.",
+					"graph.json is missing; run `cosmonauts architecture generate --file-graph` to compute the blast radius.",
 					{ graph: "missing" },
 				);
 			}

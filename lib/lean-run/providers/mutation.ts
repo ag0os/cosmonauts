@@ -109,6 +109,14 @@ async function runMutation(
 	options: MutationProviderOptions,
 	started: number,
 ): Promise<Signal> {
+	const unverified = failedVerification(ctx);
+	if (unverified !== undefined) {
+		const reason = `verification did not pass: ${unverified.summary}`;
+		return infoSignal("skipped: verification did not pass", {
+			skipped: true,
+			reason,
+		});
+	}
 	ctx.signal?.throwIfAborted();
 	const ranges = await changedSourceFunctions(ctx);
 	if (ranges.length === 0) {
@@ -293,6 +301,15 @@ async function loadGraph(worktree: string): Promise<FileGraph | undefined> {
 	} catch {
 		return undefined;
 	}
+}
+
+/**
+ * The `verify` signal of this pass when it ran and did not pass: mutants
+ * cannot be judged against tests that fail, so Stryker is not started.
+ */
+function failedVerification(ctx: SignalContext): Signal | undefined {
+	const verify = ctx.priorSignals?.find((entry) => entry.kind === "verify");
+	return verify !== undefined && verify.status !== "pass" ? verify : undefined;
 }
 
 /** The `blast-radius` signal's `data.radius.tests`, when that signal already ran. */

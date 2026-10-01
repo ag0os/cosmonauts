@@ -17,7 +17,10 @@ import type {
 export interface VerifyCommand {
 	readonly executable: string;
 	readonly args: readonly string[];
-	/** Capped by what is left of the run's time budget. */
+	/**
+	 * Capped by what is left of `ctx.budget.timeMs` counted from when
+	 * verification starts; the run's own deadline aborts through `ctx.signal`.
+	 */
 	readonly timeoutMs?: number;
 }
 

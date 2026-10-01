@@ -37,7 +37,7 @@ describe("createBlastRadiusProvider", () => {
 			kind: "blast-radius",
 			status: "info",
 			summary:
-				"graph.json is missing; run `cosmonauts architecture generate` to compute the blast radius.",
+				"graph.json is missing; run `cosmonauts architecture generate --file-graph` to compute the blast radius.",
 			data: { graph: "missing" },
 			reenter: false,
 		});

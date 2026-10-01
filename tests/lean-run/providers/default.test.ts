@@ -6,6 +6,7 @@ describe("createDefaultProviders", () => {
 		expect(createDefaultProviders().map((provider) => provider.kind)).toEqual([
 			"verify",
 			"health",
+			"dupes",
 			"blast-radius",
 			"plan-vs-actual",
 			"mutation",

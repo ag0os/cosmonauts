@@ -1,5 +1,6 @@
 import type { SignalProvider } from "../types.ts";
 import { createBlastRadiusProvider } from "./blast-radius.ts";
+import { createDupesProvider } from "./dupes.ts";
 import { createHealthProvider } from "./health.ts";
 import { createMutationProvider } from "./mutation.ts";
 import { planVersusActualProvider } from "./plan-vs-actual.ts";
@@ -15,6 +16,7 @@ export function createDefaultProviders(): SignalProvider[] {
 	return [
 		createVerifyProvider(),
 		createHealthProvider(),
+		createDupesProvider(),
 		createBlastRadiusProvider(),
 		planVersusActualProvider,
 		createMutationProvider(),

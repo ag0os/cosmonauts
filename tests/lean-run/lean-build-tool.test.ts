@@ -99,6 +99,7 @@ describe("lean_build tool", () => {
 		expect(calls[0]?.providers.map((provider) => provider.kind)).toEqual([
 			"verify",
 			"health",
+			"dupes",
 			"blast-radius",
 			"plan-vs-actual",
 			"mutation",

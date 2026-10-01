@@ -962,6 +962,66 @@ describe(
 			expect(signal.summary).toContain("could not start");
 		});
 
+		test("skips Stryker when this pass's verification did not pass", async () => {
+			const verify: Signal = {
+				kind: "verify",
+				status: "fail",
+				summary: "1 of 3 failed: bun run test (exit 1)",
+				data: { commands: [] },
+				reenter: true,
+			};
+
+			const signal = await runWith(report({ "lib/calc.ts": [] }), {
+				priorSignals: [verify],
+			});
+
+			expect(signal).toEqual({
+				kind: "mutation",
+				status: "info",
+				summary: "skipped: verification did not pass",
+				data: {
+					skipped: true,
+					reason:
+						"verification did not pass: 1 of 3 failed: bun run test (exit 1)",
+				},
+				reenter: false,
+			});
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+		});
+
+		test("skips Stryker when verification could not run every check", async () => {
+			const verify: Signal = {
+				kind: "verify",
+				status: "info",
+				summary: "unverified: no verification commands found",
+				data: { commands: [], unverified: true },
+				reenter: false,
+			};
+
+			const signal = await runWith(report({ "lib/calc.ts": [] }), {
+				priorSignals: [verify],
+			});
+
+			expect(signal.summary).toBe("skipped: verification did not pass");
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+		});
+
+		test("runs Stryker when this pass's verification passed", async () => {
+			const verify: Signal = {
+				kind: "verify",
+				status: "pass",
+				summary: "3 passed",
+				data: { commands: [] },
+				reenter: false,
+			};
+
+			await runWith(report({ "lib/calc.ts": [] }), {
+				priorSignals: [verify],
+			});
+
+			expect(existsSync(join(tools.path, "call.json"))).toBe(true);
+		});
+
 		test("reports info instead of throwing for an unknown base revision", async () => {
 			const signal = await createMutationProvider().run(
 				context(project.path, { baseSha: "no-such-revision" }),
