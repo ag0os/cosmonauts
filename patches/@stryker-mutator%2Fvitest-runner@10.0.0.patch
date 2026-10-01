@@ -1,0 +1,31 @@
+diff --git a/dist/src/vitest-test-runner.js b/dist/src/vitest-test-runner.js
+index 84f1ca026503b8e92b7adc952ec6c6a401943656..4cf6de54ad1cc2f0a49bb1afe7dd9fd1357f2068 100644
+--- a/dist/src/vitest-test-runner.js
++++ b/dist/src/vitest-test-runner.js
+@@ -1,3 +1,7 @@
++// cosmonauts patch (bun patch, see patches/README.md): the runner hard-codes
++// pool "threads", where process.chdir() throws ("not supported in workers").
++// STRYKER_VITEST_POOL=forks selects a single fork instead. Only the vitest
++// <4.1 branch is patched; redo this patch whenever vitest is upgraded.
+ import { fileURLToPath } from 'url';
+ import path from 'path';
+ import semver from 'semver';
+@@ -38,12 +42,17 @@ export class VitestTestRunner {
+         }
+         if (semver.satisfies(version, '<4.1.0')) {
+             return {
+-                pool: 'threads',
++                pool: process.env.STRYKER_VITEST_POOL === 'forks' ? 'forks' : 'threads',
+                 poolOptions: {
+                     threads: {
+                         maxThreads: 1,
+                         minThreads: 1,
+                     },
++                    forks: {
++                        singleFork: true,
++                        maxForks: 1,
++                        minForks: 1,
++                    },
+                 },
+             };
+         }

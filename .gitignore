@@ -26,3 +26,7 @@ missions/archive/sessions/
 .fallow/cache.bin
 .fallow/churn.bin
 .fallow/snapshots/
+
+# Stryker mutation sandbox and default report directory.
+.stryker-tmp/
+reports/mutation/

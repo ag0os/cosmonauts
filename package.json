@@ -53,9 +53,14 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.14",
+		"@stryker-mutator/core": "10.0.0",
+		"@stryker-mutator/vitest-runner": "10.0.0",
 		"@types/node": "^22.0.0",
 		"@vitest/coverage-v8": "^3.0.0",
 		"fallow": "2.54.2",
 		"vitest": "^3.0.0"
+	},
+	"patchedDependencies": {
+		"@stryker-mutator/vitest-runner@10.0.0": "patches/@stryker-mutator%2Fvitest-runner@10.0.0.patch"
 	}
 }

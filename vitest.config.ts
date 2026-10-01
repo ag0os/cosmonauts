@@ -1,8 +1,11 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
 	test: {
 		setupFiles: ["./tests/setup.ts"],
+		// Stryker's sandbox copies the suite under .stryker-tmp/ and a failed
+		// run leaves it behind; without this the default include runs it twice.
+		exclude: [...configDefaults.exclude, ".stryker-tmp/**"],
 		// Vitest's 5s default is not a meaningful budget for this suite. Many
 		// driver/extension tests spawn real compiled binaries and capability
 		// providers, and measured spawn cost rises ~5-6x under parallel suite
