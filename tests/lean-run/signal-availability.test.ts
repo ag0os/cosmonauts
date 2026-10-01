@@ -67,6 +67,55 @@ describe("requiredSignalGap", () => {
 		).toBeUndefined();
 	});
 
+	test("counts a required kind that skipped its check as a gap", () => {
+		expect(
+			requiredSignalGap({
+				required: ["verify", "mutation"],
+				signals: [
+					signal("verify"),
+					signal("mutation", {
+						skipped: true,
+						reason: "verification did not pass: 1 failed",
+					}),
+				],
+				absentIsGap: false,
+			}),
+		).toBe(
+			"unverified (mutation unavailable: skipped: verification did not pass: 1 failed)",
+		);
+	});
+
+	test("does not prefix a skip reason that already says it was skipped", () => {
+		expect(
+			requiredSignalGap({
+				required: ["blast-tests"],
+				signals: [signal("blast-tests", { skipped: true })],
+				absentIsGap: true,
+			}),
+		).toBe(
+			"unverified (blast-tests unavailable: skipped: blast-tests summary)",
+		);
+		expect(
+			requiredSignalGap({
+				required: ["blast-tests"],
+				signals: [
+					signal("blast-tests", { skipped: true, reason: "skipped: stale" }),
+				],
+				absentIsGap: true,
+			}),
+		).toBe("unverified (blast-tests unavailable: skipped: stale)");
+	});
+
+	test("ignores a skipped kind that is not required", () => {
+		expect(
+			requiredSignalGap({
+				required: ["verify"],
+				signals: [signal("verify"), signal("mutation", { skipped: true })],
+				absentIsGap: true,
+			}),
+		).toBeUndefined();
+	});
+
 	test("counts an absent kind as never ran when absence is a gap", () => {
 		expect(
 			requiredSignalGap({

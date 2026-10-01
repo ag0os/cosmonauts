@@ -85,6 +85,7 @@ import type {
 	RunStage,
 	RunStatus,
 	RunTier,
+	SessionStats,
 	Signal,
 	SignalContext,
 	SignalKind,
@@ -1650,33 +1651,42 @@ async function recordRepair(run: Run, repair: EnvelopeRepair): Promise<void> {
 
 /**
  * The session's text, unless its usage ends the run right away, before any
- * provider pass: `failed` once the token budget is overrun, and `blocked`
- * when the caller set a token budget and the backend reported no usage, so
- * the budget cannot be enforced.
+ * provider pass: `failed` once the token budget is overrun, counting what
+ * usage was read, and `blocked` when the caller set a token budget and the
+ * backend reported no usage or incomplete usage, so the budget cannot be
+ * enforced.
  */
 async function afterSession(
 	run: Run,
 	backend: BuilderBackend,
 	result: BackendRunResult,
 ): Promise<string | undefined> {
-	if (!result.stats && run.explicitTokens) {
-		await finish(
-			run,
-			"blocked",
-			`budget unenforceable (${backend.kind} reported no token usage)`,
-		);
-		return undefined;
-	}
 	const overrun = tokenOverrun(run);
 	if (overrun) return stopWith(run, overrun);
+	const gap = usageGap(backend, result.stats);
+	if (gap && run.explicitTokens) {
+		await finish(run, "blocked", `budget unenforceable (${gap})`);
+		return undefined;
+	}
 	return result.text;
+}
+
+/** Why a session's usage cannot be held against the budget, if it cannot. */
+function usageGap(
+	backend: BuilderBackend,
+	stats: SessionStats | undefined,
+): string | undefined {
+	if (!stats) return `${backend.kind} reported no token usage`;
+	if (!stats.incomplete) return undefined;
+	return `${backend.kind} usage incomplete: ${stats.incompleteReason ?? "no reason given"}`;
 }
 
 /**
  * Counts input + output tokens; cache reads and writes do not spend the
  * budget. Under the default budget a session that reports no stats spends
- * none, which the manifest says once; under a caller's budget
- * `afterSession` ends the run instead.
+ * none and one with incomplete stats spends what was read, which the
+ * manifest says; under a caller's budget `afterSession` ends the run
+ * instead.
  */
 async function recordStats(
 	run: Run,
@@ -1699,6 +1709,11 @@ async function recordStats(
 		warnOnce(
 			run.record,
 			`token budget not enforced: ${session.backend.kind} reports no token stats`,
+		);
+	if (spawn?.incomplete && !run.explicitTokens)
+		warnOnce(
+			run.record,
+			`token budget not fully enforced: ${usageGap(session.backend, spawn)}`,
 		);
 	await saveStats(run.record);
 	await saveManifest(run.record);

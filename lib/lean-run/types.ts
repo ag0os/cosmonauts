@@ -177,9 +177,19 @@ export interface StageProcessExit {
 	truncated?: ("stdout" | "stderr")[];
 }
 
+/**
+ * A backend session's token usage. `incomplete`: some of what the session
+ * printed was never read for usage, so the counts are a lower bound, and
+ * `incompleteReason` says why.
+ */
+export interface SessionStats extends SpawnStats {
+	incomplete?: boolean;
+	incompleteReason?: string;
+}
+
 export interface BackendRunResult {
 	text: string;
-	stats?: SpawnStats;
+	stats?: SessionStats;
 }
 
 /**
@@ -489,7 +499,7 @@ export interface RunFacts {
 export interface StageStats {
 	stage: RunStage;
 	durationMs: number;
-	spawn?: SpawnStats;
+	spawn?: SessionStats;
 	/** The stage's envelope repair turn, recorded after the stage's own entry. */
 	repair?: boolean;
 }

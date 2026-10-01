@@ -8,13 +8,15 @@
  * left after tier 1. A tier that exits non-zero is run once more, as verify
  * retries a failed command; only a second failure fails the signal and
  * re-enters the builder once, even when verification ran the test too: the
- * explicit run is what counts. Everything that keeps the list from running
- * (no list, a graph that is missing or not known to be current, no test
- * runner, a runner that selects none of the listed files, the count or time
- * bound, a run that could not finish) is `info`, never `fail`, and
- * `data.skipped` when no listed test ran. When the check cannot run at all
- * (a missing or unreadable graph, no test runner, an error) the signal is
- * also marked unavailable. Never throws.
+ * explicit run is what counts. Only the files the runner's own output
+ * reports running count as run: an exit 0 without a run summary, or with
+ * one that counts no test passed or failed, ran nothing, and listed files
+ * the runner left out are reported as not run. Everything that keeps the
+ * list from running (no list, a graph that is missing or not known to be
+ * current, no test runner, a runner that selects none of the listed files,
+ * the count or time bound, a run that could not finish) is `info`, never
+ * `fail`. When no test ran at all the signal is also `data.skipped` and
+ * unavailable, so a required `blast-tests` is a gap. Never throws.
  */
 
 import { existsSync } from "node:fs";
@@ -42,20 +44,34 @@ const OUTPUT_TAIL_CHARS = 4_000;
 /**
  * What vitest (`No test files found, exiting with code 1`) and jest (`No
  * tests found, exiting with code 1`) print, as a line of its own, when their
- * own include/exclude config filters out every file argument. No re-entry can
- * fix that. A test's own output can carry the same text, so it counts only as
- * a whole line and only when the runner printed no run summary.
+ * own include/exclude config filters out every file argument; with
+ * `passWithNoTests` the code is 0. No re-entry can fix that. A test's own
+ * output can carry the same text, so it counts only as a whole line and only
+ * when the runner printed no run summary.
  */
 const NOTHING_SELECTED =
-	/^(?:No test files found|No tests found), exiting with code 1$/mu;
-/** vitest's `Test Files  1 failed (1)` and jest's `Test Suites: 1 failed`. */
-const RUN_SUMMARY = /^\s*Test Files\s|^Test Suites:/mu;
+	/^(?:No test files found|No tests found), exiting with code \d+$/mu;
+/**
+ * vitest's run summary (`Test Files  1 failed | 2 passed (3)` and
+ * `      Tests  1 failed | 4 passed (5)`) and jest's (`Test Suites: 1 failed,
+ * 2 passed, 3 total` and `Tests:       1 failed, 4 passed, 5 total`).
+ */
+const FILES_SUMMARY = /^\s*(?:Test Files\s+|Test Suites:\s+)(.+)$/mu;
+const TESTS_SUMMARY = /^\s*Tests(?::\s+|\s{2,})(.+)$/mu;
+/** Only these ran a test; skipped and todo tests did not. */
+const RAN_COUNT = /(\d+) (?:passed|failed)/gu;
+/**
+ * A file's result line: vitest's ` ✓ path (2 tests) 3ms` (`❯` or `×` when
+ * it failed, `↓` when every test was skipped) and jest's `PASS path`.
+ */
+const FILE_RESULT = /^\s*(?:[✓❯×]|PASS|FAIL)\s+(\S+)/gmu;
 const ANSI_ESCAPE = new RegExp(
 	`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`,
 	"gu",
 );
 const NOTHING_SELECTED_REASON =
 	"the test runner selected none of the listed files";
+const UNEXECUTED_REASON = "the test runner did not run them";
 
 export interface BlastTestsCommand {
 	readonly executable: string;
@@ -85,6 +101,11 @@ export interface BlastTestsAttempt {
 	readonly verdict: TierVerdict;
 	/** Why a `not-run` tier did not run, when the runner said so. */
 	readonly reason?: string;
+	/**
+	 * A `passed` tier's listed files the runner reported running; the rest
+	 * of the tier is in `notRun`.
+	 */
+	readonly executed?: readonly string[];
 	readonly durationMs: number;
 	readonly outputTail: string;
 }
@@ -170,7 +191,7 @@ async function runBlastTests(
 ): Promise<Signal> {
 	const radius = readRadius(ctx);
 	if (typeof radius === "string")
-		return graphUnavailable(ctx) ? unavailable(radius, {}) : info(radius, {});
+		return unavailable(radius, {}, { reason: `skipped: ${radius}` });
 	const maxTests = options.maxTests ?? DEFAULT_MAX_TESTS;
 	const loadGraph = options.loadGraph ?? loadGraphAt;
 	const selection = selectTests({
@@ -181,9 +202,11 @@ async function runBlastTests(
 	});
 	const listed = [...selection.tier1, ...selection.tier2];
 	if (listed.length === 0)
-		return info("no tests in the blast radius", {
-			missing: selection.missing,
-		});
+		return unavailable(
+			"no tests in the blast radius",
+			{ missing: selection.missing },
+			{ reason: "skipped: no tests in the blast radius" },
+		);
 	const command = options.command ?? (await defaultCommand(ctx.worktree));
 	if (command === undefined)
 		return unavailable("no test runner: package.json has no test script", {
@@ -223,15 +246,6 @@ function readRadius(ctx: SignalContext): Radius | string {
 		return `graph.json is ${graphState(data.graph)}; the blast-radius test list cannot be trusted`;
 	const radius = isRecord(data.radius) ? data.radius : {};
 	return { changed: strings(radius.changed), tests: strings(radius.tests) };
-}
-
-/** The blast-radius signal had no graph to read: missing or unreadable, not merely stale. */
-function graphUnavailable(ctx: SignalContext): boolean {
-	const blast = ctx.priorSignals?.find(
-		(entry) => entry.kind === "blast-radius",
-	);
-	if (blast === undefined || !isRecord(blast.data)) return false;
-	return blast.data.graph === "missing" || blast.data.graph === "unreadable";
 }
 
 function graphState(graph: unknown): string {
@@ -298,12 +312,25 @@ async function runTiers(
 	const notRun: BlastTestsLeftOut[] = [];
 	if (overCap.length > 0)
 		notRun.push({ tests: overCap, reason: "over the test count cap" });
-	if (tier1.length > 0) runs.push(await runTierWithRetry(options, 1, tier1));
+	const run = async (tier: 1 | 2, tests: readonly string[]) => {
+		const result = await runTierWithRetry(options, tier, tests);
+		runs.push(result);
+		notRun.push(...unexecuted(result));
+	};
+	if (tier1.length > 0) await run(1, tier1);
 	if (tier2.length === 0) return { runs, notRun };
 	const skip = tier2SkipReason(options, runs[0]);
 	if (skip) notRun.push({ tests: tier2, reason: skip });
-	else runs.push(await runTierWithRetry(options, 2, tier2));
+	else await run(2, tier2);
 	return { runs, notRun };
+}
+
+/** A passed tier's listed files the runner did not report running. */
+function unexecuted(run: BlastTestsRun): BlastTestsLeftOut[] {
+	if (run.executed === undefined) return [];
+	const executed = new Set(run.executed);
+	const left = run.tests.filter((test) => !executed.has(test));
+	return left.length > 0 ? [{ tests: left, reason: UNEXECUTED_REASON }] : [];
 }
 
 function tier2SkipReason(
@@ -356,25 +383,107 @@ async function runTier(
 		ctx.signal,
 		{ timeoutMs: remainingMs },
 	);
-	const nothingSelected = selectedNothing(outcome);
 	return {
 		tier,
 		tests,
 		outcome: outcome.kind,
 		exitCode: outcome.kind === "code-exit" ? outcome.code : null,
-		verdict: nothingSelected ? "not-run" : verdictOf(outcome),
-		...(nothingSelected ? { reason: NOTHING_SELECTED_REASON } : {}),
+		...classify(outcome, tests),
 		durationMs: Date.now() - started,
 		outputTail: outputTail(outcome),
 	};
 }
 
-function selectedNothing(outcome: ProviderProcessOutcome): boolean {
-	if (outcome.kind !== "code-exit" || outcome.code === 0) return false;
+type Classified = Pick<BlastTestsRun, "verdict" | "reason" | "executed">;
+
+/**
+ * A run passes only for the listed files the runner reports running: an
+ * exit 0 without a run summary, or with one that counts no test run, ran
+ * nothing.
+ */
+function classify(
+	outcome: ProviderProcessOutcome,
+	tests: readonly string[],
+): Classified {
+	if (outcome.kind === "spawn-error")
+		return notRun(`runner spawn error: ${outcome.error.message}`);
+	if (outcome.kind !== "code-exit") return { verdict: verdictOf(outcome) };
 	const output = `${outcome.stdout}\n${outcome.stderr}`
 		.replace(ANSI_ESCAPE, "")
 		.replace(/\r$/gmu, "");
-	return NOTHING_SELECTED.test(output) && !RUN_SUMMARY.test(output);
+	const report = readRunReport(output);
+	if (report === undefined && NOTHING_SELECTED.test(output))
+		return notRun(NOTHING_SELECTED_REASON);
+	if (outcome.code !== 0) return { verdict: "failed" };
+	if (report === undefined)
+		return notRun("no run summary in the test runner's output");
+	if (report.files === 0)
+		return notRun("no tests executed (runner reported 0 test files)");
+	if (report.tests === 0)
+		return notRun("no tests executed (runner reported 0 tests)");
+	const executed = executedFiles(tests, report);
+	if (executed === undefined)
+		return notRun(
+			`the test runner ran ${report.files} of ${tests.length} listed files without naming them`,
+		);
+	return { verdict: "passed", executed };
+}
+
+function notRun(reason: string): Classified {
+	return { verdict: "not-run", reason };
+}
+
+/** What the runner says it ran: files and tests that passed or failed, and the files it named. */
+interface RunReport {
+	readonly files: number;
+	readonly tests: number;
+	readonly named: ReadonlySet<string>;
+}
+
+/** Undefined without a file count in the run summary. */
+function readRunReport(output: string): RunReport | undefined {
+	const files = lastMatch(FILES_SUMMARY, output);
+	if (files === undefined) return undefined;
+	return {
+		files: ranCount(files),
+		tests: ranCount(lastMatch(TESTS_SUMMARY, output) ?? ""),
+		named: new Set(
+			[...output.matchAll(FILE_RESULT)].map((match) =>
+				withoutDotSlash(match[1] ?? ""),
+			),
+		),
+	};
+}
+
+/**
+ * The listed files the runner named as run. When it named none of them
+ * but ran at least as many files as were listed, all of them; when it ran
+ * fewer without naming them, it cannot be told which: undefined.
+ */
+function executedFiles(
+	tests: readonly string[],
+	report: RunReport,
+): string[] | undefined {
+	const named = tests.filter((test) => report.named.has(withoutDotSlash(test)));
+	if (named.length > 0) return named;
+	if (report.files >= tests.length) return [...tests];
+	return undefined;
+}
+
+function lastMatch(pattern: RegExp, text: string): string | undefined {
+	const global = new RegExp(pattern.source, `${pattern.flags}g`);
+	return [...text.matchAll(global)].at(-1)?.[1];
+}
+
+function ranCount(summary: string): number {
+	return [...summary.matchAll(RAN_COUNT)].reduce(
+		(sum, match) => sum + Number(match[1]),
+		0,
+	);
+}
+
+function withoutDotSlash(path: string): string {
+	return path.startsWith("./") ? path.slice(2) : path;
 }
 
 function notStarted(
@@ -393,10 +502,8 @@ function notStarted(
 	};
 }
 
-/** A test that ran and failed is `failed`; a run the time bound cut short or that never started is `not-run`. */
+/** A runner that did not exit with a code: killed by a signal is `failed`; cut short by the time bound or an abort is `not-run`. */
 function verdictOf(outcome: ProviderProcessOutcome): TierVerdict {
-	if (outcome.kind === "code-exit")
-		return outcome.code === 0 ? "passed" : "failed";
 	return outcome.kind === "signal-exit" ? "failed" : "not-run";
 }
 
@@ -407,14 +514,22 @@ function verdict(data: BlastTestsData): Signal {
 		const which = failed.map(describeRun).join("; ");
 		return signal("fail", which, data);
 	}
-	const ran = runs.filter((run) => run.verdict === "passed");
-	const count = ran.reduce((sum, run) => sum + run.tests.length, 0);
+	const count = runs.reduce(
+		(sum, run) => sum + (run.verdict === "passed" ? executedCount(run) : 0),
+		0,
+	);
 	const unrun = [
 		...runs.filter((run) => run.verdict === "not-run").map(describeUnrun),
 		...(data.notRun ?? []).map(
 			(entry) => `${entry.tests.length} not run: ${entry.reason}`,
 		),
 	];
+	if (count === 0) {
+		const why = unrun.length > 0 ? unrun.join("; ") : "nothing selected";
+		return unavailable(`0 blast-radius tests passed; ${why}`, data, {
+			reason: `no tests executed: ${why}`,
+		});
+	}
 	if (unrun.length === 0)
 		return signal(
 			"pass",
@@ -422,9 +537,14 @@ function verdict(data: BlastTestsData): Signal {
 			data,
 		);
 	const reason = unrun.join("; ");
-	const summary = `${count} blast-radius tests passed; ${reason}`;
-	if (count === 0) return info(summary, { ...data, reason });
-	return signal("info", summary, { ...data, reason });
+	return signal("info", `${count} blast-radius tests passed; ${reason}`, {
+		...data,
+		reason,
+	});
+}
+
+function executedCount(run: BlastTestsRun): number {
+	return (run.executed ?? run.tests).length;
 }
 
 function describeUnrun(run: BlastTestsRun): string {
@@ -472,20 +592,21 @@ async function loadGraphAt(
 }
 
 /**
- * No listed test ran: `skipped`, so the run's re-entry accounting does not
- * count the kind as checked in this pass (a later failure can still earn
- * its own re-entry).
+ * No test ran, so nothing was verified: unavailable, which a required
+ * `blast-tests` turns into a gap, and `skipped`, so the run's re-entry
+ * accounting does not count the kind as checked in this pass (a later
+ * failure can still earn its own re-entry). `reason` defaults to the
+ * summary.
  */
-function info(summary: string, data: BlastTestsData): Signal {
-	return signal("info", summary, { reason: summary, ...data, skipped: true });
-}
-
-/** No listed test ran because the check could not run: skipped and unavailable. */
-function unavailable(summary: string, data: BlastTestsData): Signal {
+function unavailable(
+	summary: string,
+	data: BlastTestsData,
+	options: { reason?: string } = {},
+): Signal {
 	return signal("info", summary, {
 		...data,
 		skipped: true,
-		...unavailableData(summary),
+		...unavailableData(options.reason ?? summary),
 	});
 }
 

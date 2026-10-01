@@ -502,6 +502,42 @@ describe("createExternalBuilderBackend token usage", () => {
 		expect(result).toEqual({ text: cut });
 	});
 
+	function truncatedClaude(stdout: string) {
+		return createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			runProcess: async () => ({
+				exitCode: 0,
+				stdout,
+				stderr: "",
+				process: { tree: "gone", truncated: ["stdout"] },
+			}),
+		});
+	}
+
+	test("marks claude's usage incomplete when stdout passed the cap and its result object cannot be read", async () => {
+		const cut = `[output truncated: 9000 bytes dropped]\n${JSON.stringify(CLAUDE_RESULT).slice(-60)}`;
+
+		const result = await truncatedClaude(cut).run(input);
+
+		expect(result.text).toBe(cut);
+		expect(result.stats).toMatchObject({
+			tokens: { input: 0, output: 0, total: 0 },
+			incomplete: true,
+			incompleteReason:
+				"stdout passed the output cap before its usage was read",
+		});
+	});
+
+	test("reads claude's usage from a whole result object after a cut in earlier output", async () => {
+		const result = await truncatedClaude(
+			`warn\n[output truncated: 9000 bytes dropped]\n${JSON.stringify(CLAUDE_RESULT)}`,
+		).run(input);
+
+		expect(result.stats?.tokens.input).toBe(1_200);
+		expect(result.stats?.incomplete).toBeUndefined();
+	});
+
 	test("returns claude's result text with no stats when the usage is missing", async () => {
 		const { usage: _usage, ...noUsage } = CLAUDE_RESULT;
 

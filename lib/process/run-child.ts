@@ -89,6 +89,11 @@ export interface RunChildOptions {
 	 * keeps everything.
 	 */
 	readonly outputCapBytes?: number;
+	/**
+	 * Sees every stdout chunk as it arrives, before the spool cap drops any.
+	 * A throw is noted and the tap gets no further chunks.
+	 */
+	readonly onStdout?: (chunk: Buffer) => void;
 	readonly signal?: AbortSignal;
 	/** No timeout when absent. */
 	readonly timeoutMs?: number;
@@ -299,9 +304,11 @@ async function supervise(run: {
 	settings: Settings;
 }): Promise<Supervised> {
 	const { child, options, spools, settings } = run;
-	child.stdout?.on("data", (chunk: Buffer) =>
-		spools.stdout.write(chunk, run.counts.stdout),
-	);
+	const tap = stdoutTap(options.onStdout, settings.notes);
+	child.stdout?.on("data", (chunk: Buffer) => {
+		tap(chunk);
+		spools.stdout.write(chunk, run.counts.stdout);
+	});
 	child.stderr?.on("data", (chunk: Buffer) =>
 		spools.stderr.write(chunk, run.counts.stderr),
 	);
@@ -324,6 +331,24 @@ async function supervise(run: {
 	noteUntakenStdin(child, stdin, settings.notes);
 	await spools.close();
 	return result;
+}
+
+function stdoutTap(
+	onStdout: ((chunk: Buffer) => void) | undefined,
+	notes: string[],
+): (chunk: Buffer) => void {
+	let tap = onStdout;
+	return (chunk) => {
+		if (tap === undefined) return;
+		try {
+			tap(chunk);
+		} catch (error) {
+			tap = undefined;
+			notes.push(
+				`stdout tap failed and saw no more output: ${asError(error).message}`,
+			);
+		}
+	};
 }
 
 async function stopTree(

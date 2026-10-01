@@ -50,6 +50,7 @@ import {
 	type BuilderBackend,
 	LEAN_RUN_ROOT,
 	type RunRecord,
+	type SessionStats,
 	type Signal,
 	type SignalContext,
 	type SignalKind,
@@ -109,7 +110,7 @@ function stubBackend(
 	replies: Reply[],
 	kind: BuilderBackend["kind"] = "pi",
 	/** `null` for a harness that reports no stats. */
-	stats: SpawnStats | null = SESSION_STATS,
+	stats: SessionStats | null = SESSION_STATS,
 ): StubBackend {
 	const calls: BackendRunInput[] = [];
 	return {
@@ -2093,6 +2094,32 @@ describe("runBuild required signals", () => {
 		});
 	});
 
+	test("ends blocked when a required kind skipped its check", async () => {
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [
+				stubProvider([{}]),
+				stubProvider(
+					[
+						{
+							status: "info",
+							summary: "no tests in the blast radius",
+							data: { skipped: true },
+						},
+					],
+					"blast-tests",
+				),
+			],
+			requiredSignals: ["verify", "blast-tests"],
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason:
+				"unverified (blast-tests unavailable: skipped: no tests in the blast radius)",
+		});
+	});
+
 	test("names an unavailable required verify in the same shape", async () => {
 		const record = await build({
 			builder: stubBackend([editGreet(DONE)]),
@@ -2349,6 +2376,65 @@ describe("runBuild budgets", () => {
 			status: "done",
 			tokensUsed: 2 * SESSION_TOKENS,
 		});
+	});
+
+	const INCOMPLETE_STATS: SessionStats = {
+		...SESSION_STATS,
+		incomplete: true,
+		incompleteReason: "stdout ended inside a JSON line",
+	};
+
+	test("blocks when a backend's usage under the caller's token budget is incomplete", async () => {
+		const provider = stubProvider([{}]);
+		const reviewer = stubBackend([REVIEW], "codex-cli");
+		const record = await build({
+			builder: stubBackend([DONE], "codex-cli", INCOMPLETE_STATS),
+			reviewer,
+			providers: [provider],
+			budget: { tokens: 1_000_000 },
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason:
+				"budget unenforceable (codex-cli usage incomplete: stdout ended inside a JSON line)",
+			tokensUsed: SESSION_TOKENS,
+		});
+		expect(record.stats[0]?.spawn).toMatchObject({ incomplete: true });
+		expect(provider.contexts).toHaveLength(0);
+		expect(reviewer.calls).toHaveLength(0);
+	});
+
+	test("fails on the overrun when the incomplete usage it did read already passes the caller's budget", async () => {
+		const record = await build({
+			builder: stubBackend([DONE], "codex-cli", INCOMPLETE_STATS),
+			budget: { tokens: 100_000 },
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "failed",
+			reason:
+				"token budget exceeded at builder-1: 128000 of 100000 input and output tokens used",
+		});
+	});
+
+	test("goes on under the default budget when a backend's usage is incomplete, and warns once", async () => {
+		const record = await build({
+			builder: stubBackend([DONE], "codex-cli", INCOMPLETE_STATS),
+			reviewer: stubBackend([REVIEW], "codex-cli", INCOMPLETE_STATS),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			tokensUsed: 2 * SESSION_TOKENS,
+		});
+		expect(
+			record.manifest.warnings?.filter((warning) =>
+				warning.startsWith("token budget not fully enforced"),
+			),
+		).toEqual([
+			"token budget not fully enforced: codex-cli usage incomplete: stdout ended inside a JSON line",
+		]);
 	});
 
 	test("is not stopped by cache reads under the default budget", async () => {

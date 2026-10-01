@@ -478,6 +478,37 @@ describe("runChild output", () => {
 
 		expect(await readSpool(outcome.stdout, 4)).toBe("tail");
 	});
+
+	test("hands every stdout byte to the tap, including those the cap drops", async () => {
+		const chunks: Buffer[] = [];
+		const outcome = await sh(
+			"echo FIRST; head -c 100000 /dev/zero | tr '\\0' x; echo; echo MIDDLE; head -c 100000 /dev/zero | tr '\\0' y; echo; echo LAST; echo err >&2",
+			{ outputCapBytes: 1_000, onStdout: (chunk) => chunks.push(chunk) },
+		);
+
+		const tapped = Buffer.concat(chunks).toString("utf8");
+		expect(outcome.stdout.truncated).toBe(true);
+		expect(await readSpool(outcome.stdout)).not.toContain("MIDDLE");
+		expect(tapped).toContain("\nMIDDLE\n");
+		expect(tapped).not.toContain("err");
+		expect(Buffer.byteLength(tapped)).toBe(outcome.stdout.bytes);
+	});
+
+	test("stops calling a tap that throws, notes it, and still spools everything", async () => {
+		let calls = 0;
+		const outcome = await sh("echo one; sleep 0.1; echo two", {
+			onStdout: () => {
+				calls += 1;
+				throw new Error("tap broke");
+			},
+		});
+
+		expect(calls).toBe(1);
+		expect(outcome.notes).toEqual([
+			"stdout tap failed and saw no more output: tap broke",
+		]);
+		expect(await readSpool(outcome.stdout)).toBe("one\ntwo\n");
+	});
 });
 
 describe("runChild stdin", () => {

@@ -12,7 +12,10 @@ import {
 	type BlastTestsProviderOptions,
 	createBlastTestsProvider,
 } from "../../../lib/lean-run/providers/blast-tests.ts";
-import { unavailableReason } from "../../../lib/lean-run/signal-availability.ts";
+import {
+	requiredSignalGap,
+	unavailableReason,
+} from "../../../lib/lean-run/signal-availability.ts";
 import type { Signal, SignalContext } from "../../../lib/lean-run/types.ts";
 import { useTempDir } from "../../helpers/fs.ts";
 import { stubContext } from "./context.ts";
@@ -98,19 +101,108 @@ interface StubRunner {
 	}[];
 }
 
-function exited(code: number): ProviderProcessOutcome {
-	return { kind: "code-exit", code, stdout: `exit ${code}`, stderr: "" };
+/**
+ * What vitest 3.2.4's default reporter prints without a TTY (real captures
+ * below), for a run of `passed` and `failed` files of one test each.
+ */
+function vitestOutput(files: {
+	passed?: readonly string[];
+	failed?: readonly string[];
+}): string {
+	const passed = files.passed ?? [];
+	const failed = files.failed ?? [];
+	const counts = [
+		...(failed.length > 0 ? [`${failed.length} failed`] : []),
+		...(passed.length > 0 ? [`${passed.length} passed`] : []),
+	].join(" | ");
+	const total = passed.length + failed.length;
+	return [
+		"",
+		" RUN  v3.2.4 /repo",
+		"",
+		...passed.map((file) => ` ✓ ${file} (1 test) 3ms`),
+		...failed.map((file) => ` ❯ ${file} (1 test | 1 failed) 4ms`),
+		"",
+		` Test Files  ${counts} (${total})`,
+		`      Tests  ${counts} (${total})`,
+		"   Start at  16:40:12",
+		"   Duration  293ms (transform 28ms, setup 0ms, collect 28ms, tests 7ms, environment 1ms, prepare 129ms)",
+		"",
+	].join("\n");
+}
+
+/** A real vitest 3.2.4 capture: two files listed, the config's `include` excluded `e2e/x.test.ts`. */
+const VITEST_ONE_OF_TWO = `
+ RUN  v3.2.4 /repo
+
+ ✓ tests/src/sum.test.ts (2 tests) 1ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  16:40:13
+   Duration  267ms (transform 18ms, setup 0ms, collect 10ms, tests 1ms, environment 0ms, prepare 45ms)
+`;
+
+/** A real vitest 3.2.4 capture: `--passWithNoTests` and a listed file the config excludes. */
+const VITEST_PASS_WITH_NO_TESTS = `
+ RUN  v3.2.4 /repo
+
+No test files found, exiting with code 0
+
+filter: e2e/x.test.ts
+include: tests/**/*.test.ts
+exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+`;
+
+/** A real vitest 3.2.4 capture: the listed file's only test is skipped. */
+const VITEST_ALL_SKIPPED = `
+ RUN  v3.2.4 /repo
+
+ ↓ tests/src/sum.test.ts (1 test | 1 skipped)
+
+ Test Files  1 skipped (1)
+      Tests  1 skipped (1)
+   Start at  16:40:14
+   Duration  279ms (transform 19ms, setup 0ms, collect 16ms, tests 0ms, environment 0ms, prepare 46ms)
+`;
+
+type StubOutcome =
+	| ProviderProcessOutcome
+	| ((invocation: ProviderProcessInvocation) => ProviderProcessOutcome);
+
+/** The listed files after `--`. */
+function listedIn(invocation: ProviderProcessInvocation): string[] {
+	return invocation.args.slice(invocation.args.indexOf("--") + 1);
+}
+
+/** Exits `code` with vitest's output for the files it was given: all pass on 0, all fail otherwise. */
+function exited(code: number): StubOutcome {
+	return (invocation) => {
+		const files = listedIn(invocation);
+		return {
+			kind: "code-exit",
+			code,
+			stdout: vitestOutput(code === 0 ? { passed: files } : { failed: files }),
+			stderr: "",
+		};
+	};
+}
+
+function printed(code: number, stdout: string): ProviderProcessOutcome {
+	return { kind: "code-exit", code, stdout, stderr: "" };
 }
 
 function stubRunner(
-	outcomes: readonly ProviderProcessOutcome[] = [exited(0)],
+	outcomes: readonly StubOutcome[] = [exited(0)],
 ): StubRunner {
 	const calls: StubRunner["calls"] = [];
 	return {
 		calls,
 		run: async (invocation, _signal, options) => {
 			calls.push({ invocation, timeoutMs: options?.timeoutMs });
-			return outcomes[calls.length - 1] ?? outcomes.at(-1) ?? exited(0);
+			const outcome =
+				outcomes[calls.length - 1] ?? outcomes.at(-1) ?? exited(0);
+			return typeof outcome === "function" ? outcome(invocation) : outcome;
 		},
 	};
 }
@@ -244,7 +336,7 @@ describe("blast-tests provider with an injected runner", () => {
 			run: async (invocation) => {
 				runner.calls.push({ invocation });
 				controller.abort();
-				return exited(1);
+				return printed(1, vitestOutput({ failed: listedIn(invocation) }));
 			},
 		};
 
@@ -432,6 +524,177 @@ describe("blast-tests provider with an injected runner", () => {
 	});
 });
 
+describe("blast-tests provider counting only the tests the runner ran", () => {
+	const OTHER = "tests/src/sum-edge.test.ts";
+	const EXCLUDED = "e2e/x.test.ts";
+	/** Three tier-1 tests: each imports the changed file. */
+	const GRAPH3 = {
+		...GRAPH,
+		edges: [DIRECT, OTHER, EXCLUDED].map((from) => ({
+			from,
+			to: "src/sum.ts",
+			typeOnly: false,
+		})),
+	} as unknown as FileGraph;
+
+	async function tierOf(
+		tests: readonly string[],
+		outcome: StubOutcome,
+	): Promise<Signal> {
+		await writeFiles({
+			"package.json": JSON.stringify({ scripts: { test: "vitest run" } }),
+			...Object.fromEntries(tests.map((test) => [test, ""])),
+		});
+		return createBlastTestsProvider({
+			runProcess: stubRunner([outcome]).run,
+			loadGraph: async () => GRAPH3,
+		}).run(context({ priorSignals: [blastRadius(tests)] }));
+	}
+
+	function requiredGap(signal: Signal): string | undefined {
+		return requiredSignalGap({
+			required: ["blast-tests"],
+			signals: [signal],
+			absentIsGap: true,
+		});
+	}
+
+	test.each([
+		[
+			"vitest's passWithNoTests output",
+			VITEST_PASS_WITH_NO_TESTS,
+			"tier 1 not run: the test runner selected none of the listed files",
+		],
+		[
+			"a summary of zero tests",
+			" Test Files  0 passed (0)\n      Tests  0 passed (0)\n",
+			"tier 1 not run: no tests executed (runner reported 0 test files)",
+		],
+		[
+			"a summary of a file that ran zero tests",
+			" Test Files  1 passed (1)\n      Tests  0 passed (0)\n",
+			"tier 1 not run: no tests executed (runner reported 0 tests)",
+		],
+		[
+			"a summary whose only test was skipped",
+			VITEST_ALL_SKIPPED,
+			"tier 1 not run: no tests executed (runner reported 0 test files)",
+		],
+		[
+			"no run summary",
+			"done\n",
+			"tier 1 not run: no run summary in the test runner's output",
+		],
+	])("is unavailable, and a gap when required, on exit 0 with %s", async (_name, stdout, why) => {
+		const signal = await tierOf([DIRECT], printed(0, stdout));
+
+		expect(signal).toMatchObject({ status: "info", reenter: false });
+		expect(signal.summary).toBe(
+			`0 blast-radius tests passed; ${why}: ${DIRECT}`,
+		);
+		expect(unavailableReason(signal)).toBe(
+			`no tests executed: ${why}: ${DIRECT}`,
+		);
+		expect(requiredGap(signal)).toBe(
+			`unverified (blast-tests unavailable: no tests executed: ${why}: ${DIRECT})`,
+		);
+	});
+
+	test("is unavailable when the runner cannot be spawned", async () => {
+		const signal = await tierOf([DIRECT], {
+			kind: "spawn-error",
+			error: Object.assign(new Error("spawn bun ENOENT"), { code: "ENOENT" }),
+			stdout: "",
+			stderr: "",
+		});
+
+		expect(dataOf(signal).runs?.[0]).toMatchObject({
+			verdict: "not-run",
+			reason: "runner spawn error: spawn bun ENOENT",
+		});
+		expect(unavailableReason(signal)).toBe(
+			`no tests executed: tier 1 not run: runner spawn error: spawn bun ENOENT: ${DIRECT}`,
+		);
+	});
+
+	test("records the files the runner ran and lists the rest of the tier as not run", async () => {
+		const signal = await tierOf(
+			[DIRECT, OTHER, EXCLUDED],
+			printed(0, vitestOutput({ passed: [DIRECT, OTHER] })),
+		);
+
+		expect(signal).toMatchObject({
+			status: "info",
+			summary:
+				"2 blast-radius tests passed; 1 not run: the test runner did not run them",
+		});
+		expect(dataOf(signal).runs?.[0]).toMatchObject({
+			tests: [DIRECT, OTHER, EXCLUDED],
+			verdict: "passed",
+			executed: [DIRECT, OTHER],
+		});
+		expect(dataOf(signal).notRun).toEqual([
+			{ tests: [EXCLUDED], reason: "the test runner did not run them" },
+		]);
+		expect(unavailableReason(signal)).toBeUndefined();
+		expect(requiredGap(signal)).toBeUndefined();
+	});
+
+	test("reads the files run from a real capture where the config excluded one", async () => {
+		const signal = await tierOf(
+			[DIRECT, EXCLUDED],
+			printed(0, VITEST_ONE_OF_TWO),
+		);
+
+		expect(dataOf(signal).runs?.[0]?.executed).toEqual([DIRECT]);
+		expect(dataOf(signal).notRun).toEqual([
+			{ tests: [EXCLUDED], reason: "the test runner did not run them" },
+		]);
+		expect(signal.status).toBe("info");
+	});
+
+	test("counts every listed file when the runner ran as many without naming them", async () => {
+		const signal = await tierOf(
+			[DIRECT, OTHER],
+			printed(0, " Test Files  2 passed (2)\n      Tests  5 passed (5)\n"),
+		);
+
+		expect(signal).toMatchObject({
+			status: "pass",
+			summary: "2 blast-radius tests passed",
+		});
+		expect(dataOf(signal).runs?.[0]?.executed).toEqual([DIRECT, OTHER]);
+	});
+
+	test("does not pass a tier when the runner ran fewer files than listed without naming them", async () => {
+		const signal = await tierOf(
+			[DIRECT, OTHER],
+			printed(0, " Test Files  1 passed (1)\n      Tests  1 passed (1)\n"),
+		);
+
+		expect(dataOf(signal).runs?.[0]).toMatchObject({
+			verdict: "not-run",
+			reason: "the test runner ran 1 of 2 listed files without naming them",
+		});
+		expect(requiredGap(signal)).toMatch(
+			/^unverified \(blast-tests unavailable: /u,
+		);
+	});
+
+	test("passes a tier the runner reports running whole", async () => {
+		const signal = await tierOf(
+			[DIRECT, OTHER],
+			printed(0, vitestOutput({ passed: [OTHER, DIRECT] })),
+		);
+
+		expect(signal).toMatchObject({
+			status: "pass",
+			summary: "2 blast-radius tests passed",
+		});
+		expect(dataOf(signal).notRun).toEqual([]);
+	});
+});
+
 describe("blast-tests provider when there is nothing to run", () => {
 	test.each([
 		[
@@ -449,23 +712,6 @@ describe("blast-tests provider when there is nothing to run", () => {
 			[{ ...blastRadius([]), data: { graph: "unreadable", reason: "x" } }],
 			"graph.json is unreadable; the blast-radius test list cannot be trusted",
 		],
-	])("is unavailable when %s", async (_name, priorSignals, summary) => {
-		await writeFixture();
-		const runner = stubRunner();
-
-		const signal = await provider(runner).run(context({ priorSignals }));
-
-		expect(runner.calls).toHaveLength(0);
-		expect(signal).toEqual({
-			kind: "blast-tests",
-			status: "info",
-			summary,
-			data: { reason: summary, skipped: true, unavailable: true },
-			reenter: false,
-		});
-	});
-
-	test.each([
 		[
 			"no blast-radius signal ran",
 			[] as Signal[],
@@ -481,7 +727,7 @@ describe("blast-tests provider when there is nothing to run", () => {
 			[blastRadius([DIRECT], "unknown")],
 			"graph.json is of unknown freshness; the blast-radius test list cannot be trusted",
 		],
-	])("is info when %s", async (_name, priorSignals, summary) => {
+	])("is unavailable and skipped when %s", async (_name, priorSignals, summary) => {
 		await writeFixture();
 		const runner = stubRunner();
 
@@ -492,12 +738,12 @@ describe("blast-tests provider when there is nothing to run", () => {
 			kind: "blast-tests",
 			status: "info",
 			summary,
-			data: { reason: summary, skipped: true },
+			data: { reason: `skipped: ${summary}`, skipped: true, unavailable: true },
 			reenter: false,
 		});
 	});
 
-	test("is info when the radius lists no tests", async () => {
+	test("is unavailable when the radius lists no tests", async () => {
 		await writeFixture();
 		const runner = stubRunner();
 
@@ -510,7 +756,9 @@ describe("blast-tests provider when there is nothing to run", () => {
 			status: "info",
 			summary: "no tests in the blast radius",
 		});
-		expect(unavailableReason(signal)).toBeUndefined();
+		expect(unavailableReason(signal)).toBe(
+			"skipped: no tests in the blast radius",
+		);
 	});
 
 	test("lists radius paths that are not spec files in the worktree as missing", async () => {
@@ -631,7 +879,7 @@ describe("blast-tests provider, real vitest run", { timeout: 60_000 }, () => {
 		]);
 	});
 
-	test("is skipped info when the project's config excludes every listed file", async () => {
+	test("is unavailable when the project's config excludes every listed file", async () => {
 		const excluded = "e2e/x.test.ts";
 		await writeFiles({
 			"package.json": JSON.stringify({
@@ -671,11 +919,97 @@ describe("blast-tests provider, real vitest run", { timeout: 60_000 }, () => {
 		});
 		expect(dataOf(signal)).toMatchObject({
 			skipped: true,
+			unavailable: true,
 			tier1: [excluded],
 			runs: [{ tier: 1, tests: [excluded], verdict: "not-run", exitCode: 1 }],
 		});
 		expect(dataOf(signal).runs?.[0]?.outputTail).toContain(
 			"No test files found",
+		);
+	});
+
+	/** `tests/` is included; `e2e/x.test.ts` imports the changed file but the config excludes it. */
+	async function writeMixedFixture(script: string): Promise<string> {
+		const excluded = "e2e/x.test.ts";
+		await writeVitestFixture(false);
+		await writeFiles({
+			"package.json": JSON.stringify({
+				type: "module",
+				scripts: { test: script },
+			}),
+			"vitest.config.ts": [
+				'import { defineConfig } from "vitest/config";',
+				'export default defineConfig({ test: { include: ["tests/**/*.test.ts"] } });',
+				"",
+			].join("\n"),
+			[excluded]:
+				'import { expect, test } from "vitest";\nimport { sum } from "../src/sum.ts";\ntest("x", () => expect(sum(1, 1)).toBe(2));\n',
+		});
+		return excluded;
+	}
+
+	function mixedRadius(tests: readonly string[]): Signal[] {
+		return [
+			{
+				...blastRadius(tests),
+				data: {
+					graph: "current",
+					radius: { changed: ["src/sum.ts"], tests },
+				},
+			},
+		];
+	}
+
+	test("passes only for the files the runner ran when the config excludes one of a tier's files", async () => {
+		const excluded = await writeMixedFixture("vitest run");
+		const graph = {
+			...GRAPH,
+			edges: [DIRECT, excluded].map((from) => ({
+				from,
+				to: "src/sum.ts",
+				typeOnly: false,
+			})),
+		} as unknown as FileGraph;
+
+		const signal = await createBlastTestsProvider({
+			loadGraph: async () => graph,
+		}).run(context({ priorSignals: mixedRadius([DIRECT, excluded]) }));
+
+		expect(signal).toMatchObject({
+			status: "info",
+			summary:
+				"1 blast-radius tests passed; 1 not run: the test runner did not run them",
+		});
+		expect(dataOf(signal).runs).toMatchObject([
+			{
+				tier: 1,
+				tests: [DIRECT, excluded],
+				verdict: "passed",
+				executed: [DIRECT],
+				exitCode: 0,
+			},
+		]);
+		expect(dataOf(signal).notRun).toEqual([
+			{ tests: [excluded], reason: "the test runner did not run them" },
+		]);
+	});
+
+	test("is unavailable when passWithNoTests exits 0 having run none of the listed files", async () => {
+		const excluded = await writeMixedFixture("vitest run --passWithNoTests");
+
+		const signal = await createBlastTestsProvider({
+			loadGraph: async () => undefined,
+		}).run(context({ priorSignals: mixedRadius([excluded]) }));
+
+		expect(dataOf(signal).runs).toMatchObject([
+			{
+				verdict: "not-run",
+				reason: "the test runner selected none of the listed files",
+				exitCode: 0,
+			},
+		]);
+		expect(unavailableReason(signal)).toBe(
+			`no tests executed: tier 2 not run: the test runner selected none of the listed files: ${excluded}`,
 		);
 	});
 

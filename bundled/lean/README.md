@@ -97,7 +97,7 @@ read, since no portable lookup of them is cheap.
 | `health`         | fallow                                                    | unavailable                         |
 | `dupes`          | fallow, and `.fallow-baselines/dupes.json` committed at the base | unavailable                   |
 | `blast-radius`   | `graph.json` from `cosmonauts architecture generate --file-graph` | unavailable                 |
-| `blast-tests`    | the `blast-radius` signal with a current graph, and a `test` script in `package.json` | unavailable without a graph or a test script; skipped when the graph is stale or the radius lists no tests |
+| `blast-tests`    | the `blast-radius` signal with a current graph, a `test` script in `package.json`, and a runner that prints a vitest or jest run summary | unavailable whenever no listed test ran: no graph, a stale graph, no test script, no tests in the radius, or a run that executed none |
 | `plan-vs-actual` | nothing                                                   | always runs                         |
 | `mutation`       | fallow (to find the changed functions), Stryker with its vitest runner, vitest in the project, and the graph to select tests | unavailable                         |
 
@@ -106,6 +106,15 @@ A check that cannot run reports `info` with `data.unavailable: true` and
 functions, no mutants, no test covering the change) is plain `info`.
 `mutation` with no test to select is unavailable when the `blast-radius`
 signal found no readable graph, and plain `info` when the graph exists.
+
+`blast-tests` counts only the test files the runner's own output reports
+running: the run summary (`Test Files  2 passed (2)`, `Tests  5 passed
+(5)`, or jest's `Test Suites:` and `Tests:`) and its per-file result lines.
+An exit 0 with no summary, a summary that counts no test passed or failed,
+or `No test files found` (as `passWithNoTests` prints) ran nothing. Listed
+files the runner left out, for example ones its config excludes, are
+recorded under `notRun` and keep the signal from a clean `pass`; when no
+listed test ran at all the signal is unavailable.
 
 ## Installing from npm
 
@@ -161,8 +170,10 @@ cosmonauts, so an npm installation does not get them. The package ships
 A run is `done` only when every required kind ran and was available in the
 last provider pass. Otherwise it ends `blocked` with
 `unverified (<kind> unavailable: <reason>)`, or `never ran` as the reason
-for a kind no provider produced. Optional kinds that cannot run stay `info`
-for the reviewer.
+for a kind no provider produced. A signal that skipped its check
+(`data.skipped`, such as `mutation` while verification fails) counts as
+unavailable too, with `skipped: <reason>`. Optional kinds that cannot run
+stay `info` for the reviewer.
 
 The required kinds are, first to last that is set:
 
@@ -174,3 +185,21 @@ The required kinds are, first to last that is set:
 `run.json` records the list a run used. `[]` requires nothing beyond the
 rule that `verify` must pass. `lean_review` applies the same list, but only
 to the kinds of the providers it ran (by default, `verify` alone).
+
+## Token budget
+
+Each session's input and output tokens count against the run's token
+budget; cache reads and writes do not. Claude Code's usage is its final
+result object. Codex's is the sum of its `turn.completed` events, read
+from stdout as it streams, so a turn in the part of a long session's log
+that the output cap drops is still counted. Usage is incomplete when
+stdout ended inside a JSON line, a usage line was too long to read, or
+stdout bytes reached the log without reaching the counter (for Claude, a
+result object lost to the cap).
+
+An explicit budget (the `lean_build` parameter or `lean.budget.tokens`)
+ends the run `blocked` with `budget unenforceable (<backend> reported no
+token usage)` or `budget unenforceable (<backend> usage incomplete:
+<why>)`, unless the usage that was read already overran it, which fails
+the run. Under the default budget the run goes on, and `run.json` warns
+that the budget was not (fully) enforced.

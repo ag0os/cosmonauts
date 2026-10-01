@@ -27,9 +27,9 @@ import type {
 	StageProcessExit,
 } from "../types.ts";
 import {
+	CodexUsageTap,
 	claudeResult,
 	codexLastMessage,
-	codexStats,
 	type HarnessResult,
 } from "./harness-usage.ts";
 import { LEAN_DOMAIN } from "./pi.ts";
@@ -45,6 +45,12 @@ export interface ProcessRequest {
 	signal?: AbortSignal;
 	/** Where the child's stdout and stderr are spooled. */
 	output: { stdout: string; stderr: string };
+	/**
+	 * Every stdout chunk as it arrives, before any output cap. A runner that
+	 * calls it reports `stdoutBytes`; one that does not leaves usage to be
+	 * read from the `stdout` it returns.
+	 */
+	onStdout?: (chunk: Buffer) => void;
 }
 
 export interface ProcessOutcome {
@@ -55,6 +61,8 @@ export interface ProcessOutcome {
 	stderr: string;
 	/** How the child's process tree ended; absent from a runner that cannot tell. */
 	process?: StageProcessExit;
+	/** Every byte the child wrote to stdout, kept or not, from a runner that streams to `onStdout`. */
+	stdoutBytes?: number;
 }
 
 export type ProcessRunner = (
@@ -200,6 +208,8 @@ export function createExternalBuilderBackend(
 					...outputArgs(options.kind, invocation),
 				];
 				const started = Date.now();
+				const tap =
+					options.kind === "codex-cli" ? new CodexUsageTap() : undefined;
 				const outcome = await runProcess({
 					command: invocation.spec.command,
 					args,
@@ -208,6 +218,7 @@ export function createExternalBuilderBackend(
 					stdin: input.prompt,
 					...(input.signal ? { signal: input.signal } : {}),
 					output: spoolPaths(input, invocation),
+					...(tap ? { onStdout: (chunk: Buffer) => tap.push(chunk) } : {}),
 				});
 				if (outcome.process) input.processLog?.report(outcome.process);
 				if (outcome.exitCode !== 0)
@@ -215,10 +226,10 @@ export function createExternalBuilderBackend(
 						`${options.kind} exited ${outcome.exitCode}: ${outcome.stderr.slice(-STDERR_TAIL_BYTES)}`,
 					);
 				return await finalResult({
-					kind: options.kind,
 					invocation,
 					outcome,
 					durationMs: Date.now() - started,
+					...(tap ? { tap } : {}),
 				});
 			} finally {
 				await invocation.cleanup();
@@ -276,24 +287,57 @@ function outputArgs(
 }
 
 /**
- * Claude's result object, or Codex's last-message file with the JSONL
- * events' usage. When the file is missing, Codex's text is its last
- * `agent_message` event, then stdout.
+ * Claude's result object, or Codex's last-message file with the usage its
+ * tap counted from the JSONL events. When the file is missing, Codex's text
+ * is its last `agent_message` event, then stdout.
  */
 async function finalResult(options: {
-	kind: ExternalBackendKind;
 	invocation: MaterializedInvocation;
 	outcome: ProcessOutcome;
 	durationMs: number;
+	/** Codex only. */
+	tap?: CodexUsageTap;
 }): Promise<HarnessResult> {
-	const { stdout } = options.outcome;
-	if (options.kind === "claude-cli") return claudeResult(stdout);
+	const { outcome, tap } = options;
+	const { stdout } = outcome;
+	if (tap === undefined) return claudeResult(stdout, spoolCut(outcome));
 	const lastMessage = join(options.invocation.tempDir, CODEX_LAST_MESSAGE);
 	const text = await readFile(lastMessage, "utf-8").catch(
 		() => codexLastMessage(stdout) ?? stdout,
 	);
-	const stats = codexStats(stdout, options.durationMs);
+	const stats = tap.finish({
+		durationMs: options.durationMs,
+		...optionalCut(tapCut(tap, outcome)),
+	});
 	return stats ? { text, stats } : { text };
+}
+
+/**
+ * Why the tap did not see all of stdout. A runner that never streamed to it
+ * hands over the text it kept instead, which is whole unless it passed the
+ * output cap.
+ */
+function tapCut(
+	tap: CodexUsageTap,
+	outcome: ProcessOutcome,
+): string | undefined {
+	if (tap.observedBytes === 0 && outcome.stdoutBytes === undefined) {
+		tap.push(Buffer.from(outcome.stdout));
+		return spoolCut(outcome);
+	}
+	const written = outcome.stdoutBytes;
+	if (written === undefined || written <= tap.observedBytes) return undefined;
+	return `${written - tap.observedBytes} of ${written} stdout bytes were not observed`;
+}
+
+function spoolCut(outcome: ProcessOutcome): string | undefined {
+	return outcome.process?.truncated?.includes("stdout")
+		? "stdout passed the output cap before its usage was read"
+		: undefined;
+}
+
+function optionalCut(cut: string | undefined): { cut?: string } {
+	return cut === undefined ? {} : { cut };
 }
 
 /** The run's log files when the host gave them, else files in the invocation's temp dir. */
@@ -327,6 +371,7 @@ const runChildProcess: ProcessRunner = async (request) => {
 		stdin: request.stdin,
 		output: request.output,
 		...(request.signal ? { signal: request.signal } : {}),
+		...(request.onStdout ? { onStdout: request.onStdout } : {}),
 	});
 	const [stdout, stderr] = await Promise.all([
 		readSpool(outcome.stdout),
@@ -339,6 +384,7 @@ const runChildProcess: ProcessRunner = async (request) => {
 			.filter((part) => part !== "")
 			.join("\n"),
 		process: processExit(outcome),
+		stdoutBytes: outcome.stdout.bytes,
 	};
 };
 
