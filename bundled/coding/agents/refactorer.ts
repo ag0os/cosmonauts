@@ -18,7 +18,7 @@ const definition: AgentDefinition = {
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,
-	thinkingLevel: "high",
+	thinkingLevel: "medium",
 };
 
 export default definition;

@@ -11,7 +11,7 @@ const definition: AgentDefinition = {
 		"execution-probe",
 		"tasks",
 	],
-	model: "openai-codex/gpt-6-sol",
+	model: "openai-codex/gpt-5.6-sol",
 	tools: "coding",
 	extensions: [
 		"tasks",
@@ -24,7 +24,7 @@ const definition: AgentDefinition = {
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,
-	thinkingLevel: "high",
+	thinkingLevel: "medium",
 };
 
 export default definition;

@@ -15,7 +15,7 @@ const definition: AgentDefinition = {
 		"drive",
 	],
 	model: "openai-codex/gpt-5.6-sol",
-	thinkingLevel: "xhigh",
+	thinkingLevel: "medium",
 	tools: "coding",
 	extensions: [
 		"tasks",
