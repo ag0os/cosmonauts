@@ -13,6 +13,7 @@ import {
 	printLines,
 } from "../shared/output.ts";
 import { createPiArchitectureNarrativeProvider } from "./narrative-provider.ts";
+import { registerArchitectureSliceCommand } from "./slice.ts";
 
 type GenerateArchitectureMapFn = (
 	options: GenerateArchitectureMapOptions,
@@ -31,6 +32,7 @@ interface ArchitectureProgramOptions {
 interface ArchitectureGenerateOptions {
 	readonly noNarrative?: boolean;
 	readonly narrative?: boolean;
+	readonly fileGraph?: boolean;
 	readonly json?: boolean;
 	readonly plain?: boolean;
 }
@@ -39,6 +41,7 @@ interface ExecuteArchitectureGenerateOptions
 	extends ArchitectureProgramOptions {
 	readonly projectRoot: string;
 	readonly noNarrative: boolean;
+	readonly fileGraph?: boolean;
 	readonly outputMode: CliOutputMode;
 	readonly progress?: (message: string) => void;
 }
@@ -71,6 +74,10 @@ export function createArchitectureProgram(
 			"--no-narrative",
 			"Skip model-backed prose and write pending narrative entries",
 		)
+		.option(
+			"--file-graph",
+			"Also write the file-level graph (memory/architecture/graph.json)",
+		)
 		.option("--json", "Output the generator result as JSON")
 		.option("--plain", "Output in plain text format")
 		.action(async (commandOptions: ArchitectureGenerateOptions) => {
@@ -80,9 +87,14 @@ export function createArchitectureProgram(
 				noNarrative:
 					commandOptions.noNarrative === true ||
 					commandOptions.narrative === false,
+				fileGraph: commandOptions.fileGraph === true,
 				outputMode: getOutputMode(commandOptions),
 			});
 		});
+
+	registerArchitectureSliceCommand(program, {
+		projectRoot: options.projectRoot,
+	});
 
 	return program;
 }
@@ -122,6 +134,7 @@ export async function executeArchitectureGenerate(
 	const result = await generateArchitectureMap({
 		projectRoot: options.projectRoot,
 		analyzer: typescriptSourceAnalyzer,
+		...(options.fileGraph ? { fileGraph: true } : {}),
 		...(progressNarrativeProvider
 			? { narrativeProvider: progressNarrativeProvider }
 			: {}),

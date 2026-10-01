@@ -38,6 +38,14 @@ export {
 	createArchitectureMapMemoryStore,
 	listArchitectureMapModules,
 } from "./retrieval.ts";
+export type { RepoMapSlice, RepoMapSliceOptions } from "./slice.ts";
+export {
+	DEFAULT_SLICE_BUDGET_TOKENS,
+	estimateTokens,
+	loadSliceSources,
+	personalizedPageRank,
+	repoMapSlice,
+} from "./slice.ts";
 export type {
 	AnalysisInput,
 	AnalysisResult,

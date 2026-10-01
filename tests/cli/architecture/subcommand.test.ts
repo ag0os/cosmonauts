@@ -173,6 +173,31 @@ describe("architecture generate command", () => {
 		expect(JSON.parse(output.stdout())).toEqual({ kind: "unchanged" });
 	});
 
+	test("asks the generator for graph.json only with --file-graph", async () => {
+		const generate = vi.fn<GenerateArchitectureMapFn>(async () => ({
+			kind: "unchanged",
+		}));
+		const program = createArchitectureProgram({
+			generateArchitectureMap: generate,
+			createNarrativeProvider: vi.fn(fakeProvider),
+		});
+		const output = captureCliOutput();
+
+		try {
+			await program.parseAsync(["generate", "--no-narrative", "--file-graph"], {
+				from: "user",
+			});
+			await program.parseAsync(["generate", "--no-narrative"], {
+				from: "user",
+			});
+		} finally {
+			output.restore();
+		}
+
+		expect(generate.mock.calls[0]?.[0]).toHaveProperty("fileGraph", true);
+		expect(generate.mock.calls[1]?.[0]).not.toHaveProperty("fileGraph");
+	});
+
 	test("honors --no-narrative by omitting the provider from generator options", async () => {
 		const generate = vi.fn<GenerateArchitectureMapFn>(async () => ({
 			kind: "unchanged",
