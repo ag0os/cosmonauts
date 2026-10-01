@@ -1330,6 +1330,137 @@ describe(
 			});
 		});
 
+		/** A stand-in runner: makes Stryker's sandbox, then ends as `ended` says. */
+		function sandboxRun(
+			ended: Pick<ChildRunOutcome, "exit" | "stopped" | "tree">,
+			inSandbox?: (sandbox: string) => Promise<void>,
+		) {
+			return async (options: RunChildOptions): Promise<ChildRunOutcome> => {
+				const sandbox = join(options.cwd, ".stryker-tmp");
+				await mkdir(join(sandbox, "sandbox-1"), { recursive: true });
+				await inSandbox?.(sandbox);
+				return {
+					...ended,
+					stdout: { path: options.output.stdout, bytes: 0, truncated: false },
+					stderr: { path: options.output.stderr, bytes: 0, truncated: false },
+					notes: [],
+				};
+			};
+		}
+
+		test("keeps Stryker's sandbox, and says where, when its process tree survived", async () => {
+			const strykerBin = await fakeStryker(tools.path, report({}));
+			const sandbox = join(project.path, ".stryker-tmp");
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				runChild: sandboxRun({
+					exit: { kind: "unobserved" },
+					stopped: { kind: "aborted", reason: "stop" },
+					tree: { kind: "survived", reason: "4242 (node vitest)" },
+				}),
+			}).run(context(project.path));
+
+			expect(existsSync(sandbox)).toBe(true);
+			expect(signal.data).toMatchObject({
+				survivedReap: "4242 (node vitest)",
+				sandboxKept: sandbox,
+			});
+			expect(signal.summary).toBe(
+				`Stryker did not finish: aborted; Stryker's sandbox kept at ${sandbox}: its process tree survived`,
+			);
+			expect(unavailableReason(signal)).toBe("Stryker did not finish: aborted");
+		});
+
+		test("keeps Stryker's sandbox when its stopped tree could not be checked", async () => {
+			const strykerBin = await fakeStryker(tools.path, report({}));
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				runChild: sandboxRun({
+					exit: { kind: "code", code: 1 },
+					stopped: { kind: "timeout", timeoutMs: 10 },
+					tree: { kind: "unverified", reason: "taskkill /T exited 1" },
+				}),
+			}).run(context(project.path));
+
+			expect(existsSync(join(project.path, ".stryker-tmp"))).toBe(true);
+			expect(signal.data).toMatchObject({
+				unverifiedReap: "taskkill /T exited 1",
+			});
+			expect(signal.summary).toContain("its process tree could not be checked");
+		});
+
+		test("removes the sandbox after a natural exit whose tree Windows cannot check", async () => {
+			const strykerBin = await fakeStryker(tools.path, report({}));
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				runChild: sandboxRun({
+					exit: { kind: "code", code: 1 },
+					tree: { kind: "unverified", reason: "Windows cannot enumerate" },
+				}),
+			}).run(context(project.path));
+
+			expect(existsSync(join(project.path, ".stryker-tmp"))).toBe(false);
+			expect(signal.summary).toBe("Stryker did not finish: exit code 1");
+		});
+
+		test("records a failed sandbox removal instead of losing the run's facts", async () => {
+			const strykerBin = await fakeStryker(tools.path, report({}));
+			const locked = join(project.path, ".stryker-tmp", "locked");
+			try {
+				const signal = await createMutationProvider({
+					strykerBin,
+					runChild: sandboxRun(
+						{
+							exit: { kind: "code", code: 1 },
+							tree: { kind: "gone", by: "exit" },
+						},
+						async () => {
+							await mkdir(locked, { recursive: true });
+							await writeFile(join(locked, "file"), "x");
+							await chmod(locked, 0o500);
+						},
+					),
+				}).run(context(project.path));
+
+				expect(unavailableReason(signal)).toBe(
+					"Stryker did not finish: exit code 1",
+				);
+				expect(signal.summary).toMatch(
+					/^Stryker did not finish: exit code 1; Stryker's sandbox not removed: .*EACCES/u,
+				);
+				expect(signal.data).toMatchObject({
+					sandboxRemoval: expect.stringContaining("EACCES"),
+				});
+			} finally {
+				await chmod(locked, 0o700);
+			}
+		});
+
+		test("reads the end of a Stryker log that passed the output cap", async () => {
+			const strykerBin = await writeFake(tools.path, [
+				"process.stdout.write('x'.repeat(200_000) + '\\n', () => {",
+				"\tprocess.stderr.write('Error: the final reason Stryker gave\\n');",
+				"\tprocess.exitCode = 1;",
+				"});",
+			]);
+			const capped = (options: RunChildOptions) =>
+				runChild({ ...options, outputCapBytes: 10_000 });
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				runChild: capped,
+			}).run(context(project.path));
+
+			expect(signal.data).toMatchObject({
+				logTail: expect.stringContaining(
+					"Error: the final reason Stryker gave",
+				),
+			});
+		});
+
 		test("stops Stryker with taskkill /T then /T /F on Windows before removing its sandbox", async () => {
 			const strykerBin = await hangingStryker(tools.path);
 			const controller = new AbortController();

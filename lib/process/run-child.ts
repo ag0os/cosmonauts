@@ -1,10 +1,12 @@
 /**
- * Runs one child process and owns its whole process tree: the child leads its
- * own process group (POSIX), its output is spooled to files under a byte cap
+ * Runs one child process and owns its process tree: the child leads its own
+ * process group (POSIX), its output is spooled to files under a byte cap
  * instead of memory, and an abort or the timeout ends the tree with SIGTERM,
- * a grace period, then SIGKILL (`taskkill /T`, then `/T /F`, on Windows). The
- * runner resolves only once the tree is confirmed gone or the escalation is
- * spent, and the outcome says which.
+ * a grace period, then SIGKILL (`taskkill /T`, then `/T /F`, on Windows). On
+ * POSIX the tree is listed with `ps` (`process-tree.ts`), so a descendant in
+ * a group of its own is signalled too. The runner resolves only once the
+ * tree is confirmed gone or the escalation is spent, and the outcome says
+ * which.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import {
@@ -16,23 +18,49 @@ import {
 import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { finished } from "node:stream/promises";
-import { reapProcessGroup } from "./process-group.ts";
+import { processGroupExists } from "./process-group.ts";
+import {
+	type ListProcesses,
+	listProcesses,
+	PROCESS_LISTING_TIMEOUT_MS,
+	reapProcessTree,
+} from "./process-tree.ts";
 
 /** SIGTERM (or `taskkill /T`) to SIGKILL (or `taskkill /T /F`). */
 export const DEFAULT_CHILD_GRACE_MS = 5_000;
 /** How long after SIGKILL the runner waits for the tree before reporting survivors. */
 export const DEFAULT_CHILD_KILL_WAIT_MS = 2_000;
-/** Per spool file. */
-export const DEFAULT_CHILD_OUTPUT_CAP_BYTES = 16 * 1024 * 1024;
 /**
- * The longest a run can take to resolve after an abort or the timeout with
- * the default escalation: grace, kill wait, then the exit and output waits.
+ * Per spool file. Past it the first three quarters and the last quarter are
+ * kept, and a line in between says how many bytes were dropped.
  */
-export const DEFAULT_CHILD_STOP_MS =
-	DEFAULT_CHILD_GRACE_MS + DEFAULT_CHILD_KILL_WAIT_MS + 2_000;
+export const DEFAULT_CHILD_OUTPUT_CAP_BYTES = 16 * 1024 * 1024;
 
 /** After the tree is gone: how long the child's exit event and its output may lag. */
 const SETTLE_WAIT_MS = 1_000;
+
+/**
+ * The longest a run can take to resolve after an abort or the timeout, on
+ * either platform: the escalation, then the exit and output waits. POSIX:
+ * three `ps` listings (before SIGTERM, before SIGKILL, and of what is left),
+ * the grace and the kill wait. Windows: `taskkill /T` and `/T /F`, each
+ * bounded by the kill wait, the grace, and the kill wait for the exit.
+ */
+export function childStopBoundMs(escalation: {
+	readonly graceMs: number;
+	readonly killWaitMs: number;
+}): number {
+	const { graceMs, killWaitMs } = escalation;
+	const posix = 3 * PROCESS_LISTING_TIMEOUT_MS + graceMs + killWaitMs;
+	const windows = graceMs + 3 * killWaitMs;
+	return Math.max(posix, windows) + 2 * SETTLE_WAIT_MS;
+}
+
+/** `childStopBoundMs` with the default escalation: 13 s, set by Windows. */
+export const DEFAULT_CHILD_STOP_MS = childStopBoundMs({
+	graceMs: DEFAULT_CHILD_GRACE_MS,
+	killWaitMs: DEFAULT_CHILD_KILL_WAIT_MS,
+});
 
 /** Runs `taskkill.exe` with `args` and resolves to its exit code. */
 export type WindowsTaskkill = (
@@ -54,7 +82,11 @@ export interface RunChildOptions {
 	/** Written to the child's stdin, which is then closed; without it stdin is ignored. */
 	readonly stdin?: string;
 	readonly output: ChildOutputPaths;
-	/** Bytes kept per spool file; the rest is dropped and a note says so. `Infinity` keeps everything. */
+	/**
+	 * Bytes kept per spool file: the first three quarters and the last
+	 * quarter of what was written, with a note between them. `Infinity`
+	 * keeps everything.
+	 */
 	readonly outputCapBytes?: number;
 	readonly signal?: AbortSignal;
 	/** No timeout when absent. */
@@ -70,6 +102,8 @@ export interface RunChildOptions {
 	readonly platform?: NodeJS.Platform;
 	/** Test seam: how `taskkill` runs on Windows. */
 	readonly taskkill?: WindowsTaskkill;
+	/** Test seam: how the POSIX process listing is taken. */
+	readonly listProcesses?: ListProcesses;
 }
 
 export type ChildExit =
@@ -90,14 +124,24 @@ export type ChildStop =
 	| { readonly kind: "timeout"; readonly timeoutMs: number };
 
 export type ChildTree =
-	/** Nothing of the child's process tree is left; `by` is what ended the last of it. */
+	/**
+	 * Every process found in the child's tree is gone; `by` is what ended the
+	 * last of it. POSIX: the child's group, its descendants by parent pid and
+	 * the groups they lead, listed before SIGTERM and again before SIGKILL
+	 * (once after a natural exit). A process that had already left the tree,
+	 * re-parented to init in a group of its own, is not found. Windows:
+	 * `taskkill /T` succeeded on the running child.
+	 */
 	| {
 			readonly kind: "gone";
 			readonly by: "exit" | NodeJS.Signals | "taskkill" | "taskkill /F";
 	  }
-	/** Something outlived the escalation, or could not be signalled. */
+	/** Something outlived the escalation, or could not be signalled; the reason lists it. */
 	| { readonly kind: "survived"; readonly reason: string }
-	/** Windows cannot enumerate an exited child's descendants. */
+	/**
+	 * The tree could not be listed: on Windows, an exited child's
+	 * descendants; on POSIX, a failed `ps` (only the child's group was reaped).
+	 */
 	| { readonly kind: "unverified"; readonly reason: string };
 
 export interface SpoolFile {
@@ -134,6 +178,7 @@ interface Settings {
 	readonly graceMs: number;
 	readonly killWaitMs: number;
 	readonly taskkill: WindowsTaskkill;
+	readonly listProcesses: ListProcesses;
 	readonly notes: string[];
 }
 
@@ -182,6 +227,7 @@ export async function runChild(
 		graceMs: finiteOr(options.graceMs, DEFAULT_CHILD_GRACE_MS),
 		killWaitMs: finiteOr(options.killWaitMs, DEFAULT_CHILD_KILL_WAIT_MS),
 		taskkill: options.taskkill ?? runTaskkill,
+		listProcesses: options.listProcesses ?? listProcesses,
 		notes: [],
 	};
 	const result = await supervise({ child, options, spools, counts, settings });
@@ -242,7 +288,7 @@ async function supervise(run: {
 	child.stderr?.on("data", (chunk: Buffer) =>
 		spools.stderr.write(chunk, run.counts.stderr),
 	);
-	feedStdin(child, options.stdin, settings.notes);
+	const stdin = feedStdin(child, options.stdin);
 	const exited = childExit(child);
 	const stop = stopRequest(options);
 	const first = await Promise.race([
@@ -258,7 +304,7 @@ async function supervise(run: {
 				}
 			: await stopTree(child, exited, first.stopped, settings);
 	await drainOutput(child);
-	noteUnwrittenStdin(child, options.stdin, settings.notes);
+	noteUntakenStdin(child, stdin, settings.notes);
 	await spools.close();
 	return result;
 }
@@ -272,14 +318,19 @@ async function stopTree(
 	const tree =
 		settings.platform === "win32"
 			? await taskkillTree(child.pid, exited, settings)
-			: await reapGroup(child.pid, settings);
+			: await reapTree(child.pid, settings);
 	const exit = (await within(exited, SETTLE_WAIT_MS)) ?? {
 		kind: "unobserved" as const,
 	};
 	return { exit, stopped, tree };
 }
 
-/** After a natural exit: on POSIX, whatever the child left behind in its group is reaped too. */
+/**
+ * After a natural exit: on POSIX, whatever the child left behind in its
+ * group, and what those processes started, is reaped too. The child's own
+ * children outside its group are already re-parented and cannot be found,
+ * so an empty group leaves nothing to list.
+ */
 async function treeAfterExit(
 	child: ChildProcess,
 	exit: ChildExit,
@@ -292,21 +343,20 @@ async function treeAfterExit(
 			kind: "unverified",
 			reason: `process ${child.pid} exited; Windows cannot enumerate its descendants`,
 		};
-	return reapGroup(child.pid, settings);
+	if (!processGroupExists(child.pid)) return { kind: "gone", by: "exit" };
+	return reapTree(child.pid, settings);
 }
 
-async function reapGroup(
+async function reapTree(
 	pid: number | undefined,
 	settings: Settings,
 ): Promise<ChildTree> {
 	if (pid === undefined) return { kind: "gone", by: "exit" };
-	const reaped = await reapProcessGroup(pid, {
-		termGraceMs: settings.graceMs,
-		killGraceMs: settings.killWaitMs,
+	return reapProcessTree(pid, {
+		graceMs: settings.graceMs,
+		killWaitMs: settings.killWaitMs,
+		list: settings.listProcesses,
 	});
-	if (reaped.kind === "already-exited") return { kind: "gone", by: "exit" };
-	if (reaped.kind === "reaped") return { kind: "gone", by: reaped.signal };
-	return { kind: "survived", reason: reaped.reason };
 }
 
 /**
@@ -410,30 +460,37 @@ function childExit(child: ChildProcess): Promise<ChildExit> {
 	});
 }
 
-/** A stdin failure, such as a child that exits before reading, is a note; the run goes on. */
-function feedStdin(
-	child: ChildProcess,
-	stdin: string | undefined,
-	notes: string[],
-): void {
-	if (stdin === undefined || child.stdin === null) return;
-	child.stdin.on("error", (error) => notes.push(`stdin: ${error.message}`));
+interface StdinFeed {
+	/** The first write error, such as EPIPE from a child that exited without reading. */
+	error?: Error;
+}
+
+/** A stdin failure is kept for a note; the run goes on. */
+function feedStdin(child: ChildProcess, stdin: string | undefined): StdinFeed {
+	const feed: StdinFeed = {};
+	if (stdin === undefined || child.stdin === null) return feed;
+	child.stdin.on("error", (error) => {
+		feed.error ??= error;
+	});
 	child.stdin.end(stdin);
+	return feed;
 }
 
 /**
- * Node destroys stdin silently when the child exits, so a child that exits
- * before taking all of its input does not always raise an error.
+ * Notes input a started child did not take: a write error, or a stream that
+ * never finished (Node can destroy stdin silently when the child exits). Best
+ * effort: Bun reports stdin finished once it has taken the input, read or
+ * not, so under Bun such a child may leave no note.
  */
-function noteUnwrittenStdin(
+function noteUntakenStdin(
 	child: ChildProcess,
-	stdin: string | undefined,
+	feed: StdinFeed,
 	notes: string[],
 ): void {
-	if (stdin === undefined || child.stdin === null) return;
-	if (child.stdin.writableFinished) return;
-	if (notes.some((note) => note.startsWith("stdin: "))) return;
-	notes.push("stdin: the child exited before all of its input was written");
+	if (child.pid === undefined || child.stdin === null) return;
+	if (feed.error === undefined && child.stdin.writableFinished) return;
+	const cause = feed.error ? ` (${feed.error.message})` : "";
+	notes.push(`stdin: the child did not take all of its input${cause}`);
 }
 
 function stopRequest(options: RunChildOptions): {
@@ -522,32 +579,71 @@ function openSpool(path: string, cap: number): Spool {
 		throw error;
 	}
 	const done = finished(sink).catch(() => undefined);
-	const state = { kept: 0, noted: false };
+	const tailCap = Number.isFinite(cap) ? Math.floor(cap / 4) : 0;
+	const headCap = cap - tailCap;
+	const head = { kept: 0 };
+	const tail = new SpoolTail(tailCap);
 	return {
 		path,
 		write(chunk, count) {
 			count.bytes += chunk.length;
-			const room = cap - state.kept;
+			const room = headCap - head.kept;
 			if (chunk.length <= room) {
-				state.kept += chunk.length;
+				head.kept += chunk.length;
 				sink.write(chunk);
 				return;
 			}
-			count.truncated = true;
 			if (room > 0) {
-				state.kept += room;
+				head.kept += room;
 				sink.write(chunk.subarray(0, room));
 			}
-			if (!state.noted) {
-				state.noted = true;
-				sink.write(`\n[output truncated: kept the first ${cap} bytes]\n`);
-			}
+			tail.push(chunk.subarray(Math.max(room, 0)), count);
 		},
 		async close() {
-			if (!sink.writableEnded) sink.end();
+			if (!sink.writableEnded) {
+				tail.writeTo(sink);
+				sink.end();
+			}
 			await done;
 		},
 	};
+}
+
+/**
+ * The last bytes written past a spool's head, held until the spool closes.
+ * Each chunk remembers its stream, so the bytes dropped from it mark the
+ * right stream truncated.
+ */
+class SpoolTail {
+	private readonly cap: number;
+	private readonly chunks: { data: Buffer; count: StreamCount }[] = [];
+	private size = 0;
+	private dropped = 0;
+
+	constructor(cap: number) {
+		this.cap = cap;
+	}
+
+	push(data: Buffer, count: StreamCount): void {
+		this.chunks.push({ data, count });
+		this.size += data.length;
+		while (this.size > this.cap) {
+			const first = this.chunks[0];
+			if (!first) return;
+			const excess = Math.min(this.size - this.cap, first.data.length);
+			first.count.truncated = true;
+			this.size -= excess;
+			this.dropped += excess;
+			if (excess === first.data.length) this.chunks.shift();
+			else first.data = first.data.subarray(excess);
+		}
+	}
+
+	writeTo(sink: WriteStream): void {
+		if (this.dropped > 0)
+			sink.write(`\n[output truncated: ${this.dropped} bytes dropped]\n`);
+		for (const { data } of this.chunks) sink.write(data);
+	}
 }
 
 function newCount(): StreamCount {

@@ -1546,9 +1546,10 @@ interface StageSettlement<T> {
 /**
  * Waits for `work` to settle. An abort or the time budget does not abandon
  * it: the work holds the signal, and an external backend's child runner ends
- * the whole process tree before it settles, so nothing a stage started
- * outlives the run lock. Only once `stageExitCeilingMs` has passed since the
- * stop does the host stop waiting, with `unconfirmed`.
+ * the process tree it can find before it settles (`StageProcessExit` says
+ * how that went). Only once `stageExitCeilingMs` has passed since the stop
+ * does the host stop waiting, with `unconfirmed`, and that stage's work may
+ * outlive the run lock.
  */
 async function settleStage<T>(
 	run: Run,
@@ -1638,6 +1639,11 @@ async function recordStageExit(run: Run, exit: StageExitRecord): Promise<void> {
 		warn(
 			run.record,
 			`${exit.stage}: process tree survived: ${exit.process.detail ?? "unknown"}`,
+		);
+	for (const stream of exit.process?.truncated ?? [])
+		warn(
+			run.record,
+			`${exit.stage}: ${stream} passed the output cap; its middle was dropped, the head and tail are in ${exit.logs?.[stream] ?? "its log"}`,
 		);
 	await saveManifest(run.record);
 }

@@ -161,14 +161,19 @@ export interface StageProcessLog {
 /** How a backend's child process tree ended. */
 export interface StageProcessExit {
 	/**
-	 * `gone`: nothing of the tree is left. `survived`: something outlived
-	 * SIGTERM and SIGKILL (or `taskkill /T /F`), or could not be signalled.
-	 * `unverified`: on Windows, an exited child's descendants cannot be seen.
+	 * `gone`: every process found in the tree is gone. On POSIX the tree is
+	 * the child's process group, its descendants by parent pid and the
+	 * groups they lead; a process that had already left it (re-parented to
+	 * init in a group of its own, such as a daemon) is not found.
+	 * `survived`: something found outlived SIGTERM and SIGKILL (or
+	 * `taskkill /T /F`), or could not be signalled. `unverified`: the tree
+	 * could not be listed (on Windows, an exited child's descendants; on
+	 * POSIX, a failed `ps`).
 	 */
 	tree: "gone" | "survived" | "unverified";
 	/** What survived, or why the tree could not be checked. */
 	detail?: string;
-	/** Streams cut at the runner's byte cap. */
+	/** Streams that passed the runner's byte cap; their middle was dropped. */
 	truncated?: ("stdout" | "stderr")[];
 }
 

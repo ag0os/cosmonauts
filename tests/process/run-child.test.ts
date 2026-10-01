@@ -3,11 +3,12 @@
  * and the Windows escalation through an injected taskkill.
  */
 import { execFileSync } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
 	type ChildRunOutcome,
+	childStopBoundMs,
 	type RunChildOptions,
 	readSpool,
 	runChild,
@@ -90,6 +91,52 @@ async function readPids(
 const SLEEPER = "sleep 60 & echo $$ $!; wait";
 const TERM_IGNORING_SLEEPER = `trap "" TERM; ${SLEEPER}`;
 
+/**
+ * Perl in the background starts a session (and so a process group) of its
+ * own, prints `detached <pid>` once it has, and sleeps; a group signal to
+ * the child no longer reaches it. `ignoreTerm` makes it survive SIGTERM.
+ */
+function detachedSleeper(options: { ignoreTerm?: boolean } = {}): string {
+	const perl = [
+		"use POSIX;",
+		"POSIX::setsid() or die;",
+		options.ignoreTerm ? '$SIG{TERM} = "IGNORE";' : "",
+		'$| = 1; print "detached $$\\n";',
+		"sleep 60 while 1;",
+	].join(" ");
+	return `perl -e '${perl}' & wait`;
+}
+
+/** Waits for `pattern` to match the spool's text. */
+async function waitForMatch(
+	path: string,
+	pattern: RegExp,
+): Promise<RegExpExecArray> {
+	const deadline = Date.now() + 5_000;
+	while (Date.now() < deadline) {
+		const text = await readFile(path, "utf8").catch(() => "");
+		const match = pattern.exec(text);
+		if (match) return match;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error(`no ${String(pattern)} in ${path}`);
+}
+
+/** The pid a detached sleeper printed, recorded for cleanup. */
+async function detachedPid(path: string): Promise<number> {
+	const pid = Number((await waitForMatch(path, /detached (\d+)\n/u))[1]);
+	leftovers.push(pid);
+	return pid;
+}
+
+function processGroupOf(pid: number): number {
+	return Number(
+		execFileSync("ps", ["-o", "pgid=", "-p", String(pid)], {
+			encoding: "utf8",
+		}).trim(),
+	);
+}
+
 describe("runChild stopping a process tree on POSIX", () => {
 	test("an abort resolves only after the grandchild is gone", async () => {
 		const controller = new AbortController();
@@ -148,6 +195,78 @@ describe("runChild stopping a process tree on POSIX", () => {
 		expect(outcome.stopped).toBeUndefined();
 		expect(outcome.tree).toEqual({ kind: "gone", by: "SIGTERM" });
 		expect(alive(sleep ?? 0)).toBe(false);
+	});
+
+	test("an abort also ends a descendant that runs in a group of its own", async () => {
+		const controller = new AbortController();
+		const run = sh(detachedSleeper(), { signal: controller.signal });
+		const detached = await detachedPid(output().stdout);
+		expect(alive(detached)).toBe(true);
+		expect(processGroupOf(detached)).toBe(detached);
+
+		const abortedAt = Date.now();
+		controller.abort(new Error("stop"));
+		const outcome = await run;
+		const latencyMs = Date.now() - abortedAt;
+
+		expect(alive(detached)).toBe(false);
+		expect(outcome.tree).toEqual({ kind: "gone", by: "SIGTERM" });
+		expect(latencyMs).toBeLessThan(2_000);
+	});
+
+	test("with no grace, SIGKILL reaches a TERM-ignoring descendant in a group of its own", async () => {
+		const controller = new AbortController();
+		const run = sh(`trap "" TERM; ${detachedSleeper({ ignoreTerm: true })}`, {
+			signal: controller.signal,
+			graceMs: 0,
+		});
+		const detached = await detachedPid(output().stdout);
+		expect(processGroupOf(detached)).toBe(detached);
+
+		controller.abort();
+		const outcome = await run;
+
+		expect(alive(detached)).toBe(false);
+		expect(outcome.tree).toEqual({ kind: "gone", by: "SIGKILL" });
+	});
+
+	test("lists the tree again before SIGKILL, so a descendant started after SIGTERM is reached", async () => {
+		const script = join(tmp.path, "detach.pl");
+		await writeFile(
+			script,
+			'use POSIX; POSIX::setsid() or die; $SIG{TERM} = "IGNORE"; $| = 1; print "detached $$\\n"; sleep 60 while 1;\n',
+		);
+		const controller = new AbortController();
+		const run = sh(
+			`trap 'perl ${script} &' TERM; echo ready; while :; do sleep 0.05; done`,
+			{ signal: controller.signal, graceMs: 1_000 },
+		);
+		await waitForMatch(output().stdout, /^ready\n/u);
+
+		controller.abort();
+		const outcome = await run;
+		const detached = await detachedPid(output().stdout);
+
+		expect(alive(detached)).toBe(false);
+		expect(outcome.tree).toEqual({ kind: "gone", by: "SIGKILL" });
+	});
+
+	test("reports the tree unverified, and still reaps the child's group, when ps fails", async () => {
+		const controller = new AbortController();
+		const run = sh(SLEEPER, {
+			signal: controller.signal,
+			listProcesses: async () => new Error("ps: not found"),
+		});
+		const pids = await readPids(output().stdout);
+
+		controller.abort();
+		const outcome = await run;
+
+		expect(alive(pids.sleep)).toBe(false);
+		expect(outcome.tree).toEqual({
+			kind: "unverified",
+			reason: expect.stringContaining("ps: not found"),
+		});
 	});
 
 	test("does not spawn when the signal is already aborted", async () => {
@@ -302,17 +421,43 @@ describe("runChild output", () => {
 		expect(await readFile(outcome.stderr.path, "utf8")).toBe("err\n");
 	});
 
-	test("truncates a stream at the byte cap and says so", async () => {
-		const outcome = await sh("head -c 100000 /dev/zero | tr '\\0' x", {
-			outputCapBytes: 1_000,
-		});
+	test("past the byte cap keeps the head and the tail, and says how much was dropped", async () => {
+		const outcome = await sh(
+			"echo FIRST; head -c 100000 /dev/zero | tr '\\0' x; echo; echo LAST",
+			{ outputCapBytes: 1_000 },
+		);
 
 		const text = await readSpool(outcome.stdout);
 		expect(outcome.exit).toEqual({ kind: "code", code: 0 });
-		expect(outcome.stdout).toMatchObject({ bytes: 100_000, truncated: true });
-		expect(text.startsWith("x".repeat(1_000))).toBe(true);
-		expect(text.slice(1_000)).toContain("output truncated");
+		expect(outcome.stdout).toMatchObject({ bytes: 100_012, truncated: true });
+		expect(outcome.stderr.truncated).toBe(false);
+		expect(text.startsWith(`FIRST\n${"x".repeat(744)}\n`)).toBe(true);
+		expect(text).toContain("\n[output truncated: 99012 bytes dropped]\n");
+		expect(text.endsWith(`${"x".repeat(244)}\nLAST\n`)).toBe(true);
 		expect((await stat(outcome.stdout.path)).size).toBeLessThan(1_100);
+	});
+
+	test("keeps output at the byte cap whole", async () => {
+		const outcome = await sh("head -c 1000 /dev/zero | tr '\\0' x", {
+			outputCapBytes: 1_000,
+		});
+
+		expect(outcome.stdout).toMatchObject({ bytes: 1_000, truncated: false });
+		expect(await readSpool(outcome.stdout)).toBe("x".repeat(1_000));
+	});
+
+	test("in a shared spool, marks only the stream whose bytes were dropped", async () => {
+		const log = join(tmp.path, "both.log");
+		const outcome = await sh(
+			"head -c 5000 /dev/zero | tr '\\0' x; sleep 0.1; echo late-error >&2",
+			{ output: { stdout: log, stderr: log }, outputCapBytes: 1_000 },
+		);
+
+		expect(outcome.stdout.truncated).toBe(true);
+		expect(outcome.stderr.truncated).toBe(false);
+		expect((await readSpool(outcome.stdout)).endsWith("late-error\n")).toBe(
+			true,
+		);
 	});
 
 	test("shares one file and one cap when both streams name the same path", async () => {
@@ -363,7 +508,54 @@ describe("runChild stdin", () => {
 		expect(outcome.exit).toEqual({ kind: "code", code: 0 });
 		expect(outcome.tree.kind).toBe("gone");
 		expect(alive(sleep)).toBe(false);
-		expect(outcome.notes.some((note) => note.startsWith("stdin: "))).toBe(true);
+		expect(outcome.notes).toEqual([
+			expect.stringMatching(/^stdin: the child did not take all of its input/u),
+		]);
+	});
+
+	test("a command that never started leaves no stdin note", async () => {
+		const outcome = await runChild({
+			command: join(tmp.path, "missing"),
+			args: [],
+			cwd: tmp.path,
+			output: output(),
+			stdin: "x".repeat(1024 * 1024),
+		});
+
+		expect(outcome.exit.kind).toBe("spawn-error");
+		expect(outcome.notes).toEqual([]);
+	});
+});
+
+describe("childStopBoundMs", () => {
+	test("covers a Windows stop whose taskkill calls and child never finish", async () => {
+		const escalation = { graceMs: 200, killWaitMs: 100 };
+		const controller = new AbortController();
+		let pid = 0;
+		const run = runChild({
+			command: "sleep",
+			args: ["60"],
+			cwd: tmp.path,
+			output: output(),
+			signal: controller.signal,
+			platform: "win32",
+			...escalation,
+			taskkill: (args) => {
+				pid = Number(args[1]);
+				return new Promise(() => {});
+			},
+		});
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		const stoppedAt = Date.now();
+		controller.abort();
+		const outcome = await run;
+		const elapsedMs = Date.now() - stoppedAt;
+		leftovers.push(pid);
+
+		expect(outcome.tree.kind).toBe("survived");
+		expect(elapsedMs).toBeLessThanOrEqual(childStopBoundMs(escalation));
+		// Two taskkill waits, the grace, the exit wait, and the settle waits.
+		expect(elapsedMs).toBeGreaterThanOrEqual(2_400);
 	});
 });
 

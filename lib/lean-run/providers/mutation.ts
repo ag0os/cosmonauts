@@ -117,8 +117,18 @@ type StrykerOutcome =
 
 interface StrykerRun {
 	readonly outcome: StrykerOutcome;
-	/** Why Stryker's process group outlived the reap; absent when nothing did. */
+	/** What of Stryker's process tree outlived the reap; absent when nothing did. */
 	readonly survivedReap?: string;
+	/** Why Stryker's process tree could not be checked after a stop. */
+	readonly unverifiedReap?: string;
+}
+
+/** A Stryker run, and what became of its sandbox afterwards. */
+interface SandboxedRun extends StrykerRun {
+	/** Kept because Stryker's process tree may still be running in it. */
+	readonly sandboxKept?: string;
+	/** Why removing the sandbox after the run failed. */
+	readonly sandboxRemoval?: string;
 }
 
 export function createMutationProvider(
@@ -261,24 +271,41 @@ async function runStrykerPlan(
 		reportPath,
 		logPath,
 		durationMs: Date.now() - run.started,
-		...(strykerRun.survivedReap === undefined
-			? {}
-			: { survivedReap: strykerRun.survivedReap }),
+		...reapData(strykerRun),
 	};
 	if (outcome.kind !== "exit" || outcome.code !== 0) {
 		const tail = await logTail(logPath);
 		const reason = `Stryker did not finish: ${describeOutcome(outcome)}`;
-		return infoSignal(reason, {
-			...data,
-			logTail: tail,
-			...unavailableData(reason),
-		});
+		return withSandboxNote(
+			infoSignal(reason, {
+				...data,
+				logTail: tail,
+				...unavailableData(reason),
+			}),
+			strykerRun,
+		);
 	}
 	const report: unknown = JSON.parse(await readFile(reportPath, "utf8"));
 	const summary = summarizeMutationReport(report, plan.ranges, {
 		projectRoot: ctx.worktree,
 	});
-	return withUntestable(verdict(summary, data, plan.hunks), plan.untestable);
+	return withSandboxNote(
+		withUntestable(verdict(summary, data, plan.hunks), plan.untestable),
+		strykerRun,
+	);
+}
+
+/** The reap and sandbox facts a run has, for the signal's data. */
+function reapData(run: SandboxedRun): object {
+	const facts = {
+		survivedReap: run.survivedReap,
+		unverifiedReap: run.unverifiedReap,
+		sandboxKept: run.sandboxKept,
+		sandboxRemoval: run.sandboxRemoval,
+	};
+	return Object.fromEntries(
+		Object.entries(facts).filter(([, value]) => value !== undefined),
+	);
 }
 
 /** Names the files left out as untestable in the summary, when there are any. */
@@ -296,19 +323,47 @@ function withUntestable(
 
 /**
  * Stryker's sandbox is removed before and after every run: a timeout or an
- * abort kills Stryker before its own cleanup runs.
+ * abort kills Stryker before its own cleanup runs. It is kept when
+ * Stryker's process tree may still be running in it, and a removal that
+ * fails is recorded instead of thrown, so the run's other facts survive.
  */
-async function withoutSandbox<T>(
+async function withoutSandbox(
 	worktree: string,
-	work: () => Promise<T>,
-): Promise<T> {
+	work: () => Promise<StrykerRun>,
+): Promise<SandboxedRun> {
 	const sandbox = join(worktree, STRYKER_TEMP_DIR);
 	await rm(sandbox, { recursive: true, force: true });
+	let run: StrykerRun;
 	try {
-		return await work();
-	} finally {
+		run = await work();
+	} catch (error) {
 		await rm(sandbox, { recursive: true, force: true });
+		throw error;
 	}
+	const mayRun =
+		run.survivedReap !== undefined || run.unverifiedReap !== undefined;
+	if (mayRun && existsSync(sandbox)) return { ...run, sandboxKept: sandbox };
+	if (mayRun) return run;
+	try {
+		await rm(sandbox, { recursive: true, force: true });
+		return run;
+	} catch (error) {
+		return { ...run, sandboxRemoval: messageOf(error) };
+	}
+}
+
+/** Names a sandbox left behind, and why, in the signal's summary. */
+function withSandboxNote(result: Signal, run: SandboxedRun): Signal {
+	const note = sandboxNote(run);
+	return note ? { ...result, summary: `${result.summary}; ${note}` } : result;
+}
+
+function sandboxNote(run: SandboxedRun): string | undefined {
+	if (run.sandboxKept !== undefined)
+		return `Stryker's sandbox kept at ${run.sandboxKept}: its process tree ${run.survivedReap !== undefined ? "survived" : "could not be checked"}`;
+	if (run.sandboxRemoval !== undefined)
+		return `Stryker's sandbox not removed: ${run.sandboxRemoval}`;
+	return undefined;
 }
 
 /** Changed functions outside test files, with Stryker-ready repo-relative paths, and the diff's hunks. */
@@ -577,9 +632,13 @@ async function runStryker(
 		...(provider.graceMs === undefined ? {} : { graceMs: provider.graceMs }),
 	});
 	const outcome = strykerOutcome(result);
-	return result.tree.kind === "survived"
-		? { outcome, survivedReap: result.tree.reason }
-		: { outcome };
+	if (result.tree.kind === "survived")
+		return { outcome, survivedReap: result.tree.reason };
+	// After a natural exit Windows always reports `unverified`; Stryker ended
+	// its own workers then. After a stop it means the tree may be running.
+	if (result.tree.kind === "unverified" && result.stopped !== undefined)
+		return { outcome, unverifiedReap: result.tree.reason };
+	return { outcome };
 }
 
 function strykerOutcome(result: ChildRunOutcome): StrykerOutcome {

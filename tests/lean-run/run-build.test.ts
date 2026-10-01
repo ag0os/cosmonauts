@@ -1970,19 +1970,26 @@ describe("runBuild budgets", () => {
 	});
 
 	test("records a stage that never settles after the time budget as unconfirmed, with a warning", async () => {
-		const record = await build({
-			builder: stubBackend([never]),
-			budget: { tokens: 1_000, timeMs: 1_000 },
-			stageExitCeilingMs: 50,
-		});
+		await withDeadline(async (expire) => {
+			const record = await build({
+				builder: stubBackend([
+					() => {
+						expire();
+						return never();
+					},
+				]),
+				budget: { tokens: 1_000, timeMs: 100 },
+				stageExitCeilingMs: 50,
+			});
 
-		const { manifest } = await onDisk(record);
-		expect(manifest.stageExits).toEqual([
-			{ stage: "builder-1", stoppedBy: "time budget", settled: false },
-		]);
-		expect(manifest.warnings).toContain(
-			"builder-1: stage did not confirm exit within 50 ms after the time budget; it may still be running",
-		);
+			const { manifest } = await onDisk(record);
+			expect(manifest.stageExits).toEqual([
+				{ stage: "builder-1", stoppedBy: "time budget", settled: false },
+			]);
+			expect(manifest.warnings).toContain(
+				"builder-1: stage did not confirm exit within 50 ms after the time budget; it may still be running",
+			);
+		});
 	});
 
 	test("fails when a provider outlives the time budget", async () => {
@@ -2343,6 +2350,21 @@ describe("runBuild stage exits after a stop", () => {
 
 		expect(record.manifest.warnings).toContain(
 			"builder-1: process tree survived: process group 42 still had live members",
+		);
+	});
+
+	test("warns when a session's output passed the cap, naming its log", async () => {
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					input.processLog?.report({ tree: "gone", truncated: ["stdout"] });
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest.warnings).toContain(
+			"builder-1: stdout passed the output cap; its middle was dropped, the head and tail are in logs/builder-1.stdout.log",
 		);
 	});
 });
