@@ -184,6 +184,36 @@ describe("loadProjectConfig", () => {
 		}
 	});
 
+	test("reads the lean cap on ignored inputs copied into the builder clone", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ lean: { ignoredInputsCapBytes: 1024 } }),
+		);
+
+		expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+			ignoredInputsCapBytes: 1024,
+		});
+	});
+
+	test("skips a lean ignored-inputs cap that is not a positive integer", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+			await writeFile(
+				join(tmp.path, ".cosmonauts", "config.json"),
+				JSON.stringify({ lean: { ignoredInputsCapBytes: "50MB" } }),
+			);
+
+			expect((await loadProjectConfig(tmp.path)).lean).toEqual({});
+			expect(warn).toHaveBeenCalledWith(
+				expect.stringContaining("lean.ignoredInputsCapBytes"),
+			);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	test("reads the lean run budget", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(

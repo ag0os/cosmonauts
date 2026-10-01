@@ -1,7 +1,7 @@
 /**
- * Tests for the caller-state check: what a builder working in its own
- * checkout can still move in the caller's (branch, HEAD, stash, linked
- * node_modules), read before and compared after, in a real repository.
+ * Tests for the caller-state check: what can still move under a builder
+ * working in its own clone (the caller's branch, HEAD and stash, and the
+ * linked node_modules), read before and compared after, in a real repository.
  */
 import { execFileSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";

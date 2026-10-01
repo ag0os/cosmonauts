@@ -1,11 +1,12 @@
 /**
  * Tests for runBuild's cleanup when the run record cannot be written: the
- * run lock, the base-sha marker and the builder worktree are released
+ * run lock, the base-sha marker and the builder clone are released
  * whatever the last saves do.
  * Saving the manifest and reading the hook log fail on demand through
  * module mocks; everything else is real, in a temporary git repository.
  */
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,28 +26,32 @@ interface Faults {
 	/** 1-based calls to takeHealthHookLog that fail. */
 	takeFails: Set<number>;
 	takeCalls: number;
-	/** The base-sha marker of each builder worktree, read just before it is removed. */
+	/** The base-sha marker of each builder clone, read just before it is removed. */
 	markersAtDispose: Array<string | undefined>;
+	/** The top level of each builder clone opened. */
+	clones: string[];
 }
 
 const faults = vi.hoisted<Faults>(() => ({
 	takeFails: new Set(),
 	takeCalls: 0,
 	markersAtDispose: [],
+	clones: [],
 }));
 
-vi.mock("../../lib/lean-run/builder-worktree.ts", async (importOriginal) => {
+vi.mock("../../lib/lean-run/builder-workspace.ts", async (importOriginal) => {
 	const actual =
 		await importOriginal<
-			typeof import("../../lib/lean-run/builder-worktree.ts")
+			typeof import("../../lib/lean-run/builder-workspace.ts")
 		>();
 	const { readRunBaseSha } = await import("../../lib/lean-run/base-sha.ts");
 	return {
 		...actual,
-		openBuilderWorktree: async (
-			options: Parameters<typeof actual.openBuilderWorktree>[0],
+		openBuilderWorkspace: async (
+			options: Parameters<typeof actual.openBuilderWorkspace>[0],
 		) => {
-			const worktree = await actual.openBuilderWorktree(options);
+			const worktree = await actual.openBuilderWorkspace(options);
+			faults.clones.push(worktree.root);
 			return {
 				...worktree,
 				dispose: async () => {
@@ -99,17 +104,12 @@ function git(...args: string[]): string {
 	return execFileSync("git", args, { cwd: root, encoding: "utf8" });
 }
 
-function worktreeCount(): number {
-	return (
-		git("worktree", "list", "--porcelain").match(/^worktree /gmu)?.length ?? 0
-	);
-}
-
 beforeEach(async () => {
 	faults.saveFails = undefined;
 	faults.takeFails = new Set();
 	faults.takeCalls = 0;
 	faults.markersAtDispose = [];
+	faults.clones = [];
 	root = await mkdtemp(join(tmpdir(), "lean-run-cleanup-"));
 	git("init", "-q", "-b", "main");
 	git("config", "user.email", "test@example.com");
@@ -183,7 +183,8 @@ describe("runBuild cleanup when the record cannot be saved", () => {
 
 		await expect(build()).rejects.toThrow("disk full");
 
-		expect(worktreeCount()).toBe(1);
+		expect(faults.clones).toHaveLength(1);
+		expect(existsSync(faults.clones[0] ?? "")).toBe(false);
 		faults.saveFails = undefined;
 		const next = await build();
 		expect(next.manifest.status).toBe("done");
@@ -207,7 +208,7 @@ describe("runBuild cleanup when the record cannot be saved", () => {
 		);
 	});
 
-	test("clears the base sha, removes the builder worktree and releases the lock when the manifest cannot be saved after a lost hook log", async () => {
+	test("clears the base sha, deletes the builder clone and releases the lock when the manifest cannot be saved after a lost hook log", async () => {
 		faults.takeFails = new Set([2]);
 		faults.saveFails = (manifest) =>
 			(manifest.warnings ?? []).some((warning) =>
@@ -217,7 +218,8 @@ describe("runBuild cleanup when the record cannot be saved", () => {
 		await expect(build()).rejects.toThrow("disk full");
 
 		expect(faults.markersAtDispose).toEqual([undefined]);
-		expect(worktreeCount()).toBe(1);
+		expect(faults.clones).toHaveLength(1);
+		expect(existsSync(faults.clones[0] ?? "")).toBe(false);
 		faults.saveFails = undefined;
 		faults.takeFails = new Set();
 		expect((await build()).manifest.status).toBe("done");

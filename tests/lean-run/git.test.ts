@@ -2,7 +2,7 @@
  * Tests for readWorktreeStatus, readWorktreeChange and readWorktreePatch:
  * the working tree's change against a base, per file, as the change
  * diagram's classes, and as a patch applyPatch puts back. Also the
- * worktree, ref and ignored-dependency helpers the builder worktree uses.
+ * worktree, ref and ignored-path helpers the builder clone and review checkout use.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";

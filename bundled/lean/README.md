@@ -2,8 +2,47 @@
 
 A lead, a builder, a code reviewer and a checker, driven by the `lean_build`
 and `lean_review` tools (`extensions/lean-run/`). After each builder attempt
-the host runs its own checks over the builder's worktree and hands the
+the host runs its own checks over the builder's clone and hands the
 results to the reviewer as facts. The runner is `lib/lean-run/`.
+
+## Builder isolation
+
+The builder never works in your checkout. Each `lean_build` run clones the
+repository into a temp directory (`git clone --no-hardlinks`), detached at
+the run's snapshot of your tree, so uncommitted work is there as it was.
+The clone has its own refs, stash and config, and its remotes are removed:
+branches it deletes, config it sets and pushes it tries stay in the clone.
+A `claude-cli` builder is also started with `--disallowedTools` for the git
+verbs that write history or move refs (`push`, `commit`, `merge`, `rebase`,
+`cherry-pick`, `revert`, `am`, `update-ref`, `branch -d/-D`, `tag -d`,
+`stash`) and `gh pr`; `run.json` records the list as `deniedTools`.
+
+Only a `done` run applies the builder's patch, to your working tree and
+never the index. A run during which your branch, HEAD or stash moved ends
+`blocked` with nothing applied.
+
+The checks need files git does not carry, so the clone also gets:
+
+- **Gitignored files**, copied at the same paths: `.env*`, generated code,
+  build outputs, a gitignored `.cosmonauts/config.json`. `node_modules`,
+  `.git` and `.stryker-tmp` are never copied, at any depth, and an ignored
+  file or directory that would take the total past
+  `lean.ignoredInputsCapBytes` (default 50 MB) is skipped whole. The copies
+  stay out of the builder's patch. `run.json` lists what was copied
+  (`builderInputs.carried`) and what was skipped and why
+  (`builderInputs.skipped`).
+- **`node_modules`**, linked, not copied: the one at each level from the
+  top level down to the project root, and every gitignored one (up to 200).
+
+**Residual:** the dependency tree is writable through the link. What the
+builder writes or deletes under a linked `node_modules` lands in yours. A
+run whose builder removed entries from one ends `blocked`; other writes
+(an edited installed package) are not detected. `run.json` records this as
+`builderInputs.residuals`.
+
+The clone is deleted when the run ends. When the last builder patch could
+not be written, its work exists only in the clone, which is kept; the
+warning names it, and `rm -rf` of the named directory removes it.
 
 ## Host checks and what they need
 

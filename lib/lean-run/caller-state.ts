@@ -2,9 +2,10 @@ import { readdir, stat } from "node:fs/promises";
 import { type RefState, readRefState } from "./git.ts";
 
 /**
- * What the caller's checkout shares with a builder worktree, read at run
- * start: a builder cannot touch the caller's index or files from its own
- * checkout, but it can still move these.
+ * What the builder's patch is applied against, read when the builder clone
+ * opens. The clone shares no refs with the caller, but the caller can still
+ * commit, switch or stash in its own checkout during a run, and the linked
+ * `node_modules` are writable from the clone.
  */
 export interface CallerState {
 	refs: RefState;
@@ -14,7 +15,7 @@ export interface CallerState {
 
 interface CallerStateOptions {
 	projectRoot: string;
-	/** The caller's `node_modules` directories linked into the builder worktree. */
+	/** The caller's `node_modules` directories linked into the builder clone. */
 	dependencies: readonly string[];
 }
 

@@ -88,7 +88,7 @@ export type LeanLens = (typeof LEAN_LENSES)[number];
 export type RunTier = "direct" | "plan" | "review";
 
 export interface SignalContext {
-	/** In a build, the builder worktree; in a review, the caller's worktree. */
+	/** In a build, the builder clone's project directory; in a review, the caller's worktree. */
 	worktree: string;
 	/**
 	 * The revision to diff against: the run's `diffBase`, which is the
@@ -129,7 +129,7 @@ export type LeanRole = (typeof LEAN_ROLES)[number];
 
 export interface BackendRunInput {
 	prompt: string;
-	/** A builder's is the run's builder worktree; a reviewer's, its review checkout. */
+	/** A builder's is the run's builder clone; a reviewer's, its review checkout. */
 	worktree: string;
 	role: LeanRole;
 	/** Names the run's snapshot refs for the destructive-git guard. */
@@ -191,12 +191,14 @@ export interface BuilderBackend {
 	readonly kind: LeanBackendKind;
 	/** How the harness gates the session's tool calls; the run manifest records it. */
 	readonly permissions?: BackendPermissions;
+	/** Tool patterns the harness is told to deny whatever `permissions` is; the run manifest records them. */
+	readonly deniedTools?: readonly string[];
 	run(input: BackendRunInput): Promise<BackendRunResult>;
 }
 
 /**
  * How a builder harness gates tool calls. Whatever it is, the builder runs
- * in its own worktree. `guarded`: Pi, with the lean role guard and the
+ * in a private clone with no remote. `guarded`: Pi, with the lean role guard and the
  * destructive-git guard. `skipped`: Claude Code with
  * `--dangerously-skip-permissions`, which `-p` needs to edit unattended, or
  * `--permission-mode bypassPermissions`, or Codex with
@@ -225,7 +227,7 @@ export const RUN_RECORD_FILES = {
 	prBody: "pr-body.md",
 	/** What the Pi post-edit health hook injected, one JSON line per finding with its stage. */
 	healthHook: "health-hook.jsonl",
-	/** `builder-N.patch`: the builder worktree against the diff base after attempt N. */
+	/** `builder-N.patch`: the builder clone against the diff base after attempt N. */
 	patches: "patches",
 	/**
 	 * `<stage>.stdout.log` and `<stage>.stderr.log` (`<stage>-repair.*` for a
@@ -339,11 +341,15 @@ export interface RunManifest {
 	/** The pull-request body written at the end of the run, relative to the project root. */
 	prBodyPath?: string;
 	/**
-	 * The detached worktree every builder stage and provider pass ran in; it
-	 * is removed when the run ends, unless `patchFailure` keeps it. Absent
-	 * for a review.
+	 * The project directory of the private clone every builder stage and
+	 * provider pass ran in; the clone is removed when the run ends, unless
+	 * `patchFailure` keeps it. Absent for a review.
 	 */
 	builderWorktree?: string;
+	/** What the builder clone got from the caller's tree besides the snapshot. Absent for a review. */
+	builderInputs?: BuilderInputs;
+	/** Tool patterns the builder harness was told to deny (`claude-cli`: git history and ref writers). */
+	deniedTools?: string[];
 	/**
 	 * `builder-N.patch` after each builder attempt, relative to the project
 	 * root and cumulative against `diffBase`; the last is the run's change.
@@ -392,8 +398,47 @@ export interface StageExitRecord {
 export interface PatchFailure {
 	stage: string;
 	error: string;
-	/** The builder worktree's top level, kept because the work is only there. */
+	/** The builder clone's top level, kept because the work is only there. */
 	keptWorktree?: string;
+}
+
+/**
+ * Why a gitignored path of the caller's tree was not copied into the
+ * builder clone. `node_modules` is linked instead; `.git` and `.stryker-tmp`
+ * are never copied; `over the cap` would pass `capBytes`.
+ */
+export type IgnoredInputSkipReason =
+	| "node_modules"
+	| ".git"
+	| ".stryker-tmp"
+	| "over the cap"
+	| "symlink outside the checkout"
+	| "not a file"
+	| "already in the checkout"
+	| "copy failed";
+
+export interface SkippedInput {
+	/** Relative to the top level; a directory ends in `/`. */
+	path: string;
+	reason: IgnoredInputSkipReason;
+}
+
+/**
+ * The builder clone holds the run's snapshot; the checks also read
+ * gitignored inputs (`.env`, generated code, build outputs), which are
+ * copied in, and installed dependencies, which are linked.
+ */
+export interface BuilderInputs {
+	/** The caller's `node_modules` directories linked into the clone, as caller paths. */
+	linked: string[];
+	/** Ignored paths copied into the clone, relative to the top level; a directory ends in `/`. */
+	carried: string[];
+	carriedBytes: number;
+	/** The most bytes of ignored files copied: `lean.ignoredInputsCapBytes`, else 50 MB. */
+	capBytes: number;
+	skipped: SkippedInput[];
+	/** Known ways the builder can still change the caller's tree. */
+	residuals: string[];
 }
 
 /** `git apply` of the final builder patch to the working tree only, never the index. */

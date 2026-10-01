@@ -48,6 +48,8 @@ export interface ProjectLeanConfig {
 	readonly requiredSignals?: readonly SignalKind[];
 	/** `lean.requiredSignals` entries that are not signal kinds, as written. */
 	readonly unknownRequiredSignals?: readonly string[];
+	/** The most bytes of gitignored files a lean run copies into the builder clone (default 50 MB). */
+	readonly ignoredInputsCapBytes?: number;
 }
 
 /** Lean run limits. Tokens count input + output only, never cache reads or writes. */

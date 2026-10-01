@@ -20,7 +20,7 @@ import {
 export interface RunPrBodyOptions {
 	readonly record: RunRecord;
 	readonly projectRoot: string;
-	/** Where the change is read: a build's builder worktree; the project root when omitted. */
+	/** Where the change is read: a build's builder clone; the project root when omitted. */
 	readonly worktree?: string;
 	readonly plan: ParsedPlan;
 	/** `plan` when a plan document came with the change, else the run's tier. */

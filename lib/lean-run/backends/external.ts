@@ -17,6 +17,7 @@ import {
 	readSpool,
 	runChild,
 } from "../../process/run-child.ts";
+import { CLAUDE_DENIED_TOOLS } from "../git-verbs.ts";
 import type {
 	BackendPermissions,
 	BackendRunInput,
@@ -65,7 +66,11 @@ export interface ExternalBuilderBackendOptions {
 	/** The assembled persona for a role, e.g. from `buildAgentPackage`. */
 	resolvePackage(role: LeanRole): Promise<AgentPackage>;
 	binary?: string;
-	/** Defaults: claude `--dangerously-skip-permissions` (tools stay limited by `--tools`); codex none (sandbox comes from the package). */
+	/**
+	 * Defaults: claude `--dangerously-skip-permissions` (tools stay limited by
+	 * `--tools`) with `--disallowedTools` and `CLAUDE_DENIED_TOOLS`; codex none
+	 * (sandbox comes from the package). Custom arguments replace the deny list too.
+	 */
 	extraArgs?: readonly string[];
 	env?: NodeJS.ProcessEnv;
 	runProcess?: ProcessRunner;
@@ -117,13 +122,28 @@ function withoutPiOnlyParts(agent: AgentDefinition): AgentDefinition {
 
 /**
  * `claude -p` cannot approve an edit without `--dangerously-skip-permissions`,
- * so a builder keeps it: `--tools` still limits what it can call, and the run
- * gives it a worktree of its own instead of the caller's.
+ * so a builder keeps it: `--tools` still limits what it can call,
+ * `--disallowedTools` denies git history and ref writers, and the run gives
+ * it a private clone with no remote instead of the caller's checkout. The
+ * deny list is variadic, so `-p` must follow it.
  */
 const DEFAULT_EXTRA_ARGS = {
-	"claude-cli": ["--dangerously-skip-permissions"],
+	"claude-cli": [
+		"--dangerously-skip-permissions",
+		"--disallowedTools",
+		...CLAUDE_DENIED_TOOLS,
+	],
 	"codex-cli": [],
 } as const satisfies Record<ExternalBackendKind, readonly string[]>;
+
+/** The default arguments' deny list; custom `extraArgs` carry their own. */
+function deniedTools(
+	options: ExternalBuilderBackendOptions,
+): readonly string[] | undefined {
+	if (options.kind !== "claude-cli" || options.extraArgs !== undefined)
+		return undefined;
+	return CLAUDE_DENIED_TOOLS;
+}
 
 /** Claude's and Codex's flags that run every tool call unprompted. */
 const SKIP_FLAGS: ReadonlySet<string> = new Set([
@@ -165,9 +185,11 @@ export function createExternalBuilderBackend(
 	options: ExternalBuilderBackendOptions,
 ): BuilderBackend {
 	const runProcess = options.runProcess ?? runChildProcess;
+	const denied = deniedTools(options);
 	return {
 		kind: options.kind,
 		permissions: externalPermissions(options),
+		...(denied ? { deniedTools: denied } : {}),
 		async run(input) {
 			const resolved = await options.resolvePackage(input.role);
 			const agentPackage = input.readonly ? readOnly(resolved) : resolved;

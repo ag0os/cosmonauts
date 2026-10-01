@@ -22,6 +22,7 @@ import {
 } from "../../lib/architecture-map/index.ts";
 import { readRunBaseSha } from "../../lib/lean-run/base-sha.ts";
 import { buildContextPack } from "../../lib/lean-run/context-pack.ts";
+import { CLAUDE_DENIED_TOOLS } from "../../lib/lean-run/git-verbs.ts";
 import type {
 	FileGraphRefresh,
 	RefreshFileGraph,
@@ -32,6 +33,7 @@ import {
 	REVIEW_DIFF_INLINE_BYTES,
 } from "../../lib/lean-run/prompts.ts";
 import { planVersusActualProvider } from "../../lib/lean-run/providers/plan-vs-actual.ts";
+import { createVerifyProvider } from "../../lib/lean-run/providers/verify.ts";
 import { loadRunRecord } from "../../lib/lean-run/record.ts";
 import {
 	DEFAULT_RUN_BUDGET,
@@ -297,7 +299,7 @@ function blockPatch(stage: string, reply: Reply): Reply {
 	};
 }
 
-/** A run whose last patch was not written keeps its builder worktree; the test cleans it up. */
+/** A run whose last patch was not written keeps its builder clone; the test cleans it up. */
 async function build(
 	options: {
 		builder: StubBackend;
@@ -374,7 +376,7 @@ describe("runBuild on clean output", () => {
 		expect(builder.calls[0]?.taskId).toBe(`lean-${id}`);
 	});
 
-	test("hands providers the builder worktree, its changed files, the diff base and the envelope", async () => {
+	test("hands providers the builder clone, its changed files, the diff base and the envelope", async () => {
 		const provider = stubProvider([{}]);
 		const record = await build({
 			builder: stubBackend([
@@ -477,7 +479,7 @@ function worktreeList(): string[] {
 		.filter((line) => line.startsWith("worktree "));
 }
 
-describe("runBuild builder worktree", () => {
+describe("runBuild builder clone", () => {
 	test("keeps the caller's HEAD, index and uncommitted files when the builder runs destructive git", async () => {
 		const files = await dirtyCallerTree();
 		const before = callerState();
@@ -613,7 +615,7 @@ describe("runBuild builder worktree", () => {
 		expect(record.manifest.status).toBe("done");
 	});
 
-	test("removes the builder worktree when the run is done, blocked or failed", async () => {
+	test("deletes the builder clone when the run is done, blocked or failed", async () => {
 		const runs = [
 			await build({ builder: stubBackend([editGreet(DONE)]) }),
 			await build({
@@ -641,7 +643,7 @@ describe("runBuild builder worktree", () => {
 		expect(worktreeList()).toHaveLength(1);
 	});
 
-	test("links the project's node_modules into the builder worktree and leaves it intact", async () => {
+	test("links the project's node_modules into the builder clone and leaves it intact", async () => {
 		await writeFile(
 			join(root, ".gitignore"),
 			"missions/sessions/\nnode_modules/\n",
@@ -687,6 +689,169 @@ describe("runBuild builder worktree", () => {
 
 		expect(record.manifest.permissions).toBe("skipped");
 	});
+
+	test("records the tools the builder harness was told to deny", async () => {
+		const record = await build({
+			builder: {
+				...stubBackend([DONE], "claude-cli"),
+				permissions: "skipped",
+				deniedTools: CLAUDE_DENIED_TOOLS,
+			},
+		});
+
+		expect(record.manifest.deniedTools).toEqual([...CLAUDE_DENIED_TOOLS]);
+	});
+
+	test("gives the builder the caller's uncommitted work and the snapshot ref", async () => {
+		const files = await dirtyCallerTree();
+		let seen: Record<string, string> = {};
+		let snapshotInClone = "";
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					const entries = await Promise.all(
+						Object.keys(files).map(async (path) => [
+							path,
+							await readFile(join(input.worktree, path), "utf8"),
+						]),
+					);
+					seen = Object.fromEntries(entries);
+					snapshotInClone = gitIn(
+						input.worktree,
+						"for-each-ref",
+						"--format=%(objectname)",
+						"refs/cosmonauts/",
+					).trim();
+					return DONE;
+				},
+			]),
+		});
+
+		expect(seen).toEqual(files);
+		expect(snapshotInClone).toBe(record.manifest.diffBase);
+		expect(record.manifest.snapshotRefs).toHaveLength(1);
+	});
+
+	test("keeps the caller's branches, config and remote when the builder deletes a branch, edits config and force-pushes", async () => {
+		const remote = await mkdtemp(join(tmpdir(), "lean-run-remote-"));
+		extraDirs.push(remote);
+		gitIn(remote, "init", "-q", "--bare", "-b", "main");
+		git("remote", "add", "origin", remote);
+		git("push", "-q", "origin", "main");
+		git("branch", "other");
+		const before = {
+			branches: git("branch", "--list"),
+			config: git("config", "--list", "--local"),
+			remote: gitIn(remote, "rev-parse", "refs/heads/main"),
+		};
+		const attempts: Record<string, boolean> = {};
+		const tryGit = (name: string, cwd: string, ...args: string[]) => {
+			try {
+				gitIn(cwd, ...args);
+				attempts[name] = true;
+			} catch {
+				attempts[name] = false;
+			}
+		};
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					tryGit("delete other", input.worktree, "branch", "-D", "other");
+					tryGit("delete main", input.worktree, "branch", "-D", "main");
+					tryGit("config", input.worktree, "config", "core.someKey", "x");
+					tryGit(
+						"commit",
+						input.worktree,
+						"-c",
+						"user.name=Builder",
+						"-c",
+						"user.email=builder@example.com",
+						"commit",
+						"-q",
+						"-am",
+						"builder",
+					);
+					tryGit(
+						"push",
+						input.worktree,
+						"push",
+						"origin",
+						"HEAD:refs/heads/main",
+						"--force",
+					);
+					return DONE;
+				},
+			]),
+		});
+
+		expect(attempts).toEqual({
+			"delete other": false,
+			"delete main": true,
+			config: true,
+			commit: true,
+			push: false,
+		});
+		expect(git("branch", "--list")).toBe(before.branches);
+		expect(git("config", "--list", "--local")).toBe(before.config);
+		expect(gitIn(remote, "rev-parse", "refs/heads/main")).toBe(before.remote);
+		expect(record.manifest.status).toBe("done");
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			'export const greet = "hi";\n',
+		);
+	});
+
+	test("runs a check that reads a gitignored file inside the clone, and records it as carried", async () => {
+		await writeFile(join(root, ".gitignore"), "missions/sessions/\n.env\n");
+		git("commit", "-q", "-am", "ignore .env");
+		await writeFile(join(root, ".env"), "TOKEN=1\n");
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [
+				createVerifyProvider({
+					commands: [{ executable: "test", args: ["-f", ".env"] }],
+				}),
+			],
+		});
+
+		expect(record.manifest.status).toBe("done");
+		expect(record.manifest.builderInputs?.carried).toContain(".env");
+		const patch = await readFile(
+			join(root, record.manifest.patches?.at(-1) ?? ""),
+			"utf8",
+		);
+		expect(patch).not.toContain(".env");
+	});
+
+	test("skips an ignored file over lean.ignoredInputsCapBytes and records why", async () => {
+		await writeFile(join(root, ".gitignore"), "missions/sessions/\nbig.bin\n");
+		git("commit", "-q", "-am", "ignore big.bin");
+		await writeFile(join(root, "big.bin"), "x".repeat(17));
+		await mkdir(join(root, ".cosmonauts"));
+		await writeFile(
+			join(root, ".cosmonauts/config.json"),
+			JSON.stringify({ lean: { ignoredInputsCapBytes: 16 } }),
+		);
+		let present = true;
+		const record = await build({
+			builder: stubBackend([
+				(input) => {
+					present = existsSync(join(input.worktree, "big.bin"));
+					return DONE;
+				},
+			]),
+		});
+
+		expect(present).toBe(false);
+		expect(record.manifest.builderInputs).toMatchObject({
+			capBytes: 16,
+			carriedBytes: 0,
+		});
+		expect(record.manifest.builderInputs?.skipped).toContainEqual({
+			path: "big.bin",
+			reason: "over the cap",
+		});
+	});
 });
 
 /** A verify provider that passes after running `act` in the worktree it checks. */
@@ -721,14 +886,14 @@ describe("runBuild shared repository state", () => {
 
 		expect(record.manifest).toMatchObject({
 			status: "blocked",
-			reason: `builder-1: the builder worktree no longer descends from the run's snapshot ${record.manifest.diffBase}; nothing was applied`,
+			reason: `builder-1: the builder clone no longer descends from the run's snapshot ${record.manifest.diffBase}; nothing was applied`,
 		});
 		expect(record.manifest.patchApplied).toBeUndefined();
 		expect(callerState()).toEqual(before);
 		expect(await readFiles(Object.keys(files))).toEqual(files);
 	});
 
-	test("keeps the patch out when the builder worktree leaves the snapshot after the last builder stage", async () => {
+	test("keeps the patch out when the builder clone leaves the snapshot after the last builder stage", async () => {
 		const files = await dirtyCallerTree();
 		const before = callerState();
 		const record = await build({
@@ -743,22 +908,21 @@ describe("runBuild shared repository state", () => {
 		const patch = record.manifest.patches?.at(-1);
 		expect(record.manifest).toMatchObject({
 			status: "blocked",
-			reason: `the builder worktree no longer descends from the run's snapshot ${record.manifest.diffBase}; patch not applied: ${patch}`,
+			reason: `the builder clone no longer descends from the run's snapshot ${record.manifest.diffBase}; patch not applied: ${patch}`,
 		});
 		expect(callerState()).toEqual(before);
 		expect(await readFiles(Object.keys(files))).toEqual(files);
 	});
 
-	test("ends blocked naming the ref and both commits when the builder moves the caller's branch", async () => {
+	test("ends blocked naming the ref and both commits when the caller's branch moves during the run", async () => {
 		const head = git("rev-parse", "HEAD").trim();
 		let moved = "";
 		const record = await build({
 			builder: stubBackend([
 				async (input) => {
 					await writeGreet(input.worktree);
-					gitIn(input.worktree, "commit", "-q", "-am", "builder");
-					gitIn(input.worktree, "update-ref", "refs/heads/main", "HEAD");
-					moved = gitIn(input.worktree, "rev-parse", "HEAD").trim();
+					git("commit", "-q", "--allow-empty", "-m", "the user commits");
+					moved = git("rev-parse", "HEAD").trim();
 					return DONE;
 				},
 			]),
@@ -774,14 +938,14 @@ describe("runBuild shared repository state", () => {
 		);
 	});
 
-	test("ends blocked naming the stash when the builder drops the caller's stash entry", async () => {
+	test("ends blocked naming the stash when the caller's stash entry is dropped during the run", async () => {
 		await writeFile(join(root, "README.md"), "stashed by the user\n");
 		git("stash", "-q");
 		const stash = git("rev-parse", "refs/stash").trim();
 		const record = await build({
 			builder: stubBackend([
-				(input) => {
-					gitIn(input.worktree, "stash", "drop", "-q");
+				() => {
+					git("stash", "drop", "-q");
 					return DONE;
 				},
 			]),
@@ -856,7 +1020,7 @@ describe("runBuild shared repository state", () => {
 		expect(git("status", "--porcelain")).toBe(" M packages/app/src/greet.ts\n");
 	});
 
-	test("keeps the builder worktree and says its work was not captured when the last patch was not written", async () => {
+	test("keeps the builder clone and says its work was not captured when the last patch was not written", async () => {
 		const record = await build({
 			builder: stubBackend([blockPatches(editGreet(DONE))]),
 		});
@@ -867,10 +1031,13 @@ describe("runBuild shared repository state", () => {
 			'export const greet = "hi";\n',
 		);
 		expect(record.manifest.warnings).toContainEqual(
-			expect.stringContaining(`builder worktree kept at ${kept}`),
+			expect.stringContaining(`builder clone kept at ${kept}`),
+		);
+		expect(record.manifest.warnings).toContainEqual(
+			expect.stringContaining(`remove it with \`rm -rf ${dirname(kept)}\``),
 		);
 		expect(summarizeRun(record)).toContain(
-			`the builder-1 patch was not written, so its work was not captured; its work is only in the kept worktree ${kept}`,
+			`the builder-1 patch was not written, so its work was not captured; its work is only in the kept builder clone ${kept}`,
 		);
 		expect(await onDisk(record)).toEqual(record);
 	});
@@ -896,7 +1063,7 @@ describe("runBuild shared repository state", () => {
 			patchFailure: { stage: "builder-2" },
 		});
 		expect(summarizeRun(record)).toContain(
-			`the builder-2 patch was not written, so its work was not captured; its work is only in the kept worktree ${record.manifest.patchFailure?.keptWorktree}; latest builder patch written, without that work: missions/sessions/lean/runs/${id}/patches/builder-1.patch`,
+			`the builder-2 patch was not written, so its work was not captured; its work is only in the kept builder clone ${record.manifest.patchFailure?.keptWorktree}; latest builder patch written, without that work: missions/sessions/lean/runs/${id}/patches/builder-1.patch`,
 		);
 	});
 });
@@ -1236,7 +1403,7 @@ describe("runBuild diff base", () => {
 		expect(prompt).not.toContain("earlier.ts");
 	});
 
-	test("writes the diff base marker in the builder worktree's own git dir only", async () => {
+	test("writes the diff base marker in the builder clone's own git dir only", async () => {
 		await writeFile(join(root, "src/pending.ts"), "export {};\n");
 		const seen: Array<string | undefined> = [];
 		const record = await build({
@@ -1289,7 +1456,7 @@ describe("runBuild review workspace", () => {
 		expect(call?.prompt).toContain("# Changed files\n\nsrc/greet.ts");
 	});
 
-	test("reviews the builder worktree in place when its patch was not written", async () => {
+	test("reviews the builder clone in place when its patch was not written", async () => {
 		const reviewer = stubBackend([REVIEW]);
 		const record = await build({
 			builder: stubBackend([blockPatches(editGreet(DONE))]),
@@ -1305,7 +1472,7 @@ describe("runBuild review workspace", () => {
 			/^builder-1 patch not written: /u,
 		);
 		expect(record.manifest.warnings?.[1]).toContain(
-			"private review checkout unavailable, reviewed in the builder worktree",
+			"private review checkout unavailable, reviewed in the builder clone",
 		);
 		expect(reviewer.calls[0]?.worktree).toBe(record.manifest.builderWorktree);
 		expect(reviewer.calls[0]?.prompt).toContain('+export const greet = "hi";');
@@ -3266,7 +3433,7 @@ describe("runBuild health hook coverage", () => {
 		};
 	}
 
-	test("keeps what the hook logged in the builder worktree in each stage, never the caller's log", async () => {
+	test("keeps what the hook logged in the builder clone in each stage, never the caller's log", async () => {
 		const leftover = join(root, ".git/lean-run/health-hook.jsonl");
 		await mkdir(join(root, ".git/lean-run"), { recursive: true });
 		await writeFile(leftover, `${JSON.stringify(ENTRY)}\n`);

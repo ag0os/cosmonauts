@@ -271,12 +271,12 @@ describe("lean_build tool", () => {
 		expect(tool.description).toContain("60 minutes");
 	});
 
-	test("states that the builder works in its own worktree and only a done run applies its patch", () => {
+	test("states that the builder works in a private clone and only a done run applies its patch", () => {
 		const { pi } = setup();
 		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
 
 		expect(tool.description).toContain(
-			"The builder works in its own git worktree, and only a done run applies its patch to this working tree, unstaged.",
+			"The builder works in a private clone of this repository with no remote, and only a done run applies its patch to this working tree, unstaged.",
 		);
 	});
 
@@ -285,7 +285,7 @@ describe("lean_build tool", () => {
 		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
 
 		expect(tool.description).toContain(
-			"refs, stash, config and the linked node_modules stay shared",
+			"node_modules is linked, so the dependency tree stays writable through the link",
 		);
 	});
 

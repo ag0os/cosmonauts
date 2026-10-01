@@ -23,21 +23,14 @@ import type {
 	ToolCallEventResult,
 } from "@earendil-works/pi-coding-agent";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
+import { GIT_HISTORY_VERBS } from "../../../../lib/lean-run/git-verbs.ts";
 import { REPAIR_HEADING } from "../../../../lib/lean-run/prompts.ts";
 
 const BUILDER = "lean/builder";
 const CHECKER = "lean/checker";
 
-/** Git verbs that write history or publish it. */
-const HISTORY_VERBS = new Set([
-	"commit",
-	"push",
-	"merge",
-	"rebase",
-	"cherry-pick",
-	"revert",
-	"am",
-]);
+/** Git verbs that write history or publish it; a `claude-cli` builder is denied the same ones. */
+const HISTORY_VERBS: ReadonlySet<string> = new Set(GIT_HISTORY_VERBS);
 
 /** Global git options that take a separate value: `git -C dir commit`. */
 const GIT_OPTIONS_WITH_VALUE = new Set([

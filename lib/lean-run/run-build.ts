@@ -8,9 +8,9 @@ import type { Envelope, Finding } from "../envelope/index.ts";
 import { DEFAULT_CHILD_STOP_MS } from "../process/run-child.ts";
 import { clearRunBaseSha, writeRunBaseSha } from "./base-sha.ts";
 import {
-	type BuilderWorktree,
-	openBuilderWorktree,
-} from "./builder-worktree.ts";
+	type BuilderWorkspace,
+	openBuilderWorkspace,
+} from "./builder-workspace.ts";
 import {
 	type CallerState,
 	callerStateChange,
@@ -35,6 +35,7 @@ import {
 	refreshFileGraph,
 } from "./graph-refresh.ts";
 import { takeHealthHookLog } from "./health-hook-log.ts";
+import { DEFAULT_IGNORED_INPUTS_CAP_BYTES } from "./ignored-inputs.ts";
 import { parsePlan, requestPaths } from "./plan.ts";
 import {
 	builderPrompt,
@@ -188,11 +189,12 @@ interface Run {
 	stage: string;
 	/**
 	 * Where builders, providers and the graph refresh run: the builder
-	 * worktree once it is open, the project root before that and in a review.
+	 * clone's project directory once it is open, the project root before
+	 * that and in a review.
 	 */
 	worktree: string;
-	builder?: BuilderWorktree;
-	/** What the caller's checkout shares with the builder worktree, read when it opened. */
+	builder?: BuilderWorkspace;
+	/** The caller's refs and linked node_modules, read when the builder clone opened. */
 	callerState?: CallerState;
 	/** The last builder attempt's patch; undefined when it could not be written. */
 	patch?: string;
@@ -213,8 +215,10 @@ interface Verified {
 type StageInput = Omit<BackendRunInput, "signal" | "taskId" | "readonly">;
 
 /**
- * Every builder stage runs in a detached worktree of the attempt-1 snapshot
- * (HEAD for a clean tree), never in the caller's: the providers check it
+ * Every builder stage runs in a private clone with no remote, detached at
+ * the attempt-1 snapshot (HEAD for a clean tree), never in the caller's
+ * checkout; the caller's gitignored inputs are copied in and its
+ * `node_modules` linked (`openBuilderWorkspace`). The providers check it
  * there, `patches/builder-N.patch` records it after each attempt, and only
  * a `done` run applies the last patch to the caller's working tree, never
  * its index. A patch that does not apply blocks the run; the caller's tree
@@ -446,7 +450,7 @@ async function underRunLock(
 	return record;
 }
 
-/** Writes the pr body, then removes the builder worktree. */
+/** Writes the pr body, then deletes the builder clone. */
 async function closeRun(run: Run): Promise<void> {
 	try {
 		await recordPrBody(run);
@@ -458,7 +462,8 @@ async function closeRun(run: Run): Promise<void> {
 /**
  * A cleanup failure is a warning, never a throw. When the last builder
  * attempt's patch was not written, its work exists only in the builder
- * worktree, so the worktree is kept and its path recorded instead.
+ * clone, so the clone is kept and its path recorded instead. A clone is a
+ * plain directory: deleting it is all the cleanup it needs.
  */
 async function disposeBuilder(run: Run): Promise<void> {
 	if (!run.builder) return;
@@ -468,7 +473,7 @@ async function disposeBuilder(run: Run): Promise<void> {
 		failure.keptWorktree = root;
 		warn(
 			run.record,
-			`builder worktree kept at ${root}: the ${failure.stage} patch was not written, so its work is only there; remove it with \`git worktree remove --force ${root}\``,
+			`builder clone kept at ${root}: the ${failure.stage} patch was not written, so its work is only there; remove it with \`rm -rf ${dirname(root)}\``,
 		);
 		await saveManifest(run.record).catch(() => undefined);
 		return;
@@ -476,7 +481,7 @@ async function disposeBuilder(run: Run): Promise<void> {
 	const warnings = await run.builder.dispose();
 	if (warnings.length === 0) return;
 	for (const warning of warnings)
-		warn(run.record, `builder worktree cleanup: ${warning}`);
+		warn(run.record, `builder clone cleanup: ${warning}`);
 	await saveManifest(run.record).catch(() => undefined);
 }
 
@@ -638,6 +643,8 @@ function startRun(start: RunStart): Run {
 		recordHealthHook(record, options.backend);
 		if (options.backend.permissions)
 			manifest.permissions = options.backend.permissions;
+		if (options.backend.deniedTools)
+			manifest.deniedTools = [...options.backend.deniedTools];
 	}
 	return {
 		options,
@@ -674,7 +681,7 @@ function recordHealthHook(record: RunRecord, backend: BuilderBackend): void {
 }
 
 /**
- * Opens the builder worktree, refreshes graph.json there, then replaces the
+ * Opens the builder clone, refreshes graph.json there, then replaces the
  * plan-only prompt with the context pack unless the caller supplied one. An
  * already-aborted run skips this so the builder stage reports the abort.
  */
@@ -691,11 +698,12 @@ async function prepareBuilder(run: Run): Promise<void> {
 /**
  * Takes the attempt-1 snapshot of the caller's tree, which becomes the diff
  * base so work that predates the run is not the builder's, and opens the
- * builder worktree on it (on HEAD when the tree was clean). Then reads
- * what the caller's checkout shares with it, for `isolationBreach`.
+ * builder clone on it (on HEAD when the tree was clean), with the snapshot
+ * ref fetched in. Then reads the caller's refs and linked `node_modules`,
+ * for `isolationBreach`.
  */
 async function isolateBuilder(run: Run): Promise<void> {
-	run.stage = "builder worktree";
+	run.stage = "builder clone";
 	const { manifest } = run.record;
 	const { projectRoot } = run.options;
 	const ref = await snapshotBeforeBuilder({
@@ -712,13 +720,17 @@ async function isolateBuilder(run: Run): Promise<void> {
 			signal: run.signal,
 		});
 	}
-	run.builder = await openBuilderWorktree({
+	run.builder = await openBuilderWorkspace({
 		projectRoot,
-		ref: diffBase(run),
+		commit: diffBase(run),
+		...(ref ? { ref } : {}),
+		capBytes:
+			run.lean.ignoredInputsCapBytes ?? DEFAULT_IGNORED_INPUTS_CAP_BYTES,
 		signal: run.signal,
 	});
 	run.worktree = run.builder.projectDir;
 	manifest.builderWorktree = run.worktree;
+	manifest.builderInputs = run.builder.inputs;
 	for (const warning of run.builder.warnings) warn(run.record, warning);
 	run.callerState = await readCallerState({
 		projectRoot,
@@ -981,9 +993,10 @@ async function runBuilder(
 
 /**
  * Why the builder's patch cannot go to the caller, if so: the builder
- * worktree left the run's snapshot behind, so its patch would undo work
- * that predates the run, or the builder moved what the caller's checkout
- * shares with it. Nothing is repaired. A check that cannot run counts.
+ * clone left the run's snapshot behind, so its patch would undo work that
+ * predates the run, or the caller's branch, HEAD or stash moved, or a
+ * linked `node_modules` lost entries, since the clone opened. Nothing is
+ * repaired. A check that cannot run counts.
  */
 async function isolationBreach(run: Run): Promise<string | undefined> {
 	const { callerState } = run;
@@ -996,10 +1009,10 @@ async function isolationBreach(run: Run): Promise<string | undefined> {
 			ref: "HEAD",
 		});
 		if (!descends)
-			return `the builder worktree no longer descends from the run's snapshot ${base}`;
+			return `the builder clone no longer descends from the run's snapshot ${base}`;
 		return await callerStateChange(callerState, run.options.projectRoot);
 	} catch (error) {
-		return `could not check what the builder shares with the caller: ${errorMessage(error)}`;
+		return `could not check the builder clone against the caller: ${errorMessage(error)}`;
 	}
 }
 
@@ -1017,7 +1030,7 @@ async function afterBuilder(run: Run, stage: BuilderStage): Promise<void> {
 }
 
 /**
- * Writes `patches/<stage>.patch`: the builder worktree against the diff base,
+ * Writes `patches/<stage>.patch`: the builder clone against the diff base,
  * so each patch holds every attempt so far. A failure is a warning and
  * `patchFailure`, and leaves the run with no current patch to apply.
  */
@@ -1101,7 +1114,11 @@ const ATTEMPTS: Record<BuilderStage, number> = {
 	"builder-4": 4,
 };
 
-/** Snapshots the builder worktree before a later attempt; `isolateBuilder` took attempt 1. */
+/**
+ * Snapshots the builder clone before a later attempt; `isolateBuilder` took
+ * attempt 1 in the caller's tree. The ref lives in the clone, so it goes
+ * with it; the attempt's patch is the durable record.
+ */
 async function snapshotAttempt(run: Run, stage: BuilderStage): Promise<void> {
 	if (stage === "builder-1") return;
 	const { manifest } = run.record;
@@ -1256,7 +1273,6 @@ function openCheckout(run: Run): Promise<ReviewCheckout> {
 	if (!run.builder)
 		return openReviewCheckout({ projectRoot, base, signal: run.signal });
 	return openBuilderReviewCheckout({
-		projectRoot,
 		base,
 		patchPath: run.patch,
 		builderDir: run.worktree,

@@ -411,10 +411,16 @@ function parseLeanConfig(value: unknown): ProjectLeanConfig | undefined {
 		"requiredSignals" in value
 			? parseLeanRequiredSignals(value.requiredSignals)
 			: {};
+	const ignoredInputsCapBytes = leanPositiveInteger(
+		value,
+		"ignoredInputsCapBytes",
+		"lean.ignoredInputsCapBytes",
+	);
 	return {
 		...(repoMapBudgetTokens === undefined ? {} : { repoMapBudgetTokens }),
 		...(budget === undefined ? {} : { budget }),
 		...requiredSignals,
+		...(ignoredInputsCapBytes === undefined ? {} : { ignoredInputsCapBytes }),
 	};
 }
 

@@ -15,6 +15,7 @@ import {
 	type ProcessRequest,
 } from "../../lib/lean-run/backends/external.ts";
 import { createPiBuilderBackend } from "../../lib/lean-run/backends/pi.ts";
+import { GIT_HISTORY_VERBS } from "../../lib/lean-run/git-verbs.ts";
 import type { LeanRole, StageProcessExit } from "../../lib/lean-run/types.ts";
 import type {
 	AgentSpawner,
@@ -275,6 +276,65 @@ describe("createExternalBuilderBackend", () => {
 			resolvePackage: async () => PACKAGE,
 		});
 		expect(backend.permissions).toBe("skipped");
+	});
+
+	test("denies claude git history and ref writers by default, with -p after the variadic list", async () => {
+		const requests: ProcessRequest[] = [];
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			runProcess: async (request) => {
+				requests.push(request);
+				return { exitCode: 0, stdout: ENVELOPE, stderr: "" };
+			},
+		});
+		await backend.run({ prompt: "p", worktree: "/repo", role: "lean/builder" });
+
+		const denied = [
+			"Bash(git commit:*)",
+			"Bash(git push:*)",
+			"Bash(git merge:*)",
+			"Bash(git rebase:*)",
+			"Bash(git cherry-pick:*)",
+			"Bash(git revert:*)",
+			"Bash(git am:*)",
+			"Bash(gh pr:*)",
+			"Bash(git update-ref:*)",
+			"Bash(git branch -D:*)",
+			"Bash(git branch -d:*)",
+			"Bash(git tag -d:*)",
+			"Bash(git stash:*)",
+		];
+		const args = requests[0]?.args ?? [];
+		const flag = args.indexOf("--disallowedTools");
+		expect(args.slice(flag + 1, flag + 1 + denied.length)).toEqual(denied);
+		expect(args[flag + 1 + denied.length]).toBe("-p");
+		expect(backend.deniedTools).toEqual(denied);
+		expect(backend.permissions).toBe("skipped");
+	});
+
+	test("denies claude every git verb the lean role guard blocks", () => {
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+		});
+		for (const verb of GIT_HISTORY_VERBS)
+			expect(backend.deniedTools).toContain(`Bash(git ${verb}:*)`);
+	});
+
+	test("reports no deny list for claude with custom arguments or for codex", () => {
+		for (const backend of [
+			createExternalBuilderBackend({
+				kind: "claude-cli",
+				resolvePackage: async () => PACKAGE,
+				extraArgs: ["--dangerously-skip-permissions"],
+			}),
+			createExternalBuilderBackend({
+				kind: "codex-cli",
+				resolvePackage: async () => PACKAGE,
+			}),
+		])
+			expect(backend.deniedTools).toBeUndefined();
 	});
 
 	test("reports the harness's own permissions for claude run without that flag", () => {

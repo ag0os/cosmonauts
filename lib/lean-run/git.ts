@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { copyFile, mkdtemp, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { ARCHITECTURE_MAP_OUTPUT_DIR } from "../architecture-map/types.ts";
 import { snapshotWorktree } from "../driver/runtime-helpers.ts";
@@ -12,7 +12,7 @@ const execFileAsync = promisify(execFile);
  * Drive snapshots leave session paths out, so a diff against one must too.
  * The architecture map is the host's: it regenerates it before each
  * provider pass, so those files are never the builder's change. A builder
- * worktree links the caller's `node_modules` directories in at any depth,
+ * clone links the caller's `node_modules` directories in at any depth,
  * which a `node_modules/` ignore rule does not cover: git sees a symlink,
  * not a directory. So every `node_modules` in the repository, and anything
  * under one, is left out, measured from the top level whatever the cwd.
@@ -155,6 +155,70 @@ export async function readPrefix(options: GitOptions): Promise<string> {
 	return (await git(["rev-parse", "--show-prefix"], options)).trim();
 }
 
+/** Host git commands in a checkout a stage works in run none of its hooks. */
+const NO_HOOKS = ["-c", "core.hooksPath=/dev/null"] as const;
+
+interface CloneOptions {
+	/** Any checkout of the caller's repository. */
+	source: string;
+	path: string;
+	commit: string;
+	/** A ref outside `refs/heads` to bring into the clone under its own name. */
+	ref?: string;
+	signal?: AbortSignal;
+}
+
+/**
+ * Clones `source` to `path`, detached at `commit`. The clone has its own
+ * refs, config and objects (`--no-hardlinks`) and no remote, so nothing
+ * done in it reaches `source` and nothing can be pushed from it. A clone
+ * copies only branches, so `ref` (the run's snapshot ref) is fetched in
+ * under its own name, and `commit` by id when no copied ref reaches it.
+ */
+export async function clonePrivate(options: CloneOptions): Promise<void> {
+	const { source, path, commit, signal } = options;
+	await git(
+		[
+			...NO_HOOKS,
+			"clone",
+			"--quiet",
+			"--no-hardlinks",
+			"--no-checkout",
+			"--no-tags",
+			"--",
+			source,
+			path,
+		],
+		{ cwd: dirname(path), signal },
+	);
+	const inClone = { cwd: path, signal };
+	const fetch = (refspec: string) =>
+		git(
+			[...NO_HOOKS, "fetch", "--quiet", "--no-tags", source, refspec],
+			inClone,
+		);
+	if (options.ref) await fetch(`+${options.ref}:${options.ref}`);
+	const present = await readOptional(
+		["rev-parse", "-q", "--verify", `${commit}^{commit}`],
+		inClone,
+	);
+	if (!present) await fetch(commit);
+	const remotes = (await git(["remote"], inClone)).split("\n").filter(Boolean);
+	for (const remote of remotes)
+		await git([...NO_HOOKS, "remote", "remove", remote], inClone);
+	await git([...NO_HOOKS, "checkout", "--quiet", "--detach", commit], inClone);
+}
+
+/** `<git dir>/<name>` of `cwd`'s checkout as git resolves it: a linked worktree shares `info/exclude`. */
+export async function readGitPath(
+	options: GitOptions & { name: string },
+): Promise<string> {
+	const path = (
+		await git(["rev-parse", "--git-path", options.name], options)
+	).trim();
+	return resolve(options.cwd, path);
+}
+
 /**
  * Adds a detached worktree of `ref` at `path`. The repository gains only the
  * worktree's metadata; `cwd`'s own index and working tree are not touched,
@@ -165,8 +229,7 @@ export async function addDetachedWorktree(
 ): Promise<void> {
 	await git(
 		[
-			"-c",
-			"core.hooksPath=/dev/null",
+			...NO_HOOKS,
 			"worktree",
 			"add",
 			"--detach",
@@ -327,8 +390,8 @@ export async function isAncestor(
 }
 
 /**
- * What a builder working in another checkout of the same repository could
- * still move: the checked-out branch (undefined when HEAD is detached), the
+ * What the caller can move in its own checkout while a run works in
+ * another: the checked-out branch (undefined when HEAD is detached), the
  * commit HEAD names, and the stash tip (undefined with no stash).
  */
 export interface RefState {
@@ -370,13 +433,11 @@ function exitCode(error: unknown): unknown {
 }
 
 /**
- * The ignored `node_modules` directories (or links) of `cwd`'s checkout,
- * relative to its top level, at most `limit` of them. `--directory` stops
- * at an ignored directory, so none is listed from inside another.
+ * The ignored paths of `cwd`'s checkout, relative to its top level, in
+ * git's order. `--directory` stops at an ignored directory, which is listed
+ * once with a trailing slash, so nothing is listed from inside another.
  */
-export async function listIgnoredDependencies(
-	options: GitOptions & { limit: number },
-): Promise<{ paths: string[]; truncated: boolean }> {
+export async function listIgnoredPaths(options: GitOptions): Promise<string[]> {
 	const top = await readTopLevel(options);
 	const output = await git(
 		[
@@ -389,8 +450,18 @@ export async function listIgnoredDependencies(
 		],
 		{ ...options, cwd: top },
 	);
-	const paths = output
-		.split("\0")
+	return output.split("\0").filter(Boolean);
+}
+
+/**
+ * The ignored `node_modules` directories (or links) among `listed` (by
+ * default `listIgnoredPaths`), without the trailing slash, at most `limit`.
+ */
+export async function listIgnoredDependencies(
+	options: GitOptions & { limit: number; listed?: readonly string[] },
+): Promise<{ paths: string[]; truncated: boolean }> {
+	const listed = options.listed ?? (await listIgnoredPaths(options));
+	const paths = listed
 		.map((path) => path.replace(/\/$/u, ""))
 		.filter((path) => path.split("/").at(-1) === "node_modules");
 	return {

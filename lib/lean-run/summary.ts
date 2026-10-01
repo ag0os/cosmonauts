@@ -29,7 +29,7 @@ function unappliedPatch(record: RunRecord): string {
 
 function uncaptured(failure: PatchFailure, latest: string | undefined): string {
 	const kept = failure.keptWorktree
-		? `; its work is only in the kept worktree ${failure.keptWorktree}`
+		? `; its work is only in the kept builder clone ${failure.keptWorktree}`
 		: "";
 	const earlier = latest
 		? `; latest builder patch written, without that work: ${latest}`
