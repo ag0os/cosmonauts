@@ -293,6 +293,29 @@ describe("createExternalBuilderBackend", () => {
 		});
 		expect(backend.permissions).toBe("sandbox");
 	});
+
+	test.each([
+		["claude-cli", ["--permission-mode", "bypassPermissions"]],
+		["claude-cli", ["--permission-mode=bypassPermissions"]],
+		["claude-cli", ["--model", "opus", "--dangerously-skip-permissions"]],
+		["codex-cli", ["--dangerously-bypass-approvals-and-sandbox"]],
+	] as const)("reports skipped permissions for %s with custom arguments %j", (kind, extraArgs) => {
+		const backend = createExternalBuilderBackend({
+			kind,
+			resolvePackage: async () => PACKAGE,
+			extraArgs,
+		});
+		expect(backend.permissions).toBe("skipped");
+	});
+
+	test("reports the harness's own permissions for claude in another permission mode", () => {
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			extraArgs: ["--permission-mode", "acceptEdits"],
+		});
+		expect(backend.permissions).toBe("harness");
+	});
 });
 
 /** `claude -p --output-format json` as Claude Code 2.1.286 prints it. */

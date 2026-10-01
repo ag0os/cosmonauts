@@ -14,7 +14,7 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	DEFAULT_SLICE_BUDGET_TOKENS,
@@ -271,15 +271,27 @@ function blockPatches(reply: Reply): Reply {
 	};
 }
 
-function build(
+/** Runs `reply`, then puts a directory where `<stage>.patch` goes, so that one patch cannot be written. */
+function blockPatch(stage: string, reply: Reply): Reply {
+	return async (input) => {
+		const text = typeof reply === "string" ? reply : await reply(input);
+		await mkdir(join(await onlyRunDir(), "patches", `${stage}.patch`), {
+			recursive: true,
+		});
+		return text;
+	};
+}
+
+/** A run whose last patch was not written keeps its builder worktree; the test cleans it up. */
+async function build(
 	options: {
 		builder: StubBackend;
 		reviewer?: StubBackend;
 		providers?: SignalProvider[];
 	} & Partial<RunBuildOptions>,
-) {
+): Promise<RunRecord> {
 	const { builder, reviewer, providers, ...rest } = options;
-	return runBuild({
+	const record = await runBuild({
 		projectRoot: root,
 		planPath: PLAN_PATH,
 		backend: builder,
@@ -288,6 +300,9 @@ function build(
 		refreshGraph: stubRefresh(),
 		...rest,
 	});
+	const kept = record.manifest.patchFailure?.keptWorktree;
+	if (kept) extraDirs.push(dirname(kept));
+	return record;
 }
 
 function onDisk(record: RunRecord, projectRoot = root): Promise<RunRecord> {
@@ -656,6 +671,227 @@ describe("runBuild builder worktree", () => {
 		expect(record.manifest.permissions).toBe("skipped");
 	});
 });
+
+/** A verify provider that passes after running `act` in the worktree it checks. */
+function actingProvider(act: (worktree: string) => void): SignalProvider {
+	return {
+		kind: "verify",
+		async run(context) {
+			act(context.worktree);
+			return {
+				kind: "verify",
+				status: "pass",
+				summary: "tests pass",
+				data: { exitCode: 0 },
+				reenter: false,
+			};
+		},
+	};
+}
+
+describe("runBuild shared repository state", () => {
+	test("ends blocked with the caller's work intact when the builder resets below the run's snapshot", async () => {
+		const files = await dirtyCallerTree();
+		const before = callerState();
+		const record = await build({
+			builder: stubBackend([
+				(input) => {
+					gitIn(input.worktree, "reset", "-q", "--hard", "HEAD~1");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: `builder-1: the builder worktree no longer descends from the run's snapshot ${record.manifest.diffBase}; nothing was applied`,
+		});
+		expect(record.manifest.patchApplied).toBeUndefined();
+		expect(callerState()).toEqual(before);
+		expect(await readFiles(Object.keys(files))).toEqual(files);
+	});
+
+	test("keeps the patch out when the builder worktree leaves the snapshot after the last builder stage", async () => {
+		const files = await dirtyCallerTree();
+		const before = callerState();
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [
+				actingProvider((worktree) =>
+					gitIn(worktree, "reset", "-q", "--hard", "HEAD~1"),
+				),
+			],
+		});
+
+		const patch = record.manifest.patches?.at(-1);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: `the builder worktree no longer descends from the run's snapshot ${record.manifest.diffBase}; patch not applied: ${patch}`,
+		});
+		expect(callerState()).toEqual(before);
+		expect(await readFiles(Object.keys(files))).toEqual(files);
+	});
+
+	test("ends blocked naming the ref and both commits when the builder moves the caller's branch", async () => {
+		const head = git("rev-parse", "HEAD").trim();
+		let moved = "";
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					gitIn(input.worktree, "commit", "-q", "-am", "builder");
+					gitIn(input.worktree, "update-ref", "refs/heads/main", "HEAD");
+					moved = gitIn(input.worktree, "rev-parse", "HEAD").trim();
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: `builder-1: the caller's refs/heads/main moved from ${head} to ${moved}; nothing was applied`,
+		});
+		expect(record.manifest.patchApplied).toBeUndefined();
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			"export const greet = 1;\n",
+		);
+	});
+
+	test("ends blocked naming the stash when the builder drops the caller's stash entry", async () => {
+		await writeFile(join(root, "README.md"), "stashed by the user\n");
+		git("stash", "-q");
+		const stash = git("rev-parse", "refs/stash").trim();
+		const record = await build({
+			builder: stubBackend([
+				(input) => {
+					gitIn(input.worktree, "stash", "drop", "-q");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: `builder-1: the caller's refs/stash moved from ${stash} to no stash; nothing was applied`,
+		});
+	});
+
+	test("ends blocked when the builder empties the caller's node_modules through its link", async () => {
+		await ignoreNodeModules();
+		await mkdir(join(root, "node_modules/dep"), { recursive: true });
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					execFileSync("rm", ["-rf", "node_modules/"], { cwd: input.worktree });
+					await writeGreet(input.worktree);
+					return DONE;
+				},
+			]),
+		});
+
+		// BSD rm removes the linked directory too; GNU rm only empties it.
+		const caller = `the caller's ${join(root, "node_modules")}`;
+		expect(record.manifest.status).toBe("blocked");
+		expect([
+			`builder-1: ${caller} is no longer a directory; nothing was applied`,
+			`builder-1: ${caller} lost 1 of its entries (dep); nothing was applied`,
+		]).toContain(record.manifest.reason);
+		expect(git("status", "--porcelain")).toBe("");
+	});
+
+	test("links hoisted node_modules when the project root is below the top level, and patches the project only", async () => {
+		const project = join(root, "packages/app");
+		await mkdir(join(project, "missions/lean/demo"), { recursive: true });
+		await mkdir(join(project, "src"), { recursive: true });
+		await writeFile(join(project, ".gitignore"), "missions/sessions/\n");
+		await writeFile(join(project, PLAN_PATH), PLAN);
+		await writeFile(join(project, "src/greet.ts"), "export const greet = 1;\n");
+		await ignoreNodeModules();
+		git("add", "-A");
+		git("commit", "-q", "-m", "workspace package");
+		await mkdir(join(root, "node_modules/dep"), { recursive: true });
+		await writeFile(join(root, "node_modules/dep/index.js"), "dep\n");
+		const seen: string[] = [];
+
+		const record = await build({
+			projectRoot: project,
+			builder: stubBackend([
+				async (input) => {
+					seen.push(
+						await readFile(
+							join(input.worktree, "../../node_modules/dep/index.js"),
+							"utf8",
+						),
+					);
+					await writeGreet(input.worktree);
+					return DONE;
+				},
+			]),
+		});
+
+		expect(seen).toEqual(["dep\n"]);
+		expect(record.manifest.status).toBe("done");
+		const patch = await readFile(
+			join(project, record.manifest.patches?.[0] ?? ""),
+			"utf8",
+		);
+		expect(patch).not.toContain("node_modules");
+		expect(git("status", "--porcelain")).toBe(" M packages/app/src/greet.ts\n");
+	});
+
+	test("keeps the builder worktree and says its work was not captured when the last patch was not written", async () => {
+		const record = await build({
+			builder: stubBackend([blockPatches(editGreet(DONE))]),
+		});
+
+		const kept = record.manifest.patchFailure?.keptWorktree ?? "";
+		expect(record.manifest.patchFailure).toMatchObject({ stage: "builder-1" });
+		expect(await readFile(join(kept, "src/greet.ts"), "utf8")).toBe(
+			'export const greet = "hi";\n',
+		);
+		expect(record.manifest.warnings).toContainEqual(
+			expect.stringContaining(`builder worktree kept at ${kept}`),
+		);
+		expect(summarizeRun(record)).toContain(
+			`the builder-1 patch was not written, so its work was not captured; its work is only in the kept worktree ${kept}`,
+		);
+		expect(await onDisk(record)).toEqual(record);
+	});
+
+	test("names the latest written patch as missing the last attempt's work", async () => {
+		const record = await build({
+			builder: stubBackend([
+				editGreet(DONE),
+				blockPatch("builder-2", async (input) => {
+					await writeFile(
+						join(input.worktree, "src/second.ts"),
+						"export {};\n",
+					);
+					return DONE;
+				}),
+			]),
+			providers: [stubProvider([FAILING, {}])],
+		});
+
+		const { id } = record.manifest;
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			patchFailure: { stage: "builder-2" },
+		});
+		expect(summarizeRun(record)).toContain(
+			`the builder-2 patch was not written, so its work was not captured; its work is only in the kept worktree ${record.manifest.patchFailure?.keptWorktree}; latest builder patch written, without that work: missions/sessions/lean/runs/${id}/patches/builder-1.patch`,
+		);
+	});
+});
+
+async function ignoreNodeModules(): Promise<void> {
+	await writeFile(
+		join(root, ".gitignore"),
+		"missions/sessions/\nnode_modules/\n",
+	);
+	git("add", ".gitignore");
+	git("commit", "-q", "-m", "ignore node_modules");
+}
 
 /** What follows a context pack in the builder prompt: one paragraph, the envelope instruction. */
 const ENVELOPE_TAIL = /^End with the lean envelope: [^\n]+$/u;
@@ -1465,33 +1701,69 @@ describe("runBuild verification verdict", () => {
 });
 
 describe("runBuild budgets", () => {
+	/**
+	 * Hands the run a deadline the test fires itself: `startRun`'s
+	 * `AbortSignal.timeout` is the first in a run, so the deadline expires
+	 * at a known stage however long the stages before it take.
+	 */
+	async function withDeadline(
+		body: (expire: () => void) => Promise<void>,
+	): Promise<void> {
+		const deadline = new AbortController();
+		const timeout = vi
+			.spyOn(AbortSignal, "timeout")
+			.mockImplementationOnce(() => deadline.signal);
+		try {
+			await body(() =>
+				deadline.abort(new DOMException("budget", "TimeoutError")),
+			);
+		} finally {
+			timeout.mockRestore();
+		}
+	}
+
 	test("fails when a stage outlives the time budget, even if it ignores the signal", async () => {
-		const builder = stubBackend([never]);
-		const record = await build({
-			builder,
-			budget: { tokens: 1_000, timeMs: 100 },
-		});
-		expect(builder.calls[0]?.signal?.aborted).toBe(true);
-		const saved = await onDisk(record);
-		expect(saved.manifest).toMatchObject({
-			status: "failed",
-			reason: "time budget exceeded at builder-1",
+		await withDeadline(async (expire) => {
+			const builder = stubBackend([
+				() => {
+					expire();
+					return never();
+				},
+			]);
+			const record = await build({
+				builder,
+				budget: { tokens: 1_000, timeMs: 100 },
+			});
+			expect(builder.calls[0]?.signal?.aborted).toBe(true);
+			expect((await onDisk(record)).manifest).toMatchObject({
+				status: "failed",
+				reason: "time budget exceeded at builder-1",
+			});
 		});
 	});
 
 	test("fails when a provider outlives the time budget", async () => {
-		const reviewer = stubBackend([REVIEW]);
-		const record = await build({
-			builder: stubBackend([DONE]),
-			reviewer,
-			providers: [stubProvider([never])],
-			budget: { tokens: 1_000_000, timeMs: 2_000 },
+		await withDeadline(async (expire) => {
+			const reviewer = stubBackend([REVIEW]);
+			const record = await build({
+				builder: stubBackend([DONE]),
+				reviewer,
+				providers: [
+					stubProvider([
+						() => {
+							expire();
+							return never();
+						},
+					]),
+				],
+				budget: { tokens: 1_000_000, timeMs: 2_000 },
+			});
+			expect(record.manifest).toMatchObject({
+				status: "failed",
+				reason: "time budget exceeded at verify provider (pass 1)",
+			});
+			expect(reviewer.calls).toHaveLength(0);
 		});
-		expect(record.manifest).toMatchObject({
-			status: "failed",
-			reason: "time budget exceeded at verify provider (pass 1)",
-		});
-		expect(reviewer.calls).toHaveLength(0);
 	});
 
 	test("fails right after the session that overran the token budget, before any provider runs", async () => {

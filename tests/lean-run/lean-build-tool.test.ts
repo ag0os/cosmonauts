@@ -226,12 +226,21 @@ describe("lean_build tool", () => {
 		expect(tool.description).toContain("60 minutes");
 	});
 
-	test("states that the builder works in an isolated worktree and only a done run applies its patch", () => {
+	test("states that the builder works in its own worktree and only a done run applies its patch", () => {
 		const { pi } = setup();
 		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
 
 		expect(tool.description).toContain(
-			"The builder works in an isolated git worktree, and only a done run applies its patch to this working tree, unstaged.",
+			"The builder works in its own git worktree, and only a done run applies its patch to this working tree, unstaged.",
+		);
+	});
+
+	test("states what the builder still shares with this checkout", () => {
+		const { pi } = setup();
+		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
+
+		expect(tool.description).toContain(
+			"refs, stash, config and the linked node_modules stay shared",
 		);
 	});
 

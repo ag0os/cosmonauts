@@ -6,12 +6,21 @@ import { loadProjectConfig } from "../config/index.ts";
 import type { ProjectLeanConfig } from "../config/types.ts";
 import type { Envelope, Finding } from "../envelope/index.ts";
 import { clearRunBaseSha, writeRunBaseSha } from "./base-sha.ts";
-import { openBuilderWorktree, type TempWorktree } from "./builder-worktree.ts";
+import {
+	type BuilderWorktree,
+	openBuilderWorktree,
+} from "./builder-worktree.ts";
+import {
+	type CallerState,
+	callerStateChange,
+	readCallerState,
+} from "./caller-state.ts";
 import { buildContextPack, planPathWarnings } from "./context-pack.ts";
 import { parseStageEnvelope } from "./envelope.ts";
 import {
 	applyPatch,
 	builderTaskId,
+	isAncestor,
 	readHeadSha,
 	readMergeBase,
 	readWorktreeChange,
@@ -162,7 +171,9 @@ interface Run {
 	 * worktree once it is open, the project root before that and in a review.
 	 */
 	worktree: string;
-	builder?: TempWorktree;
+	builder?: BuilderWorktree;
+	/** What the caller's checkout shares with the builder worktree, read when it opened. */
+	callerState?: CallerState;
 	/** The last builder attempt's patch; undefined when it could not be written. */
 	patch?: string;
 }
@@ -412,9 +423,24 @@ async function closeRun(run: Run): Promise<void> {
 	}
 }
 
-/** A cleanup failure is a warning, never a throw. */
+/**
+ * A cleanup failure is a warning, never a throw. When the last builder
+ * attempt's patch was not written, its work exists only in the builder
+ * worktree, so the worktree is kept and its path recorded instead.
+ */
 async function disposeBuilder(run: Run): Promise<void> {
 	if (!run.builder) return;
+	const failure = run.record.manifest.patchFailure;
+	if (failure) {
+		const { root } = run.builder;
+		failure.keptWorktree = root;
+		warn(
+			run.record,
+			`builder worktree kept at ${root}: the ${failure.stage} patch was not written, so its work is only there; remove it with \`git worktree remove --force ${root}\``,
+		);
+		await saveManifest(run.record).catch(() => undefined);
+		return;
+	}
 	const warnings = await run.builder.dispose();
 	if (warnings.length === 0) return;
 	for (const warning of warnings)
@@ -605,7 +631,8 @@ async function prepareBuilder(run: Run): Promise<void> {
 /**
  * Takes the attempt-1 snapshot of the caller's tree, which becomes the diff
  * base so work that predates the run is not the builder's, and opens the
- * builder worktree on it (on HEAD when the tree was clean).
+ * builder worktree on it (on HEAD when the tree was clean). Then reads
+ * what the caller's checkout shares with it, for `isolationBreach`.
  */
 async function isolateBuilder(run: Run): Promise<void> {
 	run.stage = "builder worktree";
@@ -632,6 +659,11 @@ async function isolateBuilder(run: Run): Promise<void> {
 	});
 	run.worktree = run.builder.projectDir;
 	manifest.builderWorktree = run.worktree;
+	for (const warning of run.builder.warnings) warn(run.record, warning);
+	run.callerState = await readCallerState({
+		projectRoot,
+		dependencies: run.builder.dependencies,
+	});
 	await saveManifest(run.record);
 }
 
@@ -868,12 +900,41 @@ async function runBuilder(
 			worktree,
 			role: "lean/builder",
 		});
-		if (envelope?.outcome === "done") return envelope;
-		if (envelope)
-			await finish(run, envelope.outcome, `${stage}: ${envelope.reason}`);
+		if (!envelope) return undefined;
+		const breach = await isolationBreach(run);
+		if (breach) {
+			await finish(run, "blocked", `${stage}: ${breach}; nothing was applied`);
+			return undefined;
+		}
+		if (envelope.outcome === "done") return envelope;
+		await finish(run, envelope.outcome, `${stage}: ${envelope.reason}`);
 		return undefined;
 	} finally {
 		await afterBuilder(run, stage);
+	}
+}
+
+/**
+ * Why the builder's patch cannot go to the caller, if so: the builder
+ * worktree left the run's snapshot behind, so its patch would undo work
+ * that predates the run, or the builder moved what the caller's checkout
+ * shares with it. Nothing is repaired. A check that cannot run counts.
+ */
+async function isolationBreach(run: Run): Promise<string | undefined> {
+	const { callerState } = run;
+	if (!callerState) return undefined;
+	try {
+		const base = diffBase(run);
+		const descends = await isAncestor({
+			cwd: run.worktree,
+			ancestor: base,
+			ref: "HEAD",
+		});
+		if (!descends)
+			return `the builder worktree no longer descends from the run's snapshot ${base}`;
+		return await callerStateChange(callerState, run.options.projectRoot);
+	} catch (error) {
+		return `could not check what the builder shares with the caller: ${errorMessage(error)}`;
 	}
 }
 
@@ -892,12 +953,13 @@ async function afterBuilder(run: Run, stage: BuilderStage): Promise<void> {
 
 /**
  * Writes `patches/<stage>.patch`: the builder worktree against the diff base,
- * so each patch holds every attempt so far. A failure is a warning, and
- * leaves the run with no current patch to apply.
+ * so each patch holds every attempt so far. A failure is a warning and
+ * `patchFailure`, and leaves the run with no current patch to apply.
  */
 async function recordPatch(run: Run, stage: BuilderStage): Promise<void> {
 	if (!run.builder) return;
 	run.patch = undefined;
+	const { manifest } = run.record;
 	const path = join(run.record.dir, RUN_RECORD_FILES.patches, `${stage}.patch`);
 	try {
 		const patch = await readWorktreePatch({
@@ -907,12 +969,13 @@ async function recordPatch(run: Run, stage: BuilderStage): Promise<void> {
 		await mkdir(dirname(path), { recursive: true });
 		await writeFile(path, patch);
 		run.patch = path;
-		const { manifest } = run.record;
 		manifest.patches = [
 			...(manifest.patches ?? []),
 			relative(run.options.projectRoot, path),
 		];
+		delete manifest.patchFailure;
 	} catch (error) {
+		manifest.patchFailure = { stage, error: errorMessage(error) };
 		warn(run.record, `${stage} patch not written: ${errorMessage(error)}`);
 	}
 	await saveManifest(run.record);
@@ -1128,8 +1191,9 @@ function openCheckout(run: Run): Promise<ReviewCheckout> {
 }
 
 /**
- * `full.diff` at the root of a private checkout; in place, `<stage>.diff` in the
- * run directory, which the reviewer can read and git ignores.
+ * `full.diff` in a private checkout's `worktree`, where its reviewer runs
+ * (in a build, the checkout's project directory); in place, `<stage>.diff`
+ * in the run directory, which the reviewer can read and git ignores.
  */
 async function writeFullDiff(
 	run: Run,
@@ -1433,7 +1497,8 @@ async function finish(
 /**
  * `git apply` of the last builder patch to the caller's working tree; never
  * the index. git applies a patch whole or not at all, so a failure leaves
- * the tree as it was. Resolves to why the patch is not in the tree, if so.
+ * the tree as it was. Resolves to why the patch is not in the tree, if so;
+ * an isolation breach since the last builder stage keeps it out too.
  */
 async function applyFinalPatch(run: Run): Promise<string | undefined> {
 	run.stage = "patch apply";
@@ -1442,6 +1507,8 @@ async function applyFinalPatch(run: Run): Promise<string | undefined> {
 	if (path === undefined)
 		return "the builder's last patch was not written, so nothing was applied to the worktree";
 	const patchPath = relative(projectRoot, path);
+	const breach = await isolationBreach(run);
+	if (breach) return `${breach}; patch not applied: ${patchPath}`;
 	const { manifest } = run.record;
 	try {
 		if ((await stat(path)).size > 0)

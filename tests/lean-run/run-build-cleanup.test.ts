@@ -10,7 +10,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { readRunBaseSha } from "../../lib/lean-run/base-sha.ts";
 import type { RefreshFileGraph } from "../../lib/lean-run/graph-refresh.ts";
 import { loadRunRecord } from "../../lib/lean-run/record.ts";
 import { runBuild } from "../../lib/lean-run/run-build.ts";
@@ -26,12 +25,40 @@ interface Faults {
 	/** 1-based calls to takeHealthHookLog that fail. */
 	takeFails: Set<number>;
 	takeCalls: number;
+	/** The base-sha marker of each builder worktree, read just before it is removed. */
+	markersAtDispose: Array<string | undefined>;
 }
 
 const faults = vi.hoisted<Faults>(() => ({
 	takeFails: new Set(),
 	takeCalls: 0,
+	markersAtDispose: [],
 }));
+
+vi.mock("../../lib/lean-run/builder-worktree.ts", async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import("../../lib/lean-run/builder-worktree.ts")
+		>();
+	const { readRunBaseSha } = await import("../../lib/lean-run/base-sha.ts");
+	return {
+		...actual,
+		openBuilderWorktree: async (
+			options: Parameters<typeof actual.openBuilderWorktree>[0],
+		) => {
+			const worktree = await actual.openBuilderWorktree(options);
+			return {
+				...worktree,
+				dispose: async () => {
+					faults.markersAtDispose.push(
+						await readRunBaseSha({ worktree: worktree.projectDir }),
+					);
+					return worktree.dispose();
+				},
+			};
+		},
+	};
+});
 
 vi.mock("../../lib/lean-run/record.ts", async (importOriginal) => {
 	const actual =
@@ -82,6 +109,7 @@ beforeEach(async () => {
 	faults.saveFails = undefined;
 	faults.takeFails = new Set();
 	faults.takeCalls = 0;
+	faults.markersAtDispose = [];
 	root = await mkdtemp(join(tmpdir(), "lean-run-cleanup-"));
 	git("init", "-q", "-b", "main");
 	git("config", "user.email", "test@example.com");
@@ -186,7 +214,7 @@ describe("runBuild cleanup when the record cannot be saved", () => {
 
 		await expect(build()).rejects.toThrow("disk full");
 
-		expect(await readRunBaseSha({ worktree: root })).toBeUndefined();
+		expect(faults.markersAtDispose).toEqual([undefined]);
 		expect(worktreeCount()).toBe(1);
 		faults.saveFails = undefined;
 		faults.takeFails = new Set();

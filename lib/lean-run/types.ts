@@ -146,8 +146,10 @@ export interface BuilderBackend {
  * How a builder harness gates tool calls. Whatever it is, the builder runs
  * in its own worktree. `guarded`: Pi, with the lean role guard and the
  * destructive-git guard. `skipped`: Claude Code with
- * `--dangerously-skip-permissions`, which `-p` needs to edit unattended:
- * every call to a tool in its `--tools` set runs unprompted. `sandbox`:
+ * `--dangerously-skip-permissions`, which `-p` needs to edit unattended, or
+ * `--permission-mode bypassPermissions`, or Codex with
+ * `--dangerously-bypass-approvals-and-sandbox`: every call to a tool in its
+ * tool set runs unprompted. `sandbox`:
  * Codex, confined by the sandbox mode its agent package sets. `harness`: the
  * harness's own permission settings, from custom arguments.
  */
@@ -281,7 +283,8 @@ export interface RunManifest {
 	prBodyPath?: string;
 	/**
 	 * The detached worktree every builder stage and provider pass ran in; it
-	 * is removed when the run ends. Absent for a review.
+	 * is removed when the run ends, unless `patchFailure` keeps it. Absent
+	 * for a review.
 	 */
 	builderWorktree?: string;
 	/**
@@ -289,10 +292,20 @@ export interface RunManifest {
 	 * root and cumulative against `diffBase`; the last is the run's change.
 	 */
 	patches?: string[];
+	/** The last builder attempt's patch, when it could not be written. */
+	patchFailure?: PatchFailure;
 	/** Applying the last patch to the caller's working tree; only a `done` run tries. */
 	patchApplied?: PatchApplication;
 	/** How the builder harness gated its tool calls. */
 	permissions?: BackendPermissions;
+}
+
+/** A builder attempt whose work no patch holds; a later attempt's patch clears it. */
+export interface PatchFailure {
+	stage: string;
+	error: string;
+	/** The builder worktree's top level, kept because the work is only there. */
+	keptWorktree?: string;
 }
 
 /** `git apply` of the final builder patch to the working tree only, never the index. */

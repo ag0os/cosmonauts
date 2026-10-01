@@ -1,9 +1,10 @@
-import type { RunRecord } from "./types.ts";
+import type { PatchFailure, RunRecord } from "./types.ts";
 
 /**
  * One line for the lead: status, reason or the last review's verdict, and
  * re-entries. A build that did not apply its change names the latest
- * builder patch, so a human can apply it.
+ * builder patch, so a human can apply it, and says when the last attempt's
+ * work is in no patch.
  */
 export function summarizeRun(record: RunRecord): string {
 	const { manifest } = record;
@@ -21,8 +22,19 @@ export function summarizeRun(record: RunRecord): string {
 function unappliedPatch(record: RunRecord): string {
 	const { manifest } = record;
 	const latest = manifest.patches?.at(-1);
+	if (manifest.patchFailure) return uncaptured(manifest.patchFailure, latest);
 	if (!latest || manifest.reason?.includes(latest)) return "";
 	return `; builder patch not applied: ${latest}`;
+}
+
+function uncaptured(failure: PatchFailure, latest: string | undefined): string {
+	const kept = failure.keptWorktree
+		? `; its work is only in the kept worktree ${failure.keptWorktree}`
+		: "";
+	const earlier = latest
+		? `; latest builder patch written, without that work: ${latest}`
+		: "";
+	return `; the ${failure.stage} patch was not written, so its work was not captured${kept}${earlier}`;
 }
 
 function reentryCounts(record: RunRecord): string {

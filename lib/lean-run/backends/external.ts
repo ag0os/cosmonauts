@@ -112,16 +112,30 @@ const DEFAULT_EXTRA_ARGS = {
 	"codex-cli": [],
 } as const satisfies Record<ExternalBackendKind, readonly string[]>;
 
-const SKIP_PERMISSIONS = "--dangerously-skip-permissions";
+/** Claude's and Codex's flags that run every tool call unprompted. */
+const SKIP_FLAGS: ReadonlySet<string> = new Set([
+	"--dangerously-skip-permissions",
+	"--permission-mode=bypassPermissions",
+	"--dangerously-bypass-approvals-and-sandbox",
+]);
 
 function externalPermissions(
 	options: ExternalBuilderBackendOptions,
 ): BackendPermissions {
-	if (options.kind === "codex-cli")
-		return options.extraArgs === undefined ? "sandbox" : "harness";
 	const args: readonly string[] =
 		options.extraArgs ?? DEFAULT_EXTRA_ARGS[options.kind];
-	return args.includes(SKIP_PERMISSIONS) ? "skipped" : "harness";
+	if (skipsPermissions(args)) return "skipped";
+	if (options.kind === "codex-cli" && options.extraArgs === undefined)
+		return "sandbox";
+	return "harness";
+}
+
+function skipsPermissions(args: readonly string[]): boolean {
+	return args.some(
+		(arg, index) =>
+			SKIP_FLAGS.has(arg) ||
+			(arg === "--permission-mode" && args[index + 1] === "bypassPermissions"),
+	);
 }
 
 const CODEX_LAST_MESSAGE = "last-message.txt";

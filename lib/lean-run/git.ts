@@ -12,15 +12,17 @@ const execFileAsync = promisify(execFile);
  * Drive snapshots leave session paths out, so a diff against one must too.
  * The architecture map is the host's: it regenerates it before each
  * provider pass, so those files are never the builder's change. A builder
- * worktree links the project's top-level `node_modules`, which a
- * `node_modules/` ignore rule does not cover: git sees a symlink, not a
- * directory.
+ * worktree links the caller's `node_modules` directories in at any depth,
+ * which a `node_modules/` ignore rule does not cover: git sees a symlink,
+ * not a directory. So every `node_modules` in the repository, and anything
+ * under one, is left out, measured from the top level whatever the cwd.
  */
 const DIFF_EXCLUDES = [
 	":(exclude)missions/sessions",
 	":(exclude)missions/archive/sessions",
 	`:(exclude)${ARCHITECTURE_MAP_OUTPUT_DIR}`,
-	":(exclude)node_modules",
+	":(top,exclude,glob)**/node_modules",
+	":(top,exclude,glob)**/node_modules/**",
 ];
 
 export interface WorktreeChange {
@@ -131,12 +133,17 @@ export function readWorktreePatch(
 /**
  * Applies a patch file to the working tree of `cwd`'s checkout, from its top
  * level. Never `--index`, `--cached` or `--3way`: the index is left as it was.
+ * `--whitespace=nowarn` keeps the user's `apply.whitespace` from refusing a
+ * patch the host wrote itself.
  */
 export async function applyPatch(
 	options: GitOptions & { patchPath: string },
 ): Promise<void> {
 	const top = await readTopLevel(options);
-	await git(["apply", "--binary", options.patchPath], { ...options, cwd: top });
+	await git(["apply", "--binary", "--whitespace=nowarn", options.patchPath], {
+		...options,
+		cwd: top,
+	});
 }
 
 export async function readTopLevel(options: GitOptions): Promise<string> {
@@ -150,13 +157,23 @@ export async function readPrefix(options: GitOptions): Promise<string> {
 
 /**
  * Adds a detached worktree of `ref` at `path`. The repository gains only the
- * worktree's metadata; `cwd`'s own index and working tree are not touched.
+ * worktree's metadata; `cwd`'s own index and working tree are not touched,
+ * and the repository's hooks (`post-checkout`) do not run.
  */
 export async function addDetachedWorktree(
 	options: GitOptions & { path: string; ref: string },
 ): Promise<void> {
 	await git(
-		["worktree", "add", "--detach", "--quiet", options.path, options.ref],
+		[
+			"-c",
+			"core.hooksPath=/dev/null",
+			"worktree",
+			"add",
+			"--detach",
+			"--quiet",
+			options.path,
+			options.ref,
+		],
 		options,
 	);
 }
@@ -164,14 +181,18 @@ export async function addDetachedWorktree(
 /**
  * Removes a worktree added by `addDetachedWorktree`, then prunes stale
  * worktree metadata. Never throws: each failure is returned as a warning,
- * and a worktree git cannot remove has its directory deleted instead.
+ * and a worktree git cannot remove has its directory deleted instead. The
+ * second `--force` removes a locked worktree too, which `prune` would keep.
  */
 export async function removeWorktree(
 	options: GitOptions & { path: string },
 ): Promise<string[]> {
 	const warnings: string[] = [];
 	try {
-		await git(["worktree", "remove", "--force", options.path], options);
+		await git(
+			["worktree", "remove", "--force", "--force", options.path],
+			options,
+		);
 	} catch (error) {
 		warnings.push(
 			`could not remove worktree ${options.path}: ${errorMessage(error)}`,
@@ -287,6 +308,95 @@ async function seedIndex(options: GitOptions, target: string): Promise<void> {
 		throw error;
 	}
 	await utimes(target, times.atime, times.mtime);
+}
+
+/** Whether `ancestor` is `ref` or an ancestor of it; throws when git cannot tell. */
+export async function isAncestor(
+	options: GitOptions & { ancestor: string; ref: string },
+): Promise<boolean> {
+	try {
+		await git(
+			["merge-base", "--is-ancestor", options.ancestor, options.ref],
+			options,
+		);
+		return true;
+	} catch (error) {
+		if (exitCode(error) === 1) return false;
+		throw error;
+	}
+}
+
+/**
+ * What a builder working in another checkout of the same repository could
+ * still move: the checked-out branch (undefined when HEAD is detached), the
+ * commit HEAD names, and the stash tip (undefined with no stash).
+ */
+export interface RefState {
+	branch?: string;
+	head?: string;
+	stash?: string;
+}
+
+export async function readRefState(options: GitOptions): Promise<RefState> {
+	const [branch, head, stash] = await Promise.all([
+		readOptional(["symbolic-ref", "-q", "HEAD"], options),
+		readOptional(["rev-parse", "-q", "--verify", "HEAD"], options),
+		readOptional(["rev-parse", "-q", "--verify", "refs/stash"], options),
+	]);
+	return {
+		...(branch ? { branch } : {}),
+		...(head ? { head } : {}),
+		...(stash ? { stash } : {}),
+	};
+}
+
+/** Trimmed stdout, or undefined when git exits 1, which `-q` uses for "not there". */
+async function readOptional(
+	args: readonly string[],
+	options: GitOptions,
+): Promise<string | undefined> {
+	try {
+		return (await git(args, options)).trim() || undefined;
+	} catch (error) {
+		if (exitCode(error) === 1) return undefined;
+		throw error;
+	}
+}
+
+function exitCode(error: unknown): unknown {
+	return typeof error === "object" && error !== null && "code" in error
+		? error.code
+		: undefined;
+}
+
+/**
+ * The ignored `node_modules` directories (or links) of `cwd`'s checkout,
+ * relative to its top level, at most `limit` of them. `--directory` stops
+ * at an ignored directory, so none is listed from inside another.
+ */
+export async function listIgnoredDependencies(
+	options: GitOptions & { limit: number },
+): Promise<{ paths: string[]; truncated: boolean }> {
+	const top = await readTopLevel(options);
+	const output = await git(
+		[
+			"ls-files",
+			"-z",
+			"--others",
+			"--ignored",
+			"--exclude-standard",
+			"--directory",
+		],
+		{ ...options, cwd: top },
+	);
+	const paths = output
+		.split("\0")
+		.map((path) => path.replace(/\/$/u, ""))
+		.filter((path) => path.split("/").at(-1) === "node_modules");
+	return {
+		paths: paths.slice(0, options.limit),
+		truncated: paths.length > options.limit,
+	};
 }
 
 /** The merge-base of HEAD and `ref`; undefined when `ref` does not exist or shares no history. */
