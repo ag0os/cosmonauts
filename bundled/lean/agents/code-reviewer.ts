@@ -9,7 +9,7 @@ const definition: AgentDefinition = {
 	model: "openai-codex/gpt-5.6-sol",
 	thinkingLevel: "xhigh",
 	tools: "readonly",
-	extensions: [],
+	extensions: ["role-guard"],
 	skills: LEAN_SKILLS,
 	subagents: [],
 	projectContext: false,

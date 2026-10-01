@@ -9,7 +9,7 @@ const definition: AgentDefinition = {
 	model: "openai-codex/gpt-6-sol",
 	thinkingLevel: "high",
 	tools: "coding",
-	extensions: ["health-hook"],
+	extensions: ["health-hook", "role-guard"],
 	skills: LEAN_SKILLS,
 	subagents: [],
 	projectContext: false,

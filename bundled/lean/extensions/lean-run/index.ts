@@ -6,8 +6,11 @@ import {
 	type BuilderBackend,
 	createExternalBuilderBackend,
 	createPiBuilderBackend,
+	LEAN_LENSES,
 	type LeanBackendKind,
+	type LeanLens,
 	leanPackageResolver,
+	type RunBudget,
 	type RunBuildOptions,
 	type RunRecord,
 	runBuild,
@@ -18,10 +21,23 @@ import { createDefaultProviders } from "../../../../lib/lean-run/providers/defau
 import { discoverFrameworkBundledPackageDirs } from "../../../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 
+function positiveInteger(description: string) {
+	return Type.Optional(Type.Integer({ minimum: 1, description }));
+}
+
 export const LeanBuildParameters = Type.Object({
-	planPath: Type.String({
-		description: "Path to plan.md, relative to the project root",
-	}),
+	planPath: Type.Optional(
+		Type.String({
+			description:
+				"Path to plan.md, relative to the project root. Give this or request, not both.",
+		}),
+	),
+	request: Type.Optional(
+		Type.String({
+			description:
+				"A direct fix with no plan document: what to change, in a few sentences. Give this or planPath, not both.",
+		}),
+	),
 	specPath: Type.Optional(
 		Type.String({ description: "Path to spec.md, when the change has one" }),
 	),
@@ -34,6 +50,19 @@ export const LeanBuildParameters = Type.Object({
 			],
 			{ description: "Where the builder and reviewer run (default: pi)" },
 		),
+	),
+	lenses: Type.Optional(
+		Type.Array(Type.Union(LEAN_LENSES.map((lens) => Type.Literal(lens))), {
+			minItems: 1,
+			description:
+				"Reviewer lenses: general, security, performance, ux (default: general)",
+		}),
+	),
+	budgetTokens: positiveInteger(
+		"Input + output token limit for the whole run (default: lean.budget.tokens in the project config, else 1,000,000)",
+	),
+	budgetTimeMs: positiveInteger(
+		"Wall-time limit for the whole run, in ms (default: lean.budget.timeMs in the project config, else 30 minutes)",
 	),
 });
 type LeanBuildInput = Static<typeof LeanBuildParameters>;
@@ -61,17 +90,22 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 			name: "lean_build",
 			label: "Lean build",
 			description:
-				"Run the lean build for a plan: builder, host checks, at most one re-entry, then the code reviewer. Returns the run id, status, a summary and the run directory.",
+				"Run a lean build for a plan or a direct request: builder, host checks, at most one re-entry, the code reviewer, and at most one findings re-entry with a re-review. Returns the run id, status, a summary and the run directory.",
 			parameters: LeanBuildParameters,
 			execute: async (_id, params: LeanBuildInput, signal, _onUpdate, ctx) => {
+				const source = planSource(params);
+				const lenses = checkedLenses(params.lenses);
 				const backends = await createBackends(params.backend ?? "pi", ctx.cwd);
+				const budget = requestedBudget(params);
 				const record = await execute({
 					projectRoot: ctx.cwd,
-					planPath: params.planPath,
+					...source,
 					...(params.specPath ? { specPath: params.specPath } : {}),
 					backend: backends.builder,
 					reviewerBackend: backends.reviewer,
 					providers: options.providers ?? createDefaultProviders(),
+					...(lenses ? { lenses } : {}),
+					...(budget ? { budget } : {}),
 					...(signal ? { signal } : {}),
 				});
 				const details = {
@@ -87,6 +121,50 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 			},
 		});
 	};
+}
+
+function planSource(
+	params: LeanBuildInput,
+): { planPath: string } | { request: string } {
+	const { planPath, request } = params;
+	if (planPath !== undefined && request !== undefined)
+		throw new Error("lean_build takes planPath or request, not both");
+	if (planPath !== undefined) return { planPath };
+	if (request === undefined || request.trim() === "")
+		throw new Error("lean_build needs planPath or a non-empty request");
+	return { request };
+}
+
+function checkedLenses(
+	lenses: readonly string[] | undefined,
+): LeanLens[] | undefined {
+	if (lenses === undefined) return undefined;
+	const known = new Set<string>(LEAN_LENSES);
+	const unknown = lenses.filter((lens) => !known.has(lens));
+	if (lenses.length === 0 || unknown.length > 0)
+		throw new Error(
+			`lean_build lenses must be one or more of ${LEAN_LENSES.join(", ")}${unknown.length > 0 ? `; got ${unknown.join(", ")}` : ""}`,
+		);
+	return [...new Set(lenses)] as LeanLens[];
+}
+
+function requestedBudget(
+	params: LeanBuildInput,
+): Partial<RunBudget> | undefined {
+	const budget: Partial<RunBudget> = {
+		...(params.budgetTokens === undefined
+			? {}
+			: { tokens: positive(params.budgetTokens, "budgetTokens") }),
+		...(params.budgetTimeMs === undefined
+			? {}
+			: { timeMs: positive(params.budgetTimeMs, "budgetTimeMs") }),
+	};
+	return Object.keys(budget).length > 0 ? budget : undefined;
+}
+
+function positive(value: number, name: string): number {
+	if (Number.isSafeInteger(value) && value > 0) return value;
+	throw new Error(`lean_build ${name} must be a positive integer`);
 }
 
 function runtimeBackends(): (

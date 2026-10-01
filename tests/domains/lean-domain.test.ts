@@ -103,10 +103,7 @@ describe("lean domain", () => {
 	});
 
 	it("resolves every chain stage to a lean agent through a qualified id", () => {
-		expect(lean.chains.map((chain) => chain.name).sort()).toEqual([
-			"build",
-			"review",
-		]);
+		expect(lean.chains.map((chain) => chain.name)).toEqual(["review"]);
 
 		for (const chain of lean.chains) {
 			const steps = parseChain(chain.chain, registry, "lean");
@@ -123,6 +120,20 @@ describe("lean domain", () => {
 				}
 			}
 		}
+	});
+
+	it.each([
+		"lean/builder",
+		"builder",
+	])("keeps the lead from starting %s outside lean_build", (target) => {
+		expect(
+			authorizeAgentStart({
+				registry,
+				domainContext: "lean",
+				callerRole: "lean/lead",
+				targetRole: target,
+			}),
+		).toBe(`lean/lead cannot start ${target}`);
 	});
 
 	it("lets the lead start every stage of its chains", () => {

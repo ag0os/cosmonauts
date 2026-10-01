@@ -1,5 +1,5 @@
 import { mkdir, readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { Envelope } from "../envelope/index.ts";
 import { writeFileAtomically } from "../fs/atomic-file.ts";
 import {
@@ -67,6 +67,18 @@ export async function saveEnvelope(
 ): Promise<void> {
 	record.envelopes[stage] = envelope;
 	await writeJson(envelopePath(record.dir, stage), envelope);
+}
+
+/** Writes a direct request to `request.md` and records its project-relative path. */
+export async function saveRequest(
+	record: RunRecord,
+	projectRoot: string,
+	request: string,
+): Promise<void> {
+	const path = join(record.dir, RUN_RECORD_FILES.request);
+	await writeFileAtomically(path, `${request.trimEnd()}\n`);
+	record.manifest.requestPath = relative(projectRoot, path);
+	await saveManifest(record);
 }
 
 export async function loadRunRecord(location: RunLocation): Promise<RunRecord> {

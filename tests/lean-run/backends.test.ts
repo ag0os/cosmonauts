@@ -3,19 +3,26 @@
  * harness invocations, with stubbed spawner and process runner.
  */
 import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { describe, expect, test } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { AgentPackage } from "../../lib/agent-packages/types.ts";
 import {
 	createExternalBuilderBackend,
+	leanPackageResolver,
 	type ProcessRequest,
 } from "../../lib/lean-run/backends/external.ts";
 import { createPiBuilderBackend } from "../../lib/lean-run/backends/pi.ts";
+import type { LeanRole } from "../../lib/lean-run/types.ts";
 import type {
 	AgentSpawner,
 	SpawnConfig,
 	SpawnResult,
 } from "../../lib/orchestration/types.ts";
+import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
+import { CosmonautsRuntime } from "../../lib/runtime.ts";
 
 const ENVELOPE = '{"outcome":"done"}';
 
@@ -176,6 +183,46 @@ describe("createExternalBuilderBackend", () => {
 		expect(existsSync(systemPrompt)).toBe(false);
 	});
 
+	test("runs an envelope repair turn with the readonly tool set", async () => {
+		const requests: ProcessRequest[] = [];
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			runProcess: async (request) => {
+				requests.push(request);
+				return { exitCode: 0, stdout: ENVELOPE, stderr: "" };
+			},
+		});
+		await backend.run({
+			prompt: "p",
+			worktree: "/repo",
+			role: "lean/builder",
+			readonly: true,
+		});
+		const args = requests[0]?.args ?? [];
+		expect(args[args.indexOf("--tools") + 1]).toBe("Read,Glob,Grep");
+	});
+
+	test("runs a codex envelope repair turn in the read-only sandbox", async () => {
+		const requests: ProcessRequest[] = [];
+		const backend = createExternalBuilderBackend({
+			kind: "codex-cli",
+			resolvePackage: async () => ({ ...PACKAGE, target: "codex" }),
+			runProcess: async (request) => {
+				requests.push(request);
+				return { exitCode: 0, stdout: ENVELOPE, stderr: "" };
+			},
+		});
+		await backend.run({
+			prompt: "p",
+			worktree: "/repo",
+			role: "lean/builder",
+			readonly: true,
+		});
+		const args = requests[0]?.args ?? [];
+		expect(args[args.indexOf("--sandbox") + 1]).toBe("read-only");
+	});
+
 	test("resolves the package for the role it runs", async () => {
 		const roles: string[] = [];
 		const backend = createExternalBuilderBackend({
@@ -192,5 +239,65 @@ describe("createExternalBuilderBackend", () => {
 			role: "lean/code-reviewer",
 		});
 		expect(roles).toEqual(["lean/code-reviewer"]);
+	});
+});
+
+describe("leanPackageResolver", () => {
+	const repositoryRoot = resolve(fileURLToPath(import.meta.url), "../../..");
+	let projectRoot: string;
+	let runtime: CosmonautsRuntime;
+
+	beforeAll(async () => {
+		projectRoot = await mkdtemp(join(tmpdir(), "lean-package-resolver-"));
+		runtime = await CosmonautsRuntime.create({
+			builtinDomainsDir: join(repositoryRoot, "domains"),
+			projectRoot,
+			bundledDirs: await discoverFrameworkBundledPackageDirs(repositoryRoot),
+			includeUserSources: false,
+		});
+	});
+
+	afterAll(async () => {
+		await rm(projectRoot, { recursive: true, force: true });
+	});
+
+	function resolvePackage(kind: "claude-cli" | "codex-cli", role: LeanRole) {
+		return leanPackageResolver({
+			kind,
+			registry: runtime.agentRegistry,
+			domainsDir: runtime.domainsDir,
+			resolver: runtime.domainResolver,
+			skillPaths: runtime.skillPaths,
+		})(role);
+	}
+
+	test.each([
+		["claude-cli", "claude-cli"],
+		["codex-cli", "codex"],
+	] as const)("packages lean/builder, which declares Pi-only extensions, for %s", async (kind, target) => {
+		expect(
+			runtime.agentRegistry.resolve("lean/builder", "lean").extensions,
+		).toContain("health-hook");
+
+		const agentPackage = await resolvePackage(kind, "lean/builder");
+
+		expect(agentPackage).toMatchObject({
+			sourceAgentId: "lean/builder",
+			tools: "coding",
+			target,
+		});
+		expect(agentPackage.systemPrompt).toContain("You're the builder");
+	});
+
+	test("packages lean/code-reviewer with its readonly tools", async () => {
+		const agentPackage = await resolvePackage(
+			"claude-cli",
+			"lean/code-reviewer",
+		);
+
+		expect(agentPackage).toMatchObject({
+			sourceAgentId: "lean/code-reviewer",
+			tools: "readonly",
+		});
 	});
 });

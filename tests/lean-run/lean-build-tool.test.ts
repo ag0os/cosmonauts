@@ -61,14 +61,91 @@ function setup() {
 }
 
 describe("lean_build tool", () => {
-	test("declares an object-root parameter schema", () => {
+	test("declares an object-root parameter schema with a plan path or a request", () => {
 		const { pi } = setup();
 		const tool = pi.tools.get("lean_build") as unknown as {
-			parameters: { type: string; required?: string[] };
+			parameters: {
+				type: string;
+				required?: string[];
+				properties: Record<string, unknown>;
+			};
 		};
 		expect(tool.parameters).toBe(LeanBuildParameters);
 		expect(tool.parameters.type).toBe("object");
-		expect(tool.parameters.required).toEqual(["planPath"]);
+		expect(tool.parameters.required ?? []).toEqual([]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(
+			expect.arrayContaining([
+				"planPath",
+				"request",
+				"lenses",
+				"budgetTokens",
+				"budgetTimeMs",
+			]),
+		);
+	});
+
+	test("runs a direct request without a plan path", async () => {
+		const { pi, calls } = setup();
+		await pi.callTool("lean_build", { request: "Rename greet to hello." });
+		expect(calls[0]?.request).toBe("Rename greet to hello.");
+		expect(calls[0]?.planPath).toBeUndefined();
+	});
+
+	test("refuses a plan path and a request together", async () => {
+		const { pi, calls } = setup();
+		await expect(
+			pi.callTool("lean_build", { planPath: "p.md", request: "fix it" }),
+		).rejects.toThrow("planPath or request, not both");
+		expect(calls).toHaveLength(0);
+	});
+
+	test("refuses a call with neither a plan path nor a request", async () => {
+		const { pi } = setup();
+		await expect(pi.callTool("lean_build", { request: "  " })).rejects.toThrow(
+			"needs planPath or a non-empty request",
+		);
+	});
+
+	test("passes the requested lenses through", async () => {
+		const { pi, calls } = setup();
+		await pi.callTool("lean_build", {
+			planPath: "p.md",
+			lenses: ["security", "ux"],
+		});
+		expect(calls[0]?.lenses).toEqual(["security", "ux"]);
+	});
+
+	test("leaves the lenses to the runner's general default when none are given", async () => {
+		const { pi, calls } = setup();
+		await pi.callTool("lean_build", { planPath: "p.md" });
+		expect(calls[0]?.lenses).toBeUndefined();
+	});
+
+	test("refuses a lens outside general, security, performance and ux", async () => {
+		const { pi } = setup();
+		await expect(
+			pi.callTool("lean_build", { planPath: "p.md", lenses: ["style"] }),
+		).rejects.toThrow(
+			"lenses must be one or more of general, security, performance, ux; got style",
+		);
+	});
+
+	test("passes only the budget fields the caller set", async () => {
+		const { pi, calls } = setup();
+		await pi.callTool("lean_build", {
+			planPath: "p.md",
+			budgetTokens: 400_000,
+		});
+		await pi.callTool("lean_build", { planPath: "p.md" });
+		expect(calls[0]?.budget).toEqual({ tokens: 400_000 });
+		expect(calls[1]?.budget).toBeUndefined();
+	});
+
+	test("refuses a budget that is not a positive integer", async () => {
+		const { pi } = setup();
+		await expect(
+			pi.callTool("lean_build", { planPath: "p.md", budgetTimeMs: 0 }),
+		).rejects.toThrow("budgetTimeMs must be a positive integer");
 	});
 
 	test("returns the run id, status, summary and run directory", async () => {

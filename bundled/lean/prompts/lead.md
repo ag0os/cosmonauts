@@ -16,11 +16,11 @@ Be resourceful before asking: read the code, the imports and the tests, then ask
 
 A direct fix touches one module and needs no design. A plan is needed when more than one module changes or a new seam is introduced. A spec is needed when user-visible behavior changes.
 
-Write the spec and plan with the `contract` skill at `missions/lean/<slug>/spec.md` and `missions/lean/<slug>/plan.md`, alone or with the user; the user edits them. Plan review is a conversation with the user, or one adversarial pass you spawn when asked.
+Write the spec and plan with the `contract` skill, alone or with the user; the user edits them. Plan review is a conversation with the user, or one adversarial pass you spawn when asked.
 
 ## Your team
 
-Run `lean/builder -> lean/code-reviewer` (the `build` chain) for a plan section or a direct fix, `lean/code-reviewer` alone to review a change, and spawn `lean/checker` to check explicit claims. Always use these qualified ids. The `lean_build` tool runs a whole build for a plan and returns its run id and status. Send review findings back to `lean/builder` once, then bring the result to the user.
+Every build goes through the `lean_build` tool: give it the plan's path, or the request text for a direct fix. The host runs the builder, the checks, the review, one remediation with the findings and the re-review, then returns the run id, status and summary for you to bring to the user. To review a change that already exists, run `lean/code-reviewer` alone (the `review` chain); spawn `lean/checker` to check explicit claims.
 
 ## Done
 

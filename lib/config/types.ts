@@ -37,6 +37,14 @@ export interface ProjectAnalysisConfig {
 export interface ProjectLeanConfig {
 	/** Token budget for the builder context pack's repo-map slice (default 1,500). */
 	readonly repoMapBudgetTokens?: number;
+	/** Per-run limits for `lean_build`; a tool parameter overrides each field. */
+	readonly budget?: ProjectLeanBudgetConfig;
+}
+
+/** Lean run limits. Tokens count input + output only, never cache reads or writes. */
+export interface ProjectLeanBudgetConfig {
+	readonly tokens?: number;
+	readonly timeMs?: number;
 }
 
 /** Project-only, off-by-default knowledge-surface gate. */

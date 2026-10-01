@@ -183,6 +183,58 @@ describe("loadProjectConfig", () => {
 		}
 	});
 
+	test("reads the lean run budget", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				lean: { budget: { tokens: 500_000, timeMs: 600_000 } },
+			}),
+		);
+
+		expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+			budget: { tokens: 500_000, timeMs: 600_000 },
+		});
+	});
+
+	test("keeps the valid lean budget fields and skips the malformed ones", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+			await writeFile(
+				join(tmp.path, ".cosmonauts", "config.json"),
+				JSON.stringify({ lean: { budget: { tokens: 0, timeMs: 90_000 } } }),
+			);
+
+			expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+				budget: { timeMs: 90_000 },
+			});
+			expect(warn).toHaveBeenCalledWith(
+				"[warning] Skipping malformed lean.budget.tokens: expected a positive integer, got 0.",
+			);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	test("skips a lean budget that is not an object", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+			await writeFile(
+				join(tmp.path, ".cosmonauts", "config.json"),
+				JSON.stringify({ lean: { repoMapBudgetTokens: 900, budget: 5 } }),
+			);
+
+			expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+				repoMapBudgetTokens: 900,
+			});
+			expect(warn).toHaveBeenCalledTimes(1);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	test("returns empty config when file does not exist", async () => {
 		const config = await loadProjectConfig(tmp.path);
 		expect(config).toEqual({});

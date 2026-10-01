@@ -14,6 +14,7 @@ import type {
 	ProjectConfig,
 	ProjectEpisodicLogConfig,
 	ProjectKnowledgeSurfaceConfig,
+	ProjectLeanBudgetConfig,
 	ProjectLeanConfig,
 } from "./types.ts";
 
@@ -393,23 +394,56 @@ function parseKnowledgeSurfaceConfig(
 }
 
 function parseLeanConfig(value: unknown): ProjectLeanConfig | undefined {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+	if (!isPlainObject(value)) {
 		console.error(
 			`[warning] Skipping malformed lean: expected an object, got ${formatConfigValue(value)}.`,
 		);
 		return undefined;
 	}
+	const repoMapBudgetTokens = leanPositiveInteger(
+		value,
+		"repoMapBudgetTokens",
+		"lean.repoMapBudgetTokens",
+	);
+	const budget = "budget" in value ? parseLeanBudget(value.budget) : undefined;
+	return {
+		...(repoMapBudgetTokens === undefined ? {} : { repoMapBudgetTokens }),
+		...(budget === undefined ? {} : { budget }),
+	};
+}
 
-	const obj = value as Record<string, unknown>;
-	if (!("repoMapBudgetTokens" in obj)) return {};
-	const budget = obj.repoMapBudgetTokens;
-	if (typeof budget !== "number" || !positiveInteger(budget)) {
+function parseLeanBudget(value: unknown): ProjectLeanBudgetConfig | undefined {
+	if (!isPlainObject(value)) {
 		console.error(
-			`[warning] Skipping malformed lean.repoMapBudgetTokens: expected a positive integer, got ${formatConfigValue(budget)}.`,
+			`[warning] Skipping malformed lean.budget: expected an object, got ${formatConfigValue(value)}.`,
 		);
-		return {};
+		return undefined;
 	}
-	return { repoMapBudgetTokens: budget };
+	const tokens = leanPositiveInteger(value, "tokens", "lean.budget.tokens");
+	const timeMs = leanPositiveInteger(value, "timeMs", "lean.budget.timeMs");
+	return {
+		...(tokens === undefined ? {} : { tokens }),
+		...(timeMs === undefined ? {} : { timeMs }),
+	};
+}
+
+/** The field when present and a positive integer; a warning and undefined otherwise. */
+function leanPositiveInteger(
+	obj: Record<string, unknown>,
+	key: string,
+	label: string,
+): number | undefined {
+	if (!(key in obj)) return undefined;
+	const value = obj[key];
+	if (typeof value === "number" && positiveInteger(value)) return value;
+	console.error(
+		`[warning] Skipping malformed ${label}: expected a positive integer, got ${formatConfigValue(value)}.`,
+	);
+	return undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function resolveEpisodicLogConfig(

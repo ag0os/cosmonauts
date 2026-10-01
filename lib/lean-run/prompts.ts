@@ -1,23 +1,44 @@
-import type { ParsedPlan, RunFacts, Signal } from "./types.ts";
+import type { Envelope, Finding } from "../envelope/index.ts";
+import type {
+	LeanLens,
+	ParsedPlan,
+	RunFacts,
+	RunTier,
+	Signal,
+} from "./types.ts";
 
-const BUILDER_ENVELOPE_INSTRUCTION =
-	'End with the lean envelope: one JSON line as your last non-empty line, with "outcome" ("done", "blocked" or "failed"), a one-sentence "summary", your "evidence", every file you changed in "touched", and a "reason" when you are not done.';
+/** Rule OD-4, stated where the host asks for the envelope: anything else is rejected. */
+const BARE_LINE =
+	"The envelope must be the bare last line, not fenced, quoted or prefixed.";
 
-const REVIEWER_ENVELOPE_INSTRUCTION =
-	'End with the lean envelope: one JSON line as your last non-empty line, with "outcome" ("done", "blocked" or "failed"), a one-sentence "summary", your "findings" (id, severity, file, summary, fix), and a "reason" when you are not done.';
+const BUILDER_ENVELOPE_INSTRUCTION = `End with the lean envelope: one JSON line as your last non-empty line, with "outcome" ("done", "blocked" or "failed"), a one-sentence "summary", your "evidence" (kind, ref, result), every file you changed in "touched", and a "reason" when you are not done. ${BARE_LINE}`;
+
+const REVIEWER_ENVELOPE_INSTRUCTION = `End with the lean envelope: one JSON line as your last non-empty line, with "outcome" ("done", "blocked" or "failed"), a one-sentence "summary", your "findings" (id, severity, file, summary, fix), and a "reason" when you are not done. ${BARE_LINE}`;
+
+/** Inline diff cap for the reviewer prompt; the full diff is a file in the review workspace. */
+export const REVIEW_DIFF_INLINE_BYTES = 60 * 1024;
+
+/** The first line of every envelope repair prompt; the lean role guard keys on it. */
+export const REPAIR_HEADING = "# Envelope repair";
+
+/** How much of the rejected output the repair prompt quotes. */
+const REPAIR_QUOTE_CHARS = 8_000;
 
 /**
- * The context pack verbatim, or the plan alone without one, with the
- * envelope instruction always the last paragraph (once, even when a
- * supplied pack already ends with it).
+ * The context pack verbatim, or the plan (or direct request) alone without
+ * one, with the envelope instruction always the last paragraph (once, even
+ * when a supplied pack already ends with it).
  */
 export function builderPrompt(options: {
 	plan: ParsedPlan;
 	contextPack?: string;
+	tier?: RunTier;
 }): string {
+	const lead =
+		options.tier === "direct" ? "Make this change." : "Implement this plan.";
 	const body =
 		options.contextPack?.trimEnd() ??
-		["Implement this plan.", options.plan.raw.trim()].join("\n\n");
+		[lead, options.plan.raw.trim()].join("\n\n");
 	if (body.endsWith(BUILDER_ENVELOPE_INSTRUCTION)) return body;
 	return [body, BUILDER_ENVELOPE_INSTRUCTION].filter(Boolean).join("\n\n");
 }
@@ -34,6 +55,26 @@ export function reentryPrompt(
 	].join("\n\n");
 }
 
+/** The one remediation turn (principle 6): the reviewer's findings, and any verification still failing. */
+export function findingsPrompt(options: {
+	basePrompt: string;
+	findings: readonly Finding[];
+	failing: readonly Signal[];
+}): string {
+	return [
+		options.basePrompt,
+		"## Review findings",
+		"A reviewer read your change and reported these findings. Address each one in the worktree, or say in your summary why not, and hand back a new envelope.",
+		...options.findings.map(renderFinding),
+		...(options.failing.length > 0
+			? [
+					"## Host verification still failing",
+					...options.failing.map(renderSignal),
+				]
+			: []),
+	].join("\n\n");
+}
+
 export function renderSignal(signal: Signal): string {
 	return [
 		`### ${signal.kind} (${signal.status})`,
@@ -44,23 +85,113 @@ export function renderSignal(signal: Signal): string {
 	].join("\n");
 }
 
-export function reviewerPrompt(options: {
+function renderFinding(finding: Finding): string {
+	return [
+		`### ${finding.id} (${finding.severity}) ${finding.file}`,
+		finding.summary,
+		`Fix: ${finding.fix}`,
+	].join("\n");
+}
+
+interface ReviewerPromptOptions {
 	plan: ParsedPlan;
+	/** A direct request is reviewed against the request, not a plan. */
+	tier?: RunTier;
 	facts: RunFacts;
 	diff: string;
 	changedFiles: readonly string[];
-}): string {
+	lenses: readonly LeanLens[];
+	/** Where the full diff is; named when the inline diff is truncated. */
+	fullDiffPath: string;
+	/** For the re-review: the first review and the builder's answer to it. */
+	earlier?: { review: Envelope; builder: Envelope };
+}
+
+export function reviewerPrompt(options: ReviewerPromptOptions): string {
+	const against = options.tier === "direct" ? "Request" : "Plan";
 	return [
-		"Review this change against its plan. The host's verification facts are below; you have the checkout read-only.",
-		"# Plan",
+		`Review this change against its ${against.toLowerCase()}. The host's verification facts are below; you have the checkout read-only.`,
+		"# Lenses",
+		options.lenses.join(", "),
+		`# ${against}`,
 		options.plan.raw.trim(),
 		"# Verification facts",
 		renderFacts(options.facts),
+		...(options.earlier ? renderEarlierReview(options.earlier) : []),
 		"# Changed files",
 		options.changedFiles.join("\n") || "(none)",
 		"# Diff",
-		["```diff", options.diff.trimEnd(), "```"].join("\n"),
+		renderDiff(options.diff, options.fullDiffPath),
 		REVIEWER_ENVELOPE_INSTRUCTION,
+	].join("\n\n");
+}
+
+function renderEarlierReview(earlier: {
+	review: Envelope;
+	builder: Envelope;
+}): string[] {
+	return [
+		"# Earlier review",
+		"This is the re-review. The first review reported these findings and the builder was sent back once to address them; check each one against the change as it is now.",
+		...(earlier.review.findings ?? []).map(renderFinding),
+		`Builder's answer: ${earlier.builder.summary ?? "(no summary)"}`,
+	];
+}
+
+/** At most `REVIEW_DIFF_INLINE_BYTES`, cut at a line end, with a note naming the full diff. */
+function renderDiff(diff: string, fullDiffPath: string): string {
+	const { text, truncated } = boundDiff(diff);
+	const fenced = ["```diff", text.trimEnd(), "```"].join("\n");
+	if (!truncated) return fenced;
+	return [
+		fenced,
+		`(truncated at ${REVIEW_DIFF_INLINE_BYTES} bytes; full diff at ${fullDiffPath})`,
+	].join("\n\n");
+}
+
+export function boundDiff(diff: string): { text: string; truncated: boolean } {
+	const bytes = Buffer.from(diff, "utf8");
+	if (bytes.length <= REVIEW_DIFF_INLINE_BYTES)
+		return { text: diff, truncated: false };
+	let cut = REVIEW_DIFF_INLINE_BYTES;
+	while (cut > 0 && isContinuationByte(bytes[cut])) cut--;
+	const head = bytes.subarray(0, cut).toString("utf8");
+	const lineEnd = head.lastIndexOf("\n");
+	return {
+		text: lineEnd > 0 ? head.slice(0, lineEnd + 1) : head,
+		truncated: true,
+	};
+}
+
+/** A UTF-8 byte that continues a character: cutting before it would split one. */
+function isContinuationByte(byte: number | undefined): boolean {
+	return byte !== undefined && (byte & 0xc0) === 0x80;
+}
+
+/**
+ * Asks the same role, in a fresh read-only session, to re-emit only its
+ * envelope: the parse error, the role's field list and the end of what it said.
+ */
+export function repairPrompt(options: {
+	reviewer: boolean;
+	reason: string;
+	output: string;
+}): string {
+	const instruction = options.reviewer
+		? REVIEWER_ENVELOPE_INSTRUCTION
+		: BUILDER_ENVELOPE_INSTRUCTION;
+	return [
+		REPAIR_HEADING,
+		`Your last session ended without a valid lean envelope: ${options.reason}. Do not change anything and do not call tools; this turn only re-emits the envelope for the work already done.`,
+		"## The end of your last reply",
+		[
+			"```text",
+			options.output.slice(-REPAIR_QUOTE_CHARS).trimEnd(),
+			"```",
+		].join("\n"),
+		"## The envelope",
+		instruction,
+		"Reply with only the envelope line, nothing else.",
 	].join("\n\n");
 }
 

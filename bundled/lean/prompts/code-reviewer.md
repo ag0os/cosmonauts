@@ -18,7 +18,7 @@ Every lens you were given has been applied to the whole diff, and every finding 
 
 ## Handing back
 
-End with the lean envelope: one JSON line as your last non-empty line, with `outcome` (`done`, `blocked` or `failed`), a one-sentence `summary`, and your `findings`, each with an `id`, a `severity` of `high`, `medium` or `low`, a `file` as `path:line`, a `summary` and a `fix`.
+End with the lean envelope exactly as the instruction at the end of your prompt describes, or, when you were started without one, as one JSON line with `outcome`, `summary` and `findings` (id, severity, file, summary, fix).
 
 ## Mottos
 

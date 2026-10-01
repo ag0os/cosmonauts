@@ -18,8 +18,13 @@ import type {
 	FileGraphRefresh,
 	RefreshFileGraph,
 } from "../../lib/lean-run/graph-refresh.ts";
+import {
+	REPAIR_HEADING,
+	REVIEW_DIFF_INLINE_BYTES,
+} from "../../lib/lean-run/prompts.ts";
 import { loadRunRecord } from "../../lib/lean-run/record.ts";
 import {
+	DEFAULT_RUN_BUDGET,
 	type RunBuildOptions,
 	runBuild,
 } from "../../lib/lean-run/run-build.ts";
@@ -32,6 +37,7 @@ import type {
 	SignalKind,
 	SignalProvider,
 } from "../../lib/lean-run/types.ts";
+import type { SpawnStats } from "../../lib/orchestration/types.ts";
 
 const PLAN_PATH = "missions/lean/demo/plan.md";
 const PLAN = `# Demo
@@ -49,6 +55,10 @@ Add a greeting.
 const DONE = '{"outcome":"done","summary":"built","touched":["src/greet.ts"]}';
 const REVIEW =
 	'{"outcome":"done","summary":"looks fine","findings":[{"id":"F-1","severity":"low","file":"src/greet.ts:1","summary":"name","fix":"rename"}]}';
+const HIGH_REVIEW =
+	'{"outcome":"done","summary":"one bug","findings":[{"id":"F-1","severity":"high","file":"src/greet.ts:1","summary":"greets nobody","fix":"return hi"},{"id":"F-2","severity":"low","file":"src/greet.ts:1","summary":"name","fix":"rename"}]}';
+const MEDIUM_REVIEW =
+	'{"outcome":"done","summary":"still off","findings":[{"id":"F-3","severity":"medium","file":"src/greet.ts:1","summary":"no test","fix":"add one"}]}';
 
 type Reply = string | ((input: BackendRunInput) => Promise<string> | string);
 
@@ -56,31 +66,40 @@ interface StubBackend extends BuilderBackend {
 	calls: BackendRunInput[];
 }
 
-function stubBackend(replies: Reply[]): StubBackend {
+/**
+ * One session as Pi's `getSessionStats()` reports it: most of the total is
+ * cache reads, which a run budget must not count.
+ */
+const SESSION_STATS: SpawnStats = {
+	tokens: {
+		input: 120_000,
+		output: 8_000,
+		cacheRead: 700_000,
+		cacheWrite: 0,
+		total: 828_000,
+	},
+	cost: 0.4,
+	durationMs: 5,
+	turns: 12,
+	toolCalls: 30,
+};
+
+/** Input + output of one `SESSION_STATS` session. */
+const SESSION_TOKENS = 128_000;
+
+function stubBackend(
+	replies: Reply[],
+	kind: BuilderBackend["kind"] = "pi",
+): StubBackend {
 	const calls: BackendRunInput[] = [];
 	return {
-		kind: "pi",
+		kind,
 		calls,
 		async run(input) {
 			calls.push(input);
 			const reply = replies[calls.length - 1] ?? replies.at(-1) ?? "";
 			const text = typeof reply === "string" ? reply : await reply(input);
-			return {
-				text,
-				stats: {
-					tokens: {
-						input: 1,
-						output: 2,
-						cacheRead: 0,
-						cacheWrite: 0,
-						total: 3,
-					},
-					cost: 0,
-					durationMs: 5,
-					turns: 1,
-					toolCalls: 0,
-				},
-			};
+			return { text, stats: SESSION_STATS };
 		},
 	};
 }
@@ -317,15 +336,15 @@ describe("runBuild on clean output", () => {
 		expect(call?.prompt).toContain('+export const greet = "hi";');
 	});
 
-	test("records per-stage duration, spawn stats and cumulative tokens", async () => {
+	test("records per-stage duration, spawn stats and cumulative input and output tokens", async () => {
 		const record = await build({ builder: stubBackend([DONE]) });
 		expect(record.stats.map((stage) => stage.stage)).toEqual([
 			"builder-1",
 			"reviewer",
 		]);
-		expect(record.stats[0]?.spawn?.tokens.total).toBe(3);
+		expect(record.stats[0]?.spawn).toEqual(SESSION_STATS);
 		expect(record.stats[0]?.durationMs).toBeGreaterThanOrEqual(0);
-		expect(record.manifest.tokensUsed).toBe(6);
+		expect(record.manifest.tokensUsed).toBe(2 * SESSION_TOKENS);
 	});
 
 	test("prompts the builder with the plan and the envelope instruction", async () => {
@@ -907,13 +926,70 @@ describe("runBuild budgets", () => {
 		const record = await build({
 			builder: stubBackend([DONE]),
 			reviewer,
-			budget: { tokens: 2, timeMs: 60_000 },
+			budget: { tokens: 100_000, timeMs: 60_000 },
 		});
 		expect(record.manifest).toMatchObject({
 			status: "failed",
-			reason: "token budget exceeded at reviewer: 3 of 2 tokens used",
+			reason:
+				"token budget exceeded at reviewer: 128000 of 100000 input and output tokens used",
 		});
 		expect(reviewer.calls).toHaveLength(0);
+	});
+
+	test("is not stopped by cache reads under the default budget", async () => {
+		const reviewer = stubBackend([HIGH_REVIEW, REVIEW]);
+		const record = await build({
+			builder: stubBackend([DONE]),
+			reviewer,
+			providers: [stubProvider([FAILING, {}])],
+		});
+
+		const sessions = record.stats.length;
+		expect(sessions).toBe(5);
+		expect(sessions * SESSION_STATS.tokens.total).toBeGreaterThan(
+			DEFAULT_RUN_BUDGET.tokens,
+		);
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			tokensUsed: sessions * SESSION_TOKENS,
+			budget: DEFAULT_RUN_BUDGET,
+		});
+	});
+
+	test("takes the budget from the project config", async () => {
+		await mkdir(join(root, ".cosmonauts"));
+		await writeFile(
+			join(root, ".cosmonauts/config.json"),
+			JSON.stringify({ lean: { budget: { tokens: 200_000 } } }),
+		);
+		const reviewer = stubBackend([HIGH_REVIEW, REVIEW]);
+
+		const record = await build({ builder: stubBackend([DONE]), reviewer });
+
+		expect(record.manifest).toMatchObject({
+			status: "failed",
+			reason:
+				"token budget exceeded at builder-3: 256000 of 200000 input and output tokens used",
+			budget: { tokens: 200_000, timeMs: DEFAULT_RUN_BUDGET.timeMs },
+		});
+	});
+
+	test("lets the caller's budget override the project config field by field", async () => {
+		await mkdir(join(root, ".cosmonauts"));
+		await writeFile(
+			join(root, ".cosmonauts/config.json"),
+			JSON.stringify({ lean: { budget: { tokens: 1, timeMs: 120_000 } } }),
+		);
+
+		const record = await build({
+			builder: stubBackend([DONE]),
+			budget: { tokens: 300_000 },
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			budget: { tokens: 300_000, timeMs: 120_000 },
+		});
 	});
 
 	test("fails at the running stage when the caller aborts", async () => {
@@ -932,7 +1008,7 @@ describe("runBuild budgets", () => {
 });
 
 describe("runBuild stage failures", () => {
-	test("fails with a reason when the builder returns no envelope", async () => {
+	test("fails with both reasons when the builder and its repair turn return no envelope", async () => {
 		const provider = stubProvider([{}]);
 		const record = await build({
 			builder: stubBackend(["I changed things."]),
@@ -946,11 +1022,19 @@ describe("runBuild stage failures", () => {
 		expect(saved).toEqual(record);
 		expect(saved.manifest).toMatchObject({
 			status: "failed",
-			reason: "builder-1: invalid envelope: no envelope line found",
+			reason:
+				"builder-1: invalid envelope: no envelope line found; repair turn: no envelope line found",
+			repairs: [
+				{
+					stage: "builder-1",
+					reason: "no envelope line found",
+					repaired: false,
+				},
+			],
 		});
 	});
 
-	test("fails when the re-entered builder returns no envelope", async () => {
+	test("fails when the re-entered builder and its repair turn return no envelope", async () => {
 		const reviewer = stubBackend([REVIEW]);
 		const record = await build({
 			builder: stubBackend([DONE, "gave up"]),
@@ -961,7 +1045,8 @@ describe("runBuild stage failures", () => {
 		expect(saved.manifest).toMatchObject({
 			status: "failed",
 			reentries: 1,
-			reason: "builder-2: invalid envelope: no envelope line found",
+			reason:
+				"builder-2: invalid envelope: no envelope line found; repair turn: no envelope line found",
 		});
 		expect(Object.keys(saved.envelopes)).toEqual(["builder-1"]);
 		expect(reviewer.calls).toHaveLength(0);
@@ -1063,5 +1148,513 @@ describe("runBuild stage failures", () => {
 		expect(
 			second.contexts[0]?.priorSignals?.map((signal) => signal.kind),
 		).toEqual(["verify"]);
+	});
+});
+
+describe("runBuild envelope repair", () => {
+	test("continues the run when the repair turn re-emits a valid envelope", async () => {
+		const builder = stubBackend(["I changed things.", DONE]);
+		const record = await build({ builder });
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			repairs: [
+				{
+					stage: "builder-1",
+					reason: "no envelope line found",
+					repaired: true,
+				},
+			],
+		});
+		expect(record.envelopes["builder-1"]?.summary).toBe("built");
+		expect(
+			record.stats.map((entry) => [entry.stage, entry.repair ?? false]),
+		).toEqual([
+			["builder-1", false],
+			["builder-1", true],
+			["reviewer", false],
+		]);
+		expect(await onDisk(record)).toEqual(record);
+	});
+
+	test("runs the repair turn read-only with the reason, the field list and the end of the reply", async () => {
+		const builder = stubBackend(["I changed src/greet.ts.", DONE]);
+		await build({ builder });
+
+		const repair = builder.calls[1];
+		expect(builder.calls[0]?.readonly).toBeUndefined();
+		expect(repair).toMatchObject({ role: "lean/builder", readonly: true });
+		expect(repair?.prompt.startsWith(`${REPAIR_HEADING}\n`)).toBe(true);
+		expect(repair?.prompt).toContain("no envelope line found");
+		expect(repair?.prompt).toContain("I changed src/greet.ts.");
+		expect(repair?.prompt).toContain('every file you changed in "touched"');
+		expect(repair?.prompt).toMatch(
+			/Reply with only the envelope line, nothing else\.$/u,
+		);
+	});
+
+	test("repairs a fenced pretty-printed reviewer envelope with the reviewer's field list", async () => {
+		const fenced = [
+			"Review done.",
+			"```json",
+			"{",
+			'  "outcome": "done"',
+			"}",
+			"```",
+		].join("\n");
+		const reviewer = stubBackend([fenced, REVIEW]);
+		const record = await build({ builder: stubBackend([DONE]), reviewer });
+
+		expect(record.manifest.status).toBe("done");
+		expect(record.manifest.repairs?.[0]).toMatchObject({
+			stage: "reviewer",
+			repaired: true,
+		});
+		expect(reviewer.calls[1]).toMatchObject({
+			role: "lean/code-reviewer",
+			readonly: true,
+		});
+		expect(reviewer.calls[1]?.prompt).toContain(
+			'your "findings" (id, severity, file, summary, fix)',
+		);
+	});
+
+	test("asks for a bare, unfenced last line wherever the host asks for the envelope", async () => {
+		const builder = stubBackend([DONE]);
+		const reviewer = stubBackend([REVIEW]);
+		await build({ builder, reviewer });
+
+		for (const call of [builder.calls[0], reviewer.calls[0]])
+			expect(call?.prompt).toMatch(
+				/The envelope must be the bare last line, not fenced, quoted or prefixed\.$/u,
+			);
+	});
+});
+
+describe("runBuild findings loop", () => {
+	test("re-enters the builder once with high findings, re-checks and re-reviews", async () => {
+		const builder = stubBackend([editGreet(DONE), DONE]);
+		const reviewer = stubBackend([HIGH_REVIEW, REVIEW]);
+		const provider = stubProvider([{}]);
+		const record = await build({ builder, reviewer, providers: [provider] });
+
+		expect(builder.calls).toHaveLength(2);
+		expect(reviewer.calls).toHaveLength(2);
+		expect(provider.contexts).toHaveLength(2);
+		const saved = await onDisk(record);
+		expect(saved).toEqual(record);
+		expect(saved.manifest).toMatchObject({
+			status: "done",
+			reentries: 0,
+			findingsReentries: 1,
+		});
+		expect(Object.keys(saved.envelopes).sort()).toEqual([
+			"builder-1",
+			"builder-3",
+			"reviewer",
+			"reviewer-2",
+		]);
+		expect(saved.facts.passes.map((pass) => pass.pass)).toEqual([1, 2]);
+		expect(saved.stats.map((entry) => entry.stage)).toEqual([
+			"builder-1",
+			"reviewer",
+			"builder-3",
+			"reviewer-2",
+		]);
+	});
+
+	test("sends the high and medium findings, not the low ones, after the base prompt", async () => {
+		const builder = stubBackend([DONE]);
+		await build({
+			builder,
+			reviewer: stubBackend([HIGH_REVIEW, REVIEW]),
+		});
+
+		const prompt = builder.calls[1]?.prompt ?? "";
+		expect(prompt.startsWith(builder.calls[0]?.prompt ?? "-")).toBe(true);
+		expect(prompt).toContain(
+			"## Review findings\n\nA reviewer read your change and reported these findings. Address each one in the worktree, or say in your summary why not",
+		);
+		expect(prompt).toContain(
+			"### F-1 (high) src/greet.ts:1\ngreets nobody\nFix: return hi",
+		);
+		expect(prompt).not.toContain("F-2");
+	});
+
+	test("gives the re-reviewer the first review and the builder's answer", async () => {
+		const reviewer = stubBackend([HIGH_REVIEW, REVIEW]);
+		await build({
+			builder: stubBackend([
+				DONE,
+				'{"outcome":"done","summary":"now greets","touched":["src/greet.ts"]}',
+			]),
+			reviewer,
+		});
+
+		const prompt = reviewer.calls[1]?.prompt ?? "";
+		expect(prompt).toContain("# Earlier review");
+		expect(prompt).toContain("### F-1 (high) src/greet.ts:1");
+		expect(prompt).toContain("Builder's answer: now greets");
+		expect(prompt).toContain("## Pass 2");
+	});
+
+	test("does not re-enter on low findings", async () => {
+		const builder = stubBackend([DONE]);
+		const record = await build({ builder, reviewer: stubBackend([REVIEW]) });
+
+		expect(builder.calls).toHaveLength(1);
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			findingsReentries: 0,
+		});
+	});
+
+	test("ends blocked when the re-review still reports a medium finding", async () => {
+		const builder = stubBackend([DONE]);
+		const record = await build({
+			builder,
+			reviewer: stubBackend([HIGH_REVIEW, MEDIUM_REVIEW]),
+		});
+
+		expect(builder.calls).toHaveLength(2);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "reviewer-2 still reports 1 high or medium finding(s): F-3",
+		});
+	});
+
+	test("runs no further builder turn when verification fails after the findings re-entry", async () => {
+		const builder = stubBackend([DONE]);
+		const reviewer = stubBackend([HIGH_REVIEW, REVIEW]);
+		const record = await build({
+			builder,
+			reviewer,
+			providers: [stubProvider([{}, FAILING])],
+		});
+
+		expect(builder.calls).toHaveLength(2);
+		expect(reviewer.calls).toHaveLength(2);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reentries: 0,
+			findingsReentries: 1,
+			reason:
+				"re-entry signals still failing after the findings re-entry: verify",
+		});
+	});
+
+	test("hands the findings re-entry the verification still failing after the first re-entry", async () => {
+		const builder = stubBackend([DONE]);
+		await build({
+			builder,
+			reviewer: stubBackend([HIGH_REVIEW, REVIEW]),
+			providers: [stubProvider([FAILING, FAILING, {}])],
+		});
+
+		expect(builder.calls).toHaveLength(3);
+		expect(builder.calls[2]?.prompt).toContain(
+			"## Host verification still failing\n\n### verify (fail)",
+		);
+	});
+
+	test("ends with the builder's outcome and no re-review when the findings re-entry is blocked", async () => {
+		const reviewer = stubBackend([HIGH_REVIEW]);
+		const record = await build({
+			builder: stubBackend([
+				DONE,
+				'{"outcome":"blocked","reason":"the finding contradicts the plan"}',
+			]),
+			reviewer,
+		});
+
+		expect(reviewer.calls).toHaveLength(1);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "builder-3: the finding contradicts the plan",
+		});
+	});
+
+	test("keeps a reviewer that did not finish from triggering the findings re-entry", async () => {
+		const builder = stubBackend([DONE]);
+		const record = await build({
+			builder,
+			reviewer: stubBackend([
+				'{"outcome":"blocked","reason":"diff is empty","findings":[{"id":"F-1","severity":"high","file":"a:1","summary":"s","fix":"f"}]}',
+			]),
+		});
+
+		expect(builder.calls).toHaveLength(1);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			findingsReentries: 0,
+			reason: "reviewer: diff is empty",
+		});
+	});
+});
+
+describe("runBuild direct request", () => {
+	const REQUEST = "Make greet return the string hi.";
+
+	function direct(
+		options: {
+			builder: StubBackend;
+			reviewer?: StubBackend;
+		} & Partial<RunBuildOptions>,
+	) {
+		const { builder, reviewer, ...rest } = options;
+		return runBuild({
+			projectRoot: root,
+			request: REQUEST,
+			backend: builder,
+			reviewerBackend: reviewer ?? stubBackend([REVIEW]),
+			providers: [stubProvider([{}])],
+			refreshGraph: stubRefresh(),
+			...rest,
+		});
+	}
+
+	test("builds a context pack around the request with an empty touch set", async () => {
+		const builder = stubBackend([editGreet(DONE)]);
+		const record = await direct({ builder });
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			tier: "direct",
+			contextPack: "built",
+		});
+		expect(record.manifest.planPath).toBeUndefined();
+		expect(builder.calls[0]?.prompt).toMatch(
+			/^# Plan\n\nMake greet return the string hi\.\n/u,
+		);
+	});
+
+	test("saves the request in the run directory", async () => {
+		const record = await direct({ builder: stubBackend([DONE]) });
+
+		const path = record.manifest.requestPath ?? "";
+		expect(path).toBe(
+			`missions/sessions/lean/runs/${record.manifest.id}/request.md`,
+		);
+		expect(await readFile(join(root, path), "utf-8")).toBe(`${REQUEST}\n`);
+		expect(await onDisk(record)).toEqual(record);
+	});
+
+	test("tells the builder to make the change when no context pack is possible", async () => {
+		const builder = stubBackend([DONE]);
+		await direct({
+			builder,
+			refreshGraph: stubRefresh([{ outcome: "unavailable", reason: "none" }]),
+		});
+
+		expect(builder.calls[0]?.prompt).toMatch(
+			/^Make this change\.\n\nMake greet return the string hi\.\n\nEnd with the lean envelope/u,
+		);
+	});
+
+	test("reviews the change against the request with host verification", async () => {
+		const provider = stubProvider([{}]);
+		const reviewer = stubBackend([REVIEW]);
+		await direct({
+			builder: stubBackend([editGreet(DONE)]),
+			reviewer,
+			providers: [provider],
+		});
+
+		expect(provider.contexts[0]?.changedFiles).toEqual(["src/greet.ts"]);
+		expect(reviewer.calls[0]?.prompt).toContain(
+			`# Request\n\n${REQUEST}\n\n# Verification facts`,
+		);
+	});
+
+	test("refuses a plan path and a request together", async () => {
+		await expect(
+			direct({ builder: stubBackend([DONE]), planPath: PLAN_PATH }),
+		).rejects.toThrow("exactly one of planPath and request");
+	});
+
+	test("refuses a call with neither a plan path nor a request", async () => {
+		await expect(
+			direct({ builder: stubBackend([DONE]), request: undefined }),
+		).rejects.toThrow("exactly one of planPath and request");
+	});
+});
+
+describe("runBuild reviewer lenses", () => {
+	test("reviews through the general lens by default", async () => {
+		const reviewer = stubBackend([REVIEW]);
+		const record = await build({ builder: stubBackend([DONE]), reviewer });
+
+		expect(record.manifest.lenses).toEqual(["general"]);
+		expect(reviewer.calls[0]?.prompt).toContain("# Lenses\n\ngeneral\n\n");
+	});
+
+	test("passes the requested lenses to the reviewer and the record", async () => {
+		const reviewer = stubBackend([REVIEW]);
+		const record = await build({
+			builder: stubBackend([DONE]),
+			reviewer,
+			lenses: ["security", "performance"],
+		});
+
+		expect(record.manifest.lenses).toEqual(["security", "performance"]);
+		expect(reviewer.calls[0]?.prompt).toContain(
+			"# Lenses\n\nsecurity, performance\n\n",
+		);
+	});
+});
+
+describe("runBuild reviewer diff bound", () => {
+	/** A file larger than the inline cap, so the diff is cut inside it. */
+	async function writeLargeChange(worktree: string): Promise<void> {
+		const line = `${"x".repeat(99)}\n`;
+		await writeFile(
+			join(worktree, "src/big.ts"),
+			line.repeat(Math.ceil(REVIEW_DIFF_INLINE_BYTES / line.length) + 50),
+		);
+		await writeFile(join(worktree, "src/zz-last.ts"), "export const z = 1;\n");
+	}
+
+	test("inlines at most the cap, lists every changed file, and points at the full diff", async () => {
+		let fullDiff = "";
+		const reviewer = stubBackend([
+			async (input) => {
+				fullDiff = await readFile(join(input.worktree, "full.diff"), "utf-8");
+				return REVIEW;
+			},
+		]);
+		await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeLargeChange(input.worktree);
+					return DONE;
+				},
+			]),
+			reviewer,
+		});
+
+		const prompt = reviewer.calls[0]?.prompt ?? "";
+		const worktree = reviewer.calls[0]?.worktree ?? "";
+		const diff = prompt.slice(
+			prompt.indexOf("```diff\n") + 8,
+			prompt.indexOf("\n```", prompt.indexOf("```diff\n")),
+		);
+		expect(Buffer.byteLength(diff)).toBeLessThanOrEqual(
+			REVIEW_DIFF_INLINE_BYTES,
+		);
+		expect(prompt).toContain("# Changed files\n\nsrc/big.ts\nsrc/zz-last.ts");
+		expect(prompt).toContain(
+			`(truncated at ${REVIEW_DIFF_INLINE_BYTES} bytes; full diff at ${join(worktree, "full.diff")})`,
+		);
+		expect(fullDiff).toContain("+export const z = 1;");
+		expect(diff).not.toContain("+export const z = 1;");
+	});
+
+	test("in place, writes the full diff to the run directory", async () => {
+		git("branch", "-m", "main", "trunk");
+		const reviewer = stubBackend([REVIEW]);
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeLargeChange(input.worktree);
+					return DONE;
+				},
+			]),
+			reviewer,
+		});
+
+		const path = join(record.dir, "reviewer.diff");
+		expect(record.manifest.reviewWorkspace).toBe("in-place");
+		expect(reviewer.calls[0]?.prompt).toContain(`full diff at ${path})`);
+		expect(await readFile(path, "utf-8")).toContain("+export const z = 1;");
+	});
+
+	test("inlines a small diff whole, with no truncation note", async () => {
+		const reviewer = stubBackend([REVIEW]);
+		await build({ builder: stubBackend([editGreet(DONE)]), reviewer });
+
+		expect(reviewer.calls[0]?.prompt).toContain('+export const greet = "hi";');
+		expect(reviewer.calls[0]?.prompt).not.toContain("truncated at");
+	});
+});
+
+describe("runBuild run lock", () => {
+	function deferred(): { promise: Promise<void>; resolve: () => void } {
+		let resolve = () => {};
+		const promise = new Promise<void>((done) => {
+			resolve = done;
+		});
+		return { promise, resolve };
+	}
+
+	test("blocks a second run in the same worktree while the first is active", async () => {
+		const started = deferred();
+		const release = deferred();
+		const first = build({
+			builder: stubBackend([
+				async () => {
+					started.resolve();
+					await release.promise;
+					return DONE;
+				},
+			]),
+		});
+		await started.promise;
+		const secondBuilder = stubBackend([DONE]);
+		const second = await build({ builder: secondBuilder });
+		release.resolve();
+		const firstRecord = await first;
+
+		expect(secondBuilder.calls).toHaveLength(0);
+		expect(second.manifest).toMatchObject({
+			status: "blocked",
+			reason: `another lean run (${firstRecord.manifest.id}) is active in this worktree`,
+		});
+		expect(firstRecord.manifest.status).toBe("done");
+	});
+
+	test("releases the lock when the run ends, even when it fails", async () => {
+		await build({ builder: stubBackend(["no envelope"]) });
+		const record = await build({ builder: stubBackend([DONE]) });
+
+		expect(record.manifest.status).toBe("done");
+		expect(existsSync(join(root, ".git/lean-run/lock"))).toBe(false);
+	});
+
+	test("reclaims a lock left by a process that is gone", async () => {
+		const gone = execFileSync("node", ["-p", "process.pid"], {
+			encoding: "utf8",
+		}).trim();
+		await mkdir(join(root, ".git/lean-run"), { recursive: true });
+		await writeFile(
+			join(root, ".git/lean-run/lock"),
+			JSON.stringify({ runId: "old-run", pid: Number(gone), createdAt: "t" }),
+		);
+
+		const record = await build({ builder: stubBackend([DONE]) });
+
+		expect(record.manifest.status).toBe("done");
+	});
+});
+
+describe("runBuild health hook coverage", () => {
+	test("records the Pi health hook for a Pi builder", async () => {
+		const record = await build({ builder: stubBackend([DONE]) });
+
+		expect(record.manifest.healthHook).toBe("pi");
+		expect(record.manifest.warnings).toBeUndefined();
+	});
+
+	test("records that no health hook ran for an external builder", async () => {
+		const record = await build({
+			builder: stubBackend([DONE], "claude-cli"),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			healthHook: "none (external backend)",
+			warnings: [
+				"claude-cli: the post-edit health hook and the lean role guard run only in Pi sessions (brief 4.7A)",
+			],
+		});
 	});
 });

@@ -46,10 +46,23 @@ export interface ParsedPlan {
 	raw: string;
 }
 
+/** Run limits. `tokens` counts input + output tokens only, never cache reads or writes. */
 export interface RunBudget {
 	tokens: number;
 	timeMs: number;
 }
+
+/** Reviewer lenses (brief 4.2); the reviewer reviews through these and no other. */
+export const LEAN_LENSES = [
+	"general",
+	"security",
+	"performance",
+	"ux",
+] as const;
+export type LeanLens = (typeof LEAN_LENSES)[number];
+
+/** Direct: a request with no plan document. Plan: a plan.md (and maybe a spec). */
+export type RunTier = "direct" | "plan";
 
 export interface SignalContext {
 	worktree: string;
@@ -90,6 +103,12 @@ export interface BackendRunInput {
 	role: LeanRole;
 	/** Names the run's snapshot refs for the destructive-git guard. */
 	taskId?: string;
+	/**
+	 * An envelope repair turn: the session must change nothing. External
+	 * backends run it with the readonly tool set; on Pi the lean role guard
+	 * blocks every tool call when the prompt starts with the repair heading.
+	 */
+	readonly?: boolean;
 	signal?: AbortSignal;
 }
 
@@ -113,12 +132,24 @@ export const LEAN_RUN_ROOT = "missions/sessions/lean/runs" as const;
 
 export const RUN_RECORD_FILES = {
 	manifest: "run.json",
+	request: "request.md",
 	envelopes: "envelopes",
 	facts: "facts.json",
 	stats: "stats.json",
 } as const;
 
-export const RUN_STAGES = ["builder-1", "builder-2", "reviewer"] as const;
+/**
+ * `builder-2` is the re-entry on failing verify or mutation signals (D-4),
+ * `builder-3` the one re-entry with the reviewer's high and medium findings,
+ * and `reviewer-2` the re-review after it.
+ */
+export const RUN_STAGES = [
+	"builder-1",
+	"builder-2",
+	"reviewer",
+	"builder-3",
+	"reviewer-2",
+] as const;
 export type RunStage = (typeof RUN_STAGES)[number];
 
 export const REVIEW_WORKSPACE_KINDS = ["private", "in-place"] as const;
@@ -143,6 +174,14 @@ export interface GraphRefreshRecord {
 /** Where the builder prompt came from: the caller, the host's context pack, or the plan alone. */
 export type ContextPackSource = "supplied" | "built" | "plan-only";
 
+/** One envelope repair turn: the stage's output had no valid envelope. */
+export interface EnvelopeRepair {
+	stage: RunStage;
+	/** Why the first output was rejected. */
+	reason: string;
+	repaired: boolean;
+}
+
 export interface RunManifest {
 	id: string;
 	/** HEAD when the run started. */
@@ -153,20 +192,37 @@ export interface RunManifest {
 	 */
 	diffBase?: string;
 	specPath?: string;
-	planPath: string;
+	/** Absent for a direct request. */
+	planPath?: string;
+	/** Absent in records written before direct requests existed; those are all `plan`. */
+	tier?: RunTier;
+	/** The direct request as saved in the run directory, relative to the project root. */
+	requestPath?: string;
 	backend: LeanBackendKind;
+	/** Re-entries on failing verify or mutation signals (0 or 1). */
 	reentries: number;
+	/** Re-entries with the reviewer's high and medium findings (0 or 1). */
+	findingsReentries?: number;
 	snapshotRefs: string[];
 	status: RunStatus;
 	reason?: string;
 	createdAt: string;
 	reviewWorkspace?: ReviewWorkspaceKind;
-	/** Cumulative tokens reported by backend stages. */
+	/**
+	 * Cumulative input + output tokens reported by backend stages. Records
+	 * written before ruling H-1 counted cache reads and writes too.
+	 */
 	tokensUsed?: number;
 	warnings?: string[];
 	/** Every graph.json check, in order: at run start and before each provider pass. */
 	graph?: GraphRefreshRecord[];
 	contextPack?: ContextPackSource;
+	lenses?: LeanLens[];
+	/** The limits this run used, after tool parameters and config. */
+	budget?: RunBudget;
+	/** Where the post-edit health hook ran: in Pi sessions, or nowhere for an external harness. */
+	healthHook?: "pi" | "none (external backend)";
+	repairs?: EnvelopeRepair[];
 }
 
 export interface SignalPass {
@@ -182,6 +238,8 @@ export interface StageStats {
 	stage: RunStage;
 	durationMs: number;
 	spawn?: SpawnStats;
+	/** The stage's envelope repair turn, recorded after the stage's own entry. */
+	repair?: boolean;
 }
 
 export interface RunRecord {

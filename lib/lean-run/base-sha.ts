@@ -48,12 +48,20 @@ export async function clearRunBaseSha(options: WorktreeOptions): Promise<void> {
 	await rm(await markerPath(options.worktree), { force: true });
 }
 
-async function markerPath(worktree: string): Promise<string> {
+function markerPath(worktree: string): Promise<string> {
+	return runStatePath(worktree, MARKER_PATH);
+}
+
+/** `<git dir>/<name>`: per worktree, so each linked worktree has its own run state. */
+export async function runStatePath(
+	worktree: string,
+	name: string,
+): Promise<string> {
 	const { stdout } = await execFileAsync("git", ["rev-parse", "--git-dir"], {
 		cwd: worktree,
 		encoding: "utf8",
 	});
-	return join(resolve(worktree, stdout.trim()), MARKER_PATH);
+	return join(resolve(worktree, stdout.trim()), name);
 }
 
 function isMissingFile(error: unknown): boolean {

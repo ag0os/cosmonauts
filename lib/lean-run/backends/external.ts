@@ -9,7 +9,8 @@ import type {
 	AgentPackage,
 	MaterializedInvocation,
 } from "../../agent-packages/types.ts";
-import type { AgentRegistry } from "../../agents/resolver.ts";
+import { AgentRegistry } from "../../agents/resolver.ts";
+import type { AgentDefinition } from "../../agents/types.ts";
 import type { DomainResolver } from "../../domains/resolver.ts";
 import type {
 	BackendRunInput,
@@ -56,7 +57,13 @@ const PACKAGE_TARGETS = {
 	"codex-cli": "codex",
 } as const satisfies Record<ExternalBackendKind, string>;
 
-/** Packages a lean role's own persona and skills, resolved in the lean domain. */
+/**
+ * Packages a lean role's own persona and skills, resolved in the lean domain.
+ * Pi extensions (the builder's post-edit health hook, the role guard) and
+ * subagents cannot run in an external harness, and the packager refuses an
+ * agent that declares them, so the role is packaged without them; the run
+ * manifest records that the health hook did not run (brief 4.7A).
+ */
 export function leanPackageResolver(options: {
 	kind: ExternalBackendKind;
 	registry: AgentRegistry;
@@ -66,14 +73,14 @@ export function leanPackageResolver(options: {
 	skillPaths: readonly string[];
 }): (role: LeanRole) => Promise<AgentPackage> {
 	const target = PACKAGE_TARGETS[options.kind];
-	return (role) =>
-		buildAgentPackage({
-			definition: definitionFromAgent(
-				options.registry.resolve(role, LEAN_DOMAIN),
-				target,
-			),
+	return (role) => {
+		const agent = withoutPiOnlyParts(
+			options.registry.resolve(role, LEAN_DOMAIN),
+		);
+		return buildAgentPackage({
+			definition: definitionFromAgent(agent, target),
 			target,
-			agentRegistry: options.registry,
+			agentRegistry: new AgentRegistry([agent]),
 			domainContext: LEAN_DOMAIN,
 			...(options.domainsDir ? { domainsDir: options.domainsDir } : {}),
 			...(options.resolver ? { resolver: options.resolver } : {}),
@@ -82,6 +89,11 @@ export function leanPackageResolver(options: {
 				: {}),
 			skillPaths: options.skillPaths,
 		});
+	};
+}
+
+function withoutPiOnlyParts(agent: AgentDefinition): AgentDefinition {
+	return { ...agent, extensions: [], subagents: [] };
 }
 
 const DEFAULT_EXTRA_ARGS = {
@@ -103,7 +115,10 @@ export function createExternalBuilderBackend(
 	return {
 		kind: options.kind,
 		async run(input) {
-			const agentPackage = await options.resolvePackage(input.role);
+			const resolved = await options.resolvePackage(input.role);
+			const agentPackage: AgentPackage = input.readonly
+				? { ...resolved, tools: "readonly" }
+				: resolved;
 			const invocation = await materialize(options, agentPackage, input);
 			try {
 				const args =
