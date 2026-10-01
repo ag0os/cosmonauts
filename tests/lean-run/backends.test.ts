@@ -3,7 +3,7 @@
  * harness invocations, with stubbed spawner and process runner.
  */
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,7 @@ import {
 	type ProcessRequest,
 } from "../../lib/lean-run/backends/external.ts";
 import { createPiBuilderBackend } from "../../lib/lean-run/backends/pi.ts";
-import type { LeanRole } from "../../lib/lean-run/types.ts";
+import type { LeanRole, StageProcessExit } from "../../lib/lean-run/types.ts";
 import type {
 	AgentSpawner,
 	SpawnConfig,
@@ -499,6 +499,90 @@ describe("createExternalBuilderBackend token usage", () => {
 		const result = await codexBackend(stdout).run(input);
 
 		expect(result).toEqual({ text: ENVELOPE });
+	});
+});
+
+describe("createExternalBuilderBackend with a real child process", () => {
+	let dir: string;
+
+	beforeAll(async () => {
+		dir = await mkdtemp(join(tmpdir(), "lean-external-child-"));
+	});
+
+	afterAll(async () => {
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	/** A stand-in `claude` that runs `body` as a shell script. */
+	async function fakeClaude(name: string, body: string): Promise<string> {
+		const bin = join(dir, name);
+		await writeFile(bin, `#!/bin/sh\n${body}\n`);
+		await chmod(bin, 0o755);
+		return bin;
+	}
+
+	function logIn(name: string, reports: StageProcessExit[]) {
+		return {
+			stdout: join(dir, "logs", `${name}.stdout.log`),
+			stderr: join(dir, "logs", `${name}.stderr.log`),
+			report: (exit: StageProcessExit) => reports.push(exit),
+		};
+	}
+
+	test("spools the child's output to the host's log files and reads the final text from them", async () => {
+		const binary = await fakeClaude(
+			"claude-echo",
+			`cat >/dev/null; echo 'thinking' >&2; printf '%s' '${ENVELOPE}'`,
+		);
+		const reports: StageProcessExit[] = [];
+		const processLog = logIn("echo", reports);
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			binary,
+		});
+
+		const result = await backend.run({
+			prompt: "build it",
+			worktree: dir,
+			role: "lean/builder",
+			processLog,
+		});
+
+		expect(result.text).toBe(ENVELOPE);
+		expect(await readFile(processLog.stdout, "utf8")).toBe(ENVELOPE);
+		expect(await readFile(processLog.stderr, "utf8")).toBe("thinking\n");
+		expect(reports).toEqual([{ tree: "gone" }]);
+	});
+
+	test("ends the child's process tree on abort and reports it before throwing", async () => {
+		const pidFile = join(dir, "sleep.pid");
+		const binary = await fakeClaude(
+			"claude-hang",
+			`sleep 60 & echo $! > '${pidFile}'; wait`,
+		);
+		const reports: StageProcessExit[] = [];
+		const controller = new AbortController();
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			binary,
+		});
+		const run = backend.run({
+			prompt: "p",
+			worktree: dir,
+			role: "lean/builder",
+			signal: controller.signal,
+			processLog: logIn("hang", reports),
+		});
+		while (!existsSync(pidFile))
+			await new Promise((settle) => setTimeout(settle, 10));
+		const sleep = Number((await readFile(pidFile, "utf8")).trim());
+		controller.abort();
+
+		await expect(run).rejects.toThrow("claude-cli exited null");
+		expect(reports).toEqual([{ tree: "gone" }]);
+		expect(() => process.kill(sleep, 0)).toThrow();
 	});
 });
 

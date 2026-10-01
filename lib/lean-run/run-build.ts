@@ -5,6 +5,7 @@ import { DEFAULT_SLICE_BUDGET_TOKENS } from "../architecture-map/index.ts";
 import { loadProjectConfig } from "../config/index.ts";
 import type { ProjectLeanConfig } from "../config/types.ts";
 import type { Envelope, Finding } from "../envelope/index.ts";
+import { DEFAULT_CHILD_STOP_MS } from "../process/run-child.ts";
 import { clearRunBaseSha, writeRunBaseSha } from "./base-sha.ts";
 import {
 	type BuilderWorktree,
@@ -77,6 +78,9 @@ import type {
 	SignalKind,
 	SignalProvider,
 	SignalReentry,
+	StageExitRecord,
+	StageProcessExit,
+	StageProcessLog,
 } from "./types.ts";
 import { RUN_RECORD_FILES } from "./types.ts";
 
@@ -106,7 +110,17 @@ export interface RunBuildOptions {
 	 * pass; defaults to regenerating it with the architecture-map generator.
 	 */
 	refreshGraph?: RefreshFileGraph;
+	/** How long a stopped stage may take to settle; `STAGE_EXIT_CEILING_MS` when omitted. */
+	stageExitCeilingMs?: number;
 }
+
+/**
+ * How long the host waits for a stage to settle after an abort or the time
+ * budget: the child runner's whole escalation, then ten seconds more. A
+ * stage still running after it is recorded as unconfirmed and the run ends
+ * anyway, releasing its lock.
+ */
+export const STAGE_EXIT_CEILING_MS = DEFAULT_CHILD_STOP_MS + 10_000;
 
 /** Warning prefix for a run whose builder got the plan without a context pack. */
 const PLAN_ONLY = "context pack: the builder got the plan alone";
@@ -267,6 +281,8 @@ export interface RunReviewOptions {
 	providers?: readonly SignalProvider[];
 	/** As in `runBuild`; called only when a provider reads the file graph. */
 	refreshGraph?: RefreshFileGraph;
+	/** As in `runBuild`. */
+	stageExitCeilingMs?: number;
 }
 
 /**
@@ -376,7 +392,9 @@ interface RunStart {
 /**
  * Runs `body` holding the worktree's run lock. The lock is released however
  * the body ends, and anything it throws, including taking the lock and
- * starting the run, ends the run `failed`.
+ * starting the run, ends the run `failed`. Every stage waits for its work to
+ * settle (`settleStage`), so the lock outlives what the run started, up to
+ * the stage-exit ceiling.
  */
 async function underRunLock(
 	start: RunStart,
@@ -723,7 +741,12 @@ async function refreshGraph(
 			reason: errorMessage(error),
 		}),
 	);
-	const result = await untilAborted(work, run.signal);
+	const settled = await settleStage(run, work);
+	if (settled.stoppedBy) {
+		await recordStageExit(run, stageExit(run.stage, settled));
+		throw new Error("aborted");
+	}
+	const result = settledValue(settled.result);
 	const { manifest } = run.record;
 	manifest.graph = [...(manifest.graph ?? []), graphRecord(at, result)];
 	await saveManifest(run.record);
@@ -1067,11 +1090,10 @@ async function runProviders(
 	for (const provider of run.options.providers) {
 		run.stage = `${provider.kind} provider (pass ${pass})`;
 		signals.push(
-			await runProvider(
-				provider,
-				{ ...context, priorSignals: [...signals] },
-				run.signal,
-			),
+			await runProvider(run, provider, {
+				...context,
+				priorSignals: [...signals],
+			}),
 		);
 		await saveFacts(run.record);
 		const reason = abortReason(run);
@@ -1104,23 +1126,32 @@ async function signalContext(
 	};
 }
 
-/** A provider that throws informs the reviewer as a `fail`; it never re-enters the builder. */
+/**
+ * A provider that throws informs the reviewer as a `fail`; it never
+ * re-enters the builder. A stopped provider is waited for like any stage.
+ */
 async function runProvider(
+	run: Run,
 	provider: SignalProvider,
 	context: SignalContext,
-	signal: AbortSignal,
 ): Promise<Signal> {
-	try {
-		return await untilAborted(provider.run(context), signal);
-	} catch (error) {
-		return {
-			kind: provider.kind,
-			status: "fail",
-			summary: `${provider.kind} provider threw: ${errorMessage(error)}`,
-			data: { error: errorMessage(error) },
-			reenter: false,
-		};
-	}
+	const settled = await settleStage(
+		run,
+		Promise.resolve().then(() => provider.run(context)),
+	);
+	if (settled.stoppedBy)
+		await recordStageExit(run, stageExit(run.stage, settled));
+	const { result } = settled;
+	if (result.kind === "value") return result.value;
+	const message =
+		result.kind === "error" ? errorMessage(result.error) : "aborted";
+	return {
+		kind: provider.kind,
+		status: "fail",
+		summary: `${provider.kind} provider threw: ${message}`,
+		data: { error: message },
+		reenter: false,
+	};
 }
 
 /** Signals of other kinds that ask to re-enter stay in the facts as-is and leave a warning. */
@@ -1347,15 +1378,25 @@ async function runSession(
 	const { stage, repair } = session;
 	run.stage = repair ? `${stage} repair` : stage;
 	const started = Date.now();
-	const work = session.backend.run({
-		...session.input,
-		taskId: builderTaskId(run.record.manifest.id),
-		...(repair ? { readonly: true } : {}),
-		signal: run.signal,
-	});
-	const result = await untilAborted(work, run.signal).catch(
-		(error: unknown) => new Error(errorMessage(error)),
+	const log = sessionLog(run, repair ? `${stage}-repair` : stage);
+	const work = Promise.resolve().then(() =>
+		session.backend.run({
+			...session.input,
+			taskId: builderTaskId(run.record.manifest.id),
+			...(repair ? { readonly: true } : {}),
+			signal: run.signal,
+			processLog: log.processLog,
+		}),
 	);
+	const settled = await settleStage(run, work);
+	if (settled.stoppedBy || log.reported)
+		await recordStageExit(run, {
+			...stageExit(run.stage, settled),
+			...(log.reported
+				? { process: log.reported, logs: log.relativePaths }
+				: {}),
+		});
+	const result = sessionResult(settled);
 	await recordStats(run, session, Date.now() - started, result);
 	if (!(result instanceof Error))
 		return afterSession(run, session.backend, result);
@@ -1435,16 +1476,141 @@ async function recordStats(
 	await saveManifest(run.record);
 }
 
-/** Settles with `work`, or rejects as soon as `signal` aborts even if `work` ignores it. */
-function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-	return new Promise<T>((resolvePromise, reject) => {
-		const onAbort = () => reject(new Error("aborted"));
-		if (signal.aborted) return onAbort();
-		signal.addEventListener("abort", onAbort, { once: true });
-		work
-			.then(resolvePromise, reject)
-			.finally(() => signal.removeEventListener("abort", onAbort));
+/** How a stage's work settled, as the host saw it. */
+type Settlement<T> =
+	| { kind: "value"; value: T }
+	| { kind: "error"; error: unknown }
+	/** Still running when the ceiling after the stop passed. */
+	| { kind: "unconfirmed" };
+
+interface StageSettlement<T> {
+	result: Settlement<T>;
+	/** Set when an abort or the time budget arrived before the work settled. */
+	stoppedBy?: StageExitRecord["stoppedBy"];
+}
+
+/**
+ * Waits for `work` to settle. An abort or the time budget does not abandon
+ * it: the work holds the signal, and an external backend's child runner ends
+ * the whole process tree before it settles, so nothing a stage started
+ * outlives the run lock. Only once `stageExitCeilingMs` has passed since the
+ * stop does the host stop waiting, with `unconfirmed`.
+ */
+async function settleStage<T>(
+	run: Run,
+	work: Promise<T>,
+): Promise<StageSettlement<T>> {
+	let settled = false;
+	let stoppedBy: StageExitRecord["stoppedBy"];
+	let timer: NodeJS.Timeout | undefined;
+	let onStop = (): void => {};
+	const outcome = work.then(
+		(value): Settlement<T> => {
+			settled = true;
+			return { kind: "value", value };
+		},
+		(error: unknown): Settlement<T> => {
+			settled = true;
+			return { kind: "error", error };
+		},
+	);
+	const ceiling = new Promise<Settlement<T>>((resolveCeiling) => {
+		onStop = () => {
+			if (settled) return;
+			stoppedBy = stopCause(run);
+			timer = setTimeout(
+				() => resolveCeiling({ kind: "unconfirmed" }),
+				stageExitCeiling(run),
+			);
+		};
 	});
+	if (run.signal.aborted) onStop();
+	else run.signal.addEventListener("abort", onStop, { once: true });
+	try {
+		const result = await Promise.race([outcome, ceiling]);
+		return stoppedBy ? { result, stoppedBy } : { result };
+	} finally {
+		clearTimeout(timer);
+		run.signal.removeEventListener("abort", onStop);
+	}
+}
+
+function stopCause(run: Run): NonNullable<StageExitRecord["stoppedBy"]> {
+	return run.options.signal?.aborted ? "abort" : "time budget";
+}
+
+function stageExitCeiling(run: Run): number {
+	return run.options.stageExitCeilingMs ?? STAGE_EXIT_CEILING_MS;
+}
+
+/** A stopped stage's work counts as aborted, whatever it settled with. */
+function sessionResult(
+	settled: StageSettlement<BackendRunResult>,
+): BackendRunResult | Error {
+	const { result } = settled;
+	if (settled.stoppedBy || result.kind === "unconfirmed")
+		return new Error("aborted");
+	if (result.kind === "error") return new Error(errorMessage(result.error));
+	return result.value;
+}
+
+/** The value of work that settled unstopped and cannot reject. */
+function settledValue<T>(result: Settlement<T>): T {
+	if (result.kind === "value") return result.value;
+	throw result.kind === "error" ? result.error : new Error("aborted");
+}
+
+function stageExit(
+	stage: string,
+	settled: StageSettlement<unknown>,
+): StageExitRecord {
+	return {
+		stage,
+		...(settled.stoppedBy ? { stoppedBy: settled.stoppedBy } : {}),
+		settled: settled.result.kind !== "unconfirmed",
+	};
+}
+
+/** Records how a stage ended, with a warning for anything that may still be running. */
+async function recordStageExit(run: Run, exit: StageExitRecord): Promise<void> {
+	const { manifest } = run.record;
+	manifest.stageExits = [...(manifest.stageExits ?? []), exit];
+	if (!exit.settled)
+		warn(
+			run.record,
+			`${exit.stage}: stage did not confirm exit within ${stageExitCeiling(run)} ms after the ${exit.stoppedBy ?? "stop"}; it may still be running`,
+		);
+	if (exit.process?.tree === "survived")
+		warn(
+			run.record,
+			`${exit.stage}: process tree survived: ${exit.process.detail ?? "unknown"}`,
+		);
+	await saveManifest(run.record);
+}
+
+interface SessionLog {
+	processLog: StageProcessLog;
+	relativePaths: { stdout: string; stderr: string };
+	reported?: StageProcessExit;
+}
+
+/** `logs/<name>.stdout.log` and `.stderr.log` in the run directory, for a backend's child process. */
+function sessionLog(run: Run, name: string): SessionLog {
+	const relativePaths = {
+		stdout: join(RUN_RECORD_FILES.logs, `${name}.stdout.log`),
+		stderr: join(RUN_RECORD_FILES.logs, `${name}.stderr.log`),
+	};
+	const log: SessionLog = {
+		relativePaths,
+		processLog: {
+			stdout: join(run.record.dir, relativePaths.stdout),
+			stderr: join(run.record.dir, relativePaths.stderr),
+			report: (exit) => {
+				log.reported = exit;
+			},
+		},
+	};
+	return log;
 }
 
 function abortReason(run: Run): string | undefined {

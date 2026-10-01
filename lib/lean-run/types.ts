@@ -123,6 +123,35 @@ export interface BackendRunInput {
 	 */
 	readonly?: boolean;
 	signal?: AbortSignal;
+	/**
+	 * Where a backend that runs a child process spools its output, and how
+	 * it reports the end of that process tree. A Pi session runs in-process
+	 * and ignores it.
+	 */
+	processLog?: StageProcessLog;
+}
+
+/** The host's log files for one backend session, and its callback for the child's end. */
+export interface StageProcessLog {
+	/** Absolute paths of the spool files, under the run directory's `logs/`. */
+	stdout: string;
+	stderr: string;
+	/** Called once the child process tree has ended, before the backend returns or throws. */
+	report(exit: StageProcessExit): void;
+}
+
+/** How a backend's child process tree ended. */
+export interface StageProcessExit {
+	/**
+	 * `gone`: nothing of the tree is left. `survived`: something outlived
+	 * SIGTERM and SIGKILL (or `taskkill /T /F`), or could not be signalled.
+	 * `unverified`: on Windows, an exited child's descendants cannot be seen.
+	 */
+	tree: "gone" | "survived" | "unverified";
+	/** What survived, or why the tree could not be checked. */
+	detail?: string;
+	/** Streams cut at the runner's byte cap. */
+	truncated?: ("stdout" | "stderr")[];
 }
 
 export interface BackendRunResult {
@@ -175,6 +204,11 @@ export const RUN_RECORD_FILES = {
 	healthHook: "health-hook.jsonl",
 	/** `builder-N.patch`: the builder worktree against the diff base after attempt N. */
 	patches: "patches",
+	/**
+	 * `<stage>.stdout.log` and `<stage>.stderr.log` (`<stage>-repair.*` for a
+	 * repair turn): what an external backend's child process wrote.
+	 */
+	logs: "logs",
 } as const;
 
 /**
@@ -298,6 +332,31 @@ export interface RunManifest {
 	patchApplied?: PatchApplication;
 	/** How the builder harness gated its tool calls. */
 	permissions?: BackendPermissions;
+	/**
+	 * How stages ended, for every backend session that ran a child process
+	 * and every stage an abort or the time budget stopped, in order.
+	 */
+	stageExits?: StageExitRecord[];
+}
+
+/**
+ * How one stage's work ended. The host waits for a stage it stopped to
+ * settle, up to a ceiling, before the run ends and its lock is released.
+ */
+export interface StageExitRecord {
+	/** `builder-1`, `reviewer repair`, `verify provider (pass 1)`, `graph refresh (start)`. */
+	stage: string;
+	/** Present when an abort or the time budget stopped the stage while it ran. */
+	stoppedBy?: "abort" | "time budget";
+	/**
+	 * Whether the host saw the stage's work settle. False only when it gave
+	 * up after the ceiling; that stage's work may still be running.
+	 */
+	settled: boolean;
+	/** For a session that ran a child process: how its process tree ended. */
+	process?: StageProcessExit;
+	/** The spool files, relative to the run directory, when the session had a child process. */
+	logs?: { stdout: string; stderr: string };
 }
 
 /** A builder attempt whose work no patch holds; a later attempt's patch clears it. */

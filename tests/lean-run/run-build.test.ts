@@ -125,7 +125,10 @@ interface StubProvider extends SignalProvider {
 	contexts: SignalContext[];
 }
 
-type ProviderResult = Partial<Signal> | Error | (() => Promise<never>);
+type ProviderResult =
+	| Partial<Signal>
+	| Error
+	| ((context: SignalContext) => Promise<never>);
 
 function stubProvider(
 	results: ProviderResult[],
@@ -139,7 +142,7 @@ function stubProvider(
 			contexts.push(context);
 			const result = results[contexts.length - 1] ?? results.at(-1) ?? {};
 			if (result instanceof Error) throw result;
-			if (typeof result === "function") return result();
+			if (typeof result === "function") return result(context);
 			return {
 				kind,
 				status: "pass",
@@ -167,6 +170,18 @@ const SKIPPED_MUTATION: Partial<Signal> = {
 };
 
 const never = (): Promise<never> => new Promise<never>(() => {});
+
+/** Work that honours the signal: it rejects once `signal` aborts. */
+function rejectsOnAbort(signal: AbortSignal | undefined): Promise<never> {
+	return new Promise<never>((_, reject) => {
+		const fail = () => reject(new Error("aborted"));
+		if (signal?.aborted) return fail();
+		signal?.addEventListener("abort", fail, { once: true });
+	});
+}
+
+const delay = (ms: number): Promise<void> =>
+	new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 
 const GREET_SIGNATURE = "const greet: string";
 
@@ -1146,14 +1161,17 @@ describe("runBuild file graph refresh", () => {
 			builder,
 			signal: controller.signal,
 			refreshGraph: stubRefresh([
-				() => {
+				async () => {
 					controller.abort();
-					return never();
+					return CURRENT;
 				},
 			]),
 		});
 
 		expect(record.manifest.reason).toBe("aborted at graph refresh (start)");
+		expect(record.manifest.stageExits).toEqual([
+			{ stage: "graph refresh (start)", stoppedBy: "abort", settled: true },
+		]);
 		expect(builder.calls).toHaveLength(0);
 	});
 });
@@ -1733,6 +1751,7 @@ describe("runBuild budgets", () => {
 			const record = await build({
 				builder,
 				budget: { tokens: 1_000, timeMs: 100 },
+				stageExitCeilingMs: 50,
 			});
 			expect(builder.calls[0]?.signal?.aborted).toBe(true);
 			expect((await onDisk(record)).manifest).toMatchObject({
@@ -1740,6 +1759,22 @@ describe("runBuild budgets", () => {
 				reason: "time budget exceeded at builder-1",
 			});
 		});
+	});
+
+	test("records a stage that never settles after the time budget as unconfirmed, with a warning", async () => {
+		const record = await build({
+			builder: stubBackend([never]),
+			budget: { tokens: 1_000, timeMs: 1_000 },
+			stageExitCeilingMs: 50,
+		});
+
+		const { manifest } = await onDisk(record);
+		expect(manifest.stageExits).toEqual([
+			{ stage: "builder-1", stoppedBy: "time budget", settled: false },
+		]);
+		expect(manifest.warnings).toContain(
+			"builder-1: stage did not confirm exit within 50 ms after the time budget; it may still be running",
+		);
 	});
 
 	test("fails when a provider outlives the time budget", async () => {
@@ -1757,6 +1792,7 @@ describe("runBuild budgets", () => {
 					]),
 				],
 				budget: { tokens: 1_000_000, timeMs: 2_000 },
+				stageExitCeilingMs: 50,
 			});
 			expect(record.manifest).toMatchObject({
 				status: "failed",
@@ -1973,14 +2009,133 @@ describe("runBuild budgets", () => {
 		const controller = new AbortController();
 		const record = await build({
 			builder: stubBackend([
-				() => {
+				(input) => {
 					controller.abort();
-					return never();
+					return rejectsOnAbort(input.signal);
 				},
 			]),
 			signal: controller.signal,
 		});
 		expect(record.manifest.reason).toBe("aborted at builder-1");
+	});
+});
+
+describe("runBuild stage exits after a stop", () => {
+	const LOCK = () => join(root, ".git/lean-run/lock");
+
+	/** A builder that ignores the abort it causes and settles a second later. */
+	function lateSettlingBuilder(controller: AbortController, seen: string[]) {
+		return stubBackend([
+			async () => {
+				controller.abort();
+				seen.push("aborted");
+				await delay(1_000);
+				seen.push(`settled with lock ${existsSync(LOCK()) ? "held" : "free"}`);
+				return DONE;
+			},
+		]);
+	}
+
+	test("waits for a stopped stage to settle before the run ends", async () => {
+		const controller = new AbortController();
+		const seen: string[] = [];
+		const record = await build({
+			builder: lateSettlingBuilder(controller, seen),
+			signal: controller.signal,
+		});
+		seen.push("run ended");
+
+		expect(seen).toEqual(["aborted", "settled with lock held", "run ended"]);
+		expect(record.manifest).toMatchObject({
+			status: "failed",
+			reason: "aborted at builder-1",
+			stageExits: [{ stage: "builder-1", stoppedBy: "abort", settled: true }],
+		});
+		expect(existsSync(LOCK())).toBe(false);
+	});
+
+	test("refuses a second run while a stopped stage is still settling", async () => {
+		const controller = new AbortController();
+		const first = build({
+			builder: lateSettlingBuilder(controller, []),
+			signal: controller.signal,
+		});
+		await delay(300);
+		const secondBuilder = stubBackend([DONE]);
+
+		const second = await build({ builder: secondBuilder });
+
+		expect(second.manifest.status).toBe("blocked");
+		expect(second.manifest.reason).toMatch(
+			/^another lean run \(.+\) is active/u,
+		);
+		expect(secondBuilder.calls).toHaveLength(0);
+		expect((await first).manifest.reason).toBe("aborted at builder-1");
+	});
+
+	test("waits for a stopped provider to settle and records it", async () => {
+		const controller = new AbortController();
+		const seen: string[] = [];
+		const provider = stubProvider([
+			async () => {
+				controller.abort();
+				await delay(200);
+				seen.push("provider settled");
+				throw new Error("aborted");
+			},
+		]);
+		const record = await build({
+			builder: stubBackend([DONE]),
+			providers: [provider],
+			signal: controller.signal,
+		});
+		seen.push("run ended");
+
+		expect(seen).toEqual(["provider settled", "run ended"]);
+		expect(record.manifest.stageExits).toEqual([
+			{ stage: "verify provider (pass 1)", stoppedBy: "abort", settled: true },
+		]);
+	});
+
+	test("records a session's process exit and its log files relative to the run", async () => {
+		const builder = stubBackend([
+			async (input) => {
+				input.processLog?.report({ tree: "gone" });
+				return DONE;
+			},
+		]);
+		const record = await build({ builder });
+
+		expect(record.manifest.stageExits?.[0]).toEqual({
+			stage: "builder-1",
+			settled: true,
+			process: { tree: "gone" },
+			logs: {
+				stdout: "logs/builder-1.stdout.log",
+				stderr: "logs/builder-1.stderr.log",
+			},
+		});
+		expect(builder.calls[0]?.processLog?.stdout).toBe(
+			join(record.dir, "logs/builder-1.stdout.log"),
+		);
+	});
+
+	test("warns when a session's process tree survived", async () => {
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					input.processLog?.report({
+						tree: "survived",
+						detail: "process group 42 still had live members",
+					});
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest.warnings).toContain(
+			"builder-1: process tree survived: process group 42 still had live members",
+		);
 	});
 });
 

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildAgentPackage } from "../../agent-packages/build.ts";
@@ -12,12 +11,19 @@ import type {
 import { AgentRegistry } from "../../agents/resolver.ts";
 import type { AgentDefinition } from "../../agents/types.ts";
 import type { DomainResolver } from "../../domains/resolver.ts";
+import {
+	type ChildRunOutcome,
+	type ChildTree,
+	readSpool,
+	runChild,
+} from "../../process/run-child.ts";
 import type {
 	BackendPermissions,
 	BackendRunInput,
 	BuilderBackend,
 	LeanBackendKind,
 	LeanRole,
+	StageProcessExit,
 } from "../types.ts";
 import {
 	claudeResult,
@@ -35,12 +41,18 @@ export interface ProcessRequest {
 	env: NodeJS.ProcessEnv;
 	stdin: string;
 	signal?: AbortSignal;
+	/** Where the child's stdout and stderr are spooled. */
+	output: { stdout: string; stderr: string };
 }
 
 export interface ProcessOutcome {
+	/** Null when the child ended by a signal, was stopped, or never started. */
 	exitCode: number | null;
 	stdout: string;
+	/** The default runner returns only the last `STDERR_TAIL_BYTES`, plus its notes. */
 	stderr: string;
+	/** How the child's process tree ended; absent from a runner that cannot tell. */
+	process?: StageProcessExit;
 }
 
 export type ProcessRunner = (
@@ -139,6 +151,7 @@ function skipsPermissions(args: readonly string[]): boolean {
 }
 
 const CODEX_LAST_MESSAGE = "last-message.txt";
+const STDERR_TAIL_BYTES = 2_000;
 
 /**
  * Runs a lean role through Claude Code or Codex using the agent-package
@@ -171,10 +184,12 @@ export function createExternalBuilderBackend(
 					env: invocation.spec.env,
 					stdin: input.prompt,
 					...(input.signal ? { signal: input.signal } : {}),
+					output: spoolPaths(input, invocation),
 				});
+				if (outcome.process) input.processLog?.report(outcome.process);
 				if (outcome.exitCode !== 0)
 					throw new Error(
-						`${options.kind} exited ${outcome.exitCode}: ${outcome.stderr.slice(-2000)}`,
+						`${options.kind} exited ${outcome.exitCode}: ${outcome.stderr.slice(-STDERR_TAIL_BYTES)}`,
 					);
 				return await finalResult({
 					kind: options.kind,
@@ -252,26 +267,73 @@ async function finalResult(options: {
 	return stats ? { text, stats } : { text };
 }
 
-const runChildProcess: ProcessRunner = (request) =>
-	new Promise((resolve, reject) => {
-		const child = spawn(request.command, [...request.args], {
-			cwd: request.cwd,
-			env: request.env,
-			stdio: ["pipe", "pipe", "pipe"],
-			...(request.signal ? { signal: request.signal } : {}),
-		});
-		const stdout: Buffer[] = [];
-		const stderr: Buffer[] = [];
-		child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-		child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-		child.on("error", reject);
-		child.stdin.on("error", reject);
-		child.on("close", (exitCode) =>
-			resolve({
-				exitCode,
-				stdout: Buffer.concat(stdout).toString("utf-8"),
-				stderr: Buffer.concat(stderr).toString("utf-8"),
-			}),
-		);
-		child.stdin.end(request.stdin);
+/** The run's log files when the host gave them, else files in the invocation's temp dir. */
+function spoolPaths(
+	input: BackendRunInput,
+	invocation: MaterializedInvocation,
+): ProcessRequest["output"] {
+	if (input.processLog)
+		return {
+			stdout: input.processLog.stdout,
+			stderr: input.processLog.stderr,
+		};
+	return {
+		stdout: join(invocation.tempDir, "stdout.log"),
+		stderr: join(invocation.tempDir, "stderr.log"),
+	};
+}
+
+/**
+ * The harness runs through the shared child runner: its own process group,
+ * output spooled under a byte cap, and on an abort or the time budget the
+ * whole tree is ended before this resolves.
+ */
+const runChildProcess: ProcessRunner = async (request) => {
+	const outcome = await runChild({
+		command: request.command,
+		args: request.args,
+		cwd: request.cwd,
+		env: request.env,
+		stdin: request.stdin,
+		output: request.output,
+		...(request.signal ? { signal: request.signal } : {}),
 	});
+	const [stdout, stderr] = await Promise.all([
+		readSpool(outcome.stdout),
+		readSpool(outcome.stderr, STDERR_TAIL_BYTES),
+	]);
+	return {
+		exitCode: exitCodeOf(outcome),
+		stdout,
+		stderr: [stderr, ...outcome.notes, spawnFailure(outcome)]
+			.filter((part) => part !== "")
+			.join("\n"),
+		process: processExit(outcome),
+	};
+};
+
+function exitCodeOf(outcome: ChildRunOutcome): number | null {
+	if (outcome.stopped !== undefined) return null;
+	return outcome.exit.kind === "code" ? outcome.exit.code : null;
+}
+
+function spawnFailure(outcome: ChildRunOutcome): string {
+	return outcome.exit.kind === "spawn-error"
+		? `could not start: ${outcome.exit.error.message}`
+		: "";
+}
+
+function processExit(outcome: ChildRunOutcome): StageProcessExit {
+	const truncated = (["stdout", "stderr"] as const).filter(
+		(stream) => outcome[stream].truncated,
+	);
+	return {
+		...treeState(outcome.tree),
+		...(truncated.length > 0 ? { truncated } : {}),
+	};
+}
+
+function treeState(tree: ChildTree): Pick<StageProcessExit, "tree" | "detail"> {
+	if (tree.kind === "gone") return { tree: "gone" };
+	return { tree: tree.kind, detail: tree.reason };
+}

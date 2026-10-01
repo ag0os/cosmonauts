@@ -14,9 +14,8 @@
  * rather than failed.
  */
 
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +26,11 @@ import {
 	type DiffHunk,
 	rangeIntersectsHunks,
 } from "../../code-health/diff-hunks.ts";
-import { reapProcessGroup } from "../../process/process-group.ts";
+import {
+	type ChildRunOutcome,
+	type RunChildOptions,
+	runChild,
+} from "../../process/run-child.ts";
 import type {
 	Signal,
 	SignalContext,
@@ -82,6 +85,10 @@ export interface MutationProviderOptions {
 	readonly maxTests?: number;
 	/** Stryker test-runner processes; defaults to the config's value. */
 	readonly concurrency?: number;
+	/** SIGTERM to SIGKILL when Stryker is stopped; the runner's default when absent. */
+	readonly graceMs?: number;
+	/** Test seam: the child runner Stryker goes through. */
+	readonly runChild?: (options: RunChildOptions) => Promise<ChildRunOutcome>;
 }
 
 interface StrykerPlan {
@@ -208,7 +215,7 @@ async function runStrykerPlan(
 	await mkdir(outDir, { recursive: true });
 	await rm(reportPath, { force: true });
 	const strykerRun = await withoutSandbox(ctx.worktree, () =>
-		runStryker({
+		runStryker(options, {
 			command: strykerCommand(options, plan),
 			cwd: ctx.worktree,
 			reportPath,
@@ -517,51 +524,44 @@ interface RunStrykerOptions {
 	readonly signal?: AbortSignal;
 }
 
-async function runStryker(options: RunStrykerOptions): Promise<StrykerRun> {
-	const log = await open(options.logPath, "w");
-	try {
-		return await spawnStryker(options, log.fd);
-	} finally {
-		await log.close();
-	}
+/**
+ * Stryker and its test-runner processes share one process tree, which the
+ * child runner ends whole on a timeout or an abort (`taskkill /T /F` on
+ * Windows) before this resolves. Both streams go to one log.
+ */
+async function runStryker(
+	provider: MutationProviderOptions,
+	options: RunStrykerOptions,
+): Promise<StrykerRun> {
+	const run = provider.runChild ?? runChild;
+	const result = await run({
+		command: options.command.executable,
+		args: options.command.args,
+		cwd: options.cwd,
+		env: strykerEnv(options),
+		output: { stdout: options.logPath, stderr: options.logPath },
+		timeoutMs: options.timeoutMs,
+		...(options.signal ? { signal: options.signal } : {}),
+		...(provider.graceMs === undefined ? {} : { graceMs: provider.graceMs }),
+	});
+	const outcome = strykerOutcome(result);
+	return result.tree.kind === "survived"
+		? { outcome, survivedReap: result.tree.reason }
+		: { outcome };
 }
 
-function spawnStryker(
-	options: RunStrykerOptions,
-	logFd: number,
-): Promise<StrykerRun> {
-	return new Promise((settleRun) => {
-		let settled = false;
-		let timer: NodeJS.Timeout | undefined;
-		const child = spawn(options.command.executable, options.command.args, {
-			cwd: options.cwd,
-			env: strykerEnv(options),
-			detached: process.platform !== "win32",
-			stdio: ["ignore", logFd, logFd],
-		});
-		const finish = (outcome: StrykerOutcome): void => {
-			if (settled) return;
-			settled = true;
-			if (timer !== undefined) clearTimeout(timer);
-			options.signal?.removeEventListener("abort", onAbort);
-			void reapChild(child.pid).then(
-				(survivedReap) => settleRun({ outcome, survivedReap }),
-				(error: unknown) =>
-					settleRun({ outcome, survivedReap: messageOf(error) }),
-			);
-		};
-		const onAbort = (): void => finish({ kind: "aborted" });
-		child.once("error", (error) =>
-			finish({ kind: "spawn-error", message: error.message }),
-		);
-		child.once("exit", (code) => finish({ kind: "exit", code }));
-		timer = setTimeout(
-			() => finish({ kind: "timeout", timeoutMs: options.timeoutMs }),
-			options.timeoutMs,
-		);
-		options.signal?.addEventListener("abort", onAbort, { once: true });
-		if (options.signal?.aborted) onAbort();
-	});
+function strykerOutcome(result: ChildRunOutcome): StrykerOutcome {
+	if (result.stopped?.kind === "aborted") return { kind: "aborted" };
+	if (result.stopped?.kind === "timeout")
+		return { kind: "timeout", timeoutMs: result.stopped.timeoutMs };
+	switch (result.exit.kind) {
+		case "code":
+			return { kind: "exit", code: result.exit.code };
+		case "spawn-error":
+			return { kind: "spawn-error", message: result.exit.error.message };
+		default:
+			return { kind: "exit", code: null };
+	}
 }
 
 /**
@@ -584,13 +584,6 @@ function strykerEnv(options: {
 			? `${ceiling}${delimiter}${inherited}`
 			: ceiling,
 	};
-}
-
-/** Stryker's runner processes share its group; none may outlive the signal. */
-async function reapChild(pid: number | undefined): Promise<string | undefined> {
-	if (pid === undefined || process.platform === "win32") return undefined;
-	const reaped = await reapProcessGroup(pid);
-	return reaped.kind === "survived" ? reaped.reason : undefined;
 }
 
 async function logTail(logPath: string): Promise<string> {

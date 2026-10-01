@@ -39,6 +39,11 @@ import {
 	untestableFiles,
 } from "../../../lib/lean-run/providers/mutation-tests.ts";
 import type { Signal, SignalContext } from "../../../lib/lean-run/types.ts";
+import type {
+	ChildRunOutcome,
+	RunChildOptions,
+} from "../../../lib/process/run-child.ts";
+import { runChild } from "../../../lib/process/run-child.ts";
 import { useTempDir } from "../../helpers/fs.ts";
 
 const REPOSITORY_ROOT = resolve(
@@ -1245,6 +1250,7 @@ describe(
 			const signal = await createMutationProvider({
 				strykerBin,
 				timeoutMs: 1_500,
+				graceMs: 300,
 			}).run(context(project.path));
 
 			expect(signal).toMatchObject({ status: "info", reenter: false });
@@ -1262,14 +1268,93 @@ describe(
 				controller.abort(),
 			);
 
-			const signal = await createMutationProvider({ strykerBin }).run(
-				context(project.path, { signal: controller.signal }),
-			);
+			const signal = await createMutationProvider({
+				strykerBin,
+				graceMs: 300,
+			}).run(context(project.path, { signal: controller.signal }));
 
 			expect(signal).toMatchObject({ status: "info", reenter: false });
 			expect(signal.summary).toContain("aborted");
 			const child = await childPid(tools.path);
 			expect(await waitFor(() => !isAlive(child))).toBe(true);
+			expect(existsSync(join(project.path, ".stryker-tmp"))).toBe(false);
+		});
+
+		test("runs Stryker through the child runner with both streams in one log", async () => {
+			const strykerBin = await fakeStryker(tools.path, report({}));
+			const calls: RunChildOptions[] = [];
+			const recording = (
+				options: RunChildOptions,
+			): Promise<ChildRunOutcome> => {
+				calls.push(options);
+				return runChild(options);
+			};
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				runChild: recording,
+			}).run(context(project.path));
+
+			expect(calls).toHaveLength(1);
+			expect(calls[0]?.command).toBe(strykerBin);
+			expect(calls[0]?.output.stdout).toBe(calls[0]?.output.stderr);
+			expect(signal.data).toMatchObject({ logPath: calls[0]?.output.stdout });
+		});
+
+		test("records what survived Stryker's stop in the signal", async () => {
+			const stopped = async (
+				options: RunChildOptions,
+			): Promise<ChildRunOutcome> => ({
+				exit: { kind: "unobserved" },
+				stopped: { kind: "timeout", timeoutMs: 10 },
+				tree: { kind: "survived", reason: "group 42 still alive" },
+				stdout: { path: options.output.stdout, bytes: 0, truncated: false },
+				stderr: { path: options.output.stderr, bytes: 0, truncated: false },
+				notes: [],
+			});
+			const strykerBin = await fakeStryker(tools.path, report({}));
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				runChild: stopped,
+			}).run(context(project.path));
+
+			expect(signal.summary).toContain("timed out after 10 ms");
+			expect(signal.data).toMatchObject({
+				survivedReap: "group 42 still alive",
+			});
+		});
+
+		test("stops Stryker with taskkill /T then /T /F on Windows before removing its sandbox", async () => {
+			const strykerBin = await hangingStryker(tools.path);
+			const controller = new AbortController();
+			const events: string[] = [];
+			const pidsFile = join(tools.path, "pids.json");
+			void waitFor(() => existsSync(pidsFile), 10_000).then(() =>
+				controller.abort(),
+			);
+			const onWindows = (options: RunChildOptions) =>
+				runChild({
+					...options,
+					platform: "win32",
+					graceMs: 100,
+					taskkill: async (args) => {
+						const sandbox = existsSync(join(project.path, ".stryker-tmp"));
+						events.push(`${args.slice(2).join(" ")} sandbox=${sandbox}`);
+						if (!args.includes("/F")) return 1;
+						process.kill(Number(args[1]), "SIGKILL");
+						process.kill(await childPid(tools.path), "SIGKILL");
+						return 0;
+					},
+				});
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				runChild: onWindows,
+			}).run(context(project.path, { signal: controller.signal }));
+
+			expect(events).toEqual(["/T sandbox=true", "/T /F sandbox=true"]);
+			expect(signal.summary).toContain("aborted");
 			expect(existsSync(join(project.path, ".stryker-tmp"))).toBe(false);
 		});
 
