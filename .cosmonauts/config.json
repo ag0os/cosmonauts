@@ -1,11 +1,13 @@
 {
 	"skills": [
 		"archive",
+		"contract",
 		"creating-skills",
 		"design-dialogue",
 		"drive",
 		"engineering-principles",
 		"find-docs",
+		"git-workflow",
 		"init",
 		"pi",
 		"plan",

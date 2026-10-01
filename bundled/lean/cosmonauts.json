@@ -1,0 +1,6 @@
+{
+	"name": "lean",
+	"version": "0.1.0",
+	"description": "Lean coding domain with four roles, optional spec and plan documents, and host-owned verification",
+	"domains": [{ "name": "lean", "path": "." }]
+}
