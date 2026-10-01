@@ -1151,8 +1151,9 @@ async function runBuilder(
 /**
  * Why the builder's patch cannot go to the caller, if so: the builder
  * clone left the run's snapshot behind, so its patch would undo work that
- * predates the run, or the caller's branch, HEAD or stash moved, or a
- * linked `node_modules` lost entries, since the clone opened. Nothing is
+ * predates the run, or the caller's branch, HEAD or stash moved, a branch
+ * or tag of the caller was added, deleted or moved, or a linked
+ * `node_modules` lost entries, since the clone opened. Nothing is
  * repaired. A check that cannot run counts.
  */
 async function isolationBreach(run: Run): Promise<string | undefined> {

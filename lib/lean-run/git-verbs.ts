@@ -26,8 +26,11 @@ const GIT_REF_WRITERS = [
  * Claude Code permission rules a `claude-cli` lean role is started with
  * (`--disallowedTools`); Claude Code enforces them under
  * `--dangerously-skip-permissions` too. They match the command's prefix, so
- * `git -C dir push` or git run through `sh -c` is not caught: they are a
- * second line behind the builder clone, which has no remote to push to.
+ * `git -C dir push` or git run through `sh -c` is not caught. They are a
+ * second line behind the builder clone, which has no configured remote,
+ * and neither line stops a push that names a repository by path or URL
+ * (the caller's, or its remote's): the run detects one that changes the
+ * caller's branches or tags, not one to a remote.
  */
 export const CLAUDE_DENIED_TOOLS: readonly string[] = [
 	...GIT_HISTORY_VERBS.map((verb) => `Bash(git ${verb}:*)`),

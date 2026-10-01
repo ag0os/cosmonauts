@@ -25,9 +25,11 @@ import type { BuilderInputs } from "./types.ts";
  * The builder's private clone (brief 3 principle 1, host code before tool
  * permissions; W3c-1): every builder stage and provider pass runs here,
  * never in the caller's checkout. The clone has its own refs, config and
- * objects and no remote, so the builder's git commands, a push included,
- * cannot reach the caller's repository. Only the linked `node_modules`
- * stay shared (`inputs.residuals`).
+ * objects and no configured remote, so the builder's git commands in it,
+ * `push origin` included, cannot reach the caller's repository. There is
+ * no filesystem sandbox, though: a push that names a repository by path or
+ * URL still lands, and the linked `node_modules` stay shared
+ * (`inputs.residuals`).
  */
 export interface BuilderWorkspace {
 	/** The clone's top level. */
@@ -53,6 +55,10 @@ export const MAX_LINKED_DEPENDENCIES = 200;
  */
 const LINKED_DEPENDENCY_RESIDUAL =
 	"dependency tree writable through the link: the caller's node_modules directories are linked into the builder clone, so what the builder writes or deletes there lands in the caller's";
+
+/** Always present: removing the clone's remotes does not stop a push by path. */
+const PUSH_BY_PATH_RESIDUAL =
+	"push by path or URL: the clone has no configured remote, but a builder that names a repository by path or URL, the caller's or its remote's, can still push to it; the claude-cli deny list matches only commands that start with `git push`. A push that adds, deletes or moves a branch or tag of the caller ends the run blocked; a push to a remote is not detected";
 
 interface OpenOptions {
 	projectRoot: string;
@@ -118,8 +124,12 @@ export async function openBuilderWorkspace(
 				carriedBytes: carried.carriedBytes,
 				capBytes: options.capBytes,
 				skipped: carried.skipped,
-				residuals:
-					linked.dependencies.length > 0 ? [LINKED_DEPENDENCY_RESIDUAL] : [],
+				residuals: [
+					PUSH_BY_PATH_RESIDUAL,
+					...(linked.dependencies.length > 0
+						? [LINKED_DEPENDENCY_RESIDUAL]
+						: []),
+				],
 			},
 			warnings: [...linked.warnings, ...carried.warnings],
 			dispose,

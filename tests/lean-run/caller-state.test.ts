@@ -1,7 +1,8 @@
 /**
  * Tests for the caller-state check: what can still move under a builder
- * working in its own clone (the caller's branch, HEAD and stash, and the
- * linked node_modules), read before and compared after, in a real repository.
+ * working in its own clone (the caller's branch, HEAD, stash, branches and
+ * tags, and the linked node_modules), read before and compared after, in a
+ * real repository.
  */
 import { execFileSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -113,4 +114,39 @@ test("names a linked node_modules that is no longer a directory", async () => {
 	expect(await change(before)).toBe(
 		`the caller's ${dependencies()} is no longer a directory`,
 	);
+});
+
+test("names a branch added, a branch deleted and a tag moved", async () => {
+	git("branch", "doomed");
+	git("tag", "v1");
+	const before = await read();
+	git("commit", "-q", "--allow-empty", "-m", "elsewhere");
+	const elsewhere = git("rev-parse", "HEAD").trim();
+	git("reset", "-q", "--soft", "HEAD~1");
+
+	git("update-ref", "refs/heads/injected", "HEAD");
+	git("branch", "-D", "doomed");
+	git("update-ref", "refs/tags/v1", elsewhere);
+
+	expect(await change(before)).toBe(
+		"the caller's branches or tags changed (refs/heads/injected added, refs/tags/v1 moved, refs/heads/doomed deleted)",
+	);
+});
+
+test("names the first three branch or tag changes and elides the rest", async () => {
+	const before = await read();
+
+	for (const name of ["a", "b", "c", "d"]) git("tag", name);
+
+	expect(await change(before)).toBe(
+		"the caller's branches or tags changed (refs/tags/a added, refs/tags/b added, refs/tags/c added, …)",
+	);
+});
+
+test("leaves refs outside refs/heads and refs/tags alone", async () => {
+	const before = await read();
+
+	git("update-ref", "refs/cosmonauts/drive/run/attempt-1", "HEAD");
+
+	expect(await change(before)).toBeUndefined();
 });

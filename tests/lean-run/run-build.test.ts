@@ -3,7 +3,7 @@
  * temporary git repository.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import {
 	mkdir,
 	mkdtemp,
@@ -11,6 +11,7 @@ import {
 	readFile,
 	rm,
 	stat,
+	symlink,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -777,7 +778,7 @@ describe("runBuild builder clone", () => {
 						input.worktree,
 						"push",
 						"origin",
-						"HEAD:refs/heads/main",
+						"HEAD:refs/heads/pushed",
 						"--force",
 					);
 					return DONE;
@@ -792,6 +793,9 @@ describe("runBuild builder clone", () => {
 			commit: true,
 			push: false,
 		});
+		// `pushed` is checked out nowhere, so only the clone having no remote stops it.
+		expect(git("for-each-ref", "refs/heads/pushed")).toBe("");
+		expect(gitIn(remote, "for-each-ref", "refs/heads/pushed")).toBe("");
 		expect(git("branch", "--list")).toBe(before.branches);
 		expect(git("config", "--list", "--local")).toBe(before.config);
 		expect(gitIn(remote, "rev-parse", "refs/heads/main")).toBe(before.remote);
@@ -851,6 +855,39 @@ describe("runBuild builder clone", () => {
 			path: "big.bin",
 			reason: "over the cap",
 		});
+	});
+
+	test("keeps the caller's file unchanged when the builder writes through an ignored absolute symlink to it", async () => {
+		await writeFile(
+			join(root, ".gitignore"),
+			"missions/sessions/\nreadme-link\n",
+		);
+		git("commit", "-q", "-am", "ignore readme-link");
+		await symlink(
+			join(realpathSync(root), "README.md"),
+			join(root, "readme-link"),
+		);
+		let callerReadme = "";
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeFile(
+						join(input.worktree, "readme-link"),
+						"written by the builder\n",
+					);
+					callerReadme = await readFile(join(root, "README.md"), "utf8");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest.builderInputs?.carried).toContain("readme-link");
+		expect(callerReadme).toBe("readme\n");
+		const patch = await readFile(
+			join(root, record.manifest.patches?.at(-1) ?? ""),
+			"utf8",
+		);
+		expect(patch).toContain("+written by the builder");
 	});
 });
 
@@ -955,6 +992,54 @@ describe("runBuild shared repository state", () => {
 			status: "blocked",
 			reason: `builder-1: the caller's refs/stash moved from ${stash} to no stash; nothing was applied`,
 		});
+	});
+
+	test("ends blocked naming the branch when the builder pushes one to the caller's repository by path", async () => {
+		let pushed = false;
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					gitIn(input.worktree, "push", "-q", root, "HEAD:refs/heads/injected");
+					pushed = true;
+					return DONE;
+				},
+			]),
+		});
+
+		expect(pushed).toBe(true);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason:
+				"builder-1: the caller's branches or tags changed (refs/heads/injected added); nothing was applied",
+		});
+		expect(record.manifest.patchApplied).toBeUndefined();
+		expect(git("status", "--porcelain")).toBe("");
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			"export const greet = 1;\n",
+		);
+	});
+
+	test("ends blocked naming the branch when the caller creates one during the run", async () => {
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					git("branch", "made-by-the-user");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason:
+				"builder-1: the caller's branches or tags changed (refs/heads/made-by-the-user added); nothing was applied",
+		});
+		expect(record.manifest.patchApplied).toBeUndefined();
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			"export const greet = 1;\n",
+		);
 	});
 
 	test("ends blocked when the builder empties the caller's node_modules through its link", async () => {

@@ -11,34 +11,46 @@ The builder never works in your checkout. Each `lean_build` run clones the
 repository into a temp directory (`git clone --no-hardlinks`), detached at
 the run's snapshot of your tree, so uncommitted work is there as it was.
 The clone has its own refs, stash and config, and its remotes are removed:
-branches it deletes, config it sets and pushes it tries stay in the clone.
-A `claude-cli` builder is also started with `--disallowedTools` for the git
+branches it deletes, config it sets and a `git push origin` stay in the
+clone. A push that names a repository by path or URL still lands (see
+the residuals below). A `claude-cli` builder is also started with `--disallowedTools` for the git
 verbs that write history or move refs (`push`, `commit`, `merge`, `rebase`,
 `cherry-pick`, `revert`, `am`, `update-ref`, `branch -d/-D`, `tag -d`,
 `stash`) and `gh pr`; `run.json` records the list as `deniedTools`.
 
 Only a `done` run applies the builder's patch, to your working tree and
-never the index. A run during which your branch, HEAD or stash moved ends
-`blocked` with nothing applied.
+never the index. A run during which your branch, HEAD or stash moved, or
+a branch or tag of yours was added, deleted or moved, ends `blocked` with
+nothing applied, and the reason names the refs.
 
 The checks need files git does not carry, so the clone also gets:
 
 - **Gitignored files**, copied at the same paths: `.env*`, generated code,
   build outputs, a gitignored `.cosmonauts/config.json`. `node_modules`,
-  `.git` and `.stryker-tmp` are never copied, at any depth, and an ignored
-  file or directory that would take the total past
-  `lean.ignoredInputsCapBytes` (default 50 MB) is skipped whole. The copies
-  stay out of the builder's patch. `run.json` lists what was copied
+  `.git` and `.stryker-tmp` are never copied, at any depth. Ignored files
+  and directories are copied smallest first, and one that would take the
+  total past `lean.ignoredInputsCapBytes` (default 50 MB) is skipped
+  whole. A symlink is copied only when it leads inside the checkout; an
+  absolute one is rewritten to point at the clone's file, not yours. The
+  copies stay out of the builder's patch. `run.json` lists what was copied
   (`builderInputs.carried`) and what was skipped and why
   (`builderInputs.skipped`).
 - **`node_modules`**, linked, not copied: the one at each level from the
   top level down to the project root, and every gitignored one (up to 200).
 
-**Residual:** the dependency tree is writable through the link. What the
-builder writes or deletes under a linked `node_modules` lands in yours. A
-run whose builder removed entries from one ends `blocked`; other writes
-(an edited installed package) are not detected. `run.json` records this as
-`builderInputs.residuals`.
+There is no filesystem sandbox, so two residuals remain. `run.json`
+records them as `builderInputs.residuals`.
+
+- **Push by path or URL.** The clone has no configured remote, but a
+  builder that names a repository by path or URL, yours or your remote's,
+  can still push to it, and the `claude-cli` deny list matches only
+  commands that start with `git push`. A push that adds, deletes or moves
+  one of your branches or tags ends the run `blocked`; a push to a remote
+  is not detected.
+- **The dependency tree is writable through the link.** What the builder
+  writes or deletes under a linked `node_modules` lands in yours. A run
+  whose builder removed entries from one ends `blocked`; other writes (an
+  edited installed package) are not detected.
 
 The clone is deleted when the run ends. When the last builder patch could
 not be written, its work exists only in the clone, which is kept; the

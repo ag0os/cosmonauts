@@ -5,6 +5,7 @@ import {
 	mkdir,
 	readdir,
 	readlink,
+	realpath,
 	symlink,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -48,13 +49,20 @@ interface EntryPlan {
 	skipped: SkippedInput[];
 }
 
+/** One listed entry: skipped before any copy, or planned and waiting for its turn under the cap. */
+type Outcome =
+	| { entry: string; skipped: SkippedInput }
+	| { entry: string; plan: EntryPlan };
+
 /**
  * Copies the caller's ignored paths into the clone at the same paths, so
  * the checks find `.env`, generated code and build outputs there. An entry
- * under a `NEVER_CARRIED` name is skipped, inside a copied directory too; an
- * entry that would take the total past `capBytes` is skipped whole and the
- * next one tried. A copy cannot reach the caller, so the builder may change
- * it freely. Nothing in the clone is overwritten.
+ * under a `NEVER_CARRIED` name is skipped, inside a copied directory too.
+ * The others are carried smallest first, so one large entry cannot crowd
+ * out several small ones; an entry that would take the total past
+ * `capBytes` is skipped whole. Results are listed in git's order. A copy
+ * cannot reach the caller, so the builder may change it freely. Nothing in
+ * the clone is overwritten.
  */
 export async function carryIgnoredInputs(
 	options: CarryOptions,
@@ -65,33 +73,65 @@ export async function carryIgnoredInputs(
 		skipped: [],
 		warnings: [],
 	};
-	for (const entry of options.listed) {
-		const path = entry.replace(/\/$/u, "");
-		const never = neverCarried(path);
-		if (never) {
-			result.skipped.push({ path: entry, reason: never });
-			continue;
-		}
-		let plan: EntryPlan | undefined;
-		try {
-			plan = await planEntry(
-				options.from,
-				path,
-				options.capBytes - result.carriedBytes,
+	const from = await realpath(options.from);
+	const outcomes: Outcome[] = [];
+	for (const entry of options.listed)
+		outcomes.push(await outcomeFor(from, entry, options.capBytes, result));
+	const chosen = chooseSmallestFirst(outcomes, options.capBytes);
+	for (const outcome of outcomes) {
+		if ("skipped" in outcome) result.skipped.push(outcome.skipped);
+		else if (!chosen.has(outcome))
+			result.skipped.push({ path: outcome.entry, reason: "over the cap" });
+		else {
+			result.skipped.push(...outcome.plan.skipped);
+			result.carriedBytes += await copyItems(
+				{ from, to: options.to },
+				outcome.plan.items,
+				result,
 			);
-		} catch (error) {
-			result.skipped.push(skipFor({ path: entry }, error, result.warnings));
-			continue;
+			result.carried.push(outcome.entry);
 		}
-		if (!plan) {
-			result.skipped.push({ path: entry, reason: "over the cap" });
-			continue;
-		}
-		result.skipped.push(...plan.skipped);
-		result.carriedBytes += await copyItems(options, plan.items, result);
-		result.carried.push(entry);
 	}
 	return result;
+}
+
+async function outcomeFor(
+	from: string,
+	entry: string,
+	capBytes: number,
+	result: CarriedInputs,
+): Promise<Outcome> {
+	const path = entry.replace(/\/$/u, "");
+	const never = neverCarried(path);
+	if (never) return { entry, skipped: { path: entry, reason: never } };
+	try {
+		const plan = await planEntry(from, path, capBytes);
+		if (plan) return { entry, plan };
+		return { entry, skipped: { path: entry, reason: "over the cap" } };
+	} catch (error) {
+		return { entry, skipped: skipFor({ path: entry }, error, result.warnings) };
+	}
+}
+
+/** The planned entries that fit under `capBytes` when taken smallest first. */
+function chooseSmallestFirst(
+	outcomes: readonly Outcome[],
+	capBytes: number,
+): Set<Outcome> {
+	const planned = outcomes.filter(
+		(outcome): outcome is Extract<Outcome, { plan: EntryPlan }> =>
+			"plan" in outcome,
+	);
+	const chosen = new Set<Outcome>();
+	let total = 0;
+	for (const outcome of [...planned].sort(
+		(a, b) => a.plan.bytes - b.plan.bytes,
+	)) {
+		if (total + outcome.plan.bytes > capBytes) continue;
+		total += outcome.plan.bytes;
+		chosen.add(outcome);
+	}
+	return chosen;
 }
 
 function neverCarried(path: string): IgnoredInputSkipReason | undefined {
@@ -120,9 +160,8 @@ async function walk(
 ): Promise<boolean> {
 	const stats = await lstat(join(from, path));
 	if (stats.isSymbolicLink()) {
-		const target = await readlink(join(from, path));
-		if (inside(from, resolve(from, dirname(path), target)))
-			plan.items.push({ kind: "link", path, target });
+		const target = await linkTargetInClone(from, path);
+		if (target !== undefined) plan.items.push({ kind: "link", path, target });
 		else plan.skipped.push({ path, reason: "symlink outside the checkout" });
 		return true;
 	}
@@ -148,7 +187,27 @@ async function walk(
 	return true;
 }
 
-/** A link that is absolute or climbs out would let the builder write the caller's files. */
+/**
+ * The target the link at `path` gets in the clone, or undefined when it
+ * leads out of the checkout (`from`, a real path). A relative target that
+ * stays inside is kept as it is. An absolute one names the caller's file
+ * even inside the checkout, so a builder writing through it would write
+ * the caller's, so it is rewritten relative to the link and then names the
+ * clone's file.
+ */
+async function linkTargetInClone(
+	from: string,
+	path: string,
+): Promise<string | undefined> {
+	const link = join(from, path);
+	const target = await readlink(link);
+	if (!isAbsolute(target))
+		return inside(from, resolve(dirname(link), target)) ? target : undefined;
+	const resolved = await realpath(target).catch(() => target);
+	if (!inside(from, resolved)) return undefined;
+	return relative(dirname(link), resolved) || ".";
+}
+
 function inside(root: string, path: string): boolean {
 	const rel = relative(root, path);
 	return (
@@ -159,7 +218,7 @@ function inside(root: string, path: string): boolean {
 
 /** Copies `items` in order; returns the bytes copied. A failure is a skip, never a throw. */
 async function copyItems(
-	options: CarryOptions,
+	options: { from: string; to: string },
 	items: readonly Item[],
 	result: CarriedInputs,
 ): Promise<number> {

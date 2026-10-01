@@ -318,6 +318,12 @@ export interface RunManifest {
 	reentryReasons?: SignalReentry[];
 	/** Re-entries with the reviewer's high and medium findings (0 or 1). */
 	findingsReentries?: number;
+	/**
+	 * The snapshot ref taken before each builder attempt. Attempt 1's lives
+	 * in the caller's repository; later attempts' existed only in the
+	 * builder clone and are gone once the run ends. The patches are the
+	 * durable record.
+	 */
 	snapshotRefs: string[];
 	status: RunStatus;
 	reason?: string;
@@ -459,7 +465,7 @@ export interface BuilderInputs {
 	/** The most bytes of ignored files copied: `lean.ignoredInputsCapBytes`, else 50 MB. */
 	capBytes: number;
 	skipped: SkippedInput[];
-	/** Known ways the builder can still change the caller's tree. */
+	/** Known ways the builder can still change the caller's repository, its remotes or its tree. */
 	residuals: string[];
 }
 

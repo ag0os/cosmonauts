@@ -5,7 +5,7 @@
  * throwing.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import {
 	lstat,
 	mkdir,
@@ -24,6 +24,7 @@ import { readWorktreePatch } from "../../lib/lean-run/git.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const repo = useTempDir("lean-builder-workspace-");
+const outside = useTempDir("lean-builder-outside-");
 const opened: BuilderWorkspace[] = [];
 const CAP = 1024;
 
@@ -202,6 +203,22 @@ test("skips an ignored entry that would pass the cap and still carries the next 
 	});
 });
 
+test("carries the smallest ignored entries first, whatever git's order", async () => {
+	await ignore("node_modules/\na-large.bin\nz-small.txt\n");
+	await writeFile(join(repo.path, "a-large.bin"), "x".repeat(CAP - 10));
+	await writeFile(join(repo.path, "z-small.txt"), "y".repeat(20));
+
+	const clone = await open();
+
+	expect(clone.inputs.carried).toEqual(["z-small.txt"]);
+	expect(clone.inputs.carriedBytes).toBe(20);
+	expect(existsSync(join(clone.root, "a-large.bin"))).toBe(false);
+	expect(clone.inputs.skipped).toContainEqual({
+		path: "a-large.bin",
+		reason: "over the cap",
+	});
+});
+
 test("skips an ignored directory whole when its files pass the cap", async () => {
 	await ignore("node_modules/\ndist/\n");
 	await mkdir(join(repo.path, "dist"));
@@ -242,9 +259,13 @@ test("never copies node_modules, .git or .stryker-tmp, and names each skip", asy
 	]);
 });
 
+// The fixtures name real paths: macOS `tmpdir()` is under the `/var` link,
+// and git's top level is not, so an unresolved path would compare unequal.
 test("skips an ignored symlink that leads out of the checkout", async () => {
 	await ignore("node_modules/\nsecret\n");
-	await symlink(join(repo.path, "a.ts"), join(repo.path, "secret"));
+	const target = join(realpathSync(outside.path), "secret.txt");
+	await writeFile(target, "secret\n");
+	await symlink(target, join(repo.path, "secret"));
 
 	const clone = await open();
 
@@ -253,6 +274,54 @@ test("skips an ignored symlink that leads out of the checkout", async () => {
 		path: "secret",
 		reason: "symlink outside the checkout",
 	});
+});
+
+test("skips an ignored relative symlink that climbs out of the checkout", async () => {
+	await ignore("node_modules/\nsecret\n");
+	await writeFile(join(outside.path, "secret.txt"), "secret\n");
+	const target = relative(
+		realpathSync(repo.path),
+		join(realpathSync(outside.path), "secret.txt"),
+	);
+	await symlink(target, join(repo.path, "secret"));
+
+	const clone = await open();
+
+	expect(existsSync(join(clone.root, "secret"))).toBe(false);
+	expect(clone.inputs.skipped).toContainEqual({
+		path: "secret",
+		reason: "symlink outside the checkout",
+	});
+});
+
+test("points an ignored absolute symlink inside the checkout at the clone's file, not the caller's", async () => {
+	await ignore("node_modules/\nlinks/\n");
+	await mkdir(join(repo.path, "links"));
+	await symlink(
+		join(realpathSync(repo.path), "a.ts"),
+		join(repo.path, "links/a"),
+	);
+
+	const clone = await open();
+	await writeFile(join(clone.root, "links/a"), "written by the builder\n");
+
+	expect(clone.inputs.carried).toEqual(["links/"]);
+	expect(await readlink(join(clone.root, "links/a"))).toBe("../a.ts");
+	expect(await readFile(join(clone.root, "a.ts"), "utf8")).toBe(
+		"written by the builder\n",
+	);
+	expect(await readFile(join(repo.path, "a.ts"), "utf8")).toBe(
+		"export const a = 1;\n",
+	);
+});
+
+test("keeps an ignored relative symlink inside the checkout as it is", async () => {
+	await ignore("node_modules/\nalias\n");
+	await symlink("a.ts", join(repo.path, "alias"));
+
+	const clone = await open();
+
+	expect(await readlink(join(clone.root, "alias"))).toBe("a.ts");
 });
 
 test("links the project's node_modules into the clone and records the residual", async () => {
@@ -266,14 +335,17 @@ test("links the project's node_modules into the clone and records the residual",
 	expect(clone.dependencies).toEqual([join(repo.path, "node_modules")]);
 	expect(clone.inputs.linked).toEqual(clone.dependencies);
 	expect(clone.inputs.residuals).toEqual([
+		expect.stringMatching(/^push by path or URL/u),
 		expect.stringMatching(/^dependency tree writable through the link/u),
 	]);
 });
 
-test("records no residual when nothing is linked", async () => {
+test("records the push-by-path residual even when nothing is linked", async () => {
 	const clone = await open();
 
-	expect(clone.inputs.residuals).toEqual([]);
+	expect(clone.inputs.residuals).toEqual([
+		expect.stringMatching(/^push by path or URL: .*can still push to it/u),
+	]);
 });
 
 test("links hoisted node_modules at the top level when the project root is below it", async () => {
