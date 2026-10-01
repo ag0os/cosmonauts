@@ -13,6 +13,7 @@ import {
 	readFile,
 	rename,
 	rm,
+	symlink,
 	utimes,
 	writeFile,
 } from "node:fs/promises";
@@ -410,6 +411,25 @@ describe("resolveChangedFunctions", { timeout: 60_000 }, () => {
 		});
 
 		expect(report.functions).toHaveLength(2);
+	});
+
+	test("completes when the repository tracks a node_modules symlink", async () => {
+		await mkdir(join(tmp.path, "deps"));
+		await writeFile(join(tmp.path, "deps", ".keep"), "");
+		await symlink("deps", join(tmp.path, "node_modules"));
+		await commit("track a node_modules symlink");
+		await writeSource(SAMPLE, source(LEGACY, SIMPLE));
+		await commit("lower simple, drop added");
+
+		const report = await resolveAgainst("HEAD~1");
+
+		expect(report.functions).toEqual([
+			expect.objectContaining({
+				name: "simple",
+				base: expect.objectContaining({ cyclomatic: 2 }),
+				cyclomatic: 1,
+			}),
+		]);
 	});
 
 	test("removes the temporary base worktree after the run", async () => {

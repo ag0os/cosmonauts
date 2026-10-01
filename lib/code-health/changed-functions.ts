@@ -9,7 +9,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import {
 	copyFile,
 	mkdtemp,
@@ -374,9 +374,10 @@ async function inventoryAtBase(
 
 async function linkDependencies(root: string, checkout: string): Promise<void> {
 	const dependencies = join(root, "node_modules");
-	if (existsSync(dependencies)) {
-		await symlink(dependencies, join(checkout, "node_modules"), "dir");
-	}
+	const link = join(checkout, "node_modules");
+	if (!existsSync(dependencies)) return;
+	if (lstatSync(link, { throwIfNoEntry: false })) return;
+	await symlink(dependencies, link, "dir");
 }
 
 async function removeBaseWorktree(
