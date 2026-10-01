@@ -64,10 +64,12 @@ cosmonauts, so an npm installation does not get them. The package ships
   `npm install -D fallow@2.54.2` in the project is enough for a local
   install. Only the pinned version is accepted; a fallow of any other version
   is named in the signal's reason and never run (the binary's identity is its
-  exact version, not where it lives). PATH and global installs are never
-  consulted, so a globally installed cosmonauts finds no fallow and
-  `health` and `mutation` are unavailable there (follow-up: a dependency
-  entry, which is a human call).
+  exact version, not where it lives). PATH is never consulted; a copy in
+  any `node_modules` enclosing the cosmonauts package is on the search
+  path, which for a globally installed cosmonauts means the global
+  `node_modules` (follow-up: a dependency entry, which is a human call).
+  pnpm layouts work: the platform binary is resolved from fallow's own
+  real directory, so `.pnpm/` stores are found.
 - **bun**: the default `verify` commands run through `bun run`.
 
 ## Required signals

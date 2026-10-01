@@ -3,8 +3,15 @@
  * `health --format json` findings into per-function metrics.
  */
 
-import { chmod, mkdir, realpath, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import {
+	chmod,
+	mkdir,
+	readFile,
+	realpath,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
 	PINNED_FALLOW_VERSION,
@@ -139,7 +146,7 @@ describe("resolveFallowExecutable", () => {
 		await expect(
 			resolveFallowExecutable(undefined, { searchFrom: pkg }),
 		).rejects.toThrow(
-			/fallow 2\.54\.2 is not installed.*found: .*node_modules\/fallow is 2\.53\.0/,
+			/no usable fallow 2\.54\.2.*found: .*node_modules\/fallow is 2\.53\.0/,
 		);
 	});
 
@@ -167,6 +174,63 @@ describe("resolveFallowExecutable", () => {
 		await expect(
 			resolveFallowExecutable(undefined, { searchFrom: pkg }),
 		).rejects.toThrow(/install fallow@2\.54\.2/);
+	});
+
+	test("finds the platform binary pnpm keeps beside fallow under .pnpm", async () => {
+		const project = join(tmp.path, "project");
+		const pkg = join(project, "node_modules", "cosmonauts");
+		await mkdir(pkg, { recursive: true });
+		// pnpm layout: node_modules/fallow -> .pnpm/fallow@2.54.2/node_modules/fallow,
+		// with the platform package beside it, not at the project's top level.
+		const store = join(
+			project,
+			"node_modules",
+			".pnpm",
+			"fallow@2.54.2",
+			"node_modules",
+		);
+		await installFallow(dirname(store), PINNED_FALLOW_VERSION);
+		await symlink(
+			join(store, "fallow"),
+			join(project, "node_modules", "fallow"),
+		);
+		await expect(
+			resolveFallowExecutable(undefined, { searchFrom: pkg }),
+		).resolves.toContain(
+			join(".pnpm", "fallow@2.54.2", "node_modules", "@fallow-cli"),
+		);
+	});
+
+	test("searches from the package's real path when it is symlinked", async () => {
+		const store = join(tmp.path, "store", "cosmonauts");
+		await mkdir(store, { recursive: true });
+		await installFallow(join(tmp.path, "store"), PINNED_FALLOW_VERSION);
+		const link = join(tmp.path, "project", "node_modules", "cosmonauts");
+		await mkdir(dirname(link), { recursive: true });
+		await symlink(store, link);
+		await expect(
+			resolveFallowExecutable(undefined, { searchFrom: link }),
+		).resolves.toContain(
+			join(tmp.path, "store", "node_modules", "@fallow-cli"),
+		);
+	});
+
+	test("does not treat a node_modules directory itself as a root", async () => {
+		// A fallow at <project>/node_modules/node_modules/fallow is not a resolution root.
+		const project = join(tmp.path, "project");
+		const pkg = join(project, "node_modules", "cosmonauts");
+		await mkdir(pkg, { recursive: true });
+		await installFallow(join(project, "node_modules"), PINNED_FALLOW_VERSION);
+		await expect(
+			resolveFallowExecutable(undefined, { searchFrom: pkg }),
+		).rejects.toThrow(/no usable fallow/);
+	});
+
+	test("pins the same version as the fallow devDependency", async () => {
+		const pkg = JSON.parse(
+			await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+		);
+		expect(PINNED_FALLOW_VERSION).toBe(pkg.devDependencies.fallow);
 	});
 
 	test("returns an explicit executable without searching", async () => {

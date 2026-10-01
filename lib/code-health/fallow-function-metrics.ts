@@ -9,10 +9,14 @@
  * not reported at all.
  */
 
-import { readFile, realpath } from "node:fs/promises";
+import { access, constants, readFile, realpath, stat } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveInstalledFallowExecutable } from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
+import {
+	FALLOW_VALIDATED_ENGINE_VERSION,
+	fallowPlatformPackageName,
+} from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
 import { runProviderProcess } from "../../domains/shared/extensions/project-tools/process-runner.ts";
 
 export interface FunctionMetrics {
@@ -156,7 +160,7 @@ function toFunctionMetrics(value: unknown, index: number): FunctionMetrics {
 }
 
 /** The one Fallow release this host runs; an install of any other version is reported, never run. */
-export const PINNED_FALLOW_VERSION = "2.54.2";
+export const PINNED_FALLOW_VERSION = FALLOW_VALIDATED_ENGINE_VERSION;
 
 export interface ResolveFallowOptions {
 	/** Where the upward search starts; defaults to the cosmonauts package root. */
@@ -169,8 +173,9 @@ export interface ResolveFallowOptions {
  * consumer project's hoisted copy is found too (ruling W3b-OD-1 (b)).
  * Consent-policy refinement: the binary is identified by its exact pinned
  * version rather than by living inside this package; a Fallow of any other
- * version is named in the error and never run. PATH, global installs and
- * package fetches are never consulted.
+ * version is named in the error and never run. PATH and package fetches
+ * are never consulted; a copy that sits in a `node_modules` enclosing the
+ * package (including a global install's) is on the search path.
  */
 export async function resolveFallowExecutable(
 	explicit?: string,
@@ -191,7 +196,7 @@ export async function resolveFallowExecutable(
 	}
 	const seen = rejected.length > 0 ? ` (found: ${rejected.join("; ")})` : "";
 	throw new Error(
-		`fallow ${PINNED_FALLOW_VERSION} is not installed in any node_modules from ${start} upward${seen}; install fallow@${PINNED_FALLOW_VERSION}`,
+		`no usable fallow ${PINNED_FALLOW_VERSION} in any node_modules from ${start} upward${seen}; install fallow@${PINNED_FALLOW_VERSION}`,
 	);
 }
 
@@ -228,22 +233,79 @@ interface FoundFallow {
 
 async function fallowAt(root: string): Promise<FoundFallow | undefined> {
 	const packageDir = join(root, "node_modules", "fallow");
-	let record: unknown;
+	const record = await readPackageJson(packageDir);
+	if (record?.version === undefined) return undefined;
+	return {
+		packageDir,
+		version: record.version,
+		executable: await platformExecutable(packageDir, record.version),
+	};
+}
+
+interface PackageRecord {
+	readonly name?: string;
+	readonly version?: string;
+}
+
+async function readPackageJson(
+	packageDir: string,
+): Promise<PackageRecord | undefined> {
+	let value: unknown;
 	try {
-		record = JSON.parse(
+		value = JSON.parse(
 			await readFile(join(packageDir, "package.json"), "utf8"),
 		);
 	} catch {
 		return undefined;
 	}
-	const version =
-		typeof record === "object" && record !== null && "version" in record
-			? record.version
-			: undefined;
-	if (typeof version !== "string") return undefined;
+	if (typeof value !== "object" || value === null) return undefined;
+	const { name, version } = value as Record<string, unknown>;
 	return {
-		packageDir,
-		version,
-		executable: await resolveInstalledFallowExecutable({ projectRoot: root }),
+		...(typeof name === "string" ? { name } : {}),
+		...(typeof version === "string" ? { version } : {}),
 	};
+}
+
+/**
+ * The platform package resolved from fallow's own real directory, the way
+ * fallow's npm shim finds it: beside it when hoisted, under `.pnpm/` when
+ * pnpm keeps each package's dependencies with it. Must carry fallow's exact
+ * version and an executable file.
+ */
+async function platformExecutable(
+	packageDir: string,
+	version: string,
+): Promise<string | null> {
+	const platformPackage = fallowPlatformPackageName({
+		platform: process.platform,
+		architecture: process.arch,
+	});
+	if (platformPackage === null) return null;
+	let platformDir: string;
+	try {
+		const require = createRequire(
+			join(await realpath(packageDir), "package.json"),
+		);
+		platformDir = dirname(require.resolve(`${platformPackage}/package.json`));
+	} catch {
+		return null;
+	}
+	const record = await readPackageJson(platformDir);
+	if (record?.name !== platformPackage || record.version !== version)
+		return null;
+	const executable = join(
+		platformDir,
+		process.platform === "win32" ? "fallow.exe" : "fallow",
+	);
+	return (await isExecutableFile(executable)) ? executable : null;
+}
+
+async function isExecutableFile(path: string): Promise<boolean> {
+	try {
+		if (!(await stat(path)).isFile()) return false;
+		if (process.platform !== "win32") await access(path, constants.X_OK);
+		return true;
+	} catch {
+		return false;
+	}
 }
