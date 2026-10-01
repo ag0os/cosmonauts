@@ -450,6 +450,22 @@ describe("createExternalBuilderBackend token usage", () => {
 		expect(result).toEqual({ text: `Built it.\n${ENVELOPE}` });
 	});
 
+	test("returns claude's result text with no stats when the usage is all zero", async () => {
+		const zero = {
+			...CLAUDE_RESULT,
+			usage: {
+				input_tokens: 0,
+				output_tokens: 0,
+				cache_creation_input_tokens: 0,
+				cache_read_input_tokens: 0,
+			},
+		};
+
+		const result = await claudeBackend(JSON.stringify(zero)).run(input);
+
+		expect(result).toEqual({ text: `Built it.\n${ENVELOPE}` });
+	});
+
 	test("reads claude's result object from the last line when a warning precedes it", async () => {
 		const result = await claudeBackend(
 			`warning: something\n${JSON.stringify(CLAUDE_RESULT)}`,
@@ -549,7 +565,7 @@ describe("createExternalBuilderBackend token usage", () => {
 		expect(result.stats?.turns).toBe(2);
 	});
 
-	test("reads codex turns as running totals when a later turn repeats an earlier one's counts", async () => {
+	test("sums codex turns even when a later turn's counts are no larger than an earlier one's", async () => {
 		const turn = (inputTokens: number, outputTokens: number) =>
 			JSON.stringify({
 				type: "turn.completed",
@@ -557,10 +573,10 @@ describe("createExternalBuilderBackend token usage", () => {
 			});
 
 		const result = await codexBackend(
-			[turn(100, 10), turn(150, 20), turn(150, 20)].join("\n"),
+			[turn(150, 20), turn(150, 20), turn(40, 5)].join("\n"),
 		).run(input);
 
-		expect(result.stats?.tokens).toMatchObject({ input: 150, output: 20 });
+		expect(result.stats?.tokens).toMatchObject({ input: 340, output: 45 });
 		expect(result.stats?.turns).toBe(3);
 	});
 

@@ -613,8 +613,9 @@ interface RunStrykerOptions {
 
 /**
  * Stryker and its test-runner processes share one process tree, which the
- * child runner ends whole on a timeout or an abort (`taskkill /T /F` on
- * Windows) before this resolves. Both streams go to one log.
+ * child runner ends on a timeout or an abort (`taskkill /T /F` on Windows)
+ * before this resolves; `survivedReap` or `unverifiedReap` records what it
+ * could not confirm. Both streams go to one log.
  */
 async function runStryker(
 	provider: MutationProviderOptions,

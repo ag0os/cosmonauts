@@ -30,15 +30,30 @@ export type ListProcesses = () => Promise<readonly ProcessEntry[] | Error>;
 export const PROCESS_LISTING_TIMEOUT_MS = 1_000;
 const POLL_MS = 25;
 
+/**
+ * `ps` is killed outright at the time bound, and a listing that lacks this
+ * process cannot be the machine's, so it is an error too.
+ */
 export const listProcesses: ListProcesses = () =>
 	new Promise((resolve) => {
 		execFile(
 			"ps",
 			["-A", "-ww", "-o", "pid=,ppid=,pgid=,stat=,command="],
-			{ timeout: PROCESS_LISTING_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 },
+			{
+				timeout: PROCESS_LISTING_TIMEOUT_MS,
+				killSignal: "SIGKILL",
+				maxBuffer: 64 * 1024 * 1024,
+			},
 			(error, stdout) => {
-				if (error) resolve(error);
-				else resolve(parseProcessListing(stdout));
+				if (error) return resolve(error);
+				const entries = parseProcessListing(stdout);
+				resolve(
+					entries.some((entry) => entry.pid === process.pid)
+						? entries
+						: new Error(
+								`the ps listing does not include this process (${process.pid})`,
+							),
+				);
 			},
 		);
 	});
@@ -73,8 +88,10 @@ export interface ReapProcessTreeOptions {
 /**
  * SIGTERM to the whole listed tree, a grace period, a fresh listing, then
  * SIGKILL to everything listed, each bounded. `gone` only when every listed
- * process and every group signalled is gone. When `ps` fails, only the
- * child's group is reaped and the result is `unverified` at best.
+ * process and every group signalled is gone. A signal that cannot be sent
+ * does not stop the rest; it is reported with what survived. When `ps`
+ * fails, only the child's group is reaped and the result is `unverified` at
+ * best.
  */
 export async function reapProcessTree(
 	rootPid: number,
@@ -88,22 +105,19 @@ export async function reapProcessTree(
 		{ signal: "SIGTERM", waitMs: options.graceMs },
 		{ signal: "SIGKILL", waitMs: options.killWaitMs },
 	] as const;
+	const failures: string[] = [];
 	for (const [index, { signal, waitMs }] of steps.entries()) {
 		if (index > 0) tree.relist(await options.list());
-		const failure = tree.signal(signal);
-		if (failure)
-			return {
-				kind: "survived",
-				reason: `failed to send ${signal} to the tree of process ${rootPid}: ${failure.message}`,
-			};
+		for (const { target, error } of tree.signal(signal))
+			failures.push(
+				`failed to send ${signal} to ${target < 0 ? `process group ${-target}` : `process ${target}`}: ${error.message}`,
+			);
 		if (await tree.waitGone(waitMs)) return { kind: "gone", by: signal };
 	}
 	const survivors = await tree.survivors(options.list);
 	if (survivors.length === 0) return { kind: "gone", by: "SIGKILL" };
-	return {
-		kind: "survived",
-		reason: `still running after SIGTERM and SIGKILL: ${survivors.map(describeProcess).join("; ")}`,
-	};
+	const still = `still running after SIGTERM and SIGKILL: ${survivors.map(describeProcess).join("; ")}`;
+	return { kind: "survived", reason: [...failures, still].join("; ") };
 }
 
 async function reapGroupOnly(
@@ -171,18 +185,20 @@ class TrackedTree {
 		this.members = this.collect(table, this.members);
 	}
 
-	signal(signal: NodeJS.Signals): Error | undefined {
-		for (const group of this.ownedGroups) {
-			if (!this.signallable(group)) continue;
-			const failure = send(-group, signal);
-			if (failure) return failure;
-		}
-		for (const entry of this.members.values()) {
-			if (this.ownedGroups.has(entry.pgid)) continue;
-			const failure = send(entry.pid, signal);
-			if (failure) return failure;
-		}
-		return undefined;
+	/** Signals every owned group and every member outside them; one failure does not stop the rest. */
+	signal(signal: NodeJS.Signals): SendFailure[] {
+		const targets = [
+			...[...this.ownedGroups]
+				.filter((group) => this.signallable(group))
+				.map((group) => -group),
+			...[...this.members.values()]
+				.filter((entry) => !this.ownedGroups.has(entry.pgid))
+				.map((entry) => entry.pid),
+		];
+		return targets.flatMap((target) => {
+			const error = send(target, signal);
+			return error ? [{ target, error }] : [];
+		});
 	}
 
 	async waitGone(waitMs: number): Promise<boolean> {
@@ -243,6 +259,12 @@ class TrackedTree {
 	private trackable(entry: ProcessEntry): boolean {
 		return entry.pid > 1 && entry.pid !== this.self.pid;
 	}
+}
+
+/** A signal that could not be sent; a negative target is a process group. */
+interface SendFailure {
+	readonly target: number;
+	readonly error: Error;
 }
 
 function isZombie(entry: ProcessEntry): boolean {

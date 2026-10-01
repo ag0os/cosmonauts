@@ -20,7 +20,7 @@ export interface HarnessResult {
  * `viewMode: "verbose"` setting or a global `verbose: true`) it prints an
  * array of every message instead, and the last `type: "result"` element is
  * that object. Its `result` is the final text. Any other stdout is taken as
- * plain text with no stats.
+ * plain text with no stats, and zero input with zero output is no usage.
  */
 export function claudeResult(stdout: string): HarnessResult {
 	const value =
@@ -47,6 +47,7 @@ function claudeStats(value: Record<string, unknown>): SpawnStats | undefined {
 	const input = count(usage?.input_tokens);
 	const output = count(usage?.output_tokens);
 	if (input === undefined || output === undefined) return undefined;
+	if (input === 0 && output === 0) return undefined;
 	const cacheRead = count(usage?.cache_read_input_tokens) ?? 0;
 	const cacheWrite = count(usage?.cache_creation_input_tokens) ?? 0;
 	return {
@@ -76,13 +77,9 @@ function claudeStats(value: Record<string, unknown>): SpawnStats | undefined {
  * A turn that reports zero input and zero output reported no usage.
  *
  * Whether the usage of a later turn in one exec is that turn's own or the
- * thread's running total is unproven. Turns are summed, unless some turn's
- * every count is at most an earlier turn's: per-turn counts normally grow,
- * because each turn re-sends the conversation so far, while a running total
- * repeats or grows, so the stream is then read as running totals and each
- * count is its largest value. Running totals that strictly grow are
- * summed; that over-counts, which ends a budgeted run early rather than
- * letting it overspend. No usable event, no stats.
+ * thread's running total is unproven, so turns are always summed. Were they
+ * running totals, the sum would over-count, which ends a budgeted run early
+ * rather than letting it overspend. No usable event, no stats.
  */
 export function codexStats(
 	stdout: string,
@@ -96,7 +93,7 @@ export function codexStats(
 			(event) => codexTurn(isRecord(event?.usage) ? event.usage : {}) ?? [],
 		);
 	if (turns.length === 0) return undefined;
-	const { input, cached, cacheWrite, output } = combineTurns(turns);
+	const { input, cached, cacheWrite, output } = sumTurns(turns);
 	return {
 		tokens: {
 			input,
@@ -137,22 +134,11 @@ interface CodexTurn {
 
 const CODEX_COUNTS = ["input", "cached", "cacheWrite", "output"] as const;
 
-/** The sum of the turns, or each count's largest value when they read as running totals. */
-function combineTurns(turns: readonly CodexTurn[]): CodexTurn {
-	const runningTotals = turns.some((turn, index) =>
-		turns
-			.slice(0, index)
-			.some((earlier) =>
-				CODEX_COUNTS.every((key) => turn[key] <= earlier[key]),
-			),
-	);
-	const combined: CodexTurn = { input: 0, cached: 0, cacheWrite: 0, output: 0 };
+function sumTurns(turns: readonly CodexTurn[]): CodexTurn {
+	const sum: CodexTurn = { input: 0, cached: 0, cacheWrite: 0, output: 0 };
 	for (const key of CODEX_COUNTS)
-		for (const turn of turns)
-			combined[key] = runningTotals
-				? Math.max(combined[key], turn[key])
-				: combined[key] + turn[key];
-	return combined;
+		for (const turn of turns) sum[key] += turn[key];
+	return sum;
 }
 
 function codexTurn(usage: Record<string, unknown>): CodexTurn | undefined {

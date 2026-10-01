@@ -465,10 +465,18 @@ interface StdinFeed {
 	error?: Error;
 }
 
-/** A stdin failure is kept for a note; the run goes on. */
-function feedStdin(child: ChildProcess, stdin: string | undefined): StdinFeed {
+/**
+ * A stdin failure is kept for a note; the run goes on. No input given, no
+ * feed: Bun leaves a non-null, never-finished `child.stdin` even for an
+ * ignored stdin, so the stream cannot say whether input was given.
+ */
+function feedStdin(
+	child: ChildProcess,
+	stdin: string | undefined,
+): StdinFeed | undefined {
+	if (stdin === undefined) return undefined;
 	const feed: StdinFeed = {};
-	if (stdin === undefined || child.stdin === null) return feed;
+	if (child.stdin === null) return feed;
 	child.stdin.on("error", (error) => {
 		feed.error ??= error;
 	});
@@ -484,10 +492,11 @@ function feedStdin(child: ChildProcess, stdin: string | undefined): StdinFeed {
  */
 function noteUntakenStdin(
 	child: ChildProcess,
-	feed: StdinFeed,
+	feed: StdinFeed | undefined,
 	notes: string[],
 ): void {
-	if (child.pid === undefined || child.stdin === null) return;
+	if (feed === undefined || child.pid === undefined || child.stdin === null)
+		return;
 	if (feed.error === undefined && child.stdin.writableFinished) return;
 	const cause = feed.error ? ` (${feed.error.message})` : "";
 	notes.push(`stdin: the child did not take all of its input${cause}`);

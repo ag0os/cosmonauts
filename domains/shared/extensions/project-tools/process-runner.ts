@@ -125,7 +125,8 @@ function emptyOutcome(
 /**
  * Runs a provider through the shared child runner (`lib/process/run-child.ts`):
  * its own process group, output spooled to private temp files that are read
- * back losslessly and removed, and the whole tree reaped after any exit.
+ * back losslessly and removed, and the process tree it can find reaped after
+ * any exit (`run-child.ts` names what it cannot find).
  */
 export const runProviderProcess: ProviderProcessExecutor = async (
 	invocation,

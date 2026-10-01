@@ -41,11 +41,19 @@ const DEFAULT_TIER2_MIN_MS = 60_000;
 const OUTPUT_TAIL_CHARS = 4_000;
 /**
  * What vitest (`No test files found, exiting with code 1`) and jest (`No
- * tests found, exiting with code 1`) print when their own include/exclude
- * config filters out every file argument. No re-entry can fix that.
+ * tests found, exiting with code 1`) print, as a line of its own, when their
+ * own include/exclude config filters out every file argument. No re-entry can
+ * fix that. A test's own output can carry the same text, so it counts only as
+ * a whole line and only when the runner printed no run summary.
  */
 const NOTHING_SELECTED =
-	/No test files found, exiting with code 1|No tests found, exiting with code 1/u;
+	/^(?:No test files found|No tests found), exiting with code 1$/mu;
+/** vitest's `Test Files  1 failed (1)` and jest's `Test Suites: 1 failed`. */
+const RUN_SUMMARY = /^\s*Test Files\s|^Test Suites:/mu;
+const ANSI_ESCAPE = new RegExp(
+	`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`,
+	"gu",
+);
 const NOTHING_SELECTED_REASON =
 	"the test runner selected none of the listed files";
 
@@ -362,12 +370,11 @@ async function runTier(
 }
 
 function selectedNothing(outcome: ProviderProcessOutcome): boolean {
-	return (
-		outcome.kind === "code-exit" &&
-		outcome.code !== 0 &&
-		(NOTHING_SELECTED.test(outcome.stdout) ||
-			NOTHING_SELECTED.test(outcome.stderr))
-	);
+	if (outcome.kind !== "code-exit" || outcome.code === 0) return false;
+	const output = `${outcome.stdout}\n${outcome.stderr}`
+		.replace(ANSI_ESCAPE, "")
+		.replace(/\r$/gmu, "");
+	return NOTHING_SELECTED.test(output) && !RUN_SUMMARY.test(output);
 }
 
 function notStarted(

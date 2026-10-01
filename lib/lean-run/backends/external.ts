@@ -293,7 +293,8 @@ function spoolPaths(
 /**
  * The harness runs through the shared child runner: its own process group,
  * output spooled under a byte cap, and on an abort or the time budget the
- * whole tree is ended before this resolves.
+ * process tree it can find is ended before this resolves; the
+ * `StageProcessExit` it reports says how that went.
  */
 const runChildProcess: ProcessRunner = async (request) => {
 	const outcome = await runChild({

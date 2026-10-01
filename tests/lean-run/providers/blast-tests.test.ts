@@ -268,6 +268,11 @@ describe("blast-tests provider with an injected runner", () => {
 		["vitest on stderr", "", "No test files found, exiting with code 1"],
 		["vitest on stdout", "No test files found, exiting with code 1", ""],
 		["jest", "", "No tests found, exiting with code 1"],
+		[
+			"vitest in colour",
+			"",
+			"\u001b[31mNo test files found, exiting with code 1\n\u001b[39m",
+		],
 	])("is info, not fail, when the runner selects none of a tier's files (%s)", async (_name, stdout, stderr) => {
 		await writeFixture();
 		const runner = stubRunner([
@@ -291,6 +296,31 @@ describe("blast-tests provider with an injected runner", () => {
 			reason: "the test runner selected none of the listed files",
 			exitCode: 1,
 		});
+	});
+
+	test.each([
+		[
+			"inside a line of an assertion diff",
+			'- Expected: "x"\n+ Received: "No test files found, exiting with code 1"\n',
+		],
+		[
+			"as a whole line beside a vitest run summary",
+			"No tests found, exiting with code 1\n Test Files  1 failed (1)\n",
+		],
+		[
+			"as a whole line beside a jest run summary",
+			"No tests found, exiting with code 1\nTest Suites: 1 failed, 1 total\n",
+		],
+	])("fails when a failing run's output carries the nothing-selected text %s", async (_name, stdout) => {
+		await writeFixture();
+		const runner = stubRunner([
+			{ kind: "code-exit", code: 1, stdout, stderr: "" },
+		]);
+
+		const signal = await provider(runner).run(context());
+
+		expect(signal).toMatchObject({ status: "fail", reenter: true });
+		expect(dataOf(signal).runs?.[0]).toMatchObject({ verdict: "failed" });
 	});
 
 	test("fails on a test that verification ran too", async () => {
@@ -658,5 +688,40 @@ describe("blast-tests provider, real vitest run", { timeout: 60_000 }, () => {
 
 		expect(signal).toMatchObject({ status: "fail", reenter: true });
 		expect(dataOf(signal).runs?.[0]?.outputTail).toContain("adds");
+	});
+
+	test.each([
+		[
+			"in its assertion",
+			'test("a", () => { expect("No test files found, exiting with code 1").toBe("x"); });',
+		],
+		[
+			"in its own console output",
+			'test("a", () => { console.log("No tests found, exiting with code 1"); expect(1).toBe(2); });',
+		],
+	])("fails and re-enters when a failing test prints the nothing-selected text %s", async (_name, body) => {
+		await writeFiles({
+			"package.json": JSON.stringify({
+				type: "module",
+				scripts: { test: "vitest run" },
+			}),
+			[DIRECT]: `import { expect, test } from "vitest";\n${body}\n`,
+		});
+		await symlink(
+			join(REPO_ROOT, "node_modules"),
+			join(tmp.path, "node_modules"),
+		);
+
+		const signal = await createBlastTestsProvider({
+			loadGraph: async () => undefined,
+		}).run(context({ priorSignals: [blastRadius([DIRECT])] }));
+
+		expect(signal).toMatchObject({ status: "fail", reenter: true });
+		expect(dataOf(signal).runs?.[0]).toMatchObject({
+			tier: 1,
+			tests: [DIRECT],
+			verdict: "failed",
+		});
+		expect(dataOf(signal).runs?.[0]?.outputTail).toContain("Test Files");
 	});
 });

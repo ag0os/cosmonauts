@@ -3,12 +3,17 @@
  * a process that outlives SIGKILL (simulated, since no real one can), and
  * the parsing of a `ps` listing.
  */
+import { chmod, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+	listProcesses,
+	PROCESS_LISTING_TIMEOUT_MS,
 	type ProcessEntry,
 	parseProcessListing,
 	reapProcessTree,
 } from "../../lib/process/process-tree.ts";
+import { useTempDir } from "../helpers/fs.ts";
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -108,6 +113,58 @@ describe("reapProcessTree", () => {
 		expect(reaped).toEqual({ kind: "gone", by: "SIGKILL" });
 	});
 
+	test("goes on to SIGKILL the rest when one member cannot be signalled", async () => {
+		const ROOT_OWNED = 9_000_003;
+		const sent: string[] = [];
+		const dead = new Set<number>();
+		vi.spyOn(process, "kill").mockImplementation(((
+			target: number,
+			signal?: string | number,
+		) => {
+			const pid = Math.abs(target);
+			if (pid === ROOT_OWNED) {
+				const error = new Error("kill EPERM") as Error & { code: string };
+				error.code = "EPERM";
+				throw error;
+			}
+			if (dead.has(pid)) {
+				const error = new Error("kill ESRCH") as Error & { code: string };
+				error.code = "ESRCH";
+				throw error;
+			}
+			if (signal === 0) return true;
+			sent.push(`${String(signal)} ${target}`);
+			if (signal === "SIGKILL") dead.add(pid);
+			return true;
+		}) as typeof process.kill);
+		const withRootOwned = [
+			listing[0] as ProcessEntry,
+			entry({ pid: ROOT_OWNED, ppid: CHILD, command: "sudo true" }),
+			listing[1] as ProcessEntry,
+		];
+
+		const reaped = await reapProcessTree(CHILD, {
+			graceMs: 0,
+			killWaitMs: 50,
+			list: async () => withRootOwned,
+		});
+
+		expect(sent).toEqual([
+			`SIGTERM -${CHILD}`,
+			`SIGTERM -${TOOL_SHELL}`,
+			`SIGKILL -${CHILD}`,
+			`SIGKILL -${TOOL_SHELL}`,
+		]);
+		expect(reaped).toEqual({
+			kind: "survived",
+			reason: [
+				`failed to send SIGTERM to process group ${ROOT_OWNED}: kill EPERM`,
+				`failed to send SIGKILL to process group ${ROOT_OWNED}: kill EPERM`,
+				`still running after SIGTERM and SIGKILL: ${ROOT_OWNED} (sudo true)`,
+			].join("; "),
+		});
+	});
+
 	test("finds nothing to reap once the tree has exited", async () => {
 		const { sent } = fakeKill(new Set());
 
@@ -138,5 +195,42 @@ describe("parseProcessListing", () => {
 			},
 			{ pid: 202, ppid: 101, pgid: 101, stat: "Z+", command: "" },
 		]);
+	});
+});
+
+describe("listProcesses", () => {
+	const bin = useTempDir("process-tree-ps-");
+	const path = process.env.PATH;
+
+	afterEach(() => {
+		process.env.PATH = path;
+	});
+
+	async function fakePs(script: string): Promise<void> {
+		const file = join(bin.path, "ps");
+		await writeFile(file, `#!/bin/sh\n${script}\n`);
+		await chmod(file, 0o755);
+		process.env.PATH = `${bin.path}:${path ?? ""}`;
+	}
+
+	test("kills a ps that ignores SIGTERM at the time bound and reports an error", async () => {
+		await fakePs("trap '' TERM\nexec sleep 3");
+		const started = Date.now();
+
+		const listed = await listProcesses();
+
+		expect(listed).toBeInstanceOf(Error);
+		expect(Date.now() - started).toBeLessThan(
+			PROCESS_LISTING_TIMEOUT_MS + 1_000,
+		);
+	});
+
+	test("treats a listing without this process as an error", async () => {
+		await fakePs("echo '    1     0     1 Ss   /sbin/launchd'");
+
+		const listed = await listProcesses();
+
+		expect(listed).toBeInstanceOf(Error);
+		expect((listed as Error).message).toContain(String(process.pid));
 	});
 });
