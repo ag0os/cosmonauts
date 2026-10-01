@@ -58,31 +58,16 @@ cosmonauts, so an npm installation does not get them. The package ships
 
   Without the patch, a selected test that changes directory fails Stryker's
   dry run and the mutation signal is unavailable.
-- **fallow** (`fallow@2.54.2`): health, dupes and mutation run only the
-  fallow installed in the cosmonauts package's own `node_modules`
-  (`node_modules/cosmonauts/node_modules/fallow` and its platform package).
-  A fallow in the project's `node_modules` is deliberately not used:
-  running a project's binary needs the per-project consent that the
-  analysis tools record. No package manager puts fallow there today:
-  installing cosmonauts does not install its devDependencies, and
-  `npm install fallow` or `bun add fallow` puts it in the project's
-  `node_modules`. So in an npm or bun install, `health` and `mutation`
-  (both required by default) are unavailable and every `lean_build` with
-  the default required signals ends `blocked`. Until this is resolved,
-  copy fallow into the package by hand after installing (the platform
-  package name depends on the machine, for example `darwin-arm64`):
-
-  ```sh
-  bun add -d fallow@2.54.2   # or npm install -D fallow@2.54.2
-  mkdir -p node_modules/cosmonauts/node_modules/@fallow-cli
-  cp -R node_modules/fallow node_modules/cosmonauts/node_modules/
-  cp -R node_modules/@fallow-cli/darwin-arm64 node_modules/cosmonauts/node_modules/@fallow-cli/
-  ```
-
-  The package manager does not own this copy, so a reinstall or upgrade of
-  cosmonauts can remove it; copy it again afterwards. Leaving `health` and
-  `mutation` out of `lean.requiredSignals` (below) also lets runs finish,
-  without those checks.
+- **fallow** (`fallow@2.54.2`, exact): health, dupes and mutation run the
+  fallow that Node resolution finds from the cosmonauts package: its own
+  `node_modules`, then each enclosing one, so `bun add -d fallow@2.54.2` or
+  `npm install -D fallow@2.54.2` in the project is enough for a local
+  install. Only the pinned version is accepted; a fallow of any other version
+  is named in the signal's reason and never run (the binary's identity is its
+  exact version, not where it lives). PATH and global installs are never
+  consulted, so a globally installed cosmonauts finds no fallow and
+  `health` and `mutation` are unavailable there (follow-up: a dependency
+  entry, which is a human call).
 - **bun**: the default `verify` commands run through `bun run`.
 
 ## Required signals

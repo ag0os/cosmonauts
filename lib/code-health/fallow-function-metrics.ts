@@ -9,7 +9,8 @@
  * not reported at all.
  */
 
-import { dirname, resolve } from "node:path";
+import { readFile, realpath } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveInstalledFallowExecutable } from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
 import { runProviderProcess } from "../../domains/shared/extensions/project-tools/process-runner.ts";
@@ -154,27 +155,95 @@ function toFunctionMetrics(value: unknown, index: number): FunctionMetrics {
 	};
 }
 
+/** The one Fallow release this host runs; an install of any other version is reported, never run. */
+export const PINNED_FALLOW_VERSION = "2.54.2";
+
+export interface ResolveFallowOptions {
+	/** Where the upward search starts; defaults to the cosmonauts package root. */
+	readonly searchFrom?: string;
+}
+
 /**
- * Cosmonauts' own pinned Fallow install. A project's `node_modules` binary is
- * deliberately not consulted: executing it needs the per-project consent the
- * analysis tools record, which this host-side check does not have.
+ * Cosmonauts' pinned Fallow, found the way Node resolves a package from the
+ * cosmonauts package: its own `node_modules`, then each enclosing one, so a
+ * consumer project's hoisted copy is found too (ruling W3b-OD-1 (b)).
+ * Consent-policy refinement: the binary is identified by its exact pinned
+ * version rather than by living inside this package; a Fallow of any other
+ * version is named in the error and never run. PATH, global installs and
+ * package fetches are never consulted.
  */
 export async function resolveFallowExecutable(
 	explicit?: string,
+	options: ResolveFallowOptions = {},
 ): Promise<string> {
 	if (explicit !== undefined) return explicit;
-	const frameworkRoot = resolve(
-		dirname(fileURLToPath(import.meta.url)),
-		"..",
-		"..",
-	);
-	const executable = await resolveInstalledFallowExecutable({
-		projectRoot: frameworkRoot,
-	});
-	if (executable === null) {
-		throw new Error(
-			`fallow is not installed under ${frameworkRoot}/node_modules; install the pinned devDependency`,
-		);
+	const start = options.searchFrom ?? frameworkRoot();
+	const rejected: string[] = [];
+	for (const root of enclosingRoots(await realRoot(start))) {
+		const found = await fallowAt(root);
+		if (found === undefined) continue;
+		if (found.version !== PINNED_FALLOW_VERSION) {
+			rejected.push(`${found.packageDir} is ${found.version}`);
+			continue;
+		}
+		if (found.executable !== null) return found.executable;
+		rejected.push(`${found.packageDir} has no binary for this platform`);
 	}
-	return executable;
+	const seen = rejected.length > 0 ? ` (found: ${rejected.join("; ")})` : "";
+	throw new Error(
+		`fallow ${PINNED_FALLOW_VERSION} is not installed in any node_modules from ${start} upward${seen}; install fallow@${PINNED_FALLOW_VERSION}`,
+	);
+}
+
+function frameworkRoot(): string {
+	return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+}
+
+/** The real path, so a package a package manager symlinked searches from where it lives. */
+async function realRoot(path: string): Promise<string> {
+	try {
+		return await realpath(path);
+	} catch {
+		return resolve(path);
+	}
+}
+
+/** `start` and each ancestor, skipping `node_modules` directories themselves. */
+function enclosingRoots(start: string): string[] {
+	const roots: string[] = [];
+	let current = start;
+	while (true) {
+		if (basename(current) !== "node_modules") roots.push(current);
+		const parent = dirname(current);
+		if (parent === current) return roots;
+		current = parent;
+	}
+}
+
+interface FoundFallow {
+	readonly packageDir: string;
+	readonly version: string;
+	readonly executable: string | null;
+}
+
+async function fallowAt(root: string): Promise<FoundFallow | undefined> {
+	const packageDir = join(root, "node_modules", "fallow");
+	let record: unknown;
+	try {
+		record = JSON.parse(
+			await readFile(join(packageDir, "package.json"), "utf8"),
+		);
+	} catch {
+		return undefined;
+	}
+	const version =
+		typeof record === "object" && record !== null && "version" in record
+			? record.version
+			: undefined;
+	if (typeof version !== "string") return undefined;
+	return {
+		packageDir,
+		version,
+		executable: await resolveInstalledFallowExecutable({ projectRoot: root }),
+	};
 }
