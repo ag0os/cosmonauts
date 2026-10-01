@@ -19,7 +19,28 @@ export {
 } from "./base-sha.ts";
 export { parseStageEnvelope } from "./envelope.ts";
 export { builderTaskId } from "./git.ts";
+export {
+	type BlastRadius,
+	blastRadius,
+	isSpecFile,
+	SPEC_FILE_PATTERN,
+} from "./graph/blast-radius.ts";
+export { renderChangeDiagram } from "./graph/mermaid.ts";
+export {
+	type PlanVersusActual,
+	planVersusActual,
+} from "./graph/plan-vs-actual.ts";
+export {
+	type DispositionedFinding,
+	type FindingDisposition,
+	renderPrBody,
+} from "./graph/pr-body.ts";
 export { parsePlan } from "./plan.ts";
+export { createBlastRadiusProvider } from "./providers/blast-radius.ts";
+export { createDefaultProviders } from "./providers/default.ts";
+export { createHealthProvider } from "./providers/health.ts";
+export { planVersusActualProvider } from "./providers/plan-vs-actual.ts";
+export { createVerifyProvider } from "./providers/verify.ts";
 export {
 	createRunRecord,
 	loadRunRecord,

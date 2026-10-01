@@ -14,6 +14,7 @@ import {
 	type SignalProvider,
 	summarizeRun,
 } from "../../../../lib/lean-run/index.ts";
+import { createDefaultProviders } from "../../../../lib/lean-run/providers/default.ts";
 import { discoverFrameworkBundledPackageDirs } from "../../../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 
@@ -44,7 +45,7 @@ interface LeanBackends {
 
 export interface LeanRunExtensionOptions {
 	runBuild?: (options: RunBuildOptions) => Promise<RunRecord>;
-	/** The host's signal providers; integration wires the real ones. */
+	/** The host's signal providers; defaults to `createDefaultProviders()`. */
 	providers?: readonly SignalProvider[];
 	createBackends?: (
 		kind: LeanBackendKind,
@@ -70,7 +71,7 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 					...(params.specPath ? { specPath: params.specPath } : {}),
 					backend: backends.builder,
 					reviewerBackend: backends.reviewer,
-					providers: options.providers ?? [],
+					providers: options.providers ?? createDefaultProviders(),
 					...(signal ? { signal } : {}),
 				});
 				const details = {

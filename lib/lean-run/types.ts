@@ -61,6 +61,8 @@ export interface SignalContext {
 	plan: ParsedPlan;
 	envelope: Envelope;
 	changedFiles: readonly string[];
+	/** Signals already produced earlier in the same pass, in provider order. */
+	priorSignals?: readonly Signal[];
 	budget: RunBudget;
 	runDir: string;
 	signal?: AbortSignal;

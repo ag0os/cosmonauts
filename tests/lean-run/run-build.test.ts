@@ -764,4 +764,17 @@ describe("runBuild stage failures", () => {
 			JSON.parse(await readFile(join(record.dir, "run.json"), "utf-8")),
 		).toEqual(record.manifest);
 	});
+	test("hands each provider the signals produced earlier in the same pass", async () => {
+		const first = stubProvider([{}], "verify");
+		const second = stubProvider([{}], "health");
+		await build({
+			builder: stubBackend([DONE]),
+			providers: [first, second],
+		});
+
+		expect(first.contexts[0]?.priorSignals).toEqual([]);
+		expect(
+			second.contexts[0]?.priorSignals?.map((signal) => signal.kind),
+		).toEqual(["verify"]);
+	});
 });

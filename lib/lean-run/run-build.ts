@@ -227,7 +227,13 @@ async function runProviders(
 	await saveFacts(run.record);
 	for (const provider of run.options.providers) {
 		run.stage = `${provider.kind} provider (pass ${pass})`;
-		signals.push(await runProvider(provider, context, run.signal));
+		signals.push(
+			await runProvider(
+				provider,
+				{ ...context, priorSignals: [...signals] },
+				run.signal,
+			),
+		);
 		await saveFacts(run.record);
 		const reason = abortReason(run);
 		if (reason) return stopWith(run, reason);

@@ -84,7 +84,7 @@ describe("lean_build tool", () => {
 		});
 	});
 
-	test("runs in the session's project with the pi backend by default and no providers", async () => {
+	test("runs in the session's project with the pi backend and the default providers", async () => {
 		const { pi, calls, kinds } = setup();
 		await pi.callTool("lean_build", {
 			planPath: "missions/lean/x/plan.md",
@@ -95,8 +95,13 @@ describe("lean_build tool", () => {
 			projectRoot: "/project",
 			planPath: "missions/lean/x/plan.md",
 			specPath: "missions/lean/x/spec.md",
-			providers: [],
 		});
+		expect(calls[0]?.providers.map((provider) => provider.kind)).toEqual([
+			"verify",
+			"health",
+			"blast-radius",
+			"plan-vs-actual",
+		]);
 	});
 
 	test("passes the requested backend kind through", async () => {
@@ -108,7 +113,7 @@ describe("lean_build tool", () => {
 		expect(kinds).toEqual(["codex-cli"]);
 	});
 
-	test("never reports done when no providers are configured", async () => {
+	test("never reports done when the providers are explicitly emptied", async () => {
 		const root = await mkdtemp(join(tmpdir(), "lean-build-tool-"));
 		try {
 			const git = (...args: string[]) =>
@@ -137,6 +142,7 @@ describe("lean_build tool", () => {
 			const pi = createMockPi({ cwd: root });
 			createLeanRunExtension({
 				createBackends: async () => ({ builder: done, reviewer: done }),
+				providers: [],
 			})(pi as never);
 			const result = (await pi.callTool("lean_build", {
 				planPath: "missions/lean/x/plan.md",
