@@ -26,6 +26,7 @@ import type {
 	LeanRole,
 	StageProcessExit,
 } from "../types.ts";
+import { harnessModel } from "./harness-model.ts";
 import {
 	CodexUsageTap,
 	claudeResult,
@@ -78,6 +79,8 @@ export interface ExternalBuilderBackendOptions {
 	 * Defaults: claude `--dangerously-skip-permissions` (tools stay limited by
 	 * `--tools`) with `--disallowedTools` and `CLAUDE_DENIED_TOOLS`; codex none
 	 * (sandbox comes from the package). Custom arguments replace the deny list too.
+	 * Codex also gets the role's `openai-codex/` model and reasoning effort
+	 * unless these arguments set them (`harnessModel`).
 	 */
 	extraArgs?: readonly string[];
 	env?: NodeJS.ProcessEnv;
@@ -198,6 +201,10 @@ export function createExternalBuilderBackend(
 		kind: options.kind,
 		permissions: externalPermissions(options),
 		...(denied ? { deniedTools: denied } : {}),
+		async requestedModel(role) {
+			const agentPackage = await options.resolvePackage(role);
+			return harnessModel(modelOptions(options, agentPackage)).requested;
+		},
 		async run(input) {
 			const resolved = await options.resolvePackage(input.role);
 			const agentPackage = input.readonly ? readOnly(resolved) : resolved;
@@ -265,11 +272,23 @@ function materialize(
 			claudeArgs: [...extraArgs, "-p"],
 			...(options.binary ? { claudeBinary: options.binary } : {}),
 		});
+	const model = harnessModel(modelOptions(options, agentPackage));
 	return createCodexCliInvocation(agentPackage, {
 		...shared,
-		codexArgs: ["exec", ...extraArgs],
+		codexArgs: ["exec", ...model.args, ...extraArgs],
 		...(options.binary ? { codexBinary: options.binary } : {}),
 	});
+}
+
+function modelOptions(
+	options: ExternalBuilderBackendOptions,
+	agentPackage: AgentPackage,
+): Parameters<typeof harnessModel>[0] {
+	return {
+		kind: options.kind,
+		agentPackage,
+		extraArgs: options.extraArgs ?? DEFAULT_EXTRA_ARGS[options.kind],
+	};
 }
 
 /** JSON output, so the session's usage can be read; Codex also writes its final message to a file. */

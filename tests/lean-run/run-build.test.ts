@@ -49,6 +49,7 @@ import {
 	type BackendRunInput,
 	type BuilderBackend,
 	LEAN_RUN_ROOT,
+	type RequestedModel,
 	type RunRecord,
 	type SessionStats,
 	type Signal,
@@ -702,6 +703,46 @@ describe("runBuild builder clone", () => {
 		});
 
 		expect(record.manifest.deniedTools).toEqual([...CLAUDE_DENIED_TOOLS]);
+	});
+
+	test("records the model and effort each role asked its harness for, once per role", async () => {
+		const asked: string[] = [];
+		const withModel = (
+			backend: StubBackend,
+			requested: RequestedModel,
+		): StubBackend => ({
+			...backend,
+			async requestedModel(role) {
+				asked.push(role);
+				return requested;
+			},
+		});
+		// The first reply has no envelope, so the builder runs a repair turn too.
+		const builder = withModel(
+			stubBackend(["I changed things.", DONE], "codex-cli"),
+			{ model: "gpt-5.6-sol", effort: "medium" },
+		);
+		const record = await build({
+			builder,
+			reviewer: withModel(stubBackend([REVIEW], "claude-cli"), {
+				model: "harness default",
+			}),
+		});
+
+		expect(builder.calls).toHaveLength(2);
+		const models = {
+			builder: { model: "gpt-5.6-sol", effort: "medium" },
+			"code-reviewer": { model: "harness default" },
+		};
+		expect(record.manifest.models).toEqual(models);
+		expect((await onDisk(record)).manifest.models).toEqual(models);
+		expect(asked).toEqual(["lean/builder", "lean/code-reviewer"]);
+	});
+
+	test("records no model for a backend that does not report one", async () => {
+		const record = await build({ builder: stubBackend([DONE]) });
+
+		expect(record.manifest.models).toBeUndefined();
 	});
 
 	test("gives the builder the caller's uncommitted work and the snapshot ref", async () => {

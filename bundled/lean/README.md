@@ -209,3 +209,20 @@ token usage)` or `budget unenforceable (<backend> usage incomplete:
 <why>)`, unless the usage that was read already overran it, which fails
 the run. Under the default budget the run goes on, and `run.json` warns
 that the budget was not (fully) enforced.
+
+## Models
+
+Each role's agent definition (`agents/*.ts`) names a model and a thinking
+level: `openai-codex/gpt-5.6-sol` for every role, at `medium` for the builder and
+`high` for the code reviewer, the checker and the lead. For
+`codex-cli`, a role with an `openai-codex/` model gets `--model <id>` and
+`-c model_reasoning_effort=<level>`; `off` and `minimal` ask for `low`,
+`max` for `xhigh`, and a role with no thinking level gets no effort flag.
+A model from another provider is not passed, so Codex uses its own
+configuration. `claude-cli` gets no model flag. Custom arguments that set
+a model or an effort win, and neither is added twice.
+
+`run.json` records, per role, what the harness was asked for, as
+`models`, for example `{ "builder": { "model": "gpt-5.6-sol", "effort":
+"medium" }, "code-reviewer": { "model": "harness default" } }`. `harness
+default` means no model was asked for. A Pi run records no `models`.

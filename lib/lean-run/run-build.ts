@@ -1637,6 +1637,7 @@ async function runSession(
 ): Promise<string | undefined> {
 	const { stage, repair } = session;
 	run.stage = repair ? `${stage} repair` : stage;
+	await recordRequestedModel(run, session);
 	const started = Date.now();
 	const log = sessionLog(run, repair ? `${stage}-repair` : stage);
 	const work = Promise.resolve().then(() =>
@@ -1663,6 +1664,25 @@ async function runSession(
 	const reason =
 		abortReason(run) ?? `${run.stage}: backend error: ${result.message}`;
 	return stopWith(run, reason);
+}
+
+/**
+ * The model and effort the backend asks its harness for, once per role,
+ * saved with the session's stats. A package that cannot be resolved records
+ * nothing; the session then fails with that error itself.
+ */
+async function recordRequestedModel(
+	run: Run,
+	session: { backend: BuilderBackend; input: StageInput },
+): Promise<void> {
+	const { backend, input } = session;
+	const key = input.role.slice(input.role.indexOf("/") + 1);
+	const { manifest } = run.record;
+	if (!backend.requestedModel || manifest.models?.[key]) return;
+	const requested = await backend
+		.requestedModel(input.role)
+		.catch(() => undefined);
+	if (requested) manifest.models = { ...manifest.models, [key]: requested };
 }
 
 async function accept(

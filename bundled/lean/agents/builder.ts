@@ -6,8 +6,8 @@ const definition: AgentDefinition = {
 	description:
 		"Implements one plan section or one direct fix test-first from a context pack, and hands back the diff with an envelope.",
 	capabilities: [],
-	model: "openai-codex/gpt-6-sol",
-	thinkingLevel: "high",
+	model: "openai-codex/gpt-5.6-sol",
+	thinkingLevel: "medium",
 	tools: "coding",
 	extensions: ["health-hook", "role-guard"],
 	skills: LEAN_SKILLS,

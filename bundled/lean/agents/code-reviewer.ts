@@ -7,7 +7,7 @@ const definition: AgentDefinition = {
 		"Reviews a change through the lenses it is given (general, security, performance, ux) and reports findings. Never edits.",
 	capabilities: [],
 	model: "openai-codex/gpt-5.6-sol",
-	thinkingLevel: "xhigh",
+	thinkingLevel: "high",
 	tools: "readonly",
 	extensions: ["role-guard"],
 	skills: LEAN_SKILLS,

@@ -203,7 +203,17 @@ export interface BuilderBackend {
 	readonly permissions?: BackendPermissions;
 	/** Tool patterns the harness is told to deny whatever `permissions` is; the run manifest records them. */
 	readonly deniedTools?: readonly string[];
+	/** The model and effort a role's sessions ask the harness for; the run manifest records it. */
+	requestedModel?(role: LeanRole): Promise<RequestedModel>;
 	run(input: BackendRunInput): Promise<BackendRunResult>;
+}
+
+/** What a backend asked its harness for, for one role. */
+export interface RequestedModel {
+	/** `harness default` when no model was asked for, so the harness's own configuration chose it. */
+	model: string;
+	/** The reasoning effort asked for; absent when none was. */
+	effort?: string;
 }
 
 /**
@@ -377,6 +387,11 @@ export interface RunManifest {
 	patchApplied?: PatchApplication;
 	/** How the builder harness gated its tool calls. */
 	permissions?: BackendPermissions;
+	/**
+	 * Per role (`builder`, `code-reviewer`), the model and effort its first
+	 * session asked the harness for. External backends only; absent for Pi.
+	 */
+	models?: Record<string, RequestedModel>;
 	/**
 	 * Signal kinds the last provider pass had to produce, available, for the
 	 * run to be `done`: the tool parameter, else `lean.requiredSignals`, else
