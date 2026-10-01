@@ -15,7 +15,9 @@ import {
 	mkdtemp,
 	realpath,
 	rm,
+	stat,
 	symlink,
+	utimes,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -205,12 +207,21 @@ async function withScratchIndex<T>(
 	}
 }
 
+/**
+ * Git treats an entry whose mtime is not older than the index file as
+ * "racily clean" and re-reads its content. The copy must keep the source
+ * index's mtime, or a same-size edit made in the same second as the last
+ * index write is reported as unchanged.
+ */
 async function copyIndex(root: string, target: string): Promise<void> {
 	const source = resolve(
 		root,
 		await git(root, ["rev-parse", "--git-path", "index"]),
 	);
-	if (existsSync(source)) await copyFile(source, target);
+	if (!existsSync(source)) return;
+	await copyFile(source, target);
+	const { atime, mtime } = await stat(source);
+	await utimes(target, atime, mtime);
 }
 
 /** A trailing slash marks an embedded repository, which git cannot diff. */

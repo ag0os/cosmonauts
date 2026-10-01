@@ -13,6 +13,7 @@ import {
 	readFile,
 	rename,
 	rm,
+	utimes,
 	writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -256,6 +257,32 @@ describe("resolveChangedFunctions", { timeout: 60_000 }, () => {
 				regressed: true,
 			}),
 		]);
+	});
+
+	test("sees a same-size edit made in the same second as the index write", async () => {
+		// Pin the file and the index to one past second so git's racily-clean
+		// recheck is the only thing that can notice the edit; ctime is ignored
+		// so the test does not depend on how fast the setup runs.
+		git("config", "core.trustctime", "false");
+		const pinned = new Date(Date.now() - 3_600_000);
+		const file = join(tmp.path, SAMPLE);
+		const index = join(tmp.path, ".git", "index");
+		await utimes(file, pinned, pinned);
+		git("add", "-A");
+		await utimes(index, pinned, pinned);
+		await writeSource(
+			SAMPLE,
+			source(LEGACY, SIMPLE_RAISED, [
+				"export function added(flag: boolean): string {",
+				'\treturn flag ? "yes" : "nu";',
+				"}",
+			]),
+		);
+		await utimes(file, pinned, pinned);
+
+		const report = await resolveAgainst("HEAD");
+
+		expect(report.functions.map((fn) => fn.name)).toEqual(["added"]);
 	});
 
 	test("includes uncommitted working-tree edits", async () => {
