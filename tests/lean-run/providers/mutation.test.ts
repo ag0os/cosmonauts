@@ -38,6 +38,7 @@ import {
 	type TestSelectionInput,
 	untestableFiles,
 } from "../../../lib/lean-run/providers/mutation-tests.ts";
+import { unavailableReason } from "../../../lib/lean-run/signal-availability.ts";
 import type { Signal, SignalContext } from "../../../lib/lean-run/types.ts";
 import type {
 	ChildRunOutcome,
@@ -1240,7 +1241,9 @@ describe(
 			);
 
 			expect(signal).toMatchObject({ status: "info", reenter: false });
-			expect(signal.summary).toContain("exit code 1");
+			expect(unavailableReason(signal)).toBe(
+				"Stryker did not finish: exit code 1",
+			);
 			expect(existsSync(join(project.path, ".stryker-tmp"))).toBe(false);
 		});
 
@@ -1254,7 +1257,9 @@ describe(
 			}).run(context(project.path));
 
 			expect(signal).toMatchObject({ status: "info", reenter: false });
-			expect(signal.summary).toContain("timed out after 1500 ms");
+			expect(unavailableReason(signal)).toBe(
+				"Stryker did not finish: timed out after 1500 ms",
+			);
 			const child = await childPid(tools.path);
 			expect(await waitFor(() => !isAlive(child))).toBe(true);
 			expect(existsSync(join(project.path, ".stryker-tmp"))).toBe(false);
@@ -1274,7 +1279,7 @@ describe(
 			}).run(context(project.path, { signal: controller.signal }));
 
 			expect(signal).toMatchObject({ status: "info", reenter: false });
-			expect(signal.summary).toContain("aborted");
+			expect(unavailableReason(signal)).toBe("Stryker did not finish: aborted");
 			const child = await childPid(tools.path);
 			expect(await waitFor(() => !isAlive(child))).toBe(true);
 			expect(existsSync(join(project.path, ".stryker-tmp"))).toBe(false);
@@ -1368,6 +1373,7 @@ describe(
 				summary: "no changed functions to mutate",
 				reenter: false,
 			});
+			expect(unavailableReason(signal)).toBeUndefined();
 		});
 
 		test("reports info when no test exists for the changed function", async () => {
@@ -1377,15 +1383,32 @@ describe(
 
 			expect(signal).toMatchObject({ status: "info", reenter: false });
 			expect(signal.summary).toContain("no tests selected");
+			expect(unavailableReason(signal)).toBeUndefined();
 		});
 
-		test("reports info instead of throwing when the Stryker binary is missing", async () => {
+		test("reports itself unavailable instead of throwing when the Stryker binary is missing", async () => {
 			const signal = await createMutationProvider({
 				strykerBin: join(tools.path, "missing", "stryker"),
 			}).run(context(project.path));
 
 			expect(signal).toMatchObject({ status: "info", reenter: false });
-			expect(signal.summary).toContain("could not start");
+			expect(unavailableReason(signal)).toContain("could not start");
+		});
+
+		test("reports itself unavailable when Stryker is not installed where it is resolved from", async () => {
+			const signal = await createMutationProvider({
+				strykerResolveFrom: join(tools.path, "resolve-from.mjs"),
+			}).run(context(project.path));
+
+			expect(signal).toMatchObject({
+				status: "info",
+				reenter: false,
+				summary:
+					"mutation signal unavailable: Stryker is not installed (@stryker-mutator/core)",
+			});
+			expect(unavailableReason(signal)).toBe(
+				"Stryker is not installed (@stryker-mutator/core)",
+			);
 		});
 
 		test("skips Stryker when this pass's verification did not pass", async () => {
@@ -1453,8 +1476,8 @@ describe(
 			const verify: Signal = {
 				kind: "verify",
 				status: "info",
-				summary: "unverified: no verification commands found",
-				data: { commands: [], unverified: true },
+				summary: "unverified: no verification commands configured",
+				data: { commands: [], unverified: true, unavailable: true },
 				reenter: false,
 			};
 
@@ -1482,12 +1505,16 @@ describe(
 			expect(existsSync(join(tools.path, "call.json"))).toBe(true);
 		});
 
-		test("reports info instead of throwing for an unknown base revision", async () => {
+		test("reports itself unavailable instead of throwing for an unknown base revision", async () => {
 			const signal = await createMutationProvider().run(
 				context(project.path, { baseSha: "no-such-revision" }),
 			);
 
-			expect(signal).toMatchObject({ status: "info", reenter: false });
+			expect(signal).toMatchObject({
+				status: "info",
+				reenter: false,
+				data: { unavailable: true },
+			});
 		});
 	},
 );

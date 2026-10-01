@@ -59,6 +59,8 @@ export interface VerifyData {
 	readonly commands: readonly CommandResult[];
 	/** Set when nothing failed but not every check ran, so nothing was proven. */
 	readonly unverified?: true;
+	/** Set with `unverified`: the signal is unavailable, so a run requiring it is not `done`. */
+	readonly unavailable?: true;
 	readonly reason?: string;
 }
 
@@ -80,7 +82,8 @@ const OUTPUT_TAIL_CHARS = 4_000;
  * a load-sensitive test does not send a correct change back. A command that
  * fails twice makes the signal `fail` and re-enters the builder (ruling D-4). When nothing failed but some command never ran (missing
  * executable, abort, exhausted budget, no commands at all), the signal is
- * `info` without re-entry and `data.unverified` is true with `data.reason`.
+ * `info` without re-entry and `data.unverified` and `data.unavailable` are
+ * true with `data.reason`.
  * The lean runner treats any verify signal other than `pass` as not done.
  * Never throws.
  */
@@ -101,7 +104,7 @@ export function createVerifyProvider(
 				);
 			}
 			if (commands.length === 0) {
-				return unverifiedSignal("no verification commands found", []);
+				return unverifiedSignal("no verification commands configured", []);
 			}
 			const deadline = Date.now() + ctx.budget.timeMs;
 			const results: CommandResult[] = [];
@@ -287,7 +290,7 @@ function unverifiedSignal(
 ): Signal {
 	return verifySignal("info", {
 		summary: `unverified: ${reason}`,
-		data: { commands, unverified: true, reason },
+		data: { commands, unverified: true, unavailable: true, reason },
 	});
 }
 

@@ -12,6 +12,7 @@ import {
 	resolveEpisodicLogConfig,
 	resolveKnowledgeSurfaceConfig,
 } from "../../lib/config/loader.ts";
+import { SIGNAL_KINDS } from "../../lib/lean-run/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("config-test-");
@@ -252,6 +253,69 @@ describe("loadProjectConfig", () => {
 				repoMapBudgetTokens: 900,
 			});
 			expect(warn).toHaveBeenCalledTimes(1);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	async function writeLean(lean: unknown): Promise<void> {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ lean }),
+		);
+	}
+
+	test("reads the lean required signal kinds, each once", async () => {
+		await writeLean({ requiredSignals: ["verify", "dupes", "verify"] });
+
+		expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+			requiredSignals: ["verify", "dupes"],
+		});
+	});
+
+	test("reads an empty lean required signal list as no required kinds", async () => {
+		await writeLean({ requiredSignals: [] });
+
+		expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+			requiredSignals: [],
+		});
+	});
+
+	test("leaves the lean required signals unset when the config has none", async () => {
+		await writeLean({ repoMapBudgetTokens: 900 });
+
+		expect((await loadProjectConfig(tmp.path)).lean).not.toHaveProperty(
+			"requiredSignals",
+		);
+	});
+
+	test("keeps the known lean required signal kinds and warns about each unknown one", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			await writeLean({ requiredSignals: ["mutation", "coverage", 3] });
+
+			expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+				requiredSignals: ["mutation"],
+			});
+			expect(warn).toHaveBeenCalledWith(
+				`[warning] Skipping malformed lean.requiredSignals entry: expected one of ${SIGNAL_KINDS.join(", ")}, got "coverage".`,
+			);
+			expect(warn).toHaveBeenCalledTimes(2);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	test("skips lean required signals that are not an array", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			await writeLean({ requiredSignals: "verify" });
+
+			expect((await loadProjectConfig(tmp.path)).lean).toEqual({});
+			expect(warn).toHaveBeenCalledWith(
+				'[warning] Skipping malformed lean.requiredSignals: expected an array of signal kinds, got "verify".',
+			);
 		} finally {
 			warn.mockRestore();
 		}

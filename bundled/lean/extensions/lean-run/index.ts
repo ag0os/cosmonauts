@@ -17,6 +17,8 @@ import {
 	type RunReviewOptions,
 	runBuild,
 	runReview,
+	SIGNAL_KINDS,
+	type SignalKind,
 	type SignalProvider,
 	summarizeRun,
 } from "../../../../lib/lean-run/index.ts";
@@ -74,8 +76,17 @@ export const LeanBuildParameters = Type.Object({
 		`Wall-time limit for the whole run, in ms, at most ${MAX_RUN_TIME_MS} (default: lean.budget.timeMs in the project config, else 60 minutes)`,
 		MAX_RUN_TIME_MS,
 	),
+	requiredSignals: Type.Optional(
+		Type.Array(Type.Union(SIGNAL_KINDS.map((kind) => Type.Literal(kind))), {
+			description: `Host check kinds that must run and be available for a done run; any of ${SIGNAL_KINDS.join(", ")}; [] requires none beyond a passing verify (default: lean.requiredSignals in the project config, else verify, mutation and health)`,
+		}),
+	),
 });
 type LeanBuildInput = Static<typeof LeanBuildParameters>;
+
+/** The `lean_build` description's sentence on the host checks' install requirement. */
+export const LEAN_BUILD_INSTALL_NOTE =
+	"Stryker, its vitest runner and fallow are devDependencies of cosmonauts, so an npm installation must provide them (see bundled/lean/README.md); a required check whose tool is missing ends the run blocked as unverified, never done.";
 
 export const LeanReviewParameters = Type.Object({
 	base: Type.Optional(
@@ -124,14 +135,14 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 		pi.registerTool({
 			name: "lean_build",
 			label: "Lean build",
-			description:
-				"Run a lean build for a plan or a direct request: builder, host checks, at most one re-entry per failing check kind (two in all), the code reviewer, and at most one findings re-entry with a re-review. The builder works in its own git worktree, and only a done run applies its patch to this working tree, unstaged. Its git commands do not touch this index or working tree; refs, stash, config and the linked node_modules stay shared, and a run whose builder moved this branch, HEAD or stash, or removed linked node_modules, ends blocked with nothing applied. The run's wall-time limit defaults to 60 minutes. Returns the run id, status, a summary and the run directory.",
+			description: `Run a lean build for a plan or a direct request: builder, host checks, at most one re-entry per failing check kind (two in all), the code reviewer, and at most one findings re-entry with a re-review. The builder works in its own git worktree, and only a done run applies its patch to this working tree, unstaged. Its git commands do not touch this index or working tree; refs, stash, config and the linked node_modules stay shared, and a run whose builder moved this branch, HEAD or stash, or removed linked node_modules, ends blocked with nothing applied. The run's wall-time limit defaults to 60 minutes. ${LEAN_BUILD_INSTALL_NOTE} Returns the run id, status, a summary and the run directory.`,
 			parameters: LeanBuildParameters,
 			execute: async (_id, params: LeanBuildInput, signal, _onUpdate, ctx) => {
 				const source = planSource(params);
 				const lenses = checkedLenses(params.lenses);
 				const backends = await createBackends(params.backend ?? "pi", ctx.cwd);
 				const budget = requestedBudget(params);
+				const requiredSignals = checkedSignalKinds(params.requiredSignals);
 				const record = await execute({
 					projectRoot: ctx.cwd,
 					...source,
@@ -141,6 +152,7 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 					providers: options.providers ?? createDefaultProviders(),
 					...(lenses ? { lenses } : {}),
 					...(budget ? { budget } : {}),
+					...(requiredSignals ? { requiredSignals } : {}),
 					...(signal ? { signal } : {}),
 				});
 				const details = {
@@ -169,7 +181,7 @@ function registerLeanReview(
 		name: "lean_review",
 		label: "Lean review",
 		description:
-			"Review a change that already exists: the host runs the project's verification commands over the working tree, then lean/code-reviewer reads the change against a base ref in a read-only checkout with the diff, the changed files and the verification facts. Runs no builder and changes nothing; the run is blocked as unverified when verification did not pass. Returns the run id, status, a summary, the findings and the run directory.",
+			"Review a change that already exists: the host runs the project's verification commands over the working tree, then lean/code-reviewer reads the change against a base ref in a read-only checkout with the diff, the changed files and the verification facts. Runs no builder and changes nothing; the run is blocked as unverified when verification did not pass or could not run. Returns the run id, status, a summary, the findings and the run directory.",
 		parameters: LeanReviewParameters,
 		execute: async (_id, params: LeanReviewInput, signal, _onUpdate, ctx) => {
 			if (params.planPath !== undefined && params.request !== undefined)
@@ -226,6 +238,19 @@ function checkedLenses(
 			`lenses must be one or more of ${LEAN_LENSES.join(", ")}${unknown.length > 0 ? `; got ${unknown.join(", ")}` : ""}`,
 		);
 	return [...new Set(lenses)] as LeanLens[];
+}
+
+function checkedSignalKinds(
+	kinds: readonly string[] | undefined,
+): SignalKind[] | undefined {
+	if (kinds === undefined) return undefined;
+	const known = new Set<string>(SIGNAL_KINDS);
+	const unknown = kinds.filter((kind) => !known.has(kind));
+	if (unknown.length > 0)
+		throw new Error(
+			`requiredSignals must be among ${SIGNAL_KINDS.join(", ")}; got ${unknown.join(", ")}`,
+		);
+	return [...new Set(kinds)] as SignalKind[];
 }
 
 function requestedBudget(

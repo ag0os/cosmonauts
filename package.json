@@ -24,7 +24,9 @@
 		"lib/",
 		"cli/",
 		"bin/",
-		"themes/"
+		"themes/",
+		"stryker.config.mjs",
+		"patches/"
 	],
 	"scripts": {
 		"lint": "biome check .",

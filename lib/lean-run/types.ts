@@ -12,6 +12,16 @@ export const SIGNAL_KINDS = [
 ] as const;
 export type SignalKind = (typeof SIGNAL_KINDS)[number];
 
+/**
+ * Kinds a run must get an available signal for before it can be `done`,
+ * unless the `lean_build` parameter or `lean.requiredSignals` says otherwise.
+ */
+export const DEFAULT_REQUIRED_SIGNALS: readonly SignalKind[] = [
+	"verify",
+	"mutation",
+	"health",
+];
+
 export const SIGNAL_STATUSES = ["pass", "fail", "info"] as const;
 export type SignalStatus = (typeof SIGNAL_STATUSES)[number];
 
@@ -19,7 +29,9 @@ export type SignalStatus = (typeof SIGNAL_STATUSES)[number];
  * One verification fact produced by the host after the builder returns.
  * Only `verify` failures, failing blast-radius tests (`blast-tests`) and
  * surviving mutants inside changed functions set `reenter` (ruling D-4);
- * every other signal informs the reviewer.
+ * every other signal informs the reviewer. A provider that cannot run (its
+ * tool, config or input is missing) returns `info` whose `data` includes
+ * {@link UnavailableSignalData}.
  */
 export interface Signal {
 	kind: SignalKind;
@@ -27,6 +39,12 @@ export interface Signal {
 	summary: string;
 	data: unknown;
 	reenter: boolean;
+}
+
+/** In a signal's `data`, beside its other fields, when its provider could not run. */
+export interface UnavailableSignalData {
+	readonly unavailable: true;
+	readonly reason: string;
 }
 
 export interface PlanBehavior {
@@ -332,6 +350,12 @@ export interface RunManifest {
 	patchApplied?: PatchApplication;
 	/** How the builder harness gated its tool calls. */
 	permissions?: BackendPermissions;
+	/**
+	 * Signal kinds the last provider pass had to produce, available, for the
+	 * run to be `done`: the tool parameter, else `lean.requiredSignals`, else
+	 * `DEFAULT_REQUIRED_SIGNALS`.
+	 */
+	requiredSignals?: SignalKind[];
 	/**
 	 * How stages ended, for every backend session that ran a child process
 	 * and every stage an abort or the time budget stopped, in order.

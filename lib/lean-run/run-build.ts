@@ -59,6 +59,7 @@ import {
 } from "./review-checkout.ts";
 import { acquireRunLock } from "./run-lock.ts";
 import { writeRunPrBody } from "./run-pr-body.ts";
+import { requiredSignalGap } from "./signal-availability.ts";
 import type {
 	BackendRunInput,
 	BackendRunResult,
@@ -82,7 +83,7 @@ import type {
 	StageProcessExit,
 	StageProcessLog,
 } from "./types.ts";
-import { RUN_RECORD_FILES } from "./types.ts";
+import { DEFAULT_REQUIRED_SIGNALS, RUN_RECORD_FILES } from "./types.ts";
 
 export interface RunBuildOptions {
 	projectRoot: string;
@@ -102,6 +103,11 @@ export interface RunBuildOptions {
 	providers: readonly SignalProvider[];
 	/** Each field wins over `lean.budget` in the project config, which wins over `DEFAULT_RUN_BUDGET`. */
 	budget?: Partial<RunBudget>;
+	/**
+	 * Kinds the last pass must produce, available, for a `done` run. Wins
+	 * over `lean.requiredSignals`, which wins over `DEFAULT_REQUIRED_SIGNALS`.
+	 */
+	requiredSignals?: readonly SignalKind[];
 	/** Reviewer lenses; `["general"]` when omitted. */
 	lenses?: readonly LeanLens[];
 	signal?: AbortSignal;
@@ -220,7 +226,8 @@ type StageInput = Omit<BackendRunInput, "signal" | "taskId" | "readonly">;
  * facts (brief §4.7B.6) → when the review has high or medium findings, one
  * builder re-entry with them → host signals → one re-review. The run record
  * is written after every step. The run is `done` only when the last review is
- * done with no high or medium finding, the last verify signal passed and no
+ * done with no high or medium finding, the last verify signal passed, every
+ * required signal kind ran and was available in the last pass, and no
  * re-entry signal remains. Stage failures end the run with a status and
  * reason; only a bad plan source or a non-git project throws.
  */
@@ -272,6 +279,11 @@ export interface RunReviewOptions {
 	/** Reviewer lenses; `["general"]` when omitted. */
 	lenses?: readonly LeanLens[];
 	budget?: Partial<RunBudget>;
+	/**
+	 * As in `runBuild`, but a required kind with no provider here is not a
+	 * gap: only one whose provider ran and could not produce its signal.
+	 */
+	requiredSignals?: readonly SignalKind[];
 	signal?: AbortSignal;
 	/**
 	 * Run once over the change before the reviewer, which gets their signals
@@ -291,7 +303,9 @@ export interface RunReviewOptions {
  * repair) with no builder, after one pass of the providers. The record's tier
  * is `review`. The run is `done` when the reviewer finished, whatever it
  * found, and the pass's verify signal passed; with no verify signal or one
- * that did not pass it is `blocked` with an "unverified: …" reason. The
+ * that did not pass it is `blocked` with an "unverified: …" reason, and with
+ * a required signal its provider could not produce, `blocked` with
+ * "unverified (<kind> unavailable: <reason>)". The
  * findings are in the `reviewer` envelope. An empty change is `blocked`
  * before any session starts. Only a bad plan source, an unknown base or a
  * non-git project throws.
@@ -585,12 +599,23 @@ function resolveBudget(
 	};
 }
 
+/** The tool parameter, else `lean.requiredSignals`, else the default; each kind once. */
+function resolveRequiredSignals(
+	options: RunBuildOptions,
+	lean: ProjectLeanConfig,
+): SignalKind[] {
+	const kinds =
+		options.requiredSignals ?? lean.requiredSignals ?? DEFAULT_REQUIRED_SIGNALS;
+	return [...new Set(kinds)];
+}
+
 function startRun(start: RunStart): Run {
 	const { options, record, source, lean } = start;
 	const budget = resolveBudget(options, lean);
 	const deadline = AbortSignal.timeout(budget.timeMs);
 	const { manifest } = record;
 	manifest.budget = budget;
+	manifest.requiredSignals = resolveRequiredSignals(options, lean);
 	manifest.lenses = [...(options.lenses ?? DEFAULT_LENSES)];
 	if (manifest.tier !== "review") {
 		recordHealthHook(record, options.backend);
@@ -1291,6 +1316,8 @@ function verificationGap(
 		return `re-entry signals still failing ${after}: ${remaining.map((signal) => signal.kind).join(", ")}`;
 	if (run.options.providers.length === 0)
 		return "unverified: no providers configured";
+	const missing = requiredGap(run);
+	if (missing) return missing;
 	const verify =
 		run.record.facts.passes
 			.at(-1)
@@ -1301,6 +1328,15 @@ function verificationGap(
 		failed &&
 		`verification did not pass (${verifyState(failed)}): ${failed.summary}`
 	);
+}
+
+/** A required kind the last pass could not produce; a review counts only the kinds it ran. */
+function requiredGap(run: Run): string | undefined {
+	return requiredSignalGap({
+		required: run.record.manifest.requiredSignals ?? DEFAULT_REQUIRED_SIGNALS,
+		signals: run.record.facts.passes.at(-1)?.signals ?? [],
+		absentIsGap: run.record.manifest.tier !== "review",
+	});
 }
 
 function verifyState(signal: Signal): string {

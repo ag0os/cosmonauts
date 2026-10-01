@@ -3,6 +3,7 @@ import {
 	type ResolveChangedFunctionsOptions,
 	resolveChangedFunctions,
 } from "../../code-health/changed-functions.ts";
+import { unavailableData } from "../signal-availability.ts";
 import type { Signal, SignalContext, SignalProvider } from "../types.ts";
 
 interface HealthProviderOptions {
@@ -15,7 +16,8 @@ interface HealthProviderOptions {
 /**
  * Complexity of every function the diff touches, now and at the run's base.
  * Always `info`: complexity informs the reviewer and never re-enters the
- * builder (ruling D-4). An analysis failure is reported, never thrown.
+ * builder (ruling D-4). An analysis that cannot run (Fallow missing, an
+ * unknown base) is reported as `data.unavailable`, never thrown.
  */
 export function createHealthProvider(
 	options: HealthProviderOptions = {},
@@ -36,7 +38,10 @@ export function createHealthProvider(
 				return healthSignal(summarize(report), report);
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				return healthSignal(`health unavailable: ${reason}`, { error: reason });
+				return healthSignal(
+					`health unavailable: ${reason}`,
+					unavailableData(reason),
+				);
 			}
 		},
 	};

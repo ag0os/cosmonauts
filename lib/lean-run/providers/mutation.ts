@@ -2,7 +2,9 @@
  * Scoped mutation signal (brief 4.7B.5, rulings D-2 and D-4): Stryker mutates
  * only the changed functions and runs only the selected tests. A survivor
  * inside a changed function fails the signal and re-enters the builder once.
- * Operational failures never throw; they become an `info` signal.
+ * Operational failures never throw: when Stryker cannot be resolved, cannot
+ * start or does not finish, the signal is `info` with `data.unavailable`.
+ * Nothing to mutate, or no test to run, is `info` (or `pass`) without it.
  *
  * Two refinements of 4.7B.5 under the brief's principle that thresholds are
  * regression against the base, never absolute (ruling W3-6). Only survivors
@@ -31,6 +33,7 @@ import {
 	type RunChildOptions,
 	runChild,
 } from "../../process/run-child.ts";
+import { unavailableData } from "../signal-availability.ts";
 import type {
 	Signal,
 	SignalContext,
@@ -77,6 +80,11 @@ const STRYKER_TEMP_DIR = ".stryker-tmp";
 export interface MutationProviderOptions {
 	/** Stryker executable; defaults to Cosmonauts' own install run under Node. */
 	readonly strykerBin?: string;
+	/**
+	 * Where `@stryker-mutator/core` is resolved from when `strykerBin` is
+	 * not given, as a file path or URL; defaults to this module.
+	 */
+	readonly strykerResolveFrom?: string;
 	/** Wall-clock cap for the Stryker run; the run budget caps it further. */
 	readonly timeoutMs?: number;
 	/** Test files never run under Stryker; replaces the default deny-list. */
@@ -125,6 +133,7 @@ export function createMutationProvider(
 			} catch (error) {
 				return infoSignal(`mutation signal unavailable: ${messageOf(error)}`, {
 					durationMs: Date.now() - started,
+					...unavailableData(messageOf(error)),
 				});
 			}
 		},
@@ -236,9 +245,11 @@ async function runStrykerPlan(
 	};
 	if (outcome.kind !== "exit" || outcome.code !== 0) {
 		const tail = await logTail(logPath);
-		return infoSignal(`Stryker did not finish: ${describeOutcome(outcome)}`, {
+		const reason = `Stryker did not finish: ${describeOutcome(outcome)}`;
+		return infoSignal(reason, {
 			...data,
 			logTail: tail,
+			...unavailableData(reason),
 		});
 	}
 	const report: unknown = JSON.parse(await readFile(reportPath, "utf8"));
@@ -496,12 +507,15 @@ function strykerCommand(
 	}
 	return {
 		executable: nodeExecutable(),
-		args: [installedStrykerBin(), ...args],
+		args: [
+			installedStrykerBin(options.strykerResolveFrom ?? import.meta.url),
+			...args,
+		],
 	};
 }
 
-function installedStrykerBin(): string {
-	const require = createRequire(import.meta.url);
+function installedStrykerBin(resolveFrom: string): string {
+	const require = createRequire(resolveFrom);
 	try {
 		const manifest = require.resolve("@stryker-mutator/core/package.json");
 		return join(dirname(manifest), "bin", "stryker.js");

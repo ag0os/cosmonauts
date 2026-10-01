@@ -4,6 +4,8 @@
  * Projects declare their configuration in `.cosmonauts/config.json`.
  */
 
+import type { SignalKind } from "../lean-run/types.ts";
+
 /** Named-chain entry in project config. */
 export interface ProjectChainConfig {
 	readonly description?: string;
@@ -39,6 +41,11 @@ export interface ProjectLeanConfig {
 	readonly repoMapBudgetTokens?: number;
 	/** Per-run limits for `lean_build`; a tool parameter overrides each field. */
 	readonly budget?: ProjectLeanBudgetConfig;
+	/**
+	 * Signal kinds a lean run must get from an available provider to be
+	 * `done` (default verify, mutation, health); a tool parameter overrides it.
+	 */
+	readonly requiredSignals?: readonly SignalKind[];
 }
 
 /** Lean run limits. Tokens count input + output only, never cache reads or writes. */

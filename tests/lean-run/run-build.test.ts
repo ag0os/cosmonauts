@@ -313,6 +313,8 @@ async function build(
 		reviewerBackend: reviewer ?? stubBackend([REVIEW]),
 		providers: providers ?? [stubProvider([{}])],
 		refreshGraph: stubRefresh(),
+		// Most tests stub verify alone; "runBuild required signals" pins the default.
+		requiredSignals: [],
 		...rest,
 	});
 	const kept = record.manifest.patchFailure?.keptWorktree;
@@ -1333,6 +1335,7 @@ describe("runBuild review workspace", () => {
 			]),
 			reviewerBackend: reviewer,
 			providers: [stubProvider([{}])],
+			requiredSignals: [],
 			refreshGraph: stubRefresh(),
 		});
 		expect(record.manifest).toMatchObject({
@@ -1714,6 +1717,155 @@ describe("runBuild verification verdict", () => {
 		expect(record.manifest).toMatchObject({
 			status: "failed",
 			reason: "reviewer: no tests; unverified: no providers configured",
+		});
+	});
+});
+
+const STRYKER_MISSING = "Stryker is not installed (@stryker-mutator/core)";
+
+/** A provider's answer when its tool is missing. */
+function unavailableSignal(reason: string): Partial<Signal> {
+	return {
+		status: "info",
+		summary: `unavailable: ${reason}`,
+		data: { unavailable: true, reason },
+	};
+}
+
+async function writeLeanConfig(lean: unknown): Promise<void> {
+	await mkdir(join(root, ".cosmonauts"));
+	await writeFile(
+		join(root, ".cosmonauts/config.json"),
+		JSON.stringify({ lean }),
+	);
+}
+
+describe("runBuild required signals", () => {
+	/** The default providers' order, verify passing and health informing. */
+	function providers(mutation: Partial<Signal>): SignalProvider[] {
+		return [
+			stubProvider([{}]),
+			stubProvider([{ status: "info", summary: "0 regressed" }], "health"),
+			stubProvider([mutation], "mutation"),
+		];
+	}
+
+	test("records verify, mutation and health as required by default", async () => {
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: providers({}),
+			requiredSignals: undefined,
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			requiredSignals: ["verify", "mutation", "health"],
+		});
+	});
+
+	test("ends blocked naming a required kind whose provider could not run", async () => {
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: providers(unavailableSignal(STRYKER_MISSING)),
+			requiredSignals: undefined,
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: `unverified (mutation unavailable: ${STRYKER_MISSING})`,
+		});
+		expect(summarizeRun(record)).toMatch(
+			/^blocked: unverified \(mutation unavailable: Stryker is not installed/u,
+		);
+	});
+
+	test("finishes done when the kind that could not run is optional in the config", async () => {
+		await writeLeanConfig({ requiredSignals: ["verify", "health"] });
+
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: providers(unavailableSignal(STRYKER_MISSING)),
+			requiredSignals: undefined,
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			requiredSignals: ["verify", "health"],
+		});
+	});
+
+	test("ends blocked when a required kind never ran", async () => {
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [stubProvider([{}]), stubProvider([{}], "mutation")],
+			requiredSignals: undefined,
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "unverified (health unavailable: never ran)",
+		});
+	});
+
+	test("names every missing required kind in the required order", async () => {
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [
+				stubProvider([{}]),
+				stubProvider([unavailableSignal(STRYKER_MISSING)], "mutation"),
+			],
+			requiredSignals: undefined,
+		});
+
+		expect(record.manifest.reason).toBe(
+			`unverified (mutation unavailable: ${STRYKER_MISSING}; health unavailable: never ran)`,
+		);
+	});
+
+	test("lets the caller's required kinds override the project config", async () => {
+		await writeLeanConfig({ requiredSignals: ["verify", "health"] });
+
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [stubProvider([{}])],
+			requiredSignals: ["verify"],
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			requiredSignals: ["verify"],
+		});
+	});
+
+	test("names an unavailable required verify in the same shape", async () => {
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [
+				stubProvider([
+					unavailableSignal("no verification commands configured"),
+				]),
+			],
+			requiredSignals: ["verify"],
+		});
+
+		expect(record.manifest.reason).toBe(
+			"unverified (verify unavailable: no verification commands configured)",
+		);
+	});
+
+	test("does not count a provider skipped for failing verification as unavailable", async () => {
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [
+				stubProvider([FAILING]),
+				stubProvider([SKIPPED_MUTATION], "mutation"),
+			],
+			requiredSignals: ["verify", "mutation"],
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "re-entry signals still failing after one re-entry: verify",
 		});
 	});
 });
@@ -2576,6 +2728,7 @@ describe("runBuild direct request", () => {
 			backend: builder,
 			reviewerBackend: reviewer ?? stubBackend([REVIEW]),
 			providers: [stubProvider([{}])],
+			requiredSignals: [],
 			refreshGraph: stubRefresh(),
 			...rest,
 		});
@@ -3345,5 +3498,48 @@ describe("runReview", () => {
 		await expect(
 			review({ reviewer: stubBackend([REVIEW]), base: "no-such-ref" }),
 		).rejects.toThrow();
+	});
+
+	test("ends blocked when a required provider it ran could not produce its signal", async () => {
+		await featureChange();
+
+		const record = await review({
+			reviewer: stubBackend([REVIEW]),
+			providers: [
+				stubProvider([{}]),
+				stubProvider([unavailableSignal("fallow is not installed")], "health"),
+			],
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "unverified (health unavailable: fallow is not installed)",
+		});
+	});
+
+	test("does not require the kinds it has no provider for", async () => {
+		await featureChange();
+
+		const record = await review({ reviewer: stubBackend([REVIEW]) });
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			requiredSignals: ["verify", "mutation", "health"],
+		});
+	});
+
+	test("finishes done when the caller makes the unavailable kind optional", async () => {
+		await featureChange();
+
+		const record = await review({
+			reviewer: stubBackend([REVIEW]),
+			providers: [
+				stubProvider([{}]),
+				stubProvider([unavailableSignal("fallow is not installed")], "health"),
+			],
+			requiredSignals: ["verify"],
+		});
+
+		expect(record.manifest.status).toBe("done");
 	});
 });

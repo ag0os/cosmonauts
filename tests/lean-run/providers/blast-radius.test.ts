@@ -29,7 +29,7 @@ describe("createBlastRadiusProvider", () => {
 		await rm(projectRoot, { recursive: true, force: true });
 	});
 
-	test("reports a missing graph.json as info without throwing", async () => {
+	test("reports a missing graph.json as unavailable info without throwing", async () => {
 		const signal = await createBlastRadiusProvider().run(
 			stubContext({ worktree: projectRoot, changedFiles: ["lib/a.ts"] }),
 		);
@@ -38,12 +38,16 @@ describe("createBlastRadiusProvider", () => {
 			status: "info",
 			summary:
 				"graph.json is missing; run `cosmonauts architecture generate --file-graph` to compute the blast radius.",
-			data: { graph: "missing" },
+			data: {
+				graph: "missing",
+				unavailable: true,
+				reason: "graph.json is missing",
+			},
 			reenter: false,
 		});
 	});
 
-	test("reports an unreadable graph.json as info without throwing", async () => {
+	test("reports an unreadable graph.json as unavailable info without throwing", async () => {
 		const dir = join(projectRoot, ARCHITECTURE_MAP_OUTPUT_DIR);
 		await mkdir(dir, { recursive: true });
 		await writeFile(
@@ -57,7 +61,7 @@ describe("createBlastRadiusProvider", () => {
 		expect(signal).toMatchObject({
 			status: "info",
 			reenter: false,
-			data: { graph: "unreadable" },
+			data: { graph: "unreadable", unavailable: true },
 		});
 		expect(signal.summary).toMatch(/^graph\.json is unreadable: /);
 	});

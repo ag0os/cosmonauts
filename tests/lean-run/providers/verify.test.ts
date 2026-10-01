@@ -192,7 +192,7 @@ describe("verify provider", { timeout: 30_000 }, () => {
 		expect(data[0]?.outputTail).toContain("at base123");
 	});
 
-	test("marks the run unverified without re-entry when the project has no checks", async () => {
+	test("reports itself unavailable without re-entry when the project has no checks", async () => {
 		const signal = await createVerifyProvider().run(context());
 
 		expect(signal).toMatchObject({
@@ -201,7 +201,8 @@ describe("verify provider", { timeout: 30_000 }, () => {
 			data: {
 				commands: [],
 				unverified: true,
-				reason: "no verification commands found",
+				unavailable: true,
+				reason: "no verification commands configured",
 			},
 		});
 	});
@@ -218,6 +219,7 @@ describe("verify provider", { timeout: 30_000 }, () => {
 		expect(signal.reenter).toBe(false);
 		const data = verifyData(signal.data);
 		expect(data.unverified).toBe(true);
+		expect(data.unavailable).toBe(true);
 		expect(data.reason).toContain("lean-verify-missing-executable");
 		expect(commandData(signal.data)[0]?.outcome).toBe("spawn-error");
 	});

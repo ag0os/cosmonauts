@@ -14,6 +14,7 @@ import {
 	runProviderProcess,
 } from "../../../domains/shared/extensions/project-tools/process-runner.ts";
 import { resolveFallowExecutable } from "../../code-health/fallow-function-metrics.ts";
+import { unavailableData } from "../signal-availability.ts";
 import type { Signal, SignalContext, SignalProvider } from "../types.ts";
 
 const DUPES_BASELINE_PATH = ".fallow-baselines/dupes.json";
@@ -81,10 +82,10 @@ export function createDupesProvider(
 				return toSignal(await compareWithFloor(run, options.fallowExecutable));
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				return dupesSignal(`dupes unavailable: ${reason}`, {
-					unavailable: true,
-					reason,
-				});
+				return dupesSignal(
+					`dupes unavailable: ${reason}`,
+					unavailableData(reason),
+				);
 			}
 		},
 	};

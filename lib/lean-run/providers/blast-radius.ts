@@ -7,14 +7,21 @@ import {
 	typescriptSourceAnalyzer,
 } from "../../architecture-map/index.ts";
 import { type BlastRadius, blastRadius } from "../graph/blast-radius.ts";
-import type { Signal, SignalContext, SignalProvider } from "../types.ts";
+import { unavailableData } from "../signal-availability.ts";
+import type {
+	Signal,
+	SignalContext,
+	SignalProvider,
+	UnavailableSignalData,
+} from "../types.ts";
 
 export type GraphStatus = "current" | "stale" | "unknown";
 
 export type BlastRadiusSignalData =
-	| { readonly graph: "missing" }
-	| { readonly graph: "unreadable"; readonly reason: string }
+	| ({ readonly graph: "missing" | "unreadable" } & UnavailableSignalData)
 	| { readonly graph: GraphStatus; readonly radius: BlastRadius };
+
+const MISSING_GRAPH = "graph.json is missing";
 
 export interface BlastRadiusProviderOptions {
 	readonly loadGraph?: (projectRoot: string) => Promise<FileGraph | undefined>;
@@ -27,7 +34,7 @@ export interface BlastRadiusProviderOptions {
 
 /**
  * Informs the reviewer (ruling D-4: never re-enters). A missing or unreadable
- * graph.json is reported, not thrown. A stale graph is still walked, and the
+ * graph.json is reported as `data.unavailable`, not thrown. A stale graph is still walked, and the
  * summary says the result may miss imports added since it was generated.
  */
 export function createBlastRadiusProvider(
@@ -45,13 +52,13 @@ export function createBlastRadiusProvider(
 				const reason = errorMessage(error);
 				return info(`graph.json is unreadable: ${reason}`, {
 					graph: "unreadable",
-					reason,
+					...unavailableData(`graph.json is unreadable: ${reason}`),
 				});
 			}
 			if (graph === undefined) {
 				return info(
-					"graph.json is missing; run `cosmonauts architecture generate --file-graph` to compute the blast radius.",
-					{ graph: "missing" },
+					`${MISSING_GRAPH}; run \`cosmonauts architecture generate --file-graph\` to compute the blast radius.`,
+					{ graph: "missing", ...unavailableData(MISSING_GRAPH) },
 				);
 			}
 			const radius = blastRadius({

@@ -8,6 +8,7 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { SIGNAL_KINDS, type SignalKind } from "../lean-run/types.ts";
 import { createDefaultProjectConfig } from "./defaults.ts";
 import type {
 	ProjectAnalysisConfig,
@@ -406,10 +407,42 @@ function parseLeanConfig(value: unknown): ProjectLeanConfig | undefined {
 		"lean.repoMapBudgetTokens",
 	);
 	const budget = "budget" in value ? parseLeanBudget(value.budget) : undefined;
+	const requiredSignals =
+		"requiredSignals" in value
+			? parseLeanRequiredSignals(value.requiredSignals)
+			: undefined;
 	return {
 		...(repoMapBudgetTokens === undefined ? {} : { repoMapBudgetTokens }),
 		...(budget === undefined ? {} : { budget }),
+		...(requiredSignals === undefined ? {} : { requiredSignals }),
 	};
+}
+
+/** The known signal kinds, each once; a warning for each other entry. */
+function parseLeanRequiredSignals(
+	value: unknown,
+): readonly SignalKind[] | undefined {
+	if (!Array.isArray(value)) {
+		console.error(
+			`[warning] Skipping malformed lean.requiredSignals: expected an array of signal kinds, got ${formatConfigValue(value)}.`,
+		);
+		return undefined;
+	}
+	const kinds = new Set<SignalKind>();
+	for (const entry of value as readonly unknown[]) {
+		if (isSignalKind(entry)) {
+			kinds.add(entry);
+			continue;
+		}
+		console.error(
+			`[warning] Skipping malformed lean.requiredSignals entry: expected one of ${SIGNAL_KINDS.join(", ")}, got ${formatConfigValue(entry)}.`,
+		);
+	}
+	return [...kinds];
+}
+
+function isSignalKind(value: unknown): value is SignalKind {
+	return (SIGNAL_KINDS as readonly unknown[]).includes(value);
 }
 
 function parseLeanBudget(value: unknown): ProjectLeanBudgetConfig | undefined {
