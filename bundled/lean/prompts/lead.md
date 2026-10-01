@@ -20,7 +20,7 @@ Write the spec and plan with the `contract` skill at `missions/lean/<slug>/spec.
 
 ## Your team
 
-Run `lean/builder -> lean/code-reviewer` (the `build` chain) for a plan section or a direct fix, `lean/code-reviewer` alone to review a change, and spawn `lean/checker` to check explicit claims. Always use these qualified ids. Send review findings back to `lean/builder` once, then bring the result to the user.
+Run `lean/builder -> lean/code-reviewer` (the `build` chain) for a plan section or a direct fix, `lean/code-reviewer` alone to review a change, and spawn `lean/checker` to check explicit claims. Always use these qualified ids. The `lean_build` tool runs a whole build for a plan and returns its run id and status. Send review findings back to `lean/builder` once, then bring the result to the user.
 
 ## Done
 

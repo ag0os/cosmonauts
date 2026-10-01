@@ -53,6 +53,10 @@ export interface RunBudget {
 
 export interface SignalContext {
 	worktree: string;
+	/**
+	 * The revision to diff against: the run's `diffBase`, which is the
+	 * pre-builder snapshot when the tree was dirty and HEAD otherwise.
+	 */
 	baseSha: string;
 	plan: ParsedPlan;
 	envelope: Envelope;
@@ -82,6 +86,8 @@ export interface BackendRunInput {
 	prompt: string;
 	worktree: string;
 	role: LeanRole;
+	/** Names the run's snapshot refs for the destructive-git guard. */
+	taskId?: string;
 	signal?: AbortSignal;
 }
 
@@ -113,12 +119,21 @@ export const RUN_RECORD_FILES = {
 export const RUN_STAGES = ["builder-1", "builder-2", "reviewer"] as const;
 export type RunStage = (typeof RUN_STAGES)[number];
 
+export const REVIEW_WORKSPACE_KINDS = ["private", "in-place"] as const;
+export type ReviewWorkspaceKind = (typeof REVIEW_WORKSPACE_KINDS)[number];
+
 export const RUN_STATUSES = ["running", "done", "blocked", "failed"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
 export interface RunManifest {
 	id: string;
+	/** HEAD when the run started. */
 	baseSha: string;
+	/**
+	 * What providers, changed files and the reviewer diff compare against: the
+	 * attempt-1 snapshot when uncommitted work predates the run, else `baseSha`.
+	 */
+	diffBase?: string;
 	specPath?: string;
 	planPath: string;
 	backend: LeanBackendKind;
@@ -127,6 +142,10 @@ export interface RunManifest {
 	status: RunStatus;
 	reason?: string;
 	createdAt: string;
+	reviewWorkspace?: ReviewWorkspaceKind;
+	/** Cumulative tokens reported by backend stages. */
+	tokensUsed?: number;
+	warnings?: string[];
 }
 
 export interface SignalPass {
