@@ -15,7 +15,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { acquireRunLock } from "../../lib/lean-run/run-lock.ts";
+import {
+	acquireRunLock,
+	clearUnconfirmedLock,
+} from "../../lib/lean-run/run-lock.ts";
 
 let root: string;
 
@@ -166,5 +169,120 @@ describe("acquireRunLock", () => {
 		if (first.acquired) await first.release();
 
 		expect(JSON.parse(await readFile(lockPath(), "utf8")).runId).toBe("run-b");
+	});
+});
+
+function unconfirmedHolder(runId: string, pids: unknown[]): string {
+	return JSON.stringify({
+		runId,
+		pid: deadPid(),
+		createdAt: "t",
+		state: "unconfirmed",
+		unconfirmedPids: pids,
+	});
+}
+
+describe("a lock released with unconfirmed pids", () => {
+	test("is rewritten in place as unconfirmed, not removed", async () => {
+		const lock = await acquireRunLock({ worktree: root, runId: "run-a" });
+		if (!lock.acquired) throw new Error("not acquired");
+		const before = JSON.parse(await readFile(lockPath(), "utf8"));
+
+		await lock.release([4242, 4343]);
+
+		expect(JSON.parse(await readFile(lockPath(), "utf8"))).toEqual({
+			runId: "run-a",
+			pid: process.pid,
+			createdAt: before.createdAt,
+			state: "unconfirmed",
+			unconfirmedPids: [4242, 4343],
+		});
+		expect(await readdir(join(root, ".git/lean-run"))).toEqual(["lock"]);
+	});
+
+	test("is removed by a release with no pids", async () => {
+		const lock = await acquireRunLock({ worktree: root, runId: "run-a" });
+		if (lock.acquired) await lock.release([]);
+
+		expect(existsSync(lockPath())).toBe(false);
+	});
+
+	test("refuses the next run and names the pids", async () => {
+		const first = await acquireRunLock({ worktree: root, runId: "run-a" });
+		if (first.acquired) await first.release([4242]);
+
+		const second = await acquireRunLock({ worktree: root, runId: "run-b" });
+
+		expect(second).toEqual({
+			acquired: false,
+			holder: "run-a",
+			unconfirmedPids: [4242],
+		});
+	});
+
+	test("is never reclaimed by age or for a dead holder", async () => {
+		await writeRunState(lockPath(), unconfirmedHolder("run-a", [4242]));
+		await backdate(lockPath(), 3600);
+
+		const lock = await acquireRunLock({ worktree: root, runId: "run-b" });
+
+		expect(lock).toEqual({
+			acquired: false,
+			holder: "run-a",
+			unconfirmedPids: [4242],
+		});
+		expect(JSON.parse(await readFile(lockPath(), "utf8")).runId).toBe("run-a");
+	});
+
+	test("with no valid pids, is still not reclaimed by age", async () => {
+		await writeRunState(lockPath(), unconfirmedHolder("run-a", ["x", -1]));
+		await backdate(lockPath(), 3600);
+
+		const lock = await acquireRunLock({ worktree: root, runId: "run-b" });
+
+		expect(lock).toEqual({
+			acquired: false,
+			holder: "run-a",
+			unconfirmedPids: [],
+		});
+	});
+});
+
+describe("clearUnconfirmedLock", () => {
+	test("removes the named run's unconfirmed lock, so the next run starts", async () => {
+		await writeRunState(lockPath(), unconfirmedHolder("run-a", [4242]));
+
+		const cleared = await clearUnconfirmedLock({
+			worktree: root,
+			runId: "run-a",
+		});
+
+		expect(cleared).toBe(true);
+		const lock = await acquireRunLock({ worktree: root, runId: "run-b" });
+		expect(lock.acquired).toBe(true);
+	});
+
+	test("leaves another run's unconfirmed lock in place", async () => {
+		await writeRunState(lockPath(), unconfirmedHolder("run-a", [4242]));
+
+		const cleared = await clearUnconfirmedLock({
+			worktree: root,
+			runId: "run-x",
+		});
+
+		expect(cleared).toBe(false);
+		expect(existsSync(lockPath())).toBe(true);
+	});
+
+	test("never clears a running run's lock", async () => {
+		await acquireRunLock({ worktree: root, runId: "run-a" });
+
+		const cleared = await clearUnconfirmedLock({
+			worktree: root,
+			runId: "run-a",
+		});
+
+		expect(cleared).toBe(false);
+		expect(JSON.parse(await readFile(lockPath(), "utf8")).runId).toBe("run-a");
 	});
 });

@@ -83,6 +83,8 @@ export interface ReapProcessTreeOptions {
 	readonly graceMs: number;
 	readonly killWaitMs: number;
 	readonly list: ListProcesses;
+	/** Called with the pids each listing finds in the tree, before any is signalled. */
+	readonly onFound?: (pids: readonly number[]) => void;
 }
 
 /**
@@ -99,7 +101,7 @@ export async function reapProcessTree(
 ): Promise<TreeReap> {
 	const first = await options.list();
 	if (first instanceof Error) return reapGroupOnly(rootPid, options, first);
-	const tree = new TrackedTree(rootPid, first);
+	const tree = new TrackedTree(rootPid, first, options.onFound);
 	if (!tree.anyAlive()) return { kind: "gone", by: "exit" };
 	const steps = [
 		{ signal: "SIGTERM", waitMs: options.graceMs },
@@ -157,9 +159,15 @@ class TrackedTree {
 	private readonly ownedGroups: Set<number>;
 	/** Never signalled: this process and the group it runs in. */
 	private readonly self: { pid: number; pgid?: number };
+	private readonly onFound?: (pids: readonly number[]) => void;
 
-	constructor(rootPid: number, table: readonly ProcessEntry[]) {
+	constructor(
+		rootPid: number,
+		table: readonly ProcessEntry[],
+		onFound?: (pids: readonly number[]) => void,
+	) {
 		this.rootPid = rootPid;
+		this.onFound = onFound;
 		this.ownedGroups = new Set([rootPid]);
 		this.self = {
 			pid: process.pid,
@@ -253,6 +261,7 @@ class TrackedTree {
 				if (other.ppid === entry.pid || other.pgid === entry.pid)
 					queue.push(other);
 		}
+		this.onFound?.([...found.keys()]);
 		return found;
 	}
 

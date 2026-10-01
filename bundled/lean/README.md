@@ -44,6 +44,39 @@ The clone is deleted when the run ends. When the last builder patch could
 not be written, its work exists only in the clone, which is kept; the
 warning names it, and `rm -rf` of the named directory removes it.
 
+## Run lock and leftover processes
+
+One run at a time holds a repository's run lock (`.git/lean-run/lock`).
+The run owns every process the host's child runner starts for it (external
+builder and reviewer sessions, provider commands, mutation testing) and
+every process it finds in their trees, until it sees them gone. When the
+run ends it waits up to 30 s for all of them to exit, with no wait when
+they already have. If some still run, `run.json` lists them as
+`cleanupUnconfirmed`, the reason says so, and the lock stays, rewritten as
+`{"runId", "pid", "createdAt", "state": "unconfirmed", "unconfirmedPids"}`.
+Its age never frees it. The next run in the repository:
+
+- proceeds, with a warning, when none of those pids is running any more;
+- ends `blocked: previous run cleanup unconfirmed (pids …)` otherwise;
+- proceeds anyway, with a warning naming the cleared pids, when
+  `lean_build` is called with `clearStaleLock: true`. Only an
+  `unconfirmed` lock is cleared this way, never a running run's.
+
+A pid is gone when signal 0 finds no such process, or a `ps` listing lacks
+it or shows it as a zombie; a reused pid counts as running. On Windows
+there is no listing: a pid that still exists counts as running, and the
+descendants of an exited child cannot be enumerated, so they are never
+owned.
+
+Not owned, and so never waited for: processes a Pi session's own tools
+start, and a process that left a child's tree before any listing found it
+(a daemon that forked and called `setsid`). For the second, best effort,
+the end of a build lists running processes whose command line names the
+builder clone as `detachedCandidates` in `run.json`, with a warning; they
+are reported, never counted, and never claimed gone. A process working in
+the clone without naming it is not found: working directories are not
+read, since no portable lookup of them is cheap.
+
 ## Host checks and what they need
 
 | Signal kind      | Tool                                                      | Without the tool                    |

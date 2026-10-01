@@ -80,6 +80,27 @@ describe("reapProcessTree", () => {
 		expect(sent).toEqual([`SIGTERM -${CHILD}`, `SIGTERM -${TOOL_SHELL}`]);
 	});
 
+	test("reports the pids it finds in the tree before signalling them", async () => {
+		const { sent } = fakeKill(new Set());
+		const found: { pids: number[]; signalsSent: number }[] = [];
+
+		await reapProcessTree(CHILD, {
+			graceMs: 50,
+			killWaitMs: 50,
+			list: async () => [
+				...listing,
+				entry({ pid: 9_000_003, ppid: 1, command: "unrelated" }),
+			],
+			onFound: (pids) =>
+				found.push({
+					pids: [...pids].sort((a, b) => a - b),
+					signalsSent: sent.length,
+				}),
+		});
+
+		expect(found[0]).toEqual({ pids: [CHILD, TOOL_SHELL], signalsSent: 0 });
+	});
+
 	test("reports what outlived SIGKILL, never gone", async () => {
 		const { sent } = fakeKill(new Set([TOOL_SHELL]));
 

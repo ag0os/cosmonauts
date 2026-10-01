@@ -18,6 +18,7 @@ import {
 import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { finished } from "node:stream/promises";
+import { currentProcessOwner, type ProcessClaim } from "./owned-processes.ts";
 import { processGroupExists } from "./process-group.ts";
 import {
 	type ListProcesses,
@@ -180,6 +181,8 @@ interface Settings {
 	readonly taskkill: WindowsTaskkill;
 	readonly listProcesses: ListProcesses;
 	readonly notes: string[];
+	/** The pids of this child's tree, for the process owner of the caller's context. */
+	readonly claim?: ProcessClaim;
 }
 
 /**
@@ -215,6 +218,12 @@ export async function runChild(
 		await spools.close();
 		throw error;
 	}
+	const owner = currentProcessOwner();
+	const claim = owner?.claim();
+	if (owner && !claim) {
+		await spools.close();
+		return notStarted({ kind: "spawn-error", error: ownerClosed() });
+	}
 	let child: ChildProcess;
 	try {
 		child = spawnChild(options);
@@ -222,6 +231,7 @@ export async function runChild(
 		await spools.close();
 		return notStarted({ kind: "spawn-error", error: asError(error) });
 	}
+	if (child.pid !== undefined) claim?.add([child.pid]);
 	const settings: Settings = {
 		platform: options.platform ?? process.platform,
 		graceMs: finiteOr(options.graceMs, DEFAULT_CHILD_GRACE_MS),
@@ -229,9 +239,16 @@ export async function runChild(
 		taskkill: options.taskkill ?? runTaskkill,
 		listProcesses: options.listProcesses ?? listProcesses,
 		notes: [],
+		...(claim ? { claim } : {}),
 	};
 	const result = await supervise({ child, options, spools, counts, settings });
+	if (result.tree.kind === "gone") claim?.release();
 	return outcome(result, options, counts, settings.notes);
+}
+
+/** Work whose process owner stopped waiting for it starts no child. */
+function ownerClosed(): Error {
+	return new Error("not started: the run that owns this process has ended");
 }
 
 /** Reads a spool file's text; `tailBytes` keeps only its last bytes. A missing file reads as empty. */
@@ -356,6 +373,7 @@ async function reapTree(
 		graceMs: settings.graceMs,
 		killWaitMs: settings.killWaitMs,
 		list: settings.listProcesses,
+		...(settings.claim ? { onFound: (pids) => settings.claim?.add(pids) } : {}),
 	});
 }
 

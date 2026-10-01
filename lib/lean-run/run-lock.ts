@@ -3,6 +3,7 @@ import {
 	link,
 	mkdir,
 	readFile,
+	rename,
 	rm,
 	stat,
 	unlink,
@@ -29,6 +30,13 @@ interface LockHolder {
 	runId: string;
 	pid: number;
 	createdAt: string;
+	/**
+	 * The run has ended but could not confirm that every process it owned is
+	 * gone; `unconfirmedPids` lists those. Only `clearUnconfirmedLock` removes
+	 * such a lock, never the stale-holder reclaim.
+	 */
+	state?: "unconfirmed";
+	unconfirmedPids?: number[];
 }
 
 /** What a starter saw at the lock path: its exact bytes, and the holder when they parse. */
@@ -39,8 +47,20 @@ interface SeenLock {
 }
 
 type RunLockResult =
-	| { acquired: true; release(): Promise<void> }
-	| { acquired: false; holder: string };
+	| {
+			acquired: true;
+			/**
+			 * Removes the lock; with pids, rewrites it as `unconfirmed` with
+			 * them instead, so the next run sees them.
+			 */
+			release(unconfirmedPids?: readonly number[]): Promise<void>;
+	  }
+	| {
+			acquired: false;
+			holder: string;
+			/** Set when the holder ended with these processes unconfirmed. */
+			unconfirmedPids?: number[];
+	  };
 
 /**
  * One lean run per worktree: two runs would share the base-sha marker and mix
@@ -50,7 +70,9 @@ type RunLockResult =
  * whose process is gone, or one that has been unreadable for a while, is
  * reclaimed under a claim file that only one starter holds at a time; the
  * claimant removes the lock only when it still holds the bytes it judged
- * stale. `release` removes the lock only while it is still this run's.
+ * stale. `release` removes the lock only while it is still this run's. A
+ * lock released with unconfirmed pids is never stale: it stays until
+ * `clearUnconfirmedLock` removes it.
  *
  * Accepted gap: a reclaimer that dies holding the claim leaves it for
  * `ABANDONED_AFTER_MS`; two starters that judge it abandoned in the same
@@ -72,15 +94,42 @@ export async function acquireRunLock(options: {
 		if (await createLock(path, holder))
 			return {
 				acquired: true,
-				release: () => releaseLock(path, options.runId),
+				release: (pids) => releaseLock(path, options.runId, pids),
 			};
 		last = await readLock(path);
 		if (!last) continue;
-		if (!isStale(last))
-			return { acquired: false, holder: last.holder?.runId ?? "unknown" };
+		if (!isStale(last)) return lockedOut(last);
 		if (!(await reclaim(path, last))) await delay(RETRY_DELAY_MS);
 	}
-	return { acquired: false, holder: last?.holder?.runId ?? "unknown" };
+	return last ? lockedOut(last) : { acquired: false, holder: "unknown" };
+}
+
+function lockedOut(seen: SeenLock): RunLockResult {
+	const holder = seen.holder?.runId ?? "unknown";
+	if (seen.holder?.state !== "unconfirmed") return { acquired: false, holder };
+	const pids = seen.holder.unconfirmedPids ?? [];
+	return { acquired: false, holder, unconfirmedPids: [...pids] };
+}
+
+/**
+ * Removes the `unconfirmed` lock `runId` left, for a starter that found its
+ * processes gone or was told to clear it. Resolves false when the lock is
+ * not that run's unconfirmed lock any more, or another starter is reclaiming it.
+ */
+export async function clearUnconfirmedLock(options: {
+	worktree: string;
+	runId: string;
+}): Promise<boolean> {
+	const path = await runStatePath(options.worktree, LOCK_PATH);
+	for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+		const seen = await readLock(path);
+		const holder = seen?.holder;
+		if (!seen || holder?.state !== "unconfirmed") return false;
+		if (holder.runId !== options.runId) return false;
+		if (await reclaim(path, seen)) return true;
+		await delay(RETRY_DELAY_MS);
+	}
+	return false;
 }
 
 function createLock(path: string, holder: LockHolder): Promise<boolean> {
@@ -134,6 +183,7 @@ async function createWithoutLink(
 }
 
 function isStale(seen: SeenLock): boolean {
+	if (seen.holder?.state === "unconfirmed") return false;
 	if (seen.holder) return !isAlive(seen.holder.pid);
 	return seen.ageMs >= ABANDONED_AFTER_MS;
 }
@@ -176,10 +226,15 @@ async function readLock(path: string): Promise<SeenLock | undefined> {
 	}
 }
 
+/** An unconfirmed holder keeps only the pids that are valid. */
 function parseHolder(raw: string): { holder?: LockHolder } {
 	try {
 		const parsed: unknown = JSON.parse(raw);
-		return isHolder(parsed) ? { holder: parsed } : {};
+		if (!isHolder(parsed)) return {};
+		if (parsed.state !== "unconfirmed") return { holder: parsed };
+		const listed: unknown = parsed.unconfirmedPids;
+		const pids = Array.isArray(listed) ? listed.filter(isPid) : [];
+		return { holder: { ...parsed, unconfirmedPids: pids } };
 	} catch {
 		return {};
 	}
@@ -195,9 +250,33 @@ async function ageMs(path: string): Promise<number> {
 	}
 }
 
-async function releaseLock(path: string, runId: string): Promise<void> {
+/**
+ * Only while the lock is still this run's. Unconfirmed pids replace it in
+ * one rename, so a starter never sees the lock missing in between.
+ */
+async function releaseLock(
+	path: string,
+	runId: string,
+	unconfirmedPids: readonly number[] = [],
+): Promise<void> {
 	const current = await readLock(path).catch(() => undefined);
-	if (current?.holder?.runId === runId) await rm(path, { force: true });
+	const holder = current?.holder;
+	if (holder?.runId !== runId) return;
+	if (unconfirmedPids.length === 0) return rm(path, { force: true });
+	const unconfirmed: LockHolder = {
+		runId: holder.runId,
+		pid: holder.pid,
+		createdAt: holder.createdAt,
+		state: "unconfirmed",
+		unconfirmedPids: [...unconfirmedPids],
+	};
+	const temp = `${path}.${randomUUID()}.tmp`;
+	try {
+		await writeFile(temp, `${JSON.stringify(unconfirmed)}\n`);
+		await rename(temp, path);
+	} finally {
+		await rm(temp, { force: true });
+	}
 }
 
 function isHolder(value: unknown): value is LockHolder {
@@ -205,9 +284,13 @@ function isHolder(value: unknown): value is LockHolder {
 	const record = value as Record<string, unknown>;
 	return (
 		typeof record.runId === "string" &&
-		Number.isInteger(record.pid) &&
-		(record.pid as number) > 0
+		isPid(record.pid) &&
+		(record.state === undefined || record.state === "unconfirmed")
 	);
+}
+
+function isPid(value: unknown): value is number {
+	return Number.isInteger(value) && (value as number) > 0;
 }
 
 /** Signal 0 checks existence; EPERM means the process exists under another user. */

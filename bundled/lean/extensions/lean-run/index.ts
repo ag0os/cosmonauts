@@ -81,6 +81,12 @@ export const LeanBuildParameters = Type.Object({
 			description: `Host check kinds that must run and be available for a done run; any of ${SIGNAL_KINDS.join(", ")}; [] requires none beyond a passing verify (default: lean.requiredSignals in the project config, else verify, mutation and health)`,
 		}),
 	),
+	clearStaleLock: Type.Optional(
+		Type.Boolean({
+			description:
+				"Start even though a previous run ended with processes it started still running (blocked: previous run cleanup unconfirmed). Only that lock is cleared, never a running run's; set it once those pids are known to be safe (default: false)",
+		}),
+	),
 });
 type LeanBuildInput = Static<typeof LeanBuildParameters>;
 
@@ -135,7 +141,7 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 		pi.registerTool({
 			name: "lean_build",
 			label: "Lean build",
-			description: `Run a lean build for a plan or a direct request: builder, host checks, at most one re-entry per failing check kind (two in all), the code reviewer, and at most one findings re-entry with a re-review. The builder works in a private clone of this repository with no remote, and only a done run applies its patch to this working tree, unstaged. The clone has its own refs, stash and config; gitignored files are copied in (never node_modules, .git or .stryker-tmp; up to lean.ignoredInputsCapBytes, 50 MB by default) and node_modules is linked, so the dependency tree stays writable through the link. A run during which this branch, HEAD or stash moved, or linked node_modules lost entries, ends blocked with nothing applied. The run's wall-time limit defaults to 60 minutes. ${LEAN_BUILD_INSTALL_NOTE} Returns the run id, status, a summary and the run directory.`,
+			description: `Run a lean build for a plan or a direct request: builder, host checks, at most one re-entry per failing check kind (two in all), the code reviewer, and at most one findings re-entry with a re-review. The builder works in a private clone of this repository with no remote, and only a done run applies its patch to this working tree, unstaged. The clone has its own refs, stash and config; gitignored files are copied in (never node_modules, .git or .stryker-tmp; up to lean.ignoredInputsCapBytes, 50 MB by default) and node_modules is linked, so the dependency tree stays writable through the link. A run during which this branch, HEAD or stash moved, or linked node_modules lost entries, ends blocked with nothing applied. The run's wall-time limit defaults to 60 minutes. When the run ends it waits up to 30 s for every process it started to exit; if some still run, the repository's run lock stays and the next run ends blocked (previous run cleanup unconfirmed) until they exit or clearStaleLock is set. ${LEAN_BUILD_INSTALL_NOTE} Returns the run id, status, a summary and the run directory.`,
 			parameters: LeanBuildParameters,
 			execute: async (_id, params: LeanBuildInput, signal, _onUpdate, ctx) => {
 				const source = planSource(params);
@@ -153,6 +159,7 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 					...(lenses ? { lenses } : {}),
 					...(budget ? { budget } : {}),
 					...(requiredSignals ? { requiredSignals } : {}),
+					...(params.clearStaleLock ? { clearStaleLock: true } : {}),
 					...(signal ? { signal } : {}),
 				});
 				const details = {

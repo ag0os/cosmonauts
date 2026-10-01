@@ -5,6 +5,8 @@ import { DEFAULT_SLICE_BUDGET_TOKENS } from "../architecture-map/index.ts";
 import { loadProjectConfig } from "../config/index.ts";
 import type { ProjectLeanConfig } from "../config/types.ts";
 import type { Envelope, Finding } from "../envelope/index.ts";
+import { ownProcesses, ProcessOwner } from "../process/owned-processes.ts";
+import { type ListProcesses, listProcesses } from "../process/process-tree.ts";
 import { DEFAULT_CHILD_STOP_MS } from "../process/run-child.ts";
 import { clearRunBaseSha, writeRunBaseSha } from "./base-sha.ts";
 import {
@@ -16,6 +18,13 @@ import {
 	callerStateChange,
 	readCallerState,
 } from "./caller-state.ts";
+import {
+	confirmGone,
+	DEFAULT_CLEANUP_CONFIRM_MS,
+	detachedCandidates,
+	pathSpellings,
+	runningPids,
+} from "./cleanup-check.ts";
 import { buildContextPack, planPathWarnings } from "./context-pack.ts";
 import { parseStageEnvelope } from "./envelope.ts";
 import {
@@ -58,13 +67,14 @@ import {
 	openReviewCheckout,
 	type ReviewCheckout,
 } from "./review-checkout.ts";
-import { acquireRunLock } from "./run-lock.ts";
+import { acquireRunLock, clearUnconfirmedLock } from "./run-lock.ts";
 import { writeRunPrBody } from "./run-pr-body.ts";
 import { requiredSignalGap, unavailableData } from "./signal-availability.ts";
 import type {
 	BackendRunInput,
 	BackendRunResult,
 	BuilderBackend,
+	DetachedProcess,
 	EnvelopeRepair,
 	GraphRefreshPoint,
 	GraphRefreshRecord,
@@ -119,13 +129,27 @@ export interface RunBuildOptions {
 	refreshGraph?: RefreshFileGraph;
 	/** How long a stopped stage may take to settle; `STAGE_EXIT_CEILING_MS` when omitted. */
 	stageExitCeilingMs?: number;
+	/**
+	 * How long the run waits at its end for every process it owned to be
+	 * gone before it leaves the lock `unconfirmed`; `DEFAULT_CLEANUP_CONFIRM_MS`
+	 * (30 s) when omitted.
+	 */
+	cleanupConfirmMs?: number;
+	/**
+	 * Start even though the previous run's lock is `unconfirmed` and some of
+	 * its processes still run; the cleared pids are recorded in the warnings.
+	 */
+	clearStaleLock?: boolean;
+	/** Test seam: the process listing the cleanup checks take. */
+	listProcesses?: ListProcesses;
 }
 
 /**
  * How long the host waits for a stage to settle after an abort or the time
  * budget: the child runner's whole escalation, then ten seconds more. A
  * stage still running after it is recorded as unconfirmed and the run ends
- * anyway, releasing its lock.
+ * anyway; its lock is released only once the processes the run owned are
+ * confirmed gone (`cleanupConfirmMs`).
  */
 export const STAGE_EXIT_CEILING_MS = DEFAULT_CHILD_STOP_MS + 10_000;
 
@@ -198,6 +222,10 @@ interface Run {
 	callerState?: CallerState;
 	/** The last builder attempt's patch; undefined when it could not be written. */
 	patch?: string;
+	/** Owns every child process the run starts through the child runner. */
+	owner: ProcessOwner;
+	/** Owned pids not confirmed gone at the end; the lock keeps them. */
+	unconfirmedPids?: number[];
 }
 
 interface PlanSource {
@@ -299,6 +327,10 @@ export interface RunReviewOptions {
 	refreshGraph?: RefreshFileGraph;
 	/** As in `runBuild`. */
 	stageExitCeilingMs?: number;
+	/** As in `runBuild`. */
+	cleanupConfirmMs?: number;
+	/** As in `runBuild`. */
+	listProcesses?: ListProcesses;
 }
 
 /**
@@ -408,31 +440,31 @@ interface RunStart {
 }
 
 /**
- * Runs `body` holding the worktree's run lock. The lock is released however
- * the body ends, and anything it throws, including taking the lock and
- * starting the run, ends the run `failed`. Every stage waits for its work to
- * settle (`settleStage`), so the lock outlives what the run started, up to
- * the stage-exit ceiling.
+ * Runs `body` holding the worktree's run lock, as the owner of every child
+ * process the body starts through the child runner. Anything it throws,
+ * including taking the lock and starting the run, ends the run `failed`.
+ * Every stage waits for its work to settle (`settleStage`), up to the
+ * stage-exit ceiling; then the run waits, up to `cleanupConfirmMs`, for
+ * every process it owned to be gone. Only then is the lock released; with
+ * processes still running it stays, `unconfirmed`, and names them.
  */
 async function underRunLock(
 	start: RunStart,
 	body: (run: Run) => Promise<void>,
 ): Promise<RunRecord> {
-	const { options, record } = start;
+	const { record } = start;
 	let run: Run | undefined;
-	let release: (() => Promise<void>) | undefined;
+	let release: ((pids?: readonly number[]) => Promise<void>) | undefined;
 	try {
-		const lock = await acquireRunLock({
-			worktree: options.projectRoot,
-			runId: record.manifest.id,
-		});
+		const lock = await takeRunLock(start);
 		if (!lock.acquired) {
-			await finishRecord(record, "blocked", lockedOut(lock.holder));
+			await finishRecord(record, "blocked", lock.reason);
 			return record;
 		}
 		release = lock.release;
-		run = startRun(start);
-		await body(run);
+		const started = startRun(start);
+		run = started;
+		await ownProcesses(started.owner, () => body(started));
 	} catch (error) {
 		const aborted = run && abortReason(run);
 		await finishRecord(
@@ -444,19 +476,143 @@ async function underRunLock(
 		try {
 			if (run) await closeRun(run);
 		} finally {
-			await release?.();
+			await release?.(run?.unconfirmedPids);
 		}
 	}
 	return record;
 }
 
-/** Writes the pr body, then deletes the builder clone. */
+type TakenLock =
+	| { acquired: true; release(pids?: readonly number[]): Promise<void> }
+	| { acquired: false; reason: string };
+
+/**
+ * The run lock. A lock the previous run left `unconfirmed` is cleared, with
+ * a warning, when none of its pids still runs or the caller set
+ * `clearStaleLock`; otherwise the run is refused.
+ */
+async function takeRunLock(start: RunStart): Promise<TakenLock> {
+	const { options, record } = start;
+	const lockOptions = {
+		worktree: options.projectRoot,
+		runId: record.manifest.id,
+	};
+	const lock = await acquireRunLock(lockOptions);
+	if (lock.acquired) return lock;
+	if (!lock.unconfirmedPids)
+		return { acquired: false, reason: lockedOut(lock.holder) };
+	const { running } = await runningPids(lock.unconfirmedPids, {
+		list: options.listProcesses ?? listProcesses,
+	});
+	if (running.length > 0 && !options.clearStaleLock)
+		return {
+			acquired: false,
+			reason: cleanupUnconfirmed(lock.holder, running),
+		};
+	const cleared = await clearUnconfirmedLock({
+		worktree: options.projectRoot,
+		runId: lock.holder,
+	});
+	if (cleared)
+		warn(record, clearedLock(lock.holder, lock.unconfirmedPids, running));
+	const retried = await acquireRunLock(lockOptions);
+	if (retried.acquired) return retried;
+	const reason = retried.unconfirmedPids
+		? cleanupUnconfirmed(retried.holder, retried.unconfirmedPids)
+		: lockedOut(retried.holder);
+	return { acquired: false, reason };
+}
+
+function cleanupUnconfirmed(holder: string, pids: readonly number[]): string {
+	return `previous run cleanup unconfirmed (pids ${pids.join(", ")}): run ${holder} ended while they ran and they may still change this repository; start again once they exit, or with clearStaleLock to proceed anyway`;
+}
+
+function clearedLock(
+	holder: string,
+	pids: readonly number[],
+	running: readonly number[],
+): string {
+	const listed = pids.join(", ");
+	if (running.length === 0)
+		return `previous run ${holder} left cleanup unconfirmed (pids ${listed}); all have exited, so its lock was cleared`;
+	return `clearStaleLock: cleared previous run ${holder}'s unconfirmed lock (pids ${listed}) while pids ${running.join(", ")} still run`;
+}
+
+/** Writes the pr body, confirms the run's processes are gone, then deletes the builder clone. */
 async function closeRun(run: Run): Promise<void> {
 	try {
 		await recordPrBody(run);
 	} finally {
-		await disposeBuilder(run);
+		try {
+			await confirmCleanup(run);
+		} finally {
+			await disposeBuilder(run);
+		}
 	}
+}
+
+/**
+ * Waits up to `cleanupConfirmMs` for every pid the run owned to be gone,
+ * with no wait when they already are, and records the rest in
+ * `cleanupUnconfirmed`, the reason and a warning; the lock keeps them.
+ * Processes outside the run's ownership that name the builder clone are
+ * reported as `detachedCandidates`, never counted. Never throws: a check
+ * that fails leaves every owned pid unconfirmed.
+ */
+async function confirmCleanup(run: Run): Promise<void> {
+	const owned = run.owner.close();
+	run.unconfirmedPids = owned;
+	const clone = run.builder?.root;
+	if (owned.length === 0 && clone === undefined) return;
+	const boundMs = run.options.cleanupConfirmMs ?? DEFAULT_CLEANUP_CONFIRM_MS;
+	try {
+		const check = await confirmGone(owned, {
+			list: run.options.listProcesses ?? listProcesses,
+			boundMs,
+			listAlways: clone !== undefined,
+		});
+		run.unconfirmedPids = check.running;
+		if (clone !== undefined && check.listing)
+			recordDetached(
+				run,
+				detachedCandidates(check.listing, {
+					paths: await pathSpellings(clone),
+					owned,
+				}),
+			);
+	} catch (error) {
+		warn(run.record, `cleanup check failed: ${errorMessage(error)}`);
+	}
+	recordUnconfirmed(run, run.unconfirmedPids, boundMs);
+	await saveManifest(run.record).catch(() => undefined);
+}
+
+function recordUnconfirmed(
+	run: Run,
+	pids: readonly number[],
+	boundMs: number,
+): void {
+	if (pids.length === 0) return;
+	const { manifest } = run.record;
+	manifest.cleanupUnconfirmed = [...pids];
+	const note = `cleanup unconfirmed: pids ${pids.join(", ")} the run started were still running ${boundMs} ms after it ended; the run lock stays until they exit`;
+	manifest.reason = manifest.reason ? `${manifest.reason}; ${note}` : note;
+	warn(run.record, note);
+}
+
+function recordDetached(
+	run: Run,
+	candidates: readonly DetachedProcess[],
+): void {
+	if (candidates.length === 0) return;
+	run.record.manifest.detachedCandidates = [...candidates];
+	const listed = candidates
+		.map(({ pid, command }) => `${pid} (${command})`)
+		.join("; ");
+	warn(
+		run.record,
+		`detached process candidates: still running, not owned by the run and not confirmed gone, their command lines name the builder clone: ${listed}`,
+	);
 }
 
 /**
@@ -666,6 +822,7 @@ function startRun(start: RunStart): Run {
 			: deadline,
 		stage: "builder-1",
 		worktree: options.projectRoot,
+		owner: new ProcessOwner(),
 	};
 }
 
@@ -1564,8 +1721,9 @@ interface StageSettlement<T> {
  * it: the work holds the signal, and an external backend's child runner ends
  * the process tree it can find before it settles (`StageProcessExit` says
  * how that went). Only once `stageExitCeilingMs` has passed since the stop
- * does the host stop waiting, with `unconfirmed`, and that stage's work may
- * outlive the run lock.
+ * does the host stop waiting, with `unconfirmed`; the processes that work
+ * started then hold the lock (`confirmCleanup`), but in-process work and
+ * processes started outside the child runner may outlive it.
  */
 async function settleStage<T>(
 	run: Run,

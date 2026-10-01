@@ -372,11 +372,33 @@ export interface RunManifest {
 	 * and every stage an abort or the time budget stopped, in order.
 	 */
 	stageExits?: StageExitRecord[];
+	/**
+	 * Processes the run owned (every child the shared child runner started,
+	 * and what it found in their trees, until it confirmed them gone) that
+	 * were still running when the run ended and the cleanup bound passed.
+	 * The run lock stays, `unconfirmed`, until they are gone or a run is
+	 * started with `clearStaleLock`.
+	 */
+	cleanupUnconfirmed?: number[];
+	/**
+	 * Best effort, never owned and never claimed gone: running processes the
+	 * run could not own whose command line names the builder clone, such as
+	 * a daemon re-parented before any listing found it.
+	 */
+	detachedCandidates?: DetachedProcess[];
+}
+
+/** A process found by its command line, not by the run's process tree. */
+export interface DetachedProcess {
+	pid: number;
+	/** At most 200 characters. */
+	command: string;
 }
 
 /**
  * How one stage's work ended. The host waits for a stage it stopped to
- * settle, up to a ceiling, before the run ends and its lock is released.
+ * settle, up to a ceiling, before the run ends; the lock is released once
+ * the processes the run owned are confirmed gone (`cleanupUnconfirmed`).
  */
 export interface StageExitRecord {
 	/** `builder-1`, `reviewer repair`, `verify provider (pass 1)`, `graph refresh (start)`. */

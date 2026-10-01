@@ -280,6 +280,23 @@ describe("lean_build tool", () => {
 		);
 	});
 
+	test("passes clearStaleLock through only when it is set", async () => {
+		const { pi, calls } = setup();
+		await pi.callTool("lean_build", { planPath: "p.md", clearStaleLock: true });
+		await pi.callTool("lean_build", { planPath: "p.md" });
+		expect(calls[0]?.clearStaleLock).toBe(true);
+		expect(calls[1]).not.toHaveProperty("clearStaleLock");
+	});
+
+	test("states that a run whose processes outlive it holds the lock until clearStaleLock", () => {
+		const { pi } = setup();
+		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
+
+		expect(tool.description).toContain(
+			"the next run ends blocked (previous run cleanup unconfirmed) until they exit or clearStaleLock is set",
+		);
+	});
+
 	test("states what the builder still shares with this checkout", () => {
 		const { pi } = setup();
 		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;

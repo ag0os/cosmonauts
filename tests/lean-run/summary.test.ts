@@ -43,6 +43,18 @@ describe("summarizeRun", () => {
 		expect(summary).toBe("done: two issues; 2 finding(s), 1 high (1 re-entry)");
 	});
 
+	test("says when a done run's processes were not confirmed gone", () => {
+		const summary = summarizeRun(
+			record(
+				{ cleanupUnconfirmed: [41, 42] },
+				{ outcome: "done", summary: "fine", findings: [] },
+			),
+		);
+		expect(summary).toBe(
+			"done: fine; 0 finding(s), 0 high (1 re-entry); cleanup unconfirmed (pids 41, 42), the run lock stays until they exit",
+		);
+	});
+
 	test("reports the re-review's verdict after a findings re-entry", () => {
 		const summary = summarizeRun({
 			...record({ reentries: 0, findingsReentries: 1 }),

@@ -15,7 +15,14 @@ export function summarizeRun(record: RunRecord): string {
 	const findings = review?.findings ?? [];
 	const high = findings.filter((finding) => finding.severity === "high").length;
 	const verdict = review?.summary ? `${review.summary}; ` : "";
-	return `done: ${verdict}${findings.length} finding(s), ${high} high (${loops})`;
+	return `done: ${verdict}${findings.length} finding(s), ${high} high (${loops})${cleanupNote(record)}`;
+}
+
+/** A done run has no reason, so the summary says when its processes were not confirmed gone. */
+function cleanupNote(record: RunRecord): string {
+	const pids = record.manifest.cleanupUnconfirmed ?? [];
+	if (pids.length === 0) return "";
+	return `; cleanup unconfirmed (pids ${pids.join(", ")}), the run lock stays until they exit`;
 }
 
 /** Empty when the reason already names the patch, as a failed apply's does. */
