@@ -17,6 +17,11 @@ export {
 	readRunBaseSha,
 	writeRunBaseSha,
 } from "./base-sha.ts";
+export {
+	type BuildContextPackOptions,
+	buildContextPack,
+	readVerificationCommands,
+} from "./context-pack.ts";
 export { parseStageEnvelope } from "./envelope.ts";
 export { builderTaskId } from "./git.ts";
 export {
