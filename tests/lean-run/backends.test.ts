@@ -721,10 +721,6 @@ describe("createExternalBuilderBackend token usage", () => {
 			CODEX_EVENTS.split("\n").slice(0, 3).join("\n"),
 		],
 		[
-			"a completed turn without usage counts",
-			JSON.stringify({ type: "turn.completed", usage: { input_tokens: "x" } }),
-		],
-		[
 			"a completed turn whose usage is all zero",
 			JSON.stringify({
 				type: "turn.completed",
@@ -741,6 +737,19 @@ describe("createExternalBuilderBackend token usage", () => {
 		const result = await codexBackend(stdout).run(input);
 
 		expect(result).toEqual({ text: ENVELOPE });
+	});
+
+	test("reports incomplete codex stats for a completed turn without usage counts", async () => {
+		const result = await codexBackend(
+			JSON.stringify({ type: "turn.completed", usage: { input_tokens: "x" } }),
+		).run(input);
+
+		expect(result.stats).toMatchObject({
+			tokens: { input: 0, output: 0 },
+			turns: 0,
+			incomplete: true,
+			incompleteReason: "turn.completed usage unreadable",
+		});
 	});
 });
 

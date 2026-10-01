@@ -88,6 +88,7 @@ const MAX_LINE_BYTES = 1024 * 1024;
 const TURN_COMPLETED = "turn.completed";
 /** How codex serializes the start of a usage event's line. */
 const TURN_COMPLETED_START = `{"type":"${TURN_COMPLETED}"`;
+const UNREADABLE_USAGE = `${TURN_COMPLETED} usage unreadable`;
 const NEWLINE = 0x0a;
 
 /** The start of a line that passed `MAX_LINE_BYTES` and was dropped. */
@@ -106,7 +107,8 @@ interface Oversized {
  * is the rest: neither cache reads nor writes count against a run budget.
  * `reasoning_output_tokens` is part of `output_tokens`, as in OpenAI usage,
  * so output is taken as is. A turn that reports zero input and zero output
- * reported no usage.
+ * reported no usage; one whose input or output is missing or not a count
+ * marks the stats incomplete.
  *
  * Whether the usage of a later turn in one exec is that turn's own or the
  * thread's running total is unproven, so turns are always summed. Were they
@@ -220,7 +222,12 @@ export class CodexUsageTap {
 		const event = parseObject(line);
 		if (event?.type !== TURN_COMPLETED) return;
 		const turn = codexTurn(isRecord(event.usage) ? event.usage : {});
-		if (turn) this.turns.push(turn);
+		if (turn === undefined) this.gapOnce(UNREADABLE_USAGE);
+		else if (!isEmpty(turn)) this.turns.push(turn);
+	}
+
+	private gapOnce(gap: string): void {
+		if (!this.gaps.includes(gap)) this.gaps.push(gap);
 	}
 }
 
@@ -256,17 +263,21 @@ function sumTurns(turns: readonly CodexTurn[]): CodexTurn {
 	return sum;
 }
 
+/** Undefined when the usage has no readable input and output count. */
 function codexTurn(usage: Record<string, unknown>): CodexTurn | undefined {
 	const input = count(usage.input_tokens);
 	const output = count(usage.output_tokens);
 	if (input === undefined || output === undefined) return undefined;
-	if (input === 0 && output === 0) return undefined;
 	const cached = Math.min(count(usage.cached_input_tokens) ?? 0, input);
 	const cacheWrite = Math.min(
 		count(usage.cache_write_input_tokens) ?? 0,
 		input - cached,
 	);
 	return { input: input - cached - cacheWrite, cached, cacheWrite, output };
+}
+
+function isEmpty(turn: CodexTurn): boolean {
+	return CODEX_COUNTS.every((key) => turn[key] === 0);
 }
 
 function parseJson(text: string): unknown {

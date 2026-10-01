@@ -115,12 +115,18 @@ signal found no readable graph, and plain `info` when the graph exists.
 
 `blast-tests` counts only the test files the runner's own output reports
 running: the run summary (`Test Files  2 passed (2)`, `Tests  5 passed
-(5)`, or jest's `Test Suites:` and `Tests:`) and its per-file result lines.
-An exit 0 with no summary, a summary that counts no test passed or failed,
-or `No test files found` (as `passWithNoTests` prints) ran nothing. Listed
-files the runner left out, for example ones its config excludes, are
-recorded under `notRun` and keep the signal from a clean `pass`; when no
-listed test ran at all the signal is unavailable.
+(5)`, or jest's `Test Suites:` and `Tests:`) and its per-file result lines
+(read past a vitest `|project|` label). An exit 0 with no summary, a
+summary that counts no test passed or failed, or `No test files found` (as
+`passWithNoTests` prints) ran nothing. Listed files the runner left out,
+for example ones its config excludes, are recorded under `notRun` and keep
+the signal from a clean `pass`; when no listed test ran at all the signal
+is unavailable. A runner that names only other files (vitest's substring
+filter matching a different path, or a script that ignores its arguments)
+ran none of the listed ones. Only a reporter that names no file at all is
+taken at its summary: when it ran at least as many files as were listed,
+all of them count as run, which a script that ignores its arguments would
+also satisfy.
 
 ## Installing from npm
 
@@ -199,16 +205,19 @@ budget; cache reads and writes do not. Claude Code's usage is its final
 result object. Codex's is the sum of its `turn.completed` events, read
 from stdout as it streams, so a turn in the part of a long session's log
 that the output cap drops is still counted. Usage is incomplete when
-stdout ended inside a JSON line, a usage line was too long to read, or
-stdout bytes reached the log without reaching the counter (for Claude, a
-result object lost to the cap).
+stdout ended inside a JSON line, a usage line was too long to read, a
+`turn.completed` event's usage could not be read, or stdout bytes reached
+the log without reaching the counter (for Claude, a result object lost to
+the cap).
 
 An explicit budget (the `lean_build` parameter or `lean.budget.tokens`)
 ends the run `blocked` with `budget unenforceable (<backend> reported no
 token usage)` or `budget unenforceable (<backend> usage incomplete:
 <why>)`, unless the usage that was read already overran it, which fails
-the run. Under the default budget the run goes on, and `run.json` warns
-that the budget was not (fully) enforced.
+the run; the reason then says the count is a lower bound, and `run.json`
+warns that the budget was not fully enforced. Under the default budget the
+run goes on, and `run.json` warns that the budget was not (fully)
+enforced.
 
 ## Models
 

@@ -62,9 +62,10 @@ const TESTS_SUMMARY = /^\s*Tests(?::\s+|\s{2,})(.+)$/mu;
 const RAN_COUNT = /(\d+) (?:passed|failed)/gu;
 /**
  * A file's result line: vitest's ` ✓ path (2 tests) 3ms` (`❯` or `×` when
- * it failed, `↓` when every test was skipped) and jest's `PASS path`.
+ * it failed, `↓` when every test was skipped), with a `|project|` label
+ * before the path under vitest `projects`, and jest's `PASS path`.
  */
-const FILE_RESULT = /^\s*(?:[✓❯×]|PASS|FAIL)\s+(\S+)/gmu;
+const FILE_RESULT = /^\s*(?:[✓❯×]|PASS|FAIL)\s+(?:\|[^|\s]+\|\s+)?(\S+)/gmu;
 const ANSI_ESCAPE = new RegExp(
 	`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`,
 	"gu",
@@ -422,11 +423,16 @@ function classify(
 	if (report.tests === 0)
 		return notRun("no tests executed (runner reported 0 tests)");
 	const executed = executedFiles(tests, report);
-	if (executed === undefined)
-		return notRun(
-			`the test runner ran ${report.files} of ${tests.length} listed files without naming them`,
-		);
+	if (executed === undefined) return notRun(unnamedReason(tests, report));
 	return { verdict: "passed", executed };
+}
+
+/** Why none of the listed files counts as run; the caller lists them. */
+function unnamedReason(tests: readonly string[], report: RunReport): string {
+	const others = report.named.size;
+	if (others > 0)
+		return `the test runner named none of the listed files (it named only ${others} other file${others === 1 ? "" : "s"})`;
+	return `the test runner ran ${report.files} of ${tests.length} listed files without naming any of them`;
 }
 
 function notRun(reason: string): Classified {
@@ -456,9 +462,10 @@ function readRunReport(output: string): RunReport | undefined {
 }
 
 /**
- * The listed files the runner named as run. When it named none of them
- * but ran at least as many files as were listed, all of them; when it ran
- * fewer without naming them, it cannot be told which: undefined.
+ * The listed files the runner named as run. Only when it named no file at
+ * all (a reporter without per-file lines) and ran at least as many files as
+ * were listed are all of them taken as run; otherwise, with none of them
+ * named, it cannot be told which ran: undefined.
  */
 function executedFiles(
 	tests: readonly string[],
@@ -466,7 +473,8 @@ function executedFiles(
 ): string[] | undefined {
 	const named = tests.filter((test) => report.named.has(withoutDotSlash(test)));
 	if (named.length > 0) return named;
-	if (report.files >= tests.length) return [...tests];
+	if (report.named.size === 0 && report.files >= tests.length)
+		return [...tests];
 	return undefined;
 }
 

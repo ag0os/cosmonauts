@@ -1703,8 +1703,9 @@ async function recordRepair(run: Run, repair: EnvelopeRepair): Promise<void> {
 /**
  * The session's text, unless its usage ends the run right away, before any
  * provider pass: `failed` once the token budget is overrun, counting what
- * usage was read, and `blocked` when the caller set a token budget and the
- * backend reported no usage or incomplete usage, so the budget cannot be
+ * usage was read (a lower bound, which the reason says, when the session's
+ * usage is incomplete), and `blocked` when the caller set a token budget and
+ * the backend reported no usage or incomplete usage, so the budget cannot be
  * enforced.
  */
 async function afterSession(
@@ -1712,9 +1713,17 @@ async function afterSession(
 	backend: BuilderBackend,
 	result: BackendRunResult,
 ): Promise<string | undefined> {
-	const overrun = tokenOverrun(run);
-	if (overrun) return stopWith(run, overrun);
 	const gap = usageGap(backend, result.stats);
+	const overrun = tokenOverrun(run);
+	if (overrun) {
+		const partial = result.stats?.incomplete ? gap : undefined;
+		if (partial === undefined) return stopWith(run, overrun);
+		warnOnce(run.record, notFullyEnforced(partial));
+		return stopWith(
+			run,
+			`${overrun} (${partial}; counted usage is a lower bound)`,
+		);
+	}
 	if (gap && run.explicitTokens) {
 		await finish(run, "blocked", `budget unenforceable (${gap})`);
 		return undefined;
@@ -1730,6 +1739,10 @@ function usageGap(
 	if (!stats) return `${backend.kind} reported no token usage`;
 	if (!stats.incomplete) return undefined;
 	return `${backend.kind} usage incomplete: ${stats.incompleteReason ?? "no reason given"}`;
+}
+
+function notFullyEnforced(gap: string | undefined): string {
+	return `token budget not fully enforced: ${gap}`;
 }
 
 /**
@@ -1762,10 +1775,7 @@ async function recordStats(
 			`token budget not enforced: ${session.backend.kind} reports no token stats`,
 		);
 	if (spawn?.incomplete && !run.explicitTokens)
-		warnOnce(
-			run.record,
-			`token budget not fully enforced: ${usageGap(session.backend, spawn)}`,
-		);
+		warnOnce(run.record, notFullyEnforced(usageGap(session.backend, spawn)));
 	await saveStats(run.record);
 	await saveManifest(run.record);
 }

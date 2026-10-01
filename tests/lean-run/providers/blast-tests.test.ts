@@ -166,6 +166,55 @@ const VITEST_ALL_SKIPPED = `
    Duration  279ms (transform 19ms, setup 0ms, collect 16ms, tests 0ms, environment 0ms, prepare 46ms)
 `;
 
+/**
+ * A real vitest 3.2.4 capture (file names mapped to this suite's): the
+ * config includes only `pkg/**`, so for the listed `tests/src/sum.test.ts`
+ * vitest's substring filter ran `pkg/tests/src/sum.test.ts` instead.
+ */
+const VITEST_RAN_ANOTHER_FILE = `
+ RUN  v3.2.4 /repo
+
+ ✓ pkg/tests/src/sum.test.ts (1 test) 1ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:31:37
+   Duration  435ms (transform 29ms, setup 0ms, collect 14ms, tests 1ms, environment 0ms, prepare 144ms)
+`;
+
+/**
+ * A real vitest 3.2.4 capture (file names mapped to this suite's): two
+ * `projects` that both include only `tests/**`, with `tests/src/sum.test.ts`
+ * and `e2e/x.test.ts` listed.
+ */
+const VITEST_PROJECTS = `
+ RUN  v3.2.4 /repo
+
+ ✓ |unit| tests/src/sum.test.ts (1 test) 1ms
+ ✓ |again| tests/src/sum.test.ts (1 test) 1ms
+
+ Test Files  2 passed (2)
+      Tests  2 passed (2)
+   Start at  17:31:38
+   Duration  642ms (transform 26ms, setup 0ms, collect 25ms, tests 2ms, environment 0ms, prepare 245ms)
+`;
+
+/**
+ * A real vitest 3.2.4 capture from a test script that ignores its
+ * arguments and runs every file its config includes.
+ */
+const VITEST_IGNORED_ARGUMENTS = `
+ RUN  v3.2.4 /repo
+
+ ✓ tests/other2.test.ts (1 test) 103ms
+ ✓ tests/other1.test.ts (1 test) 1ms
+
+ Test Files  2 passed (2)
+      Tests  2 passed (2)
+   Start at  17:31:39
+   Duration  636ms (transform 24ms, setup 0ms, collect 31ms, tests 105ms, environment 0ms, prepare 205ms)
+`;
+
 type StubOutcome =
 	| ProviderProcessOutcome
 	| ((invocation: ProviderProcessInvocation) => ProviderProcessOutcome);
@@ -674,11 +723,52 @@ describe("blast-tests provider counting only the tests the runner ran", () => {
 
 		expect(dataOf(signal).runs?.[0]).toMatchObject({
 			verdict: "not-run",
-			reason: "the test runner ran 1 of 2 listed files without naming them",
+			reason:
+				"the test runner ran 1 of 2 listed files without naming any of them",
 		});
 		expect(requiredGap(signal)).toMatch(
 			/^unverified \(blast-tests unavailable: /u,
 		);
+	});
+
+	test.each([
+		[
+			"vitest's substring filter ran another file",
+			[DIRECT],
+			VITEST_RAN_ANOTHER_FILE,
+			"1 other file",
+		],
+		[
+			"the test script ignored its arguments",
+			[EXCLUDED],
+			VITEST_IGNORED_ARGUMENTS,
+			"2 other files",
+		],
+	])("does not count listed files as run when %s", async (_name, tests, stdout, others) => {
+		const signal = await tierOf(tests, printed(0, stdout));
+		const why = `the test runner named none of the listed files (it named only ${others})`;
+
+		expect(dataOf(signal).runs?.[0]).toMatchObject({
+			verdict: "not-run",
+			reason: why,
+		});
+		expect(requiredGap(signal)).toBe(
+			`unverified (blast-tests unavailable: no tests executed: tier 1 not run: ${why}: ${tests.join(", ")})`,
+		);
+	});
+
+	test("reads file names behind vitest's project labels", async () => {
+		const signal = await tierOf(
+			[DIRECT, EXCLUDED],
+			printed(0, VITEST_PROJECTS),
+		);
+
+		expect(signal.status).toBe("info");
+		expect(dataOf(signal).runs?.[0]?.executed).toEqual([DIRECT]);
+		expect(dataOf(signal).notRun).toEqual([
+			{ tests: [EXCLUDED], reason: "the test runner did not run them" },
+		]);
+		expect(requiredGap(signal)).toBeUndefined();
 	});
 
 	test("passes a tier the runner reports running whole", async () => {

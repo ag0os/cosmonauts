@@ -2446,7 +2446,7 @@ describe("runBuild budgets", () => {
 		expect(reviewer.calls).toHaveLength(0);
 	});
 
-	test("fails on the overrun when the incomplete usage it did read already passes the caller's budget", async () => {
+	test("fails on the overrun when the incomplete usage it did read already passes the caller's budget, naming the count a lower bound", async () => {
 		const record = await build({
 			builder: stubBackend([DONE], "codex-cli", INCOMPLETE_STATS),
 			budget: { tokens: 100_000 },
@@ -2455,8 +2455,27 @@ describe("runBuild budgets", () => {
 		expect(record.manifest).toMatchObject({
 			status: "failed",
 			reason:
+				"token budget exceeded at builder-1: 128000 of 100000 input and output tokens used (codex-cli usage incomplete: stdout ended inside a JSON line; counted usage is a lower bound)",
+		});
+		expect(record.manifest.warnings).toContain(
+			"token budget not fully enforced: codex-cli usage incomplete: stdout ended inside a JSON line",
+		);
+	});
+
+	test("does not call a complete session's overrun a lower bound", async () => {
+		const record = await build({
+			builder: stubBackend([DONE], "codex-cli"),
+			budget: { tokens: 100_000 },
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "failed",
+			reason:
 				"token budget exceeded at builder-1: 128000 of 100000 input and output tokens used",
 		});
+		expect(record.manifest.warnings ?? []).not.toContainEqual(
+			expect.stringMatching(/^token budget not fully enforced/u),
+		);
 	});
 
 	test("goes on under the default budget when a backend's usage is incomplete, and warns once", async () => {

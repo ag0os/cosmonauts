@@ -345,6 +345,43 @@ describe("CodexUsageTap", () => {
 		expect(stats?.incomplete).toBeUndefined();
 	});
 
+	test.each([
+		["no usage", { type: "turn.completed" }],
+		[
+			"non-numeric counts",
+			{
+				type: "turn.completed",
+				usage: { input_tokens: "1200", output_tokens: 30 },
+			},
+		],
+		[
+			"no output count",
+			{ type: "turn.completed", usage: { input_tokens: 1_200 } },
+		],
+	])("is incomplete when a turn.completed event has %s", (_name, event) => {
+		const tap = new CodexUsageTap();
+		const unreadable = JSON.stringify(event);
+		tap.push(
+			Buffer.from(
+				`${turnLine(3, 1)}\n${unreadable}\n${unreadable}\n${turnLine(5, 2)}\n`,
+			),
+		);
+
+		expect(tap.finish({ durationMs: 0 })).toMatchObject({
+			tokens: { input: 8, output: 3 },
+			turns: 2,
+			incomplete: true,
+			incompleteReason: "turn.completed usage unreadable",
+		});
+	});
+
+	test("takes a turn that reports zero input and zero output as no usage, not an unreadable one", () => {
+		const tap = new CodexUsageTap();
+		tap.push(Buffer.from(`${turnLine(0, 0)}\n`));
+
+		expect(tap.finish({ durationMs: 0 })).toBeUndefined();
+	});
+
 	test("reports incomplete usage with nothing counted when no turn was read", () => {
 		const tap = new CodexUsageTap();
 		tap.push(Buffer.from('{"type":"turn.comp'));
