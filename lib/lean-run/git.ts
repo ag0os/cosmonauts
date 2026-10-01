@@ -3,14 +3,20 @@ import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { ARCHITECTURE_MAP_OUTPUT_DIR } from "../architecture-map/types.ts";
 import { snapshotWorktree } from "../driver/runtime-helpers.ts";
 
 const execFileAsync = promisify(execFile);
 
-/** Drive snapshots leave session paths out, so a diff against one must too. */
-const SESSION_EXCLUDES = [
+/**
+ * Drive snapshots leave session paths out, so a diff against one must too.
+ * The architecture map is the host's: it regenerates it before each
+ * provider pass, so those files are never the builder's change.
+ */
+const DIFF_EXCLUDES = [
 	":(exclude)missions/sessions",
 	":(exclude)missions/archive/sessions",
+	`:(exclude)${ARCHITECTURE_MAP_OUTPUT_DIR}`,
 ];
 
 export interface WorktreeChange {
@@ -57,11 +63,11 @@ export async function resolveCommit(
 	).trim();
 }
 
-/** The index of `cwd` against `base`, minus session paths. */
+/** The index of `cwd` against `base`, minus session paths and the architecture map. */
 export async function readStagedChange(
 	options: GitOptions & { base: string },
 ): Promise<WorktreeChange> {
-	const range = ["--cached", options.base, "--", ...SESSION_EXCLUDES];
+	const range = ["--cached", options.base, "--", ...DIFF_EXCLUDES];
 	const [diff, names] = await Promise.all([
 		git(["diff", ...range], options),
 		git(["diff", "--name-only", "-z", ...range], options),

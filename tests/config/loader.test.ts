@@ -151,6 +151,38 @@ describe("loadProjectConfig", () => {
 		expect(resolveKnowledgeSurfaceConfig({}).enabled).toBe(false);
 	});
 
+	test("reads the lean repo-map budget", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ lean: { repoMapBudgetTokens: 2400 } }),
+		);
+
+		expect((await loadProjectConfig(tmp.path)).lean).toEqual({
+			repoMapBudgetTokens: 2400,
+		});
+	});
+
+	test("skips a lean repo-map budget that is not a positive integer", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			for (const value of [0, -5, 1.5, "1500", null]) {
+				await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+				await writeFile(
+					join(tmp.path, ".cosmonauts", "config.json"),
+					JSON.stringify({ lean: { repoMapBudgetTokens: value } }),
+				);
+
+				expect((await loadProjectConfig(tmp.path)).lean, String(value)).toEqual(
+					{},
+				);
+			}
+			expect(warn).toHaveBeenCalledTimes(5);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	test("returns empty config when file does not exist", async () => {
 		const config = await loadProjectConfig(tmp.path);
 		expect(config).toEqual({});

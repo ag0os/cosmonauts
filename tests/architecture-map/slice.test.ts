@@ -176,6 +176,61 @@ function directoryGraph(): FileGraph {
 	};
 }
 
+/** A 100-file touch set, like lib/driver/ in miniature (wp3-3 F-7). */
+const WIDE_DIRECTORY = "src/w";
+const WIDE_SIZE = 100;
+const WIDE_NEIGHBOURS = 80;
+
+/**
+ * Two short exports per touch file and one per neighbour: the bare paths
+ * overflow 1,500 tokens, the touch paths plus first signatures do not.
+ */
+function wideGraph(): FileGraph {
+	const modules = Array.from(
+		{ length: WIDE_SIZE },
+		(_, index) => `${WIDE_DIRECTORY}/f${String(index).padStart(3, "0")}.ts`,
+	);
+	const neighbours = Array.from(
+		{ length: WIDE_NEIGHBOURS },
+		(_, index) => `src/n/d${String(index).padStart(2, "0")}.ts`,
+	);
+	return {
+		schemaVersion: 1,
+		projectHash: "project",
+		graphHash: "graph",
+		nodes: [
+			...modules.map((path, index) =>
+				node(path, [fn(`f${index}`), fn(`g${index}`)]),
+			),
+			...neighbours.map((path, index) => node(path, [fn(`n${index}`)])),
+		],
+		edges: neighbours.map((path, index) =>
+			edge(modules[index % modules.length] ?? "", path, 1),
+		),
+	};
+}
+
+function wideSlice(budgetTokens: number) {
+	return repoMapSlice({
+		graph: wideGraph(),
+		touchSet: [`${WIDE_DIRECTORY}/`],
+		budgetTokens,
+	});
+}
+
+function wideNeighbourCount(budgetTokens: number): number {
+	return wideSlice(budgetTokens)
+		.text.split("\n")
+		.filter((line) => line.startsWith("src/n/")).length;
+}
+
+/** The smallest budget at which every neighbour renders: the overflow point. */
+function wideOverflowPoint(): number {
+	let budget = 0;
+	while (wideNeighbourCount(budget) < WIDE_NEIGHBOURS) budget += 1;
+	return budget;
+}
+
 /** Each rendered file's signature lines, keyed by path. */
 function signaturesByPath(
 	text: string,
@@ -334,14 +389,16 @@ describe("repoMapSlice", () => {
 		}
 	});
 
-	test("drops neighbours to keep the touch file's signatures when paths overflow", () => {
+	test("places a neighbour before the touch file's second signature when paths overflow", () => {
 		const result = slice(30);
 
 		expect(result.text).toBe(
 			[
 				`${TARGET} [touch]`,
 				"  interface TargetOptions",
-				"  function runTarget(options: TargetOptions): void",
+				"  … 1 more",
+				"src/core/util.ts [dependency]",
+				"  … 3 more",
 			].join("\n"),
 		);
 	});
@@ -482,6 +539,40 @@ describe("repoMapSlice", () => {
 		);
 		for (const path of neighbours) {
 			expect(result.text, path).toContain(`\n${path} [`);
+		}
+	});
+
+	test("renders neighbours for a 100-file touch set whose bare paths overflow 1,500 tokens", () => {
+		expect(wideOverflowPoint()).toBeGreaterThan(1_500);
+
+		expect(wideNeighbourCount(1_500)).toBeGreaterThan(0);
+	});
+
+	test("never renders fewer neighbours as the budget rises across the overflow point", () => {
+		const counts = Array.from(
+			{ length: wideOverflowPoint() + 50 },
+			(_, budget) => wideNeighbourCount(budget),
+		);
+
+		counts.forEach((count, budget) => {
+			if (budget === 0) return;
+			expect(count, `budget ${budget}`).toBeGreaterThanOrEqual(
+				counts[budget - 1] ?? 0,
+			);
+		});
+		expect(counts.at(-1)).toBe(WIDE_NEIGHBOURS);
+	});
+
+	test("gives every touch file its first signature before any neighbour when paths overflow", () => {
+		const result = wideSlice(1_500);
+		const rendered = signaturesByPath(result.text);
+		const touchFiles = [...rendered.keys()].filter((path) =>
+			path.startsWith(`${WIDE_DIRECTORY}/`),
+		);
+
+		expect(touchFiles).toHaveLength(WIDE_SIZE);
+		for (const path of touchFiles) {
+			expect(rendered.get(path)?.length, path).toBeGreaterThanOrEqual(1);
 		}
 	});
 

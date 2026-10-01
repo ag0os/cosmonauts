@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
+import { DEFAULT_SLICE_BUDGET_TOKENS } from "../architecture-map/index.ts";
+import { loadProjectConfig } from "../config/index.ts";
 import type { Envelope } from "../envelope/index.ts";
 import { clearRunBaseSha, writeRunBaseSha } from "./base-sha.ts";
+import { buildContextPack } from "./context-pack.ts";
 import { parseStageEnvelope } from "./envelope.ts";
 import {
 	builderTaskId,
@@ -11,6 +14,11 @@ import {
 	resolveCommit,
 	snapshotBeforeBuilder,
 } from "./git.ts";
+import {
+	type FileGraphRefresh,
+	type RefreshFileGraph,
+	refreshFileGraph,
+} from "./graph-refresh.ts";
 import { parsePlan } from "./plan.ts";
 import { builderPrompt, reentryPrompt, reviewerPrompt } from "./prompts.ts";
 import {
@@ -25,6 +33,8 @@ import type {
 	BackendRunInput,
 	BackendRunResult,
 	BuilderBackend,
+	GraphRefreshPoint,
+	GraphRefreshRecord,
 	ParsedPlan,
 	RunBudget,
 	RunRecord,
@@ -40,14 +50,26 @@ export interface RunBuildOptions {
 	projectRoot: string;
 	planPath: string;
 	specPath?: string;
-	/** Verbatim builder prompt; without it the builder gets the plan and the envelope instruction. */
+	/**
+	 * Verbatim builder prompt, followed only by the envelope instruction.
+	 * Without it the host builds the context pack (brief 4.6), or sends the
+	 * plan alone when no file graph can be produced.
+	 */
 	contextPack?: string;
 	backend: BuilderBackend;
 	reviewerBackend: BuilderBackend;
 	providers: readonly SignalProvider[];
 	budget?: RunBudget;
 	signal?: AbortSignal;
+	/**
+	 * Brings graph.json up to date at run start and before each provider
+	 * pass; defaults to regenerating it with the architecture-map generator.
+	 */
+	refreshGraph?: RefreshFileGraph;
 }
+
+/** Warning prefix for a run whose builder got the plan without a context pack. */
+const PLAN_ONLY = "context pack: the builder got the plan alone";
 
 export const DEFAULT_RUN_BUDGET: RunBudget = {
 	tokens: 200_000,
@@ -72,9 +94,10 @@ interface Run {
 type StageInput = Omit<BackendRunInput, "signal" | "taskId">;
 
 /**
- * builder → host signals → (one re-entry on `reenter` signals) → host signals
- * → reviewer with every pass as facts (brief §4.7B.6), writing the run record
- * after every step. The run is `done` only when the reviewer is done, the last
+ * graph.json refresh and context pack → builder → host signals → (one
+ * re-entry on `reenter` signals) → host signals → reviewer with every pass as
+ * facts (brief §4.7B.6), refreshing graph.json before each pass and writing
+ * the run record after every step. The run is `done` only when the reviewer is done, the last
  * verify signal passed and no re-entry signal remains. Stage failures end the
  * run with a status and reason; only a missing plan or a non-git project throws.
  */
@@ -101,6 +124,7 @@ export async function runBuild(options: RunBuildOptions): Promise<RunRecord> {
 	});
 	const run = startRun(options, record, plan);
 	try {
+		await prepareBuilder(run);
 		await executeRun(run);
 	} catch (error) {
 		await finish(
@@ -133,6 +157,97 @@ function startRun(
 	};
 }
 
+/**
+ * Refreshes graph.json, then replaces the plan-only prompt with the context
+ * pack unless the caller supplied one. An already-aborted run skips this so
+ * the builder stage reports the abort.
+ */
+async function prepareBuilder(run: Run): Promise<void> {
+	if (abortReason(run)) return;
+	const refresh = await refreshGraph(run, "start");
+	if (run.options.contextPack === undefined) await useContextPack(run, refresh);
+	else run.record.manifest.contextPack = "supplied";
+	await saveManifest(run.record);
+}
+
+/** Never fails the run: without a graph or on any error the builder gets the plan alone. */
+async function useContextPack(
+	run: Run,
+	refresh: FileGraphRefresh,
+): Promise<void> {
+	run.stage = "context pack";
+	const { manifest } = run.record;
+	manifest.contextPack = "plan-only";
+	if (refresh.outcome === "unavailable")
+		return warn(run, `${PLAN_ONLY}; graph.json unavailable: ${refresh.reason}`);
+	try {
+		const pack = await buildContextPack({
+			planSection: run.plan.raw,
+			touches: run.plan.touches,
+			reuses: run.plan.reuses,
+			graph: refresh.graph,
+			budget: await repoMapBudget(run),
+			projectRoot: run.options.projectRoot,
+		});
+		run.basePrompt = builderPrompt({ plan: run.plan, contextPack: pack });
+		manifest.contextPack = "built";
+	} catch (error) {
+		warn(run, `${PLAN_ONLY}; ${errorMessage(error)}`);
+	}
+}
+
+/** `lean.repoMapBudgetTokens` from the project config, else the slice default. */
+async function repoMapBudget(run: Run): Promise<number> {
+	try {
+		const config = await loadProjectConfig(run.options.projectRoot);
+		return config.lean?.repoMapBudgetTokens ?? DEFAULT_SLICE_BUDGET_TOKENS;
+	} catch (error) {
+		warn(
+			run,
+			`repo-map budget: ${errorMessage(error)}; using ${DEFAULT_SLICE_BUDGET_TOKENS} tokens`,
+		);
+		return DEFAULT_SLICE_BUDGET_TOKENS;
+	}
+}
+
+/**
+ * Keeps graph.json current for the context pack, blast radius and
+ * mutation (brief 4.7B.3), recording each check in the manifest. Only an
+ * abort or the deadline escapes; a refresher that throws is `unavailable`.
+ */
+async function refreshGraph(
+	run: Run,
+	at: GraphRefreshPoint,
+): Promise<FileGraphRefresh> {
+	run.stage = `graph refresh (${at})`;
+	const refresh = run.options.refreshGraph ?? refreshFileGraph;
+	const work = refresh({ projectRoot: run.options.projectRoot }).catch(
+		(error: unknown): FileGraphRefresh => ({
+			outcome: "unavailable",
+			reason: errorMessage(error),
+		}),
+	);
+	const result = await untilAborted(work, run.signal);
+	const { manifest } = run.record;
+	manifest.graph = [...(manifest.graph ?? []), graphRecord(at, result)];
+	await saveManifest(run.record);
+	return result;
+}
+
+function graphRecord(
+	at: GraphRefreshPoint,
+	result: FileGraphRefresh,
+): GraphRefreshRecord {
+	if (result.outcome === "current") return { at, outcome: "current" };
+	if (result.outcome === "unavailable")
+		return { at, outcome: "unavailable", reason: result.reason };
+	const reason =
+		result.detail === undefined
+			? result.cause
+			: `${result.cause}: ${result.detail}`;
+	return { at, outcome: "regenerated", reason };
+}
+
 async function executeRun(run: Run): Promise<void> {
 	const first = await runBuilder(run, "builder-1", run.basePrompt);
 	const failing = first && (await checkPass(run, first, 1));
@@ -147,6 +262,7 @@ async function checkPass(
 	envelope: Envelope,
 	pass: number,
 ): Promise<Signal[] | undefined> {
+	if (run.options.providers.length > 0) await refreshGraph(run, `pass-${pass}`);
 	const signals = await runProviders(run, envelope, pass);
 	if (!signals) return undefined;
 	const failing = reentering(run, signals, pass);

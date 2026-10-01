@@ -399,14 +399,11 @@ function fitToBudget(options: {
 	readonly optional: readonly SliceFile[];
 	readonly budget: number;
 }): FitResult {
-	const layout = placeRequired(options.required, options.budget);
-	for (const tier of [
-		EXPORT_TIER.used,
-		EXPORT_TIER.unused,
-		EXPORT_TIER.dependent,
-	]) {
-		growTier(layout, tier);
-	}
+	const { layout, overflowed } = placeRequired(
+		options.required,
+		options.budget,
+	);
+	if (!overflowed || touchFilesFull(layout)) growOtherTiers(layout);
 	const kept = new Set(
 		layout.placements.map((placement) => placement.file.path),
 	);
@@ -426,27 +423,53 @@ function fitToBudget(options: {
 	return { placements: layout.placements, dropped };
 }
 
+function growOtherTiers(layout: BudgetedLayout): void {
+	for (const tier of [
+		EXPORT_TIER.used,
+		EXPORT_TIER.unused,
+		EXPORT_TIER.dependent,
+	]) {
+		growTier(layout, tier);
+	}
+}
+
 /**
  * Places the required paths and the touch files' signatures. When the bare
- * paths overflow the budget, touch-file signatures go in before the other
- * required paths, which then drop lowest rank first.
+ * paths overflow the budget, each touch file's first signature goes in
+ * before the other required paths, which then drop lowest rank first; the
+ * rest of the touch signatures grow after them, so a large touch set's
+ * export lists never crowd out every neighbour.
  */
 function placeRequired(
 	required: readonly SliceFile[],
 	budget: number,
-): BudgetedLayout {
+): { readonly layout: BudgetedLayout; readonly overflowed: boolean } {
 	const touch = required.filter(isTouchFile);
 	const others = required.filter((file) => !isTouchFile(file));
 	const layout = new BudgetedLayout(budget);
 	if (includeInOrder(layout, [...touch, ...others])) {
 		growTier(layout, EXPORT_TIER.touch);
-		return layout;
+		return { layout, overflowed: false };
 	}
 	const overflow = new BudgetedLayout(budget);
-	const touchKept = includeInOrder(overflow, touch);
+	if (includeInOrder(overflow, touch) && growFirstSignatures(overflow))
+		includeInOrder(overflow, others);
 	growTier(overflow, EXPORT_TIER.touch);
-	if (touchKept) includeInOrder(overflow, others);
-	return overflow;
+	return { layout: overflow, overflowed: true };
+}
+
+function touchFilesFull(layout: BudgetedLayout): boolean {
+	return layout.placements.every(
+		(placement) => !isTouchFile(placement.file) || isFull(placement),
+	);
+}
+
+/** Gives every placed file its first signature in order until one does not fit; reports whether all did. */
+function growFirstSignatures(layout: BudgetedLayout): boolean {
+	return layout.placements.every(
+		(placement, position) =>
+			placement.cap > 0 || isFull(placement) || layout.tryGrow(position),
+	);
 }
 
 /** Placements in render order with their rendered size tracked against the budget. */

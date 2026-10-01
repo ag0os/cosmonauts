@@ -33,6 +33,12 @@ export interface ProjectAnalysisConfig {
 	readonly provider?: string;
 }
 
+/** Optional lean-domain settings from `.cosmonauts/config.json`. */
+export interface ProjectLeanConfig {
+	/** Token budget for the builder context pack's repo-map slice (default 1,500). */
+	readonly repoMapBudgetTokens?: number;
+}
+
 /** Project-only, off-by-default knowledge-surface gate. */
 export interface ProjectKnowledgeSurfaceConfig {
 	readonly enabled?: boolean;
@@ -80,4 +86,6 @@ export interface ProjectConfig {
 	/** Project-only knowledge surface. Only literal true enables it. */
 	readonly knowledgeSurface?: ProjectKnowledgeSurfaceConfig;
 	readonly qualityReview?: ProjectQualityReviewConfig;
+	/** Optional lean-domain settings. */
+	readonly lean?: ProjectLeanConfig;
 }

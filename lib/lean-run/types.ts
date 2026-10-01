@@ -127,6 +127,22 @@ export type ReviewWorkspaceKind = (typeof REVIEW_WORKSPACE_KINDS)[number];
 export const RUN_STATUSES = ["running", "done", "blocked", "failed"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
+export type GraphRefreshOutcome = "current" | "regenerated" | "unavailable";
+
+/** When the host checked graph.json: at run start, or before a provider pass. */
+export type GraphRefreshPoint = "start" | `pass-${number}`;
+
+/** One graph.json freshness check and what the host did about it. */
+export interface GraphRefreshRecord {
+	at: GraphRefreshPoint;
+	outcome: GraphRefreshOutcome;
+	/** `missing`, `stale` or `corrupt: …` when regenerated; why, when unavailable. */
+	reason?: string;
+}
+
+/** Where the builder prompt came from: the caller, the host's context pack, or the plan alone. */
+export type ContextPackSource = "supplied" | "built" | "plan-only";
+
 export interface RunManifest {
 	id: string;
 	/** HEAD when the run started. */
@@ -148,6 +164,9 @@ export interface RunManifest {
 	/** Cumulative tokens reported by backend stages. */
 	tokensUsed?: number;
 	warnings?: string[];
+	/** Every graph.json check, in order: at run start and before each provider pass. */
+	graph?: GraphRefreshRecord[];
+	contextPack?: ContextPackSource;
 }
 
 export interface SignalPass {

@@ -14,6 +14,7 @@ import type {
 	ProjectConfig,
 	ProjectEpisodicLogConfig,
 	ProjectKnowledgeSurfaceConfig,
+	ProjectLeanConfig,
 } from "./types.ts";
 
 export const EPISODE_WARNING_THRESHOLD_DEFAULT = 500;
@@ -109,6 +110,7 @@ export async function loadProjectConfig(
 		analysis?: ProjectConfig["analysis"];
 		knowledgeSurface?: ProjectConfig["knowledgeSurface"];
 		qualityReview?: ProjectConfig["qualityReview"];
+		lean?: ProjectConfig["lean"];
 	} = {};
 
 	if (typeof obj.domain === "string") {
@@ -186,6 +188,9 @@ export async function loadProjectConfig(
 	}
 	if ("qualityReview" in obj) {
 		config.qualityReview = parseQualityReviewConfig(obj.qualityReview);
+	}
+	if ("lean" in obj) {
+		config.lean = parseLeanConfig(obj.lean);
 	}
 
 	return config;
@@ -385,6 +390,26 @@ function parseKnowledgeSurfaceConfig(
 		return {};
 	}
 	return { enabled: obj.enabled };
+}
+
+function parseLeanConfig(value: unknown): ProjectLeanConfig | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		console.error(
+			`[warning] Skipping malformed lean: expected an object, got ${formatConfigValue(value)}.`,
+		);
+		return undefined;
+	}
+
+	const obj = value as Record<string, unknown>;
+	if (!("repoMapBudgetTokens" in obj)) return {};
+	const budget = obj.repoMapBudgetTokens;
+	if (typeof budget !== "number" || !positiveInteger(budget)) {
+		console.error(
+			`[warning] Skipping malformed lean.repoMapBudgetTokens: expected a positive integer, got ${formatConfigValue(budget)}.`,
+		);
+		return {};
+	}
+	return { repoMapBudgetTokens: budget };
 }
 
 export function resolveEpisodicLogConfig(

@@ -8,7 +8,16 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+	DEFAULT_SLICE_BUDGET_TOKENS,
+	type FileGraph,
+} from "../../lib/architecture-map/index.ts";
 import { readRunBaseSha } from "../../lib/lean-run/base-sha.ts";
+import { buildContextPack } from "../../lib/lean-run/context-pack.ts";
+import type {
+	FileGraphRefresh,
+	RefreshFileGraph,
+} from "../../lib/lean-run/graph-refresh.ts";
 import { loadRunRecord } from "../../lib/lean-run/record.ts";
 import {
 	type RunBuildOptions,
@@ -116,6 +125,46 @@ const FAILING: Partial<Signal> = {
 
 const never = (): Promise<never> => new Promise<never>(() => {});
 
+const GREET_SIGNATURE = "const greet: string";
+
+/** The fixture repo's file graph, as the generator would write it. */
+const GRAPH: FileGraph = {
+	schemaVersion: 1,
+	projectHash: "project",
+	graphHash: "graph",
+	nodes: [
+		{
+			path: "src/greet.ts",
+			kind: "source",
+			exports: [{ name: "greet", kind: "const", signature: GREET_SIGNATURE }],
+		},
+	],
+	edges: [],
+};
+
+const CURRENT: FileGraphRefresh = { outcome: "current", graph: GRAPH };
+
+type RefreshResult =
+	| FileGraphRefresh
+	| Error
+	| ((projectRoot: string) => Promise<FileGraphRefresh>);
+
+interface StubRefresh extends RefreshFileGraph {
+	calls: string[];
+}
+
+/** Stands in for the architecture-map generator, which no run-build test runs. */
+function stubRefresh(results: RefreshResult[] = [CURRENT]): StubRefresh {
+	const calls: string[] = [];
+	const refresh = async ({ projectRoot }: { readonly projectRoot: string }) => {
+		calls.push(projectRoot);
+		const result = results[calls.length - 1] ?? results.at(-1) ?? CURRENT;
+		if (result instanceof Error) throw result;
+		return typeof result === "function" ? result(projectRoot) : result;
+	};
+	return Object.assign(refresh, { calls });
+}
+
 let root: string;
 const extraDirs: string[] = [];
 
@@ -173,6 +222,7 @@ function build(
 		backend: builder,
 		reviewerBackend: reviewer ?? stubBackend([REVIEW]),
 		providers: providers ?? [stubProvider([{}])],
+		refreshGraph: stubRefresh(),
 		...rest,
 	});
 }
@@ -288,11 +338,246 @@ describe("runBuild on clean output", () => {
 		expect(builder.calls[0]?.prompt).toContain("## Approach\nAdd a greeting.");
 		expect(builder.calls[0]?.prompt).toContain("End with the lean envelope");
 	});
+});
 
-	test("sends a supplied context pack verbatim", async () => {
+/** What follows a context pack in the builder prompt: one paragraph, the envelope instruction. */
+const ENVELOPE_TAIL = /^End with the lean envelope: [^\n]+$/u;
+
+function afterPack(prompt: string | undefined, pack: string): string {
+	expect(prompt?.startsWith(`${pack}\n\n`), prompt).toBe(true);
+	return prompt?.slice(pack.length + 2) ?? "";
+}
+
+describe("runBuild context pack", () => {
+	test("sends a supplied context pack verbatim, followed only by the envelope instruction", async () => {
 		const builder = stubBackend([DONE]);
-		await build({ builder, contextPack: "PACK" });
-		expect(builder.calls[0]?.prompt).toBe("PACK");
+		const record = await build({ builder, contextPack: "PACK" });
+
+		expect(afterPack(builder.calls[0]?.prompt, "PACK")).toMatch(ENVELOPE_TAIL);
+		expect(record.manifest.contextPack).toBe("supplied");
+	});
+
+	test("builds the context pack from the plan, the repo map and the conventions by default", async () => {
+		await writeFile(join(root, "AGENTS.md"), "# Conventions\n\nUse tabs.\n");
+		const builder = stubBackend([DONE]);
+		const pack = await buildContextPack({
+			planSection: PLAN,
+			touches: ["src/greet.ts"],
+			reuses: [],
+			graph: GRAPH,
+			budget: DEFAULT_SLICE_BUDGET_TOKENS,
+			projectRoot: root,
+		});
+
+		const record = await build({ builder });
+
+		expect(pack).toContain(
+			`# Repo map\n\nsrc/greet.ts [touch]\n  ${GREET_SIGNATURE}`,
+		);
+		expect(pack).toContain("# Repository conventions (AGENTS.md)");
+		expect(afterPack(builder.calls[0]?.prompt, pack.trimEnd())).toMatch(
+			ENVELOPE_TAIL,
+		);
+		expect(record.manifest.contextPack).toBe("built");
+	});
+
+	test("takes the repo-map budget from the project config", async () => {
+		await mkdir(join(root, ".cosmonauts"));
+		await writeFile(
+			join(root, ".cosmonauts/config.json"),
+			JSON.stringify({ lean: { repoMapBudgetTokens: 8 } }),
+		);
+		const builder = stubBackend([DONE]);
+
+		await build({ builder });
+
+		expect(builder.calls[0]?.prompt).toContain(
+			"# Repo map\n\nsrc/greet.ts [touch]\n  … 1 more",
+		);
+		expect(builder.calls[0]?.prompt).not.toContain(GREET_SIGNATURE);
+	});
+
+	test("sends the plan alone with a warning when no file graph can be produced", async () => {
+		const builder = stubBackend([DONE]);
+		const record = await build({
+			builder,
+			refreshGraph: stubRefresh([
+				{ outcome: "unavailable", reason: "not a TypeScript project" },
+			]),
+		});
+
+		expect(builder.calls[0]?.prompt).toMatch(
+			/^Implement this plan\.\n\n# Demo\n/u,
+		);
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			contextPack: "plan-only",
+			warnings: [
+				"context pack: the builder got the plan alone; graph.json unavailable: not a TypeScript project",
+			],
+		});
+	});
+
+	test("sends the plan alone with a warning when the context pack cannot be built", async () => {
+		await writeFile(join(root, "package.json"), "{ not json");
+		const builder = stubBackend([DONE]);
+
+		const record = await build({ builder });
+
+		expect(builder.calls[0]?.prompt).toMatch(/^Implement this plan\./u);
+		expect(record.manifest.status).toBe("done");
+		expect(record.manifest.contextPack).toBe("plan-only");
+		expect(record.manifest.warnings?.[0]).toMatch(
+			/^context pack: the builder got the plan alone; .*JSON/u,
+		);
+	});
+});
+
+describe("runBuild file graph refresh", () => {
+	const regenerated = (
+		cause: "missing" | "stale" | "corrupt",
+		detail?: string,
+	): FileGraphRefresh => ({
+		outcome: "regenerated",
+		cause,
+		...(detail === undefined ? {} : { detail }),
+		graph: GRAPH,
+	});
+
+	test("checks graph.json at run start and before each provider pass", async () => {
+		const refreshGraph = stubRefresh([
+			regenerated("missing"),
+			regenerated("stale"),
+			CURRENT,
+		]);
+		const record = await build({
+			builder: stubBackend([DONE, DONE]),
+			providers: [stubProvider([FAILING, {}])],
+			refreshGraph,
+		});
+
+		expect(refreshGraph.calls).toEqual([root, root, root]);
+		expect(record.manifest.graph).toEqual([
+			{ at: "start", outcome: "regenerated", reason: "missing" },
+			{ at: "pass-1", outcome: "regenerated", reason: "stale" },
+			{ at: "pass-2", outcome: "current" },
+		]);
+		expect(await onDisk(record)).toEqual(record);
+	});
+
+	test("refreshes the graph after the builder returns and before the providers run", async () => {
+		const order: string[] = [];
+		const provider = stubProvider([{}]);
+		await build({
+			builder: stubBackend([
+				() => {
+					order.push("builder");
+					return DONE;
+				},
+			]),
+			providers: [
+				{
+					kind: "verify",
+					run: (context) => {
+						order.push("provider");
+						return provider.run(context);
+					},
+				},
+			],
+			refreshGraph: stubRefresh([
+				async () => {
+					order.push("refresh");
+					return CURRENT;
+				},
+			]),
+		});
+
+		expect(order).toEqual(["refresh", "builder", "refresh", "provider"]);
+	});
+
+	test("records a corrupt graph.json's load error as the regeneration reason", async () => {
+		const record = await build({
+			builder: stubBackend([DONE]),
+			refreshGraph: stubRefresh([
+				regenerated("corrupt", "Unrecognized file graph format"),
+				CURRENT,
+			]),
+		});
+
+		expect(record.manifest.graph?.[0]).toEqual({
+			at: "start",
+			outcome: "regenerated",
+			reason: "corrupt: Unrecognized file graph format",
+		});
+		expect(record.manifest.contextPack).toBe("built");
+	});
+
+	test("records the graph unavailable and finishes the run when the refresher throws", async () => {
+		const record = await build({
+			builder: stubBackend([DONE]),
+			refreshGraph: stubRefresh([new Error("generator crashed")]),
+		});
+
+		expect(record.manifest.graph).toEqual([
+			{ at: "start", outcome: "unavailable", reason: "generator crashed" },
+			{ at: "pass-1", outcome: "unavailable", reason: "generator crashed" },
+		]);
+		expect(record.manifest.status).toBe("done");
+	});
+
+	test("leaves the regenerated architecture map out of the builder's changed files", async () => {
+		const provider = stubProvider([{}]);
+		const reviewer = stubBackend([REVIEW]);
+		const record = await build({
+			builder: stubBackend([editGreet(DONE)]),
+			reviewer,
+			providers: [provider],
+			refreshGraph: stubRefresh([
+				async (projectRoot) => {
+					const dir = join(projectRoot, "memory/architecture");
+					await mkdir(dir, { recursive: true });
+					await writeFile(join(dir, "graph.json"), `${Date.now()}\n`);
+					await writeFile(join(dir, "index.md"), `${Math.random()}\n`);
+					return regenerated("stale");
+				},
+			]),
+		});
+
+		expect(record.manifest.status).toBe("done");
+		expect(provider.contexts[0]?.changedFiles).toEqual(["src/greet.ts"]);
+		expect(reviewer.calls[0]?.prompt).not.toContain("memory/architecture");
+	});
+
+	test("skips the pass check when no providers are configured", async () => {
+		const refreshGraph = stubRefresh();
+
+		const record = await build({
+			builder: stubBackend([DONE]),
+			providers: [],
+			refreshGraph,
+		});
+
+		expect(refreshGraph.calls).toHaveLength(1);
+		expect(record.manifest.graph?.map((check) => check.at)).toEqual(["start"]);
+	});
+
+	test("fails at the graph refresh when the run is aborted during it", async () => {
+		const controller = new AbortController();
+		const builder = stubBackend([DONE]);
+
+		const record = await build({
+			builder,
+			signal: controller.signal,
+			refreshGraph: stubRefresh([
+				() => {
+					controller.abort();
+					return never();
+				},
+			]),
+		});
+
+		expect(record.manifest.reason).toBe("aborted at graph refresh (start)");
+		expect(builder.calls).toHaveLength(0);
 	});
 });
 
@@ -407,6 +692,7 @@ describe("runBuild review workspace", () => {
 			]),
 			reviewerBackend: reviewer,
 			providers: [stubProvider([{}])],
+			refreshGraph: stubRefresh(),
 		});
 		expect(record.manifest).toMatchObject({
 			status: "done",
@@ -735,6 +1021,7 @@ describe("runBuild stage failures", () => {
 			backend: builder,
 			reviewerBackend: stubBackend([REVIEW]),
 			providers: [],
+			refreshGraph: stubRefresh(),
 		});
 		expect(record.manifest.reason).toBe(
 			"builder-1: backend error: model unavailable",

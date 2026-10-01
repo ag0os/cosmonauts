@@ -6,16 +6,20 @@ const BUILDER_ENVELOPE_INSTRUCTION =
 const REVIEWER_ENVELOPE_INSTRUCTION =
 	'End with the lean envelope: one JSON line as your last non-empty line, with "outcome" ("done", "blocked" or "failed"), a one-sentence "summary", your "findings" (id, severity, file, summary, fix), and a "reason" when you are not done.';
 
+/**
+ * The context pack verbatim, or the plan alone without one, with the
+ * envelope instruction always the last paragraph (once, even when a
+ * supplied pack already ends with it).
+ */
 export function builderPrompt(options: {
 	plan: ParsedPlan;
 	contextPack?: string;
 }): string {
-	if (options.contextPack !== undefined) return options.contextPack;
-	return [
-		"Implement this plan.",
-		options.plan.raw.trim(),
-		BUILDER_ENVELOPE_INSTRUCTION,
-	].join("\n\n");
+	const body =
+		options.contextPack?.trimEnd() ??
+		["Implement this plan.", options.plan.raw.trim()].join("\n\n");
+	if (body.endsWith(BUILDER_ENVELOPE_INSTRUCTION)) return body;
+	return [body, BUILDER_ENVELOPE_INSTRUCTION].filter(Boolean).join("\n\n");
 }
 
 export function reentryPrompt(
