@@ -174,14 +174,17 @@ async function seedIndex(options: GitOptions, target: string): Promise<void> {
 		await git(["rev-parse", "--git-path", "index"], options)
 	).trim();
 	const source = resolve(options.cwd, path);
+	// Stat first: an index rewritten between the two calls then leaves an
+	// older mtime on the copy, which only makes git recheck more entries.
+	let times: { atime: Date; mtime: Date };
 	try {
+		times = await stat(source);
 		await copyFile(source, target);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
 		throw error;
 	}
-	const { atime, mtime } = await stat(source);
-	await utimes(target, atime, mtime);
+	await utimes(target, times.atime, times.mtime);
 }
 
 /** The merge-base of HEAD and `ref`; undefined when `ref` does not exist or shares no history. */

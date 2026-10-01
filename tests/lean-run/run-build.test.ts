@@ -821,7 +821,7 @@ describe("runBuild re-entry", () => {
 					stage: "builder-2",
 					pass: 1,
 					kinds: ["verify"],
-					reason: "pass 1: verify failing for the first time",
+					reason: "pass 1: verify failing",
 				},
 			],
 			reason: "re-entry signals still failing after one re-entry: verify",
@@ -865,13 +865,13 @@ describe("runBuild re-entry", () => {
 					stage: "builder-2",
 					pass: 1,
 					kinds: ["verify"],
-					reason: "pass 1: verify failing for the first time",
+					reason: "pass 1: verify failing",
 				},
 				{
 					stage: "builder-3",
 					pass: 2,
 					kinds: ["mutation"],
-					reason: "pass 2: mutation failing for the first time",
+					reason: "pass 2: mutation failing, and did not run in pass 1",
 				},
 			],
 		});
@@ -894,7 +894,8 @@ describe("runBuild re-entry", () => {
 		expect(record.manifest).toMatchObject({
 			status: "blocked",
 			reentries: 2,
-			reason: "re-entry signals still failing after two re-entries: mutation",
+			reason:
+				"re-entry signals still failing after one re-entry each: mutation",
 		});
 	});
 
@@ -913,6 +914,49 @@ describe("runBuild re-entry", () => {
 			status: "blocked",
 			reentries: 1,
 			reason: "re-entry signals still failing after one re-entry: mutation",
+		});
+	});
+
+	test("gives no second re-entry to a kind that ran and passed in the pass before", async () => {
+		const builder = stubBackend([DONE]);
+		const reviewer = stubBackend([REVIEW]);
+		const record = await build({
+			builder,
+			reviewer,
+			providers: [
+				stubProvider([{}, FAILING]),
+				stubProvider(
+					[{ status: "fail", reenter: true }, SKIPPED_MUTATION],
+					"mutation",
+				),
+			],
+		});
+
+		expect(builder.calls).toHaveLength(2);
+		expect(reviewer.calls).toHaveLength(1);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reentries: 1,
+			reason: "re-entry signals still failing after one re-entry: verify",
+		});
+	});
+
+	test("never sends a kind back twice, whatever the provider order", async () => {
+		const builder = stubBackend([DONE]);
+		const record = await build({
+			builder,
+			providers: [
+				stubProvider([{}, { status: "fail", reenter: true }], "mutation"),
+				stubProvider([FAILING]),
+			],
+		});
+
+		expect(builder.calls).toHaveLength(2);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reentries: 1,
+			reason:
+				"re-entry signals still failing after one re-entry: mutation, verify",
 		});
 	});
 

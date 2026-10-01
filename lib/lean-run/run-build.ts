@@ -632,22 +632,20 @@ async function executeRun(run: Run): Promise<void> {
 }
 
 /**
- * builder-1 and its pass, then the D-4 re-entries, each with its pass. Each
- * signal kind gets one re-entry: a pass whose failing signals include a kind
- * no builder has been sent yet re-enters with all of them, so a signal that
- * first fails in pass 2 (mutation skipped while verify failed) still reaches
- * a builder. A pass whose failing kinds all re-entered already ends the loop.
+ * builder-1 and its pass, then the D-4 re-entry with its pass. A second
+ * re-entry follows only when every signal failing in pass 2 is a kind that
+ * did not run in pass 1 (mutation is skipped while verify fails), so that
+ * result reaches a builder; a kind that ran in pass 1 and fails now goes to
+ * the reviewer instead. Every kind behind the first re-entry ran in pass 1,
+ * so no kind re-enters twice, whatever the provider order.
  */
 async function buildAndVerify(run: Run): Promise<Verified | undefined> {
 	let builder = await runBuilder(run, "builder-1", run.basePrompt);
 	let failing = builder && (await checkPass(run, builder));
-	const reentered = new Set<SignalKind>();
 	for (const stage of REENTRY_STAGES) {
 		if (!builder || !failing) return undefined;
-		if (failing.every((signal) => reentered.has(signal.kind)))
-			return { builder, remaining: failing };
-		await recordReentry(run, { stage, failing, reentered });
-		for (const signal of failing) reentered.add(signal.kind);
+		if (!earnsReentry(run, failing)) return { builder, remaining: failing };
+		await recordReentry(run, { stage, failing });
 		const prompt = reentryPrompt(run.basePrompt, failing);
 		builder = await runBuilder(run, stage, prompt);
 		failing = builder && (await checkPass(run, builder));
@@ -655,26 +653,43 @@ async function buildAndVerify(run: Run): Promise<Verified | undefined> {
 	return builder && failing ? { builder, remaining: failing } : undefined;
 }
 
+/** The first failing pass re-enters; a later one only when no failing kind ran in the pass before. */
+function earnsReentry(run: Run, failing: readonly Signal[]): boolean {
+	if (failing.length === 0) return false;
+	if (run.record.manifest.reentries === 0) return true;
+	const previous = run.record.facts.passes.at(-2)?.signals ?? [];
+	return failing.every((signal) => !ranIn(previous, signal.kind));
+}
+
+/** Whether a provider of `kind` ran in a pass: it produced a signal not marked `data.skipped`. */
+function ranIn(signals: readonly Signal[], kind: SignalKind): boolean {
+	return signals.some(
+		(signal) => signal.kind === kind && !dataFlag(signal, "skipped"),
+	);
+}
+
+function dataFlag(signal: Signal, key: string): boolean {
+	const { data } = signal;
+	return (
+		typeof data === "object" &&
+		data !== null &&
+		key in data &&
+		(data as Record<string, unknown>)[key] === true
+	);
+}
+
 /** Counts a signal re-entry in `run.json` with the pass and the kinds behind it. */
 async function recordReentry(
 	run: Run,
-	options: {
-		stage: SignalReentry["stage"];
-		failing: readonly Signal[];
-		reentered: ReadonlySet<SignalKind>;
-	},
+	options: { stage: SignalReentry["stage"]; failing: readonly Signal[] },
 ): Promise<void> {
 	const { manifest, facts } = run.record;
 	const pass = facts.passes.length;
 	const kinds = [...new Set(options.failing.map((signal) => signal.kind))];
-	const fresh = kinds.filter((kind) => !options.reentered.has(kind));
-	const again = kinds.filter((kind) => options.reentered.has(kind));
-	const reason = [
-		`pass ${pass}: ${fresh.join(", ")} failing for the first time`,
-		...(again.length > 0
-			? [`${again.join(", ")} still failing after its re-entry`]
-			: []),
-	].join("; ");
+	const reason =
+		manifest.reentries === 0
+			? `pass ${pass}: ${kinds.join(", ")} failing`
+			: `pass ${pass}: ${kinds.join(", ")} failing, and did not run in pass ${pass - 1}`;
 	manifest.reentries += 1;
 	manifest.reentryReasons = [
 		...(manifest.reentryReasons ?? []),
@@ -1027,10 +1042,11 @@ async function conclude(
 		: finish(run, "done");
 }
 
+/** No kind re-enters twice, so after two re-entries each failing kind had one. */
 function gapAfterReentry(run: Run, verified: Verified): string | undefined {
 	const after =
 		run.record.manifest.reentries > 1
-			? "after two re-entries"
+			? "after one re-entry each"
 			: "after one re-entry";
 	return verificationGap(run, verified.remaining, after);
 }
@@ -1058,13 +1074,9 @@ function verificationGap(
 }
 
 function verifyState(signal: Signal): string {
-	const data = signal.data;
-	const unverified =
-		typeof data === "object" &&
-		data !== null &&
-		"unverified" in data &&
-		data.unverified === true;
-	return unverified ? `${signal.status}, unverified` : signal.status;
+	return dataFlag(signal, "unverified")
+		? `${signal.status}, unverified`
+		: signal.status;
 }
 
 /**
