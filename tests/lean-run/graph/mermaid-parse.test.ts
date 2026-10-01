@@ -11,6 +11,11 @@ import {
 	type ChangeDiagramOptions,
 	renderChangeDiagram,
 } from "../../../lib/lean-run/graph/mermaid.ts";
+import {
+	labelCaseOptions,
+	RESTYLED_LABEL_CASES,
+	WORD_LABEL_CASE,
+} from "./mermaid-label-cases.ts";
 
 const SAMPLE: ChangeDiagramOptions = {
 	planned: ["lib/a.ts", "lib/new.ts"],
@@ -61,13 +66,13 @@ const DIAGRAMS: readonly (readonly [name: string, text: string])[] = [
 			planDiagram: "---\ntitle: P\n---\nflowchart TD\n  A[lib/a.ts]",
 		}),
 	],
-	[
-		"a restyled plan diagram with an annotated label",
-		renderChangeDiagram({
-			...LABEL_CASE,
-			planDiagram: 'flowchart TD\n  A["lib/a.ts (the parser)"] --> B[lib/b.ts]',
-		}),
-	],
+	...[...RESTYLED_LABEL_CASES, WORD_LABEL_CASE].map(
+		(labelCase) =>
+			[
+				`a restyled plan diagram with ${labelCase.name}`,
+				renderChangeDiagram(labelCaseOptions(labelCase)),
+			] as const,
+	),
 ];
 
 beforeAll(() => {

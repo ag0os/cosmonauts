@@ -11,6 +11,8 @@ export type { BuildFileGraphOptions } from "./file-graph.ts";
 export {
 	buildFileGraph,
 	DEFAULT_FILE_GRAPH_TEST_ROOTS,
+	isTestFilePath,
+	TEST_FILE_PATTERN,
 } from "./file-graph.ts";
 export {
 	checkFileGraphFreshness,

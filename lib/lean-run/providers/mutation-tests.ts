@@ -24,6 +24,7 @@ export const DEFAULT_SANDBOX_UNSAFE_TESTS = [
 	"tests/lean-run/providers/mutation.test.ts",
 ] as const;
 
+/** Vitest's default include, wider than the architecture map's TypeScript-only rule. */
 const SPEC_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/u;
 /**
  * `git clone` or `git worktree add`, as a shell string or an argument list.

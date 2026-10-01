@@ -13,6 +13,7 @@ import {
 	dependentsOf,
 	type FileGraph,
 	generateArchitectureMap,
+	isTestFilePath,
 	loadFileGraph,
 	resolveArchitectureMapConfig,
 	typescriptSourceAnalyzer,
@@ -22,6 +23,16 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("architecture-map-file-graph-");
 
 const TARGET = "lib/driver/run-one-task.ts";
+
+describe("isTestFilePath", () => {
+	test.each(["tests/a.test.ts", "lib/b.spec.tsx"])("accepts %s", (path) => {
+		expect(isTestFilePath(path)).toBe(true);
+	});
+
+	test.each(["tests/helpers/fs.ts", "lib/a.ts"])("rejects %s", (path) => {
+		expect(isTestFilePath(path)).toBe(false);
+	});
+});
 
 const CONFIG_OVERRIDES = {
 	sourceRoots: ["lib", "cli"],

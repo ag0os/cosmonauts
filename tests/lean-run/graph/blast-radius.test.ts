@@ -7,8 +7,13 @@
 
 import { describe, expect, test } from "vitest";
 import {
+	isTestFilePath,
+	TEST_FILE_PATTERN,
+} from "../../../lib/architecture-map/index.ts";
+import {
 	blastRadius,
 	isSpecFile,
+	SPEC_FILE_PATTERN,
 } from "../../../lib/lean-run/graph/blast-radius.ts";
 import { fixtureGraph, LAYERED_GRAPH } from "./fixtures.ts";
 
@@ -208,6 +213,11 @@ describe("blastRadius", () => {
 });
 
 describe("isSpecFile", () => {
+	test("is the architecture map's test-file rule, not a copy of it", () => {
+		expect(isSpecFile).toBe(isTestFilePath);
+		expect(SPEC_FILE_PATTERN).toBe(TEST_FILE_PATTERN);
+	});
+
 	test.each([
 		"tests/a.test.ts",
 		"tests/b.spec.ts",

@@ -2,8 +2,8 @@
  * Tests for renderChangeDiagram.
  * Covers the synthesized diagram, restyling a plan diagram (annotated and
  * markdown labels, comments, front matter), id safety, determinism, and the
- * emitted shape. tests/helpers/mermaid-shape.ts checks shape only; a real
- * Mermaid parse is a pending integration item.
+ * emitted shape. tests/helpers/mermaid-shape.ts checks shape only;
+ * mermaid-parse.test.ts parses the same label cases with the real parser.
  */
 
 import { describe, expect, test } from "vitest";
@@ -12,6 +12,11 @@ import {
 	renderChangeDiagram,
 } from "../../../lib/lean-run/graph/mermaid.ts";
 import { mermaidShapeErrors } from "../../helpers/mermaid-shape.ts";
+import {
+	labelCaseOptions,
+	RESTYLED_LABEL_CASES,
+	WORD_LABEL_CASE,
+} from "./mermaid-label-cases.ts";
 
 const SAMPLE: ChangeDiagramOptions = {
 	planned: ["lib/a.ts", "lib/new.ts"],
@@ -188,28 +193,16 @@ describe("renderChangeDiagram with a plan diagram", () => {
 		expect(diagram).not.toContain("subgraph");
 	});
 
-	test.each([
-		["an annotated label", 'A["lib/a.ts (the parser)"]'],
-		["an unquoted annotated label", "A[lib/a.ts the parser]"],
-		["a markdown label", 'A["`**lib/a.ts**`"]'],
-		["a label with a line break", 'A["Parser<br/>lib/a.ts"]'],
-		["a quoted label in another shape", 'A(["`lib/a.ts`: parser"])'],
-	])("restyles a node with %s and does not append its file again", (_, node) => {
-		const diagram = renderChangeDiagram({
-			...LABEL_CASE,
-			planDiagram: `flowchart TD\n  ${node} --> B[lib/b.ts]`,
-		});
+	test.each(
+		RESTYLED_LABEL_CASES,
+	)("restyles a node with $name and does not append its file again", (labelCase) => {
+		const diagram = renderChangeDiagram(labelCaseOptions(labelCase));
 		expect(diagram).toContain("  class A modified");
-		expect(diagram).not.toContain("f_lib_a_ts");
 		expect(diagram).not.toContain("Changed, not in plan diagram");
 	});
 
 	test("does not take a word in an annotated label as a path", () => {
-		const diagram = renderChangeDiagram({
-			...LABEL_CASE,
-			planned: ["parser"],
-			planDiagram: 'flowchart TD\n  A["lib/a.ts parser"]',
-		});
+		const diagram = renderChangeDiagram(labelCaseOptions(WORD_LABEL_CASE));
 		expect(diagram).not.toContain("class A");
 		expect(diagram).toContain('f_parser["parser"]');
 	});

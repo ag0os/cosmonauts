@@ -346,14 +346,16 @@ function planNodes(lines: readonly string[]): PlanNode[] {
 /**
  * The path-like tokens of a label once HTML tags, entities and markdown
  * markers are removed. A label of a single token is taken whole, so a bare
- * directory such as `lib` still names one.
+ * directory such as `lib` still names one. Tokens are judged path-like as
+ * written, before normalizing drops a trailing `/` or turns `\` into `/`.
  */
 function labelPaths(label: string): string[] {
 	const text = label.replace(/<[^>]*>/g, " ").replace(/#\w+;/g, " ");
-	const tokens = normalizeRepoPaths(
-		text.split(LABEL_SEPARATORS).map(stripTokenPunctuation),
-	);
-	return tokens.length === 1 ? tokens : tokens.filter(isPathLike);
+	const tokens = text.split(LABEL_SEPARATORS).map(stripTokenPunctuation);
+	const named = normalizeRepoPaths(tokens);
+	return named.length === 1
+		? named
+		: normalizeRepoPaths(tokens.filter(isPathLike));
 }
 
 function stripTokenPunctuation(token: string): string {
@@ -361,7 +363,7 @@ function stripTokenPunctuation(token: string): string {
 }
 
 function isPathLike(token: string): boolean {
-	return token.includes("/") || token.includes(".");
+	return /[/\\.]/.test(token);
 }
 
 /** One class per node: the single change class of what it covers, `modified` when mixed. */

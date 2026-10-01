@@ -2,6 +2,8 @@ import {
 	dependentsOf,
 	type FileGraph,
 	type FileGraphNodeKind,
+	isTestFilePath,
+	TEST_FILE_PATTERN,
 } from "../../architecture-map/index.ts";
 import type { ChangedFunction } from "../../code-health/changed-functions.ts";
 import { compareStrings, normalizeRepoPaths } from "./paths.ts";
@@ -9,12 +11,9 @@ import { compareStrings, normalizeRepoPaths } from "./paths.ts";
 export const DEFAULT_MAX_DEPENDENTS = 200;
 export const DEFAULT_HUB_THRESHOLD = 25;
 
-/** A runnable spec file; other files under the test roots are helpers. */
-export const SPEC_FILE_PATTERN = /\.(test|spec)\.tsx?$/u;
-
-export function isSpecFile(path: string): boolean {
-	return SPEC_FILE_PATTERN.test(path);
-}
+/** The architecture map's test-file rule, under the names this module's importers use. */
+export const SPEC_FILE_PATTERN = TEST_FILE_PATTERN;
+export const isSpecFile = isTestFilePath;
 
 export interface BlastRadiusOptions {
 	readonly graph: FileGraph;

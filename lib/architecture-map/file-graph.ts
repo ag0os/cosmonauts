@@ -19,7 +19,12 @@ import {
 /** Test roots scanned by the file-graph pass only; the module analyzer never sees them. */
 export const DEFAULT_FILE_GRAPH_TEST_ROOTS = ["tests"] as const;
 
-const TEST_FILE_PATTERN = /\.(test|spec)\.tsx?$/u;
+/** A runnable spec file; other files under the test roots are helpers. */
+export const TEST_FILE_PATTERN = /\.(test|spec)\.tsx?$/u;
+
+export function isTestFilePath(path: string): boolean {
+	return TEST_FILE_PATTERN.test(path);
+}
 
 export interface BuildFileGraphOptions {
 	readonly projectRoot: string;
@@ -94,7 +99,7 @@ function classifyNodes(
 	for (const file of sourceFiles) {
 		kinds.set(
 			file.path,
-			TEST_FILE_PATTERN.test(basename(file.path)) ? "test" : "source",
+			isTestFilePath(basename(file.path)) ? "test" : "source",
 		);
 	}
 	for (const file of testFiles) kinds.set(file.path, "test");
