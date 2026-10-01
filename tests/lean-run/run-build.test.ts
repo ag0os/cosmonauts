@@ -1306,6 +1306,69 @@ describe("runBuild re-entry", () => {
 		expect(builder.calls).toHaveLength(2);
 	});
 
+	test("re-enters once on failing blast-radius tests, then ends blocked naming them", async () => {
+		const builder = stubBackend([DONE]);
+		const reviewer = stubBackend([REVIEW]);
+		const blastTests = stubProvider(
+			[{ status: "fail", summary: "tier 1 failed (exit 1)", reenter: true }],
+			"blast-tests",
+		);
+		const record = await build({
+			builder,
+			reviewer,
+			providers: [stubProvider([{}]), blastTests],
+		});
+
+		expect(builder.calls).toHaveLength(2);
+		expect(builder.calls[1]?.prompt).toContain(
+			"### blast-tests (fail)\ntier 1 failed (exit 1)",
+		);
+		expect(reviewer.calls).toHaveLength(1);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reentries: 1,
+			reentryReasons: [
+				{
+					stage: "builder-2",
+					pass: 1,
+					kinds: ["blast-tests"],
+					reason: "pass 1: blast-tests failing",
+				},
+			],
+			reason: "re-entry signals still failing after one re-entry: blast-tests",
+		});
+	});
+
+	test("gives blast-radius tests that did not run in pass 1 their own re-entry", async () => {
+		const builder = stubBackend([DONE]);
+		const blastTests = stubProvider(
+			[
+				{ status: "info", data: { skipped: true } },
+				{ status: "fail", summary: "tier 1 failed", reenter: true },
+				{},
+			],
+			"blast-tests",
+		);
+		const record = await build({
+			builder,
+			providers: [stubProvider([FAILING, {}, {}]), blastTests],
+		});
+
+		expect(builder.calls).toHaveLength(3);
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			reentries: 2,
+			reentryReasons: [
+				{ stage: "builder-2", kinds: ["verify"] },
+				{
+					stage: "builder-3",
+					kinds: ["blast-tests"],
+					reason: "pass 2: blast-tests failing, and did not run in pass 1",
+				},
+			],
+		});
+	});
+
 	test("records but does not act on a re-entry request from another kind", async () => {
 		const builder = stubBackend([DONE]);
 		const health = stubProvider([{ status: "fail", reenter: true }], "health");
@@ -1320,7 +1383,7 @@ describe("runBuild re-entry", () => {
 		});
 		expect(record.manifest).toMatchObject({ status: "done", reentries: 0 });
 		expect(record.manifest.warnings).toEqual([
-			"pass 1: health asked to re-enter the builder; ruling D-4 lets only verify and mutation re-enter",
+			"pass 1: health asked to re-enter the builder; ruling D-4 lets only verify, blast-tests and mutation re-enter",
 		]);
 	});
 });
@@ -1422,7 +1485,7 @@ describe("runBuild budgets", () => {
 			builder: stubBackend([DONE]),
 			reviewer,
 			providers: [stubProvider([never])],
-			budget: { tokens: 1_000, timeMs: 2_000 },
+			budget: { tokens: 1_000_000, timeMs: 2_000 },
 		});
 		expect(record.manifest).toMatchObject({
 			status: "failed",
@@ -1431,19 +1494,86 @@ describe("runBuild budgets", () => {
 		expect(reviewer.calls).toHaveLength(0);
 	});
 
-	test("fails before the next stage once the token budget is spent", async () => {
+	test("fails right after the session that overran the token budget, before any provider runs", async () => {
 		const reviewer = stubBackend([REVIEW]);
+		const provider = stubProvider([{}]);
 		const record = await build({
 			builder: stubBackend([DONE]),
 			reviewer,
+			providers: [provider],
 			budget: { tokens: 100_000, timeMs: 60_000 },
 		});
 		expect(record.manifest).toMatchObject({
 			status: "failed",
 			reason:
-				"token budget exceeded at reviewer: 128000 of 100000 input and output tokens used",
+				"token budget exceeded at builder-1: 128000 of 100000 input and output tokens used",
 		});
+		expect(provider.contexts).toHaveLength(0);
+		expect(record.facts.passes).toEqual([]);
 		expect(reviewer.calls).toHaveLength(0);
+	});
+
+	test("fails right after a repair turn that overran the token budget", async () => {
+		const builder = stubBackend(["I changed things.", DONE]);
+		const provider = stubProvider([{}]);
+		const record = await build({
+			builder,
+			providers: [provider],
+			budget: { tokens: 200_000 },
+		});
+		expect(builder.calls).toHaveLength(2);
+		expect(record.manifest).toMatchObject({
+			status: "failed",
+			reason:
+				"token budget exceeded at builder-1 repair: 256000 of 200000 input and output tokens used",
+		});
+		expect(provider.contexts).toHaveLength(0);
+	});
+
+	test.each([
+		["the caller's token budget", { budget: { tokens: 1_000_000 } }, false],
+		["lean.budget.tokens in the project config", {}, true],
+	])("blocks when a backend reports no usage under %s", async (_name, options, fromConfig) => {
+		if (fromConfig) {
+			await mkdir(join(root, ".cosmonauts"));
+			await writeFile(
+				join(root, ".cosmonauts/config.json"),
+				JSON.stringify({ lean: { budget: { tokens: 1_000_000 } } }),
+			);
+		}
+		const provider = stubProvider([{}]);
+		const reviewer = stubBackend([REVIEW], "claude-cli", null);
+		const record = await build({
+			builder: stubBackend([DONE], "claude-cli", null),
+			reviewer,
+			providers: [provider],
+			...options,
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: "budget unenforceable (claude-cli reported no token usage)",
+		});
+		expect(provider.contexts).toHaveLength(0);
+		expect(reviewer.calls).toHaveLength(0);
+		expect(
+			record.manifest.warnings?.some((warning) =>
+				warning.startsWith("token budget not enforced"),
+			),
+		).toBe(false);
+	});
+
+	test("enforces a caller's token budget on an external backend that reports usage", async () => {
+		const record = await build({
+			builder: stubBackend([DONE], "codex-cli"),
+			reviewer: stubBackend([REVIEW], "codex-cli"),
+			budget: { tokens: 1_000_000 },
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			tokensUsed: 2 * SESSION_TOKENS,
+		});
 	});
 
 	test("is not stopped by cache reads under the default budget", async () => {
@@ -1479,7 +1609,7 @@ describe("runBuild budgets", () => {
 		expect(record.manifest).toMatchObject({
 			status: "failed",
 			reason:
-				"token budget exceeded at builder-4: 256000 of 200000 input and output tokens used",
+				"token budget exceeded at reviewer: 256000 of 200000 input and output tokens used",
 			budget: { tokens: 200_000, timeMs: DEFAULT_RUN_BUDGET.timeMs },
 		});
 	});
@@ -1598,11 +1728,11 @@ describe("runBuild stage failures", () => {
 		expect(saved.manifest).toMatchObject({
 			status: "failed",
 			reason:
-				"builder-1: invalid envelope: no envelope line found; repair turn: no envelope line found",
+				"builder-1: invalid envelope: no JSON object line found in output; repair turn: no JSON object line found in output",
 			repairs: [
 				{
 					stage: "builder-1",
-					reason: "no envelope line found",
+					reason: "no JSON object line found in output",
 					repaired: false,
 				},
 			],
@@ -1621,7 +1751,7 @@ describe("runBuild stage failures", () => {
 			status: "failed",
 			reentries: 1,
 			reason:
-				"builder-2: invalid envelope: no envelope line found; repair turn: no envelope line found",
+				"builder-2: invalid envelope: no JSON object line found in output; repair turn: no JSON object line found in output",
 		});
 		expect(Object.keys(saved.envelopes)).toEqual(["builder-1"]);
 		expect(reviewer.calls).toHaveLength(0);
@@ -1634,7 +1764,7 @@ describe("runBuild stage failures", () => {
 			]),
 		});
 		expect(record.manifest.status).toBe("failed");
-		expect(record.manifest.reason).toContain('mentions "outcome"');
+		expect(record.manifest.reason).toContain("is not a bare JSON object");
 	});
 
 	test("ends blocked with the builder's reason and runs no providers", async () => {
@@ -1736,7 +1866,7 @@ describe("runBuild envelope repair", () => {
 			repairs: [
 				{
 					stage: "builder-1",
-					reason: "no envelope line found",
+					reason: "no JSON object line found in output",
 					repaired: true,
 				},
 			],
@@ -1760,7 +1890,7 @@ describe("runBuild envelope repair", () => {
 		expect(builder.calls[0]?.readonly).toBeUndefined();
 		expect(repair).toMatchObject({ role: "lean/builder", readonly: true });
 		expect(repair?.prompt.startsWith(`${REPAIR_HEADING}\n`)).toBe(true);
-		expect(repair?.prompt).toContain("no envelope line found");
+		expect(repair?.prompt).toContain("no JSON object line found in output");
 		expect(repair?.prompt).toContain("I changed src/greet.ts.");
 		expect(repair?.prompt).toContain('every file you changed in "touched"');
 		expect(repair?.prompt).toMatch(
@@ -1794,6 +1924,42 @@ describe("runBuild envelope repair", () => {
 		);
 	});
 
+	test("sends a done envelope followed by prose to the repair turn", async () => {
+		const builder = stubBackend([`${DONE}\nActually tests failed.`, DONE]);
+		const record = await build({ builder });
+
+		expect(builder.calls).toHaveLength(2);
+		expect(builder.calls[1]?.readonly).toBe(true);
+		expect(record.manifest.repairs).toEqual([
+			{
+				stage: "builder-1",
+				reason:
+					'text follows the JSON object line; the envelope must be the very last line: "Actually tests failed."',
+				repaired: true,
+			},
+		]);
+	});
+
+	test("sends a quoted final envelope line to the repair turn", async () => {
+		const builder = stubBackend([`Done.\n> ${DONE}`, DONE]);
+		const record = await build({ builder });
+
+		expect(builder.calls).toHaveLength(2);
+		expect(record.manifest.repairs?.[0]?.reason).toMatch(
+			/^the last line is not a bare JSON object/u,
+		);
+	});
+
+	test("accepts a bare final envelope after an earlier example without a repair turn", async () => {
+		const example = '{"outcome":"failed","reason":"example only"}';
+		const builder = stubBackend([`For example:\n${example}\nMine:\n${DONE}`]);
+		const record = await build({ builder });
+
+		expect(builder.calls).toHaveLength(1);
+		expect(record.manifest.repairs).toBeUndefined();
+		expect(record.envelopes["builder-1"]?.outcome).toBe("done");
+	});
+
 	test("asks for a bare, unfenced last line wherever the host asks for the envelope", async () => {
 		const builder = stubBackend([DONE]);
 		const reviewer = stubBackend([REVIEW]);
@@ -1801,7 +1967,7 @@ describe("runBuild envelope repair", () => {
 
 		for (const call of [builder.calls[0], reviewer.calls[0]])
 			expect(call?.prompt).toMatch(
-				/The envelope must be the bare last line, not fenced, quoted or prefixed\.$/u,
+				/The envelope must be the very last line, bare, with nothing after it: not fenced, quoted or prefixed\.$/u,
 			);
 	});
 });
@@ -2700,7 +2866,11 @@ describe("runReview", () => {
 		expect(record.manifest).toMatchObject({
 			status: "done",
 			repairs: [
-				{ stage: "reviewer", reason: "no envelope line found", repaired: true },
+				{
+					stage: "reviewer",
+					reason: "no JSON object line found in output",
+					repaired: true,
+				},
 			],
 		});
 		expect(reviewer.calls[1]).toMatchObject({ readonly: true });

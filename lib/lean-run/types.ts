@@ -6,6 +6,7 @@ export const SIGNAL_KINDS = [
 	"health",
 	"dupes",
 	"blast-radius",
+	"blast-tests",
 	"plan-vs-actual",
 	"mutation",
 ] as const;
@@ -16,8 +17,9 @@ export type SignalStatus = (typeof SIGNAL_STATUSES)[number];
 
 /**
  * One verification fact produced by the host after the builder returns.
- * Only `verify` failures and surviving mutants inside changed functions
- * set `reenter` (ruling D-4); every other signal informs the reviewer.
+ * Only `verify` failures, failing blast-radius tests (`blast-tests`) and
+ * surviving mutants inside changed functions set `reenter` (ruling D-4);
+ * every other signal informs the reviewer.
  */
 export interface Signal {
 	kind: SignalKind;
@@ -174,8 +176,8 @@ export const RUN_RECORD_FILES = {
 } as const;
 
 /**
- * `builder-2` and `builder-3` are the re-entries on failing verify or
- * mutation signals (D-4), at most one per signal kind; `builder-4` is the one
+ * `builder-2` and `builder-3` are the re-entries on failing verify,
+ * blast-tests or mutation signals (D-4), at most one per signal kind; `builder-4` is the one
  * re-entry with the reviewer's high and medium findings, and `reviewer-2` the
  * re-review after it.
  */
@@ -189,7 +191,7 @@ export const RUN_STAGES = [
 ] as const;
 export type RunStage = (typeof RUN_STAGES)[number];
 
-/** One re-entry on failing verify or mutation signals, as `run.json` records it. */
+/** One re-entry on failing verify, blast-tests or mutation signals, as `run.json` records it. */
 export interface SignalReentry {
 	stage: "builder-2" | "builder-3";
 	/** The provider pass whose signals sent the builder back. */
@@ -247,8 +249,8 @@ export interface RunManifest {
 	requestPath?: string;
 	backend: LeanBackendKind;
 	/**
-	 * Re-entries on failing verify or mutation signals: at most one per
-	 * signal kind, so 0 to 2.
+	 * Re-entries on failing verify, blast-tests or mutation signals: at most
+	 * one per signal kind and two in all, so 0 to 2.
 	 */
 	reentries: number;
 	/** Why each of those re-entries happened, in order. */

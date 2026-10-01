@@ -265,6 +265,7 @@ describe("lean_build tool", () => {
 			"health",
 			"dupes",
 			"blast-radius",
+			"blast-tests",
 			"plan-vs-actual",
 			"mutation",
 		]);

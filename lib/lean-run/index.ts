@@ -42,6 +42,7 @@ export {
 } from "./graph/pr-body.ts";
 export { parsePlan } from "./plan.ts";
 export { createBlastRadiusProvider } from "./providers/blast-radius.ts";
+export { createBlastTestsProvider } from "./providers/blast-tests.ts";
 export { createDefaultProviders } from "./providers/default.ts";
 export { createHealthProvider } from "./providers/health.ts";
 export { createMutationProvider } from "./providers/mutation.ts";

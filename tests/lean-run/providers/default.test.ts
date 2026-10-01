@@ -8,6 +8,7 @@ describe("createDefaultProviders", () => {
 			"health",
 			"dupes",
 			"blast-radius",
+			"blast-tests",
 			"plan-vs-actual",
 			"mutation",
 		]);

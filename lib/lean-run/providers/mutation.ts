@@ -129,13 +129,10 @@ async function runMutation(
 	options: MutationProviderOptions,
 	started: number,
 ): Promise<Signal> {
-	const unverified = failedVerification(ctx);
-	if (unverified !== undefined) {
-		const reason = `verification did not pass: ${unverified.summary}`;
-		return infoSignal("skipped: verification did not pass", {
-			skipped: true,
-			reason,
-		});
+	const unready = notReadyToMutate(ctx);
+	if (unready !== undefined) {
+		const reason = `${unready.why}: ${unready.signal.summary}`;
+		return infoSignal(`skipped: ${unready.why}`, { skipped: true, reason });
 	}
 	ctx.signal?.throwIfAborted();
 	const changed = await changedSourceFunctions(ctx);
@@ -412,9 +409,23 @@ async function loadGraph(worktree: string): Promise<FileGraph | undefined> {
  * The `verify` signal of this pass when it ran and did not pass: mutants
  * cannot be judged against tests that fail, so Stryker is not started.
  */
-function failedVerification(ctx: SignalContext): Signal | undefined {
-	const verify = ctx.priorSignals?.find((entry) => entry.kind === "verify");
-	return verify !== undefined && verify.status !== "pass" ? verify : undefined;
+/**
+ * Mutants are only worth counting against passing tests: a verify signal that
+ * did not pass, or blast-radius tests that failed, skip the run. A skipped
+ * mutation signal did not run, so it can still earn its own re-entry once
+ * the tests pass.
+ */
+function notReadyToMutate(
+	ctx: SignalContext,
+): { why: string; signal: Signal } | undefined {
+	const prior = ctx.priorSignals ?? [];
+	const verify = prior.find((entry) => entry.kind === "verify");
+	if (verify !== undefined && verify.status !== "pass")
+		return { why: "verification did not pass", signal: verify };
+	const tests = prior.find((entry) => entry.kind === "blast-tests");
+	if (tests?.status === "fail")
+		return { why: "blast-radius tests failed", signal: tests };
+	return undefined;
 }
 
 /** The `blast-radius` signal's `data.radius.tests`, when that signal already ran. */

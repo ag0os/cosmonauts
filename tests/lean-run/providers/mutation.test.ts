@@ -1330,6 +1330,40 @@ describe(
 			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
 		});
 
+		test("skips Stryker when this pass's blast-radius tests failed", async () => {
+			const verify: Signal = {
+				kind: "verify",
+				status: "pass",
+				summary: "2 passed",
+				data: { commands: [] },
+				reenter: false,
+			};
+			const blastTests: Signal = {
+				kind: "blast-tests",
+				status: "fail",
+				summary: "tier 1 failed (exit 1): tests/calc.test.ts",
+				data: {},
+				reenter: true,
+			};
+
+			const signal = await runWith(report({ "lib/calc.ts": [] }), {
+				priorSignals: [verify, blastTests],
+			});
+
+			expect(signal).toEqual({
+				kind: "mutation",
+				status: "info",
+				summary: "skipped: blast-radius tests failed",
+				data: {
+					skipped: true,
+					reason:
+						"blast-radius tests failed: tier 1 failed (exit 1): tests/calc.test.ts",
+				},
+				reenter: false,
+			});
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+		});
+
 		test("skips Stryker when verification could not run every check", async () => {
 			const verify: Signal = {
 				kind: "verify",

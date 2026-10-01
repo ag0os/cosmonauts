@@ -7,25 +7,41 @@ export type ParseResult =
 
 type ValidationError = ReturnType<typeof Value.Errors>[number];
 
+/** How much of a rejected last line a reason quotes. */
+const QUOTE_CHARS = 200;
+
 /**
- * Reads the envelope from the last line of `text` that starts with `{`.
- * Fences, prose and blank lines around it are skipped; a malformed last
- * object line is rejected rather than passed over. Never throws.
+ * Reads the envelope from the last non-empty line of `text`, which must be
+ * the bare JSON object and nothing else: prose and blank lines before it are
+ * fine, but anything after it (prose, a closing code fence) or around it on
+ * the line (a quote marker, a bullet, a label) is rejected, as is a
+ * malformed last line. Earlier object lines never count. Never throws.
  */
 export function parseEnvelope(text: string): ParseResult {
 	if (typeof text !== "string") return reject("input is not a string");
-	const line = findLastObjectLine(text);
-	if (line === undefined) {
-		return reject("no JSON object line found in output");
-	}
-	return parseObjectLine(line);
+	const lines = nonEmptyLines(text);
+	const last = lines.at(-1);
+	if (last?.startsWith("{")) return parseObjectLine(last);
+	return reject(notBareReason(lines, last));
 }
 
-function findLastObjectLine(text: string): string | undefined {
+function nonEmptyLines(text: string): string[] {
 	return text
 		.split(/\r?\n/)
 		.map((line) => line.trim())
-		.findLast((line) => line.startsWith("{"));
+		.filter((line) => line !== "");
+}
+
+/** Why the last non-empty line is not a bare JSON object line. */
+function notBareReason(lines: readonly string[], last?: string): string {
+	if (last === undefined || !lines.some((line) => line.includes("{")))
+		return "no JSON object line found in output";
+	const quoted = JSON.stringify(last.slice(0, QUOTE_CHARS));
+	if (last.includes("{"))
+		return `the last line is not a bare JSON object (it is quoted, prefixed or decorated): ${quoted}`;
+	if (last.startsWith("}"))
+		return `the last line closes a JSON object that spans several lines; the envelope must be one line: ${quoted}`;
+	return `text follows the JSON object line; the envelope must be the very last line: ${quoted}`;
 }
 
 function parseObjectLine(line: string): ParseResult {

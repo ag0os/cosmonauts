@@ -117,8 +117,12 @@ export const MAX_RUN_TIME_MS = 2 ** 31 - 1;
 
 const DEFAULT_LENSES: readonly LeanLens[] = ["general"];
 
-/** Ruling D-4: only failing verification and surviving mutants send the builder back. */
-const REENTRY_KINDS: ReadonlySet<SignalKind> = new Set(["verify", "mutation"]);
+/** Ruling D-4: only failing verification, failing blast-radius tests and surviving mutants send the builder back. */
+const REENTRY_KINDS: ReadonlySet<SignalKind> = new Set([
+	"verify",
+	"blast-tests",
+	"mutation",
+]);
 
 /** Findings at these severities send the builder back once (principle 6). */
 const BLOCKING_SEVERITIES: ReadonlySet<Finding["severity"]> = new Set([
@@ -144,6 +148,11 @@ interface Run {
 	lean: ProjectLeanConfig;
 	basePrompt: string;
 	budget: RunBudget;
+	/**
+	 * The token budget came from the caller or `lean.budget.tokens`, not the
+	 * built-in default: a session that reports no usage then ends the run.
+	 */
+	explicitTokens: boolean;
 	deadline: AbortSignal;
 	/** The caller's signal combined with the deadline. */
 	signal: AbortSignal;
@@ -556,6 +565,8 @@ function startRun(start: RunStart): Run {
 			tier: source.tier,
 		}),
 		budget,
+		explicitTokens:
+			options.budget?.tokens !== undefined || lean.budget?.tokens !== undefined,
 		deadline,
 		signal: options.signal
 			? AbortSignal.any([options.signal, deadline])
@@ -715,7 +726,8 @@ async function executeRun(run: Run): Promise<void> {
 /**
  * builder-1 and its pass, then the D-4 re-entry with its pass. A second
  * re-entry follows only when every signal failing in pass 2 is a kind that
- * did not run in pass 1 (mutation is skipped while verify fails), so that
+ * did not run in pass 1 (mutation is skipped while verify or blast-tests
+ * fail), so that
  * result reaches a builder; a kind that ran in pass 1 and fails now goes to
  * the reviewer instead. Every kind behind the first re-entry ran in pass 1,
  * so no kind re-enters twice, whatever the provider order.
@@ -829,6 +841,7 @@ async function checkPass(
 /** Providers that walk graph.json; only they need it refreshed before a review's pass. */
 const GRAPH_KINDS: ReadonlySet<SignalKind> = new Set([
 	"blast-radius",
+	"blast-tests",
 	"mutation",
 ]);
 
@@ -1057,7 +1070,7 @@ function reentering(
 		if (signal.reenter && !REENTRY_KINDS.has(signal.kind))
 			warn(
 				run.record,
-				`pass ${pass}: ${signal.kind} asked to re-enter the builder; ruling D-4 lets only verify and mutation re-enter`,
+				`pass ${pass}: ${signal.kind} asked to re-enter the builder; ruling D-4 lets only verify, blast-tests and mutation re-enter`,
 			);
 	}
 	return signals.filter(
@@ -1280,7 +1293,8 @@ async function runSession(
 		(error: unknown) => new Error(errorMessage(error)),
 	);
 	await recordStats(run, session, Date.now() - started, result);
-	if (!(result instanceof Error)) return result.text;
+	if (!(result instanceof Error))
+		return afterSession(run, session.backend, result);
 	const reason =
 		abortReason(run) ?? `${run.stage}: backend error: ${result.message}`;
 	return stopWith(run, reason);
@@ -1302,9 +1316,34 @@ async function recordRepair(run: Run, repair: EnvelopeRepair): Promise<void> {
 }
 
 /**
+ * The session's text, unless its usage ends the run right away, before any
+ * provider pass: `failed` once the token budget is overrun, and `blocked`
+ * when the caller set a token budget and the backend reported no usage, so
+ * the budget cannot be enforced.
+ */
+async function afterSession(
+	run: Run,
+	backend: BuilderBackend,
+	result: BackendRunResult,
+): Promise<string | undefined> {
+	if (!result.stats && run.explicitTokens) {
+		await finish(
+			run,
+			"blocked",
+			`budget unenforceable (${backend.kind} reported no token usage)`,
+		);
+		return undefined;
+	}
+	const overrun = tokenOverrun(run);
+	if (overrun) return stopWith(run, overrun);
+	return result.text;
+}
+
+/**
  * Counts input + output tokens; cache reads and writes do not spend the
- * budget. A session that reports no stats (Claude Code, Codex) spends none,
- * which the manifest says once.
+ * budget. Under the default budget a session that reports no stats spends
+ * none, which the manifest says once; under a caller's budget
+ * `afterSession` ends the run instead.
  */
 async function recordStats(
 	run: Run,
@@ -1323,7 +1362,7 @@ async function recordStats(
 		const used = run.record.manifest.tokensUsed ?? 0;
 		run.record.manifest.tokensUsed =
 			used + spawn.tokens.input + spawn.tokens.output;
-	} else if (!(result instanceof Error))
+	} else if (!(result instanceof Error) && !run.explicitTokens)
 		warnOnce(
 			run.record,
 			`token budget not enforced: ${session.backend.kind} reports no token stats`,

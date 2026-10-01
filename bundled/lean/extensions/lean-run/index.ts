@@ -68,7 +68,7 @@ export const LeanBuildParameters = Type.Object({
 	backend: BackendParameter,
 	lenses: LensesParameter,
 	budgetTokens: positiveInteger(
-		"Input + output token limit for the whole run (default: lean.budget.tokens in the project config, else 1,000,000)",
+		"Input + output token limit for the whole run (default: lean.budget.tokens in the project config, else 1,000,000). A set limit blocks the run when a backend reports no token usage",
 	),
 	budgetTimeMs: positiveInteger(
 		`Wall-time limit for the whole run, in ms, at most ${MAX_RUN_TIME_MS} (default: lean.budget.timeMs in the project config, else 60 minutes)`,

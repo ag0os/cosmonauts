@@ -295,6 +295,190 @@ describe("createExternalBuilderBackend", () => {
 	});
 });
 
+/** `claude -p --output-format json` as Claude Code 2.1.286 prints it. */
+const CLAUDE_RESULT = {
+	type: "result",
+	subtype: "success",
+	is_error: false,
+	duration_ms: 4_210,
+	num_turns: 3,
+	result: `Built it.\n${ENVELOPE}`,
+	session_id: "session",
+	total_cost_usd: 0.0425,
+	usage: {
+		input_tokens: 1_200,
+		output_tokens: 340,
+		cache_creation_input_tokens: 5_000,
+		cache_read_input_tokens: 20_000,
+		service_tier: "standard",
+	},
+};
+
+/** `codex exec --json` events as codex-cli 0.159 prints them. */
+const CODEX_EVENTS = [
+	{ type: "thread.started", thread_id: "t" },
+	{ type: "turn.started" },
+	{
+		type: "item.completed",
+		item: { id: "item_0", type: "agent_message", text: ENVELOPE },
+	},
+	{
+		type: "turn.completed",
+		usage: {
+			input_tokens: 9_000,
+			cached_input_tokens: 6_000,
+			output_tokens: 500,
+		},
+	},
+]
+	.map((event) => JSON.stringify(event))
+	.join("\n");
+
+describe("createExternalBuilderBackend token usage", () => {
+	function claudeBackend(stdout: string, requests: ProcessRequest[] = []) {
+		return createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			runProcess: async (request) => {
+				requests.push(request);
+				return { exitCode: 0, stdout, stderr: "" };
+			},
+		});
+	}
+
+	function codexBackend(stdout: string, requests: ProcessRequest[] = []) {
+		return createExternalBuilderBackend({
+			kind: "codex-cli",
+			resolvePackage: async () => ({ ...PACKAGE, target: "codex" }),
+			runProcess: async (request) => {
+				requests.push(request);
+				const file =
+					request.args[request.args.indexOf("--output-last-message") + 1];
+				await writeFile(file ?? "", ENVELOPE);
+				return { exitCode: 0, stdout, stderr: "" };
+			},
+		});
+	}
+
+	const input = {
+		prompt: "p",
+		worktree: "/repo",
+		role: "lean/builder",
+	} as const;
+
+	test("runs claude with JSON output and reads the result text and usage", async () => {
+		const requests: ProcessRequest[] = [];
+		const backend = claudeBackend(
+			`${JSON.stringify(CLAUDE_RESULT)}\n`,
+			requests,
+		);
+
+		const result = await backend.run(input);
+
+		const args = requests[0]?.args ?? [];
+		expect(args[args.indexOf("--output-format") + 1]).toBe("json");
+		expect(result).toEqual({
+			text: `Built it.\n${ENVELOPE}`,
+			stats: {
+				tokens: {
+					input: 1_200,
+					output: 340,
+					cacheRead: 20_000,
+					cacheWrite: 5_000,
+					total: 26_540,
+				},
+				cost: 0.0425,
+				durationMs: 4_210,
+				turns: 3,
+				toolCalls: 0,
+			},
+		});
+	});
+
+	test("returns claude's stdout as plain text with no stats when it is not JSON", async () => {
+		const result = await claudeBackend(`done\n${ENVELOPE}\n`).run(input);
+
+		expect(result).toEqual({ text: `done\n${ENVELOPE}\n` });
+	});
+
+	test("returns claude's stdout as plain text with no stats when its JSON is cut off", async () => {
+		const cut = JSON.stringify(CLAUDE_RESULT).slice(0, 40);
+
+		const result = await claudeBackend(cut).run(input);
+
+		expect(result).toEqual({ text: cut });
+	});
+
+	test("returns claude's result text with no stats when the usage is missing", async () => {
+		const { usage: _usage, ...noUsage } = CLAUDE_RESULT;
+
+		const result = await claudeBackend(JSON.stringify(noUsage)).run(input);
+
+		expect(result).toEqual({ text: `Built it.\n${ENVELOPE}` });
+	});
+
+	test("reads claude's result object from the last line when a warning precedes it", async () => {
+		const result = await claudeBackend(
+			`warning: something\n${JSON.stringify(CLAUDE_RESULT)}`,
+		).run(input);
+
+		expect(result.text).toBe(`Built it.\n${ENVELOPE}`);
+		expect(result.stats?.tokens.input).toBe(1_200);
+	});
+
+	test("runs codex with JSONL events and counts the uncached input and the output", async () => {
+		const requests: ProcessRequest[] = [];
+
+		const result = await codexBackend(CODEX_EVENTS, requests).run(input);
+
+		const args = requests[0]?.args ?? [];
+		expect(args).toContain("--json");
+		expect(args.at(-1)).toBe("-");
+		expect(result.text).toBe(ENVELOPE);
+		expect(result.stats).toMatchObject({
+			tokens: {
+				input: 3_000,
+				output: 500,
+				cacheRead: 6_000,
+				cacheWrite: 0,
+				total: 9_500,
+			},
+			cost: 0,
+			turns: 1,
+			toolCalls: 0,
+		});
+		expect(result.stats?.durationMs).toBeGreaterThanOrEqual(0);
+	});
+
+	test("sums the usage of every completed codex turn", async () => {
+		const turn = JSON.stringify({
+			type: "turn.completed",
+			usage: { input_tokens: 100, output_tokens: 10 },
+		});
+
+		const result = await codexBackend(`${turn}\n${turn}`).run(input);
+
+		expect(result.stats?.tokens).toMatchObject({ input: 200, output: 20 });
+		expect(result.stats?.turns).toBe(2);
+	});
+
+	test.each([
+		["plain text", "log noise"],
+		[
+			"events without a completed turn",
+			CODEX_EVENTS.split("\n").slice(0, 3).join("\n"),
+		],
+		[
+			"a completed turn without usage counts",
+			JSON.stringify({ type: "turn.completed", usage: { input_tokens: "x" } }),
+		],
+	])("reports no codex stats for %s", async (_name, stdout) => {
+		const result = await codexBackend(stdout).run(input);
+
+		expect(result).toEqual({ text: ENVELOPE });
+	});
+});
+
 describe("leanPackageResolver", () => {
 	const repositoryRoot = resolve(fileURLToPath(import.meta.url), "../../..");
 	let projectRoot: string;

@@ -19,6 +19,11 @@ import type {
 	LeanBackendKind,
 	LeanRole,
 } from "../types.ts";
+import {
+	claudeResult,
+	codexStats,
+	type HarnessResult,
+} from "./harness-usage.ts";
 import { LEAN_DOMAIN } from "./pi.ts";
 
 export type ExternalBackendKind = Exclude<LeanBackendKind, "pi">;
@@ -123,8 +128,10 @@ const CODEX_LAST_MESSAGE = "last-message.txt";
 
 /**
  * Runs a lean role through Claude Code or Codex using the agent-package
- * invocation builders, sending the prompt on stdin and returning the final
- * text. These harnesses report no token stats.
+ * invocation builders, sending the prompt on stdin. Each harness runs in its
+ * JSON output mode (`claude --output-format json`, `codex exec --json`), so
+ * the result carries the session's token usage as `stats` next to the final
+ * text; output that does not parse is plain text with no stats.
  */
 export function createExternalBuilderBackend(
 	options: ExternalBuilderBackendOptions,
@@ -138,10 +145,11 @@ export function createExternalBuilderBackend(
 			const agentPackage = input.readonly ? readOnly(resolved) : resolved;
 			const invocation = await materialize(options, agentPackage, input);
 			try {
-				const args =
-					options.kind === "codex-cli"
-						? [...invocation.spec.args, ...codexOutputArgs(invocation)]
-						: invocation.spec.args;
+				const args = [
+					...invocation.spec.args,
+					...outputArgs(options.kind, invocation),
+				];
+				const started = Date.now();
 				const outcome = await runProcess({
 					command: invocation.spec.command,
 					args,
@@ -154,7 +162,12 @@ export function createExternalBuilderBackend(
 					throw new Error(
 						`${options.kind} exited ${outcome.exitCode}: ${outcome.stderr.slice(-2000)}`,
 					);
-				return { text: await finalText(options.kind, invocation, outcome) };
+				return await finalResult({
+					kind: options.kind,
+					invocation,
+					outcome,
+					durationMs: Date.now() - started,
+				});
 			} finally {
 				await invocation.cleanup();
 			}
@@ -196,23 +209,33 @@ function materialize(
 	});
 }
 
-function codexOutputArgs(invocation: MaterializedInvocation): string[] {
+/** JSON output, so the session's usage can be read; Codex also writes its final message to a file. */
+function outputArgs(
+	kind: ExternalBackendKind,
+	invocation: MaterializedInvocation,
+): string[] {
+	if (kind === "claude-cli") return ["--output-format", "json"];
 	return [
+		"--json",
 		"--output-last-message",
 		join(invocation.tempDir, CODEX_LAST_MESSAGE),
 		"-",
 	];
 }
 
-async function finalText(
-	kind: ExternalBackendKind,
-	invocation: MaterializedInvocation,
-	outcome: ProcessOutcome,
-): Promise<string> {
-	if (kind === "claude-cli") return outcome.stdout;
-	return readFile(join(invocation.tempDir, CODEX_LAST_MESSAGE), "utf-8").catch(
-		() => outcome.stdout,
-	);
+/** Claude's result object, or Codex's last-message file (stdout when it is missing) with the JSONL events' usage. */
+async function finalResult(options: {
+	kind: ExternalBackendKind;
+	invocation: MaterializedInvocation;
+	outcome: ProcessOutcome;
+	durationMs: number;
+}): Promise<HarnessResult> {
+	const { stdout } = options.outcome;
+	if (options.kind === "claude-cli") return claudeResult(stdout);
+	const lastMessage = join(options.invocation.tempDir, CODEX_LAST_MESSAGE);
+	const text = await readFile(lastMessage, "utf-8").catch(() => stdout);
+	const stats = codexStats(stdout, options.durationMs);
+	return stats ? { text, stats } : { text };
 }
 
 const runChildProcess: ProcessRunner = (request) =>

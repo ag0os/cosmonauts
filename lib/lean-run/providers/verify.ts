@@ -152,7 +152,10 @@ async function packageScriptCommands(
 	}));
 }
 
-async function readScripts(worktree: string): Promise<Record<string, unknown>> {
+/** `package.json` scripts in `worktree`; empty when there is no readable manifest. */
+export async function readScripts(
+	worktree: string,
+): Promise<Record<string, unknown>> {
 	try {
 		const manifest: unknown = JSON.parse(
 			await readFile(join(worktree, "package.json"), "utf8"),

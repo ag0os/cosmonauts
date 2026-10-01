@@ -1,7 +1,8 @@
 /**
  * Tests for parseEnvelope.
  * Covers every example shape from the lean brief (section 4.5), each rejection
- * path, and tolerant reading of fenced or prose-wrapped agent output.
+ * path, and the bare-last-line rule: prose before the envelope line is fine,
+ * anything after or around it is rejected.
  */
 
 import { describe, expect, test } from "vitest";
@@ -85,18 +86,8 @@ describe("parseEnvelope — brief examples", () => {
 	});
 });
 
-describe("parseEnvelope — tolerant reading", () => {
+describe("parseEnvelope — the bare last line", () => {
 	const minimal = { ok: true, envelope: { outcome: "done" } };
-
-	test("reads a line wrapped in a json code fence", () => {
-		const text = ["```json", line({ outcome: "done" }), "```"].join("\n");
-		expect(parseEnvelope(text)).toEqual(minimal);
-	});
-
-	test("skips prose after the JSON line", () => {
-		const text = `${line({ outcome: "done" })}\nThat is all.\nThanks!`;
-		expect(parseEnvelope(text)).toEqual(minimal);
-	});
 
 	test("ignores prose before the JSON line", () => {
 		const text = `I finished the work.\n\n${line({ outcome: "done" })}`;
@@ -110,14 +101,44 @@ describe("parseEnvelope — tolerant reading", () => {
 		expect(parseEnvelope(text)).toEqual({ ok: true, envelope: failedEnvelope });
 	});
 
+	test("accepts a bare final envelope after a stale example envelope", () => {
+		const text = [
+			"The format looks like this:",
+			line({ outcome: "failed", reason: "example" }),
+			"Mine:",
+			line({ outcome: "done" }),
+		].join("\n");
+		expect(parseEnvelope(text)).toEqual(minimal);
+	});
+
 	test("ignores blank trailing lines and surrounding whitespace", () => {
 		const text = `\n   ${line({ outcome: "done" })}   \n\n  \n`;
 		expect(parseEnvelope(text)).toEqual(minimal);
 	});
 
 	test("reads CRLF line endings", () => {
-		const text = `Done.\r\n${line({ outcome: "done" })}\r\n`;
+		const text = `Done.\r\n${line({ outcome: "done" })}  \r\n`;
 		expect(parseEnvelope(text)).toEqual(minimal);
+	});
+
+	test("reads a final line after an opening fence that never closes", () => {
+		const text = ["```json", line({ outcome: "done" })].join("\n");
+		expect(parseEnvelope(text)).toEqual(minimal);
+	});
+});
+
+describe("parseEnvelope — anything after or around the envelope line", () => {
+	const textAfter =
+		"text follows the JSON object line; the envelope must be the very last line: ";
+
+	test("rejects a done envelope followed by prose that contradicts it", () => {
+		const text = `${line({ outcome: "done" })}\nActually tests failed`;
+		expect(rejectionReason(text)).toBe(`${textAfter}"Actually tests failed"`);
+	});
+
+	test("rejects a line wrapped in a json code fence", () => {
+		const text = ["```json", line({ outcome: "done" }), "```"].join("\n");
+		expect(rejectionReason(text)).toBe(`${textAfter}"\`\`\`"`);
 	});
 
 	test.each([
@@ -125,9 +146,26 @@ describe("parseEnvelope — tolerant reading", () => {
 		["a number", "42"],
 		["a boolean", "true"],
 		["an array", "[]"],
-	])("skips trailing prose that is %s in JSON", (_name, prose) => {
+	])("rejects trailing text that is %s in JSON", (_name, prose) => {
 		const text = `${line({ outcome: "done" })}\n${prose}`;
-		expect(parseEnvelope(text)).toEqual(minimal);
+		expect(rejectionReason(text)).toBe(`${textAfter}${JSON.stringify(prose)}`);
+	});
+
+	test.each([
+		["a blockquote", "> "],
+		["a bullet", "- "],
+		["a label", "Envelope: "],
+	])("rejects a last line decorated with %s", (_name, prefix) => {
+		const last = `${prefix}${line({ outcome: "done" })}`;
+		expect(rejectionReason(`Done.\n${last}`)).toBe(
+			`the last line is not a bare JSON object (it is quoted, prefixed or decorated): ${JSON.stringify(last)}`,
+		);
+	});
+
+	test("quotes at most 200 characters of the rejected line", () => {
+		const prose = "x".repeat(300);
+		const text = `${line({ outcome: "done" })}\n${prose}`;
+		expect(rejectionReason(text)).toBe(`${textAfter}"${"x".repeat(200)}"`);
 	});
 });
 
@@ -144,8 +182,8 @@ describe("parseEnvelope — rejections", () => {
 
 	test("rejects an envelope split across several lines", () => {
 		const text = JSON.stringify({ outcome: "done" }, null, 2);
-		expect(rejectionReason(text)).toMatch(
-			/^last JSON object line is not valid JSON: SyntaxError: /,
+		expect(rejectionReason(text)).toBe(
+			'the last line closes a JSON object that spans several lines; the envelope must be one line: "}"',
 		);
 	});
 

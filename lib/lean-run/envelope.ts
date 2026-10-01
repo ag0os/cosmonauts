@@ -7,25 +7,15 @@ import {
 } from "../envelope/index.ts";
 
 /**
- * `parseEnvelope` plus two lean-run rules. Ruling OD-4: when a line after
- * the last `{` line mentions `"outcome"` without starting with `{`, the agent
- * decorated its real envelope and the earlier object line is only a quote,
- * so reject. And a `null` in a field the schema marks optional reads as the
- * field left out; a required field set to `null` still fails.
+ * `parseEnvelope` (the bare last non-empty line, nothing after it) with one
+ * lean-run tolerance: a `null` in a field the schema marks optional reads as
+ * the field left out; a required field set to `null` still fails.
  */
 export function parseStageEnvelope(text: string): ParseResult {
 	const lines = text.split(/\r?\n/);
-	const candidate = lines.findLastIndex((line) => line.trim().startsWith("{"));
-	if (candidate < 0) return { ok: false, reason: "no envelope line found" };
-	const decorated = lines
-		.slice(candidate + 1)
-		.find((line) => line.includes('"outcome"'));
-	if (decorated !== undefined)
-		return {
-			ok: false,
-			reason: `a line after the last JSON object line mentions "outcome" without starting with "{": ${decorated.trim().slice(0, 200)}`,
-		};
-	lines[candidate] = withoutOptionalNulls(lines[candidate] ?? "");
+	const last = lines.findLastIndex((line) => line.trim() !== "");
+	const line = lines[last];
+	if (line !== undefined) lines[last] = withoutOptionalNulls(line);
 	return parseEnvelope(lines.join("\n"));
 }
 

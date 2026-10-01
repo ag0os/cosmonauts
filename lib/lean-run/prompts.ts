@@ -13,9 +13,9 @@ import type {
 	Signal,
 } from "./types.ts";
 
-/** Rule OD-4, stated where the host asks for the envelope: anything else is rejected. */
+/** The parser's rule, stated where the host asks for the envelope: anything else is rejected. */
 const BARE_LINE =
-	"The envelope must be the bare last line, not fenced, quoted or prefixed.";
+	"The envelope must be the very last line, bare, with nothing after it: not fenced, quoted or prefixed.";
 
 /** `"a", "b" or "c"`: an enumeration as the instruction states it. */
 function oneOf(values: readonly string[]): string {
