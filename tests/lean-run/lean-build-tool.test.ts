@@ -101,6 +101,7 @@ describe("lean_build tool", () => {
 			"health",
 			"blast-radius",
 			"plan-vs-actual",
+			"mutation",
 		]);
 	});
 

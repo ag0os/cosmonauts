@@ -68,11 +68,6 @@ export interface MutationProviderOptions {
 	readonly concurrency?: number;
 }
 
-/** Proposed additive `SignalContext` field: signals that already ran in this pass. */
-interface PriorSignalsContext {
-	readonly priorSignals?: unknown;
-}
-
 interface StrykerPlan {
 	readonly ranges: readonly ChangedFunctionRange[];
 	readonly mutate: string[];
@@ -300,15 +295,15 @@ async function loadGraph(worktree: string): Promise<FileGraph | undefined> {
 	}
 }
 
-/** The `blast-radius` signal's `data.tests`, when that signal already ran. */
+/** The `blast-radius` signal's `data.radius.tests`, when that signal already ran. */
 function blastRadiusTests(ctx: SignalContext): string[] | undefined {
-	const prior = (ctx as SignalContext & PriorSignalsContext).priorSignals;
-	if (!Array.isArray(prior)) return undefined;
-	const blast = prior.find(
-		(entry: unknown) => isRecord(entry) && entry.kind === "blast-radius",
+	const blast = ctx.priorSignals?.find(
+		(entry) => entry.kind === "blast-radius",
 	);
-	if (!isRecord(blast) || !isRecord(blast.data)) return undefined;
-	const tests = blast.data.tests;
+	if (!blast || !isRecord(blast.data) || !isRecord(blast.data.radius)) {
+		return undefined;
+	}
+	const tests = blast.data.radius.tests;
 	return Array.isArray(tests)
 		? tests.filter((test): test is string => typeof test === "string")
 		: undefined;

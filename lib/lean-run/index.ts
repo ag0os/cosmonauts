@@ -39,6 +39,7 @@ export { parsePlan } from "./plan.ts";
 export { createBlastRadiusProvider } from "./providers/blast-radius.ts";
 export { createDefaultProviders } from "./providers/default.ts";
 export { createHealthProvider } from "./providers/health.ts";
+export { createMutationProvider } from "./providers/mutation.ts";
 export { planVersusActualProvider } from "./providers/plan-vs-actual.ts";
 export { createVerifyProvider } from "./providers/verify.ts";
 export {

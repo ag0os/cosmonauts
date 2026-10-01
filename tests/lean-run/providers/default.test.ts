@@ -8,6 +8,7 @@ describe("createDefaultProviders", () => {
 			"health",
 			"blast-radius",
 			"plan-vs-actual",
+			"mutation",
 		]);
 	});
 });

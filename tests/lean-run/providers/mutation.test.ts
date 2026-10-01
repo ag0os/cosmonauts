@@ -812,7 +812,7 @@ describe(
 				kind: "blast-radius",
 				status: "info",
 				summary: "",
-				data: { tests: wide },
+				data: { graph: "fresh", radius: { tests: wide } },
 				reenter: false,
 			};
 
