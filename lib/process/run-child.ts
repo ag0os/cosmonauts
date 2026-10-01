@@ -248,6 +248,8 @@ export async function runChild(
 	};
 	const result = await supervise({ child, options, spools, counts, settings });
 	if (result.tree.kind === "gone") claim?.release();
+	else if (result.tree.kind === "unverified" && child.pid !== undefined)
+		claim?.unverified(child.pid, result.tree.reason);
 	return outcome(result, options, counts, settings.notes);
 }
 

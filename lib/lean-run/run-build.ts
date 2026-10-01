@@ -331,6 +331,8 @@ export interface RunReviewOptions {
 	/** As in `runBuild`. */
 	cleanupConfirmMs?: number;
 	/** As in `runBuild`. */
+	clearStaleLock?: boolean;
+	/** As in `runBuild`. */
 	listProcesses?: ListProcesses;
 }
 
@@ -553,12 +555,14 @@ async function closeRun(run: Run): Promise<void> {
 }
 
 /**
- * Waits up to `cleanupConfirmMs` for every pid the run owned to be gone,
- * with no wait when they already are, and records the rest in
- * `cleanupUnconfirmed`, the reason and a warning; the lock keeps them.
- * Processes outside the run's ownership that name the builder clone are
- * reported as `detachedCandidates`, never counted. Never throws: a check
- * that fails leaves every owned pid unconfirmed.
+ * Waits up to `cleanupConfirmMs` for every pid the run owns to be gone,
+ * including pids a tree listing still running adds meanwhile, with no wait
+ * when they already are, and records the rest in `cleanupUnconfirmed`, the
+ * reason and a warning; the lock keeps them. Processes outside the run's
+ * ownership that name the builder clone are reported as
+ * `detachedCandidates`, never counted; children whose descendants could not
+ * be enumerated get a warning. Never throws: a check that fails leaves
+ * every owned pid unconfirmed.
  */
 async function confirmCleanup(run: Run): Promise<void> {
 	const owned = run.owner.close();
@@ -567,25 +571,51 @@ async function confirmCleanup(run: Run): Promise<void> {
 	if (owned.length === 0 && clone === undefined) return;
 	const boundMs = run.options.cleanupConfirmMs ?? DEFAULT_CLEANUP_CONFIRM_MS;
 	try {
-		const check = await confirmGone(owned, {
+		const check = await confirmGone(() => run.owner.current(), {
 			list: run.options.listProcesses ?? listProcesses,
 			boundMs,
 			listAlways: clone !== undefined,
 		});
 		run.unconfirmedPids = check.running;
+		if (clone !== undefined && !check.listing)
+			warn(
+				run.record,
+				"detached process scan skipped: no process listing (Windows has none, or ps failed)",
+			);
 		if (clone !== undefined && check.listing)
 			recordDetached(
 				run,
 				detachedCandidates(check.listing, {
 					paths: await pathSpellings(clone),
-					owned,
+					owned: [...owned, ...run.owner.current()],
 				}),
 			);
 	} catch (error) {
 		warn(run.record, `cleanup check failed: ${errorMessage(error)}`);
 	}
+	recordUnverifiedTrees(run);
 	recordUnconfirmed(run, run.unconfirmedPids, boundMs);
 	await saveManifest(run.record).catch(() => undefined);
+}
+
+/**
+ * Children whose descendants the runner could not enumerate (every natural
+ * exit on Windows, a failed `ps`): only their own pids were checked, so
+ * their descendants are not confirmed gone and do not hold the lock.
+ */
+function recordUnverifiedTrees(run: Run): void {
+	const trees = run.owner.unverified();
+	if (trees.length === 0) return;
+	const listed = trees
+		.map(
+			({ pid, reason, label }) =>
+				`pid ${pid} at ${label ?? "an unknown stage"} (${reason})`,
+		)
+		.join("; ");
+	warn(
+		run.record,
+		`process trees unverified: the descendants of ${listed} could not be enumerated, so they are not confirmed gone and the run lock does not wait for them`,
+	);
 }
 
 function recordUnconfirmed(
@@ -803,7 +833,7 @@ function startRun(start: RunStart): Run {
 		if (options.backend.deniedTools)
 			manifest.deniedTools = [...options.backend.deniedTools];
 	}
-	return {
+	const run: Run = {
 		options,
 		record,
 		plan: source.plan,
@@ -823,8 +853,9 @@ function startRun(start: RunStart): Run {
 			: deadline,
 		stage: "builder-1",
 		worktree: options.projectRoot,
-		owner: new ProcessOwner(),
+		owner: new ProcessOwner({ label: () => run.stage }),
 	};
+	return run;
 }
 
 /** The builder's post-edit health hook runs only in Pi sessions (brief 4.7A). */

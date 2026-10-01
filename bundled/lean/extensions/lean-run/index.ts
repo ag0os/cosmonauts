@@ -43,6 +43,17 @@ const BackendParameter = Type.Optional(
 	),
 );
 
+const ClearStaleLockParameter = Type.Optional(
+	Type.Boolean({
+		description:
+			"Start even though a previous run ended with processes it started still running (blocked: previous run cleanup unconfirmed). Only that lock is cleared, never a running run's; set it once those pids are known to be safe (default: false)",
+	}),
+);
+
+/** What the run waits for at its end, and what it does not; shared by both tools' descriptions. */
+const LEAN_RUN_PROCESSES_NOTE =
+	"When the run ends it waits up to 30 s for every process its child runner started to exit (external builder and reviewer sessions, host-check providers, mutation testing, code health, and what their process trees contain); processes started by the built-in tools of an in-process Pi session (the default pi backend) are not tracked. If some tracked processes still run, the repository's run lock stays and the next run ends blocked (previous run cleanup unconfirmed) until they exit or clearStaleLock is set.";
+
 const LensesParameter = Type.Optional(
 	Type.Array(Type.Union(LEAN_LENSES.map((lens) => Type.Literal(lens))), {
 		minItems: 1,
@@ -81,12 +92,7 @@ export const LeanBuildParameters = Type.Object({
 			description: `Host check kinds that must run and be available for a done run; any of ${SIGNAL_KINDS.join(", ")}; [] requires none beyond a passing verify (default: lean.requiredSignals in the project config, else verify, mutation and health)`,
 		}),
 	),
-	clearStaleLock: Type.Optional(
-		Type.Boolean({
-			description:
-				"Start even though a previous run ended with processes it started still running (blocked: previous run cleanup unconfirmed). Only that lock is cleared, never a running run's; set it once those pids are known to be safe (default: false)",
-		}),
-	),
+	clearStaleLock: ClearStaleLockParameter,
 });
 type LeanBuildInput = Static<typeof LeanBuildParameters>;
 
@@ -115,6 +121,7 @@ export const LeanReviewParameters = Type.Object({
 	),
 	backend: BackendParameter,
 	lenses: LensesParameter,
+	clearStaleLock: ClearStaleLockParameter,
 });
 type LeanReviewInput = Static<typeof LeanReviewParameters>;
 
@@ -141,7 +148,7 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 		pi.registerTool({
 			name: "lean_build",
 			label: "Lean build",
-			description: `Run a lean build for a plan or a direct request: builder, host checks, at most one re-entry per failing check kind (two in all), the code reviewer, and at most one findings re-entry with a re-review. The builder works in a private clone of this repository with no remote, and only a done run applies its patch to this working tree, unstaged. The clone has its own refs, stash and config; gitignored files are copied in (never node_modules, .git or .stryker-tmp; up to lean.ignoredInputsCapBytes, 50 MB by default) and node_modules is linked, so the dependency tree stays writable through the link. A run during which this branch, HEAD or stash moved, or linked node_modules lost entries, ends blocked with nothing applied. The run's wall-time limit defaults to 60 minutes. When the run ends it waits up to 30 s for every process it started to exit; if some still run, the repository's run lock stays and the next run ends blocked (previous run cleanup unconfirmed) until they exit or clearStaleLock is set. ${LEAN_BUILD_INSTALL_NOTE} Returns the run id, status, a summary and the run directory.`,
+			description: `Run a lean build for a plan or a direct request: builder, host checks, at most one re-entry per failing check kind (two in all), the code reviewer, and at most one findings re-entry with a re-review. The builder works in a private clone of this repository with no remote, and only a done run applies its patch to this working tree, unstaged. The clone has its own refs, stash and config; gitignored files are copied in (never node_modules, .git or .stryker-tmp; up to lean.ignoredInputsCapBytes, 50 MB by default) and node_modules is linked, so the dependency tree stays writable through the link. A run during which this branch, HEAD or stash moved, or linked node_modules lost entries, ends blocked with nothing applied. The run's wall-time limit defaults to 60 minutes. ${LEAN_RUN_PROCESSES_NOTE} ${LEAN_BUILD_INSTALL_NOTE} Returns the run id, status, a summary and the run directory.`,
 			parameters: LeanBuildParameters,
 			execute: async (_id, params: LeanBuildInput, signal, _onUpdate, ctx) => {
 				const source = planSource(params);
@@ -187,8 +194,7 @@ function registerLeanReview(
 	pi.registerTool({
 		name: "lean_review",
 		label: "Lean review",
-		description:
-			"Review a change that already exists: the host runs the project's verification commands over the working tree, then lean/code-reviewer reads the change against a base ref in a read-only checkout with the diff, the changed files and the verification facts. Runs no builder and changes nothing; the run is blocked as unverified when verification did not pass or could not run. Returns the run id, status, a summary, the findings and the run directory.",
+		description: `Review a change that already exists: the host runs the project's verification commands over the working tree, then lean/code-reviewer reads the change against a base ref in a read-only checkout with the diff, the changed files and the verification facts. Runs no builder and changes nothing; the run is blocked as unverified when verification did not pass or could not run. It takes the same run lock as lean_build. ${LEAN_RUN_PROCESSES_NOTE} Returns the run id, status, a summary, the findings and the run directory.`,
 		parameters: LeanReviewParameters,
 		execute: async (_id, params: LeanReviewInput, signal, _onUpdate, ctx) => {
 			if (params.planPath !== undefined && params.request !== undefined)
@@ -202,6 +208,7 @@ function registerLeanReview(
 				...(params.request?.trim() ? { request: params.request } : {}),
 				reviewerBackend: backends.reviewer,
 				...(lenses ? { lenses } : {}),
+				...(params.clearStaleLock ? { clearStaleLock: true } : {}),
 				...(signal ? { signal } : {}),
 			});
 			return toolResult({

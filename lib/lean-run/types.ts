@@ -407,7 +407,7 @@ export interface RunManifest {
 /** A process found by its command line, not by the run's process tree. */
 export interface DetachedProcess {
 	pid: number;
-	/** At most 200 characters. */
+	/** At most 200 characters, keeping the clone path it matched. */
 	command: string;
 }
 

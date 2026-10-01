@@ -52,18 +52,20 @@ export async function runningPids(
 
 /**
  * Looks until every pid is gone or `boundMs` has passed; no wait at all
- * when the first look finds them gone. The result's listing is the last one
- * taken.
+ * when the first look finds them gone. A function is read again at every
+ * look, so pids added while the check waits are checked too. The result's
+ * listing is the last one taken.
  */
 export async function confirmGone(
-	pids: readonly number[],
+	pids: readonly number[] | (() => readonly number[]),
 	options: ProcessCheckOptions & { readonly boundMs: number },
 ): Promise<ProcessCheck> {
+	const read = typeof pids === "function" ? pids : () => pids;
 	const deadline = Date.now() + options.boundMs;
-	let check = await runningPids(pids, options);
+	let check = await runningPids(read(), options);
 	while (check.running.length > 0 && Date.now() < deadline) {
 		await delay(Math.min(POLL_MS, Math.max(deadline - Date.now(), 0)));
-		const next = await runningPids(check.running, options);
+		const next = await runningPids(read(), options);
 		check = { running: next.running, listing: next.listing ?? check.listing };
 	}
 	return check;
@@ -83,18 +85,23 @@ export function detachedCandidates(
 	},
 ): DetachedProcess[] {
 	const owned = new Set(options.owned);
-	return listing
-		.filter(
-			(entry) =>
-				entry.pid !== process.pid &&
-				!owned.has(entry.pid) &&
-				!isZombie(entry) &&
-				options.paths.some((path) => entry.command.includes(path)),
-		)
-		.map((entry) => ({
-			pid: entry.pid,
-			command: shorten(entry.command),
-		}));
+	return listing.flatMap((entry) => {
+		if (entry.pid === process.pid || owned.has(entry.pid) || isZombie(entry))
+			return [];
+		const path = longestIncluded(entry.command, options.paths);
+		if (path === undefined) return [];
+		return [{ pid: entry.pid, command: shorten(entry.command, path) }];
+	});
+}
+
+/** The longest of `paths` in `command`: `/private/var/x` also contains `/var/x`. */
+function longestIncluded(
+	command: string,
+	paths: readonly string[],
+): string | undefined {
+	return paths
+		.filter((path) => command.includes(path))
+		.sort((a, b) => b.length - a.length)[0];
 }
 
 /** `path` and, when it differs, its real path: a command may name either. */
@@ -120,8 +127,17 @@ function isZombie(entry: ProcessEntry): boolean {
 	return entry.stat.startsWith("Z");
 }
 
-function shorten(command: string): string {
-	return command.length > COMMAND_CHARS
-		? `${command.slice(0, COMMAND_CHARS - 3)}...`
-		: command;
+/**
+ * At most `COMMAND_CHARS`, keeping the matched path: a cut that would fall
+ * inside or before it keeps a shorter head, then the path. Only a path
+ * longer than the limit makes the result longer.
+ */
+function shorten(command: string, path: string): string {
+	if (command.length <= COMMAND_CHARS) return command;
+	const end = command.indexOf(path) + path.length;
+	if (end <= COMMAND_CHARS - 3)
+		return `${command.slice(0, COMMAND_CHARS - 3)}...`;
+	const tail = end < command.length ? "..." : "";
+	const head = Math.max(COMMAND_CHARS - path.length - 3 - tail.length, 0);
+	return `${command.slice(0, head)}...${path}${tail}`;
 }

@@ -1,12 +1,22 @@
-import type { PatchFailure, RunRecord } from "./types.ts";
+import type { DetachedProcess, PatchFailure, RunRecord } from "./types.ts";
+
+/** How many detached candidates the summary names; the rest are counted. */
+const NAMED_CANDIDATES = 3;
+/** The command characters the summary keeps per candidate; run.json has more. */
+const CANDIDATE_COMMAND_CHARS = 80;
 
 /**
  * One line for the lead: status, reason or the last review's verdict, and
  * re-entries. A build that did not apply its change names the latest
  * builder patch, so a human can apply it, and says when the last attempt's
- * work is in no patch.
+ * work is in no patch. Detached process candidates are named whatever the
+ * status.
  */
 export function summarizeRun(record: RunRecord): string {
+	return `${outcomeLine(record)}${detachedNote(record.manifest.detachedCandidates)}`;
+}
+
+function outcomeLine(record: RunRecord): string {
 	const { manifest } = record;
 	const loops = reentryCounts(record);
 	if (manifest.status !== "done")
@@ -23,6 +33,26 @@ function cleanupNote(record: RunRecord): string {
 	const pids = record.manifest.cleanupUnconfirmed ?? [];
 	if (pids.length === 0) return "";
 	return `; cleanup unconfirmed (pids ${pids.join(", ")}), the run lock stays until they exit`;
+}
+
+/** Processes not owned and never claimed gone that still name the builder clone. */
+function detachedNote(
+	candidates: readonly DetachedProcess[] | undefined,
+): string {
+	if (!candidates || candidates.length === 0) return "";
+	const named = candidates
+		.slice(0, NAMED_CANDIDATES)
+		.map(({ pid, command }) => `${pid} (${truncated(command)})`)
+		.join("; ");
+	const more = candidates.length - NAMED_CANDIDATES;
+	const rest = more > 0 ? `; and ${more} more` : "";
+	return `; ${candidates.length} detached process candidate(s) still name the builder clone, not confirmed gone: pids ${named}${rest} (see run.json)`;
+}
+
+function truncated(command: string): string {
+	return command.length > CANDIDATE_COMMAND_CHARS
+		? `${command.slice(0, CANDIDATE_COMMAND_CHARS - 3)}...`
+		: command;
 }
 
 /** Empty when the reason already names the patch, as a failed apply's does. */

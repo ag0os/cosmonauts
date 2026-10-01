@@ -297,6 +297,43 @@ describe("lean_build tool", () => {
 		);
 	});
 
+	test("states that only the child runner's processes are waited for, not a Pi session's built-in tools", () => {
+		const { pi } = setup();
+		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
+
+		expect(tool.description).toContain(
+			"waits up to 30 s for every process its child runner started to exit (external builder and reviewer sessions, host-check providers, mutation testing, code health, and what their process trees contain); processes started by the built-in tools of an in-process Pi session (the default pi backend) are not tracked",
+		);
+		expect(tool.description).not.toContain("every process it started");
+	});
+
+	test("names detached process candidates in the summary it returns", async () => {
+		const pi = createMockPi({ cwd: "/project" });
+		createLeanRunExtension({
+			runBuild: async () => {
+				const base = record();
+				return {
+					...base,
+					manifest: {
+						...base.manifest,
+						detachedCandidates: [
+							{ pid: 4242, command: "perl -e daemon /tmp/clone/marker" },
+						],
+					},
+				};
+			},
+			createBackends: async () => ({ builder: BACKEND, reviewer: REVIEWER }),
+		})(pi as never);
+
+		const result = (await pi.callTool("lean_build", { planPath: "p.md" })) as {
+			details: { summary: string };
+		};
+
+		expect(result.details.summary).toBe(
+			"blocked: re-entry signals remain (0 re-entries); 1 detached process candidate(s) still name the builder clone, not confirmed gone: pids 4242 (perl -e daemon /tmp/clone/marker) (see run.json)",
+		);
+	});
+
 	test("states what the builder still shares with this checkout", () => {
 		const { pi } = setup();
 		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
@@ -410,7 +447,30 @@ describe("lean_review tool", () => {
 				"request",
 				"backend",
 				"lenses",
+				"clearStaleLock",
 			]),
+		);
+	});
+
+	test("passes clearStaleLock through only when it is set", async () => {
+		const { pi, reviews } = setup();
+
+		await pi.callTool("lean_review", { clearStaleLock: true });
+		await pi.callTool("lean_review", {});
+
+		expect(reviews[0]?.clearStaleLock).toBe(true);
+		expect(reviews[1]).not.toHaveProperty("clearStaleLock");
+	});
+
+	test("states that it shares the run lock and what it waits for", () => {
+		const { pi } = setup();
+		const tool = pi.tools.get("lean_review") as unknown as RegisteredTool;
+
+		expect(tool.description).toContain(
+			"It takes the same run lock as lean_build.",
+		);
+		expect(tool.description).toContain(
+			"until they exit or clearStaleLock is set",
 		);
 	});
 

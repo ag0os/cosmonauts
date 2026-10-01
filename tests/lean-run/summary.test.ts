@@ -55,6 +55,53 @@ describe("summarizeRun", () => {
 		);
 	});
 
+	test("names the detached process candidates of a done run", () => {
+		const summary = summarizeRun(
+			record(
+				{
+					detachedCandidates: [
+						{ pid: 51, command: "perl -e daemon /tmp/clone/marker" },
+					],
+				},
+				{ outcome: "done", summary: "fine", findings: [] },
+			),
+		);
+		expect(summary).toBe(
+			"done: fine; 0 finding(s), 0 high (1 re-entry); 1 detached process candidate(s) still name the builder clone, not confirmed gone: pids 51 (perl -e daemon /tmp/clone/marker) (see run.json)",
+		);
+	});
+
+	test("names the detached process candidates of a run that did not finish", () => {
+		const summary = summarizeRun(
+			record({
+				status: "failed",
+				reason: "boom",
+				detachedCandidates: [{ pid: 51, command: "sleep /tmp/clone" }],
+			}),
+		);
+		expect(summary).toBe(
+			"failed: boom (1 re-entry); 1 detached process candidate(s) still name the builder clone, not confirmed gone: pids 51 (sleep /tmp/clone) (see run.json)",
+		);
+	});
+
+	test("names three detached candidates, counts the rest and truncates long commands", () => {
+		const long = `node /tmp/clone/${"x".repeat(200)}`;
+		const summary = summarizeRun(
+			record({
+				status: "failed",
+				reason: "boom",
+				detachedCandidates: [51, 52, 53, 54, 55].map((pid) => ({
+					pid,
+					command: long,
+				})),
+			}),
+		);
+		const cut = `${long.slice(0, 77)}...`;
+		expect(summary).toBe(
+			`failed: boom (1 re-entry); 5 detached process candidate(s) still name the builder clone, not confirmed gone: pids 51 (${cut}); 52 (${cut}); 53 (${cut}); and 2 more (see run.json)`,
+		);
+	});
+
 	test("reports the re-review's verdict after a findings re-entry", () => {
 		const summary = summarizeRun({
 			...record({ reentries: 0, findingsReentries: 1 }),

@@ -58,10 +58,12 @@ warning names it, and `rm -rf` of the named directory removes it.
 
 ## Run lock and leftover processes
 
-One run at a time holds a repository's run lock (`.git/lean-run/lock`).
-The run owns every process the host's child runner starts for it (external
-builder and reviewer sessions, provider commands, mutation testing) and
-every process it finds in their trees, until it sees them gone. When the
+One run at a time holds a repository's run lock (`.git/lean-run/lock`);
+`lean_build` and `lean_review` both take it. The run owns every process the
+host's child runner starts for it (external builder and reviewer sessions,
+host-check providers, mutation testing, code health, and the project tools
+of an in-process session) and every process it finds in their trees, until
+it sees them gone. When the
 run ends it waits up to 30 s for all of them to exit, with no wait when
 they already have. If some still run, `run.json` lists them as
 `cleanupUnconfirmed`, the reason says so, and the lock stays, rewritten as
@@ -71,21 +73,25 @@ Its age never frees it. The next run in the repository:
 - proceeds, with a warning, when none of those pids is running any more;
 - ends `blocked: previous run cleanup unconfirmed (pids …)` otherwise;
 - proceeds anyway, with a warning naming the cleared pids, when
-  `lean_build` is called with `clearStaleLock: true`. Only an
+  `lean_build` or `lean_review` is called with `clearStaleLock: true`. Only an
   `unconfirmed` lock is cleared this way, never a running run's.
 
 A pid is gone when signal 0 finds no such process, or a `ps` listing lacks
 it or shows it as a zombie; a reused pid counts as running. On Windows
 there is no listing: a pid that still exists counts as running, and the
 descendants of an exited child cannot be enumerated, so they are never
-owned.
+owned. Whenever a child's descendants could not be enumerated (any natural
+exit on Windows, a failed `ps`), `run.json` has a warning naming the child's
+pid and the stage that started it: its descendants are not confirmed gone.
 
-Not owned, and so never waited for: processes a Pi session's own tools
-start, and a process that left a child's tree before any listing found it
-(a daemon that forked and called `setsid`). For the second, best effort,
+Not owned, and so never waited for: processes started by the built-in
+tools (bash and the like) of an in-process Pi session, the default `pi`
+backend, and a process that left a child's tree before any listing found
+it (a daemon that forked and called `setsid`). For the second, best effort,
 the end of a build lists running processes whose command line names the
-builder clone as `detachedCandidates` in `run.json`, with a warning; they
-are reported, never counted, and never claimed gone. A process working in
+builder clone as `detachedCandidates` in `run.json`, with a warning, and the
+summary names them; they are reported, never counted, and never claimed
+gone. A process working in
 the clone without naming it is not found: working directories are not
 read, since no portable lookup of them is cheap.
 

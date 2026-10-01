@@ -6,7 +6,15 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	realpath,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -15,7 +23,9 @@ import type { RefreshFileGraph } from "../../lib/lean-run/graph-refresh.ts";
 import {
 	type RunBuildOptions,
 	runBuild,
+	runReview,
 } from "../../lib/lean-run/run-build.ts";
+import { summarizeRun } from "../../lib/lean-run/summary.ts";
 import type {
 	BuilderBackend,
 	RunRecord,
@@ -45,6 +55,24 @@ const LEFTOVER_SCRIPT = [
 	"perl -e 'use POSIX; POSIX::setsid() or die; $| = 1; print \"detached $$\\n\"; sleep 60 while 1;' &",
 	"wait",
 ].join("\n");
+
+/**
+ * A double-fork daemon: the first child leaves the session and forks the
+ * daemon, which writes its pid to ARGV[0] and keeps ARGV[1] (a path in the
+ * clone) on its command line. The parent exits only once that file exists,
+ * so its group is empty when it exits: the runner lists nothing and the
+ * daemon is never in the tree.
+ */
+const DAEMON_SCRIPT = [
+	"use POSIX;",
+	"if (fork) { select(undef, undef, undef, 0.02) until -e $ARGV[0]; exit 0; }",
+	"POSIX::setsid() or die;",
+	"fork and exit;",
+	'open(my $f, ">", "$ARGV[0].tmp") or die; print $f "$$\\n"; close $f;',
+	'rename("$ARGV[0].tmp", $ARGV[0]) or die;',
+	"close STDOUT; close STDERR; close STDIN;",
+	"sleep 30;",
+].join(" ");
 
 let root: string;
 let scratch: string;
@@ -374,6 +402,130 @@ describe.skipIf(process.platform === "win32")(
 			).toBe(true);
 			expect(existsSync(lockPath())).toBe(false);
 			expect((await build()).manifest.status).toBe("done");
+		}, 30_000);
+
+		test("reports a real daemon re-parented before any listing as a detached candidate", async () => {
+			// The clone is made under a symlinked temp directory and the daemon
+			// names its real path, which does not contain the linked one.
+			const realTmp = join(scratch, "real-tmp");
+			const linkedTmp = join(scratch, "linked-tmp");
+			await mkdir(realTmp);
+			await symlink(realTmp, linkedTmp);
+			const pidFile = join(scratch, "daemon.pid");
+			let clone = "";
+			let realClone = "";
+			const builder: BuilderBackend = {
+				kind: "pi",
+				async run(input) {
+					clone = input.worktree;
+					realClone = await realpath(input.worktree);
+					await runChild({
+						command: "perl",
+						args: ["-e", DAEMON_SCRIPT, pidFile, `${realClone}/daemon-marker`],
+						cwd: input.worktree,
+						output: {
+							stdout: join(scratch, "daemon.stdout.log"),
+							stderr: join(scratch, "daemon.stderr.log"),
+						},
+					});
+					const daemon = await waitForMatch(pidFile, /^(\d+)\n/u);
+					leftovers.push(daemon);
+					return backend(DONE, true).run(input);
+				},
+			};
+			const savedTmp = process.env.TMPDIR;
+			process.env.TMPDIR = linkedTmp;
+			let record: RunRecord;
+			try {
+				record = await build({ backend: builder });
+			} finally {
+				if (savedTmp === undefined) delete process.env.TMPDIR;
+				else process.env.TMPDIR = savedTmp;
+			}
+
+			const [daemon] = leftovers;
+			if (!daemon) throw new Error("daemon not started");
+			expect(clone.startsWith(linkedTmp)).toBe(true);
+			expect(realClone.includes(clone)).toBe(false);
+			expect(record.manifest.detachedCandidates).toEqual([
+				{ pid: daemon, command: expect.stringContaining(realClone) },
+			]);
+			expect(record.manifest.cleanupUnconfirmed).toBeUndefined();
+			expect(record.manifest.status).toBe("done");
+			expect(summarizeRun(record)).toContain(
+				`1 detached process candidate(s) still name the builder clone, not confirmed gone: pids ${daemon} (`,
+			);
+			expect(existsSync(lockPath())).toBe(false);
+			expect((await build()).manifest.status).toBe("done");
+		}, 30_000);
+
+		test("warns that descendants were not enumerated when a tree listing fails", async () => {
+			const builder: BuilderBackend = {
+				kind: "pi",
+				async run(input) {
+					await runChild({
+						command: "sh",
+						args: ["-c", "sleep 5 & exit 0"],
+						cwd: input.worktree,
+						output: {
+							stdout: join(scratch, "unlisted.stdout.log"),
+							stderr: join(scratch, "unlisted.stderr.log"),
+						},
+						listProcesses: async () => new Error("ps failed"),
+					});
+					return backend(DONE, true).run(input);
+				},
+			};
+
+			const record = await build({
+				backend: builder,
+				listProcesses: async () => new Error("ps failed"),
+			});
+
+			expect(record.manifest.status).toBe("done");
+			expect(record.manifest.cleanupUnconfirmed).toBeUndefined();
+			expect(record.manifest.warnings).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(
+						/^process trees unverified: the descendants of pid \d+ at builder-1 \(.*\) could not be enumerated, so they are not confirmed gone and the run lock does not wait for them$/u,
+					),
+					"detached process scan skipped: no process listing (Windows has none, or ps failed)",
+				]),
+			);
+			expect(existsSync(lockPath())).toBe(false);
+		}, 30_000);
+
+		test("lean review: refused by an unconfirmed lock, proceeds with clearStaleLock", async () => {
+			const { record } = await buildWithLeftovers();
+			await writeFile(join(root, "src/greet.ts"), "export const greet = 2;\n");
+			const review = (extra: { clearStaleLock?: boolean } = {}) =>
+				runReview({
+					projectRoot: root,
+					reviewerBackend: backend(REVIEW),
+					providers: [verify],
+					requiredSignals: [],
+					refreshGraph,
+					...extra,
+				});
+
+			const refused = await review();
+
+			expect(refused.manifest.status).toBe("blocked");
+			expect(refused.manifest.reason).toMatch(
+				/^previous run cleanup unconfirmed \(pids /u,
+			);
+
+			const cleared = await review({ clearStaleLock: true });
+
+			expect(cleared.manifest.status).toBe("done");
+			expect(
+				cleared.manifest.warnings?.some((warning) =>
+					warning.startsWith(
+						`clearStaleLock: cleared previous run ${record.manifest.id}'s unconfirmed lock`,
+					),
+				),
+			).toBe(true);
+			expect(existsSync(lockPath())).toBe(false);
 		}, 30_000);
 	},
 );

@@ -103,6 +103,41 @@ describe("ProcessOwner with runChild", () => {
 		expect(owned[0]).not.toBe(process.pid);
 	});
 
+	test("records a tree it could not enumerate with the owner's label at the claim", async () => {
+		let label = "builder-1";
+		const owner = new ProcessOwner({ label: () => label });
+
+		await ownProcesses(owner, () =>
+			sh("exit 0", {
+				platform: "win32",
+				taskkill: async () => {
+					throw new Error("not called");
+				},
+			}),
+		);
+		label = "reviewer";
+
+		const [pid] = owner.current();
+		expect(owner.unverified()).toEqual([
+			{
+				pid,
+				reason: `process ${pid} exited; Windows cannot enumerate its descendants`,
+				label: "builder-1",
+			},
+		]);
+	});
+
+	test.skipIf(process.platform === "win32")(
+		"records no unverified tree for a child confirmed gone",
+		async () => {
+			const owner = new ProcessOwner({ label: () => "builder-1" });
+
+			await ownProcesses(owner, () => sh("exit 0"));
+
+			expect(owner.unverified()).toEqual([]);
+		},
+	);
+
 	test("starts nothing once the owner is closed", async () => {
 		const owner = new ProcessOwner();
 		owner.close();

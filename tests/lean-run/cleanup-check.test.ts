@@ -138,6 +138,23 @@ describe("confirmGone", () => {
 		expect(check.running).toEqual([pid]);
 		expect(Date.now() - started).toBeGreaterThanOrEqual(200);
 	});
+
+	test("checks pids added while it waits when given a function", async () => {
+		const first = sleeper();
+		const late = sleeper();
+		let reads = 0;
+		const pids = () => {
+			reads += 1;
+			return reads === 1 ? [first] : [first, late];
+		};
+
+		const check = await confirmGone(pids, {
+			list: async () => [entry({ pid: first }), entry({ pid: late })],
+			boundMs: 250,
+		});
+
+		expect(check.running).toEqual([first, late].sort((a, b) => a - b));
+	});
 });
 
 describe("detachedCandidates", () => {
@@ -180,5 +197,32 @@ describe("detachedCandidates", () => {
 
 		expect(candidate?.command).toHaveLength(200);
 		expect(candidate?.command.endsWith("...")).toBe(true);
+	});
+
+	test("keeps the longest spelling it matched", () => {
+		const clone = `/var/cosmonauts-lean-builder-x/${"c".repeat(40)}/checkout`;
+		const command = `node ${"a".repeat(180)} /private${clone}/marker`;
+
+		const [candidate] = detachedCandidates(
+			[entry({ pid: 9_000_001, command })],
+			{ paths: [clone, `/private${clone}`], owned: [] },
+		);
+
+		expect(candidate?.command).toContain(`/private${clone}`);
+	});
+
+	test("keeps the matched path when the cut would fall inside it", () => {
+		const clone = `/tmp/cosmonauts-lean-builder-x/${"c".repeat(40)}/checkout`;
+		const command = `node ${"a".repeat(180)} ${clone}/marker ${"z".repeat(100)}`;
+
+		const [candidate] = detachedCandidates(
+			[entry({ pid: 9_000_001, command })],
+			{ paths: [clone], owned: [] },
+		);
+
+		expect(candidate?.command).toHaveLength(200);
+		expect(candidate?.command).toContain(clone);
+		expect(candidate?.command.startsWith("node aaa")).toBe(true);
+		expect(candidate?.command.endsWith(`...${clone}...`)).toBe(true);
 	});
 });
