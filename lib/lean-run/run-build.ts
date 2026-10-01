@@ -354,15 +354,19 @@ async function underRunLock(
 			aborted ?? `runner error: ${errorMessage(error)}`,
 		);
 	} finally {
-		if (run) await recordPrBody(run);
-		await release?.();
+		try {
+			if (run) await recordPrBody(run);
+		} finally {
+			await release?.();
+		}
 	}
 	return record;
 }
 
 /**
  * Writes `pr-body.md` once a stage left an envelope or a provider pass ran;
- * a run that produced nothing has nothing to describe. Never fails the run.
+ * a run that produced nothing has nothing to describe. A failed body is a
+ * warning; only a manifest that cannot be saved at all throws.
  */
 async function recordPrBody(run: Run): Promise<void> {
 	const { record } = run;
@@ -379,7 +383,23 @@ async function recordPrBody(run: Run): Promise<void> {
 	} catch (error) {
 		warn(record, `pr body not written: ${errorMessage(error)}`);
 	}
-	await saveManifest(record);
+	await saveManifestOrWarn(record, "after the pr body");
+}
+
+/**
+ * Saves the manifest; a failed save is recorded as a warning and retried
+ * once, and a second failure throws, for the caller's cleanup to run first.
+ */
+async function saveManifestOrWarn(
+	record: RunRecord,
+	when: string,
+): Promise<void> {
+	try {
+		await saveManifest(record);
+	} catch (error) {
+		warn(record, `manifest save failed ${when}: ${errorMessage(error)}`);
+		await saveManifest(record);
+	}
 }
 
 /** `plan` when a plan document came with the change, else the run's own tier. */
@@ -684,7 +704,7 @@ async function runBuilder(
 	if (await stopBeforeStage(run, stage)) return undefined;
 	await snapshotAttempt(run, stage);
 	const worktree = run.options.projectRoot;
-	await takeHealthHookLog({ worktree });
+	await dropHealthHookLeftover(run, stage);
 	await writeRunBaseSha({ worktree, baseSha: diffBase(run) });
 	try {
 		const envelope = await runStage(run, stage, run.options.backend, {
@@ -697,14 +717,33 @@ async function runBuilder(
 			await finish(run, envelope.outcome, `${stage}: ${envelope.reason}`);
 		return undefined;
 	} finally {
-		await keepHealthHookLog(run, stage);
-		await clearRunBaseSha({ worktree });
+		try {
+			await keepHealthHookLog(run, stage);
+		} finally {
+			await clearRunBaseSha({ worktree });
+		}
+	}
+}
+
+/** Drops what an earlier stage or run left in the hook log; a failure is a warning. */
+async function dropHealthHookLeftover(
+	run: Run,
+	stage: BuilderStage,
+): Promise<void> {
+	try {
+		await takeHealthHookLog({ worktree: run.options.projectRoot });
+	} catch (error) {
+		warn(
+			run.record,
+			`health hook log not cleared before ${stage}: ${errorMessage(error)}`,
+		);
 	}
 }
 
 /**
  * Moves what the health hook logged during `stage` into the run record's
- * `health-hook.jsonl`, each line tagged with the stage. Never fails the run.
+ * `health-hook.jsonl`, each line tagged with the stage. A failure is a
+ * warning; only a manifest that cannot be saved at all throws.
  */
 async function keepHealthHookLog(run: Run, stage: BuilderStage): Promise<void> {
 	try {
@@ -722,7 +761,7 @@ async function keepHealthHookLog(run: Run, stage: BuilderStage): Promise<void> {
 		);
 	} catch (error) {
 		warn(run.record, `health hook log not kept: ${errorMessage(error)}`);
-		await saveManifest(run.record);
+		await saveManifestOrWarn(run.record, "after the health hook log");
 	}
 }
 

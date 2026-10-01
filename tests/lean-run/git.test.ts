@@ -1,12 +1,15 @@
 /**
- * Tests for readWorktreeStatus: the working tree's change against a base,
- * per file, as the change diagram's classes.
+ * Tests for readWorktreeStatus and readWorktreeChange: the working tree's
+ * change against a base, per file, as the change diagram's classes.
  */
 import { execFileSync } from "node:child_process";
 import { rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
-import { readWorktreeStatus } from "../../lib/lean-run/git.ts";
+import {
+	readWorktreeChange,
+	readWorktreeStatus,
+} from "../../lib/lean-run/git.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const repo = useTempDir("lean-git-status-");
@@ -30,7 +33,7 @@ beforeEach(async () => {
 	git("commit", "-q", "-m", "base");
 });
 
-test("classes added, modified, removed and renamed files, untracked ones included", async () => {
+test("classes added, modified and removed files, untracked ones included, and a rename as removed plus added", async () => {
 	await writeFile(join(repo.path, "kept.ts"), "export const kept = 2;\n");
 	await rm(join(repo.path, "gone.ts"));
 	await writeFile(join(repo.path, "new.ts"), "export const fresh = 1;\n");
@@ -42,7 +45,25 @@ test("classes added, modified, removed and renamed files, untracked ones include
 		"kept.ts": "modified",
 		"gone.ts": "removed",
 		"new.ts": "added",
-		"new-name.ts": "modified",
+		"old-name.ts": "removed",
+		"new-name.ts": "added",
 	});
 	expect(git("status", "--porcelain")).toContain("?? new.ts");
+});
+
+test.each([
+	"true",
+	"false",
+])("lists a rename's two paths and classes both, with diff.renames=%s", async (renames) => {
+	git("config", "diff.renames", renames);
+	await rename(join(repo.path, "old-name.ts"), join(repo.path, "new-name.ts"));
+
+	const [change, status] = await Promise.all([
+		readWorktreeChange({ cwd: repo.path, base: "HEAD" }),
+		readWorktreeStatus({ cwd: repo.path, base: "HEAD" }),
+	]);
+
+	expect(change.changedFiles.sort()).toEqual(["new-name.ts", "old-name.ts"]);
+	expect(Object.keys(status).sort()).toEqual(change.changedFiles);
+	expect(status).toEqual({ "old-name.ts": "removed", "new-name.ts": "added" });
 });

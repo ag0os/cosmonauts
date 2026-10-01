@@ -8,16 +8,17 @@
  * regression against the base, never absolute (ruling W3-6). Only survivors
  * on lines the diff added or rewrote re-enter; survivors on unchanged lines
  * of a changed function predate the change and are listed in
- * `survivorsOutsideDiff` as `info`. And a changed file whose covering tests
- * are all sandbox-unsafe is not mutated: no test could kill its mutants, so
- * it is reported in `untestable` rather than failed.
+ * `survivorsOutsideDiff` as `info`. And a changed file whose own tests (its
+ * mirrored test and direct test importers) are all sandbox-unsafe is not
+ * mutated: no test could kill its mutants, so it is reported in `untestable`
+ * rather than failed.
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadFileGraph } from "../../architecture-map/index.ts";
 import type { FileGraph } from "../../architecture-map/types.ts";
@@ -523,11 +524,7 @@ function spawnStryker(
 		let timer: NodeJS.Timeout | undefined;
 		const child = spawn(options.command.executable, options.command.args, {
 			cwd: options.cwd,
-			env: {
-				...process.env,
-				STRYKER_VITEST_POOL: "forks",
-				STRYKER_JSON_REPORT: options.reportPath,
-			},
+			env: strykerEnv(options),
 			detached: process.platform !== "win32",
 			stdio: ["ignore", logFd, logFd],
 		});
@@ -554,6 +551,28 @@ function spawnStryker(
 		options.signal?.addEventListener("abort", onAbort, { once: true });
 		if (options.signal?.aborted) onAbort();
 	});
+}
+
+/**
+ * Stryker's environment, which its test runners inherit. The sandbox has no
+ * `.git`, so a test running git there without a fixture cwd would find the
+ * live checkout above it; `GIT_CEILING_DIRECTORIES` at the sandboxes' parent
+ * stops that search, and such a command fails instead.
+ */
+function strykerEnv(options: {
+	readonly cwd: string;
+	readonly reportPath: string;
+}): NodeJS.ProcessEnv {
+	const ceiling = join(realpathSync(options.cwd), STRYKER_TEMP_DIR);
+	const inherited = process.env.GIT_CEILING_DIRECTORIES;
+	return {
+		...process.env,
+		STRYKER_VITEST_POOL: "forks",
+		STRYKER_JSON_REPORT: options.reportPath,
+		GIT_CEILING_DIRECTORIES: inherited
+			? `${ceiling}${delimiter}${inherited}`
+			: ceiling,
+	};
 }
 
 /** Stryker's runner processes share its group; none may outlive the signal. */

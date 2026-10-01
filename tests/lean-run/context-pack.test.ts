@@ -163,7 +163,20 @@ describe("planPathWarnings", () => {
 				graph: GRAPH,
 				projectRoot: tmp.path,
 			}),
-		).toEqual(["plan path not found: tests/helpers/mermaid-structure.ts"]);
+		).toEqual([
+			"plan path not found (new file?): tests/helpers/mermaid-structure.ts",
+		]);
+	});
+
+	test("words a Touches file the plan creates as a possible new file", () => {
+		expect(
+			planPathWarnings({
+				touches: ["src/new.ts"],
+				reuses: [],
+				graph: GRAPH,
+				projectRoot: tmp.path,
+			}),
+		).toEqual(["plan path not found (new file?): src/new.ts"]);
 	});
 
 	test("warns in other words about a file on disk the graph does not hold", async () => {

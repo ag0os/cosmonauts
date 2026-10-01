@@ -5,10 +5,19 @@
  */
 
 import { describe, expect, test } from "vitest";
+import type { BlastRadius } from "../../../lib/lean-run/graph/blast-radius.ts";
 import {
 	type PrBodyOptions,
 	renderPrBody,
 } from "../../../lib/lean-run/graph/pr-body.ts";
+
+const RADIUS: BlastRadius = {
+	changed: ["lib/a.ts"],
+	dependents: ["lib/b.ts"],
+	tests: ["tests/a.test.ts", "tests/b.test.ts"],
+	hubs: ["lib/types.ts"],
+	truncated: true,
+};
 
 const FULL: PrBodyOptions = {
 	title: "Add the blast radius",
@@ -29,13 +38,7 @@ const FULL: PrBodyOptions = {
 			reenter: true,
 		},
 	],
-	blastRadius: {
-		changed: ["lib/a.ts"],
-		dependents: ["lib/b.ts"],
-		tests: ["tests/a.test.ts", "tests/b.test.ts"],
-		hubs: ["lib/types.ts"],
-		truncated: true,
-	},
+	blastRadius: RADIUS,
 	planVersusActual: {
 		planned: ["lib/a.ts"],
 		unplanned: ["lib/extra.ts"],
@@ -132,8 +135,16 @@ Tests:
 	test("omits the truncation line when the walk was complete", () => {
 		const body = renderPrBody({
 			...FULL,
-			blastRadius: { ...FULL.blastRadius, hubs: [], truncated: false },
+			blastRadius: { ...RADIUS, hubs: [], truncated: false },
 		});
 		expect(body).not.toContain("Truncated.");
+	});
+
+	test("says the blast radius did not run when there is none", () => {
+		const { blastRadius: _, ...withoutRadius } = FULL;
+		const body = renderPrBody(withoutRadius);
+		expect(body).toContain(
+			"## Blast radius\n\nThe blast-radius signal did not run for this change.\n\n## Plan versus actual",
+		);
 	});
 });

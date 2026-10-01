@@ -422,11 +422,11 @@ describe("runBuild context pack", () => {
 
 		const warnings = [
 			"plan path is not in the file graph: README.md",
-			"plan path not found: tests/helpers/mermaid-structure.ts",
+			"plan path not found (new file?): tests/helpers/mermaid-structure.ts",
 		];
 		expect(record.manifest.warnings).toEqual(warnings);
 		expect(builder.calls[0]?.prompt).toMatch(
-			/^Warning: plan path is not in the file graph: README\.md\nWarning: plan path not found: tests\/helpers\/mermaid-structure\.ts\n\n# Plan\n/u,
+			/^Warning: plan path is not in the file graph: README\.md\nWarning: plan path not found \(new file\?\): tests\/helpers\/mermaid-structure\.ts\n\n# Plan\n/u,
 		);
 	});
 
@@ -1691,6 +1691,61 @@ graph LR
 		const body = await prBody(record);
 		expect(body).toContain(`# Change against ${base.slice(0, 7)}`);
 		expect(body).toContain("| F-1 | high | open |");
+	});
+
+	test("compares a planned review against the plan when no plan-vs-actual signal ran", async () => {
+		const base = git("rev-parse", "HEAD").trim();
+		await writeGreet(root);
+
+		const record = await runReview({
+			projectRoot: root,
+			base,
+			planPath: PLAN_PATH,
+			reviewerBackend: stubBackend([REVIEW]),
+			providers: [stubProvider([{}])],
+		});
+
+		const body = await prBody(record);
+		expect(body).toContain("**Planned** (1)\n\n- `src/greet.ts`");
+		expect(body).toContain("**Unplanned** (0)\n\n- none");
+		expect(body).toContain("**Untouched** (0)\n\n- none");
+		expect(body).toContain(
+			"## Blast radius\n\nThe blast-radius signal did not run for this change.",
+		);
+	});
+
+	test("styles a renamed planned file's old node as removed and counts it as touched", async () => {
+		await writeFile(
+			join(root, PLAN_PATH),
+			`${PLAN}
+## Diagram
+\`\`\`mermaid
+graph LR
+  greet["src/greet.ts"]
+\`\`\`
+`,
+		);
+		git("add", "-A");
+		git("commit", "-q", "-m", "diagram");
+		const renameGreet: Reply = async (input) => {
+			await rm(join(input.worktree, "src/greet.ts"));
+			await writeFile(
+				join(input.worktree, "src/hello.ts"),
+				"export const greet = 1;\n",
+			);
+			return DONE;
+		};
+
+		const record = await build({
+			builder: stubBackend([renameGreet]),
+			providers: [stubProvider([{}]), planVersusActualProvider],
+		});
+
+		const body = await prBody(record);
+		expect(body).toContain("class greet removed");
+		expect(body).toContain("**Planned** (1)\n\n- `src/greet.ts`");
+		expect(body).toContain("**Untouched** (0)");
+		expect(body).toMatch(/class \w+ added/u);
 	});
 
 	test("is not written when no stage ran", async () => {

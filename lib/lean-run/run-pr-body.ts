@@ -4,7 +4,10 @@ import { readWorktreeChange, readWorktreeStatus } from "./git.ts";
 import type { BlastRadius } from "./graph/blast-radius.ts";
 import { renderChangeDiagram } from "./graph/mermaid.ts";
 import { normalizeRepoPaths } from "./graph/paths.ts";
-import type { PlanVersusActual } from "./graph/plan-vs-actual.ts";
+import {
+	type PlanVersusActual,
+	planVersusActual,
+} from "./graph/plan-vs-actual.ts";
 import { type DispositionedFinding, renderPrBody } from "./graph/pr-body.ts";
 import {
 	type ParsedPlan,
@@ -28,8 +31,10 @@ const TITLE_CHARS = 72;
  * Writes `pr-body.md` into the run directory (brief 4.9) from the record:
  * the plan's diagram restyled with each changed file's diff status, the last
  * provider pass's signals, blast radius and plan-versus-actual data, and the
- * last review's findings, each `open`. Records its project-relative path as
- * the manifest's `prBodyPath`; saving the manifest is the caller's.
+ * last review's findings, each `open`. Without a plan-versus-actual signal,
+ * the comparison is computed here from the plan; without a blast-radius
+ * signal, the section says it did not run. Records its project-relative path
+ * as the manifest's `prBodyPath`; saving the manifest is the caller's.
  */
 export async function writeRunPrBody(
 	options: RunPrBodyOptions,
@@ -41,24 +46,31 @@ export async function writeRunPrBody(
 		readWorktreeStatus({ cwd: projectRoot, base }),
 	]);
 	const signals = record.facts.passes.at(-1)?.signals ?? [];
-	const radius = radiusOf(signals) ?? emptyRadius(changedFiles);
+	const radius = radiusOf(signals);
 	const comparison =
-		options.tier === "plan" ? planDataOf(signals, changedFiles) : undefined;
+		options.tier === "plan"
+			? (planDataOf(signals) ??
+				planVersusActual({
+					plan: options.plan,
+					touched: builderTouched(record),
+					diffFiles: changedFiles,
+				}))
+			: undefined;
 	const changed = normalizeRepoPaths(changedFiles);
 	const diagram = renderChangeDiagram({
 		...(options.plan.diagram ? { planDiagram: options.plan.diagram } : {}),
 		planned: comparison?.planned ?? changed,
 		unplanned: comparison?.unplanned ?? [],
 		untouched: comparison?.untouched ?? [],
-		impacted: radius.dependents,
-		tests: radius.tests,
+		impacted: radius?.dependents ?? [],
+		tests: radius?.tests ?? [],
 		classes,
 	});
 	const body = renderPrBody({
 		title: titleOf(options, base),
 		diagram,
 		verification: signals,
-		blastRadius: radius,
+		...(radius ? { blastRadius: radius } : {}),
 		planVersusActual: comparison ?? {
 			planned: [],
 			unplanned: [],
@@ -103,33 +115,28 @@ function radiusOf(signals: readonly Signal[]): BlastRadius | undefined {
 		: undefined;
 }
 
-function emptyRadius(changedFiles: readonly string[]): BlastRadius {
-	return {
-		changed: normalizeRepoPaths(changedFiles),
-		dependents: [],
-		tests: [],
-		hubs: [],
-		truncated: false,
-	};
+/** The plan-versus-actual signal's lists; undefined when that signal did not run. */
+function planDataOf(signals: readonly Signal[]): PlanVersusActual | undefined {
+	const data = dataOf(signals, "plan-vs-actual");
+	const planned = stringList(data?.planned);
+	const unplanned = stringList(data?.unplanned);
+	const untouched = stringList(data?.untouched);
+	if (!planned || !unplanned || !untouched) return undefined;
+	return { planned, unplanned, untouched };
 }
 
-/** The plan-versus-actual signal's lists; without one, every changed file is unplanned. */
-function planDataOf(
-	signals: readonly Signal[],
-	changedFiles: readonly string[],
-): PlanVersusActual {
-	const data = dataOf(signals, "plan-vs-actual");
-	const list = (key: string): string[] | undefined => {
-		const value = data?.[key];
-		return Array.isArray(value)
-			? value.filter((entry): entry is string => typeof entry === "string")
-			: undefined;
-	};
-	return {
-		planned: list("planned") ?? [],
-		unplanned: list("unplanned") ?? normalizeRepoPaths(changedFiles),
-		untouched: list("untouched") ?? [],
-	};
+/** The last builder envelope's `touched`, as the plan-versus-actual signal reads it. */
+function builderTouched(record: RunRecord): readonly string[] {
+	const { envelopes } = record;
+	const last =
+		envelopes["builder-3"] ?? envelopes["builder-2"] ?? envelopes["builder-1"];
+	return last?.touched ?? [];
+}
+
+function stringList(value: unknown): string[] | undefined {
+	return Array.isArray(value)
+		? value.filter((entry): entry is string => typeof entry === "string")
+		: undefined;
 }
 
 function dataOf(

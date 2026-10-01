@@ -174,4 +174,19 @@ describe("requestPaths", () => {
 			requestPaths("Use one and/or the other, e.g. a 1.5 s delay."),
 		).toEqual([]);
 	});
+
+	test("never reads a URL as a path, backticked or bare", () => {
+		expect(
+			requestPaths(
+				"See https://example.com/doc.html and `https://example.com/a/b.md`.",
+			),
+		).toEqual([]);
+	});
+
+	test("drops a line suffix from a path", () => {
+		expect(requestPaths("Fix `src/x.ts:12` and lib/y.ts:3:4.")).toEqual([
+			"src/x.ts",
+			"lib/y.ts",
+		]);
+	});
 });

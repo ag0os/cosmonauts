@@ -11,7 +11,6 @@
  */
 
 import { dependentsOf, type FileGraph } from "../../architecture-map/index.ts";
-import { blastRadius } from "../graph/blast-radius.ts";
 
 /**
  * Tests that fail in Stryker's sandbox, which has no `.git` of its own: `git`
@@ -92,7 +91,14 @@ const TEMP_FIXTURE =
 	/\bmkdtemp(?:Sync)?\s*\(|\btmpdir\s*\(\s*\)|\buseTempDir\s*\(/u;
 /** Ways a test names the checkout it lives in. */
 const PROJECT_ROOT_REFERENCE =
-	/\bprocess\.cwd\s*\(|\bimport\.meta\.(?:url|dirname|filename)\b|\b__(?:dirname|filename)\b/u;
+	/\bprocess\.cwd\s*\(|\bprocess\.env\.PWD\b|\bresolve\s*\(\s*["'`]\.["'`]\s*\)|\bimport\.meta\.(?:url|dirname|filename)\b|\b__(?:dirname|filename)\b/u;
+/** `git init`, as a shell string or an argument list. */
+const GIT_INIT = /\bgit init\b|["'`]init["'`]/u;
+/** A child-process call whose command is git: `execFileSync("git", …)`, `execSync("git …")`. */
+const GIT_LAUNCH =
+	/\b(?:execFileSync|execFile|execSync|exec|spawnSync|spawn)\s*\(\s*["'`]git\b/gu;
+/** An explicit working directory: a `cwd` option or git's `-C`. */
+const EXPLICIT_CWD = /\bcwd\b|["'`]-C["'`]|\bgit -C\b/u;
 
 /**
  * What matters is behaviour: whether the test runs `git` against the live
@@ -115,21 +121,69 @@ export function isSandboxUnsafeTest(options: {
 }
 
 /**
- * The test builds a temp fixture (`mkdtemp`, `tmpdir()`, `useTempDir`) and
- * never names the checkout it lives in (`process.cwd()`, `import.meta`,
- * `__dirname`), so its git commands can only run in that fixture, which is
- * outside the sandbox's enclosing checkout.
+ * Whether a test's git commands can only run in a temp fixture it builds.
+ * All four must hold:
+ *
+ * 1. it builds a temp directory (`mkdtemp`, `tmpdir()`, `useTempDir`);
+ * 2. it never names the checkout it lives in (`process.cwd()`,
+ *    `process.env.PWD`, `resolve(".")`, `import.meta`, `__dirname`);
+ * 3. it runs `git init`, so the fixture is a repository of its own;
+ * 4. it launches git itself at least once, and every launch
+ *    (`execFileSync("git", …)`, `spawn("git", …)`, `execSync("git …")` and
+ *    the like) passes an explicit working directory, a `cwd` option or `-C`,
+ *    inside that call.
+ *
+ * Rule 4 is the one that matters: `git worktree add <dir>` names only the
+ * destination and works on the repository of its cwd, so a launch without
+ * one adds a worktree to whatever checkout encloses the sandbox. A test that
+ * runs git only through an imported helper is not exempt. The provider also
+ * stops git's repository discovery at the sandbox (`GIT_CEILING_DIRECTORIES`)
+ * for what a text rule cannot see.
  */
 export function gitTargetsTempFixture(content: string): boolean {
-	return TEMP_FIXTURE.test(content) && !PROJECT_ROOT_REFERENCE.test(content);
+	if (!TEMP_FIXTURE.test(content) || PROJECT_ROOT_REFERENCE.test(content))
+		return false;
+	if (!GIT_INIT.test(content)) return false;
+	const launches = gitLaunchArguments(content);
+	return (
+		launches.length > 0 && launches.every((call) => EXPLICIT_CWD.test(call))
+	);
+}
+
+/** The argument text of every git launch, up to its closing parenthesis. */
+function gitLaunchArguments(content: string): string[] {
+	return [...content.matchAll(GIT_LAUNCH)].map((match) =>
+		callArguments(content, match.index + match[0].indexOf("(")),
+	);
+}
+
+/**
+ * The text from the parenthesis at `open` to its match, skipping quoted
+ * text; to the end of `content` when it never closes.
+ */
+function callArguments(content: string, open: number): string {
+	let depth = 0;
+	let quote: string | undefined;
+	for (let index = open; index < content.length; index++) {
+		const char = content.charAt(index);
+		if (quote !== undefined) {
+			if (char === "\\") index++;
+			else if (char === quote) quote = undefined;
+		} else if (char === '"' || char === "'" || char === "`") {
+			quote = char;
+		} else if (char === "(") {
+			depth++;
+		} else if (char === ")" && --depth === 0) {
+			return content.slice(open, index + 1);
+		}
+	}
+	return content.slice(open);
 }
 
 export interface CoverageInput {
 	/** Repo-relative files that hold a changed function. */
 	readonly sourceFiles: readonly string[];
 	readonly graph?: FileGraph;
-	/** The `blast-radius` signal's tests; undefined when no such signal ran. */
-	readonly blastRadiusTests?: readonly string[];
 	readonly exists: (path: string) => boolean;
 	readonly isDenied: (path: string) => boolean;
 }
@@ -155,21 +209,17 @@ export function untestableFiles(input: CoverageInput): UntestableFile[] {
 }
 
 /**
- * The spec files that import `file`: its mirrored test and direct test
- * importers, and the blast-radius signal's tests that reach it through the
- * import graph (all of them when there is no graph to tell them apart).
+ * The spec files that exercise `file` itself: its mirrored test and the tests
+ * that import it directly. Blast-radius tests are left out: they reach the
+ * file through other modules and seldom call the changed function, so one of
+ * them running does not make the file's mutants killable. They still run
+ * (see {@link selectMutationTests}).
  */
-export function coveringTests(file: string, input: CoverageInput): string[] {
-	const reach =
-		input.graph === undefined
-			? undefined
-			: new Set(
-					blastRadius({ graph: input.graph, changedFiles: [file] }).tests,
-				);
-	const viaBlastRadius = (input.blastRadiusTests ?? []).filter(
-		(test) => reach === undefined || reach.has(test),
-	);
-	return unique([...ownTests(file, input.graph), ...viaBlastRadius])
+export function coveringTests(
+	file: string,
+	input: Pick<CoverageInput, "graph" | "exists">,
+): string[] {
+	return unique(ownTests(file, input.graph))
 		.filter((path) => isSpecFile(path) && input.exists(path))
 		.sort();
 }

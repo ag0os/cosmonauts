@@ -98,21 +98,29 @@ function looksLikePath(value: string): boolean {
 /** Punctuation prose puts around a bare path. */
 const WRAPPING = /^[("'[{<]+|[)"'\]}>.,;:!?]+$/gu;
 
+/** A `:line` or `:line:column` suffix, as in `src/x.ts:12`. */
+const LINE_SUFFIX = /:\d+(?::\d+)?$/u;
+
 /**
  * The paths a direct request names: every backticked span that looks like a
  * path, by the plan's rule, and every bare word that has both a directory
  * and an extension (`lib/x.ts`), so prose like "and/or" or "e.g." is not one.
+ * A URL (`://`) is never a path, and a `:line` suffix is dropped.
  */
 export function requestPaths(request: string): string[] {
 	const quoted = [...request.matchAll(BACKTICKED)]
-		.map((match) => (match[1] ?? "").trim())
-		.filter(looksLikePath);
+		.map((match) => (match[1] ?? "").trim().replace(LINE_SUFFIX, ""))
+		.filter(isRequestPath);
 	const bare = request
 		.replace(BACKTICKED, " ")
 		.split(/\s+/)
-		.map((word) => word.replace(WRAPPING, ""))
-		.filter((word) => /\/.*\.[A-Za-z0-9]+$/u.test(word) && looksLikePath(word));
+		.map((word) => word.replace(WRAPPING, "").replace(LINE_SUFFIX, ""))
+		.filter((word) => /\/.*\.[A-Za-z0-9]+$/u.test(word) && isRequestPath(word));
 	return [...new Set([...quoted, ...bare])];
+}
+
+function isRequestPath(token: string): boolean {
+	return !token.includes("://") && looksLikePath(token);
 }
 
 function behaviorList(lines: readonly string[]): PlanBehavior[] {

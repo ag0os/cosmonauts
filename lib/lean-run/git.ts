@@ -63,11 +63,18 @@ export async function resolveCommit(
 	).trim();
 }
 
+/**
+ * Every read here passes `--no-renames`, whatever the user's `diff.renames`:
+ * a rename is the old path deleted and the new one added, so the changed-file
+ * list and the per-file classes always name the same paths.
+ */
+const NO_RENAMES = "--no-renames";
+
 /** The index of `cwd` against `base`, minus session paths and the architecture map. */
 export async function readStagedChange(
 	options: GitOptions & { base: string },
 ): Promise<WorktreeChange> {
-	const range = ["--cached", options.base, "--", ...DIFF_EXCLUDES];
+	const range = [NO_RENAMES, "--cached", options.base, "--", ...DIFF_EXCLUDES];
 	const [diff, names] = await Promise.all([
 		git(["diff", ...range], options),
 		git(["diff", "--name-only", "-z", ...range], options),
@@ -92,8 +99,8 @@ export type FileStatusClass = "added" | "modified" | "removed";
 
 /**
  * The working tree's change against `base` per file, untracked files
- * included: A and C are `added`, D is `removed`, and M, T and R are
- * `modified`, a rename keyed by its new path as the changed-file list has it.
+ * included: A is `added`, D is `removed`, and M and T are `modified`. A
+ * rename is its old path `removed` and its new path `added` (`--no-renames`).
  */
 export function readWorktreeStatus(
 	options: GitOptions & { base: string },
@@ -104,7 +111,7 @@ export function readWorktreeStatus(
 				"diff",
 				"--name-status",
 				"-z",
-				"--find-renames",
+				NO_RENAMES,
 				"--cached",
 				options.base,
 				"--",

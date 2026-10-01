@@ -10,8 +10,15 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import {
+	chmod,
+	mkdir,
+	readFile,
+	realpath,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { FileGraph } from "../../../lib/architecture-map/types.ts";
@@ -544,12 +551,15 @@ describe("isSandboxUnsafeTest", () => {
 	});
 
 	describe("with git aimed at a temp fixture", () => {
+		const worktreeAdd = ['git("work', 'tree", "a', 'dd", "--detach", target);'];
 		const fixture = [
 			'const root = await mkdtemp(join(tmpdir(), "repo-"));',
-			cloneCall,
+			'const git = (...args) => execFileSync("git", args, { cwd: root });',
+			'git("init", "-q");',
+			worktreeAdd.join(""),
 		].join("\n");
 
-		test("accepts a test whose git commands run in a temp fixture it builds", () => {
+		test("accepts a test that initializes a temp fixture and launches git only with a cwd", () => {
 			expect(
 				isSandboxUnsafeTest({
 					path: "tests/a.test.ts",
@@ -562,7 +572,14 @@ describe("isSandboxUnsafeTest", () => {
 		test("accepts a fixture made through the useTempDir helper", () => {
 			const content = [
 				'const tmp = useTempDir("changed-functions-");',
-				['git("work', 'tree", "a', 'dd", checkout)'].join(""),
+				"function git(...args: string[]): string {",
+				'\treturn execFileSync("git", args, {',
+				"\t\tcwd: tmp.path,",
+				'\t\tencoding: "utf8",',
+				"\t});",
+				"}",
+				'git("init", "-q");',
+				worktreeAdd.join(""),
 			].join("\n");
 
 			expect(
@@ -570,9 +587,65 @@ describe("isSandboxUnsafeTest", () => {
 			).toBe(false);
 		});
 
+		test("accepts git's -C as the explicit working directory", () => {
+			const content = [
+				'const root = await mkdtemp(join(tmpdir(), "repo-"));',
+				'execFileSync("git", ["-C", root, "init"]);',
+				[
+					'execFileSync("git", ["-C", root, "work',
+					'tree", "a',
+					'dd", t]);',
+				].join(""),
+			].join("\n");
+
+			expect(
+				isSandboxUnsafeTest({ path: "tests/a.test.ts", content, denyList: [] }),
+			).toBe(false);
+		});
+
+		// From the Stryker sandbox, this adds a worktree to the live checkout.
+		test("flags a worktree add whose git launch names no working directory", () => {
+			const content = [
+				'const fixture = await mkdtemp(join(tmpdir(), "repo-"));',
+				'execFileSync("git", ["init", "-q"], { cwd: fixture });',
+				[
+					'execFileSync("git", ["work',
+					'tree", "a',
+					'dd", "--detach", fixture]);',
+				].join(""),
+			].join("\n");
+
+			expect(
+				isSandboxUnsafeTest({ path: "tests/a.test.ts", content, denyList: [] }),
+			).toBe(true);
+		});
+
+		test("flags a fixture the test never initializes as a repository", () => {
+			const content = fixture.replace('git("init", "-q");', "");
+
+			expect(
+				isSandboxUnsafeTest({ path: "tests/a.test.ts", content, denyList: [] }),
+			).toBe(true);
+		});
+
+		test("flags a test that runs git only through a helper it imports", () => {
+			const content = [
+				'import { gitIn } from "../helpers/git.ts";',
+				'const root = await mkdtemp(join(tmpdir(), "repo-"));',
+				'gitIn(root, "init");',
+				['gitIn(root, "work', 'tree", "a', 'dd", target);'].join(""),
+			].join("\n");
+
+			expect(
+				isSandboxUnsafeTest({ path: "tests/a.test.ts", content, denyList: [] }),
+			).toBe(true);
+		});
+
 		test("flags it when the test also names the checkout it lives in", () => {
 			for (const root of [
 				"process.cwd()",
+				"process.env.PWD",
+				'resolve(".")',
 				"fileURLToPath(import.meta.url)",
 				"__dirname",
 			]) {
@@ -596,17 +669,27 @@ describe("isSandboxUnsafeTest", () => {
 			).toBe(true);
 		});
 
-		test("accepts the resolver test that live run 1 denied", async () => {
-			const path = "tests/code-health/changed-functions.test.ts";
-			const content = await readFile(join(REPOSITORY_ROOT, path), "utf8");
+		test("accepts the fixture tests in this repository, the resolver test live run 1 denied among them", async () => {
+			const paths = [
+				"tests/code-health/changed-functions.test.ts",
+				"tests/lean-run/base-sha.test.ts",
+				"tests/lean-run/run-build.test.ts",
+				"tests/orchestration/quality-review-workspace.test.ts",
+			];
+			const unsafe: string[] = [];
+			for (const path of paths) {
+				const content = await readFile(join(REPOSITORY_ROOT, path), "utf8");
+				if (
+					isSandboxUnsafeTest({
+						path,
+						content,
+						denyList: DEFAULT_SANDBOX_UNSAFE_TESTS,
+					})
+				)
+					unsafe.push(path);
+			}
 
-			expect(
-				isSandboxUnsafeTest({
-					path,
-					content,
-					denyList: DEFAULT_SANDBOX_UNSAFE_TESTS,
-				}),
-			).toBe(false);
+			expect(unsafe).toEqual([]);
 		});
 	});
 });
@@ -616,18 +699,17 @@ describe("untestableFiles", () => {
 		return {
 			sourceFiles: ["lib/calc.ts"],
 			graph: GRAPH,
-			blastRadiusTests: ["tests/user-extra.test.ts", "tests/other.test.ts"],
 			exists: () => true,
 			isDenied: () => false,
 			...overrides,
 		};
 	}
 
-	test("covers a file with its own tests and the blast-radius tests that reach it", () => {
+	// tests/user-extra.test.ts reaches lib/calc.ts only through lib/user.ts.
+	test("covers a file with its mirrored test and direct test importers only", () => {
 		expect(coveringTests("lib/calc.ts", coverage())).toEqual([
 			"tests/calc-direct.test.ts",
 			"tests/calc.test.ts",
-			"tests/user-extra.test.ts",
 		]);
 	});
 
@@ -635,17 +717,28 @@ describe("untestableFiles", () => {
 		expect(untestableFiles(coverage({ isDenied: () => true }))).toEqual([
 			{
 				file: "lib/calc.ts",
-				covering: [
-					"tests/calc-direct.test.ts",
-					"tests/calc.test.ts",
-					"tests/user-extra.test.ts",
-				],
+				covering: ["tests/calc-direct.test.ts", "tests/calc.test.ts"],
 			},
 		]);
 	});
 
-	test("does not list a file one covering test can still run against", () => {
-		const isDenied = (path: string) => path !== "tests/user-extra.test.ts";
+	test("lists a file whose only direct test is denied, though an indirect importer's test is not", () => {
+		const isDenied = (path: string) => path === "tests/calc-direct.test.ts";
+
+		expect(
+			untestableFiles(
+				coverage({
+					exists: (path) => path !== "tests/calc.test.ts",
+					isDenied,
+				}),
+			),
+		).toEqual([
+			{ file: "lib/calc.ts", covering: ["tests/calc-direct.test.ts"] },
+		]);
+	});
+
+	test("does not list a file with one direct test that can still run", () => {
+		const isDenied = (path: string) => path !== "tests/calc-direct.test.ts";
 
 		expect(untestableFiles(coverage({ isDenied }))).toEqual([]);
 	});
@@ -756,15 +849,22 @@ async function writeFake(
 		bin,
 		[
 			"#!/usr/bin/env node",
-			'import { spawn } from "node:child_process";',
+			'import { spawn, spawnSync } from "node:child_process";',
 			'import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";',
 			"const here = new URL('.', import.meta.url).pathname;",
+			"mkdirSync('.stryker-tmp/sandbox-1', { recursive: true });",
+			// What a test that runs git in the sandbox without a cwd would find.
+			"const toplevel = spawnSync('git', ['rev-parse', '--show-toplevel'], {",
+			"\tcwd: '.stryker-tmp/sandbox-1',",
+			"\tencoding: 'utf8',",
+			"});",
 			"writeFileSync(here + 'call.json', JSON.stringify({",
 			"\targs: process.argv.slice(2),",
 			"\tpool: process.env.STRYKER_VITEST_POOL,",
 			"\treport: process.env.STRYKER_JSON_REPORT,",
+			"\tceiling: process.env.GIT_CEILING_DIRECTORIES,",
+			"\tsandboxGit: { status: toplevel.status, stdout: toplevel.stdout },",
 			"}));",
-			"mkdirSync('.stryker-tmp/sandbox-1', { recursive: true });",
 			...body,
 			"",
 		].join("\n"),
@@ -798,6 +898,8 @@ interface FakeCall {
 	readonly args: string[];
 	readonly pool: string;
 	readonly report: string;
+	readonly ceiling: string;
+	readonly sandboxGit: { readonly status: number; readonly stdout: string };
 }
 
 function isAlive(pid: number): boolean {
@@ -973,7 +1075,9 @@ describe(
 				[
 					CALC_TEST,
 					'const fixture = await mkdtemp(join(tmpdir(), "calc-"));',
-					['git("work', 'tree", "a', 'dd", fixture);'].join(""),
+					'const git = (...args) => execFileSync("git", args, { cwd: fixture });',
+					'git("init", "-q");',
+					['git("work', 'tree", "a', 'dd", "--detach", target);'].join(""),
 				].join("\n"),
 			);
 
@@ -981,6 +1085,35 @@ describe(
 
 			const call = await readCall(tools.path);
 			expect(argAfter(call, "--testFiles")).toBe("tests/calc.test.ts");
+		});
+
+		test("reports untestable when only a blast-radius test outside the file's own tests could run", async () => {
+			await writeFile(join(project.path, "tests/app.test.ts"), "");
+			const strykerBin = await fakeStryker(tools.path, report({}));
+			const blast: Signal = {
+				kind: "blast-radius",
+				status: "info",
+				summary: "",
+				data: { graph: "fresh", radius: { tests: ["tests/app.test.ts"] } },
+				reenter: false,
+			};
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				denyListTests: ["tests/calc.test.ts"],
+			}).run(context(project.path, { priorSignals: [blast] }));
+
+			expect(signal).toMatchObject({
+				status: "info",
+				reenter: false,
+				summary: "untestable under mutation: covering tests are sandbox-unsafe",
+				data: {
+					untestable: [
+						{ file: "lib/calc.ts", covering: ["tests/calc.test.ts"] },
+					],
+				},
+			});
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
 		});
 
 		test("reports info when no mutant in changed functions was covered", async () => {
@@ -998,6 +1131,17 @@ describe(
 			expect(argAfter(call, "--mutate")).toBe("lib/calc.ts:1-4");
 			expect(argAfter(call, "--testFiles")).toBe("tests/calc.test.ts");
 			expect(call.pool).toBe("forks");
+		});
+
+		test("stops git in Stryker's sandbox from finding the checkout around it", async () => {
+			await runWith(report({ "lib/calc.ts": [] }));
+			const call = await readCall(tools.path);
+
+			expect(call.ceiling.split(delimiter)[0]).toBe(
+				join(await realpath(project.path), ".stryker-tmp"),
+			);
+			expect(call.sandboxGit.status).not.toBe(0);
+			expect(call.sandboxGit.stdout).toBe("");
 		});
 
 		describe("with a prior blast-radius signal of fifty tests", () => {

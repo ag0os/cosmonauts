@@ -43,7 +43,7 @@ export function planPathWarnings(options: {
 		if (isGlob(path) || inGraph(options.graph, path)) return [];
 		return existsSync(join(options.projectRoot, path))
 			? [`plan path is not in the file graph: ${path}`]
-			: [`plan path not found: ${path}`];
+			: [`plan path not found (new file?): ${path}`];
 	});
 }
 

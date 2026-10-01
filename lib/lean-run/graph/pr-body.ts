@@ -15,7 +15,8 @@ export interface PrBodyOptions {
 	/** Mermaid source, unfenced (see renderChangeDiagram). */
 	readonly diagram: string;
 	readonly verification: readonly Signal[];
-	readonly blastRadius: BlastRadius;
+	/** Absent when no blast-radius signal ran: the section says so. */
+	readonly blastRadius?: BlastRadius;
 	readonly planVersusActual: PlanVersusActual;
 	/** Said in place of the three lists when the change came with no plan. */
 	readonly noPlan?: string;
@@ -52,7 +53,9 @@ function verificationSection(signals: readonly Signal[]): string {
 	].join("\n");
 }
 
-function blastRadiusSection(radius: BlastRadius): string {
+function blastRadiusSection(radius: BlastRadius | undefined): string {
+	if (radius === undefined)
+		return "## Blast radius\n\nThe blast-radius signal did not run for this change.";
 	const lines = [
 		"## Blast radius",
 		"",
