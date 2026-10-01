@@ -60,6 +60,7 @@ import type {
 	SignalContext,
 	SignalKind,
 	SignalProvider,
+	SignalReentry,
 } from "./types.ts";
 import { RUN_RECORD_FILES } from "./types.ts";
 
@@ -118,7 +119,14 @@ const BLOCKING_SEVERITIES: ReadonlySet<Finding["severity"]> = new Set([
 	"medium",
 ]);
 
-type BuilderStage = "builder-1" | "builder-2" | "builder-3";
+type BuilderStage = "builder-1" | SignalReentry["stage"] | "builder-4";
+
+/** The signal re-entry stages in order: one re-entry per signal kind, two at most. */
+const REENTRY_STAGES: readonly SignalReentry["stage"][] = [
+	"builder-2",
+	"builder-3",
+];
+
 type ReviewerStage = "reviewer" | "reviewer-2";
 
 interface Run {
@@ -150,8 +158,9 @@ interface Verified {
 type StageInput = Omit<BackendRunInput, "signal" | "taskId" | "readonly">;
 
 /**
- * graph.json refresh and context pack → builder → host signals → (one
- * re-entry on `reenter` signals) → host signals → reviewer with every pass as
+ * graph.json refresh and context pack → builder → host signals → (a
+ * re-entry on `reenter` signals, at most one per signal kind, each followed
+ * by host signals) → reviewer with every pass as
  * facts (brief §4.7B.6) → when the review has high or medium findings, one
  * builder re-entry with them → host signals → one re-review. The run record
  * is written after every step. The run is `done` only when the last review is
@@ -622,22 +631,60 @@ async function executeRun(run: Run): Promise<void> {
 	await remediate(run, { review, findings, verified });
 }
 
-/** builder-1, its pass, and the D-4 re-entry with its pass when signals ask for one. */
+/**
+ * builder-1 and its pass, then the D-4 re-entries, each with its pass. Each
+ * signal kind gets one re-entry: a pass whose failing signals include a kind
+ * no builder has been sent yet re-enters with all of them, so a signal that
+ * first fails in pass 2 (mutation skipped while verify failed) still reaches
+ * a builder. A pass whose failing kinds all re-entered already ends the loop.
+ */
 async function buildAndVerify(run: Run): Promise<Verified | undefined> {
-	const first = await runBuilder(run, "builder-1", run.basePrompt);
-	const failing = first && (await checkPass(run, first));
-	if (!first || !failing) return undefined;
-	if (failing.length === 0) return { builder: first, remaining: [] };
-	run.record.manifest.reentries = 1;
+	let builder = await runBuilder(run, "builder-1", run.basePrompt);
+	let failing = builder && (await checkPass(run, builder));
+	const reentered = new Set<SignalKind>();
+	for (const stage of REENTRY_STAGES) {
+		if (!builder || !failing) return undefined;
+		if (failing.every((signal) => reentered.has(signal.kind)))
+			return { builder, remaining: failing };
+		await recordReentry(run, { stage, failing, reentered });
+		for (const signal of failing) reentered.add(signal.kind);
+		const prompt = reentryPrompt(run.basePrompt, failing);
+		builder = await runBuilder(run, stage, prompt);
+		failing = builder && (await checkPass(run, builder));
+	}
+	return builder && failing ? { builder, remaining: failing } : undefined;
+}
+
+/** Counts a signal re-entry in `run.json` with the pass and the kinds behind it. */
+async function recordReentry(
+	run: Run,
+	options: {
+		stage: SignalReentry["stage"];
+		failing: readonly Signal[];
+		reentered: ReadonlySet<SignalKind>;
+	},
+): Promise<void> {
+	const { manifest, facts } = run.record;
+	const pass = facts.passes.length;
+	const kinds = [...new Set(options.failing.map((signal) => signal.kind))];
+	const fresh = kinds.filter((kind) => !options.reentered.has(kind));
+	const again = kinds.filter((kind) => options.reentered.has(kind));
+	const reason = [
+		`pass ${pass}: ${fresh.join(", ")} failing for the first time`,
+		...(again.length > 0
+			? [`${again.join(", ")} still failing after its re-entry`]
+			: []),
+	].join("; ");
+	manifest.reentries += 1;
+	manifest.reentryReasons = [
+		...(manifest.reentryReasons ?? []),
+		{ stage: options.stage, pass, kinds, reason },
+	];
 	await saveManifest(run.record);
-	const prompt = reentryPrompt(run.basePrompt, failing);
-	const second = await runBuilder(run, "builder-2", prompt);
-	const remaining = second && (await checkPass(run, second));
-	return second && remaining ? { builder: second, remaining } : undefined;
 }
 
 /**
- * The one remediation (principle 6): builder-3 with the high and medium
+ * The one remediation (principle 6): builder-4 with the high and medium
  * findings, one provider pass with no further builder turn, then one re-review.
  */
 async function remediate(
@@ -651,7 +698,7 @@ async function remediate(
 		findings: first.findings,
 		failing: first.verified.remaining,
 	});
-	const builder = await runBuilder(run, "builder-3", prompt);
+	const builder = await runBuilder(run, "builder-4", prompt);
 	const failing = builder && (await checkPass(run, builder));
 	if (!builder || !failing) return;
 	const review = await runReviewer(run, "reviewer-2", {
@@ -779,6 +826,7 @@ const ATTEMPTS: Record<BuilderStage, number> = {
 	"builder-1": 1,
 	"builder-2": 2,
 	"builder-3": 3,
+	"builder-4": 4,
 };
 
 /** The attempt-1 snapshot becomes the diff base, so work that predates the run is not the builder's. */
@@ -980,7 +1028,11 @@ async function conclude(
 }
 
 function gapAfterReentry(run: Run, verified: Verified): string | undefined {
-	return verificationGap(run, verified.remaining, "after one re-entry");
+	const after =
+		run.record.manifest.reentries > 1
+			? "after two re-entries"
+			: "after one re-entry";
+	return verificationGap(run, verified.remaining, after);
 }
 
 /** Why the run cannot be `done` whatever the reviewer said, if anything. */

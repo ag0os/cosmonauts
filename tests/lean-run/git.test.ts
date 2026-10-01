@@ -3,7 +3,7 @@
  * change against a base, per file, as the change diagram's classes.
  */
 import { execFileSync } from "node:child_process";
-import { rename, rm, writeFile } from "node:fs/promises";
+import { rename, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import {
@@ -49,6 +49,28 @@ test("classes added, modified and removed files, untracked ones included, and a 
 		"new-name.ts": "added",
 	});
 	expect(git("status", "--porcelain")).toContain("?? new.ts");
+});
+
+test("sees a same-size edit made in the same second as the index write", async () => {
+	// Pin the file and the index to one past second so git's racily-clean
+	// recheck is the only thing that can notice the edit; ctime is ignored
+	// so the test does not depend on how fast the setup runs.
+	git("config", "core.trustctime", "false");
+	const pinned = new Date(Date.now() - 3_600_000);
+	const file = join(repo.path, "kept.ts");
+	await utimes(file, pinned, pinned);
+	git("add", "-A");
+	await utimes(join(repo.path, ".git", "index"), pinned, pinned);
+	await writeFile(file, "export const kept = 2;\n");
+	await utimes(file, pinned, pinned);
+
+	const [change, status] = await Promise.all([
+		readWorktreeChange({ cwd: repo.path, base: "HEAD" }),
+		readWorktreeStatus({ cwd: repo.path, base: "HEAD" }),
+	]);
+
+	expect(change.changedFiles).toEqual(["kept.ts"]);
+	expect(status).toEqual({ "kept.ts": "modified" });
 });
 
 test.each([

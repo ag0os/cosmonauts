@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -162,16 +162,26 @@ async function withWorktreeIndex<T>(
 	}
 }
 
-/** Copying the real index keeps its stat cache, so `add -A` rehashes only what changed. */
+/**
+ * Copying the real index keeps its stat cache, so `add -A` rehashes only what
+ * changed. The copy also keeps the index's mtime: git re-reads an entry whose
+ * mtime is not older than the index file (the racily-clean rule), so a fresh
+ * mtime would hide a same-size edit made in the same second as the last index
+ * write.
+ */
 async function seedIndex(options: GitOptions, target: string): Promise<void> {
 	const path = (
 		await git(["rev-parse", "--git-path", "index"], options)
 	).trim();
-	await copyFile(resolve(options.cwd, path), target).catch(
-		(error: NodeJS.ErrnoException) => {
-			if (error.code !== "ENOENT") throw error;
-		},
-	);
+	const source = resolve(options.cwd, path);
+	try {
+		await copyFile(source, target);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+		throw error;
+	}
+	const { atime, mtime } = await stat(source);
+	await utimes(target, atime, mtime);
 }
 
 /** The merge-base of HEAD and `ref`; undefined when `ref` does not exist or shares no history. */

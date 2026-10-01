@@ -129,7 +129,10 @@ function planDataOf(signals: readonly Signal[]): PlanVersusActual | undefined {
 function builderTouched(record: RunRecord): readonly string[] {
 	const { envelopes } = record;
 	const last =
-		envelopes["builder-3"] ?? envelopes["builder-2"] ?? envelopes["builder-1"];
+		envelopes["builder-4"] ??
+		envelopes["builder-3"] ??
+		envelopes["builder-2"] ??
+		envelopes["builder-1"];
 	return last?.touched ?? [];
 }
 

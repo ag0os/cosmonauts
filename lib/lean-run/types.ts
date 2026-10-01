@@ -151,18 +151,30 @@ export const RUN_RECORD_FILES = {
 } as const;
 
 /**
- * `builder-2` is the re-entry on failing verify or mutation signals (D-4),
- * `builder-3` the one re-entry with the reviewer's high and medium findings,
- * and `reviewer-2` the re-review after it.
+ * `builder-2` and `builder-3` are the re-entries on failing verify or
+ * mutation signals (D-4), at most one per signal kind; `builder-4` is the one
+ * re-entry with the reviewer's high and medium findings, and `reviewer-2` the
+ * re-review after it.
  */
 export const RUN_STAGES = [
 	"builder-1",
 	"builder-2",
-	"reviewer",
 	"builder-3",
+	"reviewer",
+	"builder-4",
 	"reviewer-2",
 ] as const;
 export type RunStage = (typeof RUN_STAGES)[number];
+
+/** One re-entry on failing verify or mutation signals, as `run.json` records it. */
+export interface SignalReentry {
+	stage: "builder-2" | "builder-3";
+	/** The provider pass whose signals sent the builder back. */
+	pass: number;
+	/** Every re-entry signal kind failing in that pass; all are in the builder's prompt. */
+	kinds: SignalKind[];
+	reason: string;
+}
 
 export const REVIEW_WORKSPACE_KINDS = ["private", "in-place"] as const;
 export type ReviewWorkspaceKind = (typeof REVIEW_WORKSPACE_KINDS)[number];
@@ -211,8 +223,13 @@ export interface RunManifest {
 	/** The direct request as saved in the run directory, relative to the project root. */
 	requestPath?: string;
 	backend: LeanBackendKind;
-	/** Re-entries on failing verify or mutation signals (0 or 1). */
+	/**
+	 * Re-entries on failing verify or mutation signals: at most one per
+	 * signal kind, so 0 to 2.
+	 */
 	reentries: number;
+	/** Why each of those re-entries happened, in order. */
+	reentryReasons?: SignalReentry[];
 	/** Re-entries with the reviewer's high and medium findings (0 or 1). */
 	findingsReentries?: number;
 	snapshotRefs: string[];

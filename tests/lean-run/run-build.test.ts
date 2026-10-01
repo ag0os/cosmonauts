@@ -150,6 +150,13 @@ const FAILING: Partial<Signal> = {
 	reenter: true,
 };
 
+/** The mutation provider's answer while verify fails: it does not run. */
+const SKIPPED_MUTATION: Partial<Signal> = {
+	status: "info",
+	summary: "skipped: verification did not pass",
+	data: { skipped: true, reason: "verification did not pass: 1 test failed" },
+};
+
 const never = (): Promise<never> => new Promise<never>(() => {});
 
 const GREET_SIGNATURE = "const greet: string";
@@ -809,9 +816,104 @@ describe("runBuild re-entry", () => {
 		expect(saved.manifest).toMatchObject({
 			status: "blocked",
 			reentries: 1,
+			reentryReasons: [
+				{
+					stage: "builder-2",
+					pass: 1,
+					kinds: ["verify"],
+					reason: "pass 1: verify failing for the first time",
+				},
+			],
 			reason: "re-entry signals still failing after one re-entry: verify",
 		});
 		expect(saved.envelopes.reviewer?.outcome).toBe("done");
+	});
+
+	test("gives a mutation signal that first fails in pass 2 its own re-entry", async () => {
+		const builder = stubBackend([DONE]);
+		const reviewer = stubBackend([REVIEW]);
+		const mutation = stubProvider(
+			[
+				SKIPPED_MUTATION,
+				{ status: "fail", summary: "1 survivor", reenter: true },
+				{},
+			],
+			"mutation",
+		);
+		const record = await build({
+			builder,
+			reviewer,
+			providers: [stubProvider([FAILING, {}, {}]), mutation],
+		});
+
+		expect(builder.calls).toHaveLength(3);
+		expect(builder.calls[2]?.prompt).toContain(
+			"### mutation (fail)\n1 survivor",
+		);
+		expect(builder.calls[2]?.prompt).not.toContain("### verify");
+		expect(reviewer.calls).toHaveLength(1);
+		expect(reviewer.calls[0]?.prompt).toContain("## Pass 3");
+		const saved = await onDisk(record);
+		expect(saved).toEqual(record);
+		expect(saved.facts.passes.map((pass) => pass.pass)).toEqual([1, 2, 3]);
+		expect(saved.envelopes["builder-3"]).toBeDefined();
+		expect(saved.manifest).toMatchObject({
+			status: "done",
+			reentries: 2,
+			reentryReasons: [
+				{
+					stage: "builder-2",
+					pass: 1,
+					kinds: ["verify"],
+					reason: "pass 1: verify failing for the first time",
+				},
+				{
+					stage: "builder-3",
+					pass: 2,
+					kinds: ["mutation"],
+					reason: "pass 2: mutation failing for the first time",
+				},
+			],
+		});
+	});
+
+	test("ends blocked when the signal behind the second re-entry fails again", async () => {
+		const builder = stubBackend([DONE]);
+		const record = await build({
+			builder,
+			providers: [
+				stubProvider([FAILING, {}]),
+				stubProvider(
+					[SKIPPED_MUTATION, { status: "fail", reenter: true }],
+					"mutation",
+				),
+			],
+		});
+
+		expect(builder.calls).toHaveLength(3);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reentries: 2,
+			reason: "re-entry signals still failing after two re-entries: mutation",
+		});
+	});
+
+	test("does not re-enter twice for the same signal kind", async () => {
+		const builder = stubBackend([DONE]);
+		const record = await build({
+			builder,
+			providers: [
+				stubProvider([{}]),
+				stubProvider([{ status: "fail", reenter: true }], "mutation"),
+			],
+		});
+
+		expect(builder.calls).toHaveLength(2);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reentries: 1,
+			reason: "re-entry signals still failing after one re-entry: mutation",
+		});
 	});
 
 	test("re-enters on surviving mutants", async () => {
@@ -999,7 +1101,7 @@ describe("runBuild budgets", () => {
 		expect(record.manifest).toMatchObject({
 			status: "failed",
 			reason:
-				"token budget exceeded at builder-3: 256000 of 200000 input and output tokens used",
+				"token budget exceeded at builder-4: 256000 of 200000 input and output tokens used",
 			budget: { tokens: 200_000, timeMs: DEFAULT_RUN_BUDGET.timeMs },
 		});
 	});
@@ -1345,7 +1447,7 @@ describe("runBuild findings loop", () => {
 		});
 		expect(Object.keys(saved.envelopes).sort()).toEqual([
 			"builder-1",
-			"builder-3",
+			"builder-4",
 			"reviewer",
 			"reviewer-2",
 		]);
@@ -1353,7 +1455,7 @@ describe("runBuild findings loop", () => {
 		expect(saved.stats.map((entry) => entry.stage)).toEqual([
 			"builder-1",
 			"reviewer",
-			"builder-3",
+			"builder-4",
 			"reviewer-2",
 		]);
 	});
@@ -1465,7 +1567,7 @@ describe("runBuild findings loop", () => {
 		expect(reviewer.calls).toHaveLength(1);
 		expect(record.manifest).toMatchObject({
 			status: "blocked",
-			reason: "builder-3: the finding contradicts the plan",
+			reason: "builder-4: the finding contradicts the plan",
 		});
 	});
 
