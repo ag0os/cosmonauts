@@ -255,7 +255,7 @@ stay `info` for the reviewer.
 The project owns the required kinds, not the lead: `lean.requiredSignals`
 in `.cosmonauts/config.json`, for example
 `{ "lean": { "requiredSignals": ["verify", "mutation"] } }`, else the
-default, `verify`, `mutation` and `health`.
+default, `verify` alone.
 
 `run.json` records the list a run used. `[]` requires nothing beyond the
 rule that `verify` must pass. `lean_review` applies the same list, but only

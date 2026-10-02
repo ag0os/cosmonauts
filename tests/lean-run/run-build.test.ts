@@ -2722,20 +2722,28 @@ describe("runBuild required signals", () => {
 		];
 	}
 
-	test("records verify, mutation and health as required by default", async () => {
+	test("requires verify alone by default, so unavailable mutation and health still finish done", async () => {
 		const record = await build({
 			builder: stubBackend([editGreet(DONE)]),
-			providers: providers({}),
+			providers: [
+				stubProvider([{}]),
+				stubProvider([unavailableSignal("fallow is not installed")], "health"),
+				stubProvider([unavailableSignal(STRYKER_MISSING)], "mutation"),
+			],
 			requiredSignals: undefined,
 		});
 
 		expect(record.manifest).toMatchObject({
 			status: "done",
-			requiredSignals: ["verify", "mutation", "health"],
+			requiredSignals: ["verify"],
 		});
 	});
 
-	test("ends blocked naming a required kind whose provider could not run", async () => {
+	test("ends blocked naming a kind the project requires whose provider could not run", async () => {
+		await writeLeanConfig({
+			requiredSignals: ["verify", "mutation", "health"],
+		});
+
 		const record = await build({
 			builder: stubBackend([editGreet(DONE)]),
 			providers: providers(unavailableSignal(STRYKER_MISSING)),
@@ -2751,22 +2759,9 @@ describe("runBuild required signals", () => {
 		);
 	});
 
-	test("finishes done when the kind that could not run is optional in the config", async () => {
+	test("ends blocked when a required kind never ran", async () => {
 		await writeLeanConfig({ requiredSignals: ["verify", "health"] });
 
-		const record = await build({
-			builder: stubBackend([editGreet(DONE)]),
-			providers: providers(unavailableSignal(STRYKER_MISSING)),
-			requiredSignals: undefined,
-		});
-
-		expect(record.manifest).toMatchObject({
-			status: "done",
-			requiredSignals: ["verify", "health"],
-		});
-	});
-
-	test("ends blocked when a required kind never ran", async () => {
 		const record = await build({
 			builder: stubBackend([editGreet(DONE)]),
 			providers: [stubProvider([{}]), stubProvider([{}], "mutation")],
@@ -2780,6 +2775,10 @@ describe("runBuild required signals", () => {
 	});
 
 	test("names every missing required kind in the required order", async () => {
+		await writeLeanConfig({
+			requiredSignals: ["verify", "mutation", "health"],
+		});
+
 		const record = await build({
 			builder: stubBackend([editGreet(DONE)]),
 			providers: [
@@ -2843,7 +2842,7 @@ describe("runBuild required signals", () => {
 					unavailableSignal("no verification commands configured"),
 				]),
 			],
-			requiredSignals: ["verify"],
+			requiredSignals: undefined,
 		});
 
 		expect(record.manifest.reason).toBe(
@@ -2852,6 +2851,8 @@ describe("runBuild required signals", () => {
 	});
 
 	test("ends blocked when a required provider throws", async () => {
+		await writeLeanConfig({ requiredSignals: ["verify", "health"] });
+
 		const record = await build({
 			builder: stubBackend([editGreet(DONE)]),
 			providers: [
@@ -2894,9 +2895,8 @@ describe("runBuild required signals", () => {
 		});
 
 		expect(record.manifest).toMatchObject({
-			status: "blocked",
-			requiredSignals: ["verify", "mutation", "health"],
-			reason: `unverified (mutation unavailable: ${STRYKER_MISSING})`,
+			status: "done",
+			requiredSignals: ["verify"],
 		});
 		expect(record.manifest.warnings).toContain(
 			'lean.requiredSignals: ignored unknown signal kinds "mutaton"; using the default required signals',
@@ -4757,6 +4757,7 @@ describe("runReview", () => {
 				stubProvider([{}]),
 				stubProvider([unavailableSignal("fallow is not installed")], "health"),
 			],
+			requiredSignals: ["verify", "health"],
 		});
 
 		expect(record.manifest).toMatchObject({
@@ -4774,6 +4775,7 @@ describe("runReview", () => {
 				stubProvider([{}]),
 				stubProvider([new Error("fallow crashed")], "health"),
 			],
+			requiredSignals: ["verify", "health"],
 		});
 
 		expect(record.manifest).toMatchObject({
@@ -4786,7 +4788,10 @@ describe("runReview", () => {
 	test("does not require the kinds it has no provider for", async () => {
 		await featureChange();
 
-		const record = await review({ reviewer: stubBackend([REVIEW]) });
+		const record = await review({
+			reviewer: stubBackend([REVIEW]),
+			requiredSignals: ["verify", "mutation", "health"],
+		});
 
 		expect(record.manifest).toMatchObject({
 			status: "done",

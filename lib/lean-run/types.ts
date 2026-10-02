@@ -14,13 +14,10 @@ export type SignalKind = (typeof SIGNAL_KINDS)[number];
 
 /**
  * Kinds a run must get an available signal for before it can be `done`,
- * unless `lean.requiredSignals` says otherwise.
+ * unless `lean.requiredSignals` says otherwise. `mutation` and `health` are
+ * left out because they need tools many projects lack.
  */
-export const DEFAULT_REQUIRED_SIGNALS: readonly SignalKind[] = [
-	"verify",
-	"mutation",
-	"health",
-];
+export const DEFAULT_REQUIRED_SIGNALS: readonly SignalKind[] = ["verify"];
 
 export const SIGNAL_STATUSES = ["pass", "fail", "info"] as const;
 export type SignalStatus = (typeof SIGNAL_STATUSES)[number];
