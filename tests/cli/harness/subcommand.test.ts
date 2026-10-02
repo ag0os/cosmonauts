@@ -15,7 +15,9 @@ import {
 	parseSyncRequest,
 } from "../../../cli/harness/subcommand.ts";
 import type { RuntimeSkillExportDiscovery } from "../../../cli/skills/subcommand.ts";
+import type { GeneratedHarnessNode } from "../../../lib/harness-adapters/render.ts";
 import {
+	type HarnessSyncOptions,
 	type HarnessSyncReport,
 	runHarnessSync,
 } from "../../../lib/skills/exporter.ts";
@@ -502,6 +504,87 @@ describe("cosmonauts harness sync", () => {
 			scope: "personal",
 			before: "current",
 			reason: "current",
+		});
+	});
+
+	test("a sync that does not select the lean bundle never reads the contract skill", async () => {
+		const leanContractNode = vi.fn(async () => {
+			throw new Error("contract skill read");
+		});
+		const sync = vi.fn(
+			async (_options: HarnessSyncOptions): Promise<HarnessSyncReport> => ({
+				...reportFixture(),
+				exitCode: 0,
+			}),
+		);
+		const output = captureCliOutput();
+		await createHarnessProgram({
+			projectRoot: tmp.path,
+			homeRoot: join(tmp.path, "home"),
+			discover: async () => emptyDiscovery(),
+			sync,
+			leanContractNode,
+		}).parseAsync(["--json", "sync", "--asset", "external-skill:cosmonauts"], {
+			from: "user",
+		});
+		output.restore();
+		expect(process.exitCode).toBeUndefined();
+		expect(leanContractNode).not.toHaveBeenCalled();
+		expect(sync.mock.calls[0]?.[0].generatedNodesByAssetId).not.toHaveProperty(
+			"external-skill:cosmonauts-lean",
+		);
+	});
+
+	test("a change to the contract skill shows the synced lean bundle as drift on check", async () => {
+		const projectRoot = join(tmp.path, "lean-drift-project");
+		const homeRoot = join(tmp.path, "lean-drift-home");
+		await Promise.all([
+			mkdir(projectRoot, { recursive: true }),
+			mkdir(homeRoot, { recursive: true }),
+		]);
+		const run = async (
+			leanContractNode: (() => Promise<GeneratedHarnessNode>) | undefined,
+			extra: string[],
+		) => {
+			const output = captureCliOutput();
+			await createHarnessProgram({
+				projectRoot,
+				homeRoot,
+				discover: async () => emptyDiscovery(),
+				...(leanContractNode ? { leanContractNode } : {}),
+			}).parseAsync(
+				[
+					"--json",
+					"sync",
+					"--target",
+					"claude",
+					"--scope",
+					"project",
+					"--asset",
+					"external-skill:cosmonauts-lean",
+					...extra,
+				],
+				{ from: "user" },
+			);
+			const report = JSON.parse(output.stdout()) as HarnessSyncReport;
+			output.restore();
+			return report;
+		};
+		expect((await run(undefined, [])).exitCode).toBe(0);
+
+		const edited = Buffer.from("# edited contract\n");
+		const checked = await run(
+			async () => ({
+				relativePath: "contract.md",
+				inputBytes: edited,
+				renderedBytes: edited,
+			}),
+			["--check"],
+		);
+		expect(checked.exitCode).toBe(1);
+		expect(checked.rows[0]).toMatchObject({
+			before: "source-ahead",
+			reason: "source-changed",
 		});
 	});
 

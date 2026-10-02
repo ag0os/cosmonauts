@@ -453,15 +453,24 @@ async function reportIncompleteGroup(
 	}
 }
 
+/** Whether a sync request's kind and asset selectors include the asset. */
+export function requestSelectsAsset(
+	request: SyncRequest,
+	asset: Pick<HarnessAsset, "assetId" | "kind">,
+): boolean {
+	return (
+		matchesSelection(request.kinds, asset.kind) &&
+		matchesSelection(request.assetIds, asset.assetId)
+	);
+}
+
 function resolveCatalogue(options: HarnessSyncOptions): ResolvedCatalogueRow[] {
 	const request = options.request;
 	const targetIds = deduplicate(
 		request.targetIds ?? listImplementedHarnessTargetIds(),
 	);
-	const assets = options.assets.filter(
-		(asset) =>
-			(!request.kinds || request.kinds.includes(asset.kind)) &&
-			(!request.assetIds || request.assetIds.includes(asset.assetId)),
+	const assets = options.assets.filter((asset) =>
+		requestSelectsAsset(request, asset),
 	);
 	const rows: ResolvedCatalogueRow[] = [];
 	for (const asset of assets) {

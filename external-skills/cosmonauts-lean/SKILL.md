@@ -1,11 +1,11 @@
 ---
 name: cosmonauts-lean
-description: Write a lean spec and plan for a change in a project that uses cosmonauts, check the plan, and hand it to `cosmonauts lean build` to implement. Use when the human wants the spec or plan written here and the building done by cosmonauts.
+description: Write a lean spec and plan for a change in a project that uses cosmonauts, check the plan, and hand it to `cosmonauts lean build` to implement. Use when the human wants a lean spec or plan under `missions/lean/` written here and built by `cosmonauts lean build`, not a Drive plan.
 ---
 
 # Lean spec, plan, and handoff
 
-Use this when the human wants to shape a change here and have cosmonauts build it.
+Use this when the human wants to shape a change here and have cosmonauts build it. Run the commands from the project root. Under `--json`, an error prints `{"error": ...}` and exits 1.
 
 ## 1. Write the documents
 
@@ -26,7 +26,7 @@ Open the files. Name the paths and helpers that are there, not the ones you reme
 cosmonauts lean check missions/lean/<slug>/plan.md --json
 ```
 
-It prints `{"plan","ok","title","emptySections","pathWarnings","behaviorProblems","graph"}` and exits 0 when `ok` is true. Fix what `emptySections`, `pathWarnings` and `behaviorProblems` list, and check again. A path warning ending `(new file?)` is fine for a file the change creates. `graph` is `available` or `unavailable: <reason>`.
+It prints `{"plan","ok","title","emptySections","pathWarnings","behaviorProblems","graph"}` and exits 0 when `ok` is true. Fix what `emptySections` and `behaviorProblems` list, and check again. `pathWarnings` do not affect `ok`: `plan path not found (new file?): <path>` is fine for a file the change creates, and `plan path is not in the file graph: <path>` names a real file the map does not analyze, so keep it if the path is right. `graph` is `available` or `unavailable: <reason>`.
 
 ## 4. Show the human
 
