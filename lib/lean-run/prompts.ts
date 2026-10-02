@@ -44,14 +44,18 @@ export const REPAIR_HEADING = "# Envelope repair";
 /** How much of the rejected output the repair prompt quotes. */
 const REPAIR_QUOTE_CHARS = 8_000;
 
-/** How much of the user's earlier messages rides along with the latest one, most recent first. */
+/**
+ * Byte budget for the user's messages section. The latest message counts
+ * toward it; earlier messages fill what remains, most recent first.
+ */
 export const USER_MESSAGES_CAP_BYTES = 32 * 1024;
 
 /**
  * The user's messages from the calling session, each fenced verbatim, oldest
  * first, as one section beside the lead's plan or request. The latest
- * message is always whole; earlier messages past the cap are left out, with
- * a note. Undefined without a non-blank message.
+ * message is always whole and counts toward the cap; earlier messages fill
+ * what remains, most recent first, and the rest are left out, with a note.
+ * Undefined without a non-blank message.
  */
 export function userMessagesSection(
 	messages: readonly string[] | undefined,
