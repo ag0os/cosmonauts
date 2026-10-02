@@ -2871,7 +2871,7 @@ describe("runBuild required signals", () => {
 	});
 
 	test("records the unknown kinds the config named and keeps the known ones", async () => {
-		await writeLeanConfig({ requiredSignals: ["verify", "helth"] });
+		await writeLeanConfig({ requiredSignals: ["health", "helth"] });
 
 		const record = await build({
 			builder: stubBackend([editGreet(DONE)]),
@@ -2879,7 +2879,7 @@ describe("runBuild required signals", () => {
 			requiredSignals: undefined,
 		});
 
-		expect(record.manifest.requiredSignals).toEqual(["verify"]);
+		expect(record.manifest.requiredSignals).toEqual(["health"]);
 		expect(record.manifest.warnings).toContain(
 			'lean.requiredSignals: ignored unknown signal kinds "helth"',
 		);

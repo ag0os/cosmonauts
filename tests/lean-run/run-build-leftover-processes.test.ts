@@ -245,7 +245,6 @@ function build(extra: Partial<RunBuildOptions> = {}): Promise<RunRecord> {
 		backend: backend(DONE, true),
 		reviewerBackend: backend(REVIEW),
 		providers: [verify],
-		// Only verify runs here; the default required kinds would block every run.
 		requiredSignals: [],
 		refreshGraph,
 		...extra,
