@@ -521,6 +521,77 @@ function worktreeList(): string[] {
 		.filter((line) => line.startsWith("worktree "));
 }
 
+/** A new temp directory that `afterEach` removes. */
+async function extraDir(prefix: string): Promise<string> {
+	const dir = await mkdtemp(join(tmpdir(), prefix));
+	extraDirs.push(dir);
+	return dir;
+}
+
+/**
+ * Gives the fixture caller `origin/main` from a bare remote, an annotated
+ * tag `v1.0.0` on `main`, and a checked-out `feature` branch one commit
+ * ahead. Resolves to the caller.
+ */
+async function callerWithRefs(): Promise<string> {
+	const remote = await extraDir("lean-run-remote-");
+	gitIn(remote, "init", "-q", "--bare");
+	git("remote", "add", "origin", remote);
+	git("push", "-q", "origin", "main");
+	git("fetch", "-q", "origin");
+	git("tag", "-a", "v1.0.0", "-m", "release");
+	git("checkout", "-q", "-b", "feature");
+	git("commit", "-q", "--allow-empty", "-m", "feature");
+	return root;
+}
+
+/**
+ * A `--depth 1` clone of the fixture on `feature`, with `main`, an
+ * annotated tag `v1.0.0` on HEAD, and an `origin/main` that has its own
+ * shallow root, reached by no branch of the clone. Resolves to the clone.
+ */
+async function shallowCaller(): Promise<string> {
+	git("commit", "-q", "--allow-empty", "-m", "second");
+	git("checkout", "-q", "-b", "feature");
+	git("commit", "-q", "--allow-empty", "-m", "feature");
+	git("checkout", "-q", "main");
+	const caller = join(await extraDir("lean-run-shallow-"), "caller");
+	gitIn(
+		root,
+		"clone",
+		"-q",
+		"--depth",
+		"1",
+		"--branch",
+		"feature",
+		`file://${root}`,
+		caller,
+	);
+	gitIn(caller, "config", "user.email", "test@example.com");
+	gitIn(caller, "config", "user.name", "Test");
+	gitIn(caller, "config", "commit.gpgsign", "false");
+	gitIn(caller, "fetch", "-q", "--depth", "1", "origin", "main:main");
+	git("commit", "-q", "--allow-empty", "-m", "upstream");
+	gitIn(
+		caller,
+		"fetch",
+		"-q",
+		"--depth",
+		"1",
+		"origin",
+		"main:refs/remotes/origin/main",
+	);
+	gitIn(caller, "tag", "-a", "v1.0.0", "-m", "release");
+	return caller;
+}
+
+/** Checks that pass only where `main`, `origin/main` and a tag reaching HEAD resolve. */
+const REF_CHECKS = [
+	{ executable: "git", args: ["rev-parse", "--verify", "main"] },
+	{ executable: "git", args: ["describe", "--tags"] },
+	{ executable: "git", args: ["rev-parse", "--verify", "origin/main"] },
+];
+
 describe("runBuild builder clone", () => {
 	test("keeps the caller's HEAD, index and uncommitted files when the builder runs destructive git", async () => {
 		const files = await dirtyCallerTree();
@@ -867,8 +938,9 @@ describe("runBuild builder clone", () => {
 			]),
 		});
 
+		// The clone carries `other`, so deleting it succeeds there, and only there.
 		expect(attempts).toEqual({
-			"delete other": false,
+			"delete other": true,
 			"delete main": true,
 			config: true,
 			commit: true,
@@ -906,6 +978,23 @@ describe("runBuild builder clone", () => {
 			"utf8",
 		);
 		expect(patch).not.toContain(".env");
+	});
+
+	test.each([
+		["a caller", callerWithRefs],
+		["a --depth 1 caller", shallowCaller],
+	])("ends done when a check reads main, origin/main and a tag, for %s", async (_, setUp) => {
+		const projectRoot = await setUp();
+		const record = await build({
+			projectRoot,
+			builder: stubBackend([editGreet(DONE)]),
+			providers: [createVerifyProvider({ commands: REF_CHECKS })],
+		});
+
+		expect(record.manifest.status).toBe("done");
+		expect(await readFile(join(projectRoot, "src/greet.ts"), "utf8")).toBe(
+			'export const greet = "hi";\n',
+		);
 	});
 
 	test("skips an ignored file over lean.ignoredInputsCapBytes and records why", async () => {
@@ -1101,6 +1190,49 @@ describe("runBuild shared repository state", () => {
 		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
 			"export const greet = 1;\n",
 		);
+	});
+
+	test("records no ref drift when the clone carries the caller's refs and the builder leaves them alone", async () => {
+		await callerWithRefs();
+		let carried = "";
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					carried = gitIn(input.worktree, "rev-parse", "origin/main").trim();
+					return DONE;
+				},
+			]),
+		});
+
+		expect(carried).toBe(git("rev-parse", "origin/main").trim());
+		expect(record.manifest.status).toBe("done");
+		expect(record.manifest.callerRefDrift).toBeUndefined();
+	});
+
+	test("still ends blocked when the builder pushes its commit into a caller branch the clone carries", async () => {
+		await callerWithRefs();
+		git("branch", "x");
+		const before = git("rev-parse", "refs/heads/x").trim();
+		let made = "";
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					made = builderCommit(input.worktree);
+					gitIn(input.worktree, "push", "-q", root, "HEAD:refs/heads/x");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			callerRefDrift: [
+				{ ref: "refs/heads/x", before, after: made, action: "blocked" },
+			],
+		});
+		expect(record.manifest.patchApplied).toBeUndefined();
 	});
 
 	test("only warns when the builder moves a caller branch to a commit the caller already had", async () => {

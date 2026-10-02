@@ -12,7 +12,10 @@ repository into a temp directory (`git clone --no-hardlinks`), detached at
 the run's snapshot of your tree, so uncommitted work is there as it was.
 The clone has its own refs, stash and config, and its remotes are removed:
 branches it deletes, config it sets and a `git push origin` stay in the
-clone. A push that names a repository by path or URL still lands (see
+clone. It carries your branches, tags and remote-tracking refs, so a check
+that reads `main`, `origin/main` or a tag sees them as in your checkout;
+they are names only, with no configured remote behind them, so
+`git push origin` still fails in the clone. A push that names a repository by path or URL still lands (see
 the residuals below). A `claude-cli` builder is also started with `--disallowedTools` for the git
 verbs that write history or move refs (`push`, `commit`, `merge`, `rebase`,
 `cherry-pick`, `revert`, `am`, `update-ref`, `branch -d/-D`, `tag -d`,
@@ -67,7 +70,10 @@ records them as `builderInputs.residuals`.
   edited installed package) are not detected.
 
 Submodules are not populated in the builder clone, so a check that needs
-one ends `blocked`.
+one ends `blocked`. A check that itself runs `git fetch` or `git pull`
+fails in the clone, which has no remote. Git LFS is not handled: in a
+repository that sets `filter.lfs.required`, the clone may fail to open
+(not verified).
 
 The clone is deleted when the run ends. When the last builder patch could
 not be written, its work exists only in the clone, which is kept; the

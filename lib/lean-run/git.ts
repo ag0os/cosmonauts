@@ -169,11 +169,26 @@ interface CloneOptions {
 }
 
 /**
+ * The caller's branches, tags and remote-tracking refs under their own
+ * names, so a check that reads `main`, `origin/main` or a tag sees in the
+ * clone what it sees in the caller's checkout.
+ */
+const CALLER_REFSPECS = [
+	"+refs/heads/*:refs/heads/*",
+	"+refs/tags/*:refs/tags/*",
+	"+refs/remotes/*:refs/remotes/*",
+] as const;
+
+/**
  * Clones `source` to `path`, detached at `commit`. The clone has its own
  * refs, config and objects (`--no-hardlinks`) and no remote, so nothing
  * done in it reaches `source` and nothing can be pushed from it. A clone
  * copies only branches, so `ref` (the run's snapshot ref) is fetched in
  * under its own name, and `commit` by id when no copied ref reaches it.
+ * The caller's refs are fetched last, after the detach, because git
+ * refuses to fetch into the branch HEAD is on. Without `--update-shallow`,
+ * git drops a shallow caller's refs that reach past the clone's shallow
+ * boundary, with only a warning.
  */
 export async function clonePrivate(options: CloneOptions): Promise<void> {
 	const { source, path, commit, signal } = options;
@@ -207,6 +222,18 @@ export async function clonePrivate(options: CloneOptions): Promise<void> {
 	for (const remote of remotes)
 		await git([...NO_HOOKS, "remote", "remove", remote], inClone);
 	await git([...NO_HOOKS, "checkout", "--quiet", "--detach", commit], inClone);
+	await git(
+		[
+			...NO_HOOKS,
+			"fetch",
+			"--quiet",
+			"--no-tags",
+			"--update-shallow",
+			source,
+			...CALLER_REFSPECS,
+		],
+		inClone,
+	);
 }
 
 /** `<git dir>/<name>` of `cwd`'s checkout as git resolves it: a linked worktree shares `info/exclude`. */

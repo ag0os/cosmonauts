@@ -135,6 +135,88 @@ test("fetches the snapshot ref in under its own name and checks it out", async (
 	);
 });
 
+/** The object each name resolves to in `cwd`. */
+function resolveAll(cwd: string, names: readonly string[]): string[] {
+	return names.map((name) => gitIn(cwd, "rev-parse", "--verify", name).trim());
+}
+
+test("carries the caller's branches, tags and remote-tracking refs, with no remote", async () => {
+	gitIn(outside.path, "init", "-q", "--bare", "remote.git");
+	git("remote", "add", "origin", join(outside.path, "remote.git"));
+	git("push", "-q", "origin", "main");
+	git("fetch", "-q", "origin");
+	git("tag", "-a", "v1.0.0", "-m", "release");
+	git("checkout", "-q", "-b", "feature");
+	git("commit", "-q", "--allow-empty", "-m", "feature");
+	const names = ["main", "feature", "origin/main", "v1.0.0"];
+
+	const clone = await open();
+
+	expect(resolveAll(clone.root, names)).toEqual(resolveAll(repo.path, names));
+	expect(gitIn(clone.root, "describe", "--tags")).toMatch(
+		/^v1\.0\.0-1-g[0-9a-f]+\n$/u,
+	);
+	expect(gitIn(clone.root, "remote")).toBe("");
+	expect(gitIn(clone.root, "rev-parse", "HEAD").trim()).toBe(head());
+	expect(gitIn(clone.root, "branch", "--show-current").trim()).toBe("");
+});
+
+test("carries a shallow caller's refs, a remote-tracking ref past its shallow boundary included", async () => {
+	git("commit", "-q", "--allow-empty", "-m", "second");
+	git("checkout", "-q", "-b", "feature");
+	git("commit", "-q", "--allow-empty", "-m", "feature");
+	const caller = join(outside.path, "shallow");
+	gitIn(
+		outside.path,
+		"clone",
+		"-q",
+		"--depth",
+		"1",
+		"--branch",
+		"feature",
+		`file://${repo.path}`,
+		caller,
+	);
+	gitIn(caller, "fetch", "-q", "--depth", "1", "origin", "main:main");
+	git("checkout", "-q", "main");
+	git("commit", "-q", "--allow-empty", "-m", "upstream");
+	// origin/main gets its own shallow root, reached by no caller branch.
+	gitIn(
+		caller,
+		"fetch",
+		"-q",
+		"--depth",
+		"1",
+		"origin",
+		"main:refs/remotes/origin/main",
+	);
+	gitIn(
+		caller,
+		"-c",
+		"user.name=Test",
+		"-c",
+		"user.email=test@example.com",
+		"tag",
+		"-a",
+		"v1.0.0",
+		"-m",
+		"release",
+	);
+	const names = ["main", "feature", "origin/main", "v1.0.0"];
+	expect(gitIn(caller, "rev-parse", "--is-shallow-repository").trim()).toBe(
+		"true",
+	);
+
+	const clone = await open({
+		projectRoot: caller,
+		commit: gitIn(caller, "rev-parse", "HEAD").trim(),
+	});
+
+	expect(resolveAll(clone.root, names)).toEqual(resolveAll(caller, names));
+	expect(gitIn(clone.root, "describe", "--tags").trim()).toBe("v1.0.0");
+	expect(gitIn(clone.root, "remote")).toBe("");
+});
+
 test("copies a gitignored file in and lists it as carried", async () => {
 	await ignore("node_modules/\n.env\n");
 	await writeFile(join(repo.path, ".env"), "TOKEN=1\n");
