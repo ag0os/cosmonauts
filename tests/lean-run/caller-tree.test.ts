@@ -4,9 +4,9 @@
  * directories left out.
  */
 import { execFileSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { readCallerTree } from "../../lib/lean-run/caller-tree.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -104,4 +104,44 @@ test("compares a shallow clone's tree", async () => {
 	expect(await tree.changes()).toEqual([]);
 	await writeFile(join(clone, "a.ts"), "export const a = 4;\n");
 	expect(await tree.changes()).toEqual(["a.ts"]);
+});
+
+describe("a bounded compare", () => {
+	const shims = useTempDir("lean-caller-tree-shim-");
+	const path = process.env.PATH;
+
+	afterEach(() => {
+		process.env.PATH = path;
+	});
+
+	/** Puts a `git` first on PATH that hangs on `command` and runs the real git otherwise. */
+	async function hangGitOn(command: string): Promise<void> {
+		const real = execFileSync("sh", ["-c", "command -v git"], {
+			encoding: "utf8",
+		}).trim();
+		const shim = join(shims.path, "git");
+		await writeFile(
+			shim,
+			`#!/bin/sh\nfor arg in "$@"; do [ "$arg" = "${command}" ] && exec sleep 30; done\nexec "${real}" "$@"\n`,
+		);
+		await chmod(shim, 0o755);
+		// The first run of a new executable can take a second on macOS.
+		execFileSync(shim, ["--version"]);
+		process.env.PATH = `${shims.path}:${path}`;
+	}
+
+	test.each([
+		"add",
+		"diff-tree",
+	])("fails within its bound when git %s hangs", async (command) => {
+		const tree = await readCallerTree(repo.path);
+		await writeFile(join(repo.path, "a.ts"), "export const a = 5;\n");
+		await hangGitOn(command);
+		const started = Date.now();
+
+		await expect(tree.changes({ timeoutMs: 300 })).rejects.toThrow(
+			"the compare took longer than 300 ms",
+		);
+		expect(Date.now() - started).toBeLessThan(5_000);
+	}, 15_000);
 });

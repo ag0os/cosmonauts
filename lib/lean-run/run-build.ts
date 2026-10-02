@@ -1218,19 +1218,28 @@ async function watchCallerTree(
 	}
 }
 
+/** The whole caller-tree compare after a stage that already ended the run. */
+const COMPARE_AFTER_STOP_MS = 60_000;
+
 /**
  * Compares the caller's tree with `tree`, also after a stage that ended the
- * run, and ends the run `blocked` on any change, or when the compare cannot
- * run, keeping a stage's earlier ending in the reason. Nothing is undone.
+ * run, within `COMPARE_AFTER_STOP_MS` then, and ends the run `blocked` on
+ * any change, or when the compare cannot run, keeping a stage's earlier
+ * ending in the reason. A stage that had not ended still gets its
+ * `isolationBreach`, so ref drift is recorded and named too. Nothing is
+ * undone.
  */
 async function callerTreeChanged(
 	run: Run,
 	stage: BuilderStage,
 	tree: CallerTree,
 ): Promise<boolean> {
+	const stopped = ended(run);
 	let reason: string;
 	try {
-		const paths = await tree.changes();
+		const paths = await tree.changes(
+			stopped ? { timeoutMs: COMPARE_AFTER_STOP_MS } : {},
+		);
 		if (paths.length === 0) return false;
 		const change = callerTreeChange(stage, paths);
 		run.record.manifest.callerTreeChange = change;
@@ -1239,10 +1248,12 @@ async function callerTreeChanged(
 		reason = `${stage}: could not compare the caller's working tree after the stage: ${errorMessage(error)}; nothing was applied`;
 	}
 	const { status, reason: earlier } = run.record.manifest;
-	const ending = ended(run)
+	const ending = stopped
 		? `; the stage had already ended ${status}: ${earlier}`
 		: "";
-	await finish(run, "blocked", `${reason}${ending}`);
+	const breach = stopped ? undefined : await isolationBreach(run);
+	const also = breach ? `; also: ${breach}` : "";
+	await finish(run, "blocked", `${reason}${also}${ending}`);
 	return true;
 }
 

@@ -23,7 +23,8 @@ const NEVER_CARRIED: ReadonlySet<IgnoredInputSkipReason> = new Set([
 
 /**
  * Earlier runs' transcripts and this run's own `run.json`, relative to the
- * top level: the paths `DIFF_EXCLUDES` in `git.ts` keeps out of diffs.
+ * top level and to the project directory: the paths `DIFF_EXCLUDES` in
+ * `git.ts` keeps out of diffs.
  */
 const SESSION_TRANSCRIPTS = ["missions/sessions", "missions/archive/sessions"];
 
@@ -32,9 +33,18 @@ interface CarryOptions {
 	from: string;
 	/** The clone's top level. */
 	to: string;
+	/** The project directory relative to the top level, with a trailing slash; `""` at the top. */
+	prefix: string;
 	/** `listIgnoredPaths` of the caller: directories end in `/`. */
 	listed: readonly string[];
 	capBytes: number;
+}
+
+/** What planning an entry needs: the caller's real top level, the cap and the transcript directories. */
+interface Scope {
+	from: string;
+	capBytes: number;
+	sessions: readonly string[];
 }
 
 export interface CarriedInputs {
@@ -60,16 +70,21 @@ type Outcome =
 	| { entry: string; skipped: SkippedInput }
 	| { entry: string; plan: EntryPlan };
 
+interface Decision {
+	outcome: Outcome;
+	chosen: boolean;
+}
+
 /**
  * Copies the caller's ignored paths into the clone at the same paths, so
  * the checks find `.env`, generated code and build outputs there. An entry
- * under a `NEVER_CARRIED` name or in `SESSION_TRANSCRIPTS` is skipped,
- * inside a copied directory too. The others are carried smallest first, so
- * one large entry cannot crowd out several small ones; an entry that would
- * take the total past `capBytes` is skipped whole. Results are listed in
- * git's order, and an entry is `carried` only when its copy created
- * something. A copy cannot reach the caller, so the builder may change it
- * freely. Nothing in the clone is overwritten.
+ * under a `NEVER_CARRIED` name or in a session transcript directory is
+ * skipped, inside a copied directory too. The others are carried smallest
+ * first, so one large entry cannot crowd out several small ones; an entry
+ * that would take the total past `capBytes` is skipped whole. Results are
+ * listed in git's order, and an entry is `carried` only when its copy
+ * created something. A copy cannot reach the caller, so the builder may
+ * change it freely. Nothing in the clone is overwritten.
  */
 export async function carryIgnoredInputs(
 	options: CarryOptions,
@@ -80,19 +95,23 @@ export async function carryIgnoredInputs(
 		skipped: [],
 		warnings: [],
 	};
-	const from = await realpath(options.from);
-	const outcomes: Outcome[] = [];
-	for (const entry of outermost(options.listed))
-		outcomes.push(await outcomeFor(from, entry, options.capBytes, result));
-	const chosen = chooseSmallestFirst(outcomes, options.capBytes);
-	for (const outcome of outcomes) {
+	const scope: Scope = {
+		from: await realpath(options.from),
+		capBytes: options.capBytes,
+		sessions: sessionDirs(options.prefix),
+	};
+	for (const { outcome, chosen } of await decide(
+		scope,
+		options.listed,
+		result,
+	)) {
 		if ("skipped" in outcome) result.skipped.push(outcome.skipped);
-		else if (!chosen.has(outcome))
+		else if (!chosen)
 			result.skipped.push({ path: outcome.entry, reason: "over the cap" });
 		else {
 			result.skipped.push(...outcome.plan.skipped);
 			const copied = await copyItems(
-				{ from, to: options.to },
+				{ from: scope.from, to: options.to },
 				outcome.plan.items,
 				result,
 			);
@@ -101,6 +120,47 @@ export async function carryIgnoredInputs(
 		}
 	}
 	return result;
+}
+
+function sessionDirs(prefix: string): string[] {
+	return [...new Set(["", prefix])].flatMap((dir) =>
+		SESSION_TRANSCRIPTS.map((sessions) => `${dir}${sessions}`),
+	);
+}
+
+/**
+ * Plans the outermost listed entries and chooses among them smallest first
+ * under the cap. The listed entries inside one that was not chosen then get
+ * their own turn with what is left of the cap, so a small listed child is
+ * not lost with a skipped parent; a chosen parent carries its children.
+ * Returned in git's order.
+ */
+async function decide(
+	scope: Scope,
+	listed: readonly string[],
+	result: CarriedInputs,
+): Promise<Decision[]> {
+	const decided: Decision[] = [];
+	let left = scope.capBytes;
+	let round = outermost(listed);
+	while (round.length > 0) {
+		const outcomes: Outcome[] = [];
+		for (const entry of round)
+			outcomes.push(await outcomeFor(scope, entry, result));
+		const chosen = chooseSmallestFirst(outcomes, left);
+		for (const outcome of outcomes) {
+			if ("plan" in outcome && chosen.has(outcome)) left -= outcome.plan.bytes;
+			decided.push({ outcome, chosen: chosen.has(outcome) });
+		}
+		const passed = outcomes
+			.filter((outcome) => !chosen.has(outcome))
+			.map((outcome) => outcome.entry);
+		round = outermost(listedBelow(listed, passed));
+	}
+	const order = new Map(listed.map((entry, index) => [entry, index]));
+	const position = (decision: Decision) =>
+		order.get(decision.outcome.entry) ?? 0;
+	return decided.sort((a, b) => position(a) - position(b));
 }
 
 /**
@@ -116,6 +176,17 @@ function outermost(listed: readonly string[]): string[] {
 	);
 }
 
+/** The entries of `listed` inside one of `parents`. */
+function listedBelow(
+	listed: readonly string[],
+	parents: readonly string[],
+): string[] {
+	const roots = new Set(parents.map(withoutTrailingSlash));
+	return listed.filter((entry) =>
+		ancestors(withoutTrailingSlash(entry)).some((path) => roots.has(path)),
+	);
+}
+
 /** `a/b/c` → `a`, `a/b`. */
 function ancestors(path: string): string[] {
 	const parts = path.split("/");
@@ -127,16 +198,15 @@ function withoutTrailingSlash(entry: string): string {
 }
 
 async function outcomeFor(
-	from: string,
+	scope: Scope,
 	entry: string,
-	capBytes: number,
 	result: CarriedInputs,
 ): Promise<Outcome> {
 	const path = withoutTrailingSlash(entry);
-	const never = neverCarried(path);
+	const never = neverCarried(scope, path);
 	if (never) return { entry, skipped: { path: entry, reason: never } };
 	try {
-		const plan = await planEntry(from, path, capBytes);
+		const plan = await planEntry(scope, path);
 		if (plan) return { entry, plan };
 		return { entry, skipped: { path: entry, reason: "over the cap" } };
 	} catch (error) {
@@ -165,9 +235,12 @@ function chooseSmallestFirst(
 	return chosen;
 }
 
-function neverCarried(path: string): IgnoredInputSkipReason | undefined {
+function neverCarried(
+	scope: Scope,
+	path: string,
+): IgnoredInputSkipReason | undefined {
 	if (
-		SESSION_TRANSCRIPTS.some(
+		scope.sessions.some(
 			(sessions) => path === sessions || path.startsWith(`${sessions}/`),
 		)
 	)
@@ -179,22 +252,21 @@ function neverCarried(path: string): IgnoredInputSkipReason | undefined {
 		);
 }
 
-/** What copying `path` takes; undefined as soon as its files pass `budget` bytes. */
+/** What copying `path` takes; undefined as soon as its files pass the cap. */
 async function planEntry(
-	from: string,
+	scope: Scope,
 	path: string,
-	budget: number,
 ): Promise<EntryPlan | undefined> {
 	const plan: EntryPlan = { items: [], bytes: 0, skipped: [] };
-	return (await walk(from, path, budget, plan)) ? plan : undefined;
+	return (await walk(scope, path, plan)) ? plan : undefined;
 }
 
 async function walk(
-	from: string,
+	scope: Scope,
 	path: string,
-	budget: number,
 	plan: EntryPlan,
 ): Promise<boolean> {
+	const { from } = scope;
 	const stats = await lstat(join(from, path));
 	if (stats.isSymbolicLink()) {
 		const target = await linkTargetInClone(from, path);
@@ -205,7 +277,7 @@ async function walk(
 	if (stats.isFile()) {
 		plan.bytes += stats.size;
 		plan.items.push({ kind: "file", path, bytes: stats.size });
-		return plan.bytes <= budget;
+		return plan.bytes <= scope.capBytes;
 	}
 	if (!stats.isDirectory()) {
 		plan.skipped.push({ path, reason: "not a file" });
@@ -214,9 +286,9 @@ async function walk(
 	plan.items.push({ kind: "dir", path });
 	for (const name of (await readdir(join(from, path))).sort()) {
 		const child = `${path}/${name}`;
-		const never = neverCarried(child);
+		const never = neverCarried(scope, child);
 		if (never) plan.skipped.push({ path: `${child}/`, reason: never });
-		else if (!(await walk(from, child, budget, plan))) return false;
+		else if (!(await walk(scope, child, plan))) return false;
 	}
 	return true;
 }

@@ -118,6 +118,7 @@ export async function openBuilderWorkspace(
 		const carried = await carryIgnoredInputs({
 			from: source,
 			to: root,
+			prefix,
 			listed,
 			capBytes: options.capBytes,
 		});

@@ -12,10 +12,18 @@ const MAX_LISTED = 20;
 /** Relative to the project directory, like the snapshot's session excludes. */
 const SESSION_DIRS = ["missions/sessions/", "missions/archive/sessions/"];
 
+/** Each git call's own bound, as in Drive's snapshot. */
+const GIT_TIMEOUT_MS = 60_000;
+
+interface ChangesOptions {
+	/** When set, the whole compare fails once it has taken this long. */
+	timeoutMs?: number;
+}
+
 /** The caller's working tree as it was before a builder stage. */
 export interface CallerTree {
 	/** The changed paths since, relative to the top level; empty when none. */
-	changes(): Promise<string[]>;
+	changes(options?: ChangesOptions): Promise<string[]>;
 }
 
 /**
@@ -24,7 +32,8 @@ export interface CallerTree {
  * temporary index and with no ref. The session directories are left out
  * at the top level and under the project directory, so the run's own
  * record never counts. Commands are not tied to the run's signal: the
- * check after a stopped stage still runs, each git call within its bound.
+ * check after a stopped stage still runs, each git call within its bound
+ * and the whole compare within `timeoutMs` when given.
  */
 export async function readCallerTree(projectRoot: string): Promise<CallerTree> {
 	const top = await readTopLevel({ cwd: projectRoot });
@@ -34,20 +43,44 @@ export async function readCallerTree(projectRoot: string): Promise<CallerTree> {
 	);
 	const before = await writeWorktreeTree({ projectRoot: top });
 	return {
-		async changes() {
-			const after = await writeWorktreeTree({ projectRoot: top });
-			if (after === before) return [];
-			const { stdout } = await execFileAsync(
-				"git",
-				["diff-tree", "-r", "-z", "--name-only", "--no-renames", before, after],
-				{ cwd: top, maxBuffer: 64 * 1024 * 1024 },
-			);
-			return stdout
-				.split("\0")
-				.filter(Boolean)
-				.filter((path) => !sessions.some((dir) => path.startsWith(dir)));
+		async changes({ timeoutMs }: ChangesOptions = {}) {
+			const signal =
+				timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs);
+			try {
+				const paths = await changedPaths({ top, before, signal });
+				return paths.filter(
+					(path) => !sessions.some((dir) => path.startsWith(dir)),
+				);
+			} catch (error) {
+				if (!signal?.aborted) throw error;
+				throw new Error(`the compare took longer than ${timeoutMs} ms`);
+			}
 		},
 	};
+}
+
+async function changedPaths(options: {
+	top: string;
+	before: string;
+	signal: AbortSignal | undefined;
+}): Promise<string[]> {
+	const { top, before, signal } = options;
+	const after = await writeWorktreeTree({
+		projectRoot: top,
+		...(signal ? { signal } : {}),
+	});
+	if (after === before) return [];
+	const { stdout } = await execFileAsync(
+		"git",
+		["diff-tree", "-r", "-z", "--name-only", "--no-renames", before, after],
+		{
+			cwd: top,
+			maxBuffer: 64 * 1024 * 1024,
+			timeout: GIT_TIMEOUT_MS,
+			...(signal ? { signal } : {}),
+		},
+	);
+	return stdout.split("\0").filter(Boolean);
 }
 
 export function callerTreeChange(

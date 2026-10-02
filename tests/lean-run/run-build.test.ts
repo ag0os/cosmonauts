@@ -1312,6 +1312,40 @@ describe("runBuild caller working tree", () => {
 		);
 	});
 
+	test("still names and records a branch the same stage pushed into the caller, with its restore command", async () => {
+		git("branch", "side");
+		const before = git("rev-parse", "refs/heads/side").trim();
+		let made = "";
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					made = builderCommit(input.worktree);
+					gitIn(input.worktree, "push", "-q", root, "HEAD:refs/heads/side");
+					await writeFile(join(root, "stray.txt"), "stray\n");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest.status).toBe("blocked");
+		expect(record.manifest.reason).toContain("(paths: stray.txt)");
+		expect(record.manifest.reason).toContain(
+			`; also: the builder's objects reached the caller's branches or tags (refs/heads/side moved from ${before} to ${made})`,
+		);
+		expect(record.manifest.reason).toContain(
+			`restore with: git update-ref refs/heads/side ${before}`,
+		);
+		expect((await onDisk(record)).manifest.callerRefDrift).toEqual([
+			expect.objectContaining({
+				ref: "refs/heads/side",
+				before,
+				after: made,
+				action: "blocked",
+			}),
+		]);
+	});
+
 	test("finishes done with a dirty caller tree and a session directory that is not gitignored", async () => {
 		await writeFile(join(root, ".gitignore"), "");
 		git("commit", "-q", "-am", "stop ignoring sessions");

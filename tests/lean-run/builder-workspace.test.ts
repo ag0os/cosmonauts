@@ -358,6 +358,28 @@ test("copies an untracked directory once when git lists it and its ignored child
 	});
 });
 
+test("still carries a small listed child of a listed directory that passes the cap", async () => {
+	await ignore("node_modules/\nbuild/big.bin\nbuild/small/\n");
+	await mkdir(join(repo.path, "build/small"), { recursive: true });
+	await writeFile(join(repo.path, "build/big.bin"), "x".repeat(CAP + 1));
+	await writeFile(join(repo.path, "build/small/s.txt"), "small");
+
+	const clone = await open();
+
+	expect(await readFile(join(clone.root, "build/small/s.txt"), "utf8")).toBe(
+		"small",
+	);
+	expect(existsSync(join(clone.root, "build/big.bin"))).toBe(false);
+	expect(clone.inputs).toMatchObject({
+		carried: ["build/small/"],
+		carriedBytes: 5,
+		skipped: [
+			{ path: "build/", reason: "over the cap" },
+			{ path: "build/big.bin", reason: "over the cap" },
+		],
+	});
+});
+
 test("never copies session transcripts, listed or inside a copied directory", async () => {
 	await ignore(
 		"node_modules/\nmissions/sessions/\nmissions/archive/sessions/\n",
@@ -397,6 +419,30 @@ test("never copies session transcripts git lists on their own", async () => {
 	expect(clone.inputs.skipped).toEqual([
 		{ path: "missions/sessions/", reason: "session transcripts" },
 	]);
+});
+
+test("never copies the session transcripts of a project below the top level", async () => {
+	await mkdir(join(repo.path, "pkg"));
+	await writeFile(join(repo.path, "pkg/app.ts"), "export {};\n");
+	await writeFile(join(repo.path, "pkg/.gitignore"), "missions/sessions/\n");
+	git("add", "-A");
+	git("commit", "-q", "-m", "pkg");
+	await mkdir(join(repo.path, "pkg/missions/sessions/lean/runs/r1"), {
+		recursive: true,
+	});
+	await writeFile(
+		join(repo.path, "pkg/missions/sessions/lean/runs/r1/run.json"),
+		"{}\n",
+	);
+
+	const clone = await open({ projectRoot: join(repo.path, "pkg") });
+
+	expect(existsSync(join(clone.root, "pkg/missions/sessions"))).toBe(false);
+	expect(clone.inputs.carriedBytes).toBe(0);
+	expect(clone.inputs.skipped).toContainEqual({
+		path: "pkg/missions/sessions/",
+		reason: "session transcripts",
+	});
 });
 
 test("does not list an entry as carried when nothing of it was copied", async () => {

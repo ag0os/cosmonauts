@@ -12,11 +12,13 @@ repository into a temp directory (`git clone --no-hardlinks`), detached at
 the run's snapshot of your tree, so uncommitted work is there as it was.
 The clone has its own refs, stash and config, and its remotes are removed:
 branches it deletes, config it sets and a `git push origin` stay in the
-clone. It carries your branches, tags and remote-tracking refs, so a check
-that reads `main`, `origin/main` or a tag sees them as in your checkout;
-they are names only, with no configured remote behind them, so
-`git push origin` still fails in the clone. A push that names a repository by path or URL still lands (see
-the residuals below). A `claude-cli` builder is also started with `--disallowedTools` for the git
+clone. It carries copies of your branches, tags and remote-tracking refs
+(not notes or the stash), taken when the clone opened, so a check that
+reads `main`, `origin/main` or a tag sees them as they were in your
+checkout then; they are names only, with no configured remote behind
+them, so `git push origin` still fails in the clone. A push that names a
+repository by path or URL still lands (see the residuals below). A
+`claude-cli` builder is also started with `--disallowedTools` for the git
 verbs that write history or move refs (`push`, `commit`, `merge`, `rebase`,
 `cherry-pick`, `revert`, `am`, `update-ref`, `branch -d/-D`, `tag -d`,
 `stash`) and `gh pr`; `run.json` records the list as `deniedTools`.
@@ -31,7 +33,10 @@ the `git update-ref` command that restores each; a blocked run does not
 undo the change itself. Any other branch or tag drift, such as a commit
 in a sibling worktree, a fetched tag, a deleted ref or a ref moved to an
 object you already had, is a warning and does not stop the run, and so is
-a moved stash: every worktree of the repository shares `refs/stash`.
+a stash moved in another worktree: every worktree of the repository
+shares `refs/stash`. A `git stash` in this checkout during a builder
+stage changes this working tree, and blocks like any other change to it
+(below).
 `run.json` records every drifted branch or tag with its old and new
 object as `callerRefDrift`, each `blocked` or `warned`.
 
@@ -40,10 +45,12 @@ The checks need files git does not carry, so the clone also gets:
 - **Gitignored files**, copied at the same paths: `.env*`, generated code,
   build outputs, a gitignored `.cosmonauts/config.json`. `node_modules`,
   `.git` and `.stryker-tmp` are never copied, at any depth, nor are
-  session transcripts (`missions/sessions/`, `missions/archive/sessions/`).
+  session transcripts (`missions/sessions/`, `missions/archive/sessions/`,
+  at the top level and in the project directory).
   Ignored files and directories are copied smallest first, and one that
   would take the total past `lean.ignoredInputsCapBytes` (default 50 MB) is skipped
-  whole. A symlink is copied only when it leads inside the checkout, and
+  whole; git's separate entries inside a skipped directory then get their
+  own turn. A symlink is copied only when it leads inside the checkout, and
   its target is rewritten as the shortest relative path, so it points at
   the clone's file, not yours. The
   copies stay out of the builder's patch. `run.json` lists what was copied
@@ -64,8 +71,14 @@ tracked and untracked files that are not ignored, is compared before and
 after each builder stage: any change ends the run `blocked` with nothing
 applied, names the paths (`callerTreeChange`), and leaves the changed
 files as they are. That includes your own edits during the run. Writes
-through a linked `node_modules`, to gitignored files and to paths outside
-the repository are **not detected**.
+through a linked `node_modules`, to gitignored files, into the session
+directories (`missions/sessions/`, `missions/archive/sessions/`) even when
+they are not gitignored, and to paths outside the repository are **not
+detected**, and neither are mode-only changes when `core.fileMode` is
+`false`. When your checkout is a linked worktree, the link check covers
+this worktree and the repository's git directory: a link into the main
+checkout or a sibling worktree is only a warning, and writes through it
+are not detected.
 
 Two residuals remain. `run.json` records them as
 `builderInputs.residuals`.
@@ -89,8 +102,11 @@ Two residuals remain. `run.json` records them as
   edited installed package) are not detected.
 
 Submodules are not populated in the builder clone, so a check that needs
-one ends `blocked`. A check that itself runs `git fetch` or `git pull`
-fails in the clone, which has no remote. Git LFS is not handled: in a
+one ends `blocked`. A check that itself runs `git pull` or
+`git fetch <remote>` fails in the clone, which has no remote. A plain
+`git fetch` (also with `--all` or `--prune`) exits 0 and does nothing
+there, so remote-tracking refs stay as they were when the clone opened.
+Git LFS is not handled: in a
 repository that sets `filter.lfs.required`, the clone may fail to open
 (not verified).
 
@@ -165,10 +181,12 @@ for example ones its config excludes, are recorded under `notRun` and keep
 the signal from a clean `pass`; when no listed test ran at all the signal
 is unavailable. A runner that names only other files (vitest's substring
 filter matching a different path, or a script that ignores its arguments)
-ran none of the listed ones. Attribution trusts the runner's console: lines
-a test prints that mimic the runner's result lines are ignored only inside
-the runner's console-capture blocks (vitest's `stdout |` and `stderr |`
-blocks, jest's `console.log` blocks). A reporter that names no file (for example
+ran none of the listed ones. Lines a test prints that mimic the runner's
+result lines are ignored inside the runner's console-capture blocks
+(vitest's `stdout |` and `stderr |` blocks, jest's `console.log` blocks),
+which are read up to the first empty line the test prints; a mimic line
+after one still counts, since attribution trusts the runner's console.
+A reporter that names no file (for example
 `--reporter=dot`) reports no listed file as run, whatever its summary
 counts: the run is `not-run`, with the reason "the test runner named no
 files", the signal is unavailable, and it is a gap when required.
