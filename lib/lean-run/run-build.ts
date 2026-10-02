@@ -126,7 +126,8 @@ export interface RunBuildOptions {
 	/** Each field wins over `lean.budget` in the project config, which wins over `DEFAULT_RUN_BUDGET`. */
 	budget?: Partial<RunBudget>;
 	/**
-	 * Kinds the last pass must produce, available, for a `done` run. Wins
+	 * Kinds the last pass must produce, available, for a `done` run. The
+	 * host's override (tests, embedding hosts); no tool call sets it. Wins
 	 * over `lean.requiredSignals`, which wins over `DEFAULT_REQUIRED_SIGNALS`.
 	 */
 	requiredSignals?: readonly SignalKind[];
@@ -818,7 +819,7 @@ function resolveBudget(
 	};
 }
 
-/** The tool parameter, else `lean.requiredSignals`, else the default; each kind once. */
+/** The host's override, else `lean.requiredSignals`, else the default; each kind once. */
 function resolveRequiredSignals(
 	options: RunBuildOptions,
 	lean: ProjectLeanConfig,

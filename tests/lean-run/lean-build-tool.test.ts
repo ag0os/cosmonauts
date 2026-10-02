@@ -22,7 +22,6 @@ import type {
 	LeanBackendKind,
 	RunRecord,
 } from "../../lib/lean-run/types.ts";
-import { SIGNAL_KINDS } from "../../lib/lean-run/types.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 const BACKEND: BuilderBackend = {
@@ -134,9 +133,15 @@ describe("lean_build tool", () => {
 				"lenses",
 				"budgetTokens",
 				"budgetTimeMs",
-				"requiredSignals",
 			]),
 		);
+	});
+
+	test("offers no required signals parameter: the project config owns that set", () => {
+		const { pi } = setup();
+		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
+
+		expect(tool.parameters.properties).not.toHaveProperty("requiredSignals");
 	});
 
 	test("runs a direct request without a plan path", async () => {
@@ -221,38 +226,16 @@ describe("lean_build tool", () => {
 		expect(calls).toHaveLength(0);
 	});
 
-	test("passes the required signal kinds through, each once", async () => {
+	test("never passes a caller's required signals to the runner", async () => {
 		const { pi, calls } = setup();
 		await pi.callTool("lean_build", {
 			planPath: "p.md",
-			requiredSignals: ["verify", "dupes", "verify"],
+			requiredSignals: ["verify"],
 		});
-		expect(calls[0]?.requiredSignals).toEqual(["verify", "dupes"]);
-	});
-
-	test("passes an empty required signal list through", async () => {
-		const { pi, calls } = setup();
 		await pi.callTool("lean_build", { planPath: "p.md", requiredSignals: [] });
-		expect(calls[0]?.requiredSignals).toEqual([]);
-	});
-
-	test("leaves the required signals to the config and default when none are given", async () => {
-		const { pi, calls } = setup();
-		await pi.callTool("lean_build", { planPath: "p.md" });
+		expect(calls).toHaveLength(2);
 		expect(calls[0]).not.toHaveProperty("requiredSignals");
-	});
-
-	test("refuses a required signal kind the host has no provider kind for", async () => {
-		const { pi, calls } = setup();
-		await expect(
-			pi.callTool("lean_build", {
-				planPath: "p.md",
-				requiredSignals: ["verify", "coverage"],
-			}),
-		).rejects.toThrow(
-			`requiredSignals must be among ${SIGNAL_KINDS.join(", ")}; got coverage`,
-		);
-		expect(calls).toHaveLength(0);
+		expect(calls[1]).not.toHaveProperty("requiredSignals");
 	});
 
 	test("states what an npm installation must provide for the host checks", () => {

@@ -17,8 +17,6 @@ import {
 	type RunReviewOptions,
 	runBuild,
 	runReview,
-	SIGNAL_KINDS,
-	type SignalKind,
 	type SignalProvider,
 	summarizeRun,
 } from "../../../../lib/lean-run/index.ts";
@@ -87,11 +85,6 @@ export const LeanBuildParameters = Type.Object({
 		`Wall-time limit for the whole run, in ms, at most ${MAX_RUN_TIME_MS} (default: lean.budget.timeMs in the project config, else 60 minutes)`,
 		MAX_RUN_TIME_MS,
 	),
-	requiredSignals: Type.Optional(
-		Type.Array(Type.Union(SIGNAL_KINDS.map((kind) => Type.Literal(kind))), {
-			description: `Host check kinds that must run and be available for a done run; any of ${SIGNAL_KINDS.join(", ")}; [] requires none beyond a passing verify (default: lean.requiredSignals in the project config, else verify, mutation and health)`,
-		}),
-	),
 	clearStaleLock: ClearStaleLockParameter,
 });
 type LeanBuildInput = Static<typeof LeanBuildParameters>;
@@ -155,7 +148,6 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 				const lenses = checkedLenses(params.lenses);
 				const backends = await createBackends(params.backend ?? "pi", ctx.cwd);
 				const budget = requestedBudget(params);
-				const requiredSignals = checkedSignalKinds(params.requiredSignals);
 				const record = await execute({
 					projectRoot: ctx.cwd,
 					...source,
@@ -165,7 +157,6 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 					providers: options.providers ?? createDefaultProviders(),
 					...(lenses ? { lenses } : {}),
 					...(budget ? { budget } : {}),
-					...(requiredSignals ? { requiredSignals } : {}),
 					...(params.clearStaleLock ? { clearStaleLock: true } : {}),
 					...(signal ? { signal } : {}),
 				});
@@ -252,19 +243,6 @@ function checkedLenses(
 			`lenses must be one or more of ${LEAN_LENSES.join(", ")}${unknown.length > 0 ? `; got ${unknown.join(", ")}` : ""}`,
 		);
 	return [...new Set(lenses)] as LeanLens[];
-}
-
-function checkedSignalKinds(
-	kinds: readonly string[] | undefined,
-): SignalKind[] | undefined {
-	if (kinds === undefined) return undefined;
-	const known = new Set<string>(SIGNAL_KINDS);
-	const unknown = kinds.filter((kind) => !known.has(kind));
-	if (unknown.length > 0)
-		throw new Error(
-			`requiredSignals must be among ${SIGNAL_KINDS.join(", ")}; got ${unknown.join(", ")}`,
-		);
-	return [...new Set(kinds)] as SignalKind[];
 }
 
 function requestedBudget(

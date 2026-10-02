@@ -1780,5 +1780,40 @@ describe(
 			]);
 			expect(data.testFilesKillingNothing).toEqual([]);
 		});
+
+		test("gives Stryker's sandbox the linked node_modules a test reads by its own root", async () => {
+			const root = join(scratch.path, "linked");
+			await mkdir(root);
+			await initCalcProject(root);
+			await writeFile(
+				join(root, "tests/calc.test.ts"),
+				[
+					CALC_TEST,
+					'import { existsSync } from "node:fs";',
+					'test("finds vitest under its own root", () => {',
+					'\texpect(existsSync(new URL("../node_modules/vitest/package.json", import.meta.url))).toBe(true);',
+					"});",
+					"",
+				].join("\n"),
+			);
+			await writeFile(
+				join(root, "vitest.config.ts"),
+				'import { defineConfig } from "vitest/config";\nexport default defineConfig({});\n',
+			);
+			await symlink(
+				join(REPOSITORY_ROOT, "node_modules"),
+				join(root, "node_modules"),
+			);
+
+			const signal = await realStryker.run(
+				context(root, {
+					changedFiles: ["lib/calc.ts"],
+					runDir: join(scratch.path, "run"),
+				}),
+			);
+
+			expect(unavailableReason(signal)).toBeUndefined();
+			expect(signal).toMatchObject({ status: "pass", reenter: false });
+		});
 	},
 );

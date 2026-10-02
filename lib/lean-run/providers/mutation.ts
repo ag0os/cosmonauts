@@ -16,7 +16,7 @@
  * rather than failed.
  */
 
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -257,7 +257,7 @@ async function runStrykerPlan(
 	await rm(reportPath, { force: true });
 	const strykerRun = await withoutSandbox(ctx.worktree, () =>
 		runStryker(options, {
-			command: strykerCommand(options, plan),
+			command: strykerCommand(options, plan, ctx.worktree),
 			cwd: ctx.worktree,
 			reportPath,
 			logPath,
@@ -561,6 +561,7 @@ interface StrykerCommand {
 function strykerCommand(
 	options: MutationProviderOptions,
 	plan: StrykerPlan,
+	worktree: string,
 ): StrykerCommand {
 	const args = [
 		"run",
@@ -574,6 +575,7 @@ function strykerCommand(
 		...(options.concurrency === undefined
 			? []
 			: ["--concurrency", String(options.concurrency)]),
+		...linkedNodeModulesArguments(worktree),
 	];
 	if (options.strykerBin !== undefined) {
 		return { executable: options.strykerBin, args };
@@ -585,6 +587,30 @@ function strykerCommand(
 			...args,
 		],
 	};
+}
+
+/**
+ * Stryker links only `node_modules` directories into its sandbox, never a
+ * symlink such as the builder clone's, so a test that reads its own root's
+ * `node_modules` fails there. Its build command runs in the sandbox first
+ * and makes the link; Stryker splits it on spaces a backslash does not escape.
+ */
+function linkedNodeModulesArguments(worktree: string): string[] {
+	const nodeModules = join(worktree, "node_modules");
+	if (!isSymbolicLink(nodeModules)) return [];
+	const link = "fs.symlinkSync(process.argv[1],'node_modules','junction')";
+	const command = [nodeExecutable(), "-e", link, nodeModules]
+		.map((part) => part.replaceAll(" ", "\\ "))
+		.join(" ");
+	return ["--buildCommand", command];
+}
+
+function isSymbolicLink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink();
+	} catch {
+		return false;
+	}
 }
 
 function installedStrykerBin(resolveFrom: string): string {

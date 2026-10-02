@@ -14,7 +14,7 @@ export type SignalKind = (typeof SIGNAL_KINDS)[number];
 
 /**
  * Kinds a run must get an available signal for before it can be `done`,
- * unless the `lean_build` parameter or `lean.requiredSignals` says otherwise.
+ * unless `lean.requiredSignals` says otherwise.
  */
 export const DEFAULT_REQUIRED_SIGNALS: readonly SignalKind[] = [
 	"verify",
@@ -416,7 +416,7 @@ export interface RunManifest {
 	models?: Record<string, RequestedModel>;
 	/**
 	 * Signal kinds the last provider pass had to produce, available, for the
-	 * run to be `done`: the tool parameter, else `lean.requiredSignals`, else
+	 * run to be `done`: the host's override, else `lean.requiredSignals`, else
 	 * `DEFAULT_REQUIRED_SIGNALS`.
 	 */
 	requiredSignals?: SignalKind[];
