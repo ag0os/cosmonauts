@@ -170,9 +170,6 @@ A check that cannot run reports `info` with `data.unavailable: true` and
 functions, no mutants, no test covering the change) is plain `info`.
 `mutation` with no test to select is unavailable when the `blast-radius`
 signal found no readable graph, and plain `info` when the graph exists.
-Mutants that survive on changed lines never send the builder back or
-block the run: the reviewer gets them as facts and may raise a finding, and
-`run.json` gets one warning with their count.
 
 `blast-tests` counts only the test files the runner's own output reports
 running: the run summary (`Test Files  2 passed (2)`, `Tests  5 passed

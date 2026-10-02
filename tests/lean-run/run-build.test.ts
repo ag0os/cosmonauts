@@ -2478,13 +2478,14 @@ describe("runBuild re-entry", () => {
 		expect(prompt).not.toContain("### mutation");
 	});
 
-	test("still ends blocked on failing verify, with one survivors warning from the last pass", async () => {
+	test("still ends blocked on failing blast-radius tests, warning with the last pass's survivors", async () => {
 		const builder = stubBackend([DONE]);
 		const record = await build({
 			builder,
 			providers: [
-				stubProvider([FAILING]),
+				stubProvider([{}]),
 				stubProvider([SURVIVORS], "mutation"),
+				stubProvider([BLAST_TESTS_FAILING], "blast-tests"),
 			],
 		});
 
@@ -2492,9 +2493,39 @@ describe("runBuild re-entry", () => {
 		expect(record.manifest).toMatchObject({
 			status: "blocked",
 			reentries: 1,
-			reason: "re-entry signals still failing after one re-entry: verify",
+			reason: "re-entry signals still failing after one re-entry: blast-tests",
 			warnings: [`pass 2: ${SURVIVORS.summary}`],
 		});
+	});
+
+	test("does not warn about an earlier pass's survivors when the last pass skipped mutation", async () => {
+		const record = await build({
+			builder: stubBackend([DONE]),
+			providers: [
+				stubProvider([{}, FAILING]),
+				stubProvider([SURVIVORS, SKIPPED_MUTATION], "mutation"),
+				stubProvider([BLAST_TESTS_FAILING, SKIPPED_BLAST_TESTS], "blast-tests"),
+			],
+		});
+
+		expect(record.manifest.status).toBe("blocked");
+		expect(record.manifest.warnings).toBeUndefined();
+	});
+
+	test("does not warn about survivors when the mutation provider throws", async () => {
+		const record = await build({
+			builder: stubBackend([DONE]),
+			providers: [
+				stubProvider([{}]),
+				stubProvider([new Error("boom")], "mutation"),
+			],
+		});
+
+		expect(record.facts.passes[0]?.signals[1]).toMatchObject({
+			kind: "mutation",
+			status: "fail",
+		});
+		expect(record.manifest.warnings).toBeUndefined();
 	});
 
 	test("re-enters once on failing blast-radius tests, then ends blocked naming them", async () => {

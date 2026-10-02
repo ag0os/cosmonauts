@@ -1,8 +1,8 @@
 /**
  * Scoped mutation signal (brief 4.7B.5, rulings D-2 and D-4): Stryker mutates
  * only the changed functions and runs only the selected tests. A survivor
- * inside a changed function fails the signal, a fact for the reviewer that
- * never re-enters the builder (wave 7).
+ * inside a changed function fails the signal, a fact for the reviewer; it
+ * never re-enters the builder.
  * Operational failures never throw: when Stryker cannot be resolved, cannot
  * start or does not finish, the signal is `info` with `data.unavailable`.
  * Nothing to mutate, or no test to run, is `info` (or `pass`) without it.

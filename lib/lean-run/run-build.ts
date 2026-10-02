@@ -1062,8 +1062,9 @@ async function executeRun(run: Run): Promise<void> {
  * builder-1 and its pass, then the D-4 re-entry with its pass. A second
  * re-entry follows only when every signal failing in pass 2 is a kind that
  * did not run in pass 1, so that result reaches a builder; a kind that ran
- * in pass 1 and fails now goes to the reviewer instead. Every kind behind the first re-entry ran in pass 1,
- * so no kind re-enters twice, whatever the provider order.
+ * in pass 1 and fails now goes to the reviewer instead. Every kind behind
+ * the first re-entry ran in pass 1, so no kind re-enters twice, whatever the
+ * provider order.
  */
 async function buildAndVerify(run: Run): Promise<Verified | undefined> {
 	let builder = await runBuilder(run, "builder-1", run.basePrompt);
@@ -2097,18 +2098,13 @@ async function finish(
 	return finishRecord(run.record, status, reason);
 }
 
-/** Survivors on changed lines fail the mutation signal; the last pass that ran it leaves one warning. */
+/** Survivors on changed lines fail the last pass's mutation signal and leave one warning. */
 function warnSurvivors(run: Run): void {
-	const ran = (signal: Signal) =>
-		signal.kind === "mutation" &&
-		!dataFlag(signal, "skipped") &&
-		!dataFlag(signal, "unavailable");
-	const last = run.record.facts.passes.findLast((pass) =>
-		pass.signals.some(ran),
-	);
-	const mutation = last?.signals.find(ran);
-	if (last && mutation?.status === "fail")
-		warnOnce(run.record, `pass ${last.pass}: ${mutation.summary}`);
+	const last = run.record.facts.passes.at(-1);
+	const signal = last?.signals.find((entry) => entry.kind === "mutation");
+	if (!last || signal?.status !== "fail") return;
+	if (dataFlag(signal, "unavailable") || dataFlag(signal, "skipped")) return;
+	warnOnce(run.record, `pass ${last.pass}: ${signal.summary}`);
 }
 
 /**
