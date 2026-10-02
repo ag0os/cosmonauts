@@ -460,9 +460,10 @@ function captureSpawnStats(
 	durationMs: number,
 ): SpawnStats {
 	const sessionStats = session.getSessionStats();
+	const { input, output, cacheRead, cacheWrite, total } = sessionStats.tokens;
 
 	return {
-		tokens: { ...sessionStats.tokens },
+		tokens: { input, output, cacheRead, cacheWrite, total },
 		cost: sessionStats.cost,
 		durationMs,
 		turns: sessionStats.userMessages,

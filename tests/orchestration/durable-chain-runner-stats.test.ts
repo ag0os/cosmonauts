@@ -4,6 +4,7 @@
  * results, stage_stats events, and ChainStats.
  */
 
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
@@ -32,8 +33,15 @@ vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 }));
 
 const temp = useTempDir("durable-chain-runner-stats-");
-const registry = new AgentRegistry([agent("planner"), agent("reviewer")]);
-const STAGE_WALL_MS = 90_000;
+const registry = new AgentRegistry([
+	agent("planner"),
+	agent("plan-reviewer"),
+	agent("reviewer"),
+	agent("task-manager"),
+]);
+// Differs from every sum of the mocked spawn durations, so a total built from
+// stage wall time cannot pass for one built from agent time.
+const STAGE_WALL_MS = 100_000;
 
 function statsFor(role: string): SpawnStats {
 	const seed = role === "planner" ? 1 : 2;
@@ -62,6 +70,39 @@ function succeedWithStats(config: SpawnConfig): SpawnResult {
 		],
 		stats: statsFor(config.role),
 	};
+}
+
+async function runExpression(
+	expression: string,
+	options: { planSlug?: string } = {},
+): Promise<ChainResult> {
+	return runDurableChain({
+		steps: parseChain(expression, registry),
+		projectRoot: join(temp.path, "project"),
+		registry,
+		...options,
+	});
+}
+
+async function writePlanFixture(planSlug: string): Promise<void> {
+	const planDirectory = join(
+		temp.path,
+		"project",
+		"missions",
+		"plans",
+		planSlug,
+	);
+	await mkdir(planDirectory, { recursive: true });
+	await writeFile(
+		join(planDirectory, "plan.md"),
+		"---\ntitle: Stats review\nstatus: active\n---\n\n## Decision Log\n",
+		"utf-8",
+	);
+	await writeFile(
+		join(planDirectory, "review.md"),
+		"# Plan Review\n\n## Findings\n\n## Assessment\n\nComplete.\n",
+		"utf-8",
+	);
 }
 
 async function runPlannerThenReviewer(
@@ -172,6 +213,94 @@ describe("runDurableChain stage stats", () => {
 				},
 			],
 		]);
+	});
+
+	test("loads stats whose Pi token object carries an extra field", async () => {
+		spawnerMocks.spawn.mockImplementation(async (config: SpawnConfig) => {
+			const result = succeedWithStats(config);
+			const stats = result.stats as SpawnStats;
+			return {
+				...result,
+				stats: { ...stats, tokens: { ...stats.tokens, reasoning: 5 } },
+			};
+		});
+
+		const result = await runPlannerThenReviewer();
+
+		expect(result.stageResults.map((stage) => stage.stats)).toEqual([
+			statsFor("planner"),
+			statsFor("reviewer"),
+		]);
+	});
+
+	test("keeps and counts the stats of a stage blocked after its spawn", async () => {
+		await writePlanFixture("stats-review");
+		spawnerMocks.spawn.mockImplementation(async (config: SpawnConfig) => ({
+			...succeedWithStats(config),
+			...(config.role === "plan-reviewer" && {
+				messages: [
+					{
+						role: "assistant",
+						content: [{ type: "text", text: "review saved without a report" }],
+					},
+				],
+			}),
+		}));
+
+		const result = await runExpression(
+			"planner -> plan-reviewer -> task-manager",
+			{
+				planSlug: "stats-review",
+			},
+		);
+
+		expect(
+			result.stageResults.map((stage) => [
+				stage.stage.name,
+				stage.success,
+				stage.stats,
+			]),
+		).toEqual([
+			["planner", true, statsFor("planner")],
+			["plan-reviewer", false, statsFor("plan-reviewer")],
+		]);
+		expect(result.stats?.totalTokens).toBe(18_450);
+	});
+
+	test("keeps one stats entry per fan-out member sharing a stage name", async () => {
+		const result = await runExpression("reviewer[3]");
+
+		expect(result.stats?.stages).toEqual([
+			{ stageName: "reviewer", iterations: 1, stats: statsFor("reviewer") },
+			{ stageName: "reviewer", iterations: 1, stats: statsFor("reviewer") },
+			{ stageName: "reviewer", iterations: 1, stats: statsFor("reviewer") },
+		]);
+	});
+
+	test("a malformed stats record leaves the chain successful", async () => {
+		vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		spawnerMocks.spawn.mockImplementation(async (config: SpawnConfig) => ({
+			...succeedWithStats(config),
+			stats: { ...statsFor(config.role), cost: -1 },
+		}));
+
+		const result = await runPlannerThenReviewer();
+
+		expect(result.success).toBe(true);
+	});
+
+	test("warns on stderr when it drops a malformed stats record", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		spawnerMocks.spawn.mockImplementation(async (config: SpawnConfig) => ({
+			...succeedWithStats(config),
+			stats: { ...statsFor(config.role), cost: -1 },
+		}));
+
+		await runExpression("planner");
+
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Durable chain stage stats evidence is invalid."),
+		);
 	});
 
 	test("omits stats when the spawner reports none", async () => {

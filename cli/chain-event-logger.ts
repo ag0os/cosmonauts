@@ -73,7 +73,7 @@ const CHAIN_EVENT_FORMATTERS: {
 function formatSpawnStats(stats: SpawnStats): string {
 	const { input, output, cacheRead, cacheWrite, total } = stats.tokens;
 	return [
-		`wall=${stats.durationMs}ms`,
+		`agent=${stats.durationMs}ms`,
 		`$${stats.cost.toFixed(4)}`,
 		`tokens in=${input} out=${output} cacheRead=${cacheRead} cacheWrite=${cacheWrite} total=${total}`,
 		`${stats.turns} turns`,
@@ -84,7 +84,7 @@ function formatSpawnStats(stats: SpawnStats): string {
 function formatChainStatsTotals(stats: ChainStats | undefined): string {
 	if (!stats) return "";
 	const stages = stats.stages.length;
-	return ` — ${stages} ${stages === 1 ? "stage" : "stages"}, $${stats.totalCost.toFixed(4)}, ${stats.totalTokens} tokens, stage wall=${stats.totalDurationMs}ms`;
+	return ` — ${stages} ${stages === 1 ? "stage" : "stages"}, $${stats.totalCost.toFixed(4)}, ${stats.totalTokens} tokens, agent time=${stats.totalDurationMs}ms`;
 }
 
 function formatToolName(

@@ -75,6 +75,22 @@ export function buildChainStats(
 	};
 }
 
+/**
+ * Copy exactly the SpawnStats fields. Persisting this projection keeps an extra
+ * field on the source object (say, a new Pi token count) out of the record that
+ * `parseSpawnStats` later reads back with an exact-key check.
+ */
+export function projectSpawnStats(stats: SpawnStats): SpawnStats {
+	const { input, output, cacheRead, cacheWrite, total } = stats.tokens;
+	return {
+		tokens: { input, output, cacheRead, cacheWrite, total },
+		cost: stats.cost,
+		durationMs: stats.durationMs,
+		turns: stats.turns,
+		toolCalls: stats.toolCalls,
+	};
+}
+
 const TOKEN_KEYS = [
 	"input",
 	"output",

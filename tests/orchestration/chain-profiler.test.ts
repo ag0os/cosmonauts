@@ -881,7 +881,7 @@ describe("chain-profiler: stage stats", () => {
 		});
 	});
 
-	test("summary lists per-stage wall time, cost, token breakdown, turns and tool calls", () => {
+	test("summary lists per-stage agent time, cost, token breakdown, turns and tool calls", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		const stage = makeStage("planner");
 		feed(profiler, [
@@ -892,7 +892,7 @@ describe("chain-profiler: stage stats", () => {
 		expect(
 			getSummarySection(buildProfilerSummary(profiler), "=== Stage Stats ==="),
 		).toEqual([
-			"  planner: wall=59000ms cost=$0.2500 tokens in=1200 out=300 cacheRead=4000 cacheWrite=500 total=6000 turns=3 toolCalls=7",
+			"  planner: agent=59000ms cost=$0.2500 tokens in=1200 out=300 cacheRead=4000 cacheWrite=500 total=6000 turns=3 toolCalls=7",
 		]);
 	});
 

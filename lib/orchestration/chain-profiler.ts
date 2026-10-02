@@ -427,7 +427,7 @@ function renderStageStats(entries: readonly ProfileTraceEntry[]): string[] {
 		const stats = entry.data?.stats as SpawnStats;
 		const { input, output, cacheRead, cacheWrite, total } = stats.tokens;
 		lines.push(
-			`  ${entry.name}: wall=${stats.durationMs}ms cost=$${stats.cost.toFixed(4)} tokens in=${input} out=${output} cacheRead=${cacheRead} cacheWrite=${cacheWrite} total=${total} turns=${stats.turns} toolCalls=${stats.toolCalls}`,
+			`  ${entry.name}: agent=${stats.durationMs}ms cost=$${stats.cost.toFixed(4)} tokens in=${input} out=${output} cacheRead=${cacheRead} cacheWrite=${cacheWrite} total=${total} turns=${stats.turns} toolCalls=${stats.toolCalls}`,
 		);
 	}
 	return lines;

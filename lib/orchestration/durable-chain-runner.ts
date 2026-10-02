@@ -7,6 +7,7 @@ import type {
 	RunGraphSchedulerBackend,
 	RunRef,
 	RunStore,
+	RuntimeDiagnostic,
 	SchedulerStepInput,
 	StepRecord,
 	StepResult,
@@ -31,7 +32,7 @@ import {
 	parsePlanReviewTargetActivityDetails,
 	projectDurableChainRun,
 } from "./chain-event-adapter.ts";
-import { buildChainStats } from "./chain-stats.ts";
+import { buildChainStats, projectSpawnStats } from "./chain-stats.ts";
 import {
 	type ChainCompilerStepMetadata,
 	compileChainToGraph,
@@ -364,7 +365,7 @@ async function executeChainStep({
 				source: "chain",
 				kind: "chain_stage_stats",
 				role,
-				stats: spawnResult.stats,
+				stats: projectSpawnStats(spawnResult.stats),
 			} satisfies ChainStageStatsActivityDetails,
 		});
 	}
@@ -729,6 +730,7 @@ async function reconstructDurableChainResult(
 		steps: metadata,
 		events: eventPage.events,
 	});
+	reportStageStatsDiagnostics(adapted.diagnostics);
 	const adaptedResult = adapted.events.findLast(
 		(event): event is Extract<ChainEvent, { type: "chain_end" }> =>
 			event.type === "chain_end",
@@ -757,6 +759,18 @@ async function reconstructDurableChainResult(
 			}),
 		},
 	};
+}
+
+/** A dropped stats record would otherwise vanish from the CLI and ChainStats. */
+function reportStageStatsDiagnostics(
+	diagnostics: readonly RuntimeDiagnostic[],
+): void {
+	for (const diagnostic of diagnostics) {
+		if (diagnostic.code !== "invalid_chain_stage_stats_evidence") continue;
+		process.stderr.write(
+			`[warning] ${diagnostic.message} ${JSON.stringify(diagnostic.details)}\n`,
+		);
+	}
 }
 
 function stageResultsFromStepRecords(
