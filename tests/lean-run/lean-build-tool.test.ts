@@ -280,6 +280,20 @@ describe("lean_build tool", () => {
 		);
 	});
 
+	test("states what ends a run blocked, that a moved stash only warns, and that a push by path or URL still lands", () => {
+		const { pi } = setup();
+		const tool = pi.tools.get("lean_build") as unknown as RegisteredTool;
+
+		expect(tool.description).toContain(
+			"A run during which this branch or HEAD moved, a branch or tag of this repository was pointed at an object the builder made,",
+		);
+		expect(tool.description).toContain("a moved stash is only a warning");
+		expect(tool.description).toContain(
+			"a builder push that names a repository by path or URL still lands",
+		);
+		expect(tool.description).not.toContain("HEAD or stash moved");
+	});
+
 	test("passes clearStaleLock through only when it is set", async () => {
 		const { pi, calls } = setup();
 		await pi.callTool("lean_build", { planPath: "p.md", clearStaleLock: true });

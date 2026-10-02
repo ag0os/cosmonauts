@@ -1,4 +1,4 @@
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import type {
@@ -228,6 +228,36 @@ const VITEST_DOT_REPORTER = `
       Tests  1 passed (1)
    Start at  18:53:42
    Duration  255ms (transform 18ms, setup 0ms, collect 12ms, tests 1ms, environment 0ms, prepare 69ms)
+`;
+
+/**
+ * A real vitest 3.2.4 capture (`vitest run tests/a.test.ts
+ * pkg/tests/a.test.ts`, no TTY): the config excludes `tests/**`, and
+ * `pkg/tests/a.test.ts` logs ` ✓ tests/a.test.ts (1 test)`.
+ */
+const VITEST_CONSOLE_MIMICS_RESULT_LINE = join(
+	import.meta.dirname,
+	"fixtures/vitest-console-mimics-result-line.txt",
+);
+
+/**
+ * Hand-written from jest's default reporter format, not a real run:
+ * `pkg/tests/a.test.ts` ran and logged `PASS tests/a.test.ts`, which jest
+ * prints indented under a `console.log` header.
+ */
+const JEST_CONSOLE_MIMICS_RESULT_LINE = `PASS pkg/tests/a.test.ts
+  ● Console
+
+    console.log
+      PASS tests/a.test.ts
+
+      at Object.log (pkg/tests/a.test.ts:3:11)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        0.412 s
+Ran all test suites matching /tests\\/a.test.ts|pkg\\/tests\\/a.test.ts/i.
 `;
 
 const NAMED_NO_FILES =
@@ -793,6 +823,22 @@ describe("blast-tests provider counting only the tests the runner ran", () => {
 			{ tests: [EXCLUDED], reason: "the test runner did not run them" },
 		]);
 		expect(requiredGap(signal)).toBeUndefined();
+	});
+
+	test.each([
+		["vitest", () => readFile(VITEST_CONSOLE_MIMICS_RESULT_LINE, "utf8")],
+		["jest", async () => JEST_CONSOLE_MIMICS_RESULT_LINE],
+	])("does not count a listed file as run from a test's console line that mimics %s's result line", async (_runner, capture) => {
+		const excluded = "tests/a.test.ts";
+		const ran = "pkg/tests/a.test.ts";
+
+		const signal = await tierOf([excluded, ran], printed(0, await capture()));
+
+		expect(signal.status).toBe("info");
+		expect(dataOf(signal).runs?.[0]?.executed).toEqual([ran]);
+		expect(dataOf(signal).notRun).toEqual([
+			{ tests: [excluded], reason: "the test runner did not run them" },
+		]);
 	});
 
 	test("passes a tier the runner reports running whole", async () => {

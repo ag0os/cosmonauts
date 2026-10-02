@@ -22,7 +22,7 @@ verbs that write history or move refs (`push`, `commit`, `merge`, `rebase`,
 `stash`) and `gh pr`; `run.json` records the list as `deniedTools`.
 
 Only a `done` run applies the builder's patch, to your working tree and
-never the index. A run during which your branch, HEAD or stash moved ends
+never the index. A run during which your branch or HEAD moved ends
 `blocked` with nothing applied. So does a run in which one of your
 branches or tags was added or moved to an object the builder made: one
 that exists in the builder's clone and that none of your refs, HEAD or
@@ -30,17 +30,19 @@ reflogs reached when the clone opened. The reason names those refs and
 the `git update-ref` command that restores each; a blocked run does not
 undo the change itself. Any other branch or tag drift, such as a commit
 in a sibling worktree, a fetched tag, a deleted ref or a ref moved to an
-object you already had, is a warning and does not stop the run.
-`run.json` records every drifted ref with its old and new object as
-`callerRefDrift`, each `blocked` or `warned`.
+object you already had, is a warning and does not stop the run, and so is
+a moved stash: every worktree of the repository shares `refs/stash`.
+`run.json` records every drifted branch or tag with its old and new
+object as `callerRefDrift`, each `blocked` or `warned`.
 
 The checks need files git does not carry, so the clone also gets:
 
 - **Gitignored files**, copied at the same paths: `.env*`, generated code,
   build outputs, a gitignored `.cosmonauts/config.json`. `node_modules`,
-  `.git` and `.stryker-tmp` are never copied, at any depth. Ignored files
-  and directories are copied smallest first, and one that would take the
-  total past `lean.ignoredInputsCapBytes` (default 50 MB) is skipped
+  `.git` and `.stryker-tmp` are never copied, at any depth, nor are
+  session transcripts (`missions/sessions/`, `missions/archive/sessions/`).
+  Ignored files and directories are copied smallest first, and one that
+  would take the total past `lean.ignoredInputsCapBytes` (default 50 MB) is skipped
   whole. A symlink is copied only when it leads inside the checkout, and
   its target is rewritten as the shortest relative path, so it points at
   the clone's file, not yours. The
@@ -58,12 +60,14 @@ records them as `builderInputs.residuals`.
   can still push to it, and the `claude-cli` deny list matches only
   commands that start with `git push`. A push that points one of your
   branches or tags at an object the builder made ends the run `blocked`.
-  A builder that deletes one of your refs, or moves one to an object you
-  already had, is reported in `run.json` and the warnings, not blocked:
+  A builder that deletes one of your branches or tags, or moves one to an
+  object you already had, is reported in `run.json` and the warnings, not blocked:
   the threat model is accidental damage, and the check cannot tell that
   drift from your own work in another worktree. An object you had only
   unreferenced (reached by no ref, HEAD or reflog) counts as the
-  builder's. A push to a remote is not detected.
+  builder's. A builder push into `refs/remotes/*`, `refs/notes/*` or
+  `refs/cosmonauts/*` of your repository is neither blocked nor reported:
+  the check covers branches and tags. A push to a remote is not detected.
 - **The dependency tree is writable through the link.** What the builder
   writes or deletes under a linked `node_modules` lands in yours. A run
   whose builder removed entries from one ends `blocked`; other writes (an
@@ -146,7 +150,10 @@ for example ones its config excludes, are recorded under `notRun` and keep
 the signal from a clean `pass`; when no listed test ran at all the signal
 is unavailable. A runner that names only other files (vitest's substring
 filter matching a different path, or a script that ignores its arguments)
-ran none of the listed ones. A reporter that names no file (for example
+ran none of the listed ones. Attribution trusts the runner's console: lines
+a test prints that mimic the runner's result lines are ignored only inside
+the runner's console-capture blocks (vitest's `stdout |` and `stderr |`
+blocks, jest's `console.log` blocks). A reporter that names no file (for example
 `--reporter=dot`) reports no listed file as run, whatever its summary
 counts: the run is `not-run`, with the reason "the test runner named no
 files", the signal is unavailable, and it is a gap when required.

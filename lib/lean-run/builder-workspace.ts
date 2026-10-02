@@ -58,7 +58,7 @@ const LINKED_DEPENDENCY_RESIDUAL =
 
 /** Always present: removing the clone's remotes does not stop a push by path. */
 const PUSH_BY_PATH_RESIDUAL =
-	"push by path or URL: the clone has no configured remote, but a builder that names a repository by path or URL, the caller's or its remote's, can still push to it; the claude-cli deny list matches only commands that start with `git push`. A push that points a branch or tag of the caller at an object the builder made ends the run blocked; one that deletes a ref of the caller or moves it to an object the caller already had is reported in run.json, not blocked; a push to a remote is not detected";
+	"push by path or URL: the clone has no configured remote, but a builder that names a repository by path or URL, the caller's or its remote's, can still push to it; the claude-cli deny list matches only commands that start with `git push`. A push that points a branch or tag of the caller at an object the builder made ends the run blocked; one that deletes a branch or tag of the caller or moves one to an object the caller already had is reported in run.json, not blocked; a push into refs/remotes/*, refs/notes/* or refs/cosmonauts/* of the caller's repository is neither blocked nor reported (the check covers branches and tags); a push to a remote is not detected";
 
 interface OpenOptions {
 	projectRoot: string;

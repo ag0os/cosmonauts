@@ -124,7 +124,7 @@ test("names a switch of the checked-out branch", async () => {
 	);
 });
 
-test("names the stash when its tip moves", async () => {
+test("only warns, naming both tips, when the stash is dropped", async () => {
 	await writeFile(join(repo.path, "a.ts"), "export const a = 2;\n");
 	git("stash", "-q");
 	const stash = git("rev-parse", "refs/stash").trim();
@@ -132,9 +132,42 @@ test("names the stash when its tip moves", async () => {
 
 	git("stash", "drop", "-q");
 
-	expect(await breach(before)).toBe(
-		`the caller's refs/stash moved from ${stash} to no stash`,
-	);
+	expect(await check(before)).toEqual({
+		drift: [],
+		warnings: [
+			`the caller's refs/stash moved from ${stash} to no stash during the run (reported, not blocked: every worktree of the repository shares it)`,
+		],
+	});
+});
+
+test("only warns when a stash is created, as a sibling worktree's git stash does", async () => {
+	const before = await read();
+	await writeFile(join(repo.path, "a.ts"), "export const a = 2;\n");
+
+	git("stash", "-q");
+
+	const stash = git("rev-parse", "refs/stash").trim();
+	expect(await check(before)).toEqual({
+		drift: [],
+		warnings: [
+			`the caller's refs/stash moved from no stash to ${stash} during the run (reported, not blocked: every worktree of the repository shares it)`,
+		],
+	});
+});
+
+test("still names the branch move when the stash moved too", async () => {
+	const head = git("rev-parse", "HEAD").trim();
+	const before = await read();
+	await writeFile(join(repo.path, "a.ts"), "export const a = 2;\n");
+	git("stash", "-q");
+
+	git("commit", "-q", "--allow-empty", "-m", "next");
+
+	const next = git("rev-parse", "HEAD").trim();
+	expect(await check(before)).toMatchObject({
+		breach: `the caller's refs/heads/main moved from ${head} to ${next}`,
+		warnings: [expect.stringMatching(/^the caller's refs\/stash moved/u)],
+	});
 });
 
 test("names a linked node_modules that lost entries", async () => {

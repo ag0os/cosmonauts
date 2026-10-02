@@ -1145,23 +1145,32 @@ describe("runBuild shared repository state", () => {
 		);
 	});
 
-	test("ends blocked naming the stash when the caller's stash entry is dropped during the run", async () => {
-		await writeFile(join(root, "README.md"), "stashed by the user\n");
-		git("stash", "-q");
-		const stash = git("rev-parse", "refs/stash").trim();
+	test("only warns, and applies the patch, when a stash is created in the caller during the run", async () => {
+		let stash = "";
 		const record = await build({
 			builder: stubBackend([
-				() => {
-					git("stash", "drop", "-q");
+				async (input) => {
+					await writeGreet(input.worktree);
+					await writeFile(join(root, "README.md"), "stashed by the user\n");
+					git("stash", "-q");
+					stash = git("rev-parse", "refs/stash").trim();
 					return DONE;
 				},
 			]),
 		});
 
-		expect(record.manifest).toMatchObject({
-			status: "blocked",
-			reason: `builder-1: the caller's refs/stash moved from ${stash} to no stash; nothing was applied`,
-		});
+		expect(record.manifest.status).toBe("done");
+		expect(
+			record.manifest.warnings?.filter((warning) =>
+				warning.startsWith("the caller's refs/stash moved"),
+			),
+		).toEqual([
+			`the caller's refs/stash moved from no stash to ${stash} during the run (reported, not blocked: every worktree of the repository shares it)`,
+		]);
+		expect(record.manifest.callerRefDrift).toBeUndefined();
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			'export const greet = "hi";\n',
+		);
 	});
 
 	test("ends blocked naming the branch and how to remove it when the builder pushes its commit to the caller's repository by path", async () => {

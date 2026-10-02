@@ -341,6 +341,78 @@ test("never copies node_modules, .git or .stryker-tmp, and names each skip", asy
 	]);
 });
 
+test("copies an untracked directory once when git lists it and its ignored child both", async () => {
+	await ignore("node_modules/\ngen/out/\n");
+	await mkdir(join(repo.path, "gen/out"), { recursive: true });
+	await writeFile(join(repo.path, "gen/out/a.js"), "a".repeat(10));
+
+	const clone = await open();
+
+	expect(await readFile(join(clone.root, "gen/out/a.js"), "utf8")).toBe(
+		"a".repeat(10),
+	);
+	expect(clone.inputs).toMatchObject({
+		carried: ["gen/"],
+		carriedBytes: 10,
+		skipped: [],
+	});
+});
+
+test("never copies session transcripts, listed or inside a copied directory", async () => {
+	await ignore(
+		"node_modules/\nmissions/sessions/\nmissions/archive/sessions/\n",
+	);
+	for (const dir of [
+		"missions/sessions/run-1",
+		"missions/archive/sessions/run-0",
+	]) {
+		await mkdir(join(repo.path, dir), { recursive: true });
+		await writeFile(join(repo.path, dir, "run.json"), "{}\n");
+	}
+
+	const clone = await open();
+
+	expect(existsSync(join(clone.root, "missions/sessions"))).toBe(false);
+	expect(existsSync(join(clone.root, "missions/archive/sessions"))).toBe(false);
+	expect(clone.inputs.carried).toEqual(["missions/"]);
+	expect(clone.inputs.skipped).toEqual([
+		{ path: "missions/archive/sessions/", reason: "session transcripts" },
+		{ path: "missions/sessions/", reason: "session transcripts" },
+	]);
+});
+
+test("never copies session transcripts git lists on their own", async () => {
+	await mkdir(join(repo.path, "missions"));
+	await writeFile(join(repo.path, "missions/plan.md"), "# plan\n");
+	await ignore("node_modules/\nmissions/sessions/\n");
+	git("add", "missions/plan.md");
+	git("commit", "-q", "-m", "plan");
+	await mkdir(join(repo.path, "missions/sessions/run-1"), { recursive: true });
+	await writeFile(join(repo.path, "missions/sessions/run-1/run.json"), "{}\n");
+
+	const clone = await open();
+
+	expect(existsSync(join(clone.root, "missions/sessions"))).toBe(false);
+	expect(clone.inputs.carried).toEqual([]);
+	expect(clone.inputs.skipped).toEqual([
+		{ path: "missions/sessions/", reason: "session transcripts" },
+	]);
+});
+
+test("does not list an entry as carried when nothing of it was copied", async () => {
+	await ignore("node_modules/\nsecret\n");
+	const target = join(realpathSync(outside.path), "secret.txt");
+	await writeFile(target, "secret\n");
+	await symlink(target, join(repo.path, "secret"));
+
+	const clone = await open();
+
+	expect(clone.inputs.carried).toEqual([]);
+	expect(clone.inputs.skipped).toEqual([
+		{ path: "secret", reason: "symlink outside the checkout" },
+	]);
+});
+
 // The fixtures name real paths: macOS `tmpdir()` is under the `/var` link,
 // and git's top level is not, so an unresolved path would compare unequal.
 test("skips an ignored symlink that leads out of the checkout", async () => {
@@ -448,6 +520,14 @@ test("records the push-by-path residual even when nothing is linked", async () =
 	expect(clone.inputs.residuals).toEqual([
 		expect.stringMatching(/^push by path or URL: .*can still push to it/u),
 	]);
+});
+
+test("says in the push-by-path residual that only branches and tags are checked", async () => {
+	const clone = await open();
+
+	expect(clone.inputs.residuals[0]).toContain(
+		"one that deletes a branch or tag of the caller or moves one to an object the caller already had is reported in run.json, not blocked; a push into refs/remotes/*, refs/notes/* or refs/cosmonauts/* of the caller's repository is neither blocked nor reported",
+	);
 });
 
 test("links hoisted node_modules at the top level when the project root is below it", async () => {

@@ -1,0 +1,13 @@
+
+ RUN  v3.2.4 /private/tmp/claude-501/-Users-cosmos-Projects-cosmonauts-framework-health/180ac20f-b684-49f1-ac27-631d99a9cde4/scratchpad/w3d3-vitest
+
+stdout | pkg/tests/a.test.ts > y
+ ✓ tests/a.test.ts (1 test)
+
+ ✓ pkg/tests/a.test.ts (1 test) 2ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  21:12:46
+   Duration  325ms (transform 21ms, setup 0ms, collect 13ms, tests 2ms, environment 0ms, prepare 100ms)
+

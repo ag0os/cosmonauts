@@ -59,26 +59,29 @@ export interface CallerCheck {
 	breach?: string;
 	/** Every branch or tag added, deleted or moved since the state was read. */
 	drift: CallerRefDrift[];
+	/** What moved that is reported, not blocked; set only when something did. */
+	warnings?: string[];
 }
 
 /**
- * What moved since `before`. A breach is: the caller's branch, the commit
- * its HEAD names or the stash moved; a branch or tag now names an object
- * the builder made; or a linked `node_modules` is gone or lost entries.
- * Any other branch or tag drift (a sibling worktree's commit, a fetched
- * tag, a deleted ref, a ref moved to an object the caller already had) is
- * only reported in `drift`. Entries a builder adds to `node_modules` (a
- * `.vite` cache) are not a change.
+ * What moved since `before`. A breach is: the caller's branch or the commit
+ * its HEAD names moved; a branch or tag now names an object the builder
+ * made; or a linked `node_modules` is gone or lost entries. Any other
+ * branch or tag drift (a sibling worktree's commit, a fetched tag, a
+ * deleted ref, a ref moved to an object the caller already had) is only
+ * reported in `drift`. A moved stash is only a warning: `refs/stash` is
+ * shared by every worktree of the repository, and a patch whose context a
+ * stash took away does not apply anyway. Entries a builder adds to
+ * `node_modules` (a `.vite` cache) are not a change.
  */
 export async function checkCallerState(
 	before: CallerState,
 	options: CallerCheckOptions,
 ): Promise<CallerCheck> {
 	const { projectRoot } = options;
-	const moved = refChange(
-		before.refs,
-		await readRefState({ cwd: projectRoot }),
-	);
+	const after = await readRefState({ cwd: projectRoot });
+	const moved = refChange(before.refs, after);
+	const stash = stashChange(before.refs, after);
 	const changes = diffRefs(
 		before.branchesAndTags,
 		await readBranchesAndTags(projectRoot),
@@ -86,7 +89,11 @@ export async function checkCallerState(
 	const drift = await classifyDrift(before, changes, options);
 	const breach =
 		moved ?? builderRefChange(drift) ?? (await dependenciesChange(before));
-	return breach ? { breach, drift } : { drift };
+	return {
+		...(breach ? { breach } : {}),
+		drift,
+		...(stash ? { warnings: [stash] } : {}),
+	};
 }
 
 function refChange(before: RefState, after: RefState): string | undefined {
@@ -94,9 +101,12 @@ function refChange(before: RefState, after: RefState): string | undefined {
 		return `the caller's HEAD moved from ${before.branch ?? "a detached HEAD"} to ${after.branch ?? "a detached HEAD"}`;
 	if (before.head !== after.head)
 		return `the caller's ${before.branch ?? "HEAD"} moved from ${before.head ?? "no commit"} to ${after.head ?? "no commit"}`;
-	if (before.stash !== after.stash)
-		return `the caller's refs/stash moved from ${before.stash ?? "no stash"} to ${after.stash ?? "no stash"}`;
 	return undefined;
+}
+
+function stashChange(before: RefState, after: RefState): string | undefined {
+	if (before.stash === after.stash) return undefined;
+	return `the caller's refs/stash moved from ${before.stash ?? "no stash"} to ${after.stash ?? "no stash"} during the run (reported, not blocked: every worktree of the repository shares it)`;
 }
 
 async function readBranchesAndTags(cwd: string): Promise<Map<string, string>> {

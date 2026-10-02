@@ -66,6 +66,15 @@ const RAN_COUNT = /(\d+) (?:passed|failed)/gu;
  * before the path under vitest `projects`, and jest's `PASS path`.
  */
 const FILE_RESULT = /^\s*(?:[✓❯×]|PASS|FAIL)\s+(?:\|[^|\s]+\|\s+)?(\S+)/gmu;
+/**
+ * The first line of a block of a test's own console output: vitest's
+ * `stdout | path > test` or `stderr | path`, jest's indented `console.log`.
+ * The block ends at the next empty line. jest indents every line of the
+ * output, so its block ends after the output and before the `at …` line;
+ * vitest prints the output as written, so an empty line the test printed
+ * ends the block early.
+ */
+const CONSOLE_BLOCK_HEADER = /^(?:(?:stdout|stderr) \| .+|\s*console\.\w+)$/u;
 const ANSI_ESCAPE = new RegExp(
 	`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`,
 	"gu",
@@ -454,11 +463,23 @@ function readRunReport(output: string): RunReport | undefined {
 		files: ranCount(files),
 		tests: ranCount(lastMatch(TESTS_SUMMARY, output) ?? ""),
 		named: new Set(
-			[...output.matchAll(FILE_RESULT)].map((match) =>
+			[...withoutConsoleBlocks(output).matchAll(FILE_RESULT)].map((match) =>
 				withoutDotSlash(match[1] ?? ""),
 			),
 		),
 	};
+}
+
+/** `output` without the blocks of the tests' own console output, where a printed line can look like a result line. */
+function withoutConsoleBlocks(output: string): string {
+	const kept: string[] = [];
+	let inBlock = false;
+	for (const line of output.split("\n")) {
+		if (CONSOLE_BLOCK_HEADER.test(line)) inBlock = true;
+		else if (line === "") inBlock = false;
+		if (!inBlock) kept.push(line);
+	}
+	return kept.join("\n");
 }
 
 /**

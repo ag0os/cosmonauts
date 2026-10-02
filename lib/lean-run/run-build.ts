@@ -1186,12 +1186,12 @@ async function runBuilder(
 /**
  * Why the builder's patch cannot go to the caller, if so: the builder
  * clone left the run's snapshot behind, so its patch would undo work that
- * predates the run, or the caller's branch, HEAD or stash moved, a branch
- * or tag of the caller now names an object the builder made, or a linked
+ * predates the run, or the caller's branch or HEAD moved, a branch or tag
+ * of the caller now names an object the builder made, or a linked
  * `node_modules` lost entries, since the clone opened. Every branch or tag
  * drift is recorded as `callerRefDrift`, and drift that is not the
- * builder's is a warning. Nothing is repaired. A check that cannot run
- * counts.
+ * builder's is a warning, as is a moved stash. Nothing is repaired. A
+ * check that cannot run counts.
  */
 async function isolationBreach(run: Run): Promise<string | undefined> {
 	const { callerState } = run;
@@ -1210,6 +1210,7 @@ async function isolationBreach(run: Run): Promise<string | undefined> {
 			clone: run.worktree,
 		});
 		recordRefDrift(run, check.drift);
+		for (const warning of check.warnings ?? []) warnOnce(run.record, warning);
 		return check.breach;
 	} catch (error) {
 		return `could not check the builder clone against the caller: ${errorMessage(error)}`;

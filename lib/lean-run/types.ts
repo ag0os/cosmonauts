@@ -488,6 +488,7 @@ export type IgnoredInputSkipReason =
 	| "symlink outside the checkout"
 	| "not a file"
 	| "already in the checkout"
+	| "session transcripts"
 	| "copy failed";
 
 export interface SkippedInput {
