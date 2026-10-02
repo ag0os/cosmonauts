@@ -9,6 +9,7 @@ import {
 	resolve,
 } from "node:path";
 import * as ts from "typescript";
+import { isInsideOrEqualRepoPath, moduleRootUnder } from "./modules.ts";
 import type {
 	AnalysisInput,
 	AnalysisResult,
@@ -178,13 +179,7 @@ function discoverModuleRoots(
 			isInsideOrEqualRepoPath(sourceRoot, file.path),
 		);
 		for (const file of filesUnderRoot) {
-			const rest = relativeRepoPath(sourceRoot, file.path);
-			const firstSegment = rest.split("/")[0];
-			if (!firstSegment || !rest.includes("/")) {
-				roots.add(sourceRoot);
-				continue;
-			}
-			roots.add(joinRepoPath(sourceRoot, firstSegment));
+			roots.add(moduleRootUnder(sourceRoot, file.path));
 		}
 	}
 	return [...roots].sort();
@@ -602,20 +597,6 @@ function externalDependencyName(specifier: string): string {
 		return `${parts[0]}/${parts[1]}`;
 	}
 	return parts[0] ?? specifier;
-}
-
-function isInsideOrEqualRepoPath(root: string, path: string): boolean {
-	if (root === ".") return true;
-	return path === root || path.startsWith(`${root}/`);
-}
-
-function relativeRepoPath(root: string, path: string): string {
-	if (root === ".") return path;
-	return path.slice(root.length + 1);
-}
-
-function joinRepoPath(...parts: readonly string[]): string {
-	return parts.filter((part) => part.length > 0 && part !== ".").join("/");
 }
 
 function normalizeRepoPath(path: string): string {

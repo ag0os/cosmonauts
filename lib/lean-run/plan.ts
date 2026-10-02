@@ -99,7 +99,7 @@ function looksLikePath(value: string): boolean {
 const WRAPPING = /^[("'[{<]+|[)"'\]}>.,;:!?]+$/gu;
 
 /** A `:line` or `:line:column` suffix, as in `src/x.ts:12`. */
-const LINE_SUFFIX = /:\d+(?::\d+)?$/u;
+const LINE_SUFFIX = /:\d+(?:[:-]\d+)?$/u;
 
 /**
  * The paths a direct request names: every backticked span that looks like a

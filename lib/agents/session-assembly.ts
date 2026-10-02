@@ -280,6 +280,7 @@ export async function buildSessionParams(
 				projectSkills,
 				domainsDir,
 				resolver,
+				agent: { skills: def.skills, domain: resourceDomain },
 			});
 	const hiddenSkillNames = resolveHiddenSkillNames({
 		requesterDomain: resourceDomain,

@@ -90,7 +90,11 @@ export interface ProjectConfig {
 	readonly activeDomains?: readonly string[];
 	/** Domain role → target domain overrides. */
 	readonly domainBindings?: Readonly<Record<string, string>>;
-	/** Skills relevant to this project. Filters agent skill indices to this set. */
+	/**
+	 * Skills relevant to this project. Filters agent skill indices to this set;
+	 * shared-domain skills, and the skills an agent names explicitly from its
+	 * own domain, are always kept.
+	 */
 	readonly skills?: readonly string[];
 	/** Additional skill directories (e.g. "~/.claude/skills", ".agents/skills"). */
 	readonly skillPaths?: readonly string[];

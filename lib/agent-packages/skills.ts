@@ -14,7 +14,7 @@ import type { PackagedSkill, PackageSkillSelection } from "./types.ts";
 interface ResolvePackageSkillsOptions {
 	readonly selection: PackageSkillSelection;
 	readonly skillPaths: readonly string[];
-	readonly sourceAgent?: Pick<AgentDefinition, "skills">;
+	readonly sourceAgent?: Pick<AgentDefinition, "skills" | "domain">;
 	readonly projectSkills?: readonly string[];
 	readonly domainsDir?: string;
 	readonly resolver?: DomainResolver;
@@ -67,6 +67,7 @@ export async function resolvePackageSkills(
 		projectSkills: options.projectSkills,
 		domainsDir: options.domainsDir,
 		resolver: options.resolver,
+		agent: options.sourceAgent,
 	});
 	const override = buildSkillsOverride(
 		options.sourceAgent.skills,

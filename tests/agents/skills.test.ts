@@ -104,6 +104,44 @@ describe("resolveEffectiveProjectSkills", () => {
 
 		expect(result).toBeUndefined();
 	});
+
+	describe("for an agent whose own domain ships skills", () => {
+		async function leanResolver(): Promise<DomainResolver> {
+			for (const name of ["contract", "notes"]) {
+				const dir = join(tmp.path, "lean", "skills", name);
+				await mkdir(dir, { recursive: true });
+				await writeFile(
+					join(dir, "SKILL.md"),
+					`---\nname: ${name}\ndescription: ${name}\n---\n`,
+				);
+			}
+			return new DomainResolver(
+				new DomainRegistry([
+					makeDomain("lean", { rootDirs: [join(tmp.path, "lean")] }),
+				]),
+			);
+		}
+
+		test("keeps the own-domain skills the agent names, outside the project list", async () => {
+			const result = await resolveEffectiveProjectSkills({
+				projectSkills: ["typescript"],
+				resolver: await leanResolver(),
+				agent: { skills: ["contract", "rails-api", "tdd"], domain: "lean" },
+			});
+
+			expect(result).toEqual(["contract", "typescript"]);
+		});
+
+		test("adds nothing for a wildcard agent", async () => {
+			const result = await resolveEffectiveProjectSkills({
+				projectSkills: ["typescript"],
+				resolver: await leanResolver(),
+				agent: { skills: ["*"], domain: "lean" },
+			});
+
+			expect(result).toEqual(["typescript"]);
+		});
+	});
 });
 
 describe("buildSkillsOverride", () => {

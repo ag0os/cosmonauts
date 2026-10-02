@@ -34,6 +34,14 @@ interface ResolveEffectiveProjectSkillsOptions {
 	readonly domainsDir?: string;
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
 	readonly resolver?: DomainResolver;
+	/**
+	 * The agent the list is for. Skills it names explicitly that its own
+	 * domain ships stay visible whatever the project list says.
+	 */
+	readonly agent?: {
+		readonly skills: readonly string[];
+		readonly domain?: string | undefined;
+	};
 }
 
 interface ResolveSkillVisibilityOptions {
@@ -90,6 +98,20 @@ async function listSharedSkillNames(options: {
 	return [...new Set(skills.map((skill) => skill.name))];
 }
 
+/** The skills an agent names explicitly that its own domain ships; none for a wildcard agent. */
+async function listOwnDomainSkillNames(
+	agent: ResolveEffectiveProjectSkillsOptions["agent"],
+	resolver: DomainResolver | undefined,
+): Promise<readonly string[]> {
+	if (!agent?.domain || isWildcard(agent.skills)) return [];
+	const domain = resolver?.registry.get(agent.domain);
+	if (!domain) return [];
+	const shipped = new Set(
+		(await discoverSkills([domain])).map((skill) => skill.name),
+	);
+	return agent.skills.filter((name) => shipped.has(name));
+}
+
 export async function resolveEffectiveProjectSkills(
 	options: ResolveEffectiveProjectSkillsOptions,
 ): Promise<readonly string[] | undefined> {
@@ -100,6 +122,7 @@ export async function resolveEffectiveProjectSkills(
 			domainsDir: options.domainsDir,
 			resolver: options.resolver,
 		})),
+		...(await listOwnDomainSkillNames(options.agent, options.resolver)),
 		...options.projectSkills,
 	];
 }

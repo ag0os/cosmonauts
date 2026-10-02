@@ -127,7 +127,7 @@ Domain `prompts/` contains personas only. Framework base and runtime overlays ar
 
 Capabilities are markdown prompt packs listed by agent definitions. Resolution checks the agent's domain first, then portable domains, then `shared`. Missing capabilities are validation errors because they affect prompt assembly.
 
-Skills are directories with `SKILL.md`. Agents can use an explicit allowlist, `[]` for none, or `["*"]` for all visible skills. `internal.skills` hides named skills from cross-domain agents while preserving same-domain access.
+Skills are directories with `SKILL.md`. Agents can use an explicit allowlist, `[]` for none, or `["*"]` for all visible skills. `internal.skills` hides named skills from cross-domain agents while preserving same-domain access. A project `skills` list in `.cosmonauts/config.json` narrows every agent's skills to it, except shared-domain skills and the skills an agent names explicitly from its own domain.
 
 Extensions are Pi modules under `extensions/<name>/index.ts`, loaded by names in an agent definition. Use extensions for commands, tools, lifecycle hooks, and session event handling. They are runtime dependencies rather than public assets, so `internal` does not apply to extension names.
 

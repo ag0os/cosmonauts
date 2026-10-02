@@ -30,6 +30,7 @@ export {
 	readArchitectureMapIndexFrontmatter,
 } from "./freshness.ts";
 export { generateArchitectureMap } from "./generator.ts";
+export { moduleOfPath } from "./modules.ts";
 export type {
 	ArchitectureMapMemoryDeps,
 	ArchitectureMapMemoryStoreOptions,

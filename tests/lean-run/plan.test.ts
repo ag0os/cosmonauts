@@ -189,4 +189,10 @@ describe("requestPaths", () => {
 			"lib/y.ts",
 		]);
 	});
+
+	test("drops a line-range suffix from a path", () => {
+		expect(
+			requestPaths("Merge `src/x.ts:1229-1233` / lib/y.ts:387-391 (dupes)."),
+		).toEqual(["src/x.ts", "lib/y.ts"]);
+	});
 });
