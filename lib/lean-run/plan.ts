@@ -22,6 +22,7 @@ const HEADING = /^(#{1,2})\s+(.*)$/;
 const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/;
 const BACKTICKED = /`([^`]+)`/g;
 const BEHAVIOR = /^\s*(?:[-*+]\s+)?\**(B-\d+)\**\s*[:.)—–-]?\s*(.*)$/;
+const BEHAVIOR_ID = /^\**B-\d+\b/;
 
 /**
  * Reads the plan.md contract (brief section 4.4) by its headings only.
@@ -136,19 +137,22 @@ function behaviorList(lines: readonly string[]): PlanBehavior[] {
 }
 
 /**
- * One line per Behaviors line the host cannot read as
- * `B-n: observer / entry point / outcome` with three non-empty parts:
- * a line with no `B-n` id is dropped by `parsePlan`, and a part left
- * empty reaches the builder as nothing.
+ * One line per Behaviors line with a `B-n` id that the host cannot read as
+ * `B-n: observer / entry point / outcome` with three non-empty parts: a
+ * numbered `1. B-n` line is dropped by `parsePlan`, and a part left empty
+ * reaches the builder as nothing. A line with no `B-n` id (prose, a wrapped
+ * continuation, a sub-bullet) is not checked.
  */
 export function planBehaviorProblems(markdown: string): string[] {
 	const lines = splitSections(markdown).sections.behaviors ?? [];
 	return lines.flatMap((line) => {
-		const text = line.trim();
-		if (text === "") return [];
 		const [behavior] = behaviorList([line]);
-		if (!behavior)
-			return [`not a behavior line (no B-n id; parsePlan drops it): ${text}`];
+		if (!behavior) {
+			const item = (BULLET.exec(line)?.[1] ?? line).trim();
+			return BEHAVIOR_ID.test(item)
+				? [`not a behavior line (parsePlan drops it): ${line.trim()}`]
+				: [];
+		}
 		const missing = [
 			behavior.observer ? undefined : "observer",
 			behavior.entryPoint ? undefined : "entry point",

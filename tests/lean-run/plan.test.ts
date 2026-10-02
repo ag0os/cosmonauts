@@ -220,9 +220,17 @@ describe("planBehaviorProblems", () => {
 		]);
 	});
 
-	test("reports a line with no B-n id, which parsePlan drops", () => {
-		expect(problems("- the user sees a result")).toEqual([
-			"not a behavior line (no B-n id; parsePlan drops it): - the user sees a result",
+	test("checks no line without a B-n id: prose, continuations, sub-bullets", () => {
+		expect(
+			problems(
+				"Each behavior is observable from the shell.\n- B-1: user / `x run` / sees\n  the result\n  - a detail",
+			),
+		).toEqual([]);
+	});
+
+	test("reports a numbered B-n line, which parsePlan drops", () => {
+		expect(problems("1. B-1: user / `x run` / sees it")).toEqual([
+			"not a behavior line (parsePlan drops it): 1. B-1: user / `x run` / sees it",
 		]);
 	});
 

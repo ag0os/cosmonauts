@@ -40,6 +40,7 @@ interface RunCommandOptions {
 	readonly spec?: string;
 	readonly base?: string;
 	readonly backend: LeanBackendKind;
+	readonly clearStaleLock?: boolean;
 	readonly json?: boolean;
 }
 
@@ -53,7 +54,11 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 		});
 	const program = new Command()
 		.name("cosmonauts lean")
-		.description("Lean plan check, build and review from the shell");
+		.description("Lean plan check, build and review from the shell")
+		.configureOutput({
+			outputError: (text, write) =>
+				program.args.includes("--json") ? printError(text.trim()) : write(text),
+		});
 
 	program
 		.command("check <plan>")
@@ -66,7 +71,9 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 				projectRoot: cwd,
 				planPath,
 			}).catch((error: unknown) => {
-				printLines([`cannot read ${planPath}: ${message(error)}`], "stderr");
+				const text = `cannot read ${planPath}: ${message(error)}`;
+				if (command.json) printError(text);
+				else printLines([text], "stderr");
 				return undefined;
 			});
 			setExitCode(report?.ok ? 0 : 1);
@@ -83,6 +90,10 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 				new Option("--backend <kind>", "Where the builder and reviewer run")
 					.choices(LEAN_BACKEND_KINDS)
 					.default("pi"),
+			)
+			.option(
+				"--clear-stale-lock",
+				"Start even though a previous run's cleanup is unconfirmed (its processes may still run); only that lock is cleared",
 			)
 			.option("--json", "Print the run as JSON");
 
@@ -101,10 +112,11 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 					backend: backends.builder,
 					reviewerBackend: backends.reviewer,
 					providers: options.providers ?? createDefaultProviders(),
+					...clearStaleLock(command),
 					signal,
 				}),
 			);
-			report(record, runDetails(record), command.json);
+			if (record) report(record, runDetails(record), command.json);
 		});
 
 	runCommand(
@@ -120,9 +132,11 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 					...(command.base ? { base: command.base } : {}),
 					...(command.plan ? { planPath: command.plan } : {}),
 					reviewerBackend: backends.reviewer,
+					...clearStaleLock(command),
 					signal,
 				}),
 			);
+			if (!record) return;
 			const { runDir, ...details } = runDetails(record);
 			const findings = record.envelopes.reviewer?.findings ?? [];
 			report(record, { ...details, findings, runDir }, command.json);
@@ -134,12 +148,19 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 			backends: Awaited<ReturnType<CreateLeanBackends>>,
 			signal: AbortSignal,
 		) => Promise<RunRecord>,
-	): Promise<RunRecord> {
-		const createBackends = options.createBackends ?? runtimeBackends();
-		const backends = await createBackends(command.backend, cwd);
-		return withInterruptSignal(options.signals ?? process, (signal) =>
-			run(backends, signal),
-		);
+	): Promise<RunRecord | undefined> {
+		try {
+			const createBackends = options.createBackends ?? runtimeBackends();
+			const backends = await createBackends(command.backend, cwd);
+			return await withInterruptSignal(options.signals ?? process, (signal) =>
+				run(backends, signal),
+			);
+		} catch (error) {
+			if (!command.json) throw error;
+			printError(message(error));
+			setExitCode(1);
+			return undefined;
+		}
 	}
 
 	function report(record: RunRecord, details: object, json?: boolean): void {
@@ -149,6 +170,15 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 	}
 
 	return program;
+}
+
+function clearStaleLock(command: RunCommandOptions) {
+	return command.clearStaleLock ? { clearStaleLock: true } : {};
+}
+
+/** A failure under `--json`: one line on stdout, so a JSON reader still gets JSON. */
+function printError(error: string): void {
+	process.stdout.write(`${JSON.stringify({ error })}\n`);
 }
 
 function runDetails(record: RunRecord) {

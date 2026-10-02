@@ -131,19 +131,31 @@ describe("lean check", () => {
 		expect(exitCode).toBe(1);
 	});
 
-	test("reports a malformed behavior line and exits 1", async () => {
+	test("reports a behavior line missing a part and exits 1", async () => {
 		const plan = GOOD_PLAN.replace(
 			'- B-1: user / `greet()` / sees "hi lean"',
-			"- B-1: user / `greet()`\n- greets the user",
+			"- B-1: user / `greet()`",
 		);
 
 		const { report, exitCode } = await checkJson(plan);
 
 		expect(report.behaviorProblems).toEqual([
 			'B-1: missing outcome (want "B-1: observer / entry point / outcome")',
-			"not a behavior line (no B-n id; parsePlan drops it): - greets the user",
 		]);
 		expect(exitCode).toBe(1);
+	});
+
+	test("stays ok with prose and a wrapped continuation in Behaviors", async () => {
+		const plan = GOOD_PLAN.replace(
+			'- B-1: user / `greet()` / sees "hi lean"',
+			'Each behavior is observable from the shell.\n- B-1: user / `greet()` / sees\n  "hi lean"',
+		);
+
+		const { report, exitCode } = await checkJson(plan);
+
+		expect(report.behaviorProblems).toEqual([]);
+		expect(report.ok).toBe(true);
+		expect(exitCode).toBe(0);
 	});
 
 	test("warns on a path the graph cannot show but stays ok", async () => {
@@ -190,14 +202,25 @@ describe("lean check", () => {
 	});
 
 	test("exits 1 with a message on stderr when the plan cannot be read", async () => {
+		const { stdout, stderr, exitCode } = await run(["check", "missing.md"]);
+
+		expect(stdout).toBe("");
+		expect(stderr).toMatch(/^cannot read missing\.md: .*ENOENT/u);
+		expect(exitCode).toBe(1);
+	});
+
+	test("prints one JSON error line and exits 1 when the plan cannot be read under --json", async () => {
 		const { stdout, stderr, exitCode } = await run([
 			"check",
 			"missing.md",
 			"--json",
 		]);
 
-		expect(stdout).toBe("");
-		expect(stderr).toMatch(/^cannot read missing\.md: .*ENOENT/u);
+		expect(stdout.split("\n")).toEqual([expect.any(String), ""]);
+		expect(JSON.parse(stdout)).toEqual({
+			error: expect.stringMatching(/^cannot read missing\.md: .*ENOENT/u),
+		});
+		expect(stderr).toBe("");
 		expect(exitCode).toBe(1);
 	});
 });
@@ -328,6 +351,60 @@ describe("lean build", () => {
 		expect(exitCode).toBe(1);
 	});
 
+	test("passes clearStaleLock only when --clear-stale-lock is given", async () => {
+		const { builds, options } = doubles(record("done"));
+
+		await run(["build", "--plan", "plan.md", "--clear-stale-lock"], options);
+		await run(["build", "--plan", "plan.md"], options);
+
+		expect(builds[0]?.clearStaleLock).toBe(true);
+		expect(builds[1]).not.toHaveProperty("clearStaleLock");
+	});
+
+	test("prints one JSON error line and exits 1 when runBuild throws under --json", async () => {
+		const { options } = doubles(record("done"));
+		const runBuild = async () => {
+			throw new Error("plan.md: no such file");
+		};
+
+		const { stdout, exitCode } = await run(
+			["build", "--plan", "plan.md", "--json"],
+			{ ...options, runBuild },
+		);
+
+		expect(stdout).toBe('{"error":"plan.md: no such file"}\n');
+		expect(exitCode).toBe(1);
+	});
+
+	test("lets a runBuild throw reach the caller without --json", async () => {
+		const { options } = doubles(record("done"));
+		const runBuild = async () => {
+			throw new Error("plan.md: no such file");
+		};
+
+		await expect(
+			run(["build", "--plan", "plan.md"], { ...options, runBuild }),
+		).rejects.toThrow("plan.md: no such file");
+	});
+
+	test("prints a bad option as one JSON error line under --json", async () => {
+		const { options } = doubles(record("done"));
+		output = captureCliOutput();
+		const program = createLeanProgram({ cwd: tmp.path, ...options });
+		for (const command of [program, ...program.commands])
+			command.exitOverride();
+
+		await expect(
+			program.parseAsync(
+				["build", "--plan", "plan.md", "--backend", "nope", "--json"],
+				{ from: "user" },
+			),
+		).rejects.toMatchObject({ exitCode: 1 });
+
+		expect(JSON.parse(output.stdout()).error).toMatch(/'nope' is invalid/u);
+		expect(output.stderr()).toBe("");
+	});
+
 	test("aborts the run's signal on SIGINT", async () => {
 		const signals = new EventEmitter();
 		const { options } = doubles(record("failed", "aborted"));
@@ -350,6 +427,14 @@ describe("lean build", () => {
 });
 
 describe("lean review", () => {
+	test("passes clearStaleLock when --clear-stale-lock is given", async () => {
+		const { reviews, options } = doubles(record("done"));
+
+		await run(["review", "--clear-stale-lock"], options);
+
+		expect(reviews[0]?.clearStaleLock).toBe(true);
+	});
+
 	test("calls runReview with the base, plan and reviewer and prints the findings", async () => {
 		const done: RunRecord = {
 			...record("done"),
