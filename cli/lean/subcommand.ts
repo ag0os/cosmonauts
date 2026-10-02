@@ -57,7 +57,7 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 		.description("Lean plan check, build and review from the shell")
 		.configureOutput({
 			outputError: (text, write) =>
-				program.args.includes("--json") ? printError(text.trim()) : write(text),
+				jsonFlagGiven(program) ? printError(text.trim()) : write(text),
 		});
 
 	program
@@ -174,6 +174,29 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 
 function clearStaleLock(command: RunCommandOptions) {
 	return command.clearStaleLock ? { clearStaleLock: true } : {};
+}
+
+/**
+ * Whether argv carries `--json` as a flag: before any `--`, and not as the
+ * value of an option that takes one (`--plan --json`). The error hook needs
+ * this because commander may fail before it has parsed `--json`. It reads
+ * commander's untyped `rawArgs`, since `program.args` drops the `--`.
+ */
+function jsonFlagGiven(program: Command): boolean {
+	const takesValue = new Set(
+		program.commands.flatMap((command) =>
+			command.options
+				.filter((option) => option.required)
+				.map((option) => option.long),
+		),
+	);
+	const raw = "rawArgs" in program ? program.rawArgs : undefined;
+	const args = Array.isArray(raw) ? raw.map(String) : program.args;
+	for (let i = 0; i < args.length && args[i] !== "--"; i++) {
+		if (args[i] === "--json") return true;
+		if (takesValue.has(args[i])) i++;
+	}
+	return false;
 }
 
 /** A failure under `--json`: one line on stdout, so a JSON reader still gets JSON. */

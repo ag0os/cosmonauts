@@ -220,7 +220,7 @@ describe("planBehaviorProblems", () => {
 		]);
 	});
 
-	test("checks no line without a B-n id: prose, continuations, sub-bullets", () => {
+	test("ignores unbulleted prose, an indented continuation and a sub-bullet", () => {
 		expect(
 			problems(
 				"Each behavior is observable from the shell.\n- B-1: user / `x run` / sees\n  the result\n  - a detail",
@@ -231,6 +231,20 @@ describe("planBehaviorProblems", () => {
 	test("reports a numbered B-n line, which parsePlan drops", () => {
 		expect(problems("1. B-1: user / `x run` / sees it")).toEqual([
 			"not a behavior line (parsePlan drops it): 1. B-1: user / `x run` / sees it",
+		]);
+	});
+
+	test.each([
+		["a bullet with no id", "- operator / api / sees bad"],
+		["a checkbox before the id", "- [ ] B-2: user / `x run` / sees it"],
+		["a backticked id", "- `B-2`: user / `x run` / sees it"],
+	])("reports %s next to a valid behavior, which parsePlan drops", (_, bullet) => {
+		const behaviors = `- B-1: user / \`x run\` / sees\n${bullet}`;
+		expect(
+			parsePlan(`## Behaviors\n${behaviors}\n`).behaviors.map((b) => b.id),
+		).toEqual(["B-1"]);
+		expect(problems(behaviors)).toEqual([
+			`not a behavior line (parsePlan drops it): ${bullet}`,
 		]);
 	});
 

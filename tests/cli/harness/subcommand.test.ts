@@ -507,10 +507,13 @@ describe("cosmonauts harness sync", () => {
 		});
 	});
 
-	test("a sync that does not select the lean bundle never reads the contract skill", async () => {
-		const leanContractNode = vi.fn(async () => {
-			throw new Error("contract skill read");
-		});
+	async function syncWithContractSpy(selectors: string[]) {
+		const node: GeneratedHarnessNode = {
+			relativePath: "contract.md",
+			inputBytes: Buffer.from("# contract\n"),
+			renderedBytes: Buffer.from("# contract\n"),
+		};
+		const leanContractNode = vi.fn(async () => node);
 		const sync = vi.fn(
 			async (_options: HarnessSyncOptions): Promise<HarnessSyncReport> => ({
 				...reportFixture(),
@@ -524,15 +527,32 @@ describe("cosmonauts harness sync", () => {
 			discover: async () => emptyDiscovery(),
 			sync,
 			leanContractNode,
-		}).parseAsync(["--json", "sync", "--asset", "external-skill:cosmonauts"], {
-			from: "user",
-		});
+		}).parseAsync(["--json", "sync", ...selectors], { from: "user" });
 		output.restore();
 		expect(process.exitCode).toBeUndefined();
+		return {
+			node,
+			leanContractNode,
+			nodes: sync.mock.calls[0]?.[0].generatedNodesByAssetId,
+		};
+	}
+
+	test("a sync with no --asset or --kind reads the contract skill for the lean bundle", async () => {
+		const { node, leanContractNode, nodes } = await syncWithContractSpy([]);
+		expect(leanContractNode).toHaveBeenCalledTimes(1);
+		expect(nodes).toHaveProperty(["external-skill:cosmonauts-lean"], [node]);
+	});
+
+	test.each([
+		[
+			"--asset external-skill:cosmonauts",
+			["--asset", "external-skill:cosmonauts"],
+		],
+		["--kind command", ["--kind", "command"]],
+	])("a sync with %s does not select the lean bundle and never reads the contract skill", async (_, selectors) => {
+		const { leanContractNode, nodes } = await syncWithContractSpy(selectors);
 		expect(leanContractNode).not.toHaveBeenCalled();
-		expect(sync.mock.calls[0]?.[0].generatedNodesByAssetId).not.toHaveProperty(
-			"external-skill:cosmonauts-lean",
-		);
+		expect(nodes).not.toHaveProperty("external-skill:cosmonauts-lean");
 	});
 
 	test("a change to the contract skill shows the synced lean bundle as drift on check", async () => {

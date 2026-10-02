@@ -158,6 +158,22 @@ describe("lean check", () => {
 		expect(exitCode).toBe(0);
 	});
 
+	test("reports a Behaviors bullet the host drops next to a valid one and exits 1", async () => {
+		const plan = GOOD_PLAN.replace(
+			'- B-1: user / `greet()` / sees "hi lean"',
+			'- B-1: user / `greet()` / sees "hi lean"\n- operator / api / sees bad',
+		);
+
+		const { report, exitCode } = await checkJson(plan);
+
+		expect(report.emptySections).toEqual([]);
+		expect(report.behaviorProblems).toEqual([
+			"not a behavior line (parsePlan drops it): - operator / api / sees bad",
+		]);
+		expect(report.ok).toBe(false);
+		expect(exitCode).toBe(1);
+	});
+
 	test("warns on a path the graph cannot show but stays ok", async () => {
 		const plan = GOOD_PLAN.replace(
 			"- `src/greet.ts` — uses the name",
@@ -403,6 +419,45 @@ describe("lean build", () => {
 
 		expect(JSON.parse(output.stdout()).error).toMatch(/'nope' is invalid/u);
 		expect(output.stderr()).toBe("");
+	});
+
+	async function commanderFailure(argv: string[]) {
+		const { options } = doubles(record("done"));
+		output = captureCliOutput();
+		const program = createLeanProgram({ cwd: tmp.path, ...options });
+		for (const command of [program, ...program.commands])
+			command.exitOverride();
+		await expect(
+			program.parseAsync(argv, { from: "user" }),
+		).rejects.toMatchObject({ exitCode: 1 });
+		return { stdout: output.stdout(), stderr: output.stderr() };
+	}
+
+	test.each([
+		[
+			"an option value",
+			["build", "--plan", "--json", "--backend", "nope"],
+			/'nope' is invalid/u,
+		],
+		["after --", ["check", "x.md", "--", "--json"], /too many arguments/u],
+	])("prints a commander error as plain stderr when --json is %s", async (_, argv, error) => {
+		const { stdout, stderr } = await commanderFailure(argv);
+
+		expect(stdout).toBe("");
+		expect(stderr).toMatch(error);
+	});
+
+	test("prints a commander error as JSON for a --json flag before --", async () => {
+		const { stdout, stderr } = await commanderFailure([
+			"check",
+			"--json",
+			"x.md",
+			"--",
+			"extra",
+		]);
+
+		expect(JSON.parse(stdout).error).toMatch(/too many arguments/u);
+		expect(stderr).toBe("");
 	});
 
 	test("aborts the run's signal on SIGINT", async () => {

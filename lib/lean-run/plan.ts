@@ -22,7 +22,6 @@ const HEADING = /^(#{1,2})\s+(.*)$/;
 const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/;
 const BACKTICKED = /`([^`]+)`/g;
 const BEHAVIOR = /^\s*(?:[-*+]\s+)?\**(B-\d+)\**\s*[:.)—–-]?\s*(.*)$/;
-const BEHAVIOR_ID = /^\**B-\d+\b/;
 
 /**
  * Reads the plan.md contract (brief section 4.4) by its headings only.
@@ -137,19 +136,19 @@ function behaviorList(lines: readonly string[]): PlanBehavior[] {
 }
 
 /**
- * One line per Behaviors line with a `B-n` id that the host cannot read as
+ * One line per top-level Behaviors bullet the host cannot read as
  * `B-n: observer / entry point / outcome` with three non-empty parts: a
- * numbered `1. B-n` line is dropped by `parsePlan`, and a part left empty
- * reaches the builder as nothing. A line with no `B-n` id (prose, a wrapped
- * continuation, a sub-bullet) is not checked.
+ * bullet `parsePlan` reads as no behavior (no id, a numbered `1. B-n`, a
+ * checkbox or backticked id) is dropped, and a part left empty reaches the
+ * builder as nothing. Unbulleted prose and indented lines (a wrapped
+ * continuation, a sub-bullet) are not checked.
  */
 export function planBehaviorProblems(markdown: string): string[] {
 	const lines = splitSections(markdown).sections.behaviors ?? [];
 	return lines.flatMap((line) => {
 		const [behavior] = behaviorList([line]);
 		if (!behavior) {
-			const item = (BULLET.exec(line)?.[1] ?? line).trim();
-			return BEHAVIOR_ID.test(item)
+			return BULLET.test(line) && !/^\s/.test(line)
 				? [`not a behavior line (parsePlan drops it): ${line.trim()}`]
 				: [];
 		}
