@@ -14,6 +14,7 @@
  *   cosmonauts task <command>                     → task management subcommands
  *   cosmonauts plan <command>                     → plan management subcommands
  *   cosmonauts memory <command>                   → living-memory owner commands
+ *   cosmonauts lean check|build|review            → lean plan check and runs, no lead session
  *   cosmonauts serve                             → local read-only artifact viewer
  *   cosmonauts export ...                         → export packaged agents as binaries
  *
@@ -62,6 +63,7 @@ import { createCreateProgram } from "./create/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
 import { createExportProgram } from "./export/subcommand.ts";
 import { createHarnessProgram } from "./harness/subcommand.ts";
+import { createLeanProgram } from "./lean/subcommand.ts";
 import { createMemoryProgram } from "./memory/subcommand.ts";
 import {
 	createInstallProgram,
@@ -794,10 +796,12 @@ if (runInvocation) {
 	subcommand === "architecture" ||
 	subcommand === "arch" ||
 	subcommand === "analysis" ||
+	subcommand === "lean" ||
 	subcommand === "memory"
 ) {
 	const programs: Record<string, () => Command> = {
 		analysis: createAnalysisProgram,
+		lean: createLeanProgram,
 		architecture: createArchitectureProgram,
 		arch: createArchitectureProgram,
 		memory: createMemoryProgram,

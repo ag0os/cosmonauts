@@ -135,6 +135,33 @@ function behaviorList(lines: readonly string[]): PlanBehavior[] {
 	});
 }
 
+/**
+ * One line per Behaviors line the host cannot read as
+ * `B-n: observer / entry point / outcome` with three non-empty parts:
+ * a line with no `B-n` id is dropped by `parsePlan`, and a part left
+ * empty reaches the builder as nothing.
+ */
+export function planBehaviorProblems(markdown: string): string[] {
+	const lines = splitSections(markdown).sections.behaviors ?? [];
+	return lines.flatMap((line) => {
+		const text = line.trim();
+		if (text === "") return [];
+		const [behavior] = behaviorList([line]);
+		if (!behavior)
+			return [`not a behavior line (no B-n id; parsePlan drops it): ${text}`];
+		const missing = [
+			behavior.observer ? undefined : "observer",
+			behavior.entryPoint ? undefined : "entry point",
+			behavior.outcome ? undefined : "outcome",
+		].filter((part) => part !== undefined);
+		return missing.length === 0
+			? []
+			: [
+					`${behavior.id}: missing ${missing.join(", ")} (want "${behavior.id}: observer / entry point / outcome")`,
+				];
+	});
+}
+
 function itemList(lines: readonly string[]): string[] {
 	const bullets = lines.flatMap((line) => {
 		const item = BULLET.exec(line)?.[1]?.trim();

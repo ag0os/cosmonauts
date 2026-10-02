@@ -1,5 +1,9 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import {
+	buildFileGraph,
 	checkFileGraphFreshness,
+	createProjectSnapshot,
 	type FileGraph,
 	generateArchitectureMap,
 	loadArchitectureMapConfig,
@@ -47,6 +51,52 @@ export const refreshFileGraph: RefreshFileGraph = async ({ projectRoot }) => {
 		return { outcome: "unavailable", reason: errorMessage(error) };
 	}
 };
+
+export type FileGraphRead =
+	| { readonly outcome: "current" | "built"; readonly graph: FileGraph }
+	| { readonly outcome: "unavailable"; readonly reason: string };
+
+/**
+ * The project's file graph without writing anything: graph.json when it is
+ * current, else the graph `refreshFileGraph` would write, built in memory.
+ * A project the generator would not map, or any error, is `unavailable`.
+ */
+export async function readFileGraph(options: {
+	readonly projectRoot: string;
+}): Promise<FileGraphRead> {
+	const { projectRoot } = options;
+	try {
+		const state = await graphState(projectRoot);
+		if (state.kind === "current")
+			return { outcome: "current", graph: state.graph };
+		const config = await loadArchitectureMapConfig(projectRoot);
+		const snapshot = await createProjectSnapshot({
+			projectRoot,
+			config,
+			analyzer: typescriptSourceAnalyzer,
+		});
+		if (!isTypeScriptProject(projectRoot, snapshot.files))
+			return {
+				outcome: "unavailable",
+				reason: "no TypeScript sources or tsconfig.json to map",
+			};
+		const graph = await buildFileGraph({ projectRoot, config, snapshot });
+		return { outcome: "built", graph };
+	} catch (error: unknown) {
+		return { outcome: "unavailable", reason: errorMessage(error) };
+	}
+}
+
+/** The generator's own test for a project it can map. */
+function isTypeScriptProject(
+	projectRoot: string,
+	files: readonly { readonly path: string }[],
+): boolean {
+	return (
+		files.some((file) => /\.tsx?$/u.test(file.path)) ||
+		existsSync(join(projectRoot, "tsconfig.json"))
+	);
+}
 
 /** A graph.json that fails to load or check is `corrupt` (wp3g-2 F-5), never a thrown error. */
 async function graphState(projectRoot: string): Promise<GraphState> {

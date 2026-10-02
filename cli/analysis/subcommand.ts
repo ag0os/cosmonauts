@@ -5,17 +5,11 @@ import {
 	resolveChangedFunctions as defaultResolveChangedFunctions,
 	type ResolveChangedFunctionsOptions,
 } from "../../lib/code-health/changed-functions.ts";
+import { type SignalSource, withInterruptSignal } from "../shared/interrupt.ts";
 import { printJson, printLines } from "../shared/output.ts";
 
 const CHANGED_FUNCTIONS_FORMATS = ["text", "json"] as const;
 type ChangedFunctionsFormat = (typeof CHANGED_FUNCTIONS_FORMATS)[number];
-const INTERRUPT_SIGNALS = ["SIGINT", "SIGTERM"] as const;
-
-/** Where interrupt signals come from; `process` outside tests. */
-interface SignalSource {
-	once(event: NodeJS.Signals, listener: () => void): unknown;
-	off(event: NodeJS.Signals, listener: () => void): unknown;
-}
 
 interface AnalysisProgramOptions {
 	readonly cwd?: string;
@@ -78,29 +72,6 @@ export function createAnalysisProgram(
 		});
 
 	return program;
-}
-
-/**
- * Abort the run on SIGINT or SIGTERM so the resolver removes its base
- * worktree before the process exits. A second signal gets the default
- * behavior, because each listener fires once.
- */
-async function withInterruptSignal<T>(
-	source: SignalSource,
-	run: (signal: AbortSignal) => Promise<T>,
-): Promise<T> {
-	const controller = new AbortController();
-	const listeners = INTERRUPT_SIGNALS.map((name) => {
-		const listener = () =>
-			controller.abort(new Error(`interrupted by ${name}`));
-		source.once(name, listener);
-		return { name, listener };
-	});
-	try {
-		return await run(controller.signal);
-	} finally {
-		for (const { name, listener } of listeners) source.off(name, listener);
-	}
 }
 
 /** One line per function: location, name, metrics with base values, marker. */

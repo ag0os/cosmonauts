@@ -4,10 +4,16 @@
  * file-graph pass; a current one is left alone.
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { refreshFileGraph } from "../../lib/lean-run/graph-refresh.ts";
+import {
+	type FileGraphRead,
+	type FileGraphRefresh,
+	readFileGraph,
+	refreshFileGraph,
+} from "../../lib/lean-run/graph-refresh.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("lean-run-graph-refresh-");
@@ -48,7 +54,7 @@ function refresh() {
 	return refreshFileGraph({ projectRoot: tmp.path });
 }
 
-function nodePaths(result: Awaited<ReturnType<typeof refresh>>): string[] {
+function nodePaths(result: FileGraphRefresh | FileGraphRead): string[] {
 	return result.outcome === "unavailable"
 		? []
 		: result.graph.nodes.map((node) => node.path);
@@ -118,6 +124,39 @@ describe("refreshFileGraph", () => {
 		await writeProject({ "README.md": "no code\n" });
 
 		const result = await refresh();
+
+		expect(result).toMatchObject({
+			outcome: "unavailable",
+			reason: expect.stringContaining("TypeScript"),
+		});
+	});
+});
+
+describe("readFileGraph", () => {
+	test("builds a missing graph in memory and writes no graph.json", async () => {
+		await writeProject();
+
+		const result = await readFileGraph({ projectRoot: tmp.path });
+
+		expect(result.outcome).toBe("built");
+		expect(nodePaths(result)).toEqual(["src/greet.ts", "src/name.ts"]);
+		expect(existsSync(join(tmp.path, "memory"))).toBe(false);
+	});
+
+	test("reads a current graph.json as it is", async () => {
+		await writeProject();
+		await refresh();
+
+		const result = await readFileGraph({ projectRoot: tmp.path });
+
+		expect(result.outcome).toBe("current");
+		expect(nodePaths(result)).toEqual(["src/greet.ts", "src/name.ts"]);
+	});
+
+	test("reports the graph unavailable for a project without TypeScript", async () => {
+		await writeProject({ "README.md": "no code\n" });
+
+		const result = await readFileGraph({ projectRoot: tmp.path });
 
 		expect(result).toMatchObject({
 			outcome: "unavailable",

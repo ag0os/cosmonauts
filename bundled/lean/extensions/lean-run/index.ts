@@ -1,15 +1,8 @@
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import {
-	type BuilderBackend,
-	createExternalBuilderBackend,
-	createPiBuilderBackend,
 	LEAN_LENSES,
-	type LeanBackendKind,
 	type LeanLens,
-	leanPackageResolver,
 	MAX_RUN_TIME_MS,
 	type RunBudget,
 	type RunBuildOptions,
@@ -21,8 +14,10 @@ import {
 	summarizeRun,
 } from "../../../../lib/lean-run/index.ts";
 import { createDefaultProviders } from "../../../../lib/lean-run/providers/default.ts";
-import { discoverFrameworkBundledPackageDirs } from "../../../../lib/packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
+import {
+	type CreateLeanBackends,
+	runtimeBackends,
+} from "../../../../lib/lean-run/runtime-backends.ts";
 import { sessionUserMessages } from "./user-messages.ts";
 
 function positiveInteger(description: string, maximum?: number) {
@@ -119,20 +114,12 @@ export const LeanReviewParameters = Type.Object({
 });
 type LeanReviewInput = Static<typeof LeanReviewParameters>;
 
-interface LeanBackends {
-	builder: BuilderBackend;
-	reviewer: BuilderBackend;
-}
-
 export interface LeanRunExtensionOptions {
 	runBuild?: (options: RunBuildOptions) => Promise<RunRecord>;
 	runReview?: (options: RunReviewOptions) => Promise<RunRecord>;
 	/** The host's signal providers; defaults to `createDefaultProviders()`. */
 	providers?: readonly SignalProvider[];
-	createBackends?: (
-		kind: LeanBackendKind,
-		projectRoot: string,
-	) => Promise<LeanBackends>;
+	createBackends?: CreateLeanBackends;
 }
 
 export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
@@ -180,10 +167,7 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 function registerLeanReview(
 	pi: ExtensionAPI,
 	execute: (options: RunReviewOptions) => Promise<RunRecord>,
-	createBackends: (
-		kind: LeanBackendKind,
-		projectRoot: string,
-	) => Promise<LeanBackends>,
+	createBackends: CreateLeanBackends,
 ): void {
 	pi.registerTool({
 		name: "lean_review",
@@ -276,44 +260,6 @@ function positive(
 	if (Number.isSafeInteger(value) && value > 0 && value <= max) return value;
 	const limit = max === Number.MAX_SAFE_INTEGER ? "" : ` up to ${max}`;
 	throw new Error(`lean_build ${name} must be a positive integer${limit}`);
-}
-
-function runtimeBackends(): (
-	kind: LeanBackendKind,
-	projectRoot: string,
-) => Promise<LeanBackends> {
-	const frameworkRoot = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"..",
-		"..",
-		"..",
-	);
-	return async (kind, projectRoot) => {
-		const runtime = await CosmonautsRuntime.create({
-			builtinDomainsDir: join(frameworkRoot, "domains"),
-			projectRoot,
-			bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
-		});
-		const shared = {
-			registry: runtime.agentRegistry,
-			domainsDir: runtime.domainsDir,
-			resolver: runtime.domainResolver,
-			...(runtime.projectSkills
-				? { projectSkills: runtime.projectSkills }
-				: {}),
-			skillPaths: runtime.skillPaths,
-		};
-		const backend =
-			kind === "pi"
-				? createPiBuilderBackend(shared)
-				: createExternalBuilderBackend({
-						kind,
-						resolvePackage: leanPackageResolver({ kind, ...shared }),
-					});
-		return { builder: backend, reviewer: backend };
-	};
 }
 
 export default createLeanRunExtension();

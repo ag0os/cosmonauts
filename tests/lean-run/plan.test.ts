@@ -2,7 +2,11 @@
  * Tests for parsePlan: the plan.md contract read by its headings.
  */
 import { describe, expect, test } from "vitest";
-import { parsePlan, requestPaths } from "../../lib/lean-run/plan.ts";
+import {
+	parsePlan,
+	planBehaviorProblems,
+	requestPaths,
+} from "../../lib/lean-run/plan.ts";
 
 const FULL_PLAN = `# Add retry to the fetcher
 
@@ -194,5 +198,35 @@ describe("requestPaths", () => {
 		expect(
 			requestPaths("Merge `src/x.ts:1229-1233` / lib/y.ts:387-391 (dupes)."),
 		).toEqual(["src/x.ts", "lib/y.ts"]);
+	});
+});
+
+describe("planBehaviorProblems", () => {
+	function problems(behaviors: string): string[] {
+		return planBehaviorProblems(
+			`# T\n\n## Behaviors\n${behaviors}\n\n## Risks\n- r\n`,
+		);
+	}
+
+	test("accepts three non-empty parts, and an outcome that holds a slash", () => {
+		expect(
+			problems("- B-1: user / `x run` / sees a / b\nB-2: dev / API / gets 200"),
+		).toEqual([]);
+	});
+
+	test("names the part a behavior line leaves empty", () => {
+		expect(problems("- B-3: user / `x run`")).toEqual([
+			'B-3: missing outcome (want "B-3: observer / entry point / outcome")',
+		]);
+	});
+
+	test("reports a line with no B-n id, which parsePlan drops", () => {
+		expect(problems("- the user sees a result")).toEqual([
+			"not a behavior line (no B-n id; parsePlan drops it): - the user sees a result",
+		]);
+	});
+
+	test("reports nothing when the plan has no Behaviors section", () => {
+		expect(planBehaviorProblems("# T\n\n## Approach\nx\n")).toEqual([]);
 	});
 });
