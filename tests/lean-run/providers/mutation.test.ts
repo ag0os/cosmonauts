@@ -1250,15 +1250,18 @@ describe(
 		test("reports a timeout as info and reaps the whole process group", async () => {
 			const strykerBin = await hangingStryker(tools.path);
 
+			// The timer starts before the stand-in has written pids.json (node
+			// startup plus its git probe); under a loaded machine that took over
+			// 1.5 s, so the timeout is long enough never to race it.
 			const signal = await createMutationProvider({
 				strykerBin,
-				timeoutMs: 1_500,
+				timeoutMs: 10_000,
 				graceMs: 300,
 			}).run(context(project.path));
 
 			expect(signal).toMatchObject({ status: "info", reenter: false });
 			expect(unavailableReason(signal)).toBe(
-				"Stryker did not finish: timed out after 1500 ms",
+				"Stryker did not finish: timed out after 10000 ms",
 			);
 			const child = await childPid(tools.path);
 			expect(await waitFor(() => !isAlive(child))).toBe(true);
