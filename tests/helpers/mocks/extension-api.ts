@@ -19,6 +19,8 @@ interface MockPiOptions {
 	cwd?: string;
 	/** Effective system prompt exposed by tool contexts. Defaults to empty. */
 	systemPrompt?: string;
+	/** Session entries tool contexts return from `sessionManager.getBranch()`; without it the context has no session manager. */
+	branch?: readonly unknown[];
 }
 
 export interface MockPi {
@@ -77,6 +79,9 @@ export function createMockPi(options?: MockPiOptions): MockPi {
 			return tool.execute("call-id", params, signal, undefined, {
 				cwd,
 				getSystemPrompt: () => options?.systemPrompt ?? "",
+				...(options?.branch
+					? { sessionManager: { getBranch: () => [...(options.branch ?? [])] } }
+					: {}),
 			});
 		},
 

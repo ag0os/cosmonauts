@@ -241,6 +241,8 @@ export const LEAN_RUN_ROOT = "missions/sessions/lean/runs" as const;
 export const RUN_RECORD_FILES = {
 	manifest: "run.json",
 	request: "request.md",
+	/** The user's messages section the builder and reviewer were given. */
+	userMessages: "user-messages.md",
 	envelopes: "envelopes",
 	facts: "facts.json",
 	stats: "stats.json",
@@ -342,6 +344,8 @@ export interface RunManifest {
 	tier?: RunTier;
 	/** The direct request as saved in the run directory, relative to the project root. */
 	requestPath?: string;
+	/** The user's messages section as saved in the run directory, relative to the project root. */
+	userMessagesPath?: string;
 	backend: LeanBackendKind;
 	/**
 	 * Re-entries on failing verify, blast-tests or mutation signals: at most

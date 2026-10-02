@@ -14,6 +14,8 @@ const VERIFICATION_SCRIPTS = ["test", "lint", "typecheck"] as const;
 export interface BuildContextPackOptions {
 	/** The plan section (or direct-fix request), passed through verbatim. */
 	readonly planSection: string;
+	/** The user's messages section (`userMessagesSection`), placed after the plan verbatim. */
+	readonly userSection?: string | undefined;
 	readonly touches: readonly string[];
 	readonly reuses: readonly string[];
 	readonly graph: FileGraph;
@@ -54,8 +56,8 @@ function inGraph(graph: FileGraph, path: string): boolean {
 }
 
 /**
- * The text every builder receives (lean brief 4.6): the plan section, a
- * repo-map slice around `touches` and `reuses` (files to change render as
+ * The text every builder receives (lean brief 4.6): the plan section, the
+ * user's messages, a repo-map slice around `touches` and `reuses` (files to change render as
  * `[touch]`, helpers to use as `[reuse]`), the project's AGENTS.md, and the
  * verification commands, after any warnings. Empty parts are left out.
  */
@@ -86,6 +88,7 @@ export async function buildContextPack(
 	return [
 		warnings.length > 0 ? warnings.join("\n") : undefined,
 		section("Plan", options.planSection),
+		options.userSection,
 		section("Repo map", slice.text),
 		section("Repository conventions (AGENTS.md)", conventions ?? ""),
 		section("Verification commands", commands.join("\n")),

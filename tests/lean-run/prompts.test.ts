@@ -11,6 +11,8 @@ import {
 	REVIEW_DIFF_INLINE_BYTES,
 	repairPrompt,
 	reviewerPrompt,
+	USER_MESSAGES_CAP_BYTES,
+	userMessagesSection,
 } from "../../lib/lean-run/prompts.ts";
 
 describe("boundDiff", () => {
@@ -78,6 +80,86 @@ describe("repairPrompt", () => {
 	});
 });
 
+describe("userMessagesSection", () => {
+	test("fences each message verbatim, oldest first, under its own heading", () => {
+		const first = "Fix `src/a.ts`:\n\n```ts\nx\n```\n";
+		expect(userMessagesSection([first, "ok, build it"])).toBe(
+			[
+				"# User's messages (verbatim)",
+				"",
+				`\`\`\`\`\n${first}\n\`\`\`\``,
+				"",
+				"```\nok, build it\n```",
+			].join("\n"),
+		);
+	});
+
+	test("is absent without a message", () => {
+		expect(userMessagesSection(undefined)).toBeUndefined();
+		expect(userMessagesSection([])).toBeUndefined();
+		expect(userMessagesSection(["  \n"])).toBeUndefined();
+	});
+
+	test("keeps the most recent messages within the cap and says how many it left out", () => {
+		const third = "z".repeat(USER_MESSAGES_CAP_BYTES / 2);
+		const section =
+			userMessagesSection([
+				"oldest",
+				"x".repeat(USER_MESSAGES_CAP_BYTES / 2),
+				third,
+				"latest",
+			]) ?? "";
+
+		expect(section).toContain(
+			`(2 earlier messages left out: over the ${USER_MESSAGES_CAP_BYTES}-byte cap)`,
+		);
+		expect(section).not.toContain("oldest");
+		expect(section).toContain(`\n${third}\n`);
+		expect(section).toContain("\nlatest\n");
+	});
+
+	test("cuts a latest message over the cap alone, keeping its start", () => {
+		const latest = `START${"é".repeat(USER_MESSAGES_CAP_BYTES)}END`;
+		const section = userMessagesSection(["earlier", latest]) ?? "";
+
+		expect(section).toContain("(1 earlier message left out");
+		expect(section).toContain(
+			`(the latest message is cut at ${USER_MESSAGES_CAP_BYTES} bytes)`,
+		);
+		expect(section).toContain("START");
+		expect(section).not.toContain("END");
+		expect(section).not.toContain("�");
+	});
+});
+
+describe("builderPrompt", () => {
+	const plan = parsePlan("Make greet return hi.");
+	const section = userMessagesSection(["make it say hi"]);
+
+	test("puts the user's messages after the request, apart from it", () => {
+		expect(
+			builderPrompt({ plan, tier: "direct", userSection: section }),
+		).toMatch(
+			/^Make this change\.\n\nMake greet return hi\.\n\n# User's messages \(verbatim\)\n\n```\nmake it say hi\n```\n\nEnd with the lean envelope/u,
+		);
+	});
+
+	test("is unchanged without the user's messages", () => {
+		expect(
+			builderPrompt({ plan, tier: "direct", userSection: undefined }),
+		).toBe(builderPrompt({ plan, tier: "direct" }));
+	});
+
+	test("sends a supplied context pack verbatim, without the user's messages", () => {
+		const prompt = builderPrompt({
+			plan,
+			contextPack: "PACK",
+			userSection: section,
+		});
+		expect(prompt).not.toContain("make it say hi");
+	});
+});
+
 describe("reviewerPrompt", () => {
 	const plan = parsePlan("# Demo\n\n## Approach\nAdd a greeting.\n");
 	const base = {
@@ -94,6 +176,22 @@ describe("reviewerPrompt", () => {
 
 		expect(prompt).toContain("Review this change against its plan.");
 		expect(prompt).toContain("# Plan\n\n# Demo");
+	});
+
+	test("shows the user's messages after the plan or request, apart from it", () => {
+		const userSection = userMessagesSection(["say hi"]);
+		for (const tier of ["plan", "direct"] as const) {
+			const heading = tier === "plan" ? "# Plan" : "# Request";
+			expect(reviewerPrompt({ ...base, tier, userSection })).toContain(
+				`${heading}\n\n${plan.raw.trim()}\n\n# User's messages (verbatim)\n\n\`\`\`\nsay hi\n\`\`\`\n\n# Verification facts`,
+			);
+		}
+	});
+
+	test("is unchanged without the user's messages", () => {
+		expect(
+			reviewerPrompt({ ...base, tier: "plan", userSection: undefined }),
+		).toBe(reviewerPrompt({ ...base, tier: "plan" }));
 	});
 
 	test("has no plan section for a review with neither a plan nor a request", () => {

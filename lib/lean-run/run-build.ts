@@ -61,6 +61,7 @@ import {
 	reentryPrompt,
 	repairPrompt,
 	reviewerPrompt,
+	userMessagesSection,
 } from "./prompts.ts";
 import { createVerifyProvider } from "./providers/verify.ts";
 import {
@@ -70,6 +71,7 @@ import {
 	saveManifest,
 	saveRequest,
 	saveStats,
+	saveUserMessages,
 } from "./record.ts";
 import {
 	openBuilderReviewCheckout,
@@ -113,6 +115,12 @@ export interface RunBuildOptions {
 	planPath?: string;
 	/** A direct-tier change with no plan document; it stands in for the plan section. */
 	request?: string;
+	/**
+	 * The user's own messages from the calling session, oldest first. The
+	 * builder and reviewer get them verbatim beside the plan or request
+	 * (`userMessagesSection`), except in a supplied `contextPack`.
+	 */
+	userMessages?: readonly string[];
 	specPath?: string;
 	/**
 	 * Verbatim builder prompt, followed only by the envelope instruction.
@@ -211,6 +219,8 @@ interface Run {
 	record: RunRecord;
 	plan: ParsedPlan;
 	tier: RunTier;
+	/** `userMessagesSection` of the caller's `userMessages`. */
+	userSection?: string | undefined;
 	lean: ProjectLeanConfig;
 	basePrompt: string;
 	budget: RunBudget;
@@ -243,6 +253,7 @@ interface Run {
 interface PlanSource {
 	tier: RunTier;
 	plan: ParsedPlan;
+	userSection?: string | undefined;
 }
 
 /** What the builder and verification left for the reviewer. */
@@ -276,7 +287,10 @@ type StageInput = Omit<BackendRunInput, "signal" | "taskId" | "readonly">;
  * reason; only a bad plan source or a non-git project throws.
  */
 export async function runBuild(options: RunBuildOptions): Promise<RunRecord> {
-	const source = await readPlanSource(options);
+	const source: PlanSource = {
+		...(await readPlanSource(options)),
+		userSection: userMessagesSection(options.userMessages),
+	};
 	const baseSha = await readHeadSha(options.projectRoot);
 	const lean = await readLeanConfig(options.projectRoot);
 	const record = await createRunRecord({
@@ -303,6 +317,8 @@ export async function runBuild(options: RunBuildOptions): Promise<RunRecord> {
 	if (lean.warning) warn(record, lean.warning);
 	if (options.request !== undefined)
 		await saveRequest(record, options.projectRoot, source.plan.raw);
+	if (source.userSection)
+		await saveUserMessages(record, options.projectRoot, source.userSection);
 	return underRunLock(
 		{ options, record, source, lean: lean.config },
 		async (run) => {
@@ -849,11 +865,13 @@ function startRun(start: RunStart): Run {
 		record,
 		plan: source.plan,
 		tier: source.tier,
+		userSection: source.userSection,
 		lean,
 		basePrompt: builderPrompt({
 			plan: source.plan,
 			contextPack: options.contextPack,
 			tier: source.tier,
+			userSection: source.userSection,
 		}),
 		budget,
 		explicitTokens:
@@ -972,6 +990,7 @@ async function useContextPack(
 		const pack = await buildContextPack({
 			...paths,
 			planSection: run.plan.raw,
+			userSection: run.userSection,
 			budget: run.lean.repoMapBudgetTokens ?? DEFAULT_SLICE_BUDGET_TOKENS,
 			warnings,
 		});
@@ -1541,6 +1560,7 @@ async function runReviewer(
 			prompt: reviewerPrompt({
 				plan: run.plan,
 				tier: run.tier,
+				userSection: run.userSection,
 				facts: run.record.facts,
 				diff: checkout.diff,
 				changedFiles: checkout.changedFiles,

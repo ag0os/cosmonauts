@@ -4,6 +4,9 @@ import type { SpawnTracker } from "./spawn-tracker.ts";
 /** Default per-spawn completion wait timeout (5 minutes). */
 export const DEFAULT_SPAWN_TIMEOUT_MS = 5 * 60 * 1000;
 
+/** How every spawn completion message starts; it reaches the parent as a user message. */
+export const SPAWN_COMPLETION_PREFIX = "[spawn_completion]";
+
 /**
  * Format a child completion result as a user message for the parent session.
  * The parent agent uses these messages to track child outcomes.
@@ -15,7 +18,7 @@ export function formatSpawnCompletionMessage(
 	summary: string,
 	fullText?: string,
 ): string {
-	const base = `[spawn_completion] spawnId=${spawnId} role=${role} outcome=${outcome} summary=${summary}`;
+	const base = `${SPAWN_COMPLETION_PREFIX} spawnId=${spawnId} role=${role} outcome=${outcome} summary=${summary}`;
 	const details = fullText?.trim();
 	if (!details || details === summary) return base;
 	return `${base}\n\n${details}`;

@@ -82,11 +82,11 @@ function reviewRecord(): RunRecord {
 	};
 }
 
-function setup() {
+function setup(options: { branch?: readonly unknown[] } = {}) {
 	const calls: RunBuildOptions[] = [];
 	const reviews: RunReviewOptions[] = [];
 	const kinds: LeanBackendKind[] = [];
-	const pi = createMockPi({ cwd: "/project" });
+	const pi = createMockPi({ cwd: "/project", ...options });
 	createLeanRunExtension({
 		runBuild: async (options) => {
 			calls.push(options);
@@ -149,6 +149,71 @@ describe("lean_build tool", () => {
 		await pi.callTool("lean_build", { request: "Rename greet to hello." });
 		expect(calls[0]?.request).toBe("Rename greet to hello.");
 		expect(calls[0]?.planPath).toBeUndefined();
+	});
+
+	describe("the user's messages", () => {
+		const FIRST = "Make `src/greet.ts` say hi,\n  not hello.  ";
+		const LATEST = "ok, build it";
+		let nextId = 0;
+		const entry = (fields: Record<string, unknown>) => ({
+			id: `e-${++nextId}`,
+			parentId: null,
+			timestamp: "2026-10-02T00:00:00.000Z",
+			...fields,
+		});
+		const message = (role: string, content: unknown) =>
+			entry({ type: "message", message: { role, content, timestamp: 1 } });
+		const BRANCH = [
+			entry({ type: "model_change", provider: "p", modelId: "m" }),
+			message("user", FIRST),
+			entry({
+				type: "custom_message",
+				customType: "memory",
+				content: "injected by an extension",
+				display: false,
+			}),
+			message("assistant", [{ type: "text", text: "the lead's reply" }]),
+			message("toolResult", [{ type: "text", text: "a tool's output" }]),
+			entry({ type: "compaction", summary: "a compaction summary" }),
+			message(
+				"user",
+				"[spawn_completion] spawnId=s-1 role=lean/checker outcome=success summary=ok",
+			),
+			message("user", [
+				{ type: "text", text: LATEST },
+				{ type: "image", data: "aGk=", mimeType: "image/png" },
+			]),
+		];
+
+		test("passes the user's text messages on the session branch verbatim, oldest first", async () => {
+			const { pi, calls } = setup({ branch: BRANCH });
+			await pi.callTool("lean_build", { request: "Change greet." });
+			expect(calls[0]?.userMessages).toEqual([FIRST, LATEST]);
+		});
+
+		test("shows an expanded skill command as the command the user typed", async () => {
+			const skill =
+				'<skill name="plan" location="/s/plan/SKILL.md">\nReferences are relative to /s/plan.\n\nSkill body.\n</skill>';
+			const { pi, calls } = setup({
+				branch: [
+					message("user", `${skill}\n\ncover the empty case`),
+					message("user", skill),
+				],
+			});
+			await pi.callTool("lean_build", { planPath: "p.md" });
+			expect(calls[0]?.userMessages).toEqual([
+				"/skill:plan cover the empty case",
+				"/skill:plan",
+			]);
+		});
+
+		test("passes none without a session or a user message", async () => {
+			for (const branch of [undefined, [BRANCH[0]]]) {
+				const { pi, calls } = setup(branch ? { branch } : {});
+				await pi.callTool("lean_build", { planPath: "p.md" });
+				expect(calls[0]).not.toHaveProperty("userMessages");
+			}
+		});
 	});
 
 	test("refuses a plan path and a request together", async () => {

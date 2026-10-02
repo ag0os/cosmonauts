@@ -105,6 +105,24 @@ describe("buildContextPack", () => {
 		);
 	});
 
+	test("places the user's messages section verbatim between the plan and the repo map", async () => {
+		const userSection = "# User's messages (verbatim)\n\n```\nadd retries\n```";
+
+		const pack = await buildContextPack({
+			planSection: PLAN_SECTION,
+			touches: ["src/fetch.ts"],
+			reuses: [],
+			graph: GRAPH,
+			budget: 500,
+			projectRoot: tmp.path,
+			userSection,
+		});
+
+		expect(pack).toContain(
+			`# Plan\n\n${PLAN_SECTION}\n\n${userSection}\n\n# Repo map\n`,
+		);
+	});
+
 	test("uses explicit verification commands instead of package.json scripts", async () => {
 		await writeProject({ test: "vitest run" });
 

@@ -44,21 +44,78 @@ export const REPAIR_HEADING = "# Envelope repair";
 /** How much of the rejected output the repair prompt quotes. */
 const REPAIR_QUOTE_CHARS = 8_000;
 
+/** How much of the user's own messages the builder and reviewer get, most recent first. */
+export const USER_MESSAGES_CAP_BYTES = 32 * 1024;
+
+/**
+ * The user's messages from the calling session, each fenced verbatim, oldest
+ * first, as one section beside the lead's plan or request. Older messages
+ * past the cap are left out, and a latest message over it alone is cut,
+ * each with a note. Undefined without a non-blank message.
+ */
+export function userMessagesSection(
+	messages: readonly string[] | undefined,
+): string | undefined {
+	const said = (messages ?? []).filter((message) => message.trim() !== "");
+	const kept = recentWithinCap(said);
+	if (kept.messages.length === 0) return undefined;
+	const left = said.length - kept.messages.length;
+	return [
+		"# User's messages (verbatim)",
+		...(left > 0
+			? [
+					`(${left} earlier message${left === 1 ? "" : "s"} left out: over the ${USER_MESSAGES_CAP_BYTES}-byte cap)`,
+				]
+			: []),
+		...(kept.cut
+			? [`(the latest message is cut at ${USER_MESSAGES_CAP_BYTES} bytes)`]
+			: []),
+		...kept.messages.map((message) => {
+			const fence = fenceFor(message);
+			return [fence, message, fence].join("\n");
+		}),
+	].join("\n\n");
+}
+
+function recentWithinCap(messages: readonly string[]): {
+	messages: string[];
+	cut: boolean;
+} {
+	const latest = messages.at(-1);
+	if (latest === undefined) return { messages: [], cut: false };
+	if (Buffer.byteLength(latest) > USER_MESSAGES_CAP_BYTES)
+		return { messages: [cutUtf8(latest, USER_MESSAGES_CAP_BYTES)], cut: true };
+	const kept: string[] = [];
+	let bytes = 0;
+	for (const message of [...messages].reverse()) {
+		bytes += Buffer.byteLength(message);
+		if (bytes > USER_MESSAGES_CAP_BYTES) break;
+		kept.unshift(message);
+	}
+	return { messages: kept, cut: false };
+}
+
 /**
  * The context pack verbatim, or the plan (or direct request) alone without
- * one, with the envelope instruction always the last paragraph (once, even
- * when a supplied pack already ends with it).
+ * one, followed by the user's messages; the envelope instruction is always
+ * the last paragraph (once, even when a supplied pack already ends with it).
  */
 export function builderPrompt(options: {
 	plan: ParsedPlan;
 	contextPack?: string;
 	tier?: RunTier;
+	/** `userMessagesSection`; a context pack carries its own. */
+	userSection?: string | undefined;
 }): string {
 	const lead =
 		options.tier === "direct" ? "Make this change." : "Implement this plan.";
 	const body =
 		options.contextPack?.trimEnd() ??
-		[lead, options.plan.raw.trim()].join("\n\n");
+		[
+			lead,
+			options.plan.raw.trim(),
+			...(options.userSection ? [options.userSection] : []),
+		].join("\n\n");
 	if (body.endsWith(BUILDER_ENVELOPE_INSTRUCTION)) return body;
 	return [body, BUILDER_ENVELOPE_INSTRUCTION].filter(Boolean).join("\n\n");
 }
@@ -120,6 +177,8 @@ interface ReviewerPromptOptions {
 	 * means neither came with the change, so the prompt has no plan section.
 	 */
 	tier?: RunTier;
+	/** `userMessagesSection`, shown after the plan or request. */
+	userSection?: string | undefined;
 	facts: RunFacts;
 	diff: string;
 	changedFiles: readonly string[];
@@ -144,7 +203,7 @@ export function reviewerPrompt(options: ReviewerPromptOptions): string {
 	].join("\n\n");
 }
 
-/** The opening line and lenses, then the plan or request the change answers, when there is one. */
+/** The opening line and lenses, then the plan or request the change answers and the user's messages, when there are. */
 function reviewSubject(options: ReviewerPromptOptions): string[] {
 	const facts =
 		"The host's verification facts are below; you have the checkout read-only.";
@@ -160,6 +219,7 @@ function reviewSubject(options: ReviewerPromptOptions): string[] {
 		...lenses,
 		`# ${against}`,
 		options.plan.raw.trim(),
+		...(options.userSection ? [options.userSection] : []),
 	];
 }
 
@@ -190,14 +250,20 @@ export function boundDiff(diff: string): { text: string; truncated: boolean } {
 	const bytes = Buffer.from(diff, "utf8");
 	if (bytes.length <= REVIEW_DIFF_INLINE_BYTES)
 		return { text: diff, truncated: false };
-	let cut = REVIEW_DIFF_INLINE_BYTES;
-	while (cut > 0 && isContinuationByte(bytes[cut])) cut--;
-	const head = bytes.subarray(0, cut).toString("utf8");
+	const head = cutUtf8(diff, REVIEW_DIFF_INLINE_BYTES);
 	const lineEnd = head.lastIndexOf("\n");
 	return {
 		text: lineEnd > 0 ? head.slice(0, lineEnd + 1) : head,
 		truncated: true,
 	};
+}
+
+/** The first `maxBytes` bytes of `text` or fewer, never splitting a character. */
+function cutUtf8(text: string, maxBytes: number): string {
+	const bytes = Buffer.from(text, "utf8");
+	let cut = maxBytes;
+	while (cut > 0 && isContinuationByte(bytes[cut])) cut--;
+	return bytes.subarray(0, cut).toString("utf8");
 }
 
 /** A UTF-8 byte that continues a character: cutting before it would split one. */

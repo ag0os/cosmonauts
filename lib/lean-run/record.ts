@@ -75,10 +75,34 @@ export async function saveRequest(
 	projectRoot: string,
 	request: string,
 ): Promise<void> {
-	const path = join(record.dir, RUN_RECORD_FILES.request);
-	await writeFileAtomically(path, `${request.trimEnd()}\n`);
+	const path = await writeRunText(record, RUN_RECORD_FILES.request, request);
 	record.manifest.requestPath = relative(projectRoot, path);
 	await saveManifest(record);
+}
+
+/** Writes the user's messages section to `user-messages.md` and records its project-relative path. */
+export async function saveUserMessages(
+	record: RunRecord,
+	projectRoot: string,
+	section: string,
+): Promise<void> {
+	const path = await writeRunText(
+		record,
+		RUN_RECORD_FILES.userMessages,
+		section,
+	);
+	record.manifest.userMessagesPath = relative(projectRoot, path);
+	await saveManifest(record);
+}
+
+async function writeRunText(
+	record: RunRecord,
+	file: string,
+	text: string,
+): Promise<string> {
+	const path = join(record.dir, file);
+	await writeFileAtomically(path, `${text.trimEnd()}\n`);
+	return path;
 }
 
 export async function loadRunRecord(location: RunLocation): Promise<RunRecord> {

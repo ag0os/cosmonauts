@@ -23,6 +23,7 @@ import {
 import { createDefaultProviders } from "../../../../lib/lean-run/providers/default.ts";
 import { discoverFrameworkBundledPackageDirs } from "../../../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
+import { sessionUserMessages } from "./user-messages.ts";
 
 function positiveInteger(description: string, maximum?: number) {
 	return Type.Optional(
@@ -70,7 +71,7 @@ export const LeanBuildParameters = Type.Object({
 	request: Type.Optional(
 		Type.String({
 			description:
-				"A direct fix with no plan document: what to change, in a few sentences. Give this or planPath, not both.",
+				"Direct fix, no plan: your framing; the host adds the user's messages verbatim. Give this or planPath, not both.",
 		}),
 	),
 	specPath: Type.Optional(
@@ -148,9 +149,11 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 				const lenses = checkedLenses(params.lenses);
 				const backends = await createBackends(params.backend ?? "pi", ctx.cwd);
 				const budget = requestedBudget(params);
+				const userMessages = sessionUserMessages(ctx);
 				const record = await execute({
 					projectRoot: ctx.cwd,
 					...source,
+					...(userMessages.length > 0 ? { userMessages } : {}),
 					...(params.specPath ? { specPath: params.specPath } : {}),
 					backend: backends.builder,
 					reviewerBackend: backends.reviewer,

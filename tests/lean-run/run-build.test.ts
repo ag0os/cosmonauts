@@ -3908,6 +3908,85 @@ describe("runBuild direct request", () => {
 	});
 });
 
+describe("runBuild user's messages", () => {
+	const SAID = "Make `src/greet.ts` say hi,\n  not hello.";
+	const SECTION = `# User's messages (verbatim)\n\n\`\`\`\n${SAID}\n\`\`\`\n\n\`\`\`\nok, build it\n\`\`\``;
+	const USER_MESSAGES = [SAID, "ok, build it"];
+	const REQUEST = "Make greet return the string hi.";
+
+	test("gives the direct-tier builder and reviewer the user's messages apart from the request", async () => {
+		const builder = stubBackend([editGreet(DONE)]);
+		const reviewer = stubBackend([REVIEW]);
+		await build({
+			builder,
+			reviewer,
+			planPath: undefined,
+			request: REQUEST,
+			userMessages: USER_MESSAGES,
+		});
+
+		expect(builder.calls[0]?.prompt).toContain(
+			`# Plan\n\n${REQUEST}\n\n${SECTION}\n\n`,
+		);
+		expect(reviewer.calls[0]?.prompt).toContain(
+			`# Request\n\n${REQUEST}\n\n${SECTION}\n\n# Verification facts`,
+		);
+	});
+
+	test("gives the plan-tier builder and reviewer the user's messages apart from the plan", async () => {
+		const builder = stubBackend([editGreet(DONE)]);
+		const reviewer = stubBackend([REVIEW]);
+		await build({ builder, reviewer, userMessages: USER_MESSAGES });
+
+		expect(builder.calls[0]?.prompt).toContain(
+			`# Plan\n\n${PLAN.trim()}\n\n${SECTION}\n\n# Repo map\n`,
+		);
+		expect(reviewer.calls[0]?.prompt).toContain(
+			`# Plan\n\n${PLAN.trim()}\n\n${SECTION}\n\n# Verification facts`,
+		);
+	});
+
+	test("keeps the user's messages in the plan-only prompt and every re-entry", async () => {
+		const builder = stubBackend([DONE, DONE]);
+		await build({
+			builder,
+			userMessages: USER_MESSAGES,
+			providers: [stubProvider([FAILING, {}])],
+			refreshGraph: stubRefresh([{ outcome: "unavailable", reason: "none" }]),
+		});
+
+		expect(builder.calls[0]?.prompt).toContain(
+			`${PLAN.trim()}\n\n${SECTION}\n\nEnd with the lean envelope`,
+		);
+		expect(builder.calls[1]?.prompt).toContain(SECTION);
+	});
+
+	test("saves the section in the run directory and points to it from run.json", async () => {
+		const record = await build({
+			builder: stubBackend([DONE]),
+			userMessages: USER_MESSAGES,
+		});
+
+		const path = record.manifest.userMessagesPath ?? "";
+		expect(path).toBe(
+			`missions/sessions/lean/runs/${record.manifest.id}/user-messages.md`,
+		);
+		expect(await readFile(join(root, path), "utf-8")).toBe(`${SECTION}\n`);
+		expect(await onDisk(record)).toEqual(record);
+	});
+
+	test("leaves prompts and the run directory as they were without user messages", async () => {
+		const builder = stubBackend([editGreet(DONE)]);
+		const reviewer = stubBackend([REVIEW]);
+		const record = await build({ builder, reviewer, userMessages: [] });
+
+		expect(builder.calls[0]?.prompt).not.toContain("# User's messages");
+		expect(reviewer.calls[0]?.prompt).not.toContain("# User's messages");
+		expect(record.manifest.userMessagesPath).toBeUndefined();
+		expect(existsSync(join(record.dir, "user-messages.md"))).toBe(false);
+	});
+});
+
 describe("runBuild PR body", () => {
 	const DIAGRAM_PLAN = `${PLAN}
 ## Diagram
