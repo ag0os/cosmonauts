@@ -44,7 +44,7 @@ export const REPAIR_HEADING = "# Envelope repair";
 /** How much of the rejected output the repair prompt quotes. */
 const REPAIR_QUOTE_CHARS = 8_000;
 
-/** How much of the user's own messages the builder and reviewer get, most recent first. */
+/** How much of the user's earlier messages rides along with the latest one, most recent first. */
 export const USER_MESSAGES_CAP_BYTES = 32 * 1024;
 
 /**
