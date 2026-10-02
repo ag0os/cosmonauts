@@ -118,17 +118,17 @@ describe("userMessagesSection", () => {
 		expect(section).toContain("\nlatest\n");
 	});
 
-	test("cuts a latest message over the cap alone, keeping its start", () => {
+	test("carries a latest message over the cap whole and leaves the earlier ones out", () => {
 		const latest = `START${"é".repeat(USER_MESSAGES_CAP_BYTES)}END`;
 		const section = userMessagesSection(["earlier", latest]) ?? "";
 
-		expect(section).toContain("(1 earlier message left out");
-		expect(section).toContain(
-			`(the latest message is cut at ${USER_MESSAGES_CAP_BYTES} bytes)`,
+		expect(section).toBe(
+			[
+				"# User's messages (verbatim)",
+				`(1 earlier message left out: over the ${USER_MESSAGES_CAP_BYTES}-byte cap)`,
+				["```", latest, "```"].join("\n"),
+			].join("\n\n"),
 		);
-		expect(section).toContain("START");
-		expect(section).not.toContain("END");
-		expect(section).not.toContain("�");
 	});
 });
 

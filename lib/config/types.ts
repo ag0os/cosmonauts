@@ -43,7 +43,7 @@ export interface ProjectLeanConfig {
 	readonly budget?: ProjectLeanBudgetConfig;
 	/**
 	 * Signal kinds a lean run must get from an available provider to be
-	 * `done` (default verify, mutation, health); a tool parameter overrides it.
+	 * `done` (default verify, mutation, health); no tool parameter overrides it.
 	 */
 	readonly requiredSignals?: readonly SignalKind[];
 	/** `lean.requiredSignals` entries that are not signal kinds, as written. */

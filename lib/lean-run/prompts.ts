@@ -49,17 +49,17 @@ export const USER_MESSAGES_CAP_BYTES = 32 * 1024;
 
 /**
  * The user's messages from the calling session, each fenced verbatim, oldest
- * first, as one section beside the lead's plan or request. Older messages
- * past the cap are left out, and a latest message over it alone is cut,
- * each with a note. Undefined without a non-blank message.
+ * first, as one section beside the lead's plan or request. The latest
+ * message is always whole; earlier messages past the cap are left out, with
+ * a note. Undefined without a non-blank message.
  */
 export function userMessagesSection(
 	messages: readonly string[] | undefined,
 ): string | undefined {
 	const said = (messages ?? []).filter((message) => message.trim() !== "");
 	const kept = recentWithinCap(said);
-	if (kept.messages.length === 0) return undefined;
-	const left = said.length - kept.messages.length;
+	if (kept.length === 0) return undefined;
+	const left = said.length - kept.length;
 	return [
 		"# User's messages (verbatim)",
 		...(left > 0
@@ -67,32 +67,24 @@ export function userMessagesSection(
 					`(${left} earlier message${left === 1 ? "" : "s"} left out: over the ${USER_MESSAGES_CAP_BYTES}-byte cap)`,
 				]
 			: []),
-		...(kept.cut
-			? [`(the latest message is cut at ${USER_MESSAGES_CAP_BYTES} bytes)`]
-			: []),
-		...kept.messages.map((message) => {
+		...kept.map((message) => {
 			const fence = fenceFor(message);
 			return [fence, message, fence].join("\n");
 		}),
 	].join("\n\n");
 }
 
-function recentWithinCap(messages: readonly string[]): {
-	messages: string[];
-	cut: boolean;
-} {
+function recentWithinCap(messages: readonly string[]): string[] {
 	const latest = messages.at(-1);
-	if (latest === undefined) return { messages: [], cut: false };
-	if (Buffer.byteLength(latest) > USER_MESSAGES_CAP_BYTES)
-		return { messages: [cutUtf8(latest, USER_MESSAGES_CAP_BYTES)], cut: true };
-	const kept: string[] = [];
-	let bytes = 0;
-	for (const message of [...messages].reverse()) {
+	if (latest === undefined) return [];
+	const kept = [latest];
+	let bytes = Buffer.byteLength(latest);
+	for (const message of messages.slice(0, -1).reverse()) {
 		bytes += Buffer.byteLength(message);
 		if (bytes > USER_MESSAGES_CAP_BYTES) break;
 		kept.unshift(message);
 	}
-	return { messages: kept, cut: false };
+	return kept;
 }
 
 /**

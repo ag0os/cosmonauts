@@ -35,7 +35,6 @@ import {
 } from "./cleanup-check.ts";
 import { blockedLinksReason } from "./clone-links.ts";
 import { buildContextPack, planPathWarnings } from "./context-pack.ts";
-import { directScopeRefusal } from "./direct-scope.ts";
 import { parseStageEnvelope } from "./envelope.ts";
 import {
 	applyPatch,
@@ -285,23 +284,13 @@ type StageInput = Omit<BackendRunInput, "signal" | "taskId" | "readonly">;
  * done with no high or medium finding, the last verify signal passed, every
  * required signal kind ran and was available in the last pass, and no
  * re-entry signal remains. Stage failures end the run with a status and
- * reason; only a bad plan source, a direct request spanning more than one
- * module (`directScopeRefusal`) or a non-git project throws, the first two
- * before anything is written or locked.
+ * reason; only a bad plan source or a non-git project throws.
  */
 export async function runBuild(options: RunBuildOptions): Promise<RunRecord> {
 	const source: PlanSource = {
 		...(await readPlanSource(options)),
 		userSection: userMessagesSection(options.userMessages),
 	};
-	if (source.tier === "direct") {
-		const refusal = await directScopeRefusal({
-			projectRoot: options.projectRoot,
-			request: source.plan.raw,
-			userMessages: options.userMessages,
-		});
-		if (refusal) throw new Error(refusal);
-	}
 	const baseSha = await readHeadSha(options.projectRoot);
 	const lean = await readLeanConfig(options.projectRoot);
 	const record = await createRunRecord({
