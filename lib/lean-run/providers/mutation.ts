@@ -1,14 +1,15 @@
 /**
  * Scoped mutation signal (brief 4.7B.5, rulings D-2 and D-4): Stryker mutates
  * only the changed functions and runs only the selected tests. A survivor
- * inside a changed function fails the signal and re-enters the builder once.
+ * inside a changed function fails the signal, a fact for the reviewer that
+ * never re-enters the builder (wave 7).
  * Operational failures never throw: when Stryker cannot be resolved, cannot
  * start or does not finish, the signal is `info` with `data.unavailable`.
  * Nothing to mutate, or no test to run, is `info` (or `pass`) without it.
  *
  * Two refinements of 4.7B.5 under the brief's principle that thresholds are
  * regression against the base, never absolute (ruling W3-6). Only survivors
- * on lines the diff added or rewrote re-enter; survivors on unchanged lines
+ * on lines the diff added or rewrote fail it; survivors on unchanged lines
  * of a changed function predate the change and are listed in
  * `survivorsOutsideDiff` as `info`. And a changed file whose own tests (its
  * mirrored test and direct test importers) are all sandbox-unsafe is not
@@ -443,7 +444,6 @@ function verdict(
 			"fail",
 			`${inDiff} mutants survived on changed lines of changed functions${unchanged}: ${counts}`,
 			payload,
-			true,
 		);
 	}
 	if (outsideDiff.length > 0) {
@@ -502,9 +502,7 @@ async function loadGraph(worktree: string): Promise<FileGraph | undefined> {
 
 /**
  * Mutants are only worth counting against passing tests: a verify signal that
- * did not pass, or blast-radius tests that failed, skip the run. A skipped
- * mutation signal did not run, so it can still earn its own re-entry once
- * the tests pass.
+ * did not pass, or blast-radius tests that failed, skip the run.
  */
 function notReadyToMutate(
 	ctx: SignalContext,
@@ -733,13 +731,8 @@ function planData(plan: StrykerPlan): object {
 	};
 }
 
-function signal(
-	status: SignalStatus,
-	summary: string,
-	data: object,
-	reenter = false,
-): Signal {
-	return { kind: "mutation", status, summary, data, reenter };
+function signal(status: SignalStatus, summary: string, data: object): Signal {
+	return { kind: "mutation", status, summary, data, reenter: false };
 }
 
 function infoSignal(summary: string, data: object): Signal {

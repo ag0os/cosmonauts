@@ -191,11 +191,10 @@ export const MAX_RUN_TIME_MS = 2 ** 31 - 1;
 
 const DEFAULT_LENSES: readonly LeanLens[] = ["general"];
 
-/** Ruling D-4: only failing verification, failing blast-radius tests and surviving mutants send the builder back. */
+/** Ruling D-4, amended by wave 7: mutation is a reviewer fact, not a re-entry kind. */
 const REENTRY_KINDS: ReadonlySet<SignalKind> = new Set([
 	"verify",
 	"blast-tests",
-	"mutation",
 ]);
 
 /** Findings at these severities send the builder back once (principle 6). */
@@ -1062,10 +1061,8 @@ async function executeRun(run: Run): Promise<void> {
 /**
  * builder-1 and its pass, then the D-4 re-entry with its pass. A second
  * re-entry follows only when every signal failing in pass 2 is a kind that
- * did not run in pass 1 (mutation is skipped while verify or blast-tests
- * fail), so that
- * result reaches a builder; a kind that ran in pass 1 and fails now goes to
- * the reviewer instead. Every kind behind the first re-entry ran in pass 1,
+ * did not run in pass 1, so that result reaches a builder; a kind that ran
+ * in pass 1 and fails now goes to the reviewer instead. Every kind behind the first re-entry ran in pass 1,
  * so no kind re-enters twice, whatever the provider order.
  */
 async function buildAndVerify(run: Run): Promise<Verified | undefined> {
@@ -1537,7 +1534,7 @@ function reentering(
 		if (signal.reenter && !REENTRY_KINDS.has(signal.kind))
 			warn(
 				run.record,
-				`pass ${pass}: ${signal.kind} asked to re-enter the builder; ruling D-4 lets only verify, blast-tests and mutation re-enter`,
+				`pass ${pass}: ${signal.kind} asked to re-enter the builder; ruling D-4 lets only verify and blast-tests re-enter`,
 			);
 	}
 	return signals.filter(
@@ -2092,11 +2089,26 @@ async function finish(
 	status: Exclude<RunStatus, "running">,
 	reason?: string,
 ): Promise<void> {
+	warnSurvivors(run);
 	if (status === "done" && run.builder) {
 		const failure = await applyFinalPatch(run);
 		if (failure) return finishRecord(run.record, "blocked", failure);
 	}
 	return finishRecord(run.record, status, reason);
+}
+
+/** Survivors on changed lines fail the mutation signal; the last pass that ran it leaves one warning. */
+function warnSurvivors(run: Run): void {
+	const ran = (signal: Signal) =>
+		signal.kind === "mutation" &&
+		!dataFlag(signal, "skipped") &&
+		!dataFlag(signal, "unavailable");
+	const last = run.record.facts.passes.findLast((pass) =>
+		pass.signals.some(ran),
+	);
+	const mutation = last?.signals.find(ran);
+	if (last && mutation?.status === "fail")
+		warnOnce(run.record, `pass ${last.pass}: ${mutation.summary}`);
 }
 
 /**

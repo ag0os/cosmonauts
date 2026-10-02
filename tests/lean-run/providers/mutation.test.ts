@@ -967,7 +967,7 @@ describe(
 			);
 		}
 
-		test("fails and re-enters when a mutant survives inside the changed function", async () => {
+		test("fails without re-entry when a mutant survives inside the changed function, naming it", async () => {
 			const signal = await runWith(
 				report({
 					"lib/calc.ts": [
@@ -980,7 +980,20 @@ describe(
 			expect(signal).toMatchObject({
 				kind: "mutation",
 				status: "fail",
-				reenter: true,
+				reenter: false,
+				data: {
+					changedFunctions: [
+						{
+							survivors: [
+								{
+									mutator: "ConditionalExpression",
+									replacement: "true",
+									startLine: 2,
+								},
+							],
+						},
+					],
+				},
 			});
 		});
 
@@ -1035,7 +1048,7 @@ describe(
 			);
 		});
 
-		test("re-enters on a survivor inside a hunk and lists the unchanged-line ones apart", async () => {
+		test("fails on a survivor inside a hunk and lists the unchanged-line ones apart", async () => {
 			const signal = await runWith(
 				report({
 					"lib/calc.ts": [
@@ -1045,7 +1058,7 @@ describe(
 				}),
 			);
 
-			expect(signal).toMatchObject({ status: "fail", reenter: true });
+			expect(signal).toMatchObject({ status: "fail", reenter: false });
 			expect(signal.summary).toMatch(
 				/^1 mutants survived on changed lines of changed functions \(1 more on unchanged lines\)/u,
 			);
@@ -1706,7 +1719,7 @@ describe(
 		});
 
 		test.runIf(hasCommit("f2d6242c"))(
-			"reports the f2d6242c sample's eight survivors and re-enters",
+			"reports the f2d6242c sample's eight survivors as a failing fact",
 			async () => {
 				sample = join(scratch.path, "sample");
 				gitIn(
@@ -1744,7 +1757,7 @@ describe(
 					"tests/driver/worktree-snapshot.test.ts",
 				]);
 				expect(data.inRange).toMatchObject({ mutants: 39, survived: 8 });
-				expect(signal).toMatchObject({ status: "fail", reenter: true });
+				expect(signal).toMatchObject({ status: "fail", reenter: false });
 			},
 		);
 

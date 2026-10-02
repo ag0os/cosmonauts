@@ -175,6 +175,42 @@ const SKIPPED_MUTATION: Partial<Signal> = {
 	data: { skipped: true, reason: "verification did not pass: 1 test failed" },
 };
 
+/** The mutation provider's answer when a mutant survives on a changed line. */
+const SURVIVORS = {
+	status: "fail",
+	summary:
+		"1 mutants survived on changed lines of changed functions: 1 killed (0 by timeout), 1 survived, 0 no coverage",
+	data: {
+		changedFunctions: [
+			{
+				file: "src/greet.ts",
+				name: "greet",
+				survivors: [
+					{
+						id: "7",
+						mutator: "ConditionalExpression",
+						replacement: "false",
+						startLine: 1,
+						endLine: 1,
+					},
+				],
+			},
+		],
+	},
+} satisfies Partial<Signal>;
+
+const BLAST_TESTS_FAILING: Partial<Signal> = {
+	status: "fail",
+	summary: "tier 1 failed",
+	reenter: true,
+};
+
+/** The blast-tests provider's answer when none of its tests ran. */
+const SKIPPED_BLAST_TESTS: Partial<Signal> = {
+	status: "info",
+	data: { skipped: true },
+};
+
 const never = (): Promise<never> => new Promise<never>(() => {});
 
 /** Work that honours the signal: it rejects once `signal` aborts. */
@@ -2327,52 +2363,19 @@ describe("runBuild re-entry", () => {
 		expect(saved.envelopes.reviewer?.outcome).toBe("done");
 	});
 
-	test("gives a mutation signal that first fails in pass 2 its own re-entry", async () => {
+	test("does not re-enter on a mutation signal that first fails in pass 2", async () => {
 		const builder = stubBackend([DONE]);
-		const reviewer = stubBackend([REVIEW]);
-		const mutation = stubProvider(
-			[
-				SKIPPED_MUTATION,
-				{ status: "fail", summary: "1 survivor", reenter: true },
-				{},
-			],
-			"mutation",
-		);
 		const record = await build({
 			builder,
-			reviewer,
-			providers: [stubProvider([FAILING, {}, {}]), mutation],
-		});
-
-		expect(builder.calls).toHaveLength(3);
-		expect(builder.calls[2]?.prompt).toContain(
-			"### mutation (fail)\n1 survivor",
-		);
-		expect(builder.calls[2]?.prompt).not.toContain("### verify");
-		expect(reviewer.calls).toHaveLength(1);
-		expect(reviewer.calls[0]?.prompt).toContain("## Pass 3");
-		const saved = await onDisk(record);
-		expect(saved).toEqual(record);
-		expect(saved.facts.passes.map((pass) => pass.pass)).toEqual([1, 2, 3]);
-		expect(saved.envelopes["builder-3"]).toBeDefined();
-		expect(saved.manifest).toMatchObject({
-			status: "done",
-			reentries: 2,
-			reentryReasons: [
-				{
-					stage: "builder-2",
-					pass: 1,
-					kinds: ["verify"],
-					reason: "pass 1: verify failing",
-				},
-				{
-					stage: "builder-3",
-					pass: 2,
-					kinds: ["mutation"],
-					reason: "pass 2: mutation failing, and did not run in pass 1",
-				},
+			providers: [
+				stubProvider([FAILING, {}]),
+				stubProvider([SKIPPED_MUTATION, SURVIVORS], "mutation"),
 			],
 		});
+
+		expect(builder.calls).toHaveLength(2);
+		expect(record.manifest).toMatchObject({ status: "done", reentries: 1 });
+		expect(record.manifest.warnings).toEqual([`pass 2: ${SURVIVORS.summary}`]);
 	});
 
 	test("ends blocked when the signal behind the second re-entry fails again", async () => {
@@ -2381,10 +2384,7 @@ describe("runBuild re-entry", () => {
 			builder,
 			providers: [
 				stubProvider([FAILING, {}]),
-				stubProvider(
-					[SKIPPED_MUTATION, { status: "fail", reenter: true }],
-					"mutation",
-				),
+				stubProvider([SKIPPED_BLAST_TESTS, BLAST_TESTS_FAILING], "blast-tests"),
 			],
 		});
 
@@ -2393,25 +2393,7 @@ describe("runBuild re-entry", () => {
 			status: "blocked",
 			reentries: 2,
 			reason:
-				"re-entry signals still failing after one re-entry each: mutation",
-		});
-	});
-
-	test("does not re-enter twice for the same signal kind", async () => {
-		const builder = stubBackend([DONE]);
-		const record = await build({
-			builder,
-			providers: [
-				stubProvider([{}]),
-				stubProvider([{ status: "fail", reenter: true }], "mutation"),
-			],
-		});
-
-		expect(builder.calls).toHaveLength(2);
-		expect(record.manifest).toMatchObject({
-			status: "blocked",
-			reentries: 1,
-			reason: "re-entry signals still failing after one re-entry: mutation",
+				"re-entry signals still failing after one re-entry each: blast-tests",
 		});
 	});
 
@@ -2423,10 +2405,7 @@ describe("runBuild re-entry", () => {
 			reviewer,
 			providers: [
 				stubProvider([{}, FAILING]),
-				stubProvider(
-					[{ status: "fail", reenter: true }, SKIPPED_MUTATION],
-					"mutation",
-				),
+				stubProvider([BLAST_TESTS_FAILING, SKIPPED_BLAST_TESTS], "blast-tests"),
 			],
 		});
 
@@ -2444,7 +2423,7 @@ describe("runBuild re-entry", () => {
 		const record = await build({
 			builder,
 			providers: [
-				stubProvider([{}, { status: "fail", reenter: true }], "mutation"),
+				stubProvider([{}, BLAST_TESTS_FAILING], "blast-tests"),
 				stubProvider([FAILING]),
 			],
 		});
@@ -2454,20 +2433,68 @@ describe("runBuild re-entry", () => {
 			status: "blocked",
 			reentries: 1,
 			reason:
-				"re-entry signals still failing after one re-entry: mutation, verify",
+				"re-entry signals still failing after one re-entry: blast-tests, verify",
 		});
 	});
 
-	test("re-enters on surviving mutants", async () => {
+	test("reviews builder-1's patch with the surviving mutants as facts, ends done and warns", async () => {
+		const builder = stubBackend([editGreet(DONE)]);
+		const reviewer = stubBackend([REVIEW]);
+		const record = await build({
+			builder,
+			reviewer,
+			providers: [stubProvider([{}]), stubProvider([SURVIVORS], "mutation")],
+		});
+
+		expect(builder.calls).toHaveLength(1);
+		const prompt = reviewer.calls[0]?.prompt ?? "";
+		expect(prompt).toContain(`### mutation (fail)\n${SURVIVORS.summary}`);
+		expect(prompt).toContain('"mutator": "ConditionalExpression"');
+		expect(prompt).toContain('"replacement": "false"');
+		expect(prompt).toContain('"startLine": 1');
+		expect(prompt).toContain('+export const greet = "hi";');
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			reentries: 0,
+			patches: [
+				`missions/sessions/lean/runs/${record.manifest.id}/patches/builder-1.patch`,
+			],
+			warnings: [`pass 1: ${SURVIVORS.summary}`],
+		});
+	});
+
+	test("names only verify in the re-entry prompt while mutants also survive", async () => {
 		const builder = stubBackend([DONE]);
 		await build({
 			builder,
 			providers: [
-				stubProvider([{}]),
-				stubProvider([{ status: "fail", reenter: true }, {}], "mutation"),
+				stubProvider([FAILING, {}]),
+				stubProvider([SURVIVORS, {}], "mutation"),
 			],
 		});
+
+		const prompt = builder.calls[1]?.prompt ?? "";
+		expect(prompt).toContain("### verify (fail)\n1 test failed");
+		expect(prompt).not.toContain("### mutation");
+	});
+
+	test("still ends blocked on failing verify, with one survivors warning from the last pass", async () => {
+		const builder = stubBackend([DONE]);
+		const record = await build({
+			builder,
+			providers: [
+				stubProvider([FAILING]),
+				stubProvider([SURVIVORS], "mutation"),
+			],
+		});
+
 		expect(builder.calls).toHaveLength(2);
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reentries: 1,
+			reason: "re-entry signals still failing after one re-entry: verify",
+			warnings: [`pass 2: ${SURVIVORS.summary}`],
+		});
 	});
 
 	test("re-enters once on failing blast-radius tests, then ends blocked naming them", async () => {
@@ -2533,21 +2560,24 @@ describe("runBuild re-entry", () => {
 		});
 	});
 
-	test("records but does not act on a re-entry request from another kind", async () => {
+	test.each([
+		"health",
+		"mutation",
+	] as const)("records but does not act on a re-entry request from %s", async (kind) => {
 		const builder = stubBackend([DONE]);
-		const health = stubProvider([{ status: "fail", reenter: true }], "health");
+		const other = stubProvider([{ status: "info", reenter: true }], kind);
 		const record = await build({
 			builder,
-			providers: [stubProvider([{}]), health],
+			providers: [stubProvider([{}]), other],
 		});
 		expect(builder.calls).toHaveLength(1);
 		expect(record.facts.passes[0]?.signals[1]).toMatchObject({
-			kind: "health",
+			kind,
 			reenter: true,
 		});
 		expect(record.manifest).toMatchObject({ status: "done", reentries: 0 });
 		expect(record.manifest.warnings).toEqual([
-			"pass 1: health asked to re-enter the builder; ruling D-4 lets only verify, blast-tests and mutation re-enter",
+			`pass 1: ${kind} asked to re-enter the builder; ruling D-4 lets only verify and blast-tests re-enter`,
 		]);
 	});
 });
@@ -3670,6 +3700,25 @@ describe("runBuild findings loop", () => {
 			"builder-4",
 			"reviewer-2",
 		]);
+	});
+
+	test("re-enters on a reviewer finding while mutants survive, without sending the mutants back", async () => {
+		const builder = stubBackend([DONE]);
+		const record = await build({
+			builder,
+			reviewer: stubBackend([MEDIUM_REVIEW, REVIEW]),
+			providers: [stubProvider([{}]), stubProvider([SURVIVORS], "mutation")],
+		});
+
+		expect(builder.calls).toHaveLength(2);
+		const prompt = builder.calls[1]?.prompt ?? "";
+		expect(prompt).toContain("### F-3 (medium) src/greet.ts:1\nno test");
+		expect(prompt).not.toContain("## Host verification still failing");
+		expect(record.manifest).toMatchObject({
+			status: "done",
+			reentries: 0,
+			findingsReentries: 1,
+		});
 	});
 
 	test("sends the high and medium findings, not the low ones, after the base prompt", async () => {
