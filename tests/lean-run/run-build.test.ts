@@ -4790,7 +4790,7 @@ The other clone groups fallow reports inside \`scripts/validate-harness-exports.
 				userMessages: [FEATURE_STATEMENT],
 			}),
 		).rejects.toThrow(
-			"direct requests cover one module; this one names 2 (cli/plans, cli/tasks): write missions/lean/<slug>/plan.md and pass planPath",
+			"direct runs cover one module; request and user message name 2 (cli/plans, cli/tasks): write missions/lean/<slug>/plan.md and pass planPath",
 		);
 		await expectNothingLeft(builder);
 
@@ -4803,7 +4803,7 @@ The other clone groups fallow reports inside \`scripts/validate-harness-exports.
 
 		await expect(
 			direct({ builder, request: REFACTOR_STATEMENT }),
-		).rejects.toThrow("names 2 (lib/extensions, lib/harness-adapters)");
+		).rejects.toThrow("name 2 (lib/extensions, lib/harness-adapters)");
 		await expectNothingLeft(builder);
 	});
 

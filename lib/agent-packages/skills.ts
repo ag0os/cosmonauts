@@ -8,6 +8,7 @@ import {
 	resolveEffectiveProjectSkills,
 } from "../agents/skills.ts";
 import type { AgentDefinition } from "../agents/types.ts";
+import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import type { PackagedSkill, PackageSkillSelection } from "./types.ts";
 
@@ -67,7 +68,13 @@ export async function resolvePackageSkills(
 		projectSkills: options.projectSkills,
 		domainsDir: options.domainsDir,
 		resolver: options.resolver,
-		agent: options.sourceAgent,
+		agent: {
+			skills: options.sourceAgent.skills,
+			domain: resolveDefaultDomain({
+				explicitDomain: options.sourceAgent.domain,
+				resolver: options.resolver,
+			}),
+		},
 	});
 	const override = buildSkillsOverride(
 		options.sourceAgent.skills,

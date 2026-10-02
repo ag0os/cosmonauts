@@ -6,6 +6,9 @@ import {
 	resolvePackageSkills,
 } from "../../lib/agent-packages/skills.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
+import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("agent-package-skills-");
@@ -251,5 +254,37 @@ describe("resolvePackageSkills", () => {
 		});
 
 		expect(skills.map((skill) => skill.name)).toEqual(["typescript", "plan"]);
+	});
+
+	it("source-agent mode keeps a skill the agent names from its own domain under project-level filters", async () => {
+		const leanDir = join(tmp.path, "lean");
+		const leanSkills = join(leanDir, "skills");
+		await writeDirectorySkill(leanSkills, "contract", {
+			name: "contract",
+			description: "Contract skill",
+			body: "# Contract",
+		});
+		const lean: LoadedDomain = {
+			manifest: { id: "lean", description: "Domain lean" },
+			portable: false,
+			agents: new Map(),
+			capabilities: new Set(),
+			prompts: new Set(),
+			skills: new Set(),
+			extensions: new Set(),
+			chains: [],
+			provenance: [],
+			rootDirs: [leanDir],
+		};
+
+		const skills = await resolvePackageSkills({
+			selection: { mode: "source-agent" },
+			sourceAgent: { skills: ["contract"], domain: "lean" },
+			projectSkills: ["typescript"],
+			resolver: new DomainResolver(new DomainRegistry([lean])),
+			skillPaths: [leanSkills],
+		});
+
+		expect(skills.map((skill) => skill.name)).toEqual(["contract"]);
 	});
 });
