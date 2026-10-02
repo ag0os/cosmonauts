@@ -678,11 +678,17 @@ describe("runBuild builder clone", () => {
 				async (input) => {
 					await writeGreet(input.worktree);
 					await writeFile(join(input.worktree, "src/new.ts"), "export {};\n");
+					return DONE;
+				},
+			]),
+			// After the builder stage, so the caller tree compare does not see it.
+			reviewer: stubBackend([
+				async () => {
 					await writeFile(
 						join(root, "src/greet.ts"),
 						"export const greet = 2;\n",
 					);
-					return DONE;
+					return REVIEW;
 				},
 			]),
 		});
@@ -1058,6 +1064,274 @@ describe("runBuild builder clone", () => {
 			"utf8",
 		);
 		expect(patch).toContain("+written by the builder");
+	});
+});
+
+/** The fixture repo's real path: macOS `tmpdir()` is under the `/var` link. */
+function realRoot(): string {
+	return realpathSync(root);
+}
+
+/** Commits `links` (path to target) as symlinks in the fixture repo. */
+async function commitLinks(links: Record<string, string>): Promise<void> {
+	for (const [path, target] of Object.entries(links)) {
+		await mkdir(dirname(join(root, path)), { recursive: true });
+		await symlink(target, join(root, path));
+	}
+	git("add", "-A");
+	git("commit", "-q", "-m", "links");
+}
+
+describe("runBuild symlinks into the caller", () => {
+	test("ends blocked before any builder stage on a tracked absolute symlink to a caller file", async () => {
+		const target = join(realRoot(), "README.md");
+		await commitLinks({ "readme-link": target });
+		const builder = stubBackend([
+			async (input) => {
+				await writeFile(join(input.worktree, "readme-link"), "builder\n");
+				return DONE;
+			},
+		]);
+
+		const record = await build({ builder });
+
+		expect(builder.calls).toHaveLength(0);
+		expect(await readFile(join(root, "README.md"), "utf8")).toBe("readme\n");
+		const link = { path: "readme-link", target, resolved: target };
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason: `builder clone: symlinks in the run's snapshot lead into your checkout or its git directory, so a builder write through them would change your files: readme-link -> ${target}; nothing was applied`,
+		});
+		expect((await onDisk(record)).manifest.builderInputs?.links).toEqual({
+			checked: 1,
+			blocked: [link],
+			escaping: [],
+		});
+		expect(existsSync(record.manifest.builderWorktree ?? "")).toBe(false);
+	});
+
+	test("ends blocked on an untracked absolute symlink to a caller file in a dirty tree", async () => {
+		await dirtyCallerTree();
+		const target = join(realRoot(), "src/greet.ts");
+		await symlink(target, join(root, "greet-link"));
+		const builder = stubBackend([DONE]);
+
+		const record = await build({ builder });
+
+		expect(builder.calls).toHaveLength(0);
+		expect(record.manifest.status).toBe("blocked");
+		expect(record.manifest.reason).toContain(`greet-link -> ${target}`);
+		expect(record.manifest.builderInputs?.links.blocked).toEqual([
+			{ path: "greet-link", target, resolved: target },
+		]);
+	});
+
+	test("resolves through a tracked directory link into the caller, also to a file not there yet", async () => {
+		await mkdir(join(root, "shared"));
+		await writeFile(join(root, "shared/util.ts"), "export {};\n");
+		const shared = join(realRoot(), "shared");
+		await commitLinks({ vendor: shared, "fresh-link": "vendor/fresh.ts" });
+		const builder = stubBackend([DONE]);
+
+		const record = await build({ builder });
+
+		expect(builder.calls).toHaveLength(0);
+		expect(record.manifest.status).toBe("blocked");
+		expect(record.manifest.builderInputs?.links.blocked).toEqual([
+			{
+				path: "fresh-link",
+				target: "vendor/fresh.ts",
+				resolved: join(shared, "fresh.ts"),
+			},
+			{ path: "vendor", target: shared, resolved: shared },
+		]);
+	});
+
+	test("resolves a chain through an in-repo link to a caller path", async () => {
+		const target = join(realRoot(), "README.md");
+		await commitLinks({ alias: "hop", hop: target });
+		const builder = stubBackend([DONE]);
+
+		const record = await build({ builder });
+
+		expect(builder.calls).toHaveLength(0);
+		expect(record.manifest.builderInputs?.links.blocked).toEqual([
+			{ path: "alias", target: "hop", resolved: target },
+			{ path: "hop", target, resolved: target },
+		]);
+	});
+
+	test("only warns on an absolute symlink outside both the caller and the clone", async () => {
+		const elsewhere = realpathSync(
+			await mkdtemp(join(tmpdir(), "lean-run-elsewhere-")),
+		);
+		extraDirs.push(elsewhere);
+		await commitLinks({ tools: elsewhere });
+
+		const record = await build({ builder: stubBackend([editGreet(DONE)]) });
+
+		expect(record.manifest.status).toBe("done");
+		expect(record.manifest.warnings).toContain(
+			`symlinks in the run's snapshot lead out of the builder clone (not blocked; writes through them are not detected): tools -> ${elsewhere}`,
+		);
+		expect(record.manifest.builderInputs?.links.escaping).toEqual([
+			{ path: "tools", target: elsewhere, resolved: elsewhere },
+		]);
+	});
+
+	test("only warns on a relative symlink that climbs out of the repository", async () => {
+		await commitLinks({ up: "../outside.txt" });
+
+		const record = await build({ builder: stubBackend([editGreet(DONE)]) });
+
+		expect(record.manifest.status).toBe("done");
+		expect(record.manifest.builderInputs?.links.escaping).toMatchObject([
+			{ path: "up", target: "../outside.txt" },
+		]);
+		expect(record.manifest.warnings).toContainEqual(
+			expect.stringMatching(/lead out of the builder clone .*: up -> \//u),
+		);
+	});
+
+	test("neither warns nor blocks on a relative symlink inside the repository", async () => {
+		await commitLinks({ alias: "README.md" });
+
+		const record = await build({ builder: stubBackend([editGreet(DONE)]) });
+
+		expect(record.manifest.status).toBe("done");
+		expect(record.manifest.builderInputs?.links).toEqual({
+			checked: 1,
+			blocked: [],
+			escaping: [],
+		});
+		expect(record.manifest.warnings ?? []).not.toContainEqual(
+			expect.stringContaining("symlinks in the run's snapshot"),
+		);
+	});
+});
+
+describe("runBuild caller working tree", () => {
+	test("ends blocked after the builder stage, naming the file, when the builder writes a tracked caller file by absolute path", async () => {
+		const reviewer = stubBackend([REVIEW]);
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					await writeFile(join(root, "README.md"), "written by the builder\n");
+					return DONE;
+				},
+			]),
+			reviewer,
+		});
+
+		expect(record.manifest).toMatchObject({
+			status: "blocked",
+			reason:
+				"builder-1: the caller's working tree changed during the builder stage (paths: README.md): the builder wrote outside its clone, or your tree changed during the run, your own edits included; nothing was applied, and the changed files were left as they are",
+		});
+		expect((await onDisk(record)).manifest.callerTreeChange).toEqual({
+			stage: "builder-1",
+			paths: ["README.md"],
+			count: 1,
+		});
+		expect(reviewer.calls).toHaveLength(0);
+		expect(record.manifest.patchApplied).toBeUndefined();
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			"export const greet = 1;\n",
+		);
+		expect(await readFile(join(root, "README.md"), "utf8")).toBe(
+			"written by the builder\n",
+		);
+	});
+
+	test("ends blocked naming a new untracked file the builder writes into the caller", async () => {
+		const record = await build({
+			builder: stubBackend([
+				async () => {
+					await writeFile(join(root, "stray.txt"), "stray\n");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest.status).toBe("blocked");
+		expect(record.manifest.reason).toContain("(paths: stray.txt)");
+		expect(record.manifest.callerTreeChange).toEqual({
+			stage: "builder-1",
+			paths: ["stray.txt"],
+			count: 1,
+		});
+		expect(await readFile(join(root, "stray.txt"), "utf8")).toBe("stray\n");
+	});
+
+	test("lists the first 20 changed paths and counts the rest", async () => {
+		const record = await build({
+			builder: stubBackend([
+				async () => {
+					for (let index = 10; index < 35; index++)
+						await writeFile(join(root, `stray-${index}.txt`), "stray\n");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest.callerTreeChange?.count).toBe(25);
+		expect(record.manifest.callerTreeChange?.paths).toHaveLength(20);
+		expect(record.manifest.reason).toContain("stray-29.txt and 5 more)");
+	});
+
+	test("ends blocked on a caller change in a re-entry stage", async () => {
+		const record = await build({
+			builder: stubBackend([
+				editGreet(DONE),
+				async () => {
+					await writeFile(join(root, "stray.txt"), "stray\n");
+					return DONE;
+				},
+			]),
+			providers: [stubProvider([FAILING, {}])],
+		});
+
+		expect(record.manifest.status).toBe("blocked");
+		expect(record.manifest.callerTreeChange?.stage).toBe("builder-2");
+	});
+
+	test("keeps a failed stage's reason when the caller's tree also changed", async () => {
+		const record = await build({
+			builder: stubBackend([
+				async () => {
+					await writeFile(join(root, "stray.txt"), "stray\n");
+					throw new Error("harness crashed");
+				},
+			]),
+		});
+
+		expect(record.manifest.status).toBe("blocked");
+		expect(record.manifest.reason).toMatch(
+			/^builder-1: the caller's working tree changed .*; the stage had already ended failed: builder-1: backend error: harness crashed$/u,
+		);
+	});
+
+	test("finishes done with a dirty caller tree and a session directory that is not gitignored", async () => {
+		await writeFile(join(root, ".gitignore"), "");
+		git("commit", "-q", "-am", "stop ignoring sessions");
+		const files = await dirtyCallerTree();
+		const record = await build({
+			builder: stubBackend([
+				async (input) => {
+					await writeGreet(input.worktree);
+					await writeFile(join(await onlyRunDir(), "note.txt"), "run's own\n");
+					return DONE;
+				},
+			]),
+		});
+
+		expect(record.manifest.status).toBe("done");
+		expect(record.manifest.callerTreeChange).toBeUndefined();
+		expect(await readFiles(Object.keys(files))).toEqual(files);
+		expect(await readFile(join(root, "src/greet.ts"), "utf8")).toBe(
+			'export const greet = "hi";\n',
+		);
 	});
 });
 

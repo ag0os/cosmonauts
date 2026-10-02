@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { checkSnapshotLinks, escapingLinksWarning } from "./clone-links.ts";
 import {
 	clonePrivate,
 	listIgnoredDependencies,
@@ -74,6 +75,8 @@ interface OpenOptions {
 /**
  * Clones the caller's repository into a fresh temp directory, detached at
  * `commit`, so uncommitted work the snapshot holds is there as it was.
+ * While the clone holds nothing else, it sorts the snapshot's symlinks
+ * (`inputs.links`); the caller blocks the run on one into its checkout.
  * Then it adds what the checks read but git does not carry: the caller's
  * gitignored files are copied in at the same paths (`carryIgnoredInputs`)
  * and kept out of the builder's patch by the clone's `info/exclude`, and
@@ -97,6 +100,11 @@ export async function openBuilderWorkspace(
 			path: root,
 			commit: options.commit,
 			...(options.ref ? { ref: options.ref } : {}),
+			...(signal ? { signal } : {}),
+		});
+		const links = await checkSnapshotLinks({
+			clone: root,
+			caller: source,
 			...(signal ? { signal } : {}),
 		});
 		const projectDir = join(root, prefix);
@@ -130,8 +138,15 @@ export async function openBuilderWorkspace(
 						? [LINKED_DEPENDENCY_RESIDUAL]
 						: []),
 				],
+				links,
 			},
-			warnings: [...linked.warnings, ...carried.warnings],
+			warnings: [
+				...(links.escaping.length > 0
+					? [escapingLinksWarning(links.escaping)]
+					: []),
+				...linked.warnings,
+				...carried.warnings,
+			],
 			dispose,
 		};
 	} catch (error) {

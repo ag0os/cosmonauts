@@ -21,12 +21,19 @@ import {
 	restoreCommand,
 } from "./caller-state.ts";
 import {
+	type CallerTree,
+	callerTreeChange,
+	callerTreeChangeReason,
+	readCallerTree,
+} from "./caller-tree.ts";
+import {
 	confirmGone,
 	DEFAULT_CLEANUP_CONFIRM_MS,
 	detachedCandidates,
 	pathSpellings,
 	runningPids,
 } from "./cleanup-check.ts";
+import { blockedLinksReason } from "./clone-links.ts";
 import { buildContextPack, planPathWarnings } from "./context-pack.ts";
 import { parseStageEnvelope } from "./envelope.ts";
 import {
@@ -299,7 +306,7 @@ export async function runBuild(options: RunBuildOptions): Promise<RunRecord> {
 		{ options, record, source, lean: lean.config },
 		async (run) => {
 			await prepareBuilder(run);
-			await executeRun(run);
+			if (!ended(run)) await executeRun(run);
 		},
 	);
 }
@@ -881,6 +888,7 @@ async function prepareBuilder(run: Run): Promise<void> {
 	await saveManifest(run.record);
 	if (abortReason(run)) return;
 	await isolateBuilder(run);
+	if (ended(run)) return;
 	const refresh = await refreshGraph(run, "start");
 	if (run.options.contextPack === undefined) await useContextPack(run, refresh);
 	else run.record.manifest.contextPack = "supplied";
@@ -924,6 +932,13 @@ async function isolateBuilder(run: Run): Promise<void> {
 	manifest.builderWorktree = run.worktree;
 	manifest.builderInputs = run.builder.inputs;
 	for (const warning of run.builder.warnings) warn(run.record, warning);
+	const { blocked } = run.builder.inputs.links;
+	if (blocked.length > 0)
+		return finish(
+			run,
+			"blocked",
+			`${run.stage}: ${blockedLinksReason(blocked)}`,
+		);
 	run.callerState = await readCallerState({
 		projectRoot,
 		dependencies: run.builder.dependencies,
@@ -1164,11 +1179,14 @@ async function runBuilder(
 	await dropHealthHookLeftover(run, stage);
 	await writeRunBaseSha({ worktree, baseSha: diffBase(run) });
 	try {
+		const tree = await watchCallerTree(run, stage);
+		if (!tree) return undefined;
 		const envelope = await runStage(run, stage, run.options.backend, {
 			prompt,
 			worktree,
 			role: "lean/builder",
 		});
+		if (await callerTreeChanged(run, stage, tree)) return undefined;
 		if (!envelope) return undefined;
 		const breach = await isolationBreach(run);
 		if (breach) {
@@ -1181,6 +1199,51 @@ async function runBuilder(
 	} finally {
 		await afterBuilder(run, stage);
 	}
+}
+
+/** The caller's tree before a builder stage; a tree that cannot be read ends the run `blocked`. */
+async function watchCallerTree(
+	run: Run,
+	stage: BuilderStage,
+): Promise<CallerTree | undefined> {
+	try {
+		return await readCallerTree(run.options.projectRoot);
+	} catch (error) {
+		await finish(
+			run,
+			"blocked",
+			`${stage}: could not read the caller's working tree before the stage: ${errorMessage(error)}; nothing was applied`,
+		);
+		return undefined;
+	}
+}
+
+/**
+ * Compares the caller's tree with `tree`, also after a stage that ended the
+ * run, and ends the run `blocked` on any change, or when the compare cannot
+ * run, keeping a stage's earlier ending in the reason. Nothing is undone.
+ */
+async function callerTreeChanged(
+	run: Run,
+	stage: BuilderStage,
+	tree: CallerTree,
+): Promise<boolean> {
+	let reason: string;
+	try {
+		const paths = await tree.changes();
+		if (paths.length === 0) return false;
+		const change = callerTreeChange(stage, paths);
+		run.record.manifest.callerTreeChange = change;
+		reason = callerTreeChangeReason(change);
+	} catch (error) {
+		reason = `${stage}: could not compare the caller's working tree after the stage: ${errorMessage(error)}; nothing was applied`;
+	}
+	const { status, reason: earlier } = run.record.manifest;
+	const ending = ended(run)
+		? `; the stage had already ended ${status}: ${earlier}`
+		: "";
+	await finish(run, "blocked", `${reason}${ending}`);
+	return true;
 }
 
 /**
@@ -1976,6 +2039,10 @@ async function stopBeforeStage(run: Run, stage: RunStage): Promise<boolean> {
 async function stopWith(run: Run, reason: string): Promise<undefined> {
 	await finish(run, "failed", reason);
 	return undefined;
+}
+
+function ended(run: Run): boolean {
+	return run.record.manifest.status !== "running";
 }
 
 function warn(record: RunRecord, warning: string): void {

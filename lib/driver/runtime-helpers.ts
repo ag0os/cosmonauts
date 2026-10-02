@@ -437,6 +437,40 @@ export async function snapshotWorktree(options: {
 	if (!(await git(["status", "--porcelain", "--untracked-files=all"])))
 		return undefined;
 	const ref = `refs/cosmonauts/drive/${runId}/${taskId}/attempt-${attemptNumber}`;
+	const tree = await writeWorktreeTree({ projectRoot, signal });
+	const sha = await git(
+		[
+			"commit-tree",
+			tree,
+			"-p",
+			await git(["rev-parse", "HEAD"]),
+			"-m",
+			`Drive snapshot ${runId}/${taskId}/attempt-${attemptNumber}${options.taskFile ? `\n\nDrive-Task-File: ${options.taskFile}` : ""}`,
+		],
+		{
+			GIT_AUTHOR_NAME: "Cosmonauts Drive",
+			GIT_AUTHOR_EMAIL: "drive@cosmonauts.local",
+			GIT_COMMITTER_NAME: "Cosmonauts Drive",
+			GIT_COMMITTER_EMAIL: "drive@cosmonauts.local",
+		},
+	);
+	await git(["update-ref", ref, sha]);
+	return ref;
+}
+
+/**
+ * The tree `git add -A` from `projectRoot` would stage over HEAD: tracked
+ * and untracked files that are not ignored, with the session directories
+ * left out. It is built in a temporary index, so the repository's own index
+ * is not touched, and no commit or ref is made. A clean tree yields HEAD's.
+ */
+export async function writeWorktreeTree(options: {
+	projectRoot: string;
+	signal?: AbortSignal;
+}): Promise<string> {
+	const { projectRoot, signal = new AbortController().signal } = options;
+	const git = (args: string[], env?: NodeJS.ProcessEnv) =>
+		boundedGit(projectRoot, signal, args, env);
 	const directory = mkdtempSync(join(tmpdir(), "cosmonauts-drive-index-"));
 	try {
 		const env = { GIT_INDEX_FILE: join(directory, "index") };
@@ -477,26 +511,7 @@ export async function snapshotWorktree(options: {
 			["-c", `core.excludesFile=${excludesFile}`, "add", "-A", "--", "."],
 			env,
 		);
-		const tree = await git(["write-tree"], env);
-		const sha = await git(
-			[
-				"commit-tree",
-				tree,
-				"-p",
-				await git(["rev-parse", "HEAD"]),
-				"-m",
-				`Drive snapshot ${runId}/${taskId}/attempt-${attemptNumber}${options.taskFile ? `\n\nDrive-Task-File: ${options.taskFile}` : ""}`,
-			],
-			{
-				...env,
-				GIT_AUTHOR_NAME: "Cosmonauts Drive",
-				GIT_AUTHOR_EMAIL: "drive@cosmonauts.local",
-				GIT_COMMITTER_NAME: "Cosmonauts Drive",
-				GIT_COMMITTER_EMAIL: "drive@cosmonauts.local",
-			},
-		);
-		await git(["update-ref", ref, sha]);
-		return ref;
+		return await git(["write-tree"], env);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}

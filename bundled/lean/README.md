@@ -52,8 +52,23 @@ The checks need files git does not carry, so the clone also gets:
 - **`node_modules`**, linked, not copied: the one at each level from the
   top level down to the project root, and every gitignored one (up to 200).
 
-There is no filesystem sandbox, so two residuals remain. `run.json`
-records them as `builderInputs.residuals`.
+There is no filesystem sandbox: the builder runs with your filesystem
+rights, and the clone keeps it out of your checkout only while it writes
+inside the clone. Two checks cover the known ways out. A symlink in the
+run's snapshot, tracked or untracked, whose target (through directory
+links and chains) is inside your checkout or its git directory blocks the
+run before the builder starts; other links that leave the clone (a system
+path, a relative link climbing out of the repository) are a warning.
+`run.json` records them as `builderInputs.links`. And your working tree,
+tracked and untracked files that are not ignored, is compared before and
+after each builder stage: any change ends the run `blocked` with nothing
+applied, names the paths (`callerTreeChange`), and leaves the changed
+files as they are. That includes your own edits during the run. Writes
+through a linked `node_modules`, to gitignored files and to paths outside
+the repository are **not detected**.
+
+Two residuals remain. `run.json` records them as
+`builderInputs.residuals`.
 
 - **Push by path or URL.** The clone has no configured remote, but a
   builder that names a repository by path or URL, yours or your remote's,

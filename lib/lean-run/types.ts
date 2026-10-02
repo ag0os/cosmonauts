@@ -405,6 +405,8 @@ export interface RunManifest {
 	 * ref now names an object the builder made.
 	 */
 	callerRefDrift?: CallerRefDrift[];
+	/** The caller's working tree changed during a builder stage, which ended the run `blocked`. */
+	callerTreeChange?: CallerTreeChange;
 	/** How the builder harness gated its tool calls. */
 	permissions?: BackendPermissions;
 	/**
@@ -513,6 +515,35 @@ export interface BuilderInputs {
 	skipped: SkippedInput[];
 	/** Known ways the builder can still change the caller's repository, its remotes or its tree. */
 	residuals: string[];
+	/** The snapshot's symlinks, checked when the clone opened, before any builder stage. */
+	links: SnapshotLinks;
+}
+
+/** A symlink of the run's snapshot that leads out of the builder clone. */
+export interface SnapshotLink {
+	/** Relative to the top level. */
+	path: string;
+	/** The link's own text. */
+	target: string;
+	/** Where it leads from the clone, through directory links and chains. */
+	resolved: string;
+}
+
+export interface SnapshotLinks {
+	/** Every symlink of the snapshot commit. */
+	checked: number;
+	/** Links into the caller's checkout or its git directory: the run ends `blocked` before the builder starts. */
+	blocked: SnapshotLink[];
+	/** Other links out of the clone (system paths, the run's scratch directory): warned, not blocked. */
+	escaping: SnapshotLink[];
+}
+
+export interface CallerTreeChange {
+	stage: string;
+	/** The changed paths, relative to the top level; the first 20 at most. */
+	paths: string[];
+	/** Every changed path, listed or not. */
+	count: number;
 }
 
 /** `git apply` of the final builder patch to the working tree only, never the index. */
