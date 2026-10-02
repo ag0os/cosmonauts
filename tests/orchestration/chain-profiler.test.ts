@@ -16,6 +16,7 @@ import type {
 	ChainEvent,
 	ChainStage,
 	ParallelGroupStep,
+	SpawnStats,
 } from "../../lib/orchestration/types.ts";
 
 // ============================================================================
@@ -819,6 +820,86 @@ describe("chain-profiler: buildSummary content sections", () => {
 // ============================================================================
 // Import constraint verification (AC #7)
 // ============================================================================
+
+describe("chain-profiler: stage stats", () => {
+	const plannerStats: SpawnStats = {
+		tokens: {
+			input: 1200,
+			output: 300,
+			cacheRead: 4000,
+			cacheWrite: 500,
+			total: 6000,
+		},
+		cost: 0.25,
+		durationMs: 59000,
+		turns: 3,
+		toolCalls: 7,
+	};
+
+	test("stage_stats produces an instant stage entry carrying the full SpawnStats", () => {
+		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
+		const stage = makeStage("planner");
+		feed(profiler, [
+			{ type: "chain_start", steps: [stage] },
+			{ type: "stage_stats", stage, stats: plannerStats },
+		]);
+
+		expect(getEntries(profiler)[1]).toMatchObject({
+			cat: "stage",
+			name: "planner",
+			ph: "I",
+			data: { stats: plannerStats },
+		});
+	});
+
+	test("chain_end entry carries ChainStats totals", () => {
+		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
+		feed(profiler, [
+			{ type: "chain_start", steps: [] },
+			{
+				type: "chain_end",
+				result: {
+					success: true,
+					stageResults: [],
+					totalDurationMs: 60000,
+					errors: [],
+					stats: {
+						stages: [],
+						totalCost: 0.25,
+						totalTokens: 6000,
+						totalDurationMs: 59000,
+					},
+				},
+			},
+		]);
+
+		expect(getEntries(profiler)[1]?.data).toEqual({
+			success: true,
+			totalCost: 0.25,
+			totalTokens: 6000,
+			totalDurationMs: 59000,
+		});
+	});
+
+	test("summary lists per-stage wall time, cost, token breakdown, turns and tool calls", () => {
+		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
+		const stage = makeStage("planner");
+		feed(profiler, [
+			{ type: "chain_start", steps: [stage] },
+			{ type: "stage_stats", stage, stats: plannerStats },
+		]);
+
+		expect(
+			getSummarySection(buildProfilerSummary(profiler), "=== Stage Stats ==="),
+		).toEqual([
+			"  planner: wall=59000ms cost=$0.2500 tokens in=1200 out=300 cacheRead=4000 cacheWrite=500 total=6000 turns=3 toolCalls=7",
+		]);
+	});
+
+	test("summary omits the stage stats section when no stage_stats were recorded", () => {
+		expect(buildSummary([], [], new Map())).not.toContain("Stage Stats");
+	});
+});
 
 describe("chain-profiler: import constraints", () => {
 	test("module only imports from lib/orchestration/types.ts and node:*", async () => {

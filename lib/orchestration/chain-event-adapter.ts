@@ -4,6 +4,7 @@ import type {
 	StepResult,
 	StoredOrchestrationEvent,
 } from "../durable-runtime/index.ts";
+import { buildChainStats, parseSpawnStats } from "./chain-stats.ts";
 import type { ChainCompilerStepMetadata } from "./durable-chain-compiler.ts";
 import { hasExactKeys, isRecord } from "./record-shape.ts";
 import {
@@ -20,6 +21,7 @@ import type {
 	ChainStep,
 	ParallelGroupStep,
 	SpawnEvent,
+	SpawnStats,
 	StageResult,
 } from "./types.ts";
 
@@ -36,6 +38,14 @@ export interface ChainAgentEvidenceDetails {
 	role: string;
 	sessionId: string;
 	event: SpawnEvent;
+}
+
+/** Per-stage spawn stats persisted by the durable chain runner before step completion. */
+export interface ChainStageStatsActivityDetails {
+	source: "chain";
+	kind: "chain_stage_stats";
+	role: string;
+	stats: SpawnStats;
 }
 
 export interface ChainPlanReviewTargetActivityDetails {
@@ -71,6 +81,11 @@ interface DurableChainEventAdapterResult {
 	diagnostics: RuntimeDiagnostic[];
 }
 
+interface DurableChainRunProjection extends DurableChainEventAdapterResult {
+	/** Stage results projected from terminal step events, keyed by step id. */
+	stageResultsByStepId: ReadonlyMap<string, StageResult>;
+}
+
 interface StepGroup {
 	stepIndex: number;
 	metadatas: ChainCompilerStepMetadata[];
@@ -83,7 +98,9 @@ interface AdapterState {
 	events: ChainEvent[];
 	diagnostics: RuntimeDiagnostic[];
 	stepStartedAt: Map<string, string>;
+	stepStats: Map<string, SpawnStats>;
 	stageResults: StageResult[];
+	stageResultsByStepId: Map<string, StageResult>;
 	parallelResults: Map<number, Map<string, StageResult>>;
 	startedParallelGroups: Set<number>;
 	endedParallelGroups: Set<number>;
@@ -101,13 +118,23 @@ interface ChainTopology {
 export function adaptDurableChainEvents(
 	options: DurableChainEventAdapterOptions,
 ): DurableChainEventAdapterResult {
+	const { events, diagnostics } = projectDurableChainRun(options);
+	return { events, diagnostics };
+}
+
+/** Adapt stored events and also expose each terminal step's stage result. */
+export function projectDurableChainRun(
+	options: DurableChainEventAdapterOptions,
+): DurableChainRunProjection {
 	const state: AdapterState = {
 		runId: options.runId,
 		topology: chainTopology(options.steps),
 		events: [],
 		diagnostics: [],
 		stepStartedAt: new Map(),
+		stepStats: new Map(),
 		stageResults: [],
+		stageResultsByStepId: new Map(),
 		parallelResults: new Map(),
 		startedParallelGroups: new Set(),
 		endedParallelGroups: new Set(),
@@ -121,7 +148,11 @@ export function adaptDurableChainEvents(
 		adaptStoredEvent(state, envelope);
 	}
 
-	return { events: state.events, diagnostics: state.diagnostics };
+	return {
+		events: state.events,
+		diagnostics: state.diagnostics,
+		stageResultsByStepId: state.stageResultsByStepId,
+	};
 }
 
 function adaptStoredEvent(
@@ -408,10 +439,51 @@ function adaptStepToolActivity(
 	state: AdapterState,
 	event: Extract<OrchestrationEvent, { type: "step_tool_activity" }>,
 ): void {
+	if (isRecord(event.details) && event.details.kind === "chain_stage_stats") {
+		adaptStageStatsActivity(state, event.stepId, event.details);
+		return;
+	}
 	const projected = chainAgentEventFromEvidence(state, event);
 	if (projected) {
 		state.events.push(projected);
 	}
+}
+
+function adaptStageStatsActivity(
+	state: AdapterState,
+	stepId: string,
+	details: Record<string, unknown>,
+): void {
+	const parsed = parseStageStatsActivityDetails(details);
+	const metadata = state.topology.stepById.get(stepId);
+	if (!parsed || !metadata || metadata.stage.name !== parsed.role) {
+		state.diagnostics.push({
+			code: "invalid_chain_stage_stats_evidence",
+			message: "Durable chain stage stats evidence is invalid.",
+			details: { stepId },
+		});
+		return;
+	}
+	state.stepStats.set(stepId, parsed.stats);
+}
+
+function parseStageStatsActivityDetails(
+	value: unknown,
+): ChainStageStatsActivityDetails | undefined {
+	if (
+		!isRecord(value) ||
+		!hasExactKeys(value, ["source", "kind", "role", "stats"]) ||
+		value.source !== "chain" ||
+		value.kind !== "chain_stage_stats" ||
+		typeof value.role !== "string" ||
+		value.role.length === 0
+	) {
+		return undefined;
+	}
+	const stats = parseSpawnStats(value.stats);
+	return stats
+		? { source: "chain", kind: "chain_stage_stats", role: value.role, stats }
+		: undefined;
 }
 
 function adaptStepFailure(
@@ -436,6 +508,14 @@ function adaptStepTerminal(
 ): void {
 	if (!result) return;
 
+	state.stageResultsByStepId.set(stepId, result);
+	if (result.stats) {
+		state.events.push({
+			type: "stage_stats",
+			stage: result.stage,
+			stats: result.stats,
+		});
+	}
 	state.events.push({
 		type: "stage_end",
 		stage: result.stage,
@@ -507,6 +587,7 @@ function stageResultFromStepResult(
 		durationMs: durationMs(state.stepStartedAt.get(stepId), timestamp),
 		...(error !== undefined && { error }),
 		...(result.summary !== "" && { summary: result.summary }),
+		...withStepStats(state, stepId),
 	};
 }
 
@@ -525,7 +606,16 @@ function stageResultFromFailure(
 		iterations: 1,
 		durationMs: durationMs(state.stepStartedAt.get(stepId), timestamp),
 		error: reason,
+		...withStepStats(state, stepId),
 	};
+}
+
+function withStepStats(
+	state: AdapterState,
+	stepId: string,
+): Pick<StageResult, "stats"> {
+	const stats = state.stepStats.get(stepId);
+	return stats ? { stats } : {};
 }
 
 function chainResult(
@@ -538,6 +628,9 @@ function chainResult(
 		stageResults: [...state.stageResults],
 		totalDurationMs: durationMs(state.runStartedAt, timestamp),
 		errors: [...state.errors],
+		...(state.stageResults.some((result) => result.stats) && {
+			stats: buildChainStats(state.stageResults),
+		}),
 	};
 }
 

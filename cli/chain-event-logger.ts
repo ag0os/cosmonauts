@@ -6,7 +6,11 @@
 import { formatChainSteps } from "../lib/orchestration/chain-steps.ts";
 import { formatDuration } from "../lib/orchestration/duration.ts";
 import { formatReviewRoundBlockError } from "../lib/orchestration/review-revision.ts";
-import type { ChainEvent } from "../lib/orchestration/types.ts";
+import type {
+	ChainEvent,
+	ChainStats,
+	SpawnStats,
+} from "../lib/orchestration/types.ts";
 
 export { formatDuration } from "../lib/orchestration/duration.ts";
 
@@ -24,7 +28,7 @@ const CHAIN_EVENT_FORMATTERS: {
 	chain_end: (event) => {
 		const status = event.result.success ? "Complete" : "Failed";
 		const duration = formatDuration(event.result.totalDurationMs);
-		return `[chain] ${status} (${duration})`;
+		return `[chain] ${status} (${duration})${formatChainStatsTotals(event.result.stats)}`;
 	},
 	stage_start: (event) => `[${event.stage.name}] Starting...`,
 	stage_end: (event) => {
@@ -33,11 +37,8 @@ const CHAIN_EVENT_FORMATTERS: {
 		const error = event.result.error ? ` — ${event.result.error}` : "";
 		return `[${event.stage.name}] ${status} (${duration})${error}`;
 	},
-	stage_stats: (event) => {
-		const cost = event.stats.cost.toFixed(4);
-		const tokens = event.stats.tokens.total;
-		return `[${event.stage.name}] Stats: $${cost}, ${tokens} tokens`;
-	},
+	stage_stats: (event) =>
+		`[${event.stage.name}] Stats: ${formatSpawnStats(event.stats)}`,
 	stage_iteration: (event) =>
 		`[${event.stage.name}] Starting iteration ${event.iteration}...`,
 	parallel_start: (event) => {
@@ -68,6 +69,23 @@ const CHAIN_EVENT_FORMATTERS: {
 		return `[${event.role}] Spawn ${event.spawnId} ${status}: ${event.summary}`;
 	},
 };
+
+function formatSpawnStats(stats: SpawnStats): string {
+	const { input, output, cacheRead, cacheWrite, total } = stats.tokens;
+	return [
+		`wall=${stats.durationMs}ms`,
+		`$${stats.cost.toFixed(4)}`,
+		`tokens in=${input} out=${output} cacheRead=${cacheRead} cacheWrite=${cacheWrite} total=${total}`,
+		`${stats.turns} turns`,
+		`${stats.toolCalls} tool calls`,
+	].join(", ");
+}
+
+function formatChainStatsTotals(stats: ChainStats | undefined): string {
+	if (!stats) return "";
+	const stages = stats.stages.length;
+	return ` — ${stages} ${stages === 1 ? "stage" : "stages"}, $${stats.totalCost.toFixed(4)}, ${stats.totalTokens} tokens, stage wall=${stats.totalDurationMs}ms`;
+}
 
 function formatToolName(
 	event: Extract<ChainEvent, { type: "agent_tool_use" }>["event"],

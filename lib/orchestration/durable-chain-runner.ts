@@ -22,14 +22,16 @@ import {
 	withChainEpisode,
 } from "./chain-episodes.ts";
 import {
-	adaptDurableChainEvents,
 	type ChainAgentEvidenceDetails,
 	type ChainPlanReviewAddressedActivityDetails,
 	type ChainPlanReviewBlockActivityDetails,
 	type ChainPlanReviewTargetActivityDetails,
+	type ChainStageStatsActivityDetails,
 	parsePlanReviewAddressedActivityDetails,
 	parsePlanReviewTargetActivityDetails,
+	projectDurableChainRun,
 } from "./chain-event-adapter.ts";
+import { buildChainStats } from "./chain-stats.ts";
 import {
 	type ChainCompilerStepMetadata,
 	compileChainToGraph,
@@ -353,6 +355,19 @@ async function executeChainStep({
 		});
 	}
 	await eventWrite;
+	if (spawnResult.stats) {
+		await store.appendEvent(ref, {
+			type: "step_tool_activity",
+			runId: ref.runId,
+			stepId: prepared.step.id,
+			details: {
+				source: "chain",
+				kind: "chain_stage_stats",
+				role,
+				stats: spawnResult.stats,
+			} satisfies ChainStageStatsActivityDetails,
+		});
+	}
 
 	if (!spawnResult.success) {
 		return {
@@ -709,7 +724,7 @@ async function reconstructDurableChainResult(
 		store.readEvents(ref),
 	]);
 	const metadata = metadataFromPersistedGraph(graph);
-	const adapted = adaptDurableChainEvents({
+	const adapted = projectDurableChainRun({
 		runId: ref.runId,
 		steps: metadata,
 		events: eventPage.events,
@@ -718,6 +733,11 @@ async function reconstructDurableChainResult(
 		(event): event is Extract<ChainEvent, { type: "chain_end" }> =>
 			event.type === "chain_end",
 	)?.result;
+	const stageResults = stageResultsFromStepRecords(
+		metadata,
+		stepRecords,
+		adapted.stageResultsByStepId,
+	);
 
 	return {
 		events: adapted.events,
@@ -725,13 +745,16 @@ async function reconstructDurableChainResult(
 			success:
 				adaptedResult?.success === true &&
 				stepRecords.every((step) => step.status === "completed"),
-			stageResults: stageResultsFromStepRecords(metadata, stepRecords),
+			stageResults,
 			totalDurationMs: adaptedResult?.totalDurationMs ?? 0,
 			errors: stepRecords.flatMap((step) =>
 				step.status !== "completed" && step.result?.summary
 					? [step.result.summary]
 					: [],
 			),
+			...(stageResults.some((result) => result.stats) && {
+				stats: buildChainStats(stageResults),
+			}),
 		},
 	};
 }
@@ -739,6 +762,7 @@ async function reconstructDurableChainResult(
 function stageResultsFromStepRecords(
 	metadata: readonly ChainCompilerStepMetadata[],
 	stepRecords: readonly StepRecord[],
+	adaptedByStepId: ReadonlyMap<string, StageResult>,
 ): StageResult[] {
 	const recordById = new Map(stepRecords.map((step) => [step.id, step]));
 	return metadata.flatMap((entry) => {
@@ -746,12 +770,14 @@ function stageResultsFromStepRecords(
 		if (!record?.result) return [];
 		const success =
 			record.status === "completed" && record.result.outcome === "success";
+		const adapted = adaptedByStepId.get(entry.stepId);
 		return [
 			{
 				stage: chainStage(entry.stage),
 				success,
 				iterations: 1,
-				durationMs: 0,
+				durationMs: adapted?.durationMs ?? 0,
+				...(adapted?.stats && { stats: adapted.stats }),
 				...(success ? {} : { error: record.result.summary }),
 				...(record.result.summary !== "" && {
 					summary: record.result.summary,

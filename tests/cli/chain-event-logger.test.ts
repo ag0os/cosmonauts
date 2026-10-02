@@ -222,7 +222,28 @@ describe("formatChainEvent", () => {
 			},
 		};
 		expect(formatChainEvent(event)).toBe(
-			"[planner] Stats: $0.1235, 185 tokens",
+			"[planner] Stats: wall=2000ms, $0.1235, tokens in=100 out=50 cacheRead=25 cacheWrite=10 total=185, 2 turns, 1 tool calls",
+		);
+	});
+
+	test("formats chain_end event with ChainStats totals", () => {
+		const event: ChainEvent = {
+			type: "chain_end",
+			result: {
+				success: true,
+				stageResults: [],
+				totalDurationMs: 90000,
+				errors: [],
+				stats: {
+					stages: [],
+					totalCost: 1.23456,
+					totalTokens: 98765,
+					totalDurationMs: 85000,
+				},
+			},
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[chain] Complete (1m 30s) — 0 stages, $1.2346, 98765 tokens, stage wall=85000ms",
 		);
 	});
 

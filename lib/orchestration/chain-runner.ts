@@ -17,6 +17,11 @@ import {
 	createInlineChainEpisodeLifecycle,
 	withChainEpisode,
 } from "./chain-episodes.ts";
+import {
+	addSpawnStats,
+	buildChainStats,
+	emptySpawnStats,
+} from "./chain-stats.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
 import { misplacedQualityReviewResult } from "./quality-review-chain.ts";
@@ -49,7 +54,6 @@ import type {
 	ChainEvent,
 	ChainResult,
 	ChainStage,
-	ChainStats,
 	ChainStep,
 	InlinePlanReviewState,
 	ParallelGroupStep,
@@ -58,7 +62,6 @@ import type {
 	SpawnResult,
 	SpawnStats,
 	StageResult,
-	StageStats,
 } from "./types.ts";
 
 export { injectUserPrompt } from "./chain-steps.ts";
@@ -279,66 +282,6 @@ function createSpawnEventForwarder(
 			});
 		}
 	};
-}
-
-// ============================================================================
-// Stats Aggregation Helpers
-// ============================================================================
-
-/** Create a zero-valued SpawnStats. */
-function emptySpawnStats(): SpawnStats {
-	return {
-		tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		cost: 0,
-		durationMs: 0,
-		turns: 0,
-		toolCalls: 0,
-	};
-}
-
-/** Sum two SpawnStats together. */
-function addSpawnStats(a: SpawnStats, b: SpawnStats): SpawnStats {
-	return {
-		tokens: {
-			input: a.tokens.input + b.tokens.input,
-			output: a.tokens.output + b.tokens.output,
-			cacheRead: a.tokens.cacheRead + b.tokens.cacheRead,
-			cacheWrite: a.tokens.cacheWrite + b.tokens.cacheWrite,
-			total: a.tokens.total + b.tokens.total,
-		},
-		cost: a.cost + b.cost,
-		durationMs: a.durationMs + b.durationMs,
-		turns: a.turns + b.turns,
-		toolCalls: a.toolCalls + b.toolCalls,
-	};
-}
-
-/**
- * Build ChainStats from completed stage results.
- * Pass totalDurationMs explicitly to override the sum (e.g. for parallel groups
- * where wall-clock contribution is the max member duration, not the sum).
- */
-function buildChainStats(
-	stageResults: StageResult[],
-	statsDurationMs: number,
-): ChainStats {
-	const stages: StageStats[] = [];
-	let totalCost = 0;
-	let totalTokens = 0;
-
-	for (const sr of stageResults) {
-		if (sr.stats) {
-			stages.push({
-				stageName: sr.stage.name,
-				iterations: sr.iterations,
-				stats: sr.stats,
-			});
-			totalCost += sr.stats.cost;
-			totalTokens += sr.stats.tokens.total;
-		}
-	}
-
-	return { stages, totalCost, totalTokens, totalDurationMs: statsDurationMs };
 }
 
 // ============================================================================

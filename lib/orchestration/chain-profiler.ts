@@ -8,7 +8,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ChainEvent } from "./types.ts";
+import type { ChainEvent, ChainResult, SpawnStats } from "./types.ts";
 
 // ============================================================================
 // Public Types
@@ -122,7 +122,7 @@ export class ChainProfiler {
 					cat: "chain",
 					name: "chain_end",
 					ph: "E",
-					data: { success: event.result.success },
+					data: chainEndData(event.result),
 				});
 				break;
 
@@ -146,6 +146,16 @@ export class ChainProfiler {
 						success: event.result.success,
 						durationMs: event.result.durationMs,
 					},
+				});
+				break;
+
+			case "stage_stats":
+				this.entries.push({
+					ts,
+					cat: "stage",
+					name: event.stage.name,
+					ph: "I",
+					data: { stats: event.stats },
 				});
 				break;
 
@@ -274,7 +284,7 @@ export class ChainProfiler {
 				break;
 			}
 
-			// Intentionally ignored events (stage_stats, stage_iteration, agent_turn, spawn_completion)
+			// Intentionally ignored events (stage_iteration, agent_turn, spawn_completion)
 			default:
 				break;
 		}
@@ -342,6 +352,7 @@ export function buildSummary(
 	const sections = [
 		renderChainOverview(entries),
 		renderStageBreakdown(entries),
+		renderStageStats(entries),
 		renderParallelBreakdown(entries),
 		renderSlowestTools(spans),
 		renderPerAgentToolBreakdown(spans),
@@ -390,6 +401,34 @@ function renderStageBreakdown(entries: readonly ProfileTraceEntry[]): string[] {
 			const durStr = dur !== undefined ? formatDuration(dur) : "(incomplete)";
 			lines.push(`  ${begin.name}: ${durStr}`);
 		}
+	}
+	return lines;
+}
+
+function chainEndData(result: ChainResult): Record<string, unknown> {
+	if (!result.stats) return { success: result.success };
+	const { totalCost, totalTokens, totalDurationMs } = result.stats;
+	return {
+		success: result.success,
+		totalCost,
+		totalTokens,
+		totalDurationMs,
+	};
+}
+
+function renderStageStats(entries: readonly ProfileTraceEntry[]): string[] {
+	const stageStats = entries.filter(
+		(e) => e.cat === "stage" && e.ph === "I" && e.data?.stats !== undefined,
+	);
+	if (stageStats.length === 0) return [];
+
+	const lines = ["=== Stage Stats ==="];
+	for (const entry of stageStats) {
+		const stats = entry.data?.stats as SpawnStats;
+		const { input, output, cacheRead, cacheWrite, total } = stats.tokens;
+		lines.push(
+			`  ${entry.name}: wall=${stats.durationMs}ms cost=$${stats.cost.toFixed(4)} tokens in=${input} out=${output} cacheRead=${cacheRead} cacheWrite=${cacheWrite} total=${total} turns=${stats.turns} toolCalls=${stats.toolCalls}`,
+		);
 	}
 	return lines;
 }

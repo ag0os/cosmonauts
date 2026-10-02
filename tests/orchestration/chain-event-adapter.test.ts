@@ -6,8 +6,14 @@ import type {
 import {
 	adaptDurableChainEvents,
 	type ChainAgentEvidenceDetails,
+	type ChainStageStatsActivityDetails,
+	projectDurableChainRun,
 } from "../../lib/orchestration/chain-event-adapter.ts";
-import type { ChainEvent, SpawnEvent } from "../../lib/orchestration/types.ts";
+import type {
+	ChainEvent,
+	SpawnEvent,
+	SpawnStats,
+} from "../../lib/orchestration/types.ts";
 
 describe("chain-event-adapter", () => {
 	test("maps durable chain spawn evidence to ChainEvents and refuses to fabricate missing session ids", () => {
@@ -395,6 +401,153 @@ describe("chain-event-adapter", () => {
 			expect.objectContaining({
 				code: "invalid_chain_review_block_evidence",
 			}),
+		]);
+	});
+});
+
+describe("chain-event-adapter stage stats evidence", () => {
+	const plannerStep = {
+		stepId: "chain-1-planner",
+		topologyIndex: 0,
+		stepIndex: 1,
+		purpose: { kind: "default" },
+		requiresPlanReviewTarget: false,
+		stage: { name: "planner", loop: false },
+	} as const;
+	const plannerStats: SpawnStats = {
+		tokens: {
+			input: 1200,
+			output: 300,
+			cacheRead: 4000,
+			cacheWrite: 500,
+			total: 6000,
+		},
+		cost: 0.25,
+		durationMs: 59_000,
+		turns: 3,
+		toolCalls: 7,
+	};
+
+	function statsRun(details: unknown): StoredOrchestrationEvent[] {
+		return [
+			stored(1, { type: "run_started", runId: "run-durable-chain" }),
+			stored(2, {
+				type: "step_started",
+				runId: "run-durable-chain",
+				stepId: "chain-1-planner",
+				backend: "cosmonauts-subagent",
+			}),
+			stored(3, {
+				type: "step_tool_activity",
+				runId: "run-durable-chain",
+				stepId: "chain-1-planner",
+				details,
+			}),
+			stored(4, {
+				type: "step_completed",
+				runId: "run-durable-chain",
+				stepId: "chain-1-planner",
+				result: { outcome: "success", summary: "planned", artifacts: [] },
+			}),
+			stored(5, {
+				type: "run_completed",
+				runId: "run-durable-chain",
+				result: { outcome: "completed" },
+			}),
+		];
+	}
+
+	const validDetails = {
+		source: "chain",
+		kind: "chain_stage_stats",
+		role: "planner",
+		stats: plannerStats,
+	} satisfies ChainStageStatsActivityDetails;
+
+	test("emits stage_stats with the persisted SpawnStats before stage_end", () => {
+		const adapted = adaptDurableChainEvents({
+			runId: "run-durable-chain",
+			steps: [plannerStep],
+			events: statsRun(validDetails),
+		});
+
+		expect(adapted.events.map((event) => event.type)).toEqual([
+			"chain_start",
+			"stage_start",
+			"stage_stats",
+			"stage_end",
+			"chain_end",
+		]);
+		expect(adapted.events[2]).toEqual({
+			type: "stage_stats",
+			stage: { name: "planner", loop: false },
+			stats: plannerStats,
+		});
+		expect(adapted.diagnostics).toEqual([]);
+	});
+
+	test("chain_end carries ChainStats totals built from stage stats", () => {
+		const adapted = adaptDurableChainEvents({
+			runId: "run-durable-chain",
+			steps: [plannerStep],
+			events: statsRun(validDetails),
+		});
+		const chainEnd = adapted.events.find(
+			(event): event is Extract<ChainEvent, { type: "chain_end" }> =>
+				event.type === "chain_end",
+		);
+
+		expect(chainEnd?.result.stats).toEqual({
+			stages: [{ stageName: "planner", iterations: 1, stats: plannerStats }],
+			totalCost: 0.25,
+			totalTokens: 6000,
+			totalDurationMs: 59_000,
+		});
+	});
+
+	test("projects per-step stage results with step wall time and stats", () => {
+		const projection = projectDurableChainRun({
+			runId: "run-durable-chain",
+			steps: [plannerStep],
+			events: statsRun(validDetails),
+		});
+
+		expect(
+			projection.stageResultsByStepId.get("chain-1-planner"),
+		).toMatchObject({
+			success: true,
+			durationMs: 120_000,
+			stats: plannerStats,
+		});
+	});
+
+	test("reports malformed stage stats evidence as a diagnostic and omits stats", () => {
+		const adapted = adaptDurableChainEvents({
+			runId: "run-durable-chain",
+			steps: [plannerStep],
+			events: statsRun({
+				...validDetails,
+				stats: { ...plannerStats, cost: "free" },
+			}),
+		});
+
+		expect(adapted.events.map((event) => event.type)).not.toContain(
+			"stage_stats",
+		);
+		expect(adapted.diagnostics).toEqual([
+			expect.objectContaining({ code: "invalid_chain_stage_stats_evidence" }),
+		]);
+	});
+
+	test("rejects stage stats evidence whose role does not match the step", () => {
+		const adapted = adaptDurableChainEvents({
+			runId: "run-durable-chain",
+			steps: [plannerStep],
+			events: statsRun({ ...validDetails, role: "reviewer" }),
+		});
+
+		expect(adapted.diagnostics).toEqual([
+			expect.objectContaining({ code: "invalid_chain_stage_stats_evidence" }),
 		]);
 	});
 });

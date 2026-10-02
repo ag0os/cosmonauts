@@ -71,13 +71,15 @@ cosmonauts run chain "coordinator -> reviewer[3]" "review with multiple reviewer
 - **Agent**: `agent_spawned`, `agent_completed`, `spawn_completion`; `agent_turn` and `agent_tool_use` forward a Pi `SpawnEvent` (turn boundaries, compaction, `tool_execution_*`) annotated with `role`/`sessionId` — useful for cross-agent progress monitoring without subscribing to each session
 - **`error`**: `message`, optional `stage`
 
-Cost/usage data is ephemeral (shown in CLI output and on events; not persisted to disk):
+Cost/usage data rides on the events and the returned `ChainResult`:
 
 ```typescript
 interface SpawnStats { tokens: TokenStats; cost: number; durationMs: number; turns: number; toolCalls: number }
 interface StageStats { stageName: string; iterations: number; stats: SpawnStats }
 interface ChainStats { stages: StageStats[]; totalCost: number; totalTokens: number; totalDurationMs: number }
 ```
+
+Both chain paths report it the same way. `runChain` (inline) emits `stage_stats` from each spawn. `runDurableChain` appends each successful spawn's `SpawnStats` to the run's event log as a `step_tool_activity` whose `details` are `{ source: "chain", kind: "chain_stage_stats", role, stats }` (`missions/sessions/chain/runs/<runId>/events.jsonl`). It replays them as `stage_stats`, sets each stage result's `stats`, and takes the stage's `durationMs` from its `step_started` → terminal step timestamps. The CLI prints every `stage_stats` with wall ms, cost, the input/output/cacheRead/cacheWrite/total token breakdown, turns, and tool calls, and prints the `ChainStats` totals on `chain_end`. `--profile` also writes each `stage_stats` as an instant (`ph: "I"`) stage entry carrying the full `SpawnStats`, and adds a `Stage Stats` section to the summary. Without `--profile`, an inline chain persists nothing.
 
 `SpawnStats` come from Pi's `session.getSessionStats()`, so they include Pi's prompt-cache warming (default `cacheWarming: "streaming"` since Pi 0.86): while a session waits in a long tool call — a parent blocked on `spawn_agent`, a chain, `run_driver`, or a slow test run — Pi may send small cache-refresh requests when it estimates they save more than they cost. They add tokens and cost to that session's stats (and use subscription quota), not model context. Cosmonauts keeps Pi's default. It is a global Pi setting (`cacheWarming: off | streaming | idle` in `~/.pi/agent/settings.json`); spawns built with in-memory settings (compaction config, quality review) do not read that file and always use the default.
 
