@@ -1,5 +1,8 @@
 import type { AgentRegistry } from "../agents/resolver.ts";
 
+/** How a /handoff brief, written by the previous agent, starts the new session. */
+export const HANDOFF_BRIEF_PREFIX = "Handoff context";
+
 // ============================================================================
 // Process-global slots via Symbol.for() to cross jiti module boundaries
 // ============================================================================

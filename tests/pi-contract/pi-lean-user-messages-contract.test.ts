@@ -71,6 +71,11 @@ describe("pi contract: the session's user messages reach lean_build", () => {
 				{ stopReason: "toolUse" },
 			),
 			fauxAssistantMessage("built"),
+			fauxAssistantMessage(
+				[fauxToolCall("lean_build", { request: "Change greet again." })],
+				{ stopReason: "toolUse" },
+			),
+			fauxAssistantMessage("built again"),
 		]);
 		const modelRuntime = await ModelRuntime.create({
 			authPath: join(agentDir, "auth.json"),
@@ -116,11 +121,14 @@ describe("pi contract: the session's user messages reach lean_build", () => {
 				formatSpawnCompletionMessage("s-1", "lean/checker", "success", "ok"),
 			);
 			await session.prompt("ok, build it");
+			await session.prompt("now make it say hey");
 		} finally {
 			session.dispose();
 		}
 
-		expect(calls).toHaveLength(1);
+		expect(calls).toHaveLength(2);
 		expect(calls[0]?.userMessages).toEqual([first, "ok, build it"]);
+		// The first build ended done, so the second carries only what followed.
+		expect(calls[1]?.userMessages).toEqual(["now make it say hey"]);
 	});
 });

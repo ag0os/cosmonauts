@@ -22,6 +22,7 @@ import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-i
 import {
 	clearPendingSwitch,
 	getSharedRegistry,
+	HANDOFF_BRIEF_PREFIX,
 	setPendingSwitch,
 } from "../../../../lib/interactive/agent-switch.ts";
 
@@ -257,7 +258,7 @@ export default function agentSwitchExtension(pi: ExtensionAPI): void {
 			);
 			const source = sourceAgentId ? ` (from ${sourceAgentId})` : "";
 			const handoffBrief = summary
-				? `Handoff context${source}:\n\n${summary}\n\nThe user handed off this conversation to you. Use the context above to continue where the previous agent left off.`
+				? `${HANDOFF_BRIEF_PREFIX}${source}:\n\n${summary}\n\nThe user handed off this conversation to you. Use the context above to continue where the previous agent left off.`
 				: undefined;
 
 			await performSwitch(targetAgentId, ctx, handoffBrief);

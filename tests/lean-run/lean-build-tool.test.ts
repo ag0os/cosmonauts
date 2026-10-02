@@ -12,6 +12,7 @@ import {
 	LeanBuildParameters,
 	LeanReviewParameters,
 } from "../../bundled/lean/extensions/lean-run/index.ts";
+import { HANDOFF_BRIEF_PREFIX } from "../../lib/interactive/agent-switch.ts";
 import {
 	MAX_RUN_TIME_MS,
 	type RunBuildOptions,
@@ -205,6 +206,77 @@ describe("lean_build tool", () => {
 				"/skill:plan cover the empty case",
 				"/skill:plan",
 			]);
+		});
+
+		const toolResult = (toolName: string, details: unknown, isError = false) =>
+			entry({
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: `c-${nextId}`,
+					toolName,
+					content: [{ type: "text", text: JSON.stringify(details) }],
+					details,
+					isError,
+					timestamp: 1,
+				},
+			});
+
+		test("leaves out the messages before the last lean_build that ended done", async () => {
+			const { pi, calls } = setup({
+				branch: [
+					message("user", "Rename fetchUser to loadUser."),
+					toolResult("lean_build", { runId: "r-0", status: "done" }),
+					message("user", "Now make greet() return hi."),
+				],
+			});
+			await pi.callTool("lean_build", { request: "Change greet." });
+			expect(calls[0]?.userMessages).toEqual(["Now make greet() return hi."]);
+		});
+
+		test("keeps the window open across a lean_build that threw, was blocked, or failed", async () => {
+			const { pi, calls } = setup({
+				branch: [
+					message("user", "Split the parser into two modules."),
+					toolResult("lean_build", {}, true),
+					toolResult("lean_build", { runId: "r-1", status: "blocked" }),
+					toolResult("lean_build", { runId: "r-2", status: "failed" }),
+					message("user", "try again"),
+				],
+			});
+			await pi.callTool("lean_build", { planPath: "p.md" });
+			expect(calls[0]?.userMessages).toEqual([
+				"Split the parser into two modules.",
+				"try again",
+			]);
+		});
+
+		test("keeps the window open across another tool's done result", async () => {
+			const { pi, calls } = setup({
+				branch: [
+					message("user", "Review then build."),
+					toolResult("lean_review", { runId: "r-3", status: "done" }),
+					message("user", "go"),
+				],
+			});
+			await pi.callTool("lean_build", { planPath: "p.md" });
+			expect(calls[0]?.userMessages).toEqual(["Review then build.", "go"]);
+		});
+
+		test("leaves out a /handoff brief", async () => {
+			const { pi, calls } = setup({
+				branch: [
+					message("user", [
+						{
+							type: "text",
+							text: `${HANDOFF_BRIEF_PREFIX} (from main/cosmo):\n\nsummary\n\nThe user handed off this conversation to you.`,
+						},
+					]),
+					message("user", "build it"),
+				],
+			});
+			await pi.callTool("lean_build", { planPath: "p.md" });
+			expect(calls[0]?.userMessages).toEqual(["build it"]);
 		});
 
 		test("passes none without a session or a user message", async () => {
