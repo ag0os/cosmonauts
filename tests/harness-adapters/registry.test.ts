@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+	createLeanContractGeneratedNode,
 	createRuntimeSkillDescriptor,
 	getHarnessTarget,
 	getStaticHarnessAsset,
@@ -266,5 +267,32 @@ describe("harness adapter registry", () => {
 		expect(Object.keys(packageManifest.scripts ?? {})).not.toContain(
 			"harness:check",
 		);
+	});
+
+	test("generates the lean bundle's contract.md from the lean contract skill, byte for byte", async () => {
+		const contract = await readFile(
+			join(process.cwd(), "bundled", "lean", "skills", "contract", "SKILL.md"),
+		);
+		const node = await createLeanContractGeneratedNode();
+		expect(
+			getStaticHarnessAsset("external-skill:cosmonauts-lean"),
+		).toMatchObject({
+			kind: "skill",
+			sourcePath: "external-skills/cosmonauts-lean",
+			outputIdentity: "cosmonauts-lean",
+			generatedInputs: "lean-contract",
+		});
+		expect(node.relativePath).toBe("contract.md");
+		expect(Buffer.from(node.renderedBytes).equals(contract)).toBe(true);
+		expect(
+			existsSync(
+				join(
+					process.cwd(),
+					"external-skills",
+					"cosmonauts-lean",
+					"contract.md",
+				),
+			),
+		).toBe(false);
 	});
 });

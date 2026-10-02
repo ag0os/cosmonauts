@@ -426,9 +426,10 @@ async function prepareAssetClassification(
 		options.asset,
 		options.projectRoot,
 	);
-	const generatingProjectRoot = options.asset.generatedInputs
-		? await realpath(options.projectRoot)
-		: undefined;
+	const generatingProjectRoot =
+		options.asset.generatedInputs === "cosmonauts-inventory"
+			? await realpath(options.projectRoot)
+			: undefined;
 	const observation = await observeAssetClassification(
 		options,
 		owner,

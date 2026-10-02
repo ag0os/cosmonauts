@@ -49,7 +49,7 @@ export interface HarnessAsset {
 	readonly logicalPath: string;
 	readonly outputIdentity: string;
 	readonly defaultScope: HarnessScope;
-	readonly generatedInputs?: "cosmonauts-inventory";
+	readonly generatedInputs?: "cosmonauts-inventory" | "lean-contract";
 	/** Additional names reserved by one asset in the output collision namespace. */
 	readonly reservedNames?: readonly string[];
 }

@@ -396,6 +396,115 @@ describe("cosmonauts harness sync", () => {
 		forgetOutput.restore();
 	});
 
+	test("exports the lean bundle with its contract templates to Claude Code and Codex project scope", async () => {
+		const projectRoot = join(tmp.path, "lean-project");
+		const homeRoot = join(tmp.path, "lean-home");
+		await Promise.all([
+			mkdir(projectRoot, { recursive: true }),
+			mkdir(homeRoot, { recursive: true }),
+		]);
+		const dependencies = {
+			projectRoot,
+			homeRoot,
+			discover: async () => emptyDiscovery(),
+		};
+		const args = [
+			"--json",
+			"sync",
+			"--target",
+			"claude",
+			"--target",
+			"codex",
+			"--scope",
+			"project",
+			"--asset",
+			"external-skill:cosmonauts-lean",
+		];
+		const syncOutput = captureCliOutput();
+		await createHarnessProgram(dependencies).parseAsync(args, { from: "user" });
+		const synced = JSON.parse(syncOutput.stdout()) as HarnessSyncReport;
+		syncOutput.restore();
+		expect(synced.exitCode).toBe(0);
+		expect(synced.rows.map((row) => [row.target, row.final])).toEqual([
+			["claude", "current"],
+			["codex", "current"],
+		]);
+
+		const contract = await readFile(
+			join(process.cwd(), "bundled", "lean", "skills", "contract", "SKILL.md"),
+		);
+		for (const ownerDirectory of [".claude", ".agents"]) {
+			const bundle = join(
+				projectRoot,
+				ownerDirectory,
+				"skills",
+				"cosmonauts-lean",
+			);
+			expect((await readdir(bundle)).sort()).toEqual([
+				"SKILL.md",
+				"contract.md",
+			]);
+			expect(
+				(await readFile(join(bundle, "contract.md"))).equals(contract),
+			).toBe(true);
+			expect(await readFile(join(bundle, "SKILL.md"), "utf8")).toMatch(
+				/^---\nname: cosmonauts-lean\n/,
+			);
+		}
+		expect(await readdir(homeRoot)).toEqual([]);
+
+		const checkOutput = captureCliOutput();
+		await createHarnessProgram(dependencies).parseAsync([...args, "--check"], {
+			from: "user",
+		});
+		const checked = JSON.parse(checkOutput.stdout()) as HarnessSyncReport;
+		checkOutput.restore();
+		expect(checked.exitCode).toBe(0);
+		expect(checked.rows.map((row) => row.before)).toEqual([
+			"current",
+			"current",
+		]);
+	});
+
+	test("a personal lean bundle synced from one project checks current from another", async () => {
+		const homeRoot = join(tmp.path, "lean-shared-home");
+		const projects = [join(tmp.path, "lean-a"), join(tmp.path, "lean-b")];
+		await Promise.all(
+			[homeRoot, ...projects].map((dir) => mkdir(dir, { recursive: true })),
+		);
+		const run = async (projectRoot: string, extra: string[]) => {
+			const output = captureCliOutput();
+			await createHarnessProgram({
+				projectRoot,
+				homeRoot,
+				discover: async () => emptyDiscovery(),
+			}).parseAsync(
+				[
+					"--json",
+					"sync",
+					"--target",
+					"claude",
+					"--asset",
+					"external-skill:cosmonauts-lean",
+					...extra,
+				],
+				{ from: "user" },
+			);
+			const report = JSON.parse(output.stdout()) as HarnessSyncReport;
+			output.restore();
+			return report;
+		};
+
+		expect((await run(projects[0] as string, [])).exitCode).toBe(0);
+		const checked = await run(projects[1] as string, ["--check"]);
+		expect(checked.exitCode).toBe(0);
+		expect(checked.rows[0]).toMatchObject({
+			scope: "personal",
+			before: "current",
+			reason: "current",
+		});
+	});
+
 	test("rejects command link mode before owner-root or manifest writes", async () => {
 		const projectRoot = join(tmp.path, "command-project");
 		const homeRoot = join(tmp.path, "command-home");

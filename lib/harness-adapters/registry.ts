@@ -1,6 +1,8 @@
+import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { COSMONAUTS_BUNDLE_RESERVED_NAMES } from "./inventory.ts";
+import type { GeneratedHarnessNode } from "./render.ts";
 import { getHarnessTarget } from "./target-registry.ts";
 import type {
 	HarnessAsset,
@@ -38,6 +40,18 @@ const STATIC_HARNESS_ASSETS = [
 		reservedNames: COSMONAUTS_BUNDLE_RESERVED_NAMES,
 	},
 	{
+		assetId: "external-skill:cosmonauts-lean",
+		kind: "skill",
+		ownership: { kind: "authority", authorityId: "cosmonauts/core" },
+		sourceRootId: "cosmonauts:package",
+		sourceRoot: PACKAGE_ROOT,
+		sourcePath: "external-skills/cosmonauts-lean",
+		logicalPath: "external-skills/cosmonauts-lean",
+		outputIdentity: "cosmonauts-lean",
+		defaultScope: "personal",
+		generatedInputs: "lean-contract",
+	},
+	{
 		assetId: "command:spec-to-backlog",
 		kind: "command",
 		ownership: { kind: "authority", authorityId: "cosmonauts/core" },
@@ -60,6 +74,21 @@ const STATIC_HARNESS_ASSETS = [
 		defaultScope: "personal",
 	},
 ] as const satisfies readonly HarnessAsset[];
+
+const LEAN_CONTRACT_SOURCE = "bundled/lean/skills/contract/SKILL.md";
+
+/**
+ * The lean bundle's templates, copied whole from the lean contract skill at
+ * sync time so the bundle never carries its own copy.
+ */
+export async function createLeanContractGeneratedNode(): Promise<GeneratedHarnessNode> {
+	const bytes = await readFile(join(PACKAGE_ROOT, LEAN_CONTRACT_SOURCE));
+	return {
+		relativePath: "contract.md",
+		inputBytes: bytes,
+		renderedBytes: bytes,
+	};
+}
 
 interface RuntimeSkillDescriptorOptions {
 	readonly name: string;

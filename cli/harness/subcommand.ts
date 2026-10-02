@@ -7,6 +7,7 @@ import {
 	prepareSkillExportAssets,
 } from "../../lib/harness-adapters/inventory.ts";
 import {
+	createLeanContractGeneratedNode,
 	listImplementedHarnessTargetIds,
 	listStaticHarnessAssets,
 } from "../../lib/harness-adapters/registry.ts";
@@ -155,17 +156,20 @@ export function createHarnessProgram(
 				assets,
 				sourceHealth,
 				request,
-				...(discovery.runtimeInventory
-					? {
-							generatedNodesByAssetId: {
+				generatedNodesByAssetId: {
+					"external-skill:cosmonauts-lean": [
+						await createLeanContractGeneratedNode(),
+					],
+					...(discovery.runtimeInventory
+						? {
 								"external-skill:cosmonauts": [
 									createCosmonautsInventoryGeneratedNode(
 										discovery.runtimeInventory,
 									),
 								],
-							},
-						}
-					: {}),
+							}
+						: {}),
+				},
 			});
 			renderHarnessReport(report, getOutputMode(program.opts()));
 			if (report.exitCode !== 0) process.exitCode = 1;
