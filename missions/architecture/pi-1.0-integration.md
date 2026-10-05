@@ -243,3 +243,44 @@ Each item: the Pi feature, then the cosmonauts code or plan it touches, then the
 - **The announcement post.** Read it when reachable. It may state Pi's roadmap direction
   (for example durable becoming the default runtime), which would change the "watch"
   verdicts in #6 and #7.
+
+## Corrections (2026-10-05)
+
+Added after the planning outline and two spikes re-checked this audit against the Pi source (tags `v1.0.1`, `v1.0.3`) and the installed packages. Nothing above was rewritten; where a line below disagrees with the text above, this section wins. Paths under `node_modules/@earendil-works/` are the installed Pi 1.0.3 (`bun install` at `19592410` or later); other paths are this repository.
+
+### Three findings that change the plan
+
+1. **Our tool allowlist and Pi's tool exposure do not compose.** `buildToolAllowlist` (`lib/orchestration/definition-resolution.ts:46`) is passed as `tools` (`lib/orchestration/session-factory.ts:299-313`, `cli/session.ts:70, 622, 654`). Pi treats `tools` as a filter **by name** at every registration (`pi-coding-agent/dist/core/agent-session.js:1099-1100`, `dist/core/sdk.js:145-148`). Two things follow. Every listed tool is active from the start, so `deferred` exposure defers nothing, and adding the codemode factory switches codemode on for every agent that gets it. And no tool whose name is unknown when the list is built (MCP's `mcp__<server>__<tool>`) is ever registered.
+2. **Spawned sessions never emit `session_start`.** Pi emits it in `session.bindExtensions()` (`pi-coding-agent/dist/core/agent-session.js:2562-2582`). Pi's own print and interactive modes call that (`dist/modes/print-mode.js:53`, `dist/modes/interactive/interactive-mode.js:1472`); Cosmonauts never does (no `bindExtensions` in `lib`, `cli`, `domains`, `bundled`; spawns go through `lib/orchestration/agent-spawner.ts:189`). MCP connects on `session_start`, so it would never connect in a spawned agent.
+3. **`spawn_agent` accepts and detaches.** It returns `Accepted spawn of <role>` at once and runs the child as a detached promise (`domains/shared/extensions/orchestration/spawn-tool.ts:857, 893-900`); the child's result arrives later as a message. Past the limits it returns a normal, non-error result reading `spawn_agent rejected: depth or concurrency limit reached` (`spawn-tool.ts:744`). The tool's signal goes only to the quality-review launch (`spawn-tool.ts:517, 816-820`), so nothing cancels a child. A codemode script that awaits `spawn_agent` gets the acceptance text, not the result.
+
+### Corrected claims
+
+- **Recommendation 1 (codemode).** An `outputSchema` on `spawn_agent`, `chain_run` or `run_driver` does not make them scriptable (finding 3). `codemode.inlineBudget` is a token budget for tool declarations in the `codemode` description, not a timeout. The only deadline is a script's `timeout_ms`, which is unset by default (`pi-coding-agent/docs/settings.md:42`, `docs/codemode.md:16`). "Off unless enabled" holds for the `pi` CLI, but on Cosmonauts' allowlist path the factory alone turns codemode on (finding 1).
+- **Recommendation 2 (exposure, annotations, nested calls).**
+  - Exposure is defeated by the allowlist (finding 1).
+  - Annotations cannot replace the guards. The lean role guard and Drive's destructive-git guard read the **bash command string** (`bundled/lean/extensions/role-guard/index.ts:83-124`, `lib/agents/session-assembly.ts:264`). A hint describes a tool, not a call. Pi's built-in tools carry no annotations, and only `bash` has an `outputSchema` (`pi-coding-agent/dist/core/tools/bash.js`).
+  - Nested usage does not roll children up, because spawned children are separate sessions, not nested tool calls. What works is a tool that runs sessions inside its own call returning their `usage` on its result. `lean_build` and `lean_review` now do (`bundled/lean/extensions/lean-run/index.ts:208-212`).
+  - Measured declarations: the lean lead declares 12 tools, cosmo 21.
+- **Recommendation 3 (virtual models).**
+  - Pi auto-retries, and so asks a router with `reason: "retry"`, only errors it classifies as transient (`pi-ai/dist/utils/retry.js:23-87, 183-190`). Quota, billing and subscription-limit errors are never retried (`retry.js:4-22`).
+  - On `openai-codex`, the provider of every default agent, a final 429 or a `usage_limit_reached`/`usage_not_included`/`rate_limit_exceeded` code becomes "You have hit your ChatGPT usage limit…" (`pi-ai/dist/api/openai-codex-responses.js:1249-1255`), which is not retryable. So a failover router there covers 5xx and network errors only, and "that covers `model-failover`" is wrong.
+  - A virtual model must be registered per session through the SDK (`modelRuntime.registerVirtualModel`, `pi-coding-agent/dist/core/model-runtime.d.ts:124`) before the model is resolved. Cosmonauts resolves the model before extensions load (`lib/agents/session-assembly.ts:300`, then `lib/orchestration/session-factory.ts:293`), so an extension registers too late.
+- **Recommendation 4 (MCP).** "Little effort" is wrong. Three things in our code stand in the way: the allowlist drops MCP tools (finding 1), spawned sessions never emit `session_start` (finding 2), and MCP's default exposure (`codemode`) needs codemode on, which the extension switches on by itself unless `autoEnableCodemode` is `false` (`pi-coding-agent/docs/mcp.md:228`). Interactive `cosmonauts` and `--print` already emit `session_start` through Pi's modes.
+- **Recommendation 5 (classifier models).** No consumer yet: Cosmonauts has no classifier provider configured (default agents run on `openai-codex`), and its two fits (domain routing, routing inside a virtual model) are out of reach for now.
+- **Recommendation 8 (smaller items).**
+  - `registerToolRenderer` is not free with the bump: Cosmonauts would have to call it, and does not (no call in `lib`, `cli`, `domains`, `bundled`).
+  - `pi-telemetry` through the chain profiler buys little: `lib/orchestration/chain-profiler.ts` is imported only by `cli/chain-execution.ts`.
+  - Inline Anthropic tools and the recorded `thinkingLevel` are real and already in effect.
+- **Pi version.** Cosmonauts is on Pi **1.0.3** (`package.json`), not 1.0.1. 1.0.3's only breaking change is the Azure provider rename (`azure-openai-responses` → `azure`), which no Cosmonauts code references.
+- **Open questions.** Codemode and spawn concurrency: finding 3. Exposure against the allowlist: finding 1. Virtual models across session types: router state is a session entry, so it lives as long as the session; the real constraint is registering before the model is resolved (above). MCP scoping: open, for the check-tool brainstorm. Durable gaps: unchanged at 1.0.3 (still experimental; the published coding agent does not depend on `pi-durable`, `pi-coding-agent/package.json:50-55`). The announcement post changed none of the "watch" verdicts.
+
+### Spike results
+
+- **S1a, no spend** (real Pi 1.0.3 on the faux provider, real builder, lead and cosmo assembly). With codemode `on`, declared tool size grows by 59% for the builder, 13% for the lead and 16% for cosmo. `only` shrinks the lead's and cosmo's by 22% and 27%, but routes every call through scripts, and cosmo's listing overflows the inline budget. Pi's codemode prompt line and guideline never reach a Cosmonauts model: a replacement system prompt drops Pi's tool snippets and guidelines (`pi-coding-agent/dist/core/system-prompt.js:76-85`). The lean role guard blocks `git commit` from inside a script exactly as from a direct call; `sh -c` gets through both ways (the guard's documented gap). A health-hook finding is always logged, but reaches the model only when the script returns the nested write's result.
+- **S1b, live** (codemode `on` for `lean/builder` only, no prompt cue, two builds of the saved plan): both `done`, $1.25 and $1.12, acceptance 34/34, **0 codemode calls**; every health finding reached the model and was acted on.
+
+### Rulings
+
+- **Stop 0 (human, 2026-10-05):** move to Pi 1.0.3 before building (done, `19592410`). Failover parked: no run on record ended on a provider failure, and on `openai-codex` failover could catch only 5xx and network errors. The lean run's usage reaches the lead's session totals (built, `b8db84ac`).
+- **Stop 1 (human, 2026-10-05):** no role gets codemode or tool search now, on the S1a and S1b evidence; reversible by one name in an agent definition's `extensions` list. The codemode opt-in and the script fan-out spike are dropped. Tool selection without a fixed name list waits for MCP in Pi sessions, together with the question of which session paths (Drive, chains, quality review) that change may reach. MCP waits for the check-tool brainstorm, which decides where MCP servers are declared and who gets them.

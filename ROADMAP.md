@@ -55,14 +55,12 @@ abstraction work (both waiting on the human).
 
 *Added 2026-10-05 by human ruling. Source of truth: `missions/architecture/pi-1.0-integration.md`, the Pi-First audit written 2026-10-03 against cosmonauts `04ee4aa` (Pi pinned at `0.87.1`) and Pi `v1.0.1`. It is analysis input, not a plan: re-verify its claims against the Pi source before acting.*
 
-Pi moved from 0.87.1 to 1.0.1 in twelve days. The audit's suggested order:
+Pi moved from 0.87.1 to 1.0.1 in twelve days. The audit's claims were re-checked against the Pi source and two spikes; what changed is in its `## Corrections (2026-10-05)` section. Where it stands:
 
-- Bump to 1.0.1 and update the `pi` skill (`domains/shared/skills/pi/SKILL.md`) in the same change
-- Turn on MCP, codemode and tool search in session assembly, behind each agent definition
-- Spike codemode-driven orchestration: structured results for `spawn_agent` and `chain_run`, compared against Wave F
-- Build model failover as a virtual model instead of custom code
-- Track `pi-durable` and `pi-server`; keep the durable runtime's concepts close to theirs
-- Its open questions (`## Open questions for the next agent`) are answered in the plan, not assumed
+- **Done:** Pi bumped to 1.0.1 and then 1.0.3 (lockstep), with the `pi` skill updated in the same changes; a lean run's token usage and cost now count in the lead's session totals.
+- **Decided (human, 2026-10-05):** no role gets codemode or tool search for now (a lean builder offered codemode made 0 calls in 2 builds); reversible by one name in an agent's `extensions` list. Model failover is parked: on `openai-codex` a virtual model could catch only 5xx and network errors, and no run on record ended on a provider failure.
+- **Waiting:** choosing a session's tools without a fixed name list waits for MCP in Pi sessions, together with the question of which session paths that change may reach; MCP waits for the check-tool brainstorm, which decides where MCP servers are declared and who gets them.
+- **Watch, as the audit said:** `pi-durable`, `pi-server`, `pi-protocol`, `pi-client` and `chord`; re-check them at each Pi bump.
 
 ### `suite-reliability`: A Green Suite That Stays Green
 

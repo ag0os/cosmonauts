@@ -9,7 +9,7 @@ Pi (`@earendil-works/pi-coding-agent`) is the agent runtime. This skill covers i
 
 > **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v1.0.3 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
 >
-> Pi 0.99–1.0 added codemode, `tool_search`, MCP, tool `exposure`/`annotations`/`namespace`, nested `ctx.executeTool()`, virtual models, classifier and image models, and `pi.registerToolRenderer()`. Cosmonauts uses none of them yet, so this skill does not document them; see `missions/architecture/pi-1.0-integration.md` and Pi's `docs/` before adopting one.
+> Pi 0.99–1.0 added codemode, `tool_search`, MCP, tool `exposure`/`annotations`/`namespace`, nested `ctx.executeTool()`, virtual models, classifier and image models, and `pi.registerToolRenderer()`. Cosmonauts uses none of them yet (codemode and tool search were tried and declined, 2026-10-05), so this skill does not document them; see `missions/architecture/pi-1.0-integration.md` and Pi's `docs/` before adopting one. One SDK fact for virtual models: a host registers one with `modelRuntime.registerVirtualModel(definition)` on the session's `ModelRuntime` before resolving the model it passes to `createAgentSession`; Cosmonauts resolves a session's model before its extensions load, so `pi.registerVirtualModel()` from an extension comes too late for that model.
 
 ## Source Of Truth
 
@@ -80,8 +80,9 @@ const { session } = await createAgentSession({
 | `model` | `Model` | From settings | LLM model |
 | `thinkingLevel` | `ThinkingLevel` | Restored session level, else per-model or global setting, else `"medium"` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` |
 | `scopedModels` | `Array<{model, thinkingLevel?}>` | — | Models for cycling |
-| `tools` | `string[]` | The `defaultTools` setting if configured, else `["read", "bash", "edit", "write"]` | When set, only these tool names are enabled |
+| `tools` | `string[]` | The `defaultTools` setting if configured, else `["read", "bash", "edit", "write"]` | A filter by **name**, applied at every registration: a tool whose name is not listed is never registered, including extension tools registered later (for example MCP tools in `session_start`). Every listed tool that is not hidden is also active (declared to the model) from the start, whatever its `exposure` |
 | `noTools` | `"all" \| "builtin"` | — | `"all"` = start with no tools; `"builtin"` = disable default built-ins but keep extension/custom tools |
+| `excludeTools` | `string[]` | — | Names that are never registered; applies after `tools` |
 | `customTools` | `ToolDefinition[]` | — | Additional tools |
 | `resourceLoader` | `ResourceLoader` | `DefaultResourceLoader` | Skill/extension/prompt discovery; also where `systemPrompt` / `appendSystemPrompt` overrides live |
 | `sessionManager` | `SessionManager` | `SessionManager.create(cwd)` | Session persistence |
@@ -218,7 +219,9 @@ Session files use JSONL format with a tree structure supporting branching withou
 
 ## Built-in Tools
 
-Pass `tools` as a string allowlist of built-in tool names. Omit the option to
+Pi has eight built-in tools: `read`, `bash`, `powershell`, `edit`, `write`,
+`grep`, `find`, `ls`. Pass `tools` as a string allowlist of tool names (see the
+`tools` row above: it filters every registration by name). Omit the option to
 get the default coding set. Factories are still exported for SDK code that
 needs direct `Tool` objects (e.g. custom tool wrappers), but `createAgentSession`
 no longer accepts them:
@@ -242,8 +245,19 @@ import {
   createGrepTool,        // (cwd) => Tool
   createFindTool,        // (cwd) => Tool
   createLsTool,          // (cwd) => Tool
+  createPowerShellTool,  // (cwd) => Tool
 } from "@earendil-works/pi-coding-agent";
 ```
+
+Without `tools`, the initial active set is the `defaultTools` setting, else
+`read, bash, edit, write`; extension tools stay active unless registered with
+`defaultActive: false`. With the default file-backed `SettingsManager` that
+setting comes from the user's and the project's settings files. To fix the set
+in code, override it: `settingsManager.applyOverrides({ defaultTools: ["read",
+"grep", "find", "ls"] })`. Plain names replace the inherited list; `+name` and
+`-name` entries add to or remove from it. An **empty** list does not replace
+it (it keeps the inherited value), so use `noTools: "builtin"` for "no
+built-ins".
 
 Factory functions accept a custom `cwd` for path resolution. Extensions can **override built-in tools** by registering a tool with the same name.
 
@@ -379,7 +393,7 @@ Events are subscribed via `pi.on(eventName, handler)`. Handlers receive `(event,
 
 | Event | When | Return type | Use case |
 |-------|------|-------------|----------|
-| `session_start` | Session starts, reloads, or replaces the active session | — | State restoration, rebind per-session state |
+| `session_start` | Session starts, reloads, or replaces the active session | — | State restoration, rebind per-session state. Emitted by `session.bindExtensions()`, which Pi's print and interactive modes call; a session made with `createAgentSession()` alone (every Cosmonauts spawn) never emits it |
 | `session_before_switch` | Before session switch | Can cancel | State management |
 | `session_before_fork` | Before fork | Can cancel | State management |
 | `session_before_compact` | Before compaction | Can modify | Custom compaction |
@@ -429,7 +443,7 @@ Since v0.86 the base prompt and tool loadout live in the transcript as `role: "s
 Pi's `buildSystemPrompt()` assembles the final prompt from:
 
 1. **Base prompt** — default coding assistant identity, followed by the active tools' snippets, the guidelines, and pointers to Pi's docs
-2. **`SYSTEM.md`** — in `.pi/` or `~/.pi/agent/` (or the `systemPrompt` option): replaces the whole base prompt, including its tool list, guidelines and docs pointers
+2. **`SYSTEM.md`** — in `.pi/` or `~/.pi/agent/` (or the `systemPrompt` option): replaces the whole base prompt, including its tool list, guidelines and docs pointers. Tools' `promptSnippet` and `promptGuidelines` then never reach the model (Cosmonauts always passes a replacement prompt, so a tool's own description is the model's only cue)
 3. **`APPEND_SYSTEM.md`** (or `appendSystemPrompt`) — an addendum after the base or replacement prompt
 4. **Context files** — `AGENTS.md` / `CLAUDE.md` content, as project instructions
 5. **Skills** — formatted as XML in `<available_skills>`; included only when the `read` or `bash` tool is active
@@ -652,6 +666,11 @@ settings.getRetryEnabled();
 settings.setRetryEnabled(true);
 settings.getRetrySettings();
 // { enabled, maxRetries, baseDelayMs, maxDelayMs }
+// Retries only errors pi-ai's isRetryableAssistantError() calls transient:
+// overloaded, at capacity, rate limit, 429, 5xx, network. Quota, billing and
+// subscription-limit errors are never retried. On openai-codex a final 429 (or a
+// usage_limit_reached / usage_not_included / rate_limit_exceeded code) becomes
+// "You have hit your ChatGPT usage limit…", which is not retried either.
 
 // Model defaults
 settings.getDefaultModel();
