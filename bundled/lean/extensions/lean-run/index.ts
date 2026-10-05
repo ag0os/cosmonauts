@@ -1,3 +1,4 @@
+import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import {
@@ -156,7 +157,7 @@ export function createLeanRunExtension(options: LeanRunExtensionOptions = {}) {
 					summary: summarizeRun(record),
 					runDir: record.dir,
 				};
-				return toolResult(details);
+				return toolResult(details, record);
 			},
 		});
 		registerLeanReview(pi, options.runReview ?? runReview, createBackends);
@@ -189,21 +190,53 @@ function registerLeanReview(
 				...(params.clearStaleLock ? { clearStaleLock: true } : {}),
 				...(signal ? { signal } : {}),
 			});
-			return toolResult({
-				runId: record.manifest.id,
-				status: record.manifest.status,
-				summary: summarizeRun(record),
-				findings: record.envelopes.reviewer?.findings ?? [],
-				runDir: record.dir,
-			});
+			return toolResult(
+				{
+					runId: record.manifest.id,
+					status: record.manifest.status,
+					summary: summarizeRun(record),
+					findings: record.envelopes.reviewer?.findings ?? [],
+					runDir: record.dir,
+				},
+				record,
+			);
 		},
 	});
 }
 
-function toolResult<T>(details: T) {
+function toolResult<T>(details: T, record: RunRecord) {
+	const usage = runUsage(record);
 	return {
 		content: [{ type: "text" as const, text: JSON.stringify(details) }],
 		details,
+		...(usage ? { usage } : {}),
+	};
+}
+
+function runUsage(record: RunRecord): Usage | undefined {
+	const spawns = record.stats.flatMap((stage) =>
+		stage.spawn ? [stage.spawn] : [],
+	);
+	if (spawns.length === 0) return undefined;
+	const sum = (field: "input" | "output" | "cacheRead" | "cacheWrite") =>
+		spawns.reduce((total, spawn) => total + spawn.tokens[field], 0);
+	const input = sum("input");
+	const output = sum("output");
+	const cacheRead = sum("cacheRead");
+	const cacheWrite = sum("cacheWrite");
+	return {
+		input,
+		output,
+		cacheRead,
+		cacheWrite,
+		totalTokens: input + output + cacheRead + cacheWrite,
+		cost: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			total: spawns.reduce((total, spawn) => total + spawn.cost, 0),
+		},
 	};
 }
 

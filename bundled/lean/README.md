@@ -264,9 +264,12 @@ to the kinds of the providers it ran (by default, `verify` alone).
 ## Token budget
 
 Each session's input and output tokens count against the run's token
-budget; cache reads and writes do not. Claude Code's usage is its final
-result object. Codex's is the sum of its `turn.completed` events, read
-from stdout as it streams, so a turn in the part of a long session's log
+budget; cache reads and writes do not. The tool result returns the run's
+per-stage usage, including cache reads and writes, so it counts in the lead's
+session totals; this is separate from `tokensUsed`, which is the budget's input
+plus output count. Claude Code's usage is its final result object. Codex's is
+the sum of its `turn.completed` events, read from stdout as it streams, so a
+turn in the part of a long session's log
 that the output cap drops is still counted. Usage is incomplete when
 stdout ended inside a JSON line, a usage line was too long to read, a
 `turn.completed` event's usage could not be read, or stdout bytes reached

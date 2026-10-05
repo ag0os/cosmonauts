@@ -22,6 +22,7 @@ import type {
 	BuilderBackend,
 	LeanBackendKind,
 	RunRecord,
+	SessionStats,
 } from "../../lib/lean-run/types.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
@@ -54,6 +55,28 @@ const REVIEWER: BuilderBackend = {
 	kind: "pi",
 	run: async () => ({ text: "" }),
 };
+
+function sessionStats(
+	input: number,
+	output: number,
+	cacheRead: number,
+	cacheWrite: number,
+	cost: number,
+): SessionStats {
+	return {
+		tokens: {
+			input,
+			output,
+			cacheRead,
+			cacheWrite,
+			total: input + output + cacheRead + cacheWrite,
+		},
+		cost,
+		durationMs: 100,
+		turns: 1,
+		toolCalls: 0,
+	};
+}
 
 function reviewRecord(): RunRecord {
 	const base = record();
@@ -477,6 +500,96 @@ describe("lean_build tool", () => {
 		);
 	});
 
+	test("returns usage summed across stages and an envelope repair turn", async () => {
+		const pi = createMockPi({ cwd: "/project" });
+		createLeanRunExtension({
+			runBuild: async () => {
+				const base = record();
+				return {
+					...base,
+					stats: [
+						{
+							stage: "builder-1",
+							durationMs: 100,
+							spawn: sessionStats(10, 4, 3, 2, 0.1),
+						},
+						{ stage: "reviewer", durationMs: 100 },
+						{
+							stage: "reviewer",
+							durationMs: 100,
+							repair: true,
+							spawn: sessionStats(7, 6, 5, 1, 0.25),
+						},
+					],
+				};
+			},
+			createBackends: async () => ({ builder: BACKEND, reviewer: REVIEWER }),
+		})(pi as never);
+
+		const result = (await pi.callTool("lean_build", { planPath: "p.md" })) as {
+			usage?: unknown;
+		};
+
+		expect(result.usage).toEqual({
+			input: 17,
+			output: 10,
+			cacheRead: 8,
+			cacheWrite: 3,
+			totalTokens: 38,
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				total: 0.35,
+			},
+		});
+	});
+
+	test("omits usage when no stage reported session stats", async () => {
+		const { pi } = setup();
+
+		const result = await pi.callTool("lean_build", { planPath: "p.md" });
+
+		expect(result).not.toHaveProperty("usage");
+	});
+
+	test("keeps content and details unchanged when returning usage", async () => {
+		const pi = createMockPi({ cwd: "/project" });
+		createLeanRunExtension({
+			runBuild: async () => {
+				const base = record();
+				return {
+					...base,
+					stats: [
+						{
+							stage: "builder-1",
+							durationMs: 100,
+							spawn: sessionStats(1, 2, 3, 4, 0.1),
+						},
+					],
+				};
+			},
+			createBackends: async () => ({ builder: BACKEND, reviewer: REVIEWER }),
+		})(pi as never);
+		const details = {
+			runId: "r-1",
+			status: "blocked",
+			summary: "blocked: re-entry signals remain (0 re-entries)",
+			runDir: "/project/missions/sessions/lean/runs/r-1",
+		};
+
+		const result = (await pi.callTool("lean_build", { planPath: "p.md" })) as {
+			content: unknown;
+			details: unknown;
+		};
+
+		expect({ content: result.content, details: result.details }).toEqual({
+			content: [{ type: "text", text: JSON.stringify(details) }],
+			details,
+		});
+	});
+
 	test("returns the run id, status, summary and run directory", async () => {
 		const { pi } = setup();
 		const result = (await pi.callTool("lean_build", {
@@ -652,6 +765,58 @@ describe("lean_review tool", () => {
 		await expect(
 			pi.callTool("lean_review", { lenses: ["style"] }),
 		).rejects.toThrow("lenses must be one or more of");
+	});
+
+	test("returns reviewer usage without changing content or details", async () => {
+		const pi = createMockPi({ cwd: "/project" });
+		createLeanRunExtension({
+			runReview: async () => {
+				const base = reviewRecord();
+				return {
+					...base,
+					stats: [
+						{
+							stage: "reviewer",
+							durationMs: 100,
+							spawn: sessionStats(5, 4, 3, 2, 0.2),
+						},
+					],
+				};
+			},
+			createBackends: async () => ({ builder: BACKEND, reviewer: REVIEWER }),
+		})(pi as never);
+		const details = {
+			runId: "r-1",
+			status: "done",
+			summary: "done: one issue; 1 finding(s), 0 high (0 re-entries)",
+			findings: reviewRecord().envelopes.reviewer?.findings,
+			runDir: "/project/missions/sessions/lean/runs/r-1",
+		};
+
+		const result = (await pi.callTool("lean_review", {})) as {
+			content: unknown;
+			details: unknown;
+			usage: unknown;
+		};
+
+		expect(result).toEqual({
+			content: [{ type: "text", text: JSON.stringify(details) }],
+			details,
+			usage: {
+				input: 5,
+				output: 4,
+				cacheRead: 3,
+				cacheWrite: 2,
+				totalTokens: 14,
+				cost: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0.2,
+				},
+			},
+		});
 	});
 
 	test("returns the run id, status, summary, findings and run directory", async () => {
