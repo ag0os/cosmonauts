@@ -7,7 +7,9 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 Pi (`@earendil-works/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
-> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.87.1 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
+> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v1.0.1 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
+>
+> Pi 0.99–1.0 added codemode, `tool_search`, MCP, tool `exposure`/`annotations`/`namespace`, nested `ctx.executeTool()`, virtual models, classifier and image models, and `pi.registerToolRenderer()`. Cosmonauts uses none of them yet, so this skill does not document them; see `missions/architecture/pi-1.0-integration.md` and Pi's `docs/` before adopting one.
 
 ## Source Of Truth
 
@@ -27,7 +29,7 @@ From v0.74.0 onward Pi publishes under `@earendil-works/`. Do not use the old `@
 |---------|---------|
 | `@earendil-works/pi-coding-agent` | Main runtime: sessions, tools, skills, extensions, modes |
 | `@earendil-works/pi-ai` | Multi-provider LLM API, streaming, model registry |
-| `@earendil-works/pi-agent-core` | Core types: `Agent`, `AgentEvent`, `AgentMessage`, `AgentTool`, `ThinkingLevel` |
+| `@earendil-works/pi-agent-core` | `Agent`, the agent loop, and core types: `AgentEvent`, `AgentMessage`, `AgentTool`, `ThinkingLevel`. Since v1.0 it no longer carries the experimental harness (`AgentHarness`, sessions, durable runtime, `./node`, `./harness/*`) |
 | `@earendil-works/pi-tui` | Terminal UI library |
 
 All packages use lockstep versioning under the `@earendil-works/` scope.
@@ -104,6 +106,7 @@ await session.steer("Stop and focus on the login endpoint instead");
 
 // Queue for after current turn completes
 await session.followUp("Now write tests for what you just built");
+// Since v0.99 both resolve to a QueuedInputDisposition: "queued" | "handled".
 
 // Send custom message (not a user turn)
 await session.sendCustomMessage({
@@ -293,7 +296,7 @@ export default function myExtension(pi: ExtensionAPI) {
 
 ```typescript
 import { Type } from "typebox";   // typebox v1 — the codebase's schema package
-// Pi 0.87.1 itself depends on typebox 1.3.x; this repo pins its own typebox.
+// Pi 1.0.1 itself depends on typebox 1.3.x; this repo pins its own typebox.
 // Tool-call `arguments` and tool-result `details` must be JSON-compatible
 // (`JsonObject` / `JsonValue` from pi-ai) since v0.86.
 
@@ -315,11 +318,13 @@ pi.registerTool({
   executionMode: "parallel",
   execute: async (toolCallId, params, signal, onUpdate, ctx) => {
     // signal: AbortSignal | undefined, onUpdate: streaming callback | undefined
-    // ctx: ExtensionContext — has ui, cwd, sessionManager, model, etc.
-    return { content: "result text", details: { extra: "data" } };
+    // ctx: ExtensionToolContext (since v0.99) — ExtensionContext (ui, cwd, sessionManager,
+    // model, ...) plus executeTool() for nested tool calls
+    return { content: [{ type: "text", text: "result text" }], details: { extra: "data" } };
   },
-  renderCall: (args, theme, context) => undefined,            // Optional custom UI
-  renderResult: (result, opts, theme, context) => undefined,
+  // Optional custom UI; both return a pi-tui Component:
+  // renderCall: (args, theme, context) => Component,
+  // renderResult: (result, opts, theme, context) => Component,
 });
 ```
 
@@ -477,6 +482,8 @@ const loader = new DefaultResourceLoader({
 });
 await loader.reload();
 ```
+
+`noExtensions: true` skips discovered extensions but still loads `additionalExtensionPaths` and `extensionFactories`. Pi's built-in extensions (`llama.cpp`, `codemode`, `tool-search`, `mcp`, named `builtin:<name>`) load only when the caller passes them in `extensionFactories` with `builtin: true`; the `pi` CLI does, SDK callers such as Cosmonauts do not. Since v0.99 `noExtensions` (`--no-extensions`) also skips those built-ins unless one is named in `additionalExtensionPaths` as `builtin:<name>`.
 
 Override callbacks (`skillsOverride`, `extensionsOverride`, `promptsOverride`, `themesOverride`, `agentsFilesOverride`, `systemPromptOverride`, `appendSystemPromptOverride`) receive the base-discovered resources and return the final set.
 
@@ -672,6 +679,8 @@ const mode = new InteractiveMode(runtime, { initialMessage: "optional first prom
 await mode.run();  // Blocks until user exits
 ```
 
+Since v1.0 the TUI runs fullscreen by default. The `tuiMode` setting (`"fullscreen" | "regular"`, read from the runtime's `SettingsManager`) or the `tuiMode` option on `InteractiveMode` restores the terminal's normal scrollback.
+
 ### Print Mode
 
 Non-interactive single-shot. Send prompt, output result, exit. Returns the process exit code.
@@ -784,8 +793,12 @@ const model = models.getModel("anthropic", "claude-sonnet-4-5");
 if (!model) throw new Error("Model not found");
 ```
 
-Pi v0.87.1 includes `openai-codex/gpt-6-sol` and
-`openai-codex/gpt-6-luna`, plus `anthropic/claude-opus-5-5`. Model IDs remain
+Pi v1.0.1 includes `openai-codex/gpt-6.1-sol` (Pi's default `openai-codex`
+model since v0.99.1), `openai-codex/gpt-6-sol`, `openai-codex/gpt-6-luna`, and
+`openai-codex/gpt-5.6-sol`, plus `anthropic/claude-opus-5-5`. The `openai-codex`
+provider id is unchanged; only its display name became "OpenAI Codex (legacy)".
+Since v0.99 the catalog also holds image and classifier models; `getModel()`
+and other unqualified reads return chat models only. Model IDs remain
 provider-specific; resolve the exact `provider/model-id` from the runtime
 catalog rather than assuming a bare family alias.
 
@@ -794,13 +807,17 @@ catalog rather than assuming a bare family alias.
 For one-off classification/routing without spinning up a full `AgentSession`, use a `Models` collection. The stream helpers take a `Context` object (`{ systemPrompt?, messages, tools? }`) plus options. (Provider implementations and `pi-agent-core`'s `AgentContext` instead receive a normalized `TranscriptContext` whose prompt and tools are `role: "system"` messages — use `normalizeContext()`, `getCurrentSystemPrompt()`, `getCurrentTools()`.) Inside an extension, `ctx.modelRegistry.stream()` / `streamSimple()` make the same call through the session's configured providers and resolved auth:
 
 ```typescript
+import type { Context } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
 const models = builtinModels();
 const model = models.getModel("anthropic", "claude-sonnet-4-5");
 if (!model) throw new Error("Model not found");
 
-const context = { systemPrompt: "Classify the request.", messages: [{ role: "user", content: "..." }] };
+const context: Context = {
+  systemPrompt: "Classify the request.",
+  messages: [{ role: "user", content: "...", timestamp: Date.now() }],
+};
 
 const msg = await models.completeSimple(model, context, { reasoning: "low" });  // resolves to the final AssistantMessage
 const events = models.streamSimple(model, context);                              // AssistantMessageEventStream
