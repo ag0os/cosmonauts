@@ -78,9 +78,9 @@ const { session } = await createAgentSession({
 | `agentDir` | `string` | `~/.pi/agent` | Global config directory |
 | `modelRuntime` | `ModelRuntime` | From `agentDir/auth.json` and `models.json` | Canonical model catalog, provider, and authentication runtime |
 | `model` | `Model` | From settings | LLM model |
-| `thinkingLevel` | `ThinkingLevel` | `"medium"` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` |
+| `thinkingLevel` | `ThinkingLevel` | Restored session level, else per-model or global setting, else `"medium"` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` |
 | `scopedModels` | `Array<{model, thinkingLevel?}>` | — | Models for cycling |
-| `tools` | `string[]` | `["read", "bash", "edit", "write"]` | When set, only these tool names are enabled |
+| `tools` | `string[]` | The `defaultTools` setting if configured, else `["read", "bash", "edit", "write"]` | When set, only these tool names are enabled |
 | `noTools` | `"all" \| "builtin"` | — | `"all"` = start with no tools; `"builtin"` = disable default built-ins but keep extension/custom tools |
 | `customTools` | `ToolDefinition[]` | — | Additional tools |
 | `resourceLoader` | `ResourceLoader` | `DefaultResourceLoader` | Skill/extension/prompt discovery; also where `systemPrompt` / `appendSystemPrompt` overrides live |
@@ -112,7 +112,7 @@ await session.followUp("Now write tests for what you just built");
 await session.sendCustomMessage({
   customType: "my-extension",
   content: "Context for the LLM",
-  display: true,   // true = stored + sent to LLM; false = stored only
+  display: true,   // TUI rendering only; custom messages always reach the LLM context
 });
 
 // Send user message that always triggers a turn
@@ -428,12 +428,12 @@ Since v0.86 the base prompt and tool loadout live in the transcript as `role: "s
 
 Pi's `buildSystemPrompt()` assembles the final prompt from:
 
-1. **Base prompt** — default coding assistant identity
-2. **`SYSTEM.md`** — in `.pi/` or `~/.pi/agent/`, replaces base entirely
-3. **`APPEND_SYSTEM.md`** — appends to base/custom prompt
-4. **Context files** — `AGENTS.md` / `CLAUDE.md` content, under "Project Context"
-5. **Skills** — formatted as XML in `<available_skills>`
-6. **Tools** — tool descriptions and guidelines
+1. **Base prompt** — default coding assistant identity, followed by the active tools' snippets, the guidelines, and pointers to Pi's docs
+2. **`SYSTEM.md`** — in `.pi/` or `~/.pi/agent/` (or the `systemPrompt` option): replaces the whole base prompt, including its tool list, guidelines and docs pointers
+3. **`APPEND_SYSTEM.md`** (or `appendSystemPrompt`) — an addendum after the base or replacement prompt
+4. **Context files** — `AGENTS.md` / `CLAUDE.md` content, as project instructions
+5. **Skills** — formatted as XML in `<available_skills>`; included only when the `read` or `bash` tool is active
+6. **Working directory**, then any sections extensions add through `systemPromptOptions`
 
 Programmatic control goes through the resource loader (not `createAgentSession` directly):
 
@@ -442,7 +442,7 @@ const loader = new DefaultResourceLoader({
   cwd,
   agentDir,
   systemPrompt: "Replace entire base prompt",
-  appendSystemPrompt: ["Appended after everything"],
+  appendSystemPrompt: ["Appended after the prompt, before project context and skills"],
 });
 const { session } = await createAgentSession({ cwd, agentDir, resourceLoader: loader });
 ```
@@ -557,7 +557,7 @@ Skills with `disable-model-invocation: true` in frontmatter are excluded from th
 
 ## Compaction (Context Management)
 
-When token count exceeds the model's context window, Pi compacts automatically:
+When context tokens exceed the model's context window minus `reserveTokens`, Pi compacts automatically:
 
 1. Walk backward from newest message, keep `keepRecentTokens` (default 20k)
 2. Summarize everything before the cut point via an LLM call
@@ -626,7 +626,7 @@ Since v0.86 these totals include prompt-cache warming: with the default `cacheWa
 Context usage for the current model:
 
 ```typescript
-const usage = session.getContextUsage();
+const usage = session.getContextUsage();  // ContextUsage | undefined (no model, or no known context window)
 // usage.tokens       — number | null (null right after compaction)
 // usage.contextWindow — number
 // usage.percent      — number | null
