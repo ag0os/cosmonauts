@@ -47,6 +47,23 @@ next in the pause are `driver-hardening` (picked up 2026-09-29 as plan
 `missions/plans/driver-hardening/`, spec awaiting Intent ratification) then
 `suite-reliability`, below; `execution-liveness` resumes after them.
 
+Top of the queue, human-ruled **2026-10-05**: `pi-1.0-integration` runs
+before everything below, ahead of the lean plan tests and the check-tool
+abstraction work (both waiting on the human).
+
+### `pi-1.0-integration`: Bring Pi 1.0 into Cosmonauts
+
+*Added 2026-10-05 by human ruling. Source of truth: `missions/architecture/pi-1.0-integration.md`, the Pi-First audit written 2026-10-03 against cosmonauts `04ee4aa` (Pi pinned at `0.87.1`) and Pi `v1.0.1`. It is analysis input, not a plan: re-verify its claims against the Pi source before acting.*
+
+Pi moved from 0.87.1 to 1.0.1 in twelve days. The audit's suggested order:
+
+- Bump to 1.0.1 and update the `pi` skill (`domains/shared/skills/pi/SKILL.md`) in the same change
+- Turn on MCP, codemode and tool search in session assembly, behind each agent definition
+- Spike codemode-driven orchestration: structured results for `spawn_agent` and `chain_run`, compared against Wave F
+- Build model failover as a virtual model instead of custom code
+- Track `pi-durable` and `pi-server`; keep the durable runtime's concepts close to theirs
+- Its open questions (`## Open questions for the next agent`) are answered in the plan, not assumed
+
 ### `suite-reliability`: A Green Suite That Stays Green
 
 *Added 2026-09-29 by human ruling (relayed by Shepherd). Source of truth: the flake catalogue in Claude auto-memory `project_suite_flakes` (eight known instances) and the Drive run records under `missions/sessions/project-health-audit/runs/` (one aborted run per flake).*
