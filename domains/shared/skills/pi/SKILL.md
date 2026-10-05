@@ -7,7 +7,7 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 Pi (`@earendil-works/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
-> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v1.0.1 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
+> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v1.0.3 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
 >
 > Pi 0.99–1.0 added codemode, `tool_search`, MCP, tool `exposure`/`annotations`/`namespace`, nested `ctx.executeTool()`, virtual models, classifier and image models, and `pi.registerToolRenderer()`. Cosmonauts uses none of them yet, so this skill does not document them; see `missions/architecture/pi-1.0-integration.md` and Pi's `docs/` before adopting one.
 
@@ -296,7 +296,7 @@ export default function myExtension(pi: ExtensionAPI) {
 
 ```typescript
 import { Type } from "typebox";   // typebox v1 — the codebase's schema package
-// Pi 1.0.1 itself depends on typebox 1.3.x; this repo pins its own typebox.
+// Pi 1.0.3 itself depends on typebox 1.3.x; this repo pins its own typebox.
 // Tool-call `arguments` and tool-result `details` must be JSON-compatible
 // (`JsonObject` / `JsonValue` from pi-ai) since v0.86.
 
@@ -793,7 +793,7 @@ const model = models.getModel("anthropic", "claude-sonnet-4-5");
 if (!model) throw new Error("Model not found");
 ```
 
-Pi v1.0.1 includes `openai-codex/gpt-6.1-sol` (Pi's default `openai-codex`
+Pi v1.0.3 includes `openai-codex/gpt-6.1-sol` (Pi's default `openai-codex`
 model since v0.99.1), `openai-codex/gpt-6-sol`, `openai-codex/gpt-6-luna`, and
 `openai-codex/gpt-5.6-sol`, plus `anthropic/claude-opus-5-5`. The `openai-codex`
 provider id is unchanged; only its display name became "OpenAI Codex (legacy)".
