@@ -58,7 +58,7 @@ abstraction work (both waiting on the human).
 Pi moved from 0.87.1 to 1.0.1 in twelve days. The audit's claims were re-checked against the Pi source and two spikes; what changed is in its `## Corrections (2026-10-05)` section. Where it stands:
 
 - **Done:** Pi bumped to 1.0.1 and then 1.0.3 (lockstep), with the `pi` skill updated in the same changes; a lean run's token usage and cost now count in the lead's session totals.
-- **Decided (human, 2026-10-05):** no role gets codemode or tool search for now (a lean builder offered codemode made 0 calls in 2 builds); reversible by one name in an agent's `extensions` list. Model failover is parked: on `openai-codex` a virtual model could catch only 5xx and network errors, and no run on record ended on a provider failure.
+- **Decided (human, 2026-10-05):** no role gets codemode or tool search for now (a lean builder offered codemode made 0 calls in 2 builds); reversible by one name in an agent's `extensions` list. Model failover is parked: on `openai-codex` Pi's auto-retry never retries a usage-limit error, so a virtual model would not see it, and no run on record ended on a provider failure.
 - **Waiting:** choosing a session's tools without a fixed name list waits for MCP in Pi sessions, together with the question of which session paths that change may reach; MCP waits for the check-tool brainstorm, which decides where MCP servers are declared and who gets them.
 - **Watch, as the audit said:** `pi-durable`, `pi-server`, `pi-protocol`, `pi-client` and `chord`; re-check them at each Pi bump.
 

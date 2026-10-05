@@ -78,7 +78,7 @@ const { session } = await createAgentSession({
 | `agentDir` | `string` | `~/.pi/agent` | Global config directory |
 | `modelRuntime` | `ModelRuntime` | From `agentDir/auth.json` and `models.json` | Canonical model catalog, provider, and authentication runtime |
 | `model` | `Model` | From settings | LLM model |
-| `thinkingLevel` | `ThinkingLevel` | Restored session level, else per-model or global setting, else `"medium"` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` |
+| `thinkingLevel` | `ThinkingLevel` | Restored session level, else per-model or global setting, else `"medium"` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max"` |
 | `scopedModels` | `Array<{model, thinkingLevel?}>` | — | Models for cycling |
 | `tools` | `string[]` | The `defaultTools` setting if configured, else `["read", "bash", "edit", "write"]` | A filter by **name**, applied at every registration: a tool whose name is not listed is never registered, including extension tools registered later (for example MCP tools in `session_start`). Every listed tool that is not hidden is also active (declared to the model) from the start, whatever its `exposure` |
 | `noTools` | `"all" \| "builtin"` | — | `"all"` = start with no tools; `"builtin"` = disable default built-ins but keep extension/custom tools |
@@ -665,12 +665,14 @@ settings.getCompactionReserveTokens();     // number
 settings.getRetryEnabled();
 settings.setRetryEnabled(true);
 settings.getRetrySettings();
-// { enabled, maxRetries, baseDelayMs, maxDelayMs }
+// { enabled, maxRetries, baseDelayMs, maxAgentDelayMs }
 // Retries only errors pi-ai's isRetryableAssistantError() calls transient:
 // overloaded, at capacity, rate limit, 429, 5xx, network. Quota, billing and
-// subscription-limit errors are never retried. On openai-codex a final 429 (or a
-// usage_limit_reached / usage_not_included / rate_limit_exceeded code) becomes
-// "You have hit your ChatGPT usage limit…", which is not retried either.
+// subscription-limit errors are never retried. On openai-codex an HTTP error
+// response with status 429 (or a usage_limit_reached / usage_not_included /
+// rate_limit_exceeded code) that the adapter's own retries did not clear becomes
+// "You have hit your ChatGPT usage limit…", which is not retried either; errors sent as stream events keep the server's
+// message and are retried when it reads as transient.
 
 // Model defaults
 settings.getDefaultModel();
