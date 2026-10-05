@@ -44,10 +44,10 @@
 		"probe:census": "bun scripts/probe-census.ts"
 	},
 	"dependencies": {
-		"@earendil-works/pi-agent-core": "1.0.1",
-		"@earendil-works/pi-ai": "1.0.1",
-		"@earendil-works/pi-coding-agent": "1.0.1",
-		"@earendil-works/pi-tui": "1.0.1",
+		"@earendil-works/pi-agent-core": "1.0.3",
+		"@earendil-works/pi-ai": "1.0.3",
+		"@earendil-works/pi-coding-agent": "1.0.3",
+		"@earendil-works/pi-tui": "1.0.3",
 		"commander": "^14.0.2",
 		"gray-matter": "^4.0.3",
 		"typebox": "1.1.33",
