@@ -49,7 +49,8 @@ next in the pause are `driver-hardening` (picked up 2026-09-29 as plan
 
 Top of the queue, human-ruled **2026-10-05**: `pi-1.0-integration` runs
 before everything below, ahead of the lean plan tests and the check-tool
-abstraction work (both waiting on the human).
+abstraction work (both waiting on the human). `memory-system-reassessment`
+follows the lean work (human-ruled 2026-10-05).
 
 ### `pi-1.0-integration`: Bring Pi 1.0 into Cosmonauts
 
@@ -61,6 +62,18 @@ Pi moved from 0.87.1 to 1.0.1 in twelve days. The audit's claims were re-checked
 - **Decided (human, 2026-10-05):** no role gets codemode or tool search for now (a lean builder offered codemode made 0 calls in 2 builds); reversible by one name in an agent's `extensions` list. Model failover is parked: on `openai-codex` Pi's auto-retry never retries a usage-limit error, so a virtual model would not see it, and no run on record ended on a provider failure.
 - **Waiting:** choosing a session's tools without a fixed name list waits for MCP in Pi sessions, together with the question of which session paths that change may reach; MCP waits for the check-tool brainstorm, which decides where MCP servers are declared and who gets them.
 - **Watch, as the audit said:** `pi-durable`, `pi-server`, `pi-protocol`, `pi-client` and `chord`; re-check them at each Pi bump.
+
+### `memory-system-reassessment`: Is the Memory System Earning Its Keep?
+
+*Added 2026-10-05 by human ruling, after the lean work (the lean plan tests and the removal of the old coding domain). Requested 2026-10-02: "We have been building the plumbing for the memory system, but we didn't go back to do a proper revision."*
+
+A proper assessment of the memory system, judged against the lean coding domain, before more memory work is built. Output is a report for the human's decision; revising the roadmap from it is a separate step.
+
+- **Inventory:** what the memory system is today (`lib/memory/`, the memory extensions, `memory/` and `knowledge/` content, the judge, proposals, injection), with sizes
+- **Use, from events, not settings:** what real runs actually wrote, read, injected and promoted, and what never fired
+- **Plans that touch memory:** `living-memory-structural-hardening`, `observational-memory-adoption`, `knowledge-adoption`, `living-memory-corpus-findings`, `external-session-capture` and the pending proposals in `memory/agent/proposals/`, each marked keep, change or drop, with the reason
+- **Fit with lean:** which parts the lean domain uses, which it bypasses, and which assumed the old coding domain's stages
+- Until it reports, do not build on the memory system (for example, do not use `living-memory-structural-hardening` as a lean test plan)
 
 ### `suite-reliability`: A Green Suite That Stays Green
 
