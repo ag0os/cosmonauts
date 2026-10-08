@@ -115,6 +115,9 @@ export interface SignalProvider {
 export const LEAN_BACKEND_KINDS = ["pi", "claude-cli", "codex-cli"] as const;
 export type LeanBackendKind = (typeof LEAN_BACKEND_KINDS)[number];
 
+/** Backends re-resolve roles by name, so every lean spawn names its domain. */
+export const LEAN_DOMAIN = "lean";
+
 export const LEAN_ROLES = [
 	"lean/lead",
 	"lean/builder",

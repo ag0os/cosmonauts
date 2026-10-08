@@ -18,13 +18,14 @@ import {
 	runChild,
 } from "../../process/run-child.ts";
 import { CLAUDE_DENIED_TOOLS } from "../git-verbs.ts";
-import type {
-	BackendPermissions,
-	BackendRunInput,
-	BuilderBackend,
-	LeanBackendKind,
-	LeanRole,
-	StageProcessExit,
+import {
+	type BackendPermissions,
+	type BackendRunInput,
+	type BuilderBackend,
+	LEAN_DOMAIN,
+	type LeanBackendKind,
+	type LeanRole,
+	type StageProcessExit,
 } from "../types.ts";
 import { harnessModel } from "./harness-model.ts";
 import {
@@ -33,7 +34,6 @@ import {
 	codexLastMessage,
 	type HarnessResult,
 } from "./harness-usage.ts";
-import { LEAN_DOMAIN } from "./pi.ts";
 
 export type ExternalBackendKind = Exclude<LeanBackendKind, "pi">;
 

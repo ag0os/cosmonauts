@@ -8,11 +8,6 @@ export {
 	type ProcessRunner,
 } from "./backends/external.ts";
 export {
-	createPiBuilderBackend,
-	LEAN_DOMAIN,
-	type PiBuilderBackendOptions,
-} from "./backends/pi.ts";
-export {
 	clearRunBaseSha,
 	readRunBaseSha,
 	writeRunBaseSha,

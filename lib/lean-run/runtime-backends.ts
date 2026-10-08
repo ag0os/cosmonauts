@@ -6,7 +6,6 @@ import {
 	createExternalBuilderBackend,
 	leanPackageResolver,
 } from "./backends/external.ts";
-import { createPiBuilderBackend } from "./backends/pi.ts";
 import type { BuilderBackend, LeanBackendKind } from "./types.ts";
 
 export interface LeanBackends {
@@ -46,9 +45,10 @@ export function runtimeBackends(): CreateLeanBackends {
 				: {}),
 			skillPaths: runtime.skillPaths,
 		};
+		// Imported only for a Pi run, so the external backends never load Pi.
 		const backend =
 			kind === "pi"
-				? createPiBuilderBackend(shared)
+				? (await import("./backends/pi.ts")).createPiBuilderBackend(shared)
 				: createExternalBuilderBackend({
 						kind,
 						resolvePackage: leanPackageResolver({ kind, ...shared }),

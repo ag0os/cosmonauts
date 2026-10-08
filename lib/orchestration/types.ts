@@ -2,8 +2,8 @@
  * Type definitions for the chain runner orchestration system.
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentRegistry } from "../agents/resolver.ts";
+import type { ThinkingLevel } from "../agents/types.ts";
 import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import type { EpisodeWarningReporter } from "../memory/episode.ts";
 import type { PlanReviewTarget, ReviewRoundBlock } from "./review-revision.ts";

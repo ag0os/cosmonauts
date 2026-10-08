@@ -6,23 +6,28 @@
  */
 
 import { join } from "node:path";
-import type {
-	ResourceDiagnostic,
-	Skill,
-} from "@earendil-works/pi-coding-agent";
 import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import { canAccessSurfaceName } from "../domains/public-surface.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import type { LoadedDomain } from "../domains/types.ts";
 import { discoverSkills } from "../skills/discovery.ts";
 
-/** The callback type accepted by Pi's DefaultResourceLoader.skillsOverride. */
-export type SkillsOverrideFn = (base: {
-	skills: Skill[];
-	diagnostics: ResourceDiagnostic[];
+/** All the filter reads of a skill; Pi's `Skill` has it. */
+interface NamedSkill {
+	readonly name: string;
+}
+
+/**
+ * A skill filter for Pi's DefaultResourceLoader.skillsOverride, generic so
+ * this module need not import Pi's `Skill`; `session-assembly.ts` checks it
+ * stays assignable to Pi's callback type.
+ */
+export type SkillsOverrideFn = <S extends NamedSkill, D>(base: {
+	skills: S[];
+	diagnostics: D[];
 }) => {
-	skills: Skill[];
-	diagnostics: ResourceDiagnostic[];
+	skills: S[];
+	diagnostics: D[];
 };
 
 const WILDCARD = "*";
@@ -177,7 +182,7 @@ export function buildSkillsOverride(
 		visibility?.hiddenSkillNames === undefined
 			? undefined
 			: new Set(visibility.hiddenSkillNames);
-	const isVisible = (skill: Skill): boolean =>
+	const isVisible = (skill: NamedSkill): boolean =>
 		(visibleSkills === undefined || visibleSkills.has(skill.name)) &&
 		(hiddenSkills === undefined || !hiddenSkills.has(skill.name));
 

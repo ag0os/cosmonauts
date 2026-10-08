@@ -1,5 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { AgentToolSet } from "../agents/types.ts";
+import type { AgentToolSet, ThinkingLevel } from "../agents/types.ts";
 import type {
 	HarnessPackageDefinitionKey,
 	HarnessPackageTargetLabel,

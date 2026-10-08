@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import {
+	type DefaultResourceLoader,
 	type InlineExtension,
 	isToolCallEventType,
 	type ModelRegistry,
@@ -44,7 +45,6 @@ import {
 	buildSkillsOverride,
 	resolveEffectiveProjectSkills,
 	resolveHiddenSkillNames,
-	type SkillsOverrideFn,
 } from "./skills.ts";
 import type { AgentDefinition } from "./types.ts";
 
@@ -59,6 +59,10 @@ const ARCHITECTURE_MEMORY_CONSUMERS = new Set([
 // ============================================================================
 // Interfaces
 // ============================================================================
+
+type PiResourceLoaderOptions = NonNullable<
+	ConstructorParameters<typeof DefaultResourceLoader>[0]
+>;
 
 export interface BuildSessionParamsOptions {
 	/** Agent definition. */
@@ -104,15 +108,23 @@ export interface SessionParams {
 	extensionFactories: InlineExtension[];
 	/** Frozen gate selection for this assembled session. */
 	knowledgeSurfaceEnabled: boolean;
-	/** Skill filter callback for DefaultResourceLoader, or undefined for unrestricted access. */
-	skillsOverride: SkillsOverrideFn | undefined;
+	/**
+	 * Skill filter callback for DefaultResourceLoader, or undefined for
+	 * unrestricted access. Typed as Pi's, so a Pi bump the local
+	 * `SkillsOverrideFn` no longer fits fails typecheck here.
+	 */
+	skillsOverride: PiResourceLoaderOptions["skillsOverride"];
 	/** Additional skill directory paths, or undefined if none. */
 	additionalSkillPaths: string[] | undefined;
 	/** Whether to load project context (AGENTS.md / CLAUDE.md). */
 	projectContext: boolean;
 	/** Resolved Pi Model object. */
 	model: Model<Api>;
-	/** Thinking level, or undefined to use Pi's default. */
+	/**
+	 * Thinking level, or undefined to use Pi's default. Typed as Pi's, so a Pi
+	 * bump the local `AgentDefinition.thinkingLevel` no longer fits fails
+	 * typecheck here.
+	 */
 	thinkingLevel: ThinkingLevel | undefined;
 	qualityReviewProfile?: QualityReviewProfile;
 }

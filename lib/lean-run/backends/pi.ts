@@ -3,10 +3,7 @@ import type { DomainResolver } from "../../domains/resolver.ts";
 import { createPiSpawner } from "../../orchestration/agent-spawner.ts";
 import { extractAssistantText } from "../../orchestration/assistant-text.ts";
 import type { AgentSpawner } from "../../orchestration/types.ts";
-import type { BuilderBackend } from "../types.ts";
-
-/** The spawner re-resolves roles by name, so every lean spawn names its domain. */
-export const LEAN_DOMAIN = "lean";
+import { type BuilderBackend, LEAN_DOMAIN } from "../types.ts";
 
 type PiSpawnerSource =
 	| { spawner: AgentSpawner }

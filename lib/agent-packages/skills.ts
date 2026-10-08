@@ -1,7 +1,6 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, extname, join, relative } from "node:path";
-import type { Skill } from "@earendil-works/pi-coding-agent";
 import matter from "gray-matter";
 import {
 	buildSkillsOverride,
@@ -83,7 +82,7 @@ export async function resolvePackageSkills(
 	if (!override) return discovered;
 
 	const base = {
-		skills: discovered.map((skill) => ({ name: skill.name }) as Skill),
+		skills: discovered.map((skill) => ({ name: skill.name })),
 		diagnostics: [],
 	};
 	const allowedNames = new Set(

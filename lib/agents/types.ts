@@ -7,7 +7,19 @@
  * the same way.
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+/**
+ * Reasoning effort for an agent. A copy of Pi's `ThinkingLevel`, so modules
+ * that never start a Pi session need not import Pi; `session-assembly.ts`
+ * checks it stays assignable to Pi's type.
+ */
+export type ThinkingLevel =
+	| "off"
+	| "minimal"
+	| "low"
+	| "medium"
+	| "high"
+	| "xhigh"
+	| "max";
 
 /** Tool set available to an agent. */
 export type AgentToolSet = "coding" | "readonly" | "verification" | "none";

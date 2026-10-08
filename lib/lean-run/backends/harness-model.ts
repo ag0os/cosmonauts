@@ -1,5 +1,5 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentPackage } from "../../agent-packages/types.ts";
+import type { ThinkingLevel } from "../../agents/types.ts";
 import type { LeanBackendKind, RequestedModel } from "../types.ts";
 
 /** What the manifest says when the harness was asked for no model. */
