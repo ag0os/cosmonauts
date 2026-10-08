@@ -1,6 +1,18 @@
 import type { CliGlobalOptions } from "./output.ts";
 import { printLines } from "./output.ts";
 
+/**
+ * Thrown for benign user-initiated aborts (cancel resume, decline fork).
+ * The top-level error handler checks for this to exit with status 0
+ * instead of printing an error and setting status 1.
+ */
+export class GracefulExitError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "GracefulExitError";
+	}
+}
+
 export interface CliErrorPrintOptions {
 	prefix?: string;
 	jsonMessage?: string;

@@ -22,18 +22,6 @@ const COSMONAUTS_THEMES_DIR: string | undefined = (() => {
 	return existsSync(dir) ? dir : undefined;
 })();
 
-/**
- * Thrown for benign user-initiated aborts (cancel resume, decline fork).
- * The top-level error handler checks for this to exit with status 0
- * instead of printing an error and setting status 1.
- */
-export class GracefulExitError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "GracefulExitError";
-	}
-}
-
 import {
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
@@ -62,6 +50,7 @@ import {
 } from "../lib/orchestration/definition-resolution.ts";
 import { enforceQualityReviewProfile } from "../lib/orchestration/quality-review-profile.ts";
 import type { PiFlags } from "./pi-flags.ts";
+import { GracefulExitError } from "./shared/errors.ts";
 
 function sessionToolAllowlist(
 	params: SessionParams,

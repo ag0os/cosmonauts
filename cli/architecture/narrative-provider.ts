@@ -5,10 +5,7 @@ import type {
 	NarrativeInput,
 	NarrativeProvider,
 } from "../../lib/architecture-map/index.ts";
-import {
-	createToollessPiSession,
-	type ToollessPiSession,
-} from "../pi-session.ts";
+import type { ToollessPiSession } from "../pi-session.ts";
 
 interface PiArchitectureNarrativeProviderOptions {
 	readonly projectRoot: string;
@@ -57,6 +54,8 @@ class PiArchitectureNarrativeProvider implements NarrativeProvider {
 async function createNarrativeSession(
 	options: PiArchitectureNarrativeProviderOptions,
 ): Promise<PiSession> {
+	// Pi loads only when a narrative is generated.
+	const { createToollessPiSession } = await import("../pi-session.ts");
 	return createToollessPiSession({ ...options, systemPrompt: SYSTEM_PROMPT });
 }
 

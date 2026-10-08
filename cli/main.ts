@@ -25,7 +25,6 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { InteractiveMode, runPrintMode } from "@earendil-works/pi-coding-agent";
 import { Command, CommanderError } from "commander";
 import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
 import {
@@ -57,43 +56,21 @@ import {
 	isCosmonautsFrameworkRepo,
 } from "../lib/packages/dev-bundled.ts";
 import type { CosmonautsRuntime } from "../lib/runtime.ts";
-import { createAnalysisProgram } from "./analysis/subcommand.ts";
-import { createArchitectureProgram } from "./architecture/subcommand.ts";
-import { createCreateProgram } from "./create/subcommand.ts";
-import { createEjectProgram } from "./eject/subcommand.ts";
-import { createExportProgram } from "./export/subcommand.ts";
-import { createHarnessProgram } from "./harness/subcommand.ts";
-import { createLeanProgram } from "./lean/subcommand.ts";
-import { createMemoryProgram } from "./memory/subcommand.ts";
-import {
-	createInstallProgram,
-	createPackagesProgram,
-	createUninstallProgram,
-} from "./packages/subcommand.ts";
 import { type PiFlagParseResult, parsePiFlags } from "./pi-flags.ts";
-import { createPlanProgram } from "./plans/index.ts";
-import { createRunProgram } from "./run/subcommand.ts";
 import {
 	type CliRuntimeOptions,
 	createCliRuntimeContext,
 	parseCliRuntimeOptions,
 	parseThinkingLevel,
 } from "./runtime-bootstrap.ts";
-import { createScaffoldProgram } from "./scaffold/subcommand.ts";
-import { createServeProgram } from "./serve/subcommand.ts";
-import { createSession, GracefulExitError } from "./session.ts";
-import { createSessionsProgram } from "./sessions/subcommand.ts";
-import { printCliError } from "./shared/errors.ts";
+import { GracefulExitError, printCliError } from "./shared/errors.ts";
 import {
 	type CliOutputMode,
 	getOutputMode,
 	printJson,
 	printLines,
 } from "./shared/output.ts";
-import { createSkillsProgram } from "./skills/subcommand.ts";
-import { createTaskProgram } from "./tasks/subcommand.ts";
 import type { CliOptions } from "./types.ts";
-import { createUpdateProgram } from "./update/subcommand.ts";
 
 export { discoverBundledPackageDirs, isCosmonautsFrameworkRepo };
 
@@ -600,6 +577,7 @@ async function handleInitMode(
 
 	const initSessionConfig = buildInitSessionConfig(cwd);
 	const defaultLeadDefinition = resolveDefaultLead(runtime, options);
+	const { createSession } = await import("./session.ts");
 	const initRuntime = await createSession({
 		definition: defaultLeadDefinition,
 		cwd,
@@ -614,6 +592,7 @@ async function handleInitMode(
 		ignoreProjectSkills: initSessionConfig.ignoreProjectSkills,
 	});
 
+	const { InteractiveMode } = await import("@earendil-works/pi-coding-agent");
 	const interactive = new InteractiveMode(initRuntime, {
 		modelFallbackMessage: initRuntime.modelFallbackMessage,
 		initialMessage: initSessionConfig.initialMessage,
@@ -657,6 +636,7 @@ async function handlePrintMode(
 		await runCliQualityReviewMode(cwd, options, options.prompt);
 		return;
 	}
+	const { createSession } = await import("./session.ts");
 	const printRuntime = await createSession({
 		definition,
 		cwd,
@@ -670,6 +650,7 @@ async function handlePrintMode(
 		skillPaths: runtime.skillPaths,
 	});
 
+	const { runPrintMode } = await import("@earendil-works/pi-coding-agent");
 	await runPrintMode(printRuntime, {
 		mode: "text",
 		initialMessage: options.prompt,
@@ -697,6 +678,7 @@ async function handleInteractiveMode(
 		liveBindings: runtime.liveDomainBindings,
 	});
 
+	const { createSession } = await import("./session.ts");
 	const interactiveRuntime = await createSession({
 		definition,
 		cwd,
@@ -713,6 +695,7 @@ async function handleInteractiveMode(
 		extraExtensionPaths: resolveInteractiveExtensionPaths(runtime),
 	});
 
+	const { InteractiveMode } = await import("@earendil-works/pi-coding-agent");
 	const interactive = new InteractiveMode(interactiveRuntime, {
 		modelFallbackMessage: interactiveRuntime.modelFallbackMessage,
 		initialMessage: options.prompt,
@@ -768,11 +751,12 @@ function isCliQualityReview(
 const subcommand = process.argv[2];
 const runInvocation = parseRunInvocation(process.argv.slice(2));
 if (runInvocation) {
-	const program = createRunProgram({
-		runtimeOptions: runInvocation.runtimeOptions,
-	});
-	program
-		.parseAsync(runInvocation.argv, { from: "user" })
+	import("./run/subcommand.ts")
+		.then(({ createRunProgram }) =>
+			createRunProgram({
+				runtimeOptions: runInvocation.runtimeOptions,
+			}).parseAsync(runInvocation.argv, { from: "user" }),
+		)
 		.catch((err: unknown) => {
 			const message = err instanceof Error ? err.message : String(err);
 			printCliError(message, {}, { prefix: "cosmonauts run" });
@@ -799,33 +783,58 @@ if (runInvocation) {
 	subcommand === "lean" ||
 	subcommand === "memory"
 ) {
-	const programs: Record<string, () => Command> = {
-		analysis: createAnalysisProgram,
-		lean: createLeanProgram,
-		architecture: createArchitectureProgram,
-		arch: createArchitectureProgram,
-		memory: createMemoryProgram,
-		task: createTaskProgram,
-		plan: createPlanProgram,
-		scaffold: createScaffoldProgram,
-		skills: createSkillsProgram,
-		harness: createHarnessProgram,
-		create: createCreateProgram,
-		install: createInstallProgram,
-		uninstall: createUninstallProgram,
-		packages: createPackagesProgram,
-		update: createUpdateProgram,
-		eject: createEjectProgram,
-		export: createExportProgram,
-		serve: createServeProgram,
-		session: createSessionsProgram,
+	// Each subcommand's module loads only when it runs, so one that uses Pi
+	// (sessions, memory, run) does not load it for the others.
+	const programs: Record<string, () => Promise<Command>> = {
+		analysis: async () =>
+			(await import("./analysis/subcommand.ts")).createAnalysisProgram(),
+		lean: async () =>
+			(await import("./lean/subcommand.ts")).createLeanProgram(),
+		architecture: async () =>
+			(
+				await import("./architecture/subcommand.ts")
+			).createArchitectureProgram(),
+		arch: async () =>
+			(
+				await import("./architecture/subcommand.ts")
+			).createArchitectureProgram(),
+		memory: async () =>
+			(await import("./memory/subcommand.ts")).createMemoryProgram(),
+		task: async () =>
+			(await import("./tasks/subcommand.ts")).createTaskProgram(),
+		plan: async () => (await import("./plans/index.ts")).createPlanProgram(),
+		scaffold: async () =>
+			(await import("./scaffold/subcommand.ts")).createScaffoldProgram(),
+		skills: async () =>
+			(await import("./skills/subcommand.ts")).createSkillsProgram(),
+		harness: async () =>
+			(await import("./harness/subcommand.ts")).createHarnessProgram(),
+		create: async () =>
+			(await import("./create/subcommand.ts")).createCreateProgram(),
+		install: async () =>
+			(await import("./packages/subcommand.ts")).createInstallProgram(),
+		uninstall: async () =>
+			(await import("./packages/subcommand.ts")).createUninstallProgram(),
+		packages: async () =>
+			(await import("./packages/subcommand.ts")).createPackagesProgram(),
+		update: async () =>
+			(await import("./update/subcommand.ts")).createUpdateProgram(),
+		eject: async () =>
+			(await import("./eject/subcommand.ts")).createEjectProgram(),
+		export: async () =>
+			(await import("./export/subcommand.ts")).createExportProgram(),
+		serve: async () =>
+			(await import("./serve/subcommand.ts")).createServeProgram(),
+		session: async () =>
+			(await import("./sessions/subcommand.ts")).createSessionsProgram(),
 	};
 	// subcommand is guaranteed to be in the map by the if-check above
 	const createProgram = programs[subcommand];
 	if (!createProgram) throw new Error(`Unknown subcommand: ${subcommand}`);
-	const program = createProgram();
-	program
-		.parseAsync(process.argv.slice(3), { from: "user" })
+	createProgram()
+		.then((program) =>
+			program.parseAsync(process.argv.slice(3), { from: "user" }),
+		)
 		.catch((err: unknown) => {
 			const message = err instanceof Error ? err.message : String(err);
 			printCliError(message, {}, { prefix: `cosmonauts ${subcommand}` });

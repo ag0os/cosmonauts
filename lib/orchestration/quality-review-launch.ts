@@ -7,7 +7,6 @@ import { loadProjectConfig } from "../config/loader.ts";
 import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import { discoverFrameworkBundledPackageDirs } from "../packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../runtime.ts";
-import { createPiSpawner } from "./agent-spawner.ts";
 import { finalAssistantEvidence } from "./assistant-text.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
 import {
@@ -355,6 +354,8 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				omittedSkillPaths: context.omittedSkillPaths,
 				assessmentActive: true,
 			};
+			// Pi loads only when a review is launched, not with this module.
+			const { createPiSpawner } = await import("./agent-spawner.ts");
 			const spawner = createPiSpawner(
 				activeRuntime.agentRegistry,
 				activeRuntime.domainsDir,

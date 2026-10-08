@@ -59,7 +59,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	},
 }));
 
-import { createSession, GracefulExitError } from "../../cli/session.ts";
+import { createSession } from "../../cli/session.ts";
+import { GracefulExitError } from "../../cli/shared/errors.ts";
 
 const TEST_DEF: AgentDefinition = {
 	id: "worker",
