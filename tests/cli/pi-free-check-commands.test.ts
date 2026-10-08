@@ -80,7 +80,7 @@ interface CliRun {
 	readonly status: number | null;
 	readonly stdout: string;
 	readonly stderr: string;
-	/** Every Pi module file the process loaded. */
+	/** Every Pi module file the process loaded, ESM or CommonJS. */
 	readonly piModules: readonly string[];
 	/** The stub harnesses the run invoked, in order. */
 	readonly harnesses: readonly string[];
@@ -103,11 +103,15 @@ function runCli(args: readonly string[], envelope = BLOCKED): CliRun {
 		existsSync(path)
 			? readFileSync(path, "utf8").split("\n").filter(Boolean)
 			: [];
+	if (!existsSync(piLog))
+		throw new Error(
+			`the Pi load recorder wrote no log:\n${result.stdout}\n${result.stderr}`,
+		);
 	return {
 		status: result.status,
 		stdout: result.stdout,
 		stderr: result.stderr,
-		piModules: [...new Set(lines(piLog))],
+		piModules: JSON.parse(readFileSync(piLog, "utf8")) as string[],
 		harnesses: lines(harnessLog),
 	};
 }
