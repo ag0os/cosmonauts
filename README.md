@@ -8,7 +8,7 @@ What makes it different from using a single assistant directly:
 - **Backend-agnostic** — run whatever model is available: OpenAI, Anthropic, or open-source.
 - **Orchestrate internally *or* externally** — drive agents from the Cosmonauts CLI, or from another agent harness that calls Cosmonauts' skills and tools (chains and the drive system).
 
-> ⚠️ **Alpha software.** Cosmonauts is in early development and the architecture is still evolving. Expect breaking changes — APIs, file formats, CLI surface, and domain conventions may all change without notice between versions.
+> **Development is paused.** My agent work continues for now in Shepherd, part of [Troupe](https://github.com/ag0os/troupe). Cosmonauts may pick up again; until then the code stays here as it was, alpha software with no stability guarantees.
 
 ## What It Does
 
