@@ -1262,6 +1262,80 @@ describe(
 			});
 		});
 
+		test("is unavailable, keeping its pass and kills, when one file went unmutated for a too-slow test", async () => {
+			await addRunBuild();
+
+			const signal = await runWith(
+				report({ "lib/calc.ts": [{ id: "1", status: "Killed", line: 2 }] }),
+				{ changedFiles: ["lib/calc.ts", "lib/lean-run/run-build.ts"] },
+			);
+
+			expect(signal).toMatchObject({
+				status: "pass",
+				data: { changedFunctions: [{ file: "lib/calc.ts", killed: 1 }] },
+			});
+			expect(signal.summary).toContain(
+				"; not mutated, covering tests are too slow for the time cap: lib/lean-run/run-build.ts",
+			);
+			expect(unavailableReason(signal)).toBe(
+				"not mutated, covering tests are too slow for the time cap: lib/lean-run/run-build.ts",
+			);
+			expect(requiredGap(signal)).toBeDefined();
+		});
+
+		test("is unavailable when no test is left for the rest and one file went unmutated for a too-slow test", async () => {
+			await addRunBuild();
+			gitIn(project.path, "rm", "-q", "tests/calc.test.ts");
+
+			const signal = await runWith(report({}), {
+				changedFiles: ["lib/calc.ts", "lib/lean-run/run-build.ts"],
+			});
+
+			expect(signal).toMatchObject({
+				status: "info",
+				summary: "no tests selected for the changed functions",
+			});
+			expect(unavailableReason(signal)).toBe(
+				"not mutated, covering tests are too slow for the time cap: lib/lean-run/run-build.ts",
+			);
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+		});
+
+		test("stays available when one file went unmutated for sandbox-unsafe tests only", async () => {
+			await addRunBuild();
+			await writeFile(
+				join(project.path, "lib/lean-run/run-build.ts"),
+				CALC_BASE,
+			);
+			await mkdir(join(project.path, "lib/git"));
+			await writeFile(join(project.path, "lib/git/gitty.ts"), CALC_BASE);
+			await mkdir(join(project.path, "tests/git"));
+			await writeFile(join(project.path, "tests/git/gitty.test.ts"), "");
+			gitIn(project.path, "add", "lib/git", "tests/git");
+			gitIn(project.path, "commit", "-q", "--no-verify", "-m", "gitty");
+			await writeFile(join(project.path, "lib/git/gitty.ts"), CALC_CHANGED);
+			const strykerBin = await fakeStryker(
+				tools.path,
+				report({ "lib/calc.ts": [{ id: "1", status: "Killed", line: 2 }] }),
+			);
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				denyListTests: ["tests/git/gitty.test.ts"],
+			}).run(
+				context(project.path, {
+					changedFiles: ["lib/calc.ts", "lib/git/gitty.ts"],
+				}),
+			);
+
+			expect(signal.status).toBe("pass");
+			expect(signal.summary).toContain(
+				"; not mutated, covering tests are sandbox-unsafe: lib/git/gitty.ts",
+			);
+			expect(unavailableReason(signal)).toBeUndefined();
+			expect(requiredGap(signal)).toBeUndefined();
+		});
+
 		test("runs a covering test whose worktree commands target a temp fixture", async () => {
 			await writeFile(
 				join(project.path, "tests/calc.test.ts"),

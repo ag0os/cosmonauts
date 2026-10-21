@@ -214,14 +214,19 @@ async function runMutation(
 
 /**
  * No covering test to run: plain `info`, unless the blast radius had no
- * graph to select tests from, which leaves the signal unavailable.
+ * graph to select tests from or a file went unmutated for a too-slow test,
+ * either of which leaves the signal unavailable.
  */
 function noTestsSignal(
 	ctx: SignalContext,
 	plan: StrykerPlan,
 	started: number,
 ): Signal {
-	const data = { ...planData(plan), durationMs: Date.now() - started };
+	const data = {
+		...planData(plan),
+		durationMs: Date.now() - started,
+		...tooSlowGap(plan.untestable),
+	};
 	const graph = blastRadiusGraphGap(ctx);
 	if (graph === undefined)
 		return infoSignal("no tests selected for the changed functions", data);
@@ -350,7 +355,27 @@ function withUntestable(
 	return {
 		...result,
 		summary: `${result.summary}; not mutated, ${whyUntestable(untestable)}: ${files}`,
+		data: {
+			...(isRecord(result.data) ? result.data : {}),
+			...tooSlowGap(untestable),
+		},
 	};
+}
+
+/**
+ * A file left unmutated for a too-slow test is a check that could not run, so
+ * the whole signal is unavailable, whatever ran for the other files.
+ * Sandbox-unsafe tests can never run under Stryker and leave it available.
+ */
+function tooSlowGap(untestable: readonly UntestableFile[]): object {
+	const files = untestable
+		.filter((entry) => entry.covering.some(isTooSlowTest))
+		.map((entry) => entry.file);
+	return files.length > 0
+		? unavailableData(
+				`not mutated, covering tests are too slow for the time cap: ${files.join(", ")}`,
+			)
+		: {};
 }
 
 /**
