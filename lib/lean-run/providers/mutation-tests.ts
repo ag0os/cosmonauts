@@ -30,6 +30,10 @@ export const TOO_SLOW_TESTS: readonly string[] = [
 	"tests/lean-run/run-build.test.ts",
 ];
 
+export function isTooSlowTest(path: string): boolean {
+	return TOO_SLOW_TESTS.includes(path);
+}
+
 /** Vitest's default include, wider than the architecture map's TypeScript-only rule. */
 const SPEC_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/u;
 /**
@@ -70,7 +74,7 @@ export function selectMutationTests(input: TestSelectionInput): TestSelection {
 	const tooSlow = new Set<string>();
 	const keep = (path: string): boolean => {
 		if (!isSpecFile(path) || !input.exists(path)) return false;
-		if (TOO_SLOW_TESTS.includes(path)) {
+		if (isTooSlowTest(path)) {
 			tooSlow.add(path);
 			return false;
 		}
@@ -216,7 +220,7 @@ export function untestableFiles(input: CoverageInput): UntestableFile[] {
 	return input.sourceFiles.flatMap((file) => {
 		const covering = coveringTests(file, input);
 		const excluded = (path: string) =>
-			input.isDenied(path) || TOO_SLOW_TESTS.includes(path);
+			input.isDenied(path) || isTooSlowTest(path);
 		return covering.length > 0 && covering.every(excluded)
 			? [{ file, covering }]
 			: [];
