@@ -37,12 +37,12 @@ export function planVersusActual(
 	options: PlanVersusActualOptions,
 ): PlanVersusActual {
 	const entries = normalizeRepoPaths(options.plan.touches.map(touchesPath));
-	const reuses = normalizeRepoPaths(
-		(options.plan.reuses ?? []).map(touchesPath),
-	);
 	const named = normalizeRepoPaths(
 		requestPaths(options.plan.approach ?? ""),
-	).filter((path) => !isCovered(path, reuses));
+	).filter(
+		(path) =>
+			!options.plan.reuses?.some((entry) => covers(touchesPath(entry), path)),
+	);
 	const actual = normalizeRepoPaths([...options.touched, ...options.diffFiles]);
 	const isPlanned = (file: string) =>
 		isCovered(file, entries) || named.includes(file);

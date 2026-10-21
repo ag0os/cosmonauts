@@ -177,12 +177,16 @@ describe("planVersusActual reading the Approach", () => {
 	});
 
 	test("does not read a URL in the Approach as a path", () => {
+		const urls = ["https://x.dev/lib/a.ts", "https://x.dev/lib/b.ts"];
 		const result = planVersusActual({
-			plan: { touches: [], approach: "See `https://x.dev/lib/a.ts`." },
+			plan: { touches: [], approach: `See \`${urls[0]}\` and ${urls[1]}.` },
 			touched: [],
-			diffFiles: ["lib/a.ts"],
+			diffFiles: urls,
 		});
-		expect(result.unplanned).toEqual(["lib/a.ts"]);
+		expect(result.unplanned).toEqual([
+			"https:/x.dev/lib/a.ts",
+			"https:/x.dev/lib/b.ts",
+		]);
 	});
 
 	test("never lists an Approach-only path as untouched", () => {

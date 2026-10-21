@@ -83,3 +83,6 @@ Obligations, red before the change:
 - O-2 "counts a changed file named bare in Approach, with a directory and an extension, as planned"
 - O-3 "reads an Approach path with ./ or a :line suffix as the file"
 - O-4 the Touches line in `bundled/lean/skills/contract/SKILL.md` states the rule; checked by the reviewer
+
+Added in the fix round, from review finding R1:
+- A URL the Approach names, backticked or bare, plans nothing: a changed file at the URL's normalized path (`https:/x.dev/lib/a.ts`) stays unplanned. Pinned by "does not read a URL in the Approach as a path" in `tests/lean-run/graph/plan-vs-actual.test.ts`.
