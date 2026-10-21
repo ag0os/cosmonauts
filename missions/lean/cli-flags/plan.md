@@ -92,3 +92,4 @@ Obligations, red before the change:
 - O-7 `lean build` "keeps ANTHROPIC_API_KEY in claude-cli sessions with --allow-api-billing"
 - O-8 `lean review` "keeps ANTHROPIC_API_KEY in the claude-cli reviewer with --allow-api-billing"
 - O-9 `lean build` "documents --request, --reviewer-backend and --allow-api-billing in its help", plus the hand-off line in `external-skills/cosmonauts-lean/SKILL.md`
+- O-10 `lean build` "prints an unknown option as one JSON error line under --json: review --reviewer-backend" and "...: build --base": an option the invoked command lacks fails under `--json` as one JSON error line on stdout and nothing on stderr (`lean review --reviewer-backend --json`), because only the invoked command's options take `--json` as their value

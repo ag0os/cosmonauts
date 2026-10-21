@@ -246,20 +246,22 @@ function clearStaleLock(command: RunCommandOptions) {
 
 /**
  * Whether argv carries `--json` as a flag: before any `--`, and not as the
- * value of an option that takes one (`--plan --json`). The error hook needs
- * this because commander may fail before it has parsed `--json`. It reads
- * commander's untyped `rawArgs`, since `program.args` drops the `--`.
+ * value of an option of the invoked command that takes one (`--plan --json`).
+ * The error hook needs this because commander may fail before it has parsed
+ * `--json`. It reads commander's untyped `rawArgs`, since `program.args` drops
+ * the `--`.
  */
 function jsonFlagGiven(program: Command): boolean {
-	const takesValue = new Set(
-		program.commands.flatMap((command) =>
-			command.options
-				.filter((option) => option.required)
-				.map((option) => option.long),
-		),
-	);
 	const raw = "rawArgs" in program ? program.rawArgs : undefined;
 	const args = Array.isArray(raw) ? raw.map(String) : program.args;
+	const invoked = program.commands.find(
+		(command) => command.name() === args[0],
+	);
+	const takesValue = new Set(
+		invoked?.options
+			.filter((option) => option.required)
+			.map((option) => option.long),
+	);
 	for (let i = 0; i < args.length && args[i] !== "--"; i++) {
 		if (args[i] === "--json") return true;
 		if (takesValue.has(args[i])) i++;

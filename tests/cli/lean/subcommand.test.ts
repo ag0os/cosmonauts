@@ -473,6 +473,16 @@ describe("lean build", () => {
 		expect(stderr).toBe("");
 	});
 
+	test.each([
+		["review", "--reviewer-backend"],
+		["build", "--base"],
+	])("prints an unknown option as one JSON error line under --json: %s %s", async (name, option) => {
+		const { stdout, stderr } = await commanderFailure([name, option, "--json"]);
+
+		expect(JSON.parse(stdout).error).toMatch(`unknown option '${option}'`);
+		expect(stderr).toBe("");
+	});
+
 	test("refuses neither --plan nor --request on stderr without --json", async () => {
 		const { builds, options } = doubles(record("done"));
 		output = captureCliOutput();
