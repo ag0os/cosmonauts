@@ -18,6 +18,7 @@ import {
 import { createDefaultProviders } from "../../lib/lean-run/providers/default.ts";
 import {
 	type CreateLeanBackends,
+	type LeanBackendChoices,
 	runtimeBackends,
 } from "../../lib/lean-run/runtime-backends.ts";
 import { type SignalSource, withInterruptSignal } from "../shared/interrupt.ts";
@@ -37,9 +38,12 @@ interface LeanProgramOptions {
 
 interface RunCommandOptions {
 	readonly plan?: string;
+	readonly request?: string;
 	readonly spec?: string;
 	readonly base?: string;
 	readonly backend: LeanBackendKind;
+	readonly reviewerBackend?: LeanBackendKind;
+	readonly allowApiBilling?: boolean;
 	readonly clearStaleLock?: boolean;
 	readonly json?: boolean;
 }
@@ -82,14 +86,26 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 			else printLines(renderCheckText(report));
 		});
 
-	const runCommand = (name: string, description: string) =>
+	const runCommand = ({
+		name,
+		description,
+		backendHelp,
+	}: {
+		name: string;
+		description: string;
+		backendHelp: string;
+	}) =>
 		program
 			.command(name)
 			.description(description)
 			.addOption(
-				new Option("--backend <kind>", "Where the builder and reviewer run")
+				new Option("--backend <kind>", backendHelp)
 					.choices(LEAN_BACKEND_KINDS)
 					.default("pi"),
+			)
+			.option(
+				"--allow-api-billing",
+				"Keep ANTHROPIC_API_KEY in Claude Code sessions, so they bill the API instead of the Claude subscription (claude-cli only)",
 			)
 			.option(
 				"--clear-stale-lock",
@@ -97,17 +113,35 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 			)
 			.option("--json", "Print the run as JSON");
 
-	runCommand(
-		"build",
-		"Run a lean build for a plan, as the lean_build tool does",
-	)
-		.requiredOption("--plan <path>", "plan.md, relative to the project root")
+	runCommand({
+		name: "build",
+		description:
+			"Run a lean build for a plan or a direct request, as the lean_build tool does",
+		backendHelp:
+			"Where the builder runs, and the reviewer unless --reviewer-backend is given",
+	})
+		.addOption(
+			new Option(
+				"--reviewer-backend <kind>",
+				"Where the reviewer runs; defaults to --backend",
+			).choices(LEAN_BACKEND_KINDS),
+		)
+		.option(
+			"--plan <path>",
+			"plan.md, relative to the project root; give this or --request",
+		)
+		.option(
+			"--request <text>",
+			"A direct fix to build with no plan; give this or --plan",
+		)
 		.option("--spec <path>", "spec.md, when the change has one")
-		.action(async (command: RunCommandOptions) => {
+		.action(async (command: RunCommandOptions, self: Command) => {
+			const subject = buildSubject(command);
+			if (typeof subject === "string") self.error(subject);
 			const record = await withRun(command, (backends, signal) =>
 				(options.runBuild ?? runBuild)({
 					projectRoot: cwd,
-					planPath: command.plan ?? "",
+					...subject,
 					...(command.spec ? { specPath: command.spec } : {}),
 					backend: backends.builder,
 					reviewerBackend: backends.reviewer,
@@ -119,18 +153,26 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 			if (record) report(record, runDetails(record), command.json);
 		});
 
-	runCommand(
-		"review",
-		"Review the existing change, as the lean_review tool does",
-	)
+	runCommand({
+		name: "review",
+		description: "Review the existing change, as the lean_review tool does",
+		backendHelp: "Where the reviewer runs",
+	})
 		.option("--base <ref>", "Git ref to review the working tree against")
 		.option("--plan <path>", "plan.md the change answers, as context")
-		.action(async (command: RunCommandOptions) => {
+		.option(
+			"--request <text>",
+			"What the change was meant to do, as context; not with --plan",
+		)
+		.action(async (command: RunCommandOptions, self: Command) => {
+			if (command.plan !== undefined && command.request !== undefined)
+				self.error("lean review takes --plan or --request, not both");
 			const record = await withRun(command, (backends, signal) =>
 				(options.runReview ?? runReview)({
 					projectRoot: cwd,
 					...(command.base ? { base: command.base } : {}),
 					...(command.plan ? { planPath: command.plan } : {}),
+					...(command.request?.trim() ? { request: command.request } : {}),
 					reviewerBackend: backends.reviewer,
 					...clearStaleLock(command),
 					signal,
@@ -151,7 +193,11 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 	): Promise<RunRecord | undefined> {
 		try {
 			const createBackends = options.createBackends ?? runtimeBackends();
-			const backends = await createBackends(command.backend, cwd);
+			const backends = await createBackends(
+				command.backend,
+				cwd,
+				backendChoices(command),
+			);
 			return await withInterruptSignal(options.signals ?? process, (signal) =>
 				run(backends, signal),
 			);
@@ -172,26 +218,50 @@ export function createLeanProgram(options: LeanProgramOptions = {}): Command {
 	return program;
 }
 
+/** The build's plan or direct request, or why the flags give neither, as the lean_build tool checks. */
+function buildSubject(
+	command: RunCommandOptions,
+): { planPath: string } | { request: string } | string {
+	const { plan, request } = command;
+	if (plan !== undefined && request !== undefined)
+		return "lean build takes --plan or --request, not both";
+	if (plan !== undefined) return { planPath: plan };
+	if (request === undefined || request.trim() === "")
+		return "lean build needs --plan or a non-empty --request";
+	return { request };
+}
+
+function backendChoices(command: RunCommandOptions): LeanBackendChoices {
+	return {
+		...(command.reviewerBackend
+			? { reviewerKind: command.reviewerBackend }
+			: {}),
+		...(command.allowApiBilling ? { allowApiBilling: true } : {}),
+	};
+}
+
 function clearStaleLock(command: RunCommandOptions) {
 	return command.clearStaleLock ? { clearStaleLock: true } : {};
 }
 
 /**
  * Whether argv carries `--json` as a flag: before any `--`, and not as the
- * value of an option that takes one (`--plan --json`). The error hook needs
- * this because commander may fail before it has parsed `--json`. It reads
- * commander's untyped `rawArgs`, since `program.args` drops the `--`.
+ * value of an option of the invoked command that takes one (`--plan --json`).
+ * The error hook needs this because commander may fail before it has parsed
+ * `--json`. It reads commander's untyped `rawArgs`, since `program.args` drops
+ * the `--`.
  */
 function jsonFlagGiven(program: Command): boolean {
-	const takesValue = new Set(
-		program.commands.flatMap((command) =>
-			command.options
-				.filter((option) => option.required)
-				.map((option) => option.long),
-		),
-	);
 	const raw = "rawArgs" in program ? program.rawArgs : undefined;
 	const args = Array.isArray(raw) ? raw.map(String) : program.args;
+	const invoked = program.commands.find(
+		(command) => command.name() === args[0],
+	);
+	const takesValue = new Set(
+		invoked?.options
+			.filter((option) => option.required)
+			.map((option) => option.long),
+	);
 	for (let i = 0; i < args.length && args[i] !== "--"; i++) {
 		if (args[i] === "--json") return true;
 		if (takesValue.has(args[i])) i++;

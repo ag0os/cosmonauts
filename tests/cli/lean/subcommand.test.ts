@@ -6,8 +6,8 @@
 
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -447,6 +447,19 @@ describe("lean build", () => {
 		expect(stderr).toMatch(error);
 	});
 
+	test("reads --json after --request as the request text, so a commander error stays on stderr", async () => {
+		const { stdout, stderr } = await commanderFailure([
+			"build",
+			"--request",
+			"--json",
+			"--reviewer-backend",
+			"nope",
+		]);
+
+		expect(stdout).toBe("");
+		expect(stderr).toMatch(/'nope' is invalid/u);
+	});
+
 	test("prints a commander error as JSON for a --json flag before --", async () => {
 		const { stdout, stderr } = await commanderFailure([
 			"check",
@@ -458,6 +471,32 @@ describe("lean build", () => {
 
 		expect(JSON.parse(stdout).error).toMatch(/too many arguments/u);
 		expect(stderr).toBe("");
+	});
+
+	test.each([
+		["review", "--reviewer-backend"],
+		["build", "--base"],
+	])("prints an unknown option as one JSON error line under --json: %s %s", async (name, option) => {
+		const { stdout, stderr } = await commanderFailure([name, option, "--json"]);
+
+		expect(JSON.parse(stdout).error).toMatch(`unknown option '${option}'`);
+		expect(stderr).toBe("");
+	});
+
+	test("refuses neither --plan nor --request on stderr without --json", async () => {
+		const { builds, options } = doubles(record("done"));
+		output = captureCliOutput();
+		const program = createLeanProgram({ cwd: tmp.path, ...options });
+		for (const command of [program, ...program.commands])
+			command.exitOverride();
+
+		await expect(
+			program.parseAsync(["build"], { from: "user" }),
+		).rejects.toMatchObject({ exitCode: 1 });
+
+		expect(output.stdout()).toBe("");
+		expect(output.stderr()).toMatch(/--plan or a non-empty --request/u);
+		expect(builds).toEqual([]);
 	});
 
 	test("aborts the run's signal on SIGINT", async () => {
@@ -488,6 +527,15 @@ describe("lean review", () => {
 		await run(["review", "--clear-stale-lock"], options);
 
 		expect(reviews[0]?.clearStaleLock).toBe(true);
+	});
+
+	test("passes no request for a blank --request", async () => {
+		const { reviews, options } = doubles(record("done"));
+
+		await run(["review", "--request", "  "], options);
+
+		expect(reviews).toHaveLength(1);
+		expect(reviews[0]).not.toHaveProperty("request");
 	});
 
 	test("calls runReview with the base, plan and reviewer and prints the findings", async () => {
@@ -536,6 +584,343 @@ describe("lean review", () => {
 		]);
 		expect(printed.findings).toHaveLength(1);
 		expect(exitCode).toBe(0);
+	});
+});
+
+// The Contract for the --request, --reviewer-backend and --allow-api-billing
+// flags. These blocks call the real runtimeBackends(), not a createBackends
+// double, and observe only argv, exit codes, stdout and child environments.
+
+afterEach(() => {
+	vi.unstubAllEnvs();
+});
+
+interface RunBackends {
+	builder?: BuilderBackend;
+	reviewer: BuilderBackend;
+}
+
+/**
+ * A recording runBuild and runReview and no createBackends, so the real
+ * runtimeBackends() builds the harnesses the run receives. `stages` runs
+ * inside the run, with the backends it was given.
+ */
+function recordedRuns(stages?: (backends: RunBackends) => Promise<void>) {
+	const builds: RunBuildOptions[] = [];
+	const reviews: RunReviewOptions[] = [];
+	return {
+		builds,
+		reviews,
+		options: {
+			providers: [],
+			runBuild: async (options: RunBuildOptions) => {
+				builds.push(options);
+				await stages?.({
+					builder: options.backend,
+					reviewer: options.reviewerBackend,
+				});
+				return record("done");
+			},
+			runReview: async (options: RunReviewOptions) => {
+				reviews.push(options);
+				await stages?.({ reviewer: options.reviewerBackend });
+				return record("done");
+			},
+		},
+	};
+}
+
+/** What a refused argv printed, its exit code by either route, and the runs it started. */
+async function refusal(argv: string[]) {
+	const { builds, reviews, options } = recordedRuns();
+	const result = await run(argv, options).catch(
+		(error: { exitCode?: number }) => ({
+			stdout: output?.stdout() ?? "",
+			exitCode: error.exitCode,
+		}),
+	);
+	return { ...result, runs: builds.length + reviews.length };
+}
+
+/** The error of the one JSON line on stdout. */
+function jsonError(stdout: string): string {
+	expect(stdout.split("\n")).toEqual([expect.any(String), ""]);
+	return JSON.parse(stdout).error;
+}
+
+const API_KEY = "sk-ant-contract-test";
+
+/**
+ * A stand-in `claude` first on PATH, with ANTHROPIC_API_KEY set. It writes
+ * its environment to claude-env.txt in its working directory and prints a
+ * result object.
+ */
+async function standInClaude() {
+	const bin = join(tmp.path, "bin");
+	await mkdir(bin, { recursive: true });
+	await writeFile(
+		join(bin, "claude"),
+		`#!/bin/sh\ncat >/dev/null\nenv > claude-env.txt\nprintf '%s' '{"type":"result","result":"done"}'\n`,
+	);
+	await chmod(join(bin, "claude"), 0o755);
+	vi.stubEnv("PATH", `${bin}${delimiter}${process.env.PATH ?? ""}`);
+	vi.stubEnv("ANTHROPIC_API_KEY", API_KEY);
+}
+
+/** Each stage the run was given, once, each in its own directory. */
+async function runStages({ builder, reviewer }: RunBackends) {
+	if (builder)
+		await builder.run({
+			prompt: "build it",
+			worktree: await stageDir("builder"),
+			role: "lean/builder",
+		});
+	await reviewer.run({
+		prompt: "review it",
+		worktree: await stageDir("reviewer"),
+		role: "lean/code-reviewer",
+	});
+}
+
+async function stageDir(stage: string): Promise<string> {
+	const dir = join(tmp.path, stage);
+	await mkdir(dir, { recursive: true });
+	return dir;
+}
+
+/** ANTHROPIC_API_KEY as the stage's `claude` child saw it; undefined when unset. */
+async function claudeApiKey(
+	stage: "builder" | "reviewer",
+): Promise<string | undefined> {
+	const env = await readFile(join(tmp.path, stage, "claude-env.txt"), "utf8");
+	return env
+		.split("\n")
+		.find((line) => line.startsWith("ANTHROPIC_API_KEY="))
+		?.slice("ANTHROPIC_API_KEY=".length);
+}
+
+/** The text `<command> --help` prints. */
+async function helpText(command: string): Promise<string> {
+	output = captureCliOutput();
+	const program = createLeanProgram({ cwd: tmp.path });
+	for (const each of [program, ...program.commands]) each.exitOverride();
+	await expect(
+		program.parseAsync([command, "--help"], { from: "user" }),
+	).rejects.toMatchObject({ exitCode: 0 });
+	const text = output.stdout();
+	output.restore();
+	output = undefined;
+	return text;
+}
+
+describe("lean build", () => {
+	test("runs the reviewer on the --backend harness when no reviewer backend is given", async () => {
+		const { builds, options } = recordedRuns();
+
+		const { stdout } = await run(
+			["build", "--plan", "plan.md", "--backend", "codex-cli", "--json"],
+			options,
+		);
+
+		expect(JSON.parse(stdout)).toMatchObject({ status: "done" });
+		expect(
+			builds.map((build) => [build.backend.kind, build.reviewerBackend.kind]),
+		).toEqual([["codex-cli", "codex-cli"]]);
+	});
+
+	test("launches claude-cli sessions without ANTHROPIC_API_KEY by default", async () => {
+		await standInClaude();
+		const { options } = recordedRuns(runStages);
+
+		const { stdout } = await run(
+			["build", "--plan", "plan.md", "--backend", "claude-cli", "--json"],
+			options,
+		);
+
+		expect(JSON.parse(stdout)).toMatchObject({ status: "done" });
+		expect(await claudeApiKey("builder")).toBeUndefined();
+		expect(await claudeApiKey("reviewer")).toBeUndefined();
+	});
+
+	test("runs a direct request given --request and no --plan", async () => {
+		const { builds, options } = recordedRuns();
+
+		await run(["build", "--request", "add a farewell", "--json"], options);
+
+		expect(builds).toHaveLength(1);
+		expect(builds[0]?.request).toBe("add a farewell");
+		expect(builds[0]).not.toHaveProperty("planPath");
+	});
+
+	test.each([
+		[
+			"both",
+			["build", "--plan", "plan.md", "--request", "add a farewell", "--json"],
+		],
+		["neither", ["build", "--json"]],
+	])("refuses --plan with --request, and neither, before any run: %s", async (_, argv) => {
+		const { stdout, exitCode, runs } = await refusal(argv);
+
+		const error = jsonError(stdout);
+		expect(error).toMatch(/--plan/u);
+		expect(error).toMatch(/--request/u);
+		expect(exitCode).toBe(1);
+		expect(runs).toBe(0);
+	});
+
+	test("refuses a blank --request before any run", async () => {
+		const { stdout, exitCode, runs } = await refusal([
+			"build",
+			"--request",
+			"  ",
+			"--json",
+		]);
+
+		const error = jsonError(stdout);
+		expect(error).toMatch(/request/u);
+		expect(error).toMatch(/empty/u);
+		expect(exitCode).toBe(1);
+		expect(runs).toBe(0);
+	});
+
+	test("runs the reviewer on --reviewer-backend and the builder on --backend", async () => {
+		const { builds, options } = recordedRuns();
+
+		const { stdout } = await run(
+			[
+				"build",
+				"--plan",
+				"plan.md",
+				"--backend",
+				"claude-cli",
+				"--reviewer-backend",
+				"codex-cli",
+				"--json",
+			],
+			options,
+		);
+
+		expect(JSON.parse(stdout)).toMatchObject({ status: "done" });
+		expect(
+			builds.map((build) => [build.backend.kind, build.reviewerBackend.kind]),
+		).toEqual([["claude-cli", "codex-cli"]]);
+	});
+
+	test("refuses an unknown --reviewer-backend before any run", async () => {
+		const { stdout, exitCode, runs } = await refusal([
+			"build",
+			"--plan",
+			"plan.md",
+			"--reviewer-backend",
+			"nope",
+			"--json",
+		]);
+
+		expect(jsonError(stdout)).toMatch(/nope/u);
+		expect(exitCode).toBe(1);
+		expect(runs).toBe(0);
+	});
+
+	test("keeps ANTHROPIC_API_KEY in claude-cli sessions with --allow-api-billing", async () => {
+		await standInClaude();
+		const { options } = recordedRuns(runStages);
+
+		const { stdout } = await run(
+			[
+				"build",
+				"--plan",
+				"plan.md",
+				"--backend",
+				"claude-cli",
+				"--allow-api-billing",
+				"--json",
+			],
+			options,
+		);
+
+		expect(JSON.parse(stdout)).toMatchObject({ status: "done" });
+		expect(await claudeApiKey("builder")).toBe(API_KEY);
+		expect(await claudeApiKey("reviewer")).toBe(API_KEY);
+	});
+
+	test("documents --request, --reviewer-backend and --allow-api-billing in its help", async () => {
+		const build = await helpText("build");
+		const review = await helpText("review");
+
+		for (const text of [
+			"--request",
+			"--reviewer-backend",
+			"--allow-api-billing",
+			"reviewer",
+			"subscription",
+		])
+			expect(build).toContain(text);
+		expect(review).toContain("--allow-api-billing");
+	});
+});
+
+describe("lean review", () => {
+	test("defaults the reviewer backend to pi", async () => {
+		const { reviews, options } = recordedRuns();
+
+		const { stdout } = await run(["review", "--json"], options);
+
+		expect(JSON.parse(stdout)).toMatchObject({ status: "done" });
+		expect(reviews.map((review) => review.reviewerBackend.kind)).toEqual([
+			"pi",
+		]);
+	});
+
+	test("launches the claude-cli reviewer without ANTHROPIC_API_KEY by default", async () => {
+		await standInClaude();
+		const { options } = recordedRuns(runStages);
+
+		const { stdout } = await run(
+			["review", "--backend", "claude-cli", "--json"],
+			options,
+		);
+
+		expect(JSON.parse(stdout)).toMatchObject({ status: "done" });
+		expect(await claudeApiKey("reviewer")).toBeUndefined();
+	});
+
+	test("passes --request to the run as the change's context", async () => {
+		const { reviews, options } = recordedRuns();
+
+		await run(["review", "--request", "add a farewell", "--json"], options);
+
+		expect(reviews).toHaveLength(1);
+		expect(reviews[0]?.request).toBe("add a farewell");
+	});
+
+	test("refuses --plan with --request before any run", async () => {
+		const { stdout, exitCode, runs } = await refusal([
+			"review",
+			"--plan",
+			"plan.md",
+			"--request",
+			"add a farewell",
+			"--json",
+		]);
+
+		const error = jsonError(stdout);
+		expect(error).toMatch(/--plan/u);
+		expect(error).toMatch(/--request/u);
+		expect(exitCode).toBe(1);
+		expect(runs).toBe(0);
+	});
+
+	test("keeps ANTHROPIC_API_KEY in the claude-cli reviewer with --allow-api-billing", async () => {
+		await standInClaude();
+		const { options } = recordedRuns(runStages);
+
+		const { stdout } = await run(
+			["review", "--backend", "claude-cli", "--allow-api-billing", "--json"],
+			options,
+		);
+
+		expect(JSON.parse(stdout)).toMatchObject({ status: "done" });
+		expect(await claudeApiKey("reviewer")).toBe(API_KEY);
 	});
 });
 
