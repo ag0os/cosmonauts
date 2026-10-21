@@ -923,6 +923,17 @@ describe("isCosmonautsFrameworkRepo", () => {
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(true);
 	});
 
+	test("returns true without .git when tests/ is present, as in a Stryker sandbox", async () => {
+		await writeFile(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
+		);
+		await mkdir(join(tmpDir, "bundled"));
+		await mkdir(join(tmpDir, "tests"));
+
+		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(true);
+	});
+
 	test("returns false when package.json name is not 'cosmonauts'", async () => {
 		await writeFrameworkPackage(tmpDir, "my-project");
 
@@ -939,7 +950,7 @@ describe("isCosmonautsFrameworkRepo", () => {
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
 	});
 
-	test("returns false for installed package shape without repo marker", async () => {
+	test("returns false for installed package shape with neither .git nor tests/", async () => {
 		await writeFile(
 			join(tmpDir, "package.json"),
 			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),

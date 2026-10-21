@@ -5,8 +5,10 @@ import { join } from "node:path";
  * Returns true when running from inside the Cosmonauts framework repo itself.
  *
  * Detection heuristic: package.json at root has name "cosmonauts", the
- * repo contains a bundled/ directory, and a repo-only marker (.git) exists —
- * a directory in a normal checkout, a file in a git worktree.
+ * repo contains a bundled/ directory, and a repo-only marker exists: .git
+ * (a directory in a normal checkout, a file in a git worktree) or a tests/
+ * directory. tests/ qualifies because package.json `files` never ships it,
+ * and it is what marks a Stryker sandbox, which copies the repo without .git.
  * This avoids treating published package installs as framework checkouts.
  */
 export async function isCosmonautsFrameworkRepo(
@@ -23,12 +25,15 @@ export async function isCosmonautsFrameworkRepo(
 	try {
 		const bundled = await stat(join(root, "bundled"));
 		if (!bundled.isDirectory()) return false;
-
-		const gitMarker = await stat(join(root, ".git"));
-		return gitMarker.isDirectory() || gitMarker.isFile();
 	} catch {
 		return false;
 	}
+
+	const gitMarker = await stat(join(root, ".git")).catch(() => null);
+	if (gitMarker?.isDirectory() || gitMarker?.isFile()) return true;
+
+	const testsMarker = await stat(join(root, "tests")).catch(() => null);
+	return testsMarker?.isDirectory() ?? false;
 }
 
 /**
