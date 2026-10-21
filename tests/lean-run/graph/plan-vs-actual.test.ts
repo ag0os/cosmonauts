@@ -139,3 +139,84 @@ describe("touchesPath", () => {
 		expect(touchesPath("**/fixtures/*.json")).toBe("**/fixtures/*.json");
 	});
 });
+
+describe("planVersusActual reading the Approach", () => {
+	test("counts a changed file the Approach names, backticked or bare, as planned", () => {
+		expect(
+			planVersusActual({
+				plan: {
+					touches: ["cli/x.ts"],
+					approach: "Edit `lib/a.ts`, then keep notes in docs/notes.md.",
+				},
+				touched: [],
+				diffFiles: ["cli/x.ts", "docs/notes.md", "lib/a.ts", "lib/b.ts"],
+			}),
+		).toEqual({
+			planned: ["cli/x.ts", "docs/notes.md", "lib/a.ts"],
+			unplanned: ["lib/b.ts"],
+			untouched: [],
+		});
+	});
+
+	test("matches an Approach path as the file after ./ and a :line suffix are dropped", () => {
+		const result = planVersusActual({
+			plan: { touches: [], approach: "See `./lib/a.ts:12` and lib/b.ts:3-9." },
+			touched: ["lib\\a.ts"],
+			diffFiles: ["lib/b.ts"],
+		});
+		expect(result.planned).toEqual(["lib/a.ts", "lib/b.ts"]);
+	});
+
+	test("lets a directory or glob in the Approach cover nothing beneath it", () => {
+		const result = planVersusActual({
+			plan: { touches: [], approach: "Work in `lib/dir/` and `tests/*.ts`." },
+			touched: [],
+			diffFiles: ["lib/dir/a.ts", "tests/a.ts"],
+		});
+		expect(result.unplanned).toEqual(["lib/dir/a.ts", "tests/a.ts"]);
+	});
+
+	test("does not read a URL in the Approach as a path", () => {
+		const result = planVersusActual({
+			plan: { touches: [], approach: "See `https://x.dev/lib/a.ts`." },
+			touched: [],
+			diffFiles: ["lib/a.ts"],
+		});
+		expect(result.unplanned).toEqual(["lib/a.ts"]);
+	});
+
+	test("never lists an Approach-only path as untouched", () => {
+		const result = planVersusActual({
+			plan: { touches: ["cli/x.ts"], approach: "Read `lib/z.ts` first." },
+			touched: [],
+			diffFiles: [],
+		});
+		expect(result.untouched).toEqual(["cli/x.ts"]);
+	});
+
+	test("keeps an Approach path unplanned when Reuses covers it", () => {
+		const result = planVersusActual({
+			plan: {
+				touches: [],
+				approach: "Do not touch `lib/run.ts` or `lib/core/a.ts`.",
+				reuses: ["`./lib/run.ts`: no change", "lib/core/"],
+			},
+			touched: [],
+			diffFiles: ["lib/core/a.ts", "lib/run.ts"],
+		});
+		expect(result.unplanned).toEqual(["lib/core/a.ts", "lib/run.ts"]);
+	});
+
+	test("keeps a Touches path planned when Reuses lists it too", () => {
+		const result = planVersusActual({
+			plan: {
+				touches: ["lib/a.ts"],
+				approach: "Edit `lib/a.ts`.",
+				reuses: ["lib/a.ts"],
+			},
+			touched: [],
+			diffFiles: ["lib/a.ts"],
+		});
+		expect(result.planned).toEqual(["lib/a.ts"]);
+	});
+});
