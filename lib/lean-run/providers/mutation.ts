@@ -51,6 +51,7 @@ import {
 	DEFAULT_SANDBOX_UNSAFE_TESTS,
 	isSandboxUnsafeTest,
 	isTestFile,
+	isTooSlowTest,
 	selectMutationTests,
 	type TestSelection,
 	type UntestableFile,
@@ -106,7 +107,7 @@ interface StrykerPlan {
 	readonly tests: TestSelection;
 	/** The diff's hunks per changed file; undefined when the resolver gave none. */
 	readonly hunks?: Readonly<Record<string, readonly DiffHunk[]>>;
-	/** Changed files left out because every covering test is denied. */
+	/** Changed files left out because every covering test is denied or too slow. */
 	readonly untestable: readonly UntestableFile[];
 }
 
@@ -185,13 +186,21 @@ async function runMutation(
 	const ranges = changed.ranges.filter((range) => !skip.has(range.file));
 	if (ranges.length === 0) return untestableSignal(changed.ranges, untestable);
 	const timeoutMs = effectiveTimeout(options.timeoutMs, ctx.budget.timeMs);
-	const tests = selectMutationTests({
+	const selection = selectMutationTests({
 		...coverage,
 		sourceFiles: unique(ranges.map((range) => range.file)),
 		changedFiles: ctx.changedFiles,
 		includeTier2: timeoutMs >= TIER2_MIN_BUDGET_MS,
 		maxTests: options.maxTests ?? DEFAULT_MAX_TESTS,
 	});
+	// Untestable files never reach the selection; their slow tests count too.
+	const tests = {
+		...selection,
+		tooSlow: unique([
+			...selection.tooSlow,
+			...untestable.flatMap((entry) => entry.covering.filter(isTooSlowTest)),
+		]).sort(),
+	};
 	const plan: StrykerPlan = {
 		ranges,
 		mutate: mutateArguments(ranges),
@@ -205,14 +214,19 @@ async function runMutation(
 
 /**
  * No covering test to run: plain `info`, unless the blast radius had no
- * graph to select tests from, which leaves the signal unavailable.
+ * graph to select tests from or a file went unmutated for a too-slow test,
+ * either of which leaves the signal unavailable.
  */
 function noTestsSignal(
 	ctx: SignalContext,
 	plan: StrykerPlan,
 	started: number,
 ): Signal {
-	const data = { ...planData(plan), durationMs: Date.now() - started };
+	const data = {
+		...planData(plan),
+		durationMs: Date.now() - started,
+		...tooSlowGap(plan.untestable),
+	};
 	const graph = blastRadiusGraphGap(ctx);
 	if (graph === undefined)
 		return infoSignal("no tests selected for the changed functions", data);
@@ -230,19 +244,38 @@ function blastRadiusGraphGap(
 	return graph === "missing" || graph === "unreadable" ? graph : undefined;
 }
 
-/** Every changed file's covering tests are denied: nothing to run Stryker for. */
+/**
+ * Every changed file's covering tests are denied or too slow: nothing to run
+ * Stryker for. A sandbox-unsafe test can never run under Stryker, so that
+ * alone is plain `info`; a too-slow one could, given the time, so leaving it
+ * out makes the signal unavailable, as a Stryker timeout does.
+ */
 function untestableSignal(
 	ranges: readonly ChangedFunctionRange[],
 	untestable: readonly UntestableFile[],
 ): Signal {
-	return infoSignal(
-		"untestable under mutation: covering tests are sandbox-unsafe",
-		{
-			changedFunctions: ranges,
-			untestable,
-			denied: unique(untestable.flatMap((entry) => entry.covering)).sort(),
-		},
-	);
+	const covering = unique(untestable.flatMap((entry) => entry.covering)).sort();
+	const tooSlow = covering.filter(isTooSlowTest);
+	const summary = `untestable under mutation: ${whyUntestable(untestable)}`;
+	return infoSignal(summary, {
+		changedFunctions: ranges,
+		untestable,
+		denied: covering.filter((path) => !isTooSlowTest(path)),
+		tooSlow,
+		...(tooSlow.length > 0 ? unavailableData(summary) : {}),
+	});
+}
+
+/** Why the untestable files' covering tests cannot run, by kind of exclusion. */
+function whyUntestable(untestable: readonly UntestableFile[]): string {
+	const covering = untestable.flatMap((entry) => entry.covering);
+	const reasons = [
+		...(covering.some((path) => !isTooSlowTest(path))
+			? ["sandbox-unsafe"]
+			: []),
+		...(covering.some(isTooSlowTest) ? ["too slow for the time cap"] : []),
+	];
+	return `covering tests are ${reasons.join(" or ")}`;
 }
 
 async function runStrykerPlan(
@@ -291,7 +324,10 @@ async function runStrykerPlan(
 		projectRoot: ctx.worktree,
 	});
 	return withSandboxNote(
-		withUntestable(verdict(summary, data, plan.hunks), plan.untestable),
+		withTooSlow(
+			withUntestable(verdict(summary, data, plan.hunks), plan.untestable),
+			plan.tests.tooSlow,
+		),
 		strykerRun,
 	);
 }
@@ -318,8 +354,28 @@ function withUntestable(
 	const files = untestable.map((entry) => entry.file).join(", ");
 	return {
 		...result,
-		summary: `${result.summary}; not mutated, covering tests are sandbox-unsafe: ${files}`,
+		summary: `${result.summary}; not mutated, ${whyUntestable(untestable)}: ${files}`,
+		data: {
+			...(isRecord(result.data) ? result.data : {}),
+			...tooSlowGap(untestable),
+		},
 	};
+}
+
+/**
+ * A file left unmutated for a too-slow test is a check that could not run, so
+ * the whole signal is unavailable, whatever ran for the other files.
+ * Sandbox-unsafe tests can never run under Stryker and leave it available.
+ */
+function tooSlowGap(untestable: readonly UntestableFile[]): object {
+	const files = untestable
+		.filter((entry) => entry.covering.some(isTooSlowTest))
+		.map((entry) => entry.file);
+	return files.length > 0
+		? unavailableData(
+				`not mutated, covering tests are too slow for the time cap: ${files.join(", ")}`,
+			)
+		: {};
 }
 
 /**
@@ -351,6 +407,15 @@ async function withoutSandbox(
 	} catch (error) {
 		return { ...run, sandboxRemoval: messageOf(error) };
 	}
+}
+
+/** Names the too-slow tests left out of a run in the summary, when there are any. */
+function withTooSlow(result: Signal, tooSlow: readonly string[]): Signal {
+	if (tooSlow.length === 0) return result;
+	return {
+		...result,
+		summary: `${result.summary}; run without tests too slow for the time cap, so survivors reflect a smaller selection: ${tooSlow.join(", ")}`,
+	};
 }
 
 /** Names a sandbox left behind, and why, in the signal's summary. */

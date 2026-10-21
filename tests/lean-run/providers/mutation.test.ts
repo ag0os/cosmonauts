@@ -38,7 +38,10 @@ import {
 	type TestSelectionInput,
 	untestableFiles,
 } from "../../../lib/lean-run/providers/mutation-tests.ts";
-import { unavailableReason } from "../../../lib/lean-run/signal-availability.ts";
+import {
+	requiredSignalGap,
+	unavailableReason,
+} from "../../../lib/lean-run/signal-availability.ts";
 import type { Signal, SignalContext } from "../../../lib/lean-run/types.ts";
 import type {
 	ChildRunOutcome,
@@ -474,6 +477,19 @@ describe("selectMutationTests", () => {
 			"tests/user.test.ts",
 		]);
 	});
+
+	test("leaves run-build.test.ts out of both tiers as too slow, apart from denied tests", () => {
+		const slow = "tests/lean-run/run-build.test.ts";
+		const asOwnTest = selection({ sourceFiles: ["lib/lean-run/run-build.ts"] });
+		const asBlastRadiusTest = selection({ blastRadiusTests: [slow] });
+
+		for (const tests of [asOwnTest, asBlastRadiusTest]) {
+			expect(tests.selected).not.toContain(slow);
+			expect(tests.skipped).not.toContain(slow);
+			expect(tests.tooSlow).toEqual([slow]);
+			expect(tests.denied).toEqual([]);
+		}
+	});
 });
 
 describe("isSandboxUnsafeTest", () => {
@@ -747,6 +763,22 @@ describe("untestableFiles", () => {
 		const isDenied = (path: string) => path !== "tests/calc-direct.test.ts";
 
 		expect(untestableFiles(coverage({ isDenied }))).toEqual([]);
+	});
+
+	test("lists a file whose only covering test is too slow", () => {
+		expect(
+			untestableFiles(
+				coverage({
+					sourceFiles: ["lib/lean-run/run-build.ts"],
+					graph: undefined,
+				}),
+			),
+		).toEqual([
+			{
+				file: "lib/lean-run/run-build.ts",
+				covering: ["tests/lean-run/run-build.test.ts"],
+			},
+		]);
 	});
 
 	test("does not list a file with no covering test at all", () => {
@@ -1086,6 +1118,222 @@ describe(
 				},
 			});
 			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+			expect(unavailableReason(signal)).toBeUndefined();
+			expect(requiredGap(signal)).toBeUndefined();
+		});
+
+		/** What a build that requires mutation makes of `signal`. */
+		function requiredGap(signal: Signal): string | undefined {
+			return requiredSignalGap({
+				required: ["mutation"],
+				signals: [signal],
+				absentIsGap: true,
+			});
+		}
+
+		/** Commits `lib/lean-run/run-build.ts` and its test, then edits `add` in it. */
+		async function addRunBuild(): Promise<void> {
+			await mkdir(join(project.path, "lib/lean-run"));
+			await mkdir(join(project.path, "tests/lean-run"));
+			await writeFile(
+				join(project.path, "lib/lean-run/run-build.ts"),
+				CALC_BASE,
+			);
+			await writeFile(
+				join(project.path, "tests/lean-run/run-build.test.ts"),
+				CALC_TEST,
+			);
+			gitIn(project.path, "add", "lib/lean-run", "tests/lean-run");
+			gitIn(project.path, "commit", "-q", "--no-verify", "-m", "run-build");
+			await writeFile(
+				join(project.path, "lib/lean-run/run-build.ts"),
+				CALC_CHANGED,
+			);
+		}
+
+		test("reports info without running Stryker when the only covering test is too slow", async () => {
+			await writeFile(join(project.path, "lib/calc.ts"), CALC_BASE);
+			await addRunBuild();
+			const strykerBin = await fakeStryker(tools.path, report({}));
+
+			const signal = await createMutationProvider({ strykerBin }).run(
+				context(project.path, { changedFiles: ["lib/lean-run/run-build.ts"] }),
+			);
+
+			expect(signal).toMatchObject({
+				status: "info",
+				reenter: false,
+				summary:
+					"untestable under mutation: covering tests are too slow for the time cap",
+				data: {
+					denied: [],
+					tooSlow: ["tests/lean-run/run-build.test.ts"],
+					untestable: [
+						{
+							file: "lib/lean-run/run-build.ts",
+							covering: ["tests/lean-run/run-build.test.ts"],
+						},
+					],
+				},
+			});
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+			expect(requiredGap(signal)).toBe(
+				"unverified (mutation unavailable: untestable under mutation: covering tests are too slow for the time cap)",
+			);
+		});
+
+		test("names both reasons when one file's tests are sandbox-unsafe and another's too slow", async () => {
+			await addRunBuild();
+			const strykerBin = await fakeStryker(tools.path, report({}));
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				denyListTests: ["tests/calc.test.ts"],
+			}).run(
+				context(project.path, {
+					changedFiles: ["lib/calc.ts", "lib/lean-run/run-build.ts"],
+				}),
+			);
+
+			expect(signal).toMatchObject({
+				status: "info",
+				summary:
+					"untestable under mutation: covering tests are sandbox-unsafe or too slow for the time cap",
+				data: {
+					denied: ["tests/calc.test.ts"],
+					tooSlow: ["tests/lean-run/run-build.test.ts"],
+				},
+			});
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+			expect(unavailableReason(signal)).toBe(signal.summary);
+		});
+
+		test("names a too-slow test left out of a run that went ahead, since survivors reflect the smaller selection", async () => {
+			await mkdir(join(project.path, "tests/lean-run"));
+			await writeFile(
+				join(project.path, "tests/lean-run/run-build.test.ts"),
+				CALC_TEST,
+			);
+			const blast: Signal = {
+				kind: "blast-radius",
+				status: "info",
+				summary: "",
+				data: {
+					graph: "fresh",
+					radius: { tests: ["tests/lean-run/run-build.test.ts"] },
+				},
+				reenter: false,
+			};
+
+			const signal = await runWith(
+				report({ "lib/calc.ts": [{ id: "1", status: "Survived", line: 2 }] }),
+				{
+					priorSignals: [blast],
+					budget: { tokens: 0, timeMs: 200_000 },
+				} as Partial<SignalContext>,
+			);
+			const call = await readCall(tools.path);
+
+			expect(argAfter(call, "--testFiles")).toBe("tests/calc.test.ts");
+			expect(signal.status).toBe("fail");
+			expect(signal.summary).toMatch(
+				/; run without tests too slow for the time cap, so survivors reflect a smaller selection: tests\/lean-run\/run-build\.test\.ts$/u,
+			);
+		});
+
+		test("reports the too-slow test of a file left out as untestable while the rest is mutated", async () => {
+			await addRunBuild();
+
+			const signal = await runWith(report({ "lib/calc.ts": [] }), {
+				changedFiles: ["lib/calc.ts", "lib/lean-run/run-build.ts"],
+			});
+
+			expect(argAfter(await readCall(tools.path), "--mutate")).toBe(
+				"lib/calc.ts:1-4",
+			);
+			expect(signal.data).toMatchObject({
+				tests: { tooSlow: ["tests/lean-run/run-build.test.ts"] },
+				untestable: [
+					{
+						file: "lib/lean-run/run-build.ts",
+						covering: ["tests/lean-run/run-build.test.ts"],
+					},
+				],
+			});
+		});
+
+		test("is unavailable, keeping its pass and kills, when one file went unmutated for a too-slow test", async () => {
+			await addRunBuild();
+
+			const signal = await runWith(
+				report({ "lib/calc.ts": [{ id: "1", status: "Killed", line: 2 }] }),
+				{ changedFiles: ["lib/calc.ts", "lib/lean-run/run-build.ts"] },
+			);
+
+			expect(signal).toMatchObject({
+				status: "pass",
+				data: { changedFunctions: [{ file: "lib/calc.ts", killed: 1 }] },
+			});
+			expect(signal.summary).toContain(
+				"; not mutated, covering tests are too slow for the time cap: lib/lean-run/run-build.ts",
+			);
+			expect(unavailableReason(signal)).toBe(
+				"not mutated, covering tests are too slow for the time cap: lib/lean-run/run-build.ts",
+			);
+			expect(requiredGap(signal)).toBeDefined();
+		});
+
+		test("is unavailable when no test is left for the rest and one file went unmutated for a too-slow test", async () => {
+			await addRunBuild();
+			gitIn(project.path, "rm", "-q", "tests/calc.test.ts");
+
+			const signal = await runWith(report({}), {
+				changedFiles: ["lib/calc.ts", "lib/lean-run/run-build.ts"],
+			});
+
+			expect(signal).toMatchObject({
+				status: "info",
+				summary: "no tests selected for the changed functions",
+			});
+			expect(unavailableReason(signal)).toBe(
+				"not mutated, covering tests are too slow for the time cap: lib/lean-run/run-build.ts",
+			);
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+		});
+
+		test("stays available when one file went unmutated for sandbox-unsafe tests only", async () => {
+			await addRunBuild();
+			await writeFile(
+				join(project.path, "lib/lean-run/run-build.ts"),
+				CALC_BASE,
+			);
+			await mkdir(join(project.path, "lib/git"));
+			await writeFile(join(project.path, "lib/git/gitty.ts"), CALC_BASE);
+			await mkdir(join(project.path, "tests/git"));
+			await writeFile(join(project.path, "tests/git/gitty.test.ts"), "");
+			gitIn(project.path, "add", "lib/git", "tests/git");
+			gitIn(project.path, "commit", "-q", "--no-verify", "-m", "gitty");
+			await writeFile(join(project.path, "lib/git/gitty.ts"), CALC_CHANGED);
+			const strykerBin = await fakeStryker(
+				tools.path,
+				report({ "lib/calc.ts": [{ id: "1", status: "Killed", line: 2 }] }),
+			);
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				denyListTests: ["tests/git/gitty.test.ts"],
+			}).run(
+				context(project.path, {
+					changedFiles: ["lib/calc.ts", "lib/git/gitty.ts"],
+				}),
+			);
+
+			expect(signal.status).toBe("pass");
+			expect(signal.summary).toContain(
+				"; not mutated, covering tests are sandbox-unsafe: lib/git/gitty.ts",
+			);
+			expect(unavailableReason(signal)).toBeUndefined();
+			expect(requiredGap(signal)).toBeUndefined();
 		});
 
 		test("runs a covering test whose worktree commands target a temp fixture", async () => {
