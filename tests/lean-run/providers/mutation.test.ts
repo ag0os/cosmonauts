@@ -474,6 +474,19 @@ describe("selectMutationTests", () => {
 			"tests/user.test.ts",
 		]);
 	});
+
+	test("leaves run-build.test.ts out of both tiers as too slow, apart from denied tests", () => {
+		const slow = "tests/lean-run/run-build.test.ts";
+		const asOwnTest = selection({ sourceFiles: ["lib/lean-run/run-build.ts"] });
+		const asBlastRadiusTest = selection({ blastRadiusTests: [slow] });
+
+		for (const tests of [asOwnTest, asBlastRadiusTest]) {
+			expect(tests.selected).not.toContain(slow);
+			expect(tests.skipped).not.toContain(slow);
+			expect(tests.tooSlow).toEqual([slow]);
+			expect(tests.denied).toEqual([]);
+		}
+	});
 });
 
 describe("isSandboxUnsafeTest", () => {
@@ -747,6 +760,22 @@ describe("untestableFiles", () => {
 		const isDenied = (path: string) => path !== "tests/calc-direct.test.ts";
 
 		expect(untestableFiles(coverage({ isDenied }))).toEqual([]);
+	});
+
+	test("lists a file whose only covering test is too slow", () => {
+		expect(
+			untestableFiles(
+				coverage({
+					sourceFiles: ["lib/lean-run/run-build.ts"],
+					graph: undefined,
+				}),
+			),
+		).toEqual([
+			{
+				file: "lib/lean-run/run-build.ts",
+				covering: ["tests/lean-run/run-build.test.ts"],
+			},
+		]);
 	});
 
 	test("does not list a file with no covering test at all", () => {
@@ -1083,6 +1112,79 @@ describe(
 					untestable: [
 						{ file: "lib/calc.ts", covering: ["tests/calc.test.ts"] },
 					],
+				},
+			});
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+		});
+
+		/** Commits `lib/lean-run/run-build.ts` and its test, then edits `add` in it. */
+		async function addRunBuild(): Promise<void> {
+			await mkdir(join(project.path, "lib/lean-run"));
+			await mkdir(join(project.path, "tests/lean-run"));
+			await writeFile(
+				join(project.path, "lib/lean-run/run-build.ts"),
+				CALC_BASE,
+			);
+			await writeFile(
+				join(project.path, "tests/lean-run/run-build.test.ts"),
+				CALC_TEST,
+			);
+			gitIn(project.path, "add", "lib/lean-run", "tests/lean-run");
+			gitIn(project.path, "commit", "-q", "--no-verify", "-m", "run-build");
+			await writeFile(
+				join(project.path, "lib/lean-run/run-build.ts"),
+				CALC_CHANGED,
+			);
+		}
+
+		test("reports info without running Stryker when the only covering test is too slow", async () => {
+			await writeFile(join(project.path, "lib/calc.ts"), CALC_BASE);
+			await addRunBuild();
+			const strykerBin = await fakeStryker(tools.path, report({}));
+
+			const signal = await createMutationProvider({ strykerBin }).run(
+				context(project.path, { changedFiles: ["lib/lean-run/run-build.ts"] }),
+			);
+
+			expect(signal).toMatchObject({
+				status: "info",
+				reenter: false,
+				summary:
+					"untestable under mutation: covering tests are too slow for the time cap",
+				data: {
+					denied: [],
+					tooSlow: ["tests/lean-run/run-build.test.ts"],
+					untestable: [
+						{
+							file: "lib/lean-run/run-build.ts",
+							covering: ["tests/lean-run/run-build.test.ts"],
+						},
+					],
+				},
+			});
+			expect(existsSync(join(tools.path, "call.json"))).toBe(false);
+		});
+
+		test("names both reasons when one file's tests are sandbox-unsafe and another's too slow", async () => {
+			await addRunBuild();
+			const strykerBin = await fakeStryker(tools.path, report({}));
+
+			const signal = await createMutationProvider({
+				strykerBin,
+				denyListTests: ["tests/calc.test.ts"],
+			}).run(
+				context(project.path, {
+					changedFiles: ["lib/calc.ts", "lib/lean-run/run-build.ts"],
+				}),
+			);
+
+			expect(signal).toMatchObject({
+				status: "info",
+				summary:
+					"untestable under mutation: covering tests are sandbox-unsafe or too slow for the time cap",
+				data: {
+					denied: ["tests/calc.test.ts"],
+					tooSlow: ["tests/lean-run/run-build.test.ts"],
 				},
 			});
 			expect(existsSync(join(tools.path, "call.json"))).toBe(false);

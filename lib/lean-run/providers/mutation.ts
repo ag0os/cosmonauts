@@ -53,6 +53,7 @@ import {
 	isTestFile,
 	selectMutationTests,
 	type TestSelection,
+	TOO_SLOW_TESTS,
 	type UntestableFile,
 	untestableFiles,
 } from "./mutation-tests.ts";
@@ -106,7 +107,7 @@ interface StrykerPlan {
 	readonly tests: TestSelection;
 	/** The diff's hunks per changed file; undefined when the resolver gave none. */
 	readonly hunks?: Readonly<Record<string, readonly DiffHunk[]>>;
-	/** Changed files left out because every covering test is denied. */
+	/** Changed files left out because every covering test is denied or too slow. */
 	readonly untestable: readonly UntestableFile[];
 }
 
@@ -230,19 +231,32 @@ function blastRadiusGraphGap(
 	return graph === "missing" || graph === "unreadable" ? graph : undefined;
 }
 
-/** Every changed file's covering tests are denied: nothing to run Stryker for. */
+/** Every changed file's covering tests are denied or too slow: nothing to run Stryker for. */
 function untestableSignal(
 	ranges: readonly ChangedFunctionRange[],
 	untestable: readonly UntestableFile[],
 ): Signal {
-	return infoSignal(
-		"untestable under mutation: covering tests are sandbox-unsafe",
-		{
-			changedFunctions: ranges,
-			untestable,
-			denied: unique(untestable.flatMap((entry) => entry.covering)).sort(),
-		},
-	);
+	const covering = unique(untestable.flatMap((entry) => entry.covering)).sort();
+	return infoSignal(`untestable under mutation: ${whyUntestable(untestable)}`, {
+		changedFunctions: ranges,
+		untestable,
+		denied: covering.filter((path) => !TOO_SLOW_TESTS.includes(path)),
+		tooSlow: covering.filter((path) => TOO_SLOW_TESTS.includes(path)),
+	});
+}
+
+/** Why the untestable files' covering tests cannot run, by kind of exclusion. */
+function whyUntestable(untestable: readonly UntestableFile[]): string {
+	const covering = untestable.flatMap((entry) => entry.covering);
+	const reasons = [
+		...(covering.some((path) => !TOO_SLOW_TESTS.includes(path))
+			? ["sandbox-unsafe"]
+			: []),
+		...(covering.some((path) => TOO_SLOW_TESTS.includes(path))
+			? ["too slow for the time cap"]
+			: []),
+	];
+	return `covering tests are ${reasons.join(" or ")}`;
 }
 
 async function runStrykerPlan(
@@ -318,7 +332,7 @@ function withUntestable(
 	const files = untestable.map((entry) => entry.file).join(", ");
 	return {
 		...result,
-		summary: `${result.summary}; not mutated, covering tests are sandbox-unsafe: ${files}`,
+		summary: `${result.summary}; not mutated, ${whyUntestable(untestable)}: ${files}`,
 	};
 }
 

@@ -7,7 +7,8 @@
  * blast-radius signal's tests, which do not tell direct importers from
  * transitive ones. Tier 2 runs only when the budget allows. `maxTests` caps
  * the whole selection, tier 1 first; everything left out is `skipped`.
- * Only spec files are ever selected, and sandbox-unsafe tests are removed.
+ * Only spec files are ever selected, and sandbox-unsafe and too-slow tests
+ * are removed.
  */
 
 import { dependentsOf, type FileGraph } from "../../architecture-map/index.ts";
@@ -23,6 +24,11 @@ export const DEFAULT_SANDBOX_UNSAFE_TESTS = [
 	"tests/config/biome*",
 	"tests/lean-run/providers/mutation.test.ts",
 ] as const;
+
+/** Too slow for scoped mutation: run-build.test.ts alone takes about 117 s of the 300 s cap. */
+export const TOO_SLOW_TESTS: readonly string[] = [
+	"tests/lean-run/run-build.test.ts",
+];
 
 /** Vitest's default include, wider than the architecture map's TypeScript-only rule. */
 const SPEC_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/u;
@@ -54,14 +60,20 @@ export interface TestSelection {
 	/** Tier 1 followed by tier 2: what Stryker runs. */
 	readonly selected: string[];
 	readonly denied: string[];
+	readonly tooSlow: string[];
 	/** Tests left out by the budget or `maxTests`. */
 	readonly skipped: string[];
 }
 
 export function selectMutationTests(input: TestSelectionInput): TestSelection {
 	const denied = new Set<string>();
+	const tooSlow = new Set<string>();
 	const keep = (path: string): boolean => {
 		if (!isSpecFile(path) || !input.exists(path)) return false;
+		if (TOO_SLOW_TESTS.includes(path)) {
+			tooSlow.add(path);
+			return false;
+		}
 		if (!input.isDenied(path)) return true;
 		denied.add(path);
 		return false;
@@ -79,6 +91,7 @@ export function selectMutationTests(input: TestSelectionInput): TestSelection {
 		tier2,
 		selected: [...tier1, ...tier2],
 		denied: [...denied].sort(),
+		tooSlow: [...tooSlow].sort(),
 		skipped: [
 			...tier1Candidates.slice(tier1.length),
 			...tier2Candidates.slice(tier2.length),
@@ -190,19 +203,21 @@ export interface CoverageInput {
 
 export interface UntestableFile {
 	readonly file: string;
-	/** Its covering tests, every one denied. */
+	/** Its covering tests, every one denied or too slow. */
 	readonly covering: string[];
 }
 
 /**
- * Source files whose covering tests are all sandbox-unsafe: their mutants
- * cannot be killed under Stryker, so survivors there say nothing about the
- * change. A file with no covering test at all is not listed.
+ * Source files whose covering tests are all sandbox-unsafe or too slow: their
+ * mutants cannot be killed under Stryker, so survivors there say nothing
+ * about the change. A file with no covering test at all is not listed.
  */
 export function untestableFiles(input: CoverageInput): UntestableFile[] {
 	return input.sourceFiles.flatMap((file) => {
 		const covering = coveringTests(file, input);
-		return covering.length > 0 && covering.every(input.isDenied)
+		const excluded = (path: string) =>
+			input.isDenied(path) || TOO_SLOW_TESTS.includes(path);
+		return covering.length > 0 && covering.every(excluded)
 			? [{ file, covering }]
 			: [];
 	});
