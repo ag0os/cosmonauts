@@ -13,13 +13,22 @@ export interface LeanBackends {
 	reviewer: BuilderBackend;
 }
 
+export interface LeanBackendChoices {
+	/** The reviewer's harness; defaults to the builder's `kind`. */
+	reviewerKind?: LeanBackendKind;
+	/** Claude Code sessions keep ANTHROPIC_API_KEY; no effect on other kinds. */
+	allowApiBilling?: boolean;
+}
+
 export type CreateLeanBackends = (
 	kind: LeanBackendKind,
 	projectRoot: string,
+	choices?: LeanBackendChoices,
 ) => Promise<LeanBackends>;
 
 /**
- * The builder and reviewer backend a lean run uses for `kind`, resolved
+ * The builder backend a lean run uses for `kind`, and the reviewer backend
+ * for `choices.reviewerKind` (the same backend when the kinds match), resolved
  * through a runtime over this framework's domains and bundled packages and
  * the project's own config; the `lean_build` tool and `cosmonauts lean` share it.
  */
@@ -30,7 +39,7 @@ export function runtimeBackends(): CreateLeanBackends {
 		"..",
 		"..",
 	);
-	return async (kind, projectRoot) => {
+	return async (kind, projectRoot, choices = {}) => {
 		const runtime = await CosmonautsRuntime.create({
 			builtinDomainsDir: join(frameworkRoot, "domains"),
 			projectRoot,
@@ -46,13 +55,18 @@ export function runtimeBackends(): CreateLeanBackends {
 			skillPaths: runtime.skillPaths,
 		};
 		// Imported only for a Pi run, so the external backends never load Pi.
-		const backend =
-			kind === "pi"
+		const create = async (each: LeanBackendKind) =>
+			each === "pi"
 				? (await import("./backends/pi.ts")).createPiBuilderBackend(shared)
 				: createExternalBuilderBackend({
-						kind,
-						resolvePackage: leanPackageResolver({ kind, ...shared }),
+						kind: each,
+						resolvePackage: leanPackageResolver({ kind: each, ...shared }),
+						...(choices.allowApiBilling ? { allowApiBilling: true } : {}),
 					});
-		return { builder: backend, reviewer: backend };
+		const reviewerKind = choices.reviewerKind ?? kind;
+		const builder = await create(kind);
+		const reviewer =
+			reviewerKind === kind ? builder : await create(reviewerKind);
+		return { builder, reviewer };
 	};
 }

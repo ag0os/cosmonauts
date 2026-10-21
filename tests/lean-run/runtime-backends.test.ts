@@ -26,4 +26,23 @@ describe("runtimeBackends", () => {
 			"code-reviewer",
 		);
 	});
+
+	test("builds the reviewer on its own kind when it differs from the builder's", async () => {
+		const backends = await runtimeBackends()("claude-cli", tmp.path, {
+			reviewerKind: "codex-cli",
+		});
+
+		expect([backends.builder.kind, backends.reviewer.kind]).toEqual([
+			"claude-cli",
+			"codex-cli",
+		]);
+	});
+
+	test("shares one backend for both roles when the reviewer kind matches", async () => {
+		const backends = await runtimeBackends()("codex-cli", tmp.path, {
+			reviewerKind: "codex-cli",
+		});
+
+		expect(backends.reviewer).toBe(backends.builder);
+	});
 });

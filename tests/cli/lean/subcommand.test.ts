@@ -447,6 +447,19 @@ describe("lean build", () => {
 		expect(stderr).toMatch(error);
 	});
 
+	test("reads --json after --request as the request text, so a commander error stays on stderr", async () => {
+		const { stdout, stderr } = await commanderFailure([
+			"build",
+			"--request",
+			"--json",
+			"--reviewer-backend",
+			"nope",
+		]);
+
+		expect(stdout).toBe("");
+		expect(stderr).toMatch(/'nope' is invalid/u);
+	});
+
 	test("prints a commander error as JSON for a --json flag before --", async () => {
 		const { stdout, stderr } = await commanderFailure([
 			"check",
@@ -458,6 +471,22 @@ describe("lean build", () => {
 
 		expect(JSON.parse(stdout).error).toMatch(/too many arguments/u);
 		expect(stderr).toBe("");
+	});
+
+	test("refuses neither --plan nor --request on stderr without --json", async () => {
+		const { builds, options } = doubles(record("done"));
+		output = captureCliOutput();
+		const program = createLeanProgram({ cwd: tmp.path, ...options });
+		for (const command of [program, ...program.commands])
+			command.exitOverride();
+
+		await expect(
+			program.parseAsync(["build"], { from: "user" }),
+		).rejects.toMatchObject({ exitCode: 1 });
+
+		expect(output.stdout()).toBe("");
+		expect(output.stderr()).toMatch(/--plan or a non-empty --request/u);
+		expect(builds).toEqual([]);
 	});
 
 	test("aborts the run's signal on SIGINT", async () => {
@@ -488,6 +517,15 @@ describe("lean review", () => {
 		await run(["review", "--clear-stale-lock"], options);
 
 		expect(reviews[0]?.clearStaleLock).toBe(true);
+	});
+
+	test("passes no request for a blank --request", async () => {
+		const { reviews, options } = doubles(record("done"));
+
+		await run(["review", "--request", "  "], options);
+
+		expect(reviews).toHaveLength(1);
+		expect(reviews[0]).not.toHaveProperty("request");
 	});
 
 	test("calls runReview with the base, plan and reviewer and prints the findings", async () => {

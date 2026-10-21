@@ -146,6 +146,25 @@ describe("createExternalBuilderBackend", () => {
 		);
 	});
 
+	test.each([
+		[true, "sk-ant-backend"],
+		[false, undefined],
+	])("passes ANTHROPIC_API_KEY to claude only with allowApiBilling: %s", async (allowApiBilling, key) => {
+		const requests: ProcessRequest[] = [];
+		const backend = createExternalBuilderBackend({
+			kind: "claude-cli",
+			resolvePackage: async () => PACKAGE,
+			env: { ANTHROPIC_API_KEY: "sk-ant-backend" },
+			allowApiBilling,
+			runProcess: async (request) => {
+				requests.push(request);
+				return { exitCode: 0, stdout: ENVELOPE, stderr: "" };
+			},
+		});
+		await backend.run({ prompt: "p", worktree: "/repo", role: "lean/builder" });
+		expect(requests[0]?.env.ANTHROPIC_API_KEY).toBe(key);
+	});
+
 	test("runs codex exec and returns its last message file", async () => {
 		const requests: ProcessRequest[] = [];
 		const backend = createExternalBuilderBackend({

@@ -85,6 +85,8 @@ export interface ExternalBuilderBackendOptions {
 	 */
 	extraArgs?: readonly string[];
 	env?: NodeJS.ProcessEnv;
+	/** Claude only: keep ANTHROPIC_API_KEY, so the session bills the API, not the subscription. */
+	allowApiBilling?: boolean;
 	runProcess?: ProcessRunner;
 }
 
@@ -271,6 +273,7 @@ function materialize(
 		return createClaudeCliInvocation(agentPackage, {
 			...shared,
 			claudeArgs: [...extraArgs, "-p"],
+			...(options.allowApiBilling ? { allowApiBilling: true } : {}),
 			...(options.binary ? { claudeBinary: options.binary } : {}),
 		});
 	const model = harnessModel(modelOptions(options, agentPackage));

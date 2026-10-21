@@ -35,8 +35,10 @@ Stop and show the human the plan (and the spec). Wait for their go-ahead or edit
 ## 5. Hand off
 
 ```
-cosmonauts lean build --plan missions/lean/<slug>/plan.md [--spec missions/lean/<slug>/spec.md] [--backend pi|claude-cli|codex-cli] --json
+cosmonauts lean build --plan missions/lean/<slug>/plan.md [--spec missions/lean/<slug>/spec.md] [--backend pi|claude-cli|codex-cli] [--reviewer-backend pi|claude-cli|codex-cli] [--allow-api-billing] --json
 ```
+
+`--backend` picks where the builder runs, and the reviewer too unless `--reviewer-backend` names another harness. Claude Code sessions run without `ANTHROPIC_API_KEY`, on the human's subscription; `--allow-api-billing` keeps the key, so they bill the API. A small direct fix with no plan takes `--request "<text>"` in place of `--plan`.
 
 It runs the builder, the host checks and the reviewer, and takes a long time: give it a long timeout or run it in the background.
 
