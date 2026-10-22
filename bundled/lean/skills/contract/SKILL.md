@@ -27,6 +27,7 @@ They live at `missions/lean/<slug>/spec.md` and `missions/lean/<slug>/plan.md`, 
 ## Approach      — one paragraph
 ## Touches       — modules/files to change, with the reason each is touched
                    (one bullet per path; the host reads its first `backticked` path, else its first word with a / or an extension)
+                   (a file the Approach names by its exact path also counts as planned, unless Reuses lists it, so name files that must not change in Risks or Reuses, not the Approach)
 ## Reuses        — existing helpers/modules the change must use (from the map; same bullets as Touches)
 ## Behaviors     — B-1..n: observer / entry point / outcome
                    (one line per behavior, `B-n: observer / entry point / outcome`, parts separated by " / ")

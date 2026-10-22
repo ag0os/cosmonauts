@@ -1,3 +1,4 @@
+import { requestPaths } from "../plan.ts";
 import type { ParsedPlan } from "../types.ts";
 import {
 	isGlob,
@@ -7,7 +8,8 @@ import {
 } from "./paths.ts";
 
 export interface PlanVersusActualOptions {
-	readonly plan: Pick<ParsedPlan, "touches">;
+	readonly plan: Pick<ParsedPlan, "touches"> &
+		Partial<Pick<ParsedPlan, "approach" | "reuses">>;
 	/** The builder envelope's `touched`. */
 	readonly touched: readonly string[];
 	/** `git diff --name-only` against the base. */
@@ -15,28 +17,38 @@ export interface PlanVersusActualOptions {
 }
 
 export interface PlanVersusActual {
-	/** Changed files that a `Touches` entry covers. */
+	/** Changed files that a `Touches` entry covers or the `Approach` names. */
 	readonly planned: string[];
-	/** Changed files no `Touches` entry covers: reviewer input, not a failure. */
+	/** Every other changed file: reviewer input, not a failure. */
 	readonly unplanned: string[];
 	/** `Touches` entries that no changed file falls under. */
 	readonly untouched: string[];
 }
 
 /**
- * Compares the plan's `Touches` with what actually changed: the union of the
- * envelope's `touched` and the diff. An entry covers a file when it names the
+ * Compares the plan with what actually changed: the union of the envelope's
+ * `touched` and the diff. A `Touches` entry covers a file when it names the
  * file or a directory above it, or is a glob (`*`, `**`, `?`) the file matches.
+ * A file the `Approach` names, by `requestPaths`' rule, is planned too unless
+ * a `Reuses` entry covers it; prose names one exact file, and is no promise,
+ * so it never enters `untouched`.
  */
 export function planVersusActual(
 	options: PlanVersusActualOptions,
 ): PlanVersusActual {
 	const entries = normalizeRepoPaths(options.plan.touches.map(touchesPath));
+	const named = normalizeRepoPaths(
+		requestPaths(options.plan.approach ?? ""),
+	).filter(
+		(path) =>
+			!options.plan.reuses?.some((entry) => covers(touchesPath(entry), path)),
+	);
 	const actual = normalizeRepoPaths([...options.touched, ...options.diffFiles]);
-	const planned = actual.filter((file) => isCovered(file, entries));
+	const isPlanned = (file: string) =>
+		isCovered(file, entries) || named.includes(file);
 	return {
-		planned,
-		unplanned: actual.filter((file) => !isCovered(file, entries)),
+		planned: actual.filter(isPlanned),
+		unplanned: actual.filter((file) => !isPlanned(file)),
 		untouched: entries.filter(
 			(entry) => !actual.some((file) => covers(entry, file)),
 		),
