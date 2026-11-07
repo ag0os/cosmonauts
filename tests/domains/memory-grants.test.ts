@@ -1,3 +1,4 @@
+import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import worker from "../../bundled/coding/agents/worker.ts";
@@ -64,6 +65,27 @@ describe("current content memory adapters", () => {
 			Object.assign(worker, { memory: saved });
 		}
 	});
+});
+
+// Direct module imports deliberately bypass the proposed loader guard.
+// Removing that policy must not remove the pin on the content migration itself.
+test("shipped content never selects obsolete memory extensions independently of loader validation", async () => {
+	for (const root of [
+		"domains/main/agents",
+		"bundled/coding/agents",
+		"bundled/lean/agents",
+	]) {
+		for (const file of await readdir(resolve(root))) {
+			if (!file.endsWith(".ts")) continue;
+			const { default: definition } = await import(resolve(root, file));
+			expect(definition.extensions, `${root}/${file}`).not.toContain(
+				"agent-memory",
+			);
+			expect(definition.extensions, `${root}/${file}`).not.toContain(
+				"architecture-memory",
+			);
+		}
+	}
 });
 
 // Derived from the base providers actually selected, not the now-removed id allowlist.

@@ -2,6 +2,7 @@ import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import { LEAN_SKILLS } from "../agent-skills.ts";
 
 const definition: AgentDefinition = {
+	memory: {},
 	id: "builder",
 	description:
 		"Implements one plan section or one direct fix test-first from a context pack, and hands back the diff with an envelope.",

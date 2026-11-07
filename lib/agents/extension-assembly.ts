@@ -4,8 +4,6 @@ import { join } from "node:path";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import ts from "typescript";
 import type { DomainResolver } from "../domains/resolver.ts";
-import { createSessionExtension as authoredProvider } from "../extensions/agent-memory/index.ts";
-import { createSessionExtension as architectureProvider } from "../extensions/architecture-memory/index.ts";
 import { createSessionExtension as plansProvider } from "../extensions/plans/index.ts";
 import type {
 	SessionExtensionProvider,
@@ -20,8 +18,6 @@ import {
 const NATIVE_PROVIDERS: Readonly<Record<string, SessionExtensionProvider>> = {
 	tasks: tasksProvider,
 	plans: plansProvider,
-	"agent-memory": authoredProvider,
-	"architecture-memory": architectureProvider,
 };
 
 interface BindingOptions {

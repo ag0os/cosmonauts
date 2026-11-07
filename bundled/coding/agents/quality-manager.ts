@@ -1,6 +1,7 @@
 import type { AgentDefinition } from "../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
+	memory: {},
 	id: "quality-manager",
 	description:
 		"Runs one review-only quality pass and reports findings for caller-owned remediation.",

@@ -9,6 +9,10 @@ import {
 import { assemblePrompts } from "../../lib/domains/prompt-assembly.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { DomainMergeConflict } from "../../lib/domains/types.ts";
+import {
+	DomainValidationError,
+	validateDomains,
+} from "../../lib/domains/validator.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("domain-loader-");
@@ -66,6 +70,26 @@ describe("loadDomains", () => {
 			message: "memory.architecture",
 		},
 		{ declaration: { id: "under_score", memory: {} }, message: "Agent id" },
+		{
+			declaration: { id: "legacy", capabilities: ["framework-base"] },
+			message: "memory grants",
+		},
+		{
+			declaration: { id: "legacy", memory: { unknown: true } },
+			message: "Invalid memory grant",
+		},
+		{
+			declaration: { id: "legacy", memory: {}, tools: "bad" },
+			message: "Unknown tool preset",
+		},
+		{
+			declaration: {
+				id: "legacy",
+				memory: {},
+				instructions: { kind: "file", path: "relative.md" },
+			},
+			message: "absolute file path",
+		},
 	])("rejects an unmigrated file declaration with guidance: $message", async ({
 		declaration,
 		message,
@@ -75,24 +99,69 @@ describe("loadDomains", () => {
 		await writeDomainManifest(domainDir, "outside");
 		await writeFile(
 			join(domainDir, "agents", "legacy.ts"),
-			`export default ${JSON.stringify(declaration)};`,
+			`export default ${JSON.stringify({ tools: "none", ...declaration })};`,
 		);
-		await expect(loadDomains(tmp.path)).rejects.toThrow(message);
+		const domains = await loadDomains(tmp.path);
+		const error = new DomainValidationError(validateDomains(domains));
+		expect(error.message).toContain(message);
+		expect(error.message).toContain(join(domainDir, "agents", "legacy.ts"));
+		expect(error.message).toContain("outside");
+		expect(error.message).toContain("package/source:");
 	});
 
 	it.each([
 		{ memory: {} },
-		{ capabilities: ["framework-base"] },
+		{ memory: {}, capabilities: ["consumer-voice"] },
 	])("accepts an explicitly migrated file declaration %j", async (choice) => {
 		const domainDir = join(tmp.path, "outside");
 		await mkdir(join(domainDir, "agents"), { recursive: true });
 		await writeDomainManifest(domainDir, "outside");
 		await writeFile(
 			join(domainDir, "agents", "agent.ts"),
-			`export default ${JSON.stringify({ id: "agent", ...choice })};`,
+			`export default ${JSON.stringify({ id: "agent", tools: "none", ...choice })};`,
 		);
-		expect((await loadDomains(tmp.path))[0]?.agents.has("agent")).toBe(true);
+		const domain = (await loadDomains(tmp.path))[0];
+		expect(domain?.agents.has("agent")).toBe(true);
+		expect(domain?.declarationDiagnostics).toEqual([]);
 	});
+	it("retains declaration diagnostics from both layered packages without aborting discovery", async () => {
+		const sources = [];
+		for (const [index, name] of ["first", "second"].entries()) {
+			const root = join(tmp.path, name);
+			await mkdir(join(root, "agents"), { recursive: true });
+			await writeDomainManifest(root, "outside");
+			await writeFile(
+				join(root, "agents", `${name}.ts`),
+				`export default { id: "${name}", tools: "none" };`,
+			);
+			sources.push({
+				domainsDir: root,
+				kind: "domain-root" as const,
+				origin: name,
+				precedence: index,
+			});
+		}
+		const domains = await loadDomainsFromSources(sources);
+		expect(domains).toHaveLength(1);
+		expect(domains[0]?.declarationDiagnostics).toEqual([
+			expect.objectContaining({
+				domain: "outside",
+				origin: "first",
+				file: join(tmp.path, "first", "agents", "first.ts"),
+				severity: "error",
+			}),
+			expect.objectContaining({
+				domain: "outside",
+				origin: "second",
+				file: join(tmp.path, "second", "agents", "second.ts"),
+				severity: "error",
+			}),
+		]);
+		expect(
+			new DomainValidationError(validateDomains(domains)).diagnostics,
+		).toHaveLength(2);
+	});
+
 	it("loads conventional domains without registration and assembles persona by agent id", async () => {
 		const frameworkPromptsDir = join(tmp.path, "framework");
 		await mkdir(frameworkPromptsDir, { recursive: true });

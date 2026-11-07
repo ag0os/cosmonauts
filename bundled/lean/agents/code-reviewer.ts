@@ -2,6 +2,7 @@ import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import { LEAN_SKILLS } from "../agent-skills.ts";
 
 const definition: AgentDefinition = {
+	memory: {},
 	id: "code-reviewer",
 	description:
 		"Reviews a change through the lenses it is given (general, security, performance, ux) and reports findings. Never edits.",

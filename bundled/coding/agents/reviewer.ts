@@ -1,6 +1,7 @@
 import type { AgentDefinition } from "../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
+	memory: {},
 	id: "reviewer",
 	description:
 		"Performs clean-context code review against main and writes structured findings for remediation.",

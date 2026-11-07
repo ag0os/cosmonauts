@@ -1,6 +1,7 @@
 import type { AgentDefinition } from "../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
+	memory: {},
 	id: "verifier",
 	description:
 		"Validates explicit claims against the codebase with structured pass/fail evidence. Runs checks but never writes code.",

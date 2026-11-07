@@ -103,11 +103,10 @@ function rejectLegacyMemoryExtensions(def: AgentDefinition): void {
 
 /** Shepherd-proposed migration policy for file-loaded declarations; user acceptance pending. */
 export function validateLoadedAgentDefinition(def: AgentDefinition): void {
-	validateIdentity(def);
-	rejectLegacyMemoryExtensions(def);
-	if (def.memory === undefined && !def.capabilities?.includes("framework-base"))
+	validateAgentDefinition(def);
+	if (def.memory === undefined)
 		throw new Error(
-			`Agent "${def.id}" needs explicit memory grants (use memory: {} to decline) or the framework-base capability; legacy defaults are not inferred`,
+			`Agent "${def.id}" needs explicit memory grants (use memory: {} to decline); legacy defaults are not inferred`,
 		);
 }
 

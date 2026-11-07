@@ -421,6 +421,11 @@ describe("CosmonautsRuntime", () => {
 				capabilities: ["missing-capability"],
 			});
 
+			await writeFile(
+				join(betaAgentsDir, "legacy.ts"),
+				'export default { id: "legacy", tools: "none" };',
+			);
+
 			const pluginA = join(tmp.path, "plugin-a");
 			const pluginB = join(tmp.path, "plugin-b");
 			const gammaA = join(pluginA, "gamma-a");

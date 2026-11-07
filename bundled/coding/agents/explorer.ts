@@ -1,6 +1,7 @@
 import type { AgentDefinition } from "../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
+	memory: {},
 	id: "explorer",
 	description:
 		"Performs readonly codebase exploration and fact-finding. Reports discoveries without writing code or creating tasks.",
