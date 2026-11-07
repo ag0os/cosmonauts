@@ -605,6 +605,16 @@ describe("cosmonauts run", () => {
 		});
 	});
 
+	test("resolves a named stages declaration and passes the collection name to execution", async () => {
+		const runtime = runtimeFixture([
+			{ name: "declared", description: "Stages", stages: [{ name: "scribe" }] },
+		]);
+		await parseRun(["chain", "declared"], { runtime });
+		expect(chainMocks.executeChainExpression).toHaveBeenCalledWith(
+			expect.objectContaining({ runtime, chainExpr: "declared" }),
+		);
+	});
+
 	async function parseRun(
 		argv: string[],
 		options: {

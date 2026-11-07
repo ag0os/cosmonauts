@@ -840,3 +840,54 @@ describe("DomainValidationError", () => {
 		expect(error.message).toContain("chain:build");
 	});
 });
+
+it("validates actors in sequential and parallel declared stages", () => {
+	const agent = makeAgent({
+		id: "test-agent",
+		instructions: { kind: "inline", content: "Do work" },
+	});
+	const domain = makeDomain({
+		prompts: new Set([agent.id]),
+		agents: new Map([[agent.id, agent]]),
+		chains: [
+			{
+				name: "declared",
+				description: "Stages",
+				stages: [
+					{ name: agent.id },
+					{
+						kind: "parallel",
+						syntax: { kind: "group" },
+						stages: [{ name: agent.id }, { name: "missing" }],
+					},
+				],
+			},
+		],
+	});
+	const diagnostics = validateDomains([makeShared(), domain]);
+	expect(diagnostics.filter((d) => d.message.includes("missing"))).toHaveLength(
+		1,
+	);
+	expect(
+		validateDomains([
+			makeShared(),
+			{
+				...domain,
+				chains: [
+					{
+						name: "missing-sequential",
+						description: "Missing",
+						stages: [{ name: "missing-sequential-actor" }],
+					},
+				],
+			},
+		]).some((d) => d.message.includes("missing-sequential-actor")),
+	).toBe(true);
+	const validDomain: LoadedDomain = {
+		...domain,
+		chains: [
+			{ name: "valid", description: "Valid", stages: [{ name: agent.id }] },
+		],
+	};
+	expect(validateDomains([makeShared(), validDomain])).toEqual([]);
+});

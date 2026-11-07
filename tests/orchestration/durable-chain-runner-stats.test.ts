@@ -138,6 +138,82 @@ describe("runDurableChain stage stats", () => {
 		vi.useRealTimers();
 	});
 
+	test.each([
+		[undefined, { kind: "default" }],
+		[
+			{ kind: "plan-review", targetStageIds: ["author", 42] },
+			{ kind: "plan-review", targetStageIds: ["author"] },
+		],
+		[
+			{ kind: "plan-revision", targetStageIds: ["author", false] },
+			{ kind: "plan-revision", targetStageIds: ["author"] },
+		],
+		[
+			{ kind: "revision", reviewKind: "plan" },
+			{ kind: "plan-revision", targetStageIds: [] },
+		],
+		[{ kind: "revision", reviewKind: "code" }, { kind: "default" }],
+		[{ kind: "unknown" }, { kind: "default" }],
+	])("projects stage purpose %j and sanitizes persisted selectors without reexecution", async (purpose, expected) => {
+		let projecting = false;
+		spawnerMocks.createPiSpawner.mockReturnValue({
+			spawn: spawnerMocks.spawn,
+			dispose: () => {
+				projecting = true;
+			},
+		});
+		const original = FileRunStore.prototype.readRunGraph;
+		const read = vi
+			.spyOn(FileRunStore.prototype, "readRunGraph")
+			.mockImplementation(async function (this: FileRunStore, ref) {
+				const persisted = await original.call(this, ref);
+				if (!projecting) return persisted;
+				return {
+					...persisted,
+					graph: {
+						...persisted.graph,
+						steps: persisted.graph.steps.map((step, index) => ({
+							...step,
+							backend: {
+								...step.backend,
+								options: {
+									...step.backend.options,
+									stage: {
+										name: index === 0 ? "planner" : "reviewer",
+										loop: false,
+										purpose,
+										requiresPlanReviewTarget: index === 0,
+										reviewTarget: {
+											source: "active-plan-review",
+											producerStageIds: ["producer", 17],
+										},
+									},
+								},
+							},
+						})),
+					},
+				};
+			});
+		try {
+			const result = await runPlannerThenReviewer();
+			expect(result.success).toBe(true);
+			expect(result.stageResults.map((r) => r.stage)).toMatchObject(
+				[true, false].map((requiresPlanReviewTarget) => ({
+					purpose: expected,
+					requiresPlanReviewTarget,
+					completionPolicy: { kind: "once" },
+					reviewTarget: {
+						source: "active-plan-review",
+						producerStageIds: ["producer"],
+					},
+				})),
+			);
+			expect(spawnerMocks.spawn).toHaveBeenCalledTimes(2);
+		} finally {
+			read.mockRestore();
+		}
+	});
+
 	test("projects completed legacy graphs without new stage fields and accepts old purposes", async () => {
 		let projection = false;
 		spawnerMocks.createPiSpawner.mockReturnValue({

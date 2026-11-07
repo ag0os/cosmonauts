@@ -1,7 +1,13 @@
 import { describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
-import { normalizeChain } from "../../lib/orchestration/chain-normalization.ts";
+import { runConfiguredChain } from "../../lib/orchestration/chain-dispatch.ts";
+import { createInlineChainEpisodeLifecycle } from "../../lib/orchestration/chain-episodes.ts";
+import {
+	assertNormalizedStage,
+	normalizeChain,
+	refuseNormalization,
+} from "../../lib/orchestration/chain-normalization.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runStage } from "../../lib/orchestration/chain-runner.ts";
 import { selectChain } from "../../lib/orchestration/chain-selection.ts";
@@ -194,7 +200,7 @@ describe("declared chain normalization", () => {
 			run: { scope: "chain", runId: "refusal" },
 		});
 		expect(refuse).toHaveBeenCalledWith(
-			expect.any(Object),
+			expect.objectContaining({ steps: [stage] }),
 			expect.arrayContaining([expect.objectContaining({ code: "completion" })]),
 		);
 		expect(spawn).not.toHaveBeenCalled();
@@ -223,7 +229,10 @@ describe("declared chain normalization", () => {
 		).toMatchObject({
 			ok: false,
 			errors: expect.arrayContaining([
-				expect.objectContaining({ code: "completion" }),
+				expect.objectContaining({
+					code: "completion",
+					message: "completionCheck and completionPolicy conflict.",
+				}),
 			]),
 		});
 	});
@@ -534,5 +543,553 @@ describe("declared chain normalization", () => {
 				true,
 			).episodes,
 		).toBe(false);
+	});
+});
+
+test("normalization failures correlate repeated names by supplied or generated occurrence id", async () => {
+	for (const supplied of [false, true]) {
+		const steps: ChainStage[] = [
+			{ name: definition.id, stageId: supplied ? "first" : undefined },
+			{
+				name: definition.id,
+				stageId: supplied ? "second" : undefined,
+				purpose: { kind: "plan-review", targetStageIds: ["missing"] },
+			},
+		];
+		const input = config(steps);
+		const normalized = normalizeChain(input);
+		if (normalized.ok) throw new Error("Expected target refusal");
+		const result = await refuseNormalization(input, normalized.errors);
+		expect(result.stageResults).toHaveLength(1);
+		expect(result.stageResults[0]).toMatchObject({
+			stage: {
+				...steps[1],
+				stageId: supplied ? "second" : "chain-2-spec-writer-pro",
+			},
+			success: false,
+			iterations: 0,
+			durationMs: 0,
+			error: 'Unknown target stage "missing".',
+		});
+	}
+});
+
+test("mixed normalized and raw stages still validate raw declarations", () => {
+	const first = normalizeChain(config([{ name: definition.id }]));
+	if (!first.ok) throw new Error("Expected normalized stage");
+	expect(
+		normalizeChain(config([...first.stages, { name: "missing" }])),
+	).toMatchObject({ ok: false, errors: [{ code: "declaration" }] });
+	expect(() => assertNormalizedStage({ name: definition.id })).toThrow(
+		"Stage must be normalized before execution.",
+	);
+	expect(() =>
+		assertNormalizedStage(first.stages[0] as ChainStage),
+	).not.toThrow();
+});
+
+test("invalid plan slugs preserve the typed diagnostic through compilation", () => {
+	const input = {
+		...config([{ name: definition.id }]),
+		planSlug: "Invalid_slug",
+		completionLabel: "plan:two",
+	};
+	expect(normalizeChain(input)).toMatchObject({
+		ok: false,
+		errors: [
+			{ code: "target", message: expect.stringContaining("Invalid_slug") },
+		],
+	});
+	expect(() => compileChainToGraph({ ...input, runId: "run" })).toThrow(
+		/Invalid_slug/,
+	);
+});
+
+test("compiler preserves distinct per-stage slugs and persisted once policy in sequence and parallel", () => {
+	const actor = (stageId: string): ChainStage => ({
+		name: definition.id,
+		stageId,
+		expectedPlanSlug: stageId,
+	});
+	const compiled = compileChainToGraph({
+		...config([
+			actor("solo"),
+			{
+				kind: "parallel",
+				syntax: { kind: "group" },
+				stages: [actor("left"), actor("right")],
+			},
+		]),
+		planSlug: "global",
+		runId: "run",
+	});
+	expect(
+		compiled.graph.steps.map((step) => step.backend.options),
+	).toMatchObject(
+		["solo", "left", "right"].map((expectedPlanSlug) => ({
+			expectedPlanSlug,
+			stage: {
+				expectedPlanSlug,
+				loop: false,
+				completionPolicy: { kind: "once" },
+			},
+		})),
+	);
+});
+
+test("classifier registry preserves a requested alias and only resolves it once across frozen occurrences", () => {
+	const provider = { ...definition, domain: "vendor" };
+	const source = new AgentRegistry([provider]);
+	const reference = {
+		requested: {
+			role: "studio",
+			agentId: definition.id,
+			qualifiedId: `studio/${definition.id}`,
+		},
+		resolved: {
+			role: "vendor",
+			agentId: definition.id,
+			qualifiedId: `vendor/${definition.id}`,
+		},
+		binding: { role: "studio", domainId: "vendor", source: "default" as const },
+	};
+	const lookup = vi
+		.spyOn(source, "resolveReferenceResult")
+		.mockReturnValue({ kind: "found", definition: provider, reference });
+	const classifyStage = vi.fn(
+		(context: import("../../lib/orchestration/types.ts").ChainStageContext) => {
+			expect(
+				context.registry.resolveReferenceResult(definition.id, "studio"),
+			).toEqual({ kind: "found", definition: provider, reference });
+			expect(context.registry.get(definition.id, "studio")).toBe(provider);
+			return {};
+		},
+	);
+	const result = normalizeChain({
+		...config([
+			{ name: definition.id, agentReference: reference },
+			{
+				name: definition.id,
+				agentReference: {
+					...reference,
+					binding: { ...reference.binding, source: "project" as const },
+				},
+			},
+		]),
+		registry: source,
+		chainAdapter: { classifyStage },
+	});
+	expect(result.ok).toBe(true);
+	expect(classifyStage).toHaveBeenCalledTimes(2);
+	expect(lookup).toHaveBeenCalledTimes(1);
+});
+
+test("frozen identity grammar is checked even when qualified components agree", () => {
+	for (const side of ["requested", "resolved"] as const) {
+		const ref = {
+			requested: {
+				role: "studio",
+				agentId: definition.id,
+				qualifiedId: `studio/${definition.id}`,
+			},
+			resolved: {
+				role: "studio",
+				agentId: definition.id,
+				qualifiedId: `studio/${definition.id}`,
+			},
+			binding: {
+				role: "studio",
+				domainId: "studio",
+				source: "default" as const,
+			},
+		};
+		ref[side].role = "Invalid";
+		ref[side].qualifiedId = `Invalid/${definition.id}`;
+		expect(
+			normalizeChain(config([{ name: definition.id, agentReference: ref }])),
+		).toMatchObject({
+			ok: false,
+			errors: [
+				{ code: "binding", message: expect.stringContaining("stage actor") },
+			],
+		});
+	}
+});
+
+test("malformed purpose and unavailable frozen declarations retain actionable diagnostics", () => {
+	expect(
+		normalizeChain(
+			config([{ name: definition.id, purpose: { kind: "bogus" } as never }]),
+		),
+	).toMatchObject({
+		ok: false,
+		errors: [{ message: "Invalid stage purpose." }],
+	});
+	const stage = { name: definition.id, terminalGate: "absent" };
+	expect(
+		normalizeChain({ ...config([stage]), chainAdapter: {} }),
+	).toMatchObject({
+		ok: false,
+		errors: [{ message: 'Unknown terminal gate "absent".' }],
+	});
+	const ref = {
+		requested: {
+			role: "studio",
+			agentId: definition.id,
+			qualifiedId: `studio/${definition.id}`,
+		},
+		resolved: {
+			role: "missing",
+			agentId: definition.id,
+			qualifiedId: `missing/${definition.id}`,
+		},
+		binding: {
+			role: "studio",
+			domainId: "missing",
+			source: "default" as const,
+		},
+	};
+	expect(
+		normalizeChain(config([{ name: definition.id, agentReference: ref }])),
+	).toMatchObject({
+		ok: false,
+		errors: [
+			{
+				message: `Frozen declaration "missing/${definition.id}" is unavailable or internal.`,
+			},
+		],
+	});
+});
+
+test("direct stages honor the remaining iteration budget and absolute deadline", async () => {
+	const stage: ChainStage = {
+		name: definition.id,
+		loop: true,
+		completionPolicy: {
+			kind: "state",
+			evaluate: async () => ({ status: "pending" }),
+		},
+	};
+	const spawn = vi
+		.fn()
+		.mockResolvedValue({ success: true, sessionId: "session", messages: [] });
+	const spawner = { spawn, dispose() {} };
+	const expired = await runStage(stage, config([stage]), spawner, {
+		maxTotalIterations: 1,
+		deadlineMs: Date.now() - 1,
+	});
+	expect(expired.success).toBe(false);
+	expect(spawn).not.toHaveBeenCalled();
+	const budget = await runStage(stage, config([stage]), spawner, {
+		maxTotalIterations: 1,
+		deadlineMs: Date.now() + 10000,
+	});
+	expect(budget.success).toBe(false);
+	expect(budget.iterations).toBe(1);
+	expect(spawn).toHaveBeenCalledTimes(1);
+});
+
+test("a synthesized binding preserves its requested and resolved identities", () => {
+	const result = normalizeChain(config([{ name: `studio/${definition.id}` }]));
+	if (!result.ok) throw new Error("Expected declaration");
+	expect((result.stages[0] as ChainStage).agentReference).toEqual({
+		requested: {
+			role: "studio",
+			agentId: definition.id,
+			qualifiedId: `studio/${definition.id}`,
+		},
+		resolved: {
+			role: "studio",
+			agentId: definition.id,
+			qualifiedId: `studio/${definition.id}`,
+		},
+		binding: { role: "studio", domainId: "studio", source: "default" },
+	});
+});
+
+test("classification sees an explicit loop even when the declaration is one-shot", () => {
+	const classifyStage = vi.fn(() => ({}));
+	const result = normalizeChain({
+		...config([
+			{
+				name: definition.id,
+				loop: true,
+				completionPolicy: {
+					kind: "state",
+					evaluate: async () => ({ status: "complete" }),
+				},
+			},
+		]),
+		chainAdapter: { classifyStage },
+	});
+	expect(result.ok).toBe(true);
+	expect(classifyStage).toHaveBeenCalledWith(
+		expect.objectContaining({ stage: expect.objectContaining({ loop: true }) }),
+	);
+});
+
+test("the requester defaults to the domain context for binding and private classifier peers", () => {
+	const peer = { ...definition, id: "private-peer" };
+	const source = new AgentRegistry([definition, peer], {
+		internalAgentsByDomain: new Map([["studio", new Set([peer.id])]]),
+	});
+	const resolve = vi.spyOn(source, "resolveReferenceResult");
+	const classifyStage = vi.fn(
+		(context: import("../../lib/orchestration/types.ts").ChainStageContext) => {
+			expect(context.registry.get("private-peer", "studio")).toBe(peer);
+			return {};
+		},
+	);
+	const result = normalizeChain({
+		...config([{ name: definition.id }]),
+		registry: source,
+		chainAdapter: { classifyStage },
+	});
+	expect(result.ok).toBe(true);
+	expect(resolve).toHaveBeenCalledWith(definition.id, "studio", "studio");
+});
+
+test("public dispatch returns a typed failure before routing unknown declarations", async () => {
+	const result = await runConfiguredChain(config([{ name: "unknown-actor" }]));
+	expect(result).toMatchObject({
+		success: false,
+		totalDurationMs: 0,
+		errors: ['Unknown agent role "unknown-actor".'],
+		stageResults: [
+			{
+				stage: { name: "unknown-actor", stageId: "chain-1-unknown-actor" },
+				success: false,
+				iterations: 0,
+			},
+		],
+	});
+	expect(
+		await refuseNormalization(config([{ name: definition.id }]), [
+			{ code: "target", message: "global diagnostic" },
+		]),
+	).toMatchObject({
+		success: false,
+		stageResults: [],
+		errors: ["global diagnostic"],
+	});
+});
+
+test("compilation refuses a completion label even without a loop", () => {
+	expect(() =>
+		compileChainToGraph({
+			...config([{ name: definition.id }]),
+			runId: "run",
+			completionLabel: "scope",
+		}),
+	).toThrow("Cannot compile inline-only chain steps.");
+});
+
+test("live binding output preserves the provider reference instead of reconstructing a default", () => {
+	const provider = { ...definition, domain: "vendor" };
+	const source = new AgentRegistry([provider]);
+	const reference = {
+		requested: {
+			role: "studio",
+			agentId: definition.id,
+			qualifiedId: `studio/${definition.id}`,
+		},
+		resolved: {
+			role: "vendor",
+			agentId: definition.id,
+			qualifiedId: `vendor/${definition.id}`,
+		},
+		binding: { role: "studio", domainId: "vendor", source: "project" as const },
+	};
+	vi.spyOn(source, "resolveReferenceResult").mockReturnValue({
+		kind: "found",
+		definition: provider,
+		reference,
+	});
+	const result = normalizeChain({
+		...config([{ name: definition.id }]),
+		registry: source,
+	});
+	if (!result.ok) throw new Error("Expected live bound actor");
+	expect((result.stages[0] as ChainStage).agentReference).toEqual(reference);
+});
+
+test("named parallel selection clones stages while preserving callbacks", () => {
+	const evaluate = async () => ({ status: "complete" as const });
+	const stages: ChainConfig["steps"] = [
+		{
+			kind: "parallel",
+			syntax: { kind: "group" },
+			stages: [
+				{ name: definition.id, completionPolicy: { kind: "state", evaluate } },
+				{ name: definition.id },
+			],
+		},
+	];
+	const selected = selectChain("declared", [
+		{ name: "declared", description: "Parallel", stages },
+	]);
+	expect(selected.steps).toEqual(stages);
+	expect(selected.steps[0]).not.toBe(stages[0]);
+});
+
+test("episode attribution preserves a domainless declaration and raw reference or name fallbacks", () => {
+	for (const stage of [
+		{ name: "display", declarationId: "local" },
+		{
+			name: "display",
+			agentReference: {
+				resolved: { qualifiedId: "vendor/actor" },
+			} as ChainStage["agentReference"],
+		},
+		{ name: "local" },
+	]) {
+		expect(createInlineChainEpisodeLifecycle(config([stage])).source).toBe(
+			stage.declarationId ??
+				stage.agentReference?.resolved.qualifiedId ??
+				stage.name,
+		);
+	}
+});
+
+test("consumer classification errors retain their occurrence and diagnostic", () => {
+	expect(
+		normalizeChain({
+			...config([{ name: definition.id, stageId: "consumer-stage" }]),
+			chainAdapter: {
+				classifyStage: () => ({
+					errors: [{ code: "model", message: "Consumer diagnostic" }],
+				}),
+			},
+		}),
+	).toEqual({
+		ok: false,
+		errors: [
+			{
+				code: "model",
+				message: "Consumer diagnostic",
+				stageId: "consumer-stage",
+				stageName: definition.id,
+			},
+		],
+	});
+});
+
+test("internal declaration refusals identify their owner and requester", () => {
+	const source = new AgentRegistry([definition], {
+		internalAgentsByDomain: new Map([["studio", new Set([definition.id])]]),
+	});
+	expect(
+		normalizeChain({
+			...config([{ name: `studio/${definition.id}` }]),
+			registry: source,
+			domainContext: "outsider",
+		}),
+	).toMatchObject({
+		ok: false,
+		errors: [
+			{
+				code: "declaration",
+				message: `Agent "studio/${definition.id}" is internal to domain "studio" and is not visible from domain "outsider".`,
+			},
+		],
+	});
+});
+
+test("frozen private declarations use the context as their default requester", () => {
+	const source = new AgentRegistry([definition], {
+		internalAgentsByDomain: new Map([["studio", new Set([definition.id])]]),
+	});
+	const first = normalizeChain(config([{ name: definition.id }]));
+	if (!first.ok) throw new Error("Expected blueprint");
+	expect(
+		normalizeChain({
+			...config([
+				{
+					name: definition.id,
+					agentReference: (first.stages[0] as ChainStage).agentReference,
+				},
+			]),
+			registry: source,
+		}).ok,
+	).toBe(true);
+});
+
+test("the classifier sees synthesized references even without a host binding resolver", () => {
+	const classifyStage = vi.fn(
+		(context: import("../../lib/orchestration/types.ts").ChainStageContext) => {
+			expect(
+				context.registry.resolveReferenceResult(definition.id, "studio"),
+			).toMatchObject({
+				kind: "found",
+				reference: context.stage.agentReference,
+			});
+			return {};
+		},
+	);
+	expect(
+		normalizeChain({
+			...config([{ name: definition.id }]),
+			chainAdapter: { classifyStage },
+		}).ok,
+	).toBe(true);
+	expect(classifyStage).toHaveBeenCalledTimes(1);
+});
+
+test("identical frozen references snapshot the provider before repeated occurrences", () => {
+	const first = normalizeChain(config([{ name: definition.id }]));
+	if (!first.ok) throw new Error("Expected blueprint");
+	const reference = (first.stages[0] as ChainStage).agentReference;
+	const source = new AgentRegistry([definition]);
+	const lookup = vi
+		.spyOn(source, "getResolvedTarget")
+		.mockReturnValueOnce(definition)
+		.mockReturnValue({ ...definition, model: "drift/model" });
+	const result = normalizeChain({
+		...config([
+			{ name: definition.id, agentReference: reference },
+			{ name: definition.id, agentReference: reference },
+		]),
+		registry: source,
+	});
+	if (!result.ok) throw new Error("Expected frozen declarations");
+	expect(result.stages.map((stage) => (stage as ChainStage).model)).toEqual([
+		definition.model,
+		definition.model,
+	]);
+	expect(lookup).toHaveBeenCalledTimes(1);
+});
+
+test("an adapter without a refusal hook retains normal typed failures", async () => {
+	const result = await runConfiguredChain({
+		...config([{ name: "unknown-actor" }]),
+		chainAdapter: {},
+	});
+	expect(result).toMatchObject({
+		success: false,
+		errors: ['Unknown agent role "unknown-actor".'],
+	});
+	expect(
+		(
+			await refuseNormalization(config([{ name: definition.id }]), [
+				{
+					code: "target",
+					stageName: "ghost",
+					stageId: "missing",
+					message: "Absent occurrence",
+				},
+			])
+		).stageResults,
+	).toEqual([]);
+});
+
+test("a global diagnostic without an actor name does not invent a stage failure", async () => {
+	const result = await refuseNormalization(
+		config([{ name: definition.id, stageId: "known" }]),
+		[{ code: "target", stageId: "known", message: "Global diagnostic" }],
+	);
+	expect(result).toMatchObject({
+		success: false,
+		errors: ["Global diagnostic"],
+		stageResults: [],
 	});
 });

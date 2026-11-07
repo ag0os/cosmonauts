@@ -234,6 +234,18 @@ interface StageBindingInput {
 	member: number;
 	parallel: boolean;
 }
+function occurrenceId({
+	input,
+	index,
+	member,
+	parallel,
+}: Omit<StageBindingInput, "run">): string {
+	return (
+		input.stageId ??
+		`chain-${index + 1}${parallel ? `-${member + 1}` : ""}-${input.name.replaceAll("/", "-")}`
+	);
+}
+
 function assignStageId({
 	run,
 	input,
@@ -243,9 +255,7 @@ function assignStageId({
 }: StageBindingInput): ChainStage & { stageId: string } {
 	const stage = {
 		...input,
-		stageId:
-			input.stageId ??
-			`chain-${index + 1}${parallel ? `-${member + 1}` : ""}-${input.name.replaceAll("/", "-")}`,
+		stageId: occurrenceId({ input, index, member, parallel }),
 	};
 	try {
 		validateAgentId(stage.stageId, "Stage id");
@@ -711,13 +721,16 @@ function normalizationFailure(
 			.filter((error) => error.stageName)
 			.map((error) => [error.stageId, error]),
 	);
-	const stages = config.steps.flatMap(stagesOf);
+	const stages = mapSteps(config.steps, (stage, index, member, parallel) => ({
+		...stage,
+		stageId: occurrenceId({ input: stage, index, member, parallel }),
+	})).flatMap(stagesOf);
 	return {
 		success: false,
 		totalDurationMs: 0,
 		errors: messages,
 		stageResults: [...failed.values()].flatMap((error) => {
-			const stage = stages.find((stage) => stage.name === error.stageName);
+			const stage = stages.find((stage) => stage.stageId === error.stageId);
 			return stage
 				? [
 						{

@@ -183,3 +183,21 @@ describe("declared Drive worker identity", () => {
 		);
 	});
 });
+
+test("unavailable capture diagnostics name the declared worker", () => {
+	const warning = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+	try {
+		expect(
+			resolveDriveEpisodeWorker({
+				workerAgent: "studio/assembler",
+				domainContext: "studio",
+				agentRegistry: new AgentRegistry([actor("studio", false)]),
+			}),
+		).toBeUndefined();
+		expect(warning.mock.calls.flat().join(" ")).toContain(
+			'Declared worker "studio/assembler"',
+		);
+	} finally {
+		warning.mockRestore();
+	}
+});

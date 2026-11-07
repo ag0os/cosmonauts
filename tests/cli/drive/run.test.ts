@@ -913,6 +913,47 @@ describe("cosmonauts run drive compat run", () => {
 		expect(firstRunInlineSpec().runId).toBe("run-previous");
 	});
 
+	test("live subagent execution resolves the declared worker even with capture disabled", async () => {
+		await setupFixture(1);
+		await writeEpisodicConfig(process.cwd(), false);
+		const runtime = workerRuntime("coding", "live-coding", []);
+		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue(
+			runtime as CosmonautsRuntime,
+		);
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--backend",
+			"cosmonauts-subagent",
+			"--mode",
+			"inline",
+		]);
+		expect(backendMocks.createCosmonautsSubagentBackend).toHaveBeenCalledWith(
+			expect.objectContaining({
+				workerResolution: expect.objectContaining({
+					qualifiedId: "live-coding/worker",
+				}),
+			}),
+		);
+	});
+
+	test("external resume skips unavailable frozen capture without minting fallback provenance", async () => {
+		const fixture = await setupFixture(2);
+		const taskIds = fixture.tasks.map((task) => task.id);
+		await writeEpisodicConfig(process.cwd(), true);
+		await writeResumeRun(
+			taskIds,
+			[{ type: "task_done", taskId: taskIds[0] ?? "TASK-001" }],
+			{ episodeSource: "missing/worker", episodeAttemptId: "attempt-old" },
+		);
+		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue(
+			workerRuntime("coding", "live-coding", []) as CosmonautsRuntime,
+		);
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+		expect(firstRunInlineSpec()).not.toHaveProperty("episodeSource");
+		expect(firstRunInlineSpec()).not.toHaveProperty("episodeAttemptId");
+	});
+
 	test("enabled resume preserves the frozen source and mints only when worker execution remains", async () => {
 		const fixture = await setupFixture(2);
 		const taskIds = fixture.tasks.map((task) => task.id);

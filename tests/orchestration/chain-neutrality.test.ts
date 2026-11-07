@@ -158,6 +158,36 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 			});
 		}
 	});
+
+	test("unguarded default stages do not receive the active review target", async () => {
+		const root = join(tmp.path, name);
+		await fixture(root);
+		configureSpawn();
+		const declared = stages(["revise/final"]);
+		declared.splice(2, 0, { name: "scribe", stageId: "unrelated" });
+		const result = await run(options(root, declared));
+		expect(result.success).toBe(true);
+		expect(host.spawn.mock.calls[2]?.[0].prompt).not.toContain(
+			"Bound plan-review target",
+		);
+	});
+
+	test("a required review can accept addressed evidence without an explicit producer selector", async () => {
+		const root = join(tmp.path, name);
+		await fixture(root);
+		configureSpawn();
+		const declared = stages(["revise/final"]).map((step) =>
+			"name" in step && step.name === "dispatcher"
+				? { ...step, reviewTarget: undefined }
+				: step,
+		);
+		const result = await run(options(root, declared));
+		expect(result.success).toBe(true);
+		expect(host.spawn.mock.calls.map(([config]) => config.role)).toEqual(
+			actors,
+		);
+	});
+
 	test("requires addressed evidence from an eligible declared occurrence", async () => {
 		const root = join(tmp.path, name);
 		await fixture(root);
@@ -224,6 +254,77 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 		expect(result.stats).toMatchObject({ totalCost: 0.25, totalTokens: 5 });
 		expect(host.spawn).not.toHaveBeenCalled();
 	});
+
+	test.each([
+		{
+			outcome: "success",
+			response: { success: true, summary: "accepted" },
+			summaries: { inline: "accepted", durable: "accepted" } as Record<
+				string,
+				string | undefined
+			>,
+			backendSummary: "accepted",
+		},
+		{
+			outcome: "failure",
+			response: { success: false, error: "rejected" },
+			summaries: { inline: undefined, durable: "rejected" } as Record<
+				string,
+				string | undefined
+			>,
+			backendSummary: "rejected",
+		},
+		{
+			outcome: "empty",
+			response: { success: true },
+			summaries: { inline: undefined, durable: undefined } as Record<
+				string,
+				string | undefined
+			>,
+			backendSummary: "",
+		},
+	])("terminal $outcome retains summary, artifacts and stage slug", async ({
+		response,
+		summaries,
+		backendSummary,
+	}) => {
+		const root = join(tmp.path, name);
+		await mkdir(root, { recursive: true });
+		const gate = vi
+			.fn()
+			.mockResolvedValue({ ...response, iterations: 1, durationMs: 0 });
+		const result = await run({
+			...options(root, [
+				{
+					name: "scribe",
+					terminalGate: "approval",
+					expectedPlanSlug: "stage-plan",
+				},
+			]),
+			chainAdapter: { terminalGates: { approval: gate } },
+		});
+		expect(result.success).toBe(response.success);
+
+		expect(result.stageResults[0]?.summary).toBe(summaries[name]);
+		if (result.run) {
+			const store = new FileRunStore({
+				rootDir: join(root, "missions", "sessions"),
+			});
+			const record = await store.readStepRecord({
+				...result.run,
+				stepId: "chain-1-scribe",
+			});
+			expect(record?.result).toMatchObject({
+				summary: backendSummary,
+				artifacts: [],
+			});
+		}
+
+		expect(gate).toHaveBeenCalledWith(
+			expect.objectContaining({ planSlug: "stage-plan" }),
+		);
+	});
+
 	test.each([
 		false,
 		true,
@@ -249,5 +350,101 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 		expect(records).toHaveLength(episodes ? 2 : 0);
 		for (const record of records) expect(record.source).toBe("studio/scribe");
 		expect(registry.get("studio/scribe")?.memory?.episodes).toBeUndefined();
+	});
+});
+
+test("durable addressed evidence requires the producer's persisted plan-revision purpose", async () => {
+	const root = join(tmp.path, "producer-purpose");
+	await fixture(root);
+	configureSpawn();
+	const original = FileRunStore.prototype.readRunGraph;
+	const read = vi
+		.spyOn(FileRunStore.prototype, "readRunGraph")
+		.mockImplementation(async function (this: FileRunStore, ref) {
+			const persisted = await original.call(this, ref);
+			if (
+				!host.spawn.mock.calls.some(([config]) => config.role === "translator")
+			)
+				return persisted;
+			return {
+				...persisted,
+				graph: {
+					...persisted.graph,
+					steps: persisted.graph.steps.map((step) =>
+						step.id === "chain-3-translator"
+							? {
+									...step,
+									backend: {
+										...step.backend,
+										options: {
+											...step.backend.options,
+											purpose: { kind: "default" },
+										},
+									},
+								}
+							: step,
+					),
+				},
+			};
+		});
+	try {
+		const result = await runDurableChain(
+			options(root, stages(["revise/final"])),
+		);
+		expect(result.success).toBe(false);
+		expect(host.spawn.mock.calls.map(([config]) => config.role)).not.toContain(
+			"dispatcher",
+		);
+	} finally {
+		read.mockRestore();
+	}
+});
+
+describe.each(runners)("bounded $name host execution", ({ name, run }) => {
+	test.each([
+		false,
+		true,
+	])("settles a one-shot chain with stats=%s", async (withStats) => {
+		const root = join(tmp.path, name);
+		await mkdir(root, { recursive: true });
+		host.spawn.mockResolvedValue({
+			success: true,
+			sessionId: "session",
+			messages: [],
+			...(withStats
+				? {
+						stats: {
+							tokens: {
+								input: 2,
+								output: 3,
+								cacheRead: 0,
+								cacheWrite: 0,
+								total: 5,
+							},
+							cost: 0.25,
+							durationMs: 1,
+							turns: 1,
+							toolCalls: 0,
+						},
+					}
+				: {}),
+		});
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const outcome = await Promise.race([
+				run(options(root, [{ name: "scribe" }])),
+				new Promise<"did not settle">((resolve) => {
+					timer = setTimeout(() => resolve("did not settle"), 2000);
+				}),
+			]);
+			expect(outcome).not.toBe("did not settle");
+			if (outcome === "did not settle")
+				throw new Error("Host execution did not settle");
+			expect(outcome.success).toBe(true);
+			expect(outcome.stats?.totalTokens ?? 0).toBe(withStats ? 5 : 0);
+			expect(host.spawn).toHaveBeenCalledTimes(1);
+		} finally {
+			clearTimeout(timer);
+		}
 	});
 });
