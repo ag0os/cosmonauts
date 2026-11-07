@@ -4,7 +4,7 @@
  * Resolution order for any agent-scoped lookup:
  *   Tier 1: Agent's own domain
  *   Tier 2: Portable domains (in registry discovery order)
- *   Tier 3: Shared domain (always last)
+ *   Tier 3: Declared fallback domains (always last)
  *
  * Within a merged domain (multiple rootDirs), files are searched in
  * precedence order (rootDirs[0] = highest precedence) so that a
@@ -44,7 +44,10 @@ export class DomainResolver {
 	 * Returns the path from the first domain that declares the capability,
 	 * or undefined if no domain provides it.
 	 */
-	resolveCapabilityPath(name: string, agentDomain: string): string | undefined {
+	resolveCapabilityPath(
+		name: string,
+		agentDomain: string | undefined,
+	): string | undefined {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.capabilities.has(name),
@@ -57,7 +60,10 @@ export class DomainResolver {
 	 * Returns the path from the first domain that declares the prompt,
 	 * or undefined if no domain provides it.
 	 */
-	resolvePersonaPath(agentId: string, agentDomain: string): string | undefined {
+	resolvePersonaPath(
+		agentId: string,
+		agentDomain: string | undefined,
+	): string | undefined {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.prompts.has(agentId),
@@ -70,7 +76,10 @@ export class DomainResolver {
 	 * Returns the path from the first domain that declares the extension,
 	 * or undefined if no domain provides it.
 	 */
-	resolveExtensionPath(name: string, agentDomain: string): string | undefined {
+	resolveExtensionPath(
+		name: string,
+		agentDomain: string | undefined,
+	): string | undefined {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.extensions.has(name),
@@ -81,28 +90,20 @@ export class DomainResolver {
 	/**
 	 * Returns all skill directories across all domains.
 	 *
-	 * Order: non-shared domains (registry order) → shared domain.
+	 * Order: ordinary domains (registry order), then declared fallback domains.
 	 * For merged domains with multiple rootDirs, includes the skills/
 	 * directory from each rootDir (highest precedence first).
 	 */
 	allSkillDirs(): string[] {
-		const dirs: string[] = [];
-		const addSkillDirs = (domain: LoadedDomain) => {
-			for (const rootDir of domain.rootDirs) {
-				dirs.push(join(rootDir, "skills"));
-			}
-		};
-
-		for (const domain of this._registry.listAll()) {
-			if (domain.manifest.id !== "shared" && domain.skills.size > 0) {
-				addSkillDirs(domain);
-			}
-		}
-		const shared = this._registry.get("shared");
-		if (shared && shared.skills.size > 0) {
-			addSkillDirs(shared);
-		}
-		return dirs;
+		const domains = this._registry.listAll();
+		return [
+			...domains.filter((domain) => !domain.manifest.resourceFallback),
+			...this._registry.listResourceFallbacks(),
+		].flatMap((domain) =>
+			domain.skills.size > 0
+				? domain.rootDirs.map((root) => join(root, "skills"))
+				: [],
+		);
 	}
 
 	// ============================================================================
@@ -114,50 +115,17 @@ export class DomainResolver {
 	 * domain that satisfies the predicate.
 	 */
 	private resolveInTiers(
-		agentDomain: string,
+		agentDomain: string | undefined,
 		hasResource: (domain: LoadedDomain) => boolean,
 		buildPath: (domain: LoadedDomain) => string | undefined,
 	): string | undefined {
-		for (const domain of this.tieredOrder(agentDomain)) {
+		for (const domain of this._registry.resourceOrder(agentDomain)) {
 			if (hasResource(domain)) {
 				const path = buildPath(domain);
 				if (path) return path;
 			}
 		}
 		return undefined;
-	}
-
-	/**
-	 * Returns domains in three-tier resolution order:
-	 *   1. Agent's own domain (if registered and not shared)
-	 *   2. Portable domains in registry discovery order (excluding agent domain and shared)
-	 *   3. Shared domain (always last, regardless of portable flag)
-	 */
-	private tieredOrder(agentDomain: string): LoadedDomain[] {
-		const result: LoadedDomain[] = [];
-
-		// Tier 1: Agent's own domain
-		const own = this._registry.get(agentDomain);
-		if (own && own.manifest.id !== "shared") {
-			result.push(own);
-		}
-
-		// Tier 2: Portable domains (registry order, excluding agent domain and shared)
-		for (const domain of this._registry.listAll()) {
-			if (domain.manifest.id === agentDomain) continue;
-			if (domain.manifest.id === "shared") continue;
-			if (domain.portable) {
-				result.push(domain);
-			}
-		}
-
-		// Tier 3: Shared (always last)
-		const shared = this._registry.get("shared");
-		if (shared) {
-			result.push(shared);
-		}
-
-		return result;
 	}
 }
 

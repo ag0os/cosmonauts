@@ -9,7 +9,12 @@ function makeDomain(
 ): LoadedDomain {
 	const rootDir = `/tmp/${id}`;
 	return {
-		manifest: { id, description: `Domain ${id}` },
+		// Current-content fixtures declare the former shared tier explicitly.
+		manifest: {
+			id,
+			description: `Domain ${id}`,
+			resourceFallback: id === "shared",
+		},
 		portable: false,
 		agents: new Map<string, AgentDefinition>(),
 		capabilities: new Set<string>(),

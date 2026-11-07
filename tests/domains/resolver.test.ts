@@ -14,7 +14,12 @@ function makeDomain(
 ): LoadedDomain {
 	const rootDir = `/domains/${id}`;
 	return {
-		manifest: { id, description: `Domain ${id}` },
+		// Current-content fixtures declare the former shared tier explicitly.
+		manifest: {
+			id,
+			description: `Domain ${id}`,
+			resourceFallback: id === "shared",
+		},
 		portable: false,
 		agents: new Map<string, AgentDefinition>(),
 		capabilities: new Set<string>(),
@@ -35,7 +40,12 @@ function makePortableDomain(
 	overrides: Partial<LoadedDomain> = {},
 ): LoadedDomain {
 	return makeDomain(id, {
-		manifest: { id, description: `Portable domain ${id}`, portable: true },
+		manifest: {
+			id,
+			description: `Portable domain ${id}`,
+			portable: true,
+			resourceFallback: id === "shared",
+		},
 		portable: true,
 		...overrides,
 	});
@@ -269,7 +279,12 @@ describe("shared domain resolution order", () => {
 	it("shared is always searched last even if it has portable flag", () => {
 		// shared marked portable should still be last
 		const sharedDomain: LoadedDomain = {
-			manifest: { id: "shared", description: "Shared", portable: true },
+			manifest: {
+				id: "shared",
+				description: "Shared",
+				portable: true,
+				resourceFallback: true,
+			},
 			portable: true,
 			agents: new Map(),
 			capabilities: new Set(["cap"]),
