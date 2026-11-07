@@ -585,6 +585,7 @@ function workerRuntime(
 
 function workerDefinition(domain: string): AgentDefinition {
 	return {
+		memory: { episodes: true },
 		id: "worker",
 		domain,
 		description: `${domain} worker`,

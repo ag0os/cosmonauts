@@ -3,10 +3,7 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, test, vi } from "vitest";
-import {
-	default as architectureMemoryExtension,
-	createArchitectureMemoryExtension,
-} from "../../domains/shared/extensions/architecture-memory/index.ts";
+import { default as architectureMemoryExtension } from "../../domains/shared/extensions/architecture-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import * as architectureMap from "../../lib/architecture-map/index.ts";
@@ -36,6 +33,7 @@ import {
 	KNOWLEDGE_INDEX_RETRIEVAL,
 } from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { createArchitectureMemoryExtension } from "../helpers/memory-grants.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 const tmp = useTempDir("architecture-memory-");

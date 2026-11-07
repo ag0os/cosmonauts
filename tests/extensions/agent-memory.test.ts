@@ -4,10 +4,7 @@ import { join, relative, sep } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test, vi } from "vitest";
 import cosmo from "../../domains/main/agents/cosmo.ts";
-import {
-	default as agentMemoryExtension,
-	createAgentMemoryExtension,
-} from "../../domains/shared/extensions/agent-memory/index.ts";
+import { default as agentMemoryExtension } from "../../domains/shared/extensions/agent-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import { writeKnowledgeProposalThroughStore } from "../../lib/extensions/knowledge-surface/knowledge-tools.ts";
 import { createKnowledgeSurfaceSessionExtension } from "../../lib/extensions/knowledge-surface/session-extension.ts";
@@ -26,6 +23,7 @@ import {
 	type RetrievedMemoryRecord,
 } from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { createAgentMemoryExtension } from "../helpers/memory-grants.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 const tmp = useTempDir("agent-memory-");
@@ -2878,7 +2876,7 @@ describe("agent-memory extension", () => {
 		}
 	});
 
-	test("registers proposal authority only for the distiller with no path input and same-writer idempotent writes", async () => {
+	test("registers only granted proposal authority with no path input and stable same-writer idempotent writes", async () => {
 		const projectRoot = join(tmp.path, "distiller-proposal-project");
 		const userRoot = join(tmp.path, "distiller-proposal-user");
 		const qualifiedDistillerId = `${["cod", "ing"].join("")}/distiller`;
@@ -2919,7 +2917,7 @@ describe("agent-memory extension", () => {
 			registerArchitectureTool: false,
 			authorizeArchitecture: false,
 			recallOwner: "knowledge",
-			canPropose: true,
+			canPropose: false,
 			userCosmonautsRoot: userRoot,
 			createKnowledgeStore,
 		});

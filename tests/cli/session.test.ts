@@ -155,6 +155,53 @@ describe("createSession", () => {
 		clearPendingSwitch();
 	});
 
+	test("preserves exact tool grants and recall opt-out across initial and switched sessions", async () => {
+		mocks.buildSessionParams.mockResolvedValue({
+			...BASE_PARAMS,
+			tools: ["read"],
+			exactTools: true,
+			knowledgeSurfaceEnabled: true,
+			recallEnabled: false,
+		});
+		mocks.createAgentSessionServices.mockResolvedValue({
+			diagnostics: {},
+			resourceLoader: {
+				getExtensions: () => ({
+					extensions: [
+						{ path: "/installed/custom", tools: new Map([["unrelated", {}]]) },
+					],
+					errors: [],
+					runtime: {},
+				}),
+			},
+		});
+		mocks.createAgentSessionRuntime.mockImplementation(
+			async (createRuntime, options) => {
+				await createRuntime({
+					cwd: options.cwd,
+					sessionManager: options.sessionManager,
+				});
+				setPendingSwitch("planner");
+				return createRuntime({
+					cwd: options.cwd,
+					sessionManager: options.sessionManager,
+				});
+			},
+		);
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: false,
+			agentRegistry: {
+				resolve: () => ({ ...TEST_DEF, id: "planner" }),
+			} as unknown as AgentRegistry,
+		});
+		expect(mocks.createAgentSessionFromServices).toHaveBeenCalledTimes(2);
+		for (const [options] of mocks.createAgentSessionFromServices.mock.calls)
+			expect(options.tools).toEqual(["read"]);
+	});
+
 	test("passes extraExtensionPaths to initial buildSessionParams call", async () => {
 		await createSession({
 			definition: TEST_DEF,

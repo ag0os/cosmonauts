@@ -342,6 +342,41 @@ describe("session-factory planSlug validation", () => {
 		});
 	});
 
+	test("preserves an exact tool grant and recall opt-out when spawning", async () => {
+		const params = {
+			promptContent: "consumer",
+			tools: ["read"],
+			exactTools: true,
+			extensionPaths: ["/installed/unrelated/index.ts"],
+			extensionFactories: [],
+			knowledgeSurfaceEnabled: true,
+			recallEnabled: false,
+			projectContext: false,
+			model: { id: "test/model" },
+		};
+		mocks.buildSessionParams.mockResolvedValue(params);
+		await createAgentSessionFromDefinition(
+			TEST_AGENT,
+			{ role: "planner", cwd: "/tmp/project", prompt: "work" },
+			"/tmp/domains",
+		);
+		expect(mocks.createAgentSession).toHaveBeenCalledWith(
+			expect.objectContaining({ tools: ["read"] }),
+		);
+		mocks.buildSessionParams.mockResolvedValue({
+			...params,
+			tools: ["missing"],
+		});
+		await expect(
+			createAgentSessionFromDefinition(
+				TEST_AGENT,
+				{ role: "planner", cwd: "/tmp/project", prompt: "work" },
+				"/tmp/domains",
+			),
+		).rejects.toThrow("Unknown tool");
+		expect(mocks.createAgentSession).toHaveBeenCalledTimes(1);
+	});
+
 	test("keeps unrelated extension tools callable in enabled spawned sessions", async () => {
 		const factory = {
 			name: "cosmonauts-knowledge-surface",

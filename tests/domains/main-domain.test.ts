@@ -4,7 +4,6 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createAgentMemoryExtension } from "../../domains/shared/extensions/agent-memory/index.ts";
 import { createRegistryFromDomains } from "../../lib/agents/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
@@ -24,6 +23,7 @@ import {
 import { scanDomainSources } from "../../lib/packages/scanner.ts";
 import { writeProjectInstalledDomainPackage } from "../helpers/domain-package-fixture.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { createAgentMemoryExtension } from "../helpers/memory-grants.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -96,7 +96,13 @@ describe("main domain built-in discovery", () => {
 
 		expect(registry.resolve("main/cosmo")).toBe(cosmo);
 		expect(cosmo.tools).toBe("none");
-		expect(cosmo.capabilities).toEqual(["tasks", "spawning", "todo", "drive"]);
+		expect(cosmo.capabilities).toEqual([
+			"framework-base",
+			"tasks",
+			"spawning",
+			"todo",
+			"drive",
+		]);
 		expect(cosmo.capabilities).not.toContain("engineering-discipline");
 		expect(subagents.length).toBeGreaterThan(0);
 		expect(subagents.every((subagent) => subagent.startsWith("coding/"))).toBe(

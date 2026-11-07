@@ -5,6 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Applies targeted fixes from quality or review findings and commits remediation changes.",
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readwrite",

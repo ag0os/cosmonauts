@@ -4,7 +4,9 @@ const definition: AgentDefinition = {
 	id: "planner",
 	description:
 		"Designs the technical architecture and testable behaviors for a feature — module structure, contracts, integration seams, behavior specs, implementation order. Test-first by default; adaptation mode studies a reference codebase. Never writes code or creates tasks.",
+	memory: { architecture: true, episodes: true },
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"architectural-design",

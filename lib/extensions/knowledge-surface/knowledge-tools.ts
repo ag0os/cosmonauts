@@ -19,7 +19,6 @@ import {
 } from "../../memory/index.ts";
 import { normalizeRecallLimit } from "./recall-limit.ts";
 
-const QUALIFIED_DISTILLER_ID = "coding/distiller";
 const KnowledgeTypeLiterals = KNOWLEDGE_RECORD_TYPES.map((type) =>
 	Type.Literal(type),
 );
@@ -42,6 +41,7 @@ interface AuthoredRecallStoreOptions {
 }
 
 interface KnowledgeRecallOptions {
+	readonly knowledge?: boolean;
 	readonly createKnowledgeStore: (projectRoot: string) => MemoryStore;
 	readonly createAuthoredStore?: (
 		options: AuthoredRecallStoreOptions,
@@ -50,6 +50,7 @@ interface KnowledgeRecallOptions {
 }
 
 interface KnowledgeProposalToolOptions {
+	readonly writer: string;
 	readonly createKnowledgeStore: (projectRoot: string) => MemoryStore;
 	readonly now: () => Date;
 }
@@ -77,21 +78,26 @@ export function createKnowledgeRecallHandler(
 			});
 		}
 
-		const requests: MemoryRetrievalRequest[] = [
-			{
-				key: "knowledge",
-				store: options.createKnowledgeStore(request.projectRoot),
-				scope: {
-					projectRoot: request.projectRoot,
-					scopes: ["project", "user"] as const,
-				},
-				query: {
-					text: query,
-					recordTypes: KNOWLEDGE_RECORD_TYPES,
-					...(request.includeRetired === true ? { includeRetired: true } : {}),
-				},
-			},
-		];
+		const requests: MemoryRetrievalRequest[] =
+			options.knowledge === false
+				? []
+				: [
+						{
+							key: "knowledge",
+							store: options.createKnowledgeStore(request.projectRoot),
+							scope: {
+								projectRoot: request.projectRoot,
+								scopes: ["project", "user"] as const,
+							},
+							query: {
+								text: query,
+								recordTypes: KNOWLEDGE_RECORD_TYPES,
+								...(request.includeRetired === true
+									? { includeRetired: true }
+									: {}),
+							},
+						},
+					];
 		if (options.createAuthoredStore) {
 			const settings = resolveEpisodicLogConfig(
 				await (options.loadConfig ?? loadProjectConfig)(request.projectRoot),
@@ -258,6 +264,7 @@ export function registerKnowledgeProposalTool(
 				draft = deriveKnowledgeProposalDraft({
 					request: parseKnowledgeProposalRequest(params),
 					now: options.now,
+					writer: options.writer,
 				});
 			} catch (error: unknown) {
 				const reason = error instanceof Error ? error.message : String(error);
@@ -301,12 +308,13 @@ export function writeKnowledgeProposalThroughStore(options: {
 }
 
 function deriveKnowledgeProposalDraft(options: {
+	readonly writer: string;
 	readonly request: KnowledgeProposalRequest;
 	readonly now: () => Date;
 }): MemoryRecordDraft {
 	const derived = deriveKnowledgeProposalIdentity({
 		...options.request,
-		writer: QUALIFIED_DISTILLER_ID,
+		writer: options.writer,
 	});
 	const writeDate =
 		derived.proposalIdentity.sourceDate ?? options.now().toISOString();

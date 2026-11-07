@@ -348,6 +348,11 @@ describe("loadAgentPackageDefinition", () => {
 });
 
 describe("definitionFromAgent", () => {
+	it("rejects exact grants rather than weakening them to an export preset", () => {
+		expect(() =>
+			definitionFromAgent({ ...sourceAgent, tools: ["read"] }),
+		).toThrow("does not support exact tool grants");
+	});
 	it("normalizes an agent id shorthand into a source-agent package definition", () => {
 		const definition = definitionFromAgent(sourceAgent, "claude-cli");
 

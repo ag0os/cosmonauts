@@ -6,7 +6,14 @@ interface EpisodeCaptureOptions {
 	readonly reportEpisodeWarning: (warning: MemoryWarning) => Promise<void>;
 }
 
+export interface EpisodeCaptureGrant {
+	readonly enabled?: boolean;
+	readonly source?: string;
+}
+
 export function createEpisodeCapture<T>(options: {
+	readonly enabled?: boolean;
+	readonly source?: string;
 	readonly cwd: string;
 	readonly systemPrompt: string;
 	readonly createManager: (
@@ -15,7 +22,9 @@ export function createEpisodeCapture<T>(options: {
 	) => T;
 }): { readonly manager: T; readonly warnings: MemoryWarning[] } {
 	const warnings: MemoryWarning[] = [];
-	const episodeSource = extractAgentIdFromSystemPrompt(options.systemPrompt);
+	const episodeSource = options.enabled
+		? (options.source ?? extractAgentIdFromSystemPrompt(options.systemPrompt))
+		: undefined;
 	const captureOptions = episodeSource
 		? {
 				episodeSource,

@@ -37,7 +37,7 @@ async function setupExtension(cwd: string, systemPrompt = ""): Promise<MockPi> {
 		"../../lib/extensions/tasks/index.ts"
 	);
 	const mock = createMockPi({ cwd, systemPrompt });
-	tasksExtension(mock as never);
+	tasksExtension(mock as never, { enabled: true });
 	return mock;
 }
 

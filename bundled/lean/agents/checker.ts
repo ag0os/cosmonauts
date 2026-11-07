@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	id: "checker",
 	description:
 		"Checks explicit claims by running commands and reading code, and reports pass or fail with evidence. Never edits.",
-	capabilities: [],
+	capabilities: ["framework-base"],
 	model: "openai-codex/gpt-5.6-sol",
 	thinkingLevel: "high",
 	tools: "verification",

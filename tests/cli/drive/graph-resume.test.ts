@@ -1443,6 +1443,7 @@ function fallbackExecutionRuntime(): Pick<
 function workerDefinition(qualifiedId: string): AgentDefinition {
 	const separator = qualifiedId.indexOf("/");
 	return {
+		memory: { episodes: true },
 		id: "worker",
 		domain: qualifiedId.slice(0, separator),
 		description: "Drive worker",

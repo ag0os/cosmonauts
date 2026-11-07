@@ -4,7 +4,9 @@ const definition: AgentDefinition = {
 	id: "worker",
 	description:
 		"Implements a single task test-first. Loads relevant skills, writes code, checks off acceptance criteria.",
+	memory: { architecture: true, episodes: true },
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readwrite",

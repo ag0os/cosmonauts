@@ -5,6 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Performs clean-context code review against main and writes structured findings for remediation.",
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readwrite",

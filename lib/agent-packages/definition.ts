@@ -116,6 +116,9 @@ export function definitionFromAgent(
 	definition: AgentDefinition,
 	target: SupportedExportTarget = "claude-cli",
 ): AgentPackageDefinition {
+	if (typeof definition.tools !== "string") {
+		throw new Error("Agent package export does not support exact tool grants");
+	}
 	const sourceAgent = qualifyRole(definition.id, definition.domain);
 	const registryTarget = getHarnessPackageTarget(target);
 	if (!registryTarget) {

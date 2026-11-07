@@ -28,6 +28,7 @@ const LEGACY_CONTEXT_TYPES = new Set([
 ]);
 
 interface CombinedContextOptions {
+	readonly knowledge?: boolean;
 	readonly agentId: string;
 	readonly authorizeAuthoredMemory: boolean;
 	readonly authorizeArchitecture: boolean;
@@ -60,12 +61,15 @@ export function registerCombinedContextHandler(
 		};
 		const pending: Array<
 			Promise<{ key: ContextSectionKey; result: MemoryRetrieveResult }>
-		> = [
-			options
-				.createKnowledgeStore(projectRoot)
-				.retrieve(knowledgeScope, KNOWLEDGE_INDEX_RETRIEVAL.query)
-				.then((result) => ({ key: "knowledge", result })),
-		];
+		> =
+			options.knowledge === false
+				? []
+				: [
+						options
+							.createKnowledgeStore(projectRoot)
+							.retrieve(knowledgeScope, KNOWLEDGE_INDEX_RETRIEVAL.query)
+							.then((result) => ({ key: "knowledge", result })),
+					];
 		if (options.authoredAuthorization.authorized) {
 			pending.push(
 				options

@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	id: "builder",
 	description:
 		"Implements one plan section or one direct fix test-first from a context pack, and hands back the diff with an envelope.",
-	capabilities: [],
+	capabilities: ["framework-base"],
 	model: "openai-codex/gpt-5.6-sol",
 	thinkingLevel: "medium",
 	tools: "coding",

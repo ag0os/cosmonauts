@@ -85,7 +85,7 @@ describe("coding domain agent invariants", () => {
 	it("uses valid tools values", () => {
 		const valid = new Set(["coding", "readonly", "verification", "none"]);
 		for (const def of allDefinitions) {
-			expect(valid.has(def.tools)).toBe(true);
+			expect(typeof def.tools === "string" && valid.has(def.tools)).toBe(true);
 		}
 	});
 

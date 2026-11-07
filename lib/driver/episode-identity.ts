@@ -40,7 +40,7 @@ export function resolveDriveEpisodeWorker(
 			domainContext: runtime.domainContext,
 			agentReference: undefined,
 		});
-		if (resolution) return resolution;
+		if (resolution?.definition.memory?.episodes) return resolution;
 		reportDriveEpisodeLaunchWarning(
 			`worker did not resolve in domain context ${JSON.stringify(runtime.domainContext)}`,
 		);
@@ -83,7 +83,7 @@ export function resolveFrozenDriveEpisodeWorker(
 			domainContext: runtime.domainContext,
 			agentReference: reference,
 		});
-		if (resolution) return resolution;
+		if (resolution?.definition.memory?.episodes) return resolution;
 		reportDriveEpisodeLaunchWarning(
 			`frozen worker ${JSON.stringify(episodeSource)} is unavailable`,
 		);

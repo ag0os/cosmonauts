@@ -4,17 +4,19 @@
  * Assembles a full system prompt from domain directories using a strict
  * four-layer order:
  *
- *   Layer 0: lib/prompts/framework/base.md               (always)
+ *   Layer 0: consumer base.md (only with explicit frameworkPromptsDir)
  *   Layer 1: domains/{domain}/capabilities/{cap}.md       (per capability)
  *            → three-tier resolution via resolver (domain → portable → shared)
  *              OR two-tier directory fallback when no resolver is provided
- *   Layer 2: domains/{domain}/prompts/{agent-id}.md       (auto-loaded persona)
+ *   Layer 2: explicit instructions, or domain persona convention
  *   Layer 3: lib/prompts/framework/runtime/sub-agent.md   (if sub-agent mode)
  */
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import matter from "gray-matter";
+import { stripAgentIdentityMarkers } from "../agents/runtime-identity.ts";
+import type { AgentInstructions } from "../agents/types.ts";
 import type { RuntimeTemplateContext } from "../prompts/loader.ts";
 import { PROMPTS_DIR, renderRuntimeTemplate } from "../prompts/loader.ts";
 import type { DomainResolver } from "./resolver.ts";
@@ -31,6 +33,8 @@ export interface RuntimeContext {
 }
 
 export interface AssemblePromptsOptions {
+	instructions?: AgentInstructions;
+	cwd?: string;
 	/** The agent's unqualified ID (e.g. "worker"). */
 	agentId: string;
 	/** The agent's domain (e.g. "coding"). */
@@ -65,7 +69,6 @@ export async function assemblePrompts(
 	options: AssemblePromptsOptions,
 ): Promise<string> {
 	const {
-		agentId,
 		domain,
 		capabilities,
 		domainsDir,
@@ -77,28 +80,25 @@ export async function assemblePrompts(
 
 	// domainsDir is required when resolver is absent (or when resolver returns
 	// undefined for a path). Validate once and narrow to string for all uses below.
-	if (domainsDir === undefined && !resolver) {
+	if (
+		domainsDir === undefined &&
+		!resolver &&
+		(!options.instructions || capabilities.length > 0)
+	) {
 		throw new Error("domainsDir is required when no resolver is provided");
 	}
-	const dir = domainsDir as string;
 
-	// Layer 0: Base prompt (always from framework)
-	const basePath = join(frameworkPromptsDir, "base.md");
-	parts.push(await loadPromptFile(basePath));
+	// Layer 0: An explicitly supplied consumer base
+	if (options.frameworkPromptsDir) {
+		const basePath = join(options.frameworkPromptsDir, "base.md");
+		parts.push(await loadPromptFile(basePath));
+	}
 
 	// Layer 1: Capabilities
 	// With resolver: three-tier (agent domain → portable domains → shared).
 	// Without resolver: two-tier directory-based (domain → shared).
 	for (const cap of capabilities) {
-		let content: string | null;
-		if (resolver) {
-			const capPath = resolver.resolveCapabilityPath(cap, domain);
-			content = capPath ? await loadPromptFile(capPath) : null;
-		} else {
-			const domainPath = join(dir, domain, "capabilities", `${cap}.md`);
-			const sharedPath = join(dir, "shared", "capabilities", `${cap}.md`);
-			content = await loadWithFallback(domainPath, sharedPath);
-		}
+		const content = await loadCapability(cap, options);
 		if (content === null) {
 			throw new Error(
 				`Capability "${cap}" not found in domain "${domain}" or shared`,
@@ -107,11 +107,7 @@ export async function assemblePrompts(
 		parts.push(content);
 	}
 
-	// Layer 2: Agent persona prompt
-	const personaPath =
-		resolver?.resolvePersonaPath(agentId, domain) ??
-		join(dir, domain, "prompts", `${agentId}.md`);
-	parts.push(await loadPromptFile(personaPath));
+	parts.push(await loadPersona(options));
 
 	// Layer 3: Runtime context (sub-agent mode only)
 	if (runtimeContext?.mode === "sub-agent") {
@@ -126,6 +122,43 @@ export async function assemblePrompts(
 	}
 
 	return parts.join("\n\n");
+}
+
+async function loadCapability(
+	cap: string,
+	options: AssemblePromptsOptions,
+): Promise<string | null> {
+	if (options.resolver) {
+		const path = options.resolver.resolveCapabilityPath(cap, options.domain);
+		return path ? loadPromptFile(path) : null;
+	}
+	const dir = options.domainsDir as string;
+	return loadWithFallback(
+		join(dir, options.domain, "capabilities", `${cap}.md`),
+		join(dir, "shared", "capabilities", `${cap}.md`),
+	);
+}
+
+async function loadPersona(options: AssemblePromptsOptions): Promise<string> {
+	if (options.instructions) {
+		const source = options.instructions;
+		const content =
+			source.kind === "inline"
+				? source.content
+				: await loadPromptFile(
+						resolve(options.cwd ?? process.cwd(), source.path),
+					);
+		return stripAgentIdentityMarkers(content);
+	}
+	const path =
+		options.resolver?.resolvePersonaPath(options.agentId, options.domain) ??
+		join(
+			options.domainsDir as string,
+			options.domain,
+			"prompts",
+			`${options.agentId}.md`,
+		);
+	return loadPromptFile(path);
 }
 
 // ============================================================================

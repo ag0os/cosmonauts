@@ -5,6 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Performance-lens review of code diffs — algorithmic hotspots, N+1 queries, missing indexes, unbounded memory, chatty I/O, scaling cliffs, missing instrumentation. Part of the quality-manager's review panel. Does not redesign or implement fixes.",
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readonly",

@@ -13,7 +13,6 @@ import { assemblePrompts } from "../../lib/domains/prompt-assembly.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
-import { loadPrompt } from "../../lib/prompts/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("prompt-assembly-");
@@ -79,7 +78,7 @@ function assembleTestPrompts(options: AssemblePromptsOptions): Promise<string> {
 
 describe("assemblePrompts", () => {
 	describe("Layer 0: Base prompt", () => {
-		it("loads framework base/runtime by default and persona from the domain", async () => {
+		it("loads the domain persona and runtime overlay without an implicit base voice", async () => {
 			await setupFiles(tmp.path, {
 				"coding/prompts/worker.md": "Default framework base persona.",
 			});
@@ -101,7 +100,7 @@ describe("assemblePrompts", () => {
 				},
 			});
 
-			expect(result).toContain(await loadPrompt("base"));
+			expect(result).not.toContain("You are an agent in Cosmonauts");
 			expect(result).toContain("Default framework base persona.");
 			expect(result).toContain("coordinator");
 			expect(result).toContain("Verify default framework prompts");

@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	id: "code-reviewer",
 	description:
 		"Reviews a change through the lenses it is given (general, security, performance, ux) and reports findings. Never edits.",
-	capabilities: [],
+	capabilities: ["framework-base"],
 	model: "openai-codex/gpt-5.6-sol",
 	thinkingLevel: "high",
 	tools: "readonly",

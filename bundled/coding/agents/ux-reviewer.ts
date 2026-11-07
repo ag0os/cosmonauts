@@ -5,6 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"UX-lens review of code diffs — end-to-end flow, data-loss scenarios, missing feedback, confusing states, inconsistency with existing patterns, accessibility. Part of the quality-manager's review panel. Does not redesign or implement fixes.",
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readonly",

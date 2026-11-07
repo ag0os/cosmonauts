@@ -4,7 +4,9 @@ const definition: AgentDefinition = {
 	id: "quality-manager",
 	description:
 		"Runs one review-only quality pass and reports findings for caller-owned remediation.",
+	memory: { architecture: true },
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"spawning",

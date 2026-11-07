@@ -4,7 +4,9 @@ const definition: AgentDefinition = {
 	id: "plan-reviewer",
 	description:
 		"Adversarial review of implementation plans. Verifies claims against the codebase and produces structured findings for the planner to address.",
+	memory: { architecture: true, episodes: true },
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"architectural-design",
