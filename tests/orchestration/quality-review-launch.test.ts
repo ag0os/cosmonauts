@@ -1,3 +1,9 @@
+import type { QualityReviewRunOptions } from "../../lib/orchestration/quality-review-run.ts";
+
+type QualityExecutionContext = Parameters<
+	NonNullable<QualityReviewRunOptions["execute"]>
+>[0];
+
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,6 +25,7 @@ import {
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
 import * as workspaceModule from "../../lib/orchestration/quality-review-workspace.ts";
+import { withCodingChain } from "../helpers/coding-chain.ts";
 
 const agent = (id: string): AgentDefinition => ({
 	id,
@@ -81,28 +88,30 @@ async function runDurableWithOperatorNote(
 	projectRoot: string,
 	registry: AgentRegistry,
 ): Promise<string | undefined> {
-	const callerStages = parseChain("quality-manager", registry);
+	const callerStages = parseChain("quality-manager");
 	const callerStage = callerStages[0];
 	if (!callerStage || "stages" in callerStage)
 		throw new Error("expected stage");
 	callerStage.prompt = "Review the payment boundary only.";
 	let operatorNote: string | undefined;
-	await runDurableChain({
-		steps: callerStages,
-		projectRoot,
-		registry,
-		qualityReview: {
-			execute: async ({ operatorNote: note }) => {
-				operatorNote = note;
-				return {
-					markdown: renderQualityReviewReport({
-						verdict: "not-ready",
-						reason: "finding",
-					}),
-				};
+	await runDurableChain(
+		withCodingChain({
+			steps: callerStages,
+			projectRoot,
+			registry,
+			terminalGateContext: {
+				execute: async ({ operatorNote: note }: QualityExecutionContext) => {
+					operatorNote = note;
+					return {
+						markdown: renderQualityReviewReport({
+							verdict: "not-ready",
+							reason: "finding",
+						}),
+					};
+				},
 			},
-		},
-	});
+		}),
+	);
 	return operatorNote;
 }
 
@@ -348,11 +357,13 @@ describe("quality review launch policy", () => {
 			agent("quality-manager"),
 			agent("planner"),
 		]);
-		const result = await runDurableChain({
-			steps: parseChain(expression, registry),
-			projectRoot,
-			registry,
-		});
+		const result = await runDurableChain(
+			withCodingChain({
+				steps: parseChain(expression),
+				projectRoot,
+				registry,
+			}),
+		);
 		expect(result.success).toBe(false);
 		expect(result.run?.runId).toMatch(/^qm-/);
 		const report = await readFile(
@@ -475,7 +486,7 @@ describe("quality review launch policy", () => {
 		git("commit", "-qm", "base");
 		const result = await launchQualityReview({
 			projectRoot,
-			execute: async (context) => {
+			execute: async (context: QualityExecutionContext) => {
 				const fullText = "review complete";
 				await context.artifactSink.writeReviewer({
 					runId: context.runId,
@@ -658,7 +669,7 @@ describe("quality review launch policy", () => {
 		let observedDependency = false;
 		const result = await launchQualityReview({
 			projectRoot,
-			execute: async (context) => {
+			execute: async (context: QualityExecutionContext) => {
 				observedDependency = (
 					await readFile(
 						join(
@@ -908,23 +919,25 @@ describe("quality review launch policy", () => {
 		const registry = new AgentRegistry([agent("quality-manager")]);
 		let operatorNote: string | undefined = "unexpected";
 		const chainEvents: string[] = [];
-		const result = await runDurableChain({
-			steps: parseChain("quality-manager", registry),
-			projectRoot,
-			registry,
-			onEvent: (event) => chainEvents.push(event.type),
-			qualityReview: {
-				execute: async (context) => {
-					operatorNote = context.operatorNote;
-					return {
-						markdown: renderQualityReviewReport({
-							verdict: "ready",
-							reason: "clear",
-						}),
-					};
+		const result = await runDurableChain(
+			withCodingChain({
+				steps: parseChain("quality-manager"),
+				projectRoot,
+				registry,
+				onEvent: (event) => chainEvents.push(event.type),
+				terminalGateContext: {
+					execute: async (context: QualityExecutionContext) => {
+						operatorNote = context.operatorNote;
+						return {
+							markdown: renderQualityReviewReport({
+								verdict: "ready",
+								reason: "clear",
+							}),
+						};
+					},
 				},
-			},
-		});
+			}),
+		);
 		expect(operatorNote).toBeUndefined();
 		await assertDurableTerminalReport(projectRoot, result, chainEvents);
 		expect(await runDurableWithOperatorNote(projectRoot, registry)).toBe(

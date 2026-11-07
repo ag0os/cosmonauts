@@ -33,10 +33,26 @@ export function authorizeAgentStart(options: {
 	domainContext?: string;
 	callerRole: string;
 	targetRole: string;
+	targetReference?: ResolvedAgentReference;
 }): string | undefined {
 	const { registry, domainContext, callerRole, targetRole } = options;
 	const caller = registry.get(callerRole, domainContext);
 	if (!caller) return `unknown caller ${callerRole} cannot start ${targetRole}`;
+
+	if (options.targetReference) {
+		const reference = options.targetReference;
+		const definition = registry.getResolvedTarget(
+			reference.resolved.qualifiedId,
+			caller.domain,
+		);
+		if (!definition)
+			return `${callerRole} cannot start ${targetRole}: unavailable or internal target`;
+		if (reference.requested.agentId !== reference.resolved.agentId)
+			return `${callerRole} cannot start ${targetRole}: invalid binding target`;
+		return isSubagentAllowed(caller, definition, reference)
+			? undefined
+			: `${callerRole} cannot start ${targetRole}`;
+	}
 
 	const target = registry.resolveReferenceResult(
 		targetRole,

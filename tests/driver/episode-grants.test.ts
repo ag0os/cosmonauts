@@ -29,6 +29,7 @@ describe("Drive episode grants", () => {
 		const runtime = {
 			agentRegistry: new AgentRegistry([worker]),
 			domainContext: "coding",
+			workerAgent: "coding/worker",
 		};
 		expect(resolveDriveEpisodeWorker(runtime)?.definition).toBe(
 			grant ? worker : undefined,
@@ -56,6 +57,7 @@ describe("Drive episode grants", () => {
 			const runtime = {
 				agentRegistry: new AgentRegistry(definitions),
 				domainContext: "coding",
+				workerAgent: "coding/worker",
 			};
 			expect(resolveDriveEpisodeWorker(runtime)).toBeUndefined();
 			expect(

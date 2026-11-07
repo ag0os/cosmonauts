@@ -205,6 +205,7 @@ async function setupFixture(): Promise<Fixture> {
 function runtimeFor(fixture: Fixture) {
 	return async () =>
 		({
+			workerAgent: "coding/worker",
 			agentRegistry: authorizedToolRegistry(),
 			domainResolver: {},
 			domainsDir: fixture.projectRoot,

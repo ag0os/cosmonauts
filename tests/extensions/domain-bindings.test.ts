@@ -7,9 +7,9 @@ import {
 	clearSharedDomainBindings,
 	setSharedDomainBindings,
 } from "../../lib/interactive/domain-bindings.ts";
-import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { compileChainToGraph } from "../../lib/orchestration/durable-chain-compiler.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
+import { parseCodingChain, withCodingChain } from "../helpers/coding-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("domain-bindings-extension-");
@@ -255,18 +255,20 @@ describe("domain-bindings extension", () => {
 		const alreadyRunningAgent =
 			runtime.agentRegistry.resolveReference("ruby-coding/worker");
 		expect(alreadyRunningAgent?.definition.description).toBe("Original worker");
-		const alreadySpawnedSteps = parseChain(
+		const alreadySpawnedSteps = parseCodingChain(
 			"worker",
 			runtime.agentRegistry,
 			runtime.domainContext,
 		);
-		const alreadySpawnedGraph = compileChainToGraph({
-			runId: "pre-switch-spawn",
-			steps: alreadySpawnedSteps,
-			projectRoot: tmp.path,
-			registry: runtime.agentRegistry,
-			domainContext: runtime.domainContext,
-		});
+		const alreadySpawnedGraph = compileChainToGraph(
+			withCodingChain({
+				runId: "pre-switch-spawn",
+				steps: alreadySpawnedSteps,
+				projectRoot: tmp.path,
+				registry: runtime.agentRegistry,
+				domainContext: runtime.domainContext,
+			}),
+		);
 
 		await getCommand(pi, "domain-bind").handler(
 			"ruby-coding ruby-experimental",
@@ -312,7 +314,7 @@ describe("domain-bindings extension", () => {
 			),
 		).toBe(true);
 
-		const chainSteps = parseChain(
+		const chainSteps = parseCodingChain(
 			"worker",
 			runtime.agentRegistry,
 			runtime.domainContext,
@@ -325,13 +327,15 @@ describe("domain-bindings extension", () => {
 			"ruby-experimental/worker",
 		);
 
-		const compiled = compileChainToGraph({
-			runId: "live-binding-chain",
-			steps: chainSteps,
-			projectRoot: tmp.path,
-			registry: runtime.agentRegistry,
-			domainContext: runtime.domainContext,
-		});
+		const compiled = compileChainToGraph(
+			withCodingChain({
+				runId: "live-binding-chain",
+				steps: chainSteps,
+				projectRoot: tmp.path,
+				registry: runtime.agentRegistry,
+				domainContext: runtime.domainContext,
+			}),
+		);
 		const backendOptions = compiled.graph.steps[0]?.backend.options as
 			| {
 					stage: { agentReference?: typeof stage.agentReference };

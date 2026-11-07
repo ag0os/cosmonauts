@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import type {
@@ -18,6 +19,7 @@ import type {
 	SpawnConfig,
 } from "../../lib/orchestration/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { withCodingChain } from "../helpers/coding-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import {
 	authorizedToolRegistry,
@@ -97,11 +99,13 @@ describe("orchestration run control surface", () => {
 	test("observes returned chain and Drive run ids through normalized status and watch", async () => {
 		const projectRoot = join(temp.path, "project");
 		await mkdir(projectRoot, { recursive: true });
-		const chainResult = await runDurableChain({
-			steps: parseChain("planner", registry),
-			projectRoot,
-			registry,
-		});
+		const chainResult = await runDurableChain(
+			withCodingChain({
+				steps: parseChain("planner"),
+				projectRoot,
+				registry,
+			}),
+		);
 		const chainRun = requireRun(chainResult);
 
 		const fixture = await setupDriveFixture(projectRoot);
@@ -192,6 +196,8 @@ async function setupDriveFixture(projectRoot: string) {
 function runtimeFor(projectRoot: string) {
 	return async () =>
 		({
+			chainAdapter: codingChainAdapter,
+			workerAgent: "coding/worker",
 			agentRegistry: authorizedToolRegistry(),
 			domainResolver: {},
 			domainsDir: projectRoot,

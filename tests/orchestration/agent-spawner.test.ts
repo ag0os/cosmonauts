@@ -549,14 +549,14 @@ describe("getModelForRole", () => {
 
 	test("supports model override keys for new roles", () => {
 		const model = getModelForRole("quality-manager", {
-			qualityManager: "override-provider/quality-model",
+			"quality-manager": "override-provider/quality-model",
 		});
 		expect(model).toBe("override-provider/quality-model");
 	});
 
 	test("supports model override keys for integration-verifier", () => {
 		const model = getModelForRole("integration-verifier", {
-			integrationVerifier: "override-provider/integration-model",
+			"integration-verifier": "override-provider/integration-model",
 		});
 		expect(model).toBe("override-provider/integration-model");
 	});
@@ -638,7 +638,7 @@ describe("getThinkingForRole", () => {
 
 	test("supports thinking override keys for integration-verifier", () => {
 		const thinking = getThinkingForRole("integration-verifier", {
-			integrationVerifier: "xhigh",
+			"integration-verifier": "xhigh",
 		});
 		expect(thinking).toBe("xhigh");
 	});

@@ -5,6 +5,7 @@ import type {
 	HarnessPathRow,
 	RuntimeInventorySnapshot,
 } from "./harness-adapters/types.ts";
+import { formatChainSteps } from "./orchestration/chain-steps.ts";
 import type { CosmonautsRuntime } from "./runtime.ts";
 import {
 	discoverSkillCandidatesStrict,
@@ -40,7 +41,7 @@ export async function composeHarnessRuntimeInventory(
 		chains: chains.map((chain) => ({
 			name: chain.name,
 			description: chain.description,
-			expression: chain.chain,
+			expression: chain.chain ?? formatChainSteps([...(chain.stages ?? [])]),
 		})),
 		effectiveSkills: effectiveSkills.map((skill) => ({
 			name: skill.name,

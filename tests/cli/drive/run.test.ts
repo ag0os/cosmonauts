@@ -925,7 +925,13 @@ describe("cosmonauts run drive compat run", () => {
 				episodeAttemptId: "attempt-original",
 			},
 		);
-		const runtimeCreate = vi.spyOn(CosmonautsRuntime, "create");
+		const runtimeCreate = vi
+			.spyOn(CosmonautsRuntime, "create")
+			.mockResolvedValue(
+				workerRuntime("coding", "live-coding", [
+					workerDefinition("project-coding"),
+				]) as CosmonautsRuntime,
+			);
 
 		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
 
@@ -934,7 +940,7 @@ describe("cosmonauts run drive compat run", () => {
 		expect(spec.episodeAttemptId).toMatch(/^attempt-/u);
 		expect(spec.episodeAttemptId).not.toBe("attempt-original");
 		expect(spec.remainingTaskIds).toEqual(taskIds.slice(1));
-		expect(runtimeCreate).not.toHaveBeenCalled();
+		expect(runtimeCreate).toHaveBeenCalledTimes(1);
 	});
 
 	test("trusts only frozen worker agent ids for execution and preserves reconcile provenance", async () => {
@@ -961,23 +967,11 @@ describe("cosmonauts run drive compat run", () => {
 			episodeSource: "project-coding/planner",
 			episodeAttemptId: "attempt-arbitrary-agent",
 		});
-		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
-
-		const arbitraryAgentSpec = firstRunInlineSpec();
-		expect(arbitraryAgentSpec.episodeSource).toBe("live-coding/worker");
-		expect(arbitraryAgentSpec.episodeAttemptId).toMatch(/^attempt-/u);
-		expect(arbitraryAgentSpec.episodeAttemptId).not.toBe(
-			"attempt-arbitrary-agent",
-		);
-		expect(
-			backendMocks.createCosmonautsSubagentBackend,
-		).toHaveBeenLastCalledWith(
-			expect.objectContaining({
-				workerResolution: expect.objectContaining({
-					qualifiedId: "live-coding/worker",
-				}),
-			}),
-		);
+		await expect(
+			parseDrive(["--plan", PLAN, "--resume", "run-previous"]),
+		).rejects.toThrow("no fallback is permitted");
+		expect(backendMocks.createCosmonautsSubagentBackend).not.toHaveBeenCalled();
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
 
 		await writeResumeRun(taskIds, firstTaskDone, {
 			backendName: "cosmonauts-subagent",
@@ -2011,6 +2005,7 @@ function workerRuntime(
 	additionalDefinitions: AgentDefinition[] = [],
 ): Pick<
 	CosmonautsRuntime,
+	| "workerAgent"
 	| "agentRegistry"
 	| "domainContext"
 	| "domainResolver"
@@ -2043,6 +2038,7 @@ function workerRuntime(
 		},
 	} as never;
 	return {
+		workerAgent: "coding/worker",
 		agentRegistry: new AgentRegistry(definitions, { bindingResolver }),
 		domainContext,
 		domainResolver: {} as never,

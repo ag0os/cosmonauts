@@ -1,3 +1,8 @@
+import {
+	buildStagePrompt,
+	deriveStagePromptPurpose,
+} from "../../bundled/coding/chain-prompts.ts";
+import { withCodingChain } from "../helpers/coding-chain.ts";
 /**
  * Tests for chain-steps.ts
  * Covers type guards, prompt injection, DSL formatting, and DSL detection.
@@ -21,10 +26,6 @@ import {
 	PLAN_REVIEW_REPORT_TOKEN,
 	REVIEW_REVISION_REPORT_TOKEN,
 } from "../../lib/orchestration/review-revision.ts";
-import {
-	buildStagePrompt,
-	deriveStagePromptPurpose,
-} from "../../lib/orchestration/stage-prompts.ts";
 import type {
 	AgentSpawner,
 	ChainConfig,
@@ -361,7 +362,7 @@ describe("deriveStagePromptPurpose", () => {
 			projectRoot: "/tmp/cosmonauts-stage-prompt-test",
 			registry: new AgentRegistry([plannerDefinition()]),
 		};
-		await runStage(directStage, directConfig, directSpawner);
+		await runStage(directStage, withCodingChain(directConfig), directSpawner);
 		expect(directRunPrompt).toBe(
 			"Analyze the project and design an implementation plan.",
 		);
@@ -688,25 +689,25 @@ describe("formatChainSteps", () => {
 // ============================================================================
 
 describe("isChainDslExpression", () => {
-	describe("single stage names (true)", () => {
+	describe("single names defer to declaration lookup", () => {
 		test("plain agent name", () => {
-			expect(isChainDslExpression("planner")).toBe(true);
+			expect(isChainDslExpression("planner")).toBe(false);
 		});
 
 		test("hyphenated agent name", () => {
-			expect(isChainDslExpression("task-manager")).toBe(true);
+			expect(isChainDslExpression("task-manager")).toBe(false);
 		});
 
 		test("hyphenated two-part name", () => {
-			expect(isChainDslExpression("quality-manager")).toBe(true);
+			expect(isChainDslExpression("quality-manager")).toBe(false);
 		});
 
 		test("qualified name with domain prefix", () => {
-			expect(isChainDslExpression("coding/planner")).toBe(true);
+			expect(isChainDslExpression("coding/planner")).toBe(false);
 		});
 
 		test("qualified hyphenated name", () => {
-			expect(isChainDslExpression("coding/task-manager")).toBe(true);
+			expect(isChainDslExpression("coding/task-manager")).toBe(false);
 		});
 	});
 

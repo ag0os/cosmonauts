@@ -22,7 +22,9 @@ import {
 	isDriveEpisodeCaptureEnabled,
 	mintDriveEpisodeIdentity,
 	reportDriveEpisodeLaunchWarning,
+	requireDriveWorkerAgent,
 	resolveDriveEpisodeWorker,
+	resolveDriveWorker,
 } from "../../driver/episode-identity.ts";
 import { formatError } from "../../driver/errors.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../driver/run-one-task.ts";
@@ -513,13 +515,19 @@ function createBackend(
 					resolver: runtime.domainResolver,
 				},
 			);
+			const executionWorker = workerResolution ?? resolveDriveWorker(runtime);
+			if (!executionWorker)
+				throw new Error(
+					"Declared Drive worker is unavailable; no fallback is permitted.",
+				);
 			return createCosmonautsSubagentBackend({
+				workerAgent: requireDriveWorkerAgent(runtime),
 				spawner,
 				cwd,
 				domainContext: runtime.domainContext,
 				projectSkills: runtime.projectSkills,
 				skillPaths: runtime.skillPaths,
-				workerResolution,
+				workerResolution: executionWorker,
 			});
 		}
 		case "codex":

@@ -1,12 +1,10 @@
-/**
- * Type definitions for named chains.
- */
+import type { ChainStep } from "../orchestration/types.ts";
 
-export interface NamedChain {
-	/** Chain name used by CLI and project config. */
+export type NamedChain = {
 	name: string;
-	/** Human-readable description */
 	description: string;
-	/** Chain DSL expression (e.g. "planner -> task-manager -> coordinator") */
-	chain: string;
-}
+	episodes?: boolean;
+} & (
+	| { chain: string; stages?: never }
+	| { stages: readonly ChainStep[]; chain?: never }
+);

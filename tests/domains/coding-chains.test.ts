@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import chains from "../../bundled/coding/chains.ts";
 import { resolveNamedChain } from "../../lib/chains/loader.ts";
 
@@ -9,6 +10,11 @@ function getWorkflowChain(name: string): string {
 }
 
 describe("coding domain chains", () => {
+	it("preserves runner capture for named and anonymous coding chains without granting it to actors", () => {
+		expect(codingChainAdapter.defaultEpisodes).toBe(true);
+		for (const chain of chains) expect(chain.episodes).toBe(true);
+	});
+
 	it("places integration-verifier immediately before quality-manager in every plan-driven build chain", () => {
 		for (const name of [
 			"plan-and-build",
@@ -40,7 +46,7 @@ describe("coding domain chains", () => {
 				"/tmp/cosmonauts-stage8-chain-test",
 				chains,
 			);
-			const stages = resolved.chain.split(" -> ");
+			const stages = (resolved.chain ?? "").split(" -> ");
 			expect(stages.at(-1)).toBe("quality-manager");
 			expect(
 				stages.filter((stage) => stage === "quality-manager"),

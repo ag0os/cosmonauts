@@ -146,7 +146,7 @@ describe("cosmonauts run", () => {
 		expect(chainMocks.executeChainExpression).toHaveBeenCalledWith({
 			runtime,
 			cwd: temp.path,
-			chainExpr: "quality-manager",
+			chainExpr: "verify",
 			options: {
 				...runtimeOptions,
 				prompt: "check this",
@@ -496,7 +496,7 @@ describe("cosmonauts run", () => {
 		expect(chainMocks.executeChainExpression).toHaveBeenCalledWith({
 			runtime,
 			cwd: temp.path,
-			chainExpr: "ruby-planner",
+			chainExpr: "ruby-chain",
 			options: {
 				piFlags: {},
 				prompt: "check ruby",
@@ -588,7 +588,7 @@ describe("cosmonauts run", () => {
 		expect(chainMocks.executeChainExpression).toHaveBeenCalledWith({
 			runtime,
 			cwd: temp.path,
-			chainExpr: "planner -> reviewer",
+			chainExpr: "list",
 			options: {
 				piFlags: {},
 				prompt: "do it",

@@ -2,12 +2,15 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
+import { loadNamedChains } from "../../chains/loader.ts";
 import type { MemoryWarning } from "../../memory/types.ts";
-import { parseChain } from "../../orchestration/chain-parser.ts";
-import { runChain } from "../../orchestration/chain-runner.ts";
+import { runConfiguredChain } from "../../orchestration/chain-dispatch.ts";
+import {
+	normalizeChain,
+	refuseNormalization,
+} from "../../orchestration/chain-normalization.ts";
+import { selectChain } from "../../orchestration/chain-selection.ts";
 import { injectUserPrompt } from "../../orchestration/chain-steps.ts";
-import { shouldRunChainInline } from "../../orchestration/durable-chain-compiler.ts";
-import { runDurableChain } from "../../orchestration/durable-chain-runner.ts";
 import type { ChainEvent, ChainResult } from "../../orchestration/types.ts";
 import type { CosmonautsRuntime } from "../../runtime.ts";
 import { authorizeAgentStart } from "./authorization.ts";
@@ -74,7 +77,7 @@ function formatEpisodeWarning(warning: MemoryWarning): string {
 }
 
 function chainDenial(
-	steps: ReturnType<typeof parseChain>,
+	steps: import("../../orchestration/types.ts").ChainStep[],
 	callerRole: string,
 	runtime: CosmonautsRuntime,
 ): string | undefined {
@@ -86,6 +89,7 @@ function chainDenial(
 				domainContext: runtime.domainContext,
 				callerRole,
 				targetRole: stage.name,
+				targetReference: stage.agentReference,
 			});
 			if (denial) return denial;
 		}
@@ -112,11 +116,11 @@ export function registerChainTool(
 		name: "chain_run",
 		label: "Run Chain",
 		description:
-			'Run a chain of agent stages using the chain DSL. Supports sequential ("planner -> coordinator"), bracket-group ("planner -> [task-manager, reviewer] -> coordinator"), and fan-out ("coordinator -> reviewer[3]") syntax.',
+			'Run a chain of agent stages using the chain DSL. Supports sequential ("author -> executor"), bracket-group ("author -> [editor, inspector] -> executor"), and fan-out ("executor -> inspector[3]") syntax.',
 		parameters: Type.Object({
 			expression: Type.String({
 				description:
-					'Chain DSL expression. Examples: "planner -> task-manager -> coordinator" (sequential), "planner -> [task-manager, reviewer] -> coordinator" (bracket group), "coordinator -> reviewer[3]" (fan-out)',
+					'Chain DSL expression. Examples: "author -> editor -> executor" (sequential), "author -> [editor, inspector] -> executor" (bracket group), "executor -> inspector[3]" (fan-out)',
 			}),
 			prompt: Type.Optional(
 				Type.String({
@@ -157,14 +161,11 @@ export function registerChainTool(
 				callerRole,
 				runtime.domainContext,
 			);
-			const steps = parseChain(
+			const { steps, episodes } = selectChain(
 				params.expression,
-				runtime.agentRegistry,
-				runtime.domainContext,
-				callerDef?.domain,
+				await loadNamedChains(ctx.cwd, runtime.chains),
+				runtime.chainAdapter?.defaultEpisodes,
 			);
-			const denial = chainDenial(steps, callerRole, runtime);
-			if (denial) return deniedChainResult(denial);
 			injectUserPrompt(steps, params.prompt);
 			const thinking = params.thinkingLevel
 				? { default: params.thinkingLevel }
@@ -175,6 +176,10 @@ export function registerChainTool(
 
 			const chainConfig = {
 				signal,
+				episodes,
+				chainAdapter: runtime.chainAdapter,
+				defaultModel: runtime.defaultModel,
+				requesterDomain: callerDef?.domain,
 				steps,
 				projectRoot: ctx.cwd,
 				projectSkills: runtime.projectSkills,
@@ -207,11 +212,16 @@ export function registerChainTool(
 				},
 			};
 
-			const result = shouldRunChainInline(steps, {
-				completionLabel: params.completionLabel,
-			})
-				? await runChain(chainConfig)
-				: await runDurableChain(chainConfig);
+			const normalized = normalizeChain(chainConfig);
+			const denial = chainDenial(
+				normalized.ok ? normalized.stages : steps,
+				callerRole,
+				runtime,
+			);
+			if (denial) return deniedChainResult(denial);
+			const result = normalized.ok
+				? await runConfiguredChain({ ...chainConfig, steps: normalized.stages })
+				: await refuseNormalization(chainConfig, normalized.errors);
 
 			// Add final summary line
 			const finalLine = result.success

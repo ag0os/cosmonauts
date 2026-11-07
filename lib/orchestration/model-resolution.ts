@@ -1,3 +1,4 @@
+import { unqualifyRole } from "../agents/qualified-role.ts";
 /**
  * Model and thinking resolution for chain orchestration.
  * Determines the model ID and thinking level for each agent role
@@ -8,7 +9,6 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
-import { roleToConfigKey } from "../agents/qualified-role.ts";
 import type { ModelConfig, ThinkingConfig } from "./types.ts";
 
 const builtinModelCatalog = builtinModels();
@@ -34,14 +34,8 @@ export function getModelForRole(
 	registry?: AgentRegistry,
 	domainContext?: string,
 ): string {
-	// Check explicit override from ModelConfig
-	if (models) {
-		const configKey = roleToConfigKey(role);
-		if (configKey) {
-			const override = models[configKey];
-			if (override) return override;
-		}
-	}
+	const override = models?.[role] ?? models?.[unqualifyRole(role)];
+	if (override) return override;
 
 	// Check agent definition for model
 	const def = registry?.get(role, domainContext);
@@ -72,14 +66,8 @@ export function getThinkingForRole(
 	registry?: AgentRegistry,
 	domainContext?: string,
 ): ThinkingLevel | undefined {
-	// Check explicit override from ThinkingConfig
-	if (thinking) {
-		const configKey = roleToConfigKey(role);
-		if (configKey) {
-			const override = thinking[configKey];
-			if (override) return override;
-		}
-	}
+	const override = thinking?.[role] ?? thinking?.[unqualifyRole(role)];
+	if (override) return override;
 
 	// Check agent definition for thinkingLevel
 	const def = registry?.get(role, domainContext);

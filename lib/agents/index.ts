@@ -12,7 +12,6 @@ export {
 
 export {
 	qualifyRole,
-	roleToConfigKey,
 	splitRole,
 	unqualifyRole,
 } from "./qualified-role.ts";

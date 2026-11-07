@@ -122,6 +122,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		const registry = createRegistryFromDomains(domains);
 		const spawner = createPiSpawner(registry, DOMAINS_DIR);
 		const backend = createCosmonautsSubagentBackend({
+			workerAgent: "worker",
 			spawner,
 			cwd: REPO_ROOT,
 		});
@@ -165,6 +166,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		expect(frozen.reference?.requested.qualifiedId).toBe("coding/worker");
 
 		const backend = createCosmonautsSubagentBackend({
+			workerAgent: "worker",
 			spawner,
 			cwd: REPO_ROOT,
 			workerResolution: frozen,
@@ -222,6 +224,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		const registry = createRegistryFromDomains(domains);
 		const spawner = createPiSpawner(registry, DOMAINS_DIR);
 		const backend = createCosmonautsSubagentBackend({
+			workerAgent: "worker",
 			spawner,
 			cwd: REPO_ROOT,
 		});

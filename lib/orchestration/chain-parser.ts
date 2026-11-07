@@ -1,26 +1,14 @@
-/**
- * Chain DSL parser for orchestration pipelines.
- * Parses chain expressions into ChainStep arrays.
- *
- * DSL syntax:
- *   Sequential:   "planner -> task-manager -> coordinator"
- *   Bracket group: "planner -> [task-manager, reviewer] -> coordinator"
- *   Fan-out:       "coordinator -> reviewer[3]"
- *   Qualified:    "coding/planner -> coding/worker"
- *   Single:       "planner"
- *
- * Loop behavior is determined by the role's lifecycle, not the DSL.
+/** Parse chain topology only: `author -> [critic, editor] -> executor` or `critic[3]`.
+ * Binding, visibility, lifecycle and execution policy belong to normalization.
  */
-
-import type { AgentRegistry } from "../agents/index.ts";
-import { InternalAgentAccessError } from "../agents/resolver.ts";
+import { validateAgentId } from "../agents/declaration.ts";
 import type { ChainStage, ChainStep, ParallelGroupStep } from "./types.ts";
 
 // ============================================================================
 // Internal helpers
 // ============================================================================
 
-const FAN_OUT_RE = /^([a-zA-Z][a-zA-Z0-9\-/]*)\[(\d+)\]$/;
+const FAN_OUT_RE = /^([^[\]\s]+)\[(\d+)\]$/;
 
 /** Split a chain expression on top-level `->` arrows (not inside brackets). */
 function splitOnTopLevelArrows(expression: string): string[] {
@@ -57,52 +45,13 @@ function splitOnTopLevelArrows(expression: string): string[] {
 	return parts;
 }
 
-/** Resolve a stage name to a ChainStage using the registry. */
-function resolveStage(
-	name: string,
-	registry: AgentRegistry,
-	domainContext: string | undefined,
-	requesterDomain: string | undefined,
-): ChainStage {
-	const result = registry.resolveReferenceResult(
-		name,
-		domainContext,
-		requesterDomain,
-	);
-	if (result.kind === "internal") {
-		throw new InternalAgentAccessError({
-			requestedId: name,
-			domain: result.domain,
-			agent: result.agent,
-			requesterDomain,
-		});
-	}
-	const reference =
-		result.kind === "found"
-			? (result.reference ??
-				registry.resolveReference(name, domainContext, requesterDomain)
-					?.reference)
-			: undefined;
-	const agentReference =
-		reference &&
-		(reference.binding.source !== "default" ||
-			reference.requested.qualifiedId !== reference.resolved.qualifiedId)
-			? reference
-			: undefined;
-	return {
-		name,
-		...(agentReference !== undefined && { agentReference }),
-		loop: result.kind === "found" ? result.definition.loop : false,
-	};
+function topologyStage(name: string): ChainStage {
+	validateAgentId(name, "Chain stage");
+	return { name };
 }
 
 /** Validate and parse a single sequential token into a ChainStage. */
-function parseSequentialToken(
-	raw: string,
-	registry: AgentRegistry,
-	domainContext: string | undefined,
-	requesterDomain: string | undefined,
-): ChainStage {
+function parseSequentialToken(raw: string): ChainStage {
 	const name = raw.trim().toLowerCase();
 
 	if (!name) {
@@ -115,16 +64,11 @@ function parseSequentialToken(
 		);
 	}
 
-	return resolveStage(name, registry, domainContext, requesterDomain);
+	return topologyStage(name);
 }
 
 /** Parse a bracket-group token `[a, b, c]` into a ParallelGroupStep. */
-function parseBracketGroup(
-	token: string,
-	registry: AgentRegistry,
-	domainContext: string | undefined,
-	requesterDomain: string | undefined,
-): ParallelGroupStep {
+function parseBracketGroup(token: string): ParallelGroupStep {
 	const inner = token.slice(1, -1).trim();
 
 	if (!inner) {
@@ -158,13 +102,7 @@ function parseBracketGroup(
 			);
 		}
 
-		const stage = resolveStage(name, registry, domainContext, requesterDomain);
-
-		if (stage.loop) {
-			throw new Error(
-				`Loop stage "${name}" cannot be used inside a parallel group. Loop stages must run sequentially.`,
-			);
-		}
+		const stage = topologyStage(name);
 
 		return stage;
 	});
@@ -183,12 +121,7 @@ function parseBracketGroup(
 }
 
 /** Parse a fan-out token `role[n]` into a ParallelGroupStep. */
-function parseFanOut(
-	match: RegExpMatchArray,
-	registry: AgentRegistry,
-	domainContext: string | undefined,
-	requesterDomain: string | undefined,
-): ParallelGroupStep {
+function parseFanOut(match: RegExpMatchArray): ParallelGroupStep {
 	const [, rawRole = "", rawCount = "0"] = match;
 	const role = rawRole.toLowerCase();
 	const count = Number(rawCount);
@@ -199,13 +132,7 @@ function parseFanOut(
 		);
 	}
 
-	const stage = resolveStage(role, registry, domainContext, requesterDomain);
-
-	if (stage.loop) {
-		throw new Error(
-			`Loop stage "${role}" cannot be used in a fan-out. Loop stages must run sequentially.`,
-		);
-	}
+	const stage = topologyStage(role);
 
 	const stages = Array.from({ length: count }, () => ({
 		...stage,
@@ -222,46 +149,8 @@ function parseFanOut(
 // Parser
 // ============================================================================
 
-/**
- * Parse a chain DSL expression into an array of ChainStep objects.
- *
- * Supports sequential stages, bracket groups, and fan-out notation.
- * Arrows inside bracket groups are not treated as separators.
- *
- * @param expression - The chain DSL expression to parse
- * @param registry - Agent registry for loop property resolution
- * @param domainContext - Optional default domain for resolving unqualified stage names
- * @returns Array of parsed ChainStep objects
- * @throws Error if the expression is invalid
- *
- * @example
- * parseChain("planner -> task-manager -> coordinator")
- * // => [
- * //   { name: "planner", loop: false },
- * //   { name: "task-manager", loop: false },
- * //   { name: "coordinator", loop: true },
- * // ]
- *
- * @example
- * parseChain("coordinator -> reviewer[3]")
- * // => [
- * //   { name: "coordinator", loop: true },
- * //   { kind: "parallel", stages: [{ name: "reviewer", loop: false }, ...], syntax: { kind: "fanout", role: "reviewer", count: 3 } },
- * // ]
- *
- * @example
- * parseChain("planner -> [task-manager, reviewer]")
- * // => [
- * //   { name: "planner", loop: false },
- * //   { kind: "parallel", stages: [{ name: "task-manager", loop: false }, { name: "reviewer", loop: false }], syntax: { kind: "group" } },
- * // ]
- */
-export function parseChain(
-	expression: string,
-	registry: AgentRegistry,
-	domainContext?: string,
-	requesterDomain = domainContext,
-): ChainStep[] {
+/** Parse a sequence, bracket group or fan-out without reading declarations. */
+export function parseChain(expression: string): ChainStep[] {
 	const trimmed = expression.trim();
 
 	if (!trimmed) {
@@ -279,23 +168,17 @@ export function parseChain(
 		}
 
 		if (token.startsWith("[")) {
-			steps.push(
-				parseBracketGroup(token, registry, domainContext, requesterDomain),
-			);
+			steps.push(parseBracketGroup(token));
 			continue;
 		}
 
 		const fanOutMatch = token.match(FAN_OUT_RE);
 		if (fanOutMatch) {
-			steps.push(
-				parseFanOut(fanOutMatch, registry, domainContext, requesterDomain),
-			);
+			steps.push(parseFanOut(fanOutMatch));
 			continue;
 		}
 
-		steps.push(
-			parseSequentialToken(token, registry, domainContext, requesterDomain),
-		);
+		steps.push(parseSequentialToken(token));
 	}
 
 	return steps;

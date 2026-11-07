@@ -20,10 +20,11 @@ import {
 	type DriveEpisodeIdentity,
 	deriveDriveEpisodeAttemptId,
 	isDriveEpisodeCaptureEnabled,
-	isFrozenDriveEpisodeWorkerSource,
 	mintDriveEpisodeIdentity,
 	reportDriveEpisodeLaunchWarning,
+	requireDriveWorkerAgent,
 	resolveDriveEpisodeWorker,
+	resolveDriveWorker,
 	resolveFrozenDriveEpisodeWorker,
 } from "../../lib/driver/episode-identity.ts";
 import { formatError } from "../../lib/driver/errors.ts";
@@ -292,6 +293,7 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		projectRoot,
 		runtime,
 		episodeWorker,
+		resume?.spec.episodeSource,
 	);
 	const deps = {
 		taskManager,
@@ -369,8 +371,7 @@ function trustedDriveWorkerSource(
 	const { selection, reconcilePriorAttempt, frozenEpisodeSource } = context;
 	return selection.episodeCaptureEnabled &&
 		!reconcilePriorAttempt &&
-		frozenEpisodeSource !== undefined &&
-		isFrozenDriveEpisodeWorkerSource(frozenEpisodeSource)
+		frozenEpisodeSource !== undefined
 		? frozenEpisodeSource
 		: undefined;
 }
@@ -378,19 +379,12 @@ function trustedDriveWorkerSource(
 async function loadDriveEpisodeRuntime(
 	context: DriveEpisodeContext,
 ): Promise<CosmonautsRuntime | undefined> {
-	const {
-		selection,
-		reconcilePriorAttempt,
-		frozenEpisodeSource,
-		trustedFrozenWorkerSource,
-	} = context;
+	const { selection, reconcilePriorAttempt } = context;
 	const needsExecutionRuntime =
 		selection.mode === "inline" &&
 		selection.backendName === "cosmonauts-subagent";
 	const needsEpisodeRuntime =
-		selection.episodeCaptureEnabled &&
-		(frozenEpisodeSource === undefined ||
-			(!reconcilePriorAttempt && trustedFrozenWorkerSource === undefined));
+		selection.episodeCaptureEnabled && !reconcilePriorAttempt;
 	if (!needsExecutionRuntime && !needsEpisodeRuntime) return undefined;
 	try {
 		return await createDriveRuntime(selection.projectRoot);
@@ -424,12 +418,8 @@ function lostFrozenDriveWorker(
 	// A resumed execution without its frozen worker must not attribute the fallback
 	// worker's episode to the unavailable frozen source.
 	return (
-		context.selection.episodeCaptureEnabled &&
-		context.selection.mode === "inline" &&
-		context.selection.backendName === "cosmonauts-subagent" &&
 		!context.reconcilePriorAttempt &&
-		context.runtime !== undefined &&
-		context.trustedFrozenWorkerSource !== undefined &&
+		context.frozenEpisodeSource !== undefined &&
 		context.episodeWorker === undefined
 	);
 }
@@ -1995,6 +1985,7 @@ async function createBackend(
 	projectRoot: string,
 	runtime?: CosmonautsRuntime,
 	workerResolution?: SpawnAgentResolution,
+	frozenWorkerSource?: string,
 ): Promise<Backend> {
 	if (backendName !== "cosmonauts-subagent") {
 		return resolveConfiguredExternalBackend(backendName);
@@ -2011,13 +2002,21 @@ async function createBackend(
 			resolver: executionRuntime.domainResolver,
 		},
 	);
+	const executionWorker =
+		workerResolution ??
+		resolveDriveWorker(executionRuntime, frozenWorkerSource);
+	if (!executionWorker)
+		throw new Error(
+			"Declared Drive worker is unavailable; no fallback is permitted.",
+		);
 	return createCosmonautsSubagentBackend({
+		workerAgent: requireDriveWorkerAgent(executionRuntime),
 		spawner,
 		cwd: projectRoot,
 		domainContext: executionRuntime.domainContext,
 		projectSkills: executionRuntime.projectSkills,
 		skillPaths: executionRuntime.skillPaths,
-		workerResolution,
+		workerResolution: executionWorker,
 	});
 }
 

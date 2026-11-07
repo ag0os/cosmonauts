@@ -14,6 +14,7 @@ import {
 	runStatus,
 	runWatch,
 } from "../../lib/durable-runtime/index.ts";
+import { formatChainSteps } from "../../lib/orchestration/chain-steps.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { executeChainExpression } from "../chain-execution.ts";
 import { createDriveRunCommand } from "../drive/subcommand.ts";
@@ -153,7 +154,7 @@ async function resolveRunChainExpression({
 			input,
 			name: chain.name,
 			description: chain.description,
-			expression: chain.chain,
+			expression: chain.chain ?? formatChainSteps([...(chain.stages ?? [])]),
 		};
 	} catch (error) {
 		if (!isUnknownNamedChainError(error, input) || namedOnly) {
@@ -252,7 +253,7 @@ async function runChainCommand({
 	const result = await executeChain({
 		runtime: context.runtime,
 		cwd: context.cwd,
-		chainExpr: resolved.expression,
+		chainExpr: resolved.name ?? resolved.expression,
 		options: {
 			...runtimeOptions,
 			prompt: promptParts.length > 0 ? promptParts.join(" ") : undefined,

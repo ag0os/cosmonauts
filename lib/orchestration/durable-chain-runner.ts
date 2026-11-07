@@ -32,6 +32,7 @@ import {
 	parsePlanReviewTargetActivityDetails,
 	projectDurableChainRun,
 } from "./chain-event-adapter.ts";
+import { normalizeChain, refuseNormalization } from "./chain-normalization.ts";
 import { buildChainStats, projectSpawnStats } from "./chain-stats.ts";
 import {
 	type ChainCompilerStepMetadata,
@@ -40,11 +41,7 @@ import {
 	type DurableChainStageSpawnOptions,
 	shouldRunChainInline,
 } from "./durable-chain-compiler.ts";
-import { misplacedQualityReviewResult } from "./quality-review-chain.ts";
-import {
-	isQualityReviewReference,
-	launchQualityReview,
-} from "./quality-review-launch.ts";
+
 import {
 	assessTaskManagerReviewGate,
 	formatReviewRoundBlockError,
@@ -85,8 +82,11 @@ const FALLBACK_DOMAINS_DIR = resolve(
 export async function runDurableChain(
 	config: ChainConfig,
 ): Promise<ChainResult> {
-	const refusal = await misplacedQualityReviewResult(config);
-	if (refusal) return refusal;
+	const normalized = normalizeChain(config);
+	if (!normalized.ok) {
+		return refuseNormalization(config, normalized.errors);
+	}
+	config = { ...config, steps: normalized.stages };
 	if (
 		shouldRunChainInline(config.steps, {
 			completionLabel: config.completionLabel,
@@ -114,6 +114,8 @@ async function executeDurableChain(
 	});
 	const compiled = compileChainToGraph({
 		runId,
+		chainAdapter: config.chainAdapter,
+		defaultModel: config.defaultModel,
 		steps: config.steps,
 		projectRoot: config.projectRoot,
 		registry: config.registry,
@@ -142,7 +144,8 @@ async function executeDurableChain(
 			ref,
 			spawner,
 			signal: config.signal,
-			qualityReview: config.qualityReview,
+			chainAdapter: config.chainAdapter,
+			terminalGateContext: config.terminalGateContext,
 		});
 		const scheduler = await runStart({
 			store,
@@ -203,7 +206,8 @@ interface ChainSchedulerBackendOptions {
 	ref: RunRef;
 	spawner: AgentSpawner;
 	signal?: AbortSignal;
-	qualityReview?: ChainConfig["qualityReview"];
+	chainAdapter?: ChainConfig["chainAdapter"];
+	terminalGateContext?: unknown;
 }
 
 function createChainSchedulerBackend({
@@ -211,7 +215,8 @@ function createChainSchedulerBackend({
 	ref,
 	spawner,
 	signal,
-	qualityReview,
+	chainAdapter,
+	terminalGateContext,
 }: ChainSchedulerBackendOptions): RunGraphSchedulerBackend {
 	return {
 		name: "cosmonauts-subagent",
@@ -243,7 +248,8 @@ function createChainSchedulerBackend({
 					spawner,
 					prepared,
 					signal,
-					qualityReview,
+					chainAdapter,
+					terminalGateContext,
 				}),
 			};
 		},
@@ -256,14 +262,16 @@ async function executeChainStep({
 	spawner,
 	prepared,
 	signal,
-	qualityReview,
+	chainAdapter,
+	terminalGateContext,
 }: {
 	store: RunStore;
 	ref: RunRef;
 	spawner: AgentSpawner;
 	prepared: PreparedStep<SchedulerStepInput>;
 	signal?: AbortSignal;
-	qualityReview?: ChainConfig["qualityReview"];
+	chainAdapter?: ChainConfig["chainAdapter"];
+	terminalGateContext?: unknown;
 }): Promise<StepResult> {
 	const spawn = readSpawnOptions(prepared.input.backendOptions);
 	const promptMetadata = readPromptMetadata(prepared.input.backendOptions);
@@ -276,6 +284,7 @@ async function executeChainStep({
 			ref,
 			persistedReview,
 			taskManagerTopologyIndex: promptMetadata.topologyIndex,
+			producerStepIds: promptMetadata.reviewProducerStepIds,
 			projectRoot: spawn.cwd,
 		});
 		if (block) {
@@ -298,16 +307,17 @@ async function executeChainStep({
 		prompt: appendBoundReviewTarget(spawn.prompt, target),
 	};
 	const stage = readStageOptions(prepared.input.backendOptions);
-	if (isQualityReviewReference(spawn.agentReference ?? stage.agentReference)) {
-		const review = await launchQualityReview({
-			...qualityReview,
-			projectRoot: spawn.cwd,
-			operatorNote: stage.prompt,
-			planSlug: spawn.planSlug,
+	if (stage.terminalGate)
+		return executeTerminalStep({
+			store,
+			ref,
+			stepId: prepared.step.id,
+			stage,
+			spawn,
+			chainAdapter,
+			terminalGateContext,
 			signal,
 		});
-		return { ...review.stepResult, childRun: review.ref };
-	}
 	const role = materializedSpawn.role;
 	let eventWrite = Promise.resolve();
 	const enqueueAgentEvent = (
@@ -356,19 +366,13 @@ async function executeChainStep({
 		});
 	}
 	await eventWrite;
-	if (spawnResult.stats) {
-		await store.appendEvent(ref, {
-			type: "step_tool_activity",
-			runId: ref.runId,
-			stepId: prepared.step.id,
-			details: {
-				source: "chain",
-				kind: "chain_stage_stats",
-				role,
-				stats: projectSpawnStats(spawnResult.stats),
-			} satisfies ChainStageStatsActivityDetails,
-		});
-	}
+	await persistStageStats({
+		store,
+		ref,
+		stepId: prepared.step.id,
+		role,
+		stats: spawnResult.stats,
+	});
 
 	if (!spawnResult.success) {
 		return {
@@ -398,6 +402,68 @@ async function executeChainStep({
 		summary: summarizeAssistantText(assistantText, stage.name),
 		artifacts: [],
 	};
+}
+
+interface TerminalStepOptions {
+	store: RunStore;
+	ref: RunRef;
+	stepId: string;
+	stage: DurableChainStageOptions;
+	spawn: DurableChainStageSpawnOptions;
+	chainAdapter?: ChainConfig["chainAdapter"];
+	terminalGateContext?: unknown;
+	signal?: AbortSignal;
+}
+async function executeTerminalStep(
+	options: TerminalStepOptions,
+): Promise<StepResult> {
+	const { stage, spawn, chainAdapter } = options;
+	const gate =
+		stage.terminalGate && chainAdapter?.terminalGates?.[stage.terminalGate];
+	if (!gate) throw new Error("Terminal executor is unavailable.");
+	const result = await gate({
+		hostContext: options.terminalGateContext,
+		stage,
+		prompt: stage.prompt,
+		projectRoot: spawn.cwd,
+		planSlug: stage.expectedPlanSlug ?? spawn.planSlug,
+		signal: options.signal,
+	});
+	await persistStageStats({
+		...options,
+		role: stage.name,
+		stats: result.stats,
+	});
+	return terminalStepResult(result);
+}
+function terminalStepResult(result: Omit<StageResult, "stage">): StepResult {
+	return {
+		outcome: result.success ? "success" : "failed",
+		summary: result.summary ?? result.error ?? "",
+		artifacts: result.artifacts ?? [],
+		...(result.run ? { childRun: result.run } : {}),
+	};
+}
+
+async function persistStageStats(options: {
+	store: RunStore;
+	ref: RunRef;
+	stepId: string;
+	role: string;
+	stats?: import("./types.ts").SpawnStats;
+}): Promise<void> {
+	if (!options.stats) return;
+	await options.store.appendEvent(options.ref, {
+		type: "step_tool_activity",
+		runId: options.ref.runId,
+		stepId: options.stepId,
+		details: {
+			source: "chain",
+			kind: "chain_stage_stats",
+			role: options.role,
+			stats: projectSpawnStats(options.stats),
+		} satisfies ChainStageStatsActivityDetails,
+	});
 }
 
 async function validateDurableReview({
@@ -440,10 +506,7 @@ async function validateDurableReview({
 		});
 		if (blocked) return blocked;
 	}
-	if (
-		promptMetadata.purpose.kind === "revision" &&
-		promptMetadata.purpose.reviewKind === "plan"
-	) {
+	if (promptMetadata.purpose.kind === "plan-revision") {
 		const check = await validateReviewRevisionReport({
 			assistantText,
 			projectRoot: spawn.cwd,
@@ -470,8 +533,7 @@ async function validateDurableReview({
 function shouldReadPersistedReview(metadata: DurablePromptMetadata): boolean {
 	return (
 		metadata.requiresPlanReviewTarget ||
-		(metadata.purpose.kind === "revision" &&
-			metadata.purpose.reviewKind === "plan")
+		metadata.purpose.kind === "plan-revision"
 	);
 }
 
@@ -533,6 +595,7 @@ async function assessDurableTaskManagerEntry(options: {
 	ref: RunRef;
 	persistedReview?: PersistedPlanReview;
 	taskManagerTopologyIndex: number;
+	producerStepIds?: readonly string[];
 	projectRoot: string;
 }): Promise<ReviewRoundBlock | undefined> {
 	const { persistedReview, taskManagerTopologyIndex } = options;
@@ -582,7 +645,7 @@ async function assessDurableTaskManagerEntry(options: {
 		};
 	}
 
-	return assessTaskManagerReviewGate({
+	const block = await assessTaskManagerReviewGate({
 		activePlanReview: {
 			target: persistedReview.target,
 			addressedAtTopologyIndex: addressed.topologyIndex,
@@ -591,6 +654,36 @@ async function assessDurableTaskManagerEntry(options: {
 		taskManagerTopologyIndex,
 		projectRoot: options.projectRoot,
 	});
+	return assessProducerSelection({
+		block,
+		eligible: options.producerStepIds,
+		producerStepId: addressed.producerStepId,
+		target: persistedReview.target,
+		taskManagerTopologyIndex,
+	});
+}
+
+function assessProducerSelection({
+	block,
+	eligible,
+	producerStepId,
+	target,
+	taskManagerTopologyIndex,
+}: {
+	block?: ReviewRoundBlock;
+	eligible?: readonly string[];
+	producerStepId: string;
+	target: PlanReviewTarget;
+	taskManagerTopologyIndex: number;
+}): ReviewRoundBlock | undefined {
+	if (block) return block;
+	return eligible && !eligible.includes(producerStepId)
+		? {
+				reason: "mismatched-addressed-evidence",
+				...target,
+				taskManagerTopologyIndex,
+			}
+		: undefined;
 }
 
 async function isCorrelatedAddressedProducer(
@@ -611,8 +704,7 @@ async function isCorrelatedAddressedProducer(
 	const stage = readStageOptions(producer.backend.options);
 	return (
 		metadata.topologyIndex === addressed.topologyIndex &&
-		metadata.purpose.kind === "revision" &&
-		metadata.purpose.reviewKind === "plan" &&
+		metadata.purpose.kind === "plan-revision" &&
 		resolvedProducerRole(stage, spawn) === addressed.producerRole &&
 		record.status === "completed" &&
 		record.result?.outcome === "success"
@@ -826,6 +918,7 @@ function metadataFromPersistedGraph(
 }
 
 interface DurablePromptMetadata {
+	reviewProducerStepIds?: readonly string[];
 	topologyIndex: number;
 	purpose: StagePromptPurpose;
 	requiresPlanReviewTarget: boolean;
@@ -836,49 +929,41 @@ function readPromptMetadata(options: unknown): DurablePromptMetadata {
 	if (!isRecord(options)) {
 		throw new Error("Durable chain step is missing prompt metadata.");
 	}
-	const topologyIndex = numberOption(options.topologyIndex);
+	const topologyIndex = numberOption(options.topologyIndex) ?? 0;
 	const purpose = stagePromptPurposeOption(options.purpose);
 	if (
 		topologyIndex === undefined ||
 		!Number.isInteger(topologyIndex) ||
-		topologyIndex < 0 ||
-		purpose === undefined ||
-		typeof options.requiresPlanReviewTarget !== "boolean"
+		topologyIndex < 0
 	) {
 		throw new Error("Durable chain step has invalid prompt metadata.");
 	}
 	return {
 		topologyIndex,
+		reviewProducerStepIds: Array.isArray(options.reviewProducerStepIds)
+			? options.reviewProducerStepIds.filter(
+					(id): id is string => typeof id === "string",
+				)
+			: undefined,
 		purpose,
-		requiresPlanReviewTarget: options.requiresPlanReviewTarget,
+		requiresPlanReviewTarget: options.requiresPlanReviewTarget === true,
 		...withDefined("expectedPlanSlug", stringOption(options.expectedPlanSlug)),
 	};
 }
 
-function stagePromptPurposeOption(
-	value: unknown,
-): StagePromptPurpose | undefined {
-	if (!isRecord(value) || typeof value.kind !== "string") return undefined;
-	if (value.kind === "default") return { kind: "default" };
-	if (value.kind === "plan-review") {
-		const authorIdentity = stringOption(value.authorIdentity);
-		return {
-			kind: "plan-review",
-			...withDefined("authorIdentity", authorIdentity),
-		};
-	}
+function stagePromptPurposeOption(value: unknown): StagePromptPurpose {
+	if (!isRecord(value)) return { kind: "default" };
+	const targetStageIds = Array.isArray(value.targetStageIds)
+		? value.targetStageIds.filter((id): id is string => typeof id === "string")
+		: [];
+	if (value.kind === "plan-review")
+		return { kind: "plan-review", targetStageIds };
 	if (
-		value.kind === "revision" &&
-		(value.reviewKind === "generic" || value.reviewKind === "plan") &&
-		typeof value.authorIdentity === "string"
-	) {
-		return {
-			kind: "revision",
-			reviewKind: value.reviewKind,
-			authorIdentity: value.authorIdentity,
-		};
-	}
-	return undefined;
+		value.kind === "plan-revision" ||
+		(value.kind === "revision" && value.reviewKind === "plan")
+	)
+		return { kind: "plan-revision", targetStageIds };
+	return { kind: "default" };
 }
 
 function readSpawnOptions(options: unknown): DurableChainStageSpawnOptions {
@@ -927,6 +1012,28 @@ function readStageOptions(options: unknown): DurableChainStageOptions {
 	}
 	return {
 		name: stage.name,
+		...withDefined("stageId", stringOption(stage.stageId)),
+		...withDefined("declarationId", stringOption(stage.declarationId)),
+		purpose: stagePromptPurposeOption(stage.purpose),
+		expectedPlanSlug: stringOption(stage.expectedPlanSlug),
+		requiresPlanReviewTarget: stage.requiresPlanReviewTarget === true,
+		completionPolicy: { kind: "once" },
+		model: stringOption(stage.model),
+		thinkingLevel:
+			stage.thinkingLevel as DurableChainStageOptions["thinkingLevel"],
+		...(isRecord(stage.reviewTarget) &&
+		Array.isArray(stage.reviewTarget.producerStageIds)
+			? {
+					reviewTarget: {
+						source: "active-plan-review" as const,
+						producerStageIds: stage.reviewTarget.producerStageIds.filter(
+							(id): id is string => typeof id === "string",
+						),
+					},
+				}
+			: {}),
+		...withDefined("instruction", stringOption(stage.instruction)),
+		...withDefined("terminalGate", stringOption(stage.terminalGate)),
 		...withDefined(
 			"agentReference",
 			agentReferenceOption(stage.agentReference),
@@ -954,12 +1061,7 @@ function readSyntax(value: unknown): ChainCompilerStepMetadata["syntax"] {
 }
 
 function chainStage(stage: DurableChainStageOptions): ChainStage {
-	return {
-		name: stage.name,
-		...withDefined("agentReference", stage.agentReference),
-		loop: stage.loop,
-		...withDefined("prompt", stage.prompt),
-	};
+	return { ...stage };
 }
 
 function agentReferenceOption(

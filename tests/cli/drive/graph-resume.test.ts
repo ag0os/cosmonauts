@@ -56,7 +56,6 @@ const RUN_ID = "run-previous";
 const WORKER_SOURCE = "cod" + "ing/worker";
 const UNAVAILABLE_WORKER_SOURCE = "retired-" + "cod" + "ing/worker";
 const FALLBACK_WORKER_SOURCE = "fallback-" + "cod" + "ing/worker";
-const PLANNER_SOURCE = "project-" + "cod" + "ing/planner";
 const TERMINAL_COMPLETED_AT = "2026-07-22T19:00:00.000Z";
 type DriverEventInput = DriverEvent extends infer Event
 	? Event extends DriverEvent
@@ -177,7 +176,7 @@ describe("cosmonauts run drive compat graph resume", () => {
 		).toBe("completed");
 	});
 
-	test("drops an unavailable frozen worker before execution and never attributes the fallback to it", async () => {
+	test("refuses an unavailable frozen worker without executing or attributing a fallback", async () => {
 		const fixture = await setupPendingExecutionGraphResume();
 		await enableEpisodeCapture(fixture.spec.projectRoot);
 		const runtimeCreate = vi
@@ -197,49 +196,35 @@ describe("cosmonauts run drive compat graph resume", () => {
 			await readFile(join(fixture.spec.workdir, "task-queue.txt"), "utf-8"),
 		).toBe(`${fixture.taskId}\n`);
 
-		await parseDrive([
-			"--plan",
-			PLAN_SLUG,
-			"--resume",
-			RUN_ID,
-			"--resume-dirty",
-			"--mode",
-			"inline",
-			"--backend",
-			"cosmonauts-subagent",
-		]);
+		await expect(
+			parseDrive([
+				"--plan",
+				PLAN_SLUG,
+				"--resume",
+				RUN_ID,
+				"--resume-dirty",
+				"--mode",
+				"inline",
+				"--backend",
+				"cosmonauts-subagent",
+			]),
+		).rejects.toThrow("no fallback is permitted");
 
 		const persistedSpec = (await readJson(
 			join(fixture.spec.workdir, "spec.json"),
 		)) as DriverRunSpec;
 		const episodes = await readProjectDriveEpisodes(fixture.spec.projectRoot);
 		const events = await readFile(fixture.spec.eventLogPath, "utf-8");
-		const [executedDefinition, spawnConfig] =
-			sessionFactoryMocks.createAgentSessionFromDefinition.mock.calls[0] ?? [];
-		const executedWorker = executedDefinition as AgentDefinition;
-
-		expect(output.stdoutJson()).toMatchObject({
-			runId: RUN_ID,
-			scope: PLAN_SLUG,
-			outcome: "completed",
-			tasksDone: 1,
-			tasksBlocked: 0,
-		});
 		expect(runtimeCreate).toHaveBeenCalledTimes(1);
 		expect(
 			sessionFactoryMocks.createAgentSessionFromDefinition,
-		).toHaveBeenCalledTimes(1);
-		expect(`${executedWorker.domain}/${executedWorker.id}`).toBe(
-			FALLBACK_WORKER_SOURCE,
+		).not.toHaveBeenCalled();
+		expect(events).not.toContain(
+			`"resolvedAgentId":"${FALLBACK_WORKER_SOURCE}"`,
 		);
-		expect(spawnConfig).toMatchObject({
-			role: "worker",
-			agentReference: undefined,
-		});
-		expect(events).toContain(`"resolvedAgentId":"${FALLBACK_WORKER_SOURCE}"`);
-		expect(persistedSpec).not.toHaveProperty("episodeSource");
-		expect(persistedSpec).not.toHaveProperty("episodeAttemptId");
-		// Pre-CDX-002 attributed this fallback execution to the unavailable source.
+		expect(persistedSpec.remainingTaskIds).toEqual([fixture.taskId]);
+		expect(persistedSpec).toEqual(persistedBefore);
+		// No normalized declaration owns a new episode when the frozen actor is absent.
 		expect(
 			episodes.some((episode) => episode.source === UNAVAILABLE_WORKER_SOURCE),
 		).toBe(false);
@@ -255,7 +240,7 @@ describe("cosmonauts run drive compat graph resume", () => {
 				{
 					...fixture.spec,
 					remainingTaskIds: [],
-					episodeSource: PLANNER_SOURCE,
+					episodeSource: WORKER_SOURCE,
 					episodeAttemptId: staleAttemptId,
 				},
 				null,
@@ -270,6 +255,7 @@ describe("cosmonauts run drive compat graph resume", () => {
 		);
 		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue({
 			...fallbackExecutionRuntime(),
+			workerAgent: WORKER_SOURCE,
 			agentRegistry: new AgentRegistry([workerDefinition(WORKER_SOURCE)]),
 		} as CosmonautsRuntime);
 
@@ -1414,6 +1400,7 @@ async function enableEpisodeCapture(projectRoot: string): Promise<void> {
 
 function terminalResumeRuntime(): CosmonautsRuntime {
 	return {
+		workerAgent: WORKER_SOURCE,
 		agentRegistry: new AgentRegistry([workerDefinition(WORKER_SOURCE)]),
 		domainContext: undefined,
 	} as CosmonautsRuntime;
@@ -1421,6 +1408,7 @@ function terminalResumeRuntime(): CosmonautsRuntime {
 
 function fallbackExecutionRuntime(): Pick<
 	CosmonautsRuntime,
+	| "workerAgent"
 	| "agentRegistry"
 	| "domainContext"
 	| "domainResolver"
@@ -1429,6 +1417,7 @@ function fallbackExecutionRuntime(): Pick<
 	| "skillPaths"
 > {
 	return {
+		workerAgent: WORKER_SOURCE,
 		agentRegistry: new AgentRegistry([
 			workerDefinition(FALLBACK_WORKER_SOURCE),
 		]),

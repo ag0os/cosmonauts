@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { roleToConfigKey } from "../../bundled/coding/chain-adapter.ts";
 import {
 	qualifyRole,
-	roleToConfigKey,
 	splitRole,
 	unqualifyRole,
 } from "../../lib/agents/qualified-role.ts";

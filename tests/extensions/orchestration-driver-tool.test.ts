@@ -263,6 +263,7 @@ describe("driver e2e run_driver integration", () => {
 			pi as never,
 			async () =>
 				({
+					workerAgent: "coding/worker",
 					agentRegistry: authorizedToolRegistry(),
 					domainContext: "coding",
 				}) as never,
@@ -684,6 +685,7 @@ interface RunDriverOverrides {
 	omitEnvelopePath?: boolean;
 	runtime?: Pick<
 		CosmonautsRuntime,
+		| "workerAgent"
 		| "agentRegistry"
 		| "domainContext"
 		| "domainResolver"
@@ -775,6 +777,7 @@ async function launchDriver(
 		async () =>
 			(overrides.runtime ??
 				({
+					workerAgent: "coding/worker",
 					agentRegistry: authorizedToolRegistry(),
 					domainResolver: {},
 					domainsDir: fixture.projectRoot,
@@ -830,6 +833,7 @@ function workerRuntime(
 	targetDomain: string | undefined,
 ): Pick<
 	CosmonautsRuntime,
+	| "workerAgent"
 	| "agentRegistry"
 	| "domainContext"
 	| "domainResolver"
@@ -869,6 +873,7 @@ function workerRuntime(
 		},
 	} as never;
 	return {
+		workerAgent: "coding/worker",
 		agentRegistry: new AgentRegistry(definitions, { bindingResolver }),
 		domainContext,
 		domainResolver: {} as never,

@@ -207,7 +207,11 @@ function validateNamedChainAgents(
 	const diagnostics: DomainValidationDiagnostic[] = [];
 
 	for (const chain of domain.chains) {
-		for (const stage of parseChainStages(chain.chain)) {
+		for (const stage of chain.stages
+			? chain.stages.flatMap((step) =>
+					"kind" in step ? step.stages.map((stage) => stage.name) : [step.name],
+				)
+			: parseChainStages(chain.chain)) {
 			const visibility = resolveAgentVisibility(
 				stage,
 				domain.manifest.id,

@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { validateAgentId } from "../../agents/declaration.ts";
+import { unqualifyRole } from "../../agents/qualified-role.ts";
 import { extractAssistantText } from "../../orchestration/assistant-text.ts";
 import type { SpawnAgentResolution } from "../../orchestration/spawn-resolution.ts";
 import { summarizeToolCall } from "../../orchestration/tool-call-summary.ts";
@@ -12,7 +14,7 @@ import type { Backend } from "./types.ts";
 
 interface CosmonautsSubagentBackendDeps {
 	spawner: AgentSpawner;
-	defaultRole?: string;
+	workerAgent: string;
 	cwd: string;
 	domainContext?: string;
 	projectSkills?: readonly string[];
@@ -30,16 +32,14 @@ interface DriverActivityFields {
 export function createCosmonautsSubagentBackend(
 	deps: CosmonautsSubagentBackendDeps,
 ): Backend {
+	validateAgentId(deps.workerAgent, "Drive workerAgent");
 	return {
 		name: "cosmonauts-subagent",
 		capabilities: { canCommit: true, isolatedFromHostSource: false },
 		async run(invocation) {
-			// `role` is a session-path/label component (session-factory builds
-			// `${role}-<uuid>.jsonl`), so it must stay the plain worker role — a
-			// qualified id like "coding/worker" would fork the session/manifest
-			// layout. Frozen worker SELECTION flows through `agentReference` below,
-			// which resolveSpawnAgent prioritizes over `role`.
-			const role = deps.defaultRole ?? "worker";
+			const role = deps.workerResolution
+				? unqualifyRole(deps.workerAgent)
+				: deps.workerAgent;
 			const prompt = await readFile(invocation.promptPath, "utf-8");
 			const start = Date.now();
 			const result = await deps.spawner.spawn({

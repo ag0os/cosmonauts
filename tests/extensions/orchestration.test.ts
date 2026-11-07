@@ -1,3 +1,4 @@
+import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 /**
  * Tests for orchestration extension wiring.
  * Verifies the cached CosmonautsRuntime is used and forwarded to runtime calls.
@@ -132,6 +133,9 @@ describe("orchestration extension", () => {
 	}) {
 		const resolver = new DomainResolver(realDomainRegistry);
 		runtimeCreateMock.mockResolvedValue({
+			chainAdapter: codingChainAdapter,
+			workerAgent: "alpha/worker",
+			chains: [],
 			agentRegistry: overrides?.agentRegistry ?? realRegistry,
 			domainContext: overrides?.domainContext,
 			projectSkills: overrides?.projectSkills ?? [],
@@ -290,14 +294,7 @@ describe("orchestration extension", () => {
 				resolver: expect.any(DomainResolver),
 			}),
 		);
-		expect(parseChainMock).toHaveBeenCalledWith(
-			"coordinator",
-			expect.objectContaining({
-				has: expect.any(Function),
-			}),
-			"alpha",
-			"alpha",
-		);
+		expect(parseChainMock).toHaveBeenCalledWith("coordinator");
 	});
 
 	test("orchestration runtime includes a synthetic bundled package in framework dev mode", async () => {
@@ -330,7 +327,7 @@ describe("orchestration extension", () => {
 			expect.objectContaining({
 				projectRoot: cwd,
 				completionLabel: undefined,
-				steps: [{ name: "coordinator", loop: true }],
+				steps: [expect.objectContaining({ name: "coordinator", loop: true })],
 			}),
 		);
 	});
@@ -354,12 +351,12 @@ describe("orchestration extension", () => {
 			expect.objectContaining({
 				completionLabel: "plan:auth-system",
 				steps: [
-					{
+					expect.objectContaining({
 						name: "planner",
 						loop: false,
 						prompt: "User request: Build auth with refresh tokens",
-					},
-					{ name: "coordinator", loop: true },
+					}),
+					expect.objectContaining({ name: "coordinator", loop: true }),
 				],
 			}),
 		);
@@ -792,7 +789,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		);
 	});
 
-	test("chain_run passes the caller domain as requester while preserving default resolution context", async () => {
+	test("chain_run authorization uses the caller domain while preserving default resolution context", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:main/cosmo -->",
 		});
@@ -803,17 +800,13 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			},
 		);
 
+		const resolve = vi.spyOn(registry, "resolveReferenceResult");
 		mockRuntime({ domainContext: "target", agentRegistry: registry });
 		mockSuccessfulChain([{ name: "secret", loop: true }]);
 
 		await pi.callTool("chain_run", { expression: "secret" });
 
-		expect(parseChainMock).toHaveBeenCalledWith(
-			"secret",
-			registry,
-			"target",
-			"main",
-		);
+		expect(resolve).toHaveBeenCalledWith("secret", "target", "main");
 	});
 
 	test("chain_run surfaces internal-agent denial for a non-owner caller in target default context", async () => {
@@ -826,21 +819,15 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 				internalAgentsByDomain: new Map([["target", new Set(["secret"])]]),
 			},
 		);
-		parseChainMock.mockImplementationOnce(
-			(_expression, _registry, _domainContext, requesterDomain) => {
-				throw new Error(
-					`Agent "secret" is internal to domain "target" and is not visible from domain "${requesterDomain}".`,
-				);
-			},
-		);
 
 		mockRuntime({ domainContext: "target", agentRegistry: registry });
+		parseChainMock.mockReturnValueOnce([{ name: "secret", loop: false }]);
 
 		await expect(
 			pi.callTool("chain_run", { expression: "secret" }),
-		).rejects.toThrow(
-			'Agent "secret" is internal to domain "target" and is not visible from domain "main".',
-		);
+		).resolves.toMatchObject({
+			content: [{ text: expect.stringContaining("internal") }],
+		});
 		expect(runChainMock).not.toHaveBeenCalled();
 	});
 
@@ -1082,6 +1069,9 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			makeAgent("integration-verifier", "coding"),
 		]);
 		runtimeCreateMock.mockResolvedValue({
+			chainAdapter: codingChainAdapter,
+			workerAgent: "alpha/worker",
+			chains: [],
 			agentRegistry: registry,
 			domainContext: "coding",
 			projectSkills: [],

@@ -1,5 +1,4 @@
 import { Text } from "@earendil-works/pi-tui";
-import { unqualifyRole } from "../../agents/qualified-role.ts";
 import { formatChainSteps } from "../../orchestration/chain-steps.ts";
 import { formatDuration } from "../../orchestration/duration.ts";
 import { formatReviewRoundBlockError } from "../../orchestration/review-revision.ts";
@@ -12,20 +11,8 @@ export { formatDuration } from "../../orchestration/duration.ts";
 // Rendering Helpers
 // ============================================================================
 
-const ROLE_LABELS: Record<string, string> = {
-	planner: "Planner",
-	"task-manager": "Task Manager",
-	coordinator: "Coordinator",
-	worker: "Worker",
-	"quality-manager": "Quality Manager",
-	reviewer: "Reviewer",
-	fixer: "Fixer",
-	explorer: "Explorer",
-	verifier: "Verifier",
-};
-
 export function roleLabel(role: string): string {
-	return ROLE_LABELS[unqualifyRole(role)] ?? role;
+	return role;
 }
 
 /**

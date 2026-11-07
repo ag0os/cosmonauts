@@ -73,6 +73,7 @@ describe("cosmonauts-subagent backend", () => {
 			messages: [],
 		});
 		const backend = createCosmonautsSubagentBackend({
+			workerAgent: "worker",
 			spawner,
 			cwd: "/repo",
 		});
@@ -103,7 +104,7 @@ describe("cosmonauts-subagent backend", () => {
 		const skillPaths = ["/skills/typescript", "/skills/testing"];
 		const backend = createCosmonautsSubagentBackend({
 			spawner,
-			defaultRole: "reviewer",
+			workerAgent: "reviewer",
 			cwd: "/repo",
 			domainContext: "coding",
 			projectSkills,
@@ -156,6 +157,7 @@ describe("cosmonauts-subagent backend", () => {
 			return { success: true, sessionId: "child-session-1", messages: [] };
 		});
 		const backend = createCosmonautsSubagentBackend({
+			workerAgent: "worker",
 			spawner: { spawn, dispose: vi.fn() },
 			cwd: "/repo",
 		});
@@ -203,6 +205,7 @@ describe("cosmonauts-subagent backend", () => {
 			],
 		});
 		const backend = createCosmonautsSubagentBackend({
+			workerAgent: "worker",
 			spawner,
 			cwd: "/repo",
 		});

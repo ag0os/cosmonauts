@@ -5,15 +5,14 @@ import type {
 	RunGraph,
 	RunGraphStep,
 } from "../durable-runtime/index.ts";
-import { isParallelGroupStep } from "./chain-steps.ts";
-import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
-import type { StagePromptPurpose } from "./stage-prompts.ts";
 import {
-	buildStagePrompt,
-	deriveStagePromptPurpose,
-	requiresPlanReviewTarget,
-	resolvePlanSlug,
-} from "./stage-prompts.ts";
+	assertNormalizedStage,
+	normalizeChain,
+} from "./chain-normalization.ts";
+import { isParallelGroupStep } from "./chain-steps.ts";
+import type { getThinkingForRole } from "./model-resolution.ts";
+import type { StagePromptPurpose } from "./stage-prompts.ts";
+import { resolvePlanSlug } from "./stage-prompts.ts";
 import type {
 	ChainStage,
 	ChainStep,
@@ -24,6 +23,8 @@ import type {
 } from "./types.ts";
 
 interface CompileChainToGraphOptions {
+	chainAdapter?: import("./types.ts").ChainAdapter;
+	defaultModel?: string;
 	runId: string;
 	steps: readonly ChainStep[];
 	projectRoot: string;
@@ -46,6 +47,7 @@ export interface ChainCompilerStepMetadata {
 	purpose: StagePromptPurpose;
 	requiresPlanReviewTarget: boolean;
 	expectedPlanSlug?: string;
+	reviewProducerStepIds?: readonly string[];
 	memberIndex?: number;
 	syntax?: ParallelGroupStep["syntax"];
 }
@@ -61,6 +63,17 @@ interface ShouldRunChainInlineOptions {
 }
 
 export interface DurableChainStageOptions {
+	declarationId?: string;
+	purpose?: StagePromptPurpose;
+	reviewTarget?: ChainStage["reviewTarget"];
+	expectedPlanSlug?: string;
+	requiresPlanReviewTarget?: boolean;
+	completionPolicy?: { kind: "once" };
+	model?: string;
+	thinkingLevel?: ChainStage["thinkingLevel"];
+	stageId?: string;
+	instruction?: string;
+	terminalGate?: string;
 	name: string;
 	agentReference?: ResolvedAgentReference;
 	loop: boolean;
@@ -107,6 +120,16 @@ interface CompileStageOptions {
 export function compileChainToGraph(
 	options: CompileChainToGraphOptions,
 ): CompiledChainGraph {
+	const normalized = normalizeChain({ ...options, steps: [...options.steps] });
+	if (!normalized.ok)
+		throw new Error(normalized.errors.map((error) => error.message).join("\n"));
+	options = { ...options, steps: normalized.stages };
+	if (
+		shouldRunChainInline(options.steps, {
+			completionLabel: options.completionLabel,
+		})
+	)
+		throw new Error("Cannot compile inline-only chain steps.");
 	const graphSteps: RunGraphStep[] = [];
 	const metadata: ChainCompilerStepMetadata[] = [];
 	let frontier: string[] = [];
@@ -119,36 +142,23 @@ export function compileChainToGraph(
 		const stages = isParallelGroupStep(step) ? step.stages : [step];
 		const promptContexts = stages.map((stage) => ({
 			stage,
-			purpose: deriveStagePromptPurpose(options.steps, topologyIndex, stage),
-			requiresPlanReviewTarget: requiresPlanReviewTarget(
-				options.steps,
-				topologyIndex,
-				stage,
-			),
+			purpose: stage.purpose ?? { kind: "default" as const },
+			requiresPlanReviewTarget: stage.requiresPlanReviewTarget ?? false,
 		}));
 		const stepIndex = topologyIndex + 1;
 
 		if (isParallelGroupStep(step)) {
 			const siblings = promptContexts.map((promptContext, memberIndex) =>
 				compileStage({
-					runId: options.runId,
+					...options,
 					...promptContext,
 					topologyIndex,
 					stepIndex,
 					memberIndex: memberIndex + 1,
 					syntax: step.syntax,
 					frontier,
-					domainContext: options.domainContext,
-					models: options.models,
-					thinking: options.thinking,
-					projectRoot: options.projectRoot,
-					projectSkills: options.projectSkills,
-					skillPaths: options.skillPaths,
-					completionLabel: options.completionLabel,
 					planSlug,
-					expectedPlanSlug: planSlug,
-					compaction: options.compaction,
-					registry: options.registry,
+					expectedPlanSlug: promptContext.stage.expectedPlanSlug ?? planSlug,
 				}),
 			);
 
@@ -163,27 +173,35 @@ export function compileChainToGraph(
 			throw new Error(`Missing stage at topology index ${topologyIndex}.`);
 		}
 		const compiled = compileStage({
-			runId: options.runId,
+			...options,
 			...promptContext,
 			topologyIndex,
 			stepIndex,
 			frontier,
-			domainContext: options.domainContext,
-			models: options.models,
-			thinking: options.thinking,
-			projectRoot: options.projectRoot,
-			projectSkills: options.projectSkills,
-			skillPaths: options.skillPaths,
-			completionLabel: options.completionLabel,
 			planSlug,
-			expectedPlanSlug: planSlug,
-			compaction: options.compaction,
-			registry: options.registry,
+			expectedPlanSlug: promptContext.stage.expectedPlanSlug ?? planSlug,
 		});
 		graphSteps.push(compiled.graphStep);
 		metadata.push(compiled.metadata);
 		frontier = [compiled.graphStep.id];
 	});
+
+	const stepIds = new Map(
+		metadata.map((item) => [item.stage.stageId, item.stepId]),
+	);
+	for (const item of metadata) {
+		const target = item.stage.reviewTarget;
+		if (!target) continue;
+		const producerStepIds = target.producerStageIds.map((id) => {
+			const stepId = stepIds.get(id);
+			if (!stepId) throw new Error(`Unknown producer stage "${id}".`);
+			return stepId;
+		});
+		item.reviewProducerStepIds = producerStepIds;
+		const backend = graphSteps.find((step) => step.id === item.stepId)?.backend;
+		if (backend?.options)
+			backend.options.reviewProducerStepIds = producerStepIds;
+	}
 
 	return {
 		graph: {
@@ -222,6 +240,7 @@ function compileStage(options: CompileStageOptions): {
 	graphStep: RunGraphStep;
 	metadata: ChainCompilerStepMetadata;
 } {
+	assertNormalizedStage(options.stage);
 	const stage = durableStageOptions(options.stage);
 	const promptMetadata = chainPromptMetadata(options);
 	const stepId = chainStepId({
@@ -299,10 +318,7 @@ function durableStageSpawnOptions(
 	stage: ChainStage,
 	options: CompileStageOptions,
 ): DurableChainStageSpawnOptions {
-	const agentReference =
-		stage.agentReference ??
-		options.registry.resolveReference(stage.name, options.domainContext)
-			?.reference;
+	const agentReference = stage.agentReference;
 	return {
 		role: stage.name,
 		...(agentReference !== undefined && { agentReference }),
@@ -310,31 +326,15 @@ function durableStageSpawnOptions(
 			domainContext: options.domainContext,
 		}),
 		cwd: options.projectRoot,
-		model: getModelForRole(
-			stage.name,
-			options.models,
-			options.registry,
-			options.domainContext,
-		),
-		prompt: buildStagePrompt(stage, {
-			completionLabel: options.completionLabel,
-			purpose: options.purpose,
-		}),
+		model: stage.model ?? "",
+		prompt: stage.instruction ?? "",
 		...(options.projectSkills !== undefined && {
 			projectSkills: [...options.projectSkills],
 		}),
 		...(options.skillPaths !== undefined && {
 			skillPaths: [...options.skillPaths],
 		}),
-		...withDefined(
-			"thinkingLevel",
-			getThinkingForRole(
-				stage.name,
-				options.thinking,
-				options.registry,
-				options.domainContext,
-			),
-		),
+		...withDefined("thinkingLevel", stage.thinkingLevel),
 		...(options.compaction !== undefined && {
 			compaction: { ...options.compaction },
 		}),
@@ -348,7 +348,18 @@ function durableStageOptions(stage: ChainStage): DurableChainStageOptions {
 		...(stage.agentReference !== undefined && {
 			agentReference: stage.agentReference,
 		}),
-		loop: stage.loop,
+		loop: stage.loop ?? false,
+		stageId: stage.stageId,
+		declarationId: stage.declarationId,
+		purpose: stage.purpose,
+		reviewTarget: stage.reviewTarget,
+		expectedPlanSlug: stage.expectedPlanSlug,
+		requiresPlanReviewTarget: stage.requiresPlanReviewTarget,
+		completionPolicy: { kind: "once" },
+		model: stage.model,
+		thinkingLevel: stage.thinkingLevel,
+		instruction: stage.instruction,
+		terminalGate: stage.terminalGate,
 		...(stage.prompt !== undefined && { prompt: stage.prompt }),
 	};
 }
@@ -361,7 +372,10 @@ function withDefined<Key extends string, Value>(
 }
 
 function stageHasCompletionCheck(stage: ChainStage): boolean {
-	return stage.completionCheck !== undefined;
+	return (
+		stage.completionCheck !== undefined ||
+		stage.completionPolicy?.kind === "state"
+	);
 }
 
 function chainStepId(options: {

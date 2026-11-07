@@ -1,3 +1,6 @@
+import { createDefaultCompletionCheck } from "../../bundled/coding/chain-completion.ts";
+import { getDefaultStagePrompt } from "../../bundled/coding/chain-prompts.ts";
+import { parseCodingChain, withCodingChain } from "../helpers/coding-chain.ts";
 /**
  * Tests for chain-runner.ts
  * Covers runStage (one-shot and loop modes), runChain (with mocked spawner module),
@@ -23,9 +26,7 @@ import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
 import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import {
-	createDefaultCompletionCheck,
 	derivePlanSlug,
-	getDefaultStagePrompt,
 	injectUserPrompt,
 	runChain,
 	runStage,
@@ -346,7 +347,7 @@ describe("runStage", () => {
 			const stage = makeStage("unknown-role", false);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(false);
 			expect(result.error).toContain('Unknown agent role "unknown-role"');
@@ -357,7 +358,7 @@ describe("runStage", () => {
 			const registry = new AgentRegistry([makeCodingDef("worker", false)], {
 				bindingResolver: bindingResolver({ a: "coding", coding: "c" }) as never,
 			});
-			const [stage] = parseChain("a/worker", registry);
+			const [stage] = parseCodingChain("a/worker", registry);
 			if (!stage || "kind" in stage) {
 				expect.unreachable("Expected one resolved chain stage");
 			}
@@ -365,7 +366,7 @@ describe("runStage", () => {
 			const spawner = createMockSpawner();
 			const config = makeConfig([stage], { registry });
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(true);
 			expect(spawner.spawn).toHaveBeenCalledWith(
@@ -387,7 +388,7 @@ describe("runStage", () => {
 				completionLabel: "plan:../../escape",
 			});
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(false);
 			expect(result.error).toContain("Invalid plan slug");
@@ -401,7 +402,7 @@ describe("runStage", () => {
 				planSlug: "..\\escape",
 			});
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(false);
 			expect(result.error).toContain("Invalid plan slug");
@@ -413,7 +414,7 @@ describe("runStage", () => {
 			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(true);
 			expect(result.iterations).toBe(1);
@@ -425,7 +426,7 @@ describe("runStage", () => {
 			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		});
@@ -448,7 +449,7 @@ describe("runStage", () => {
 			const stage = makeStage("task-manager", false);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.summary).toBe("Created 7 tasks under the plan.");
 		});
@@ -458,7 +459,7 @@ describe("runStage", () => {
 			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.summary).toBe("planner completed");
 		});
@@ -472,7 +473,7 @@ describe("runStage", () => {
 			};
 			const config = makeConfig([stage]);
 
-			await runStage(stage, config, spawner);
+			await runStage(stage, withCodingChain(config), spawner);
 
 			expect(spawner.spawn).toHaveBeenCalledWith(
 				expect.objectContaining({ prompt: "Custom prompt for this stage" }),
@@ -484,7 +485,7 @@ describe("runStage", () => {
 			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
-			await runStage(stage, config, spawner);
+			await runStage(stage, withCodingChain(config), spawner);
 
 			expect(spawner.spawn).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -500,7 +501,7 @@ describe("runStage", () => {
 			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBe("boom");
@@ -514,7 +515,7 @@ describe("runStage", () => {
 				compaction: { enabled: true, keepRecentTokens: 8000 },
 			});
 
-			await runStage(stage, config, spawner);
+			await runStage(stage, withCodingChain(config), spawner);
 
 			expect(spawner.spawn).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -528,7 +529,7 @@ describe("runStage", () => {
 			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
-			await runStage(stage, config, spawner);
+			await runStage(stage, withCodingChain(config), spawner);
 
 			const spawnArgs = (spawner.spawn as ReturnType<typeof vi.fn>).mock
 				.calls[0]?.[0];
@@ -565,7 +566,7 @@ describe("runStage", () => {
 			const stage = makeStage("custom-agent", false);
 			const config = makeConfig([stage], { registry });
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(true);
 			expect(spawner.spawn).toHaveBeenCalledTimes(1);
@@ -579,7 +580,7 @@ describe("runStage", () => {
 			const stage = makeStage("nonexistent", false);
 			const config = makeConfig([stage], { registry });
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(false);
 			expect(result.error).toContain('Unknown agent role "nonexistent"');
@@ -592,7 +593,7 @@ describe("runStage", () => {
 			const stage = makeStage("ops/runner", false);
 			const config = makeConfig([stage], { registry });
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(true);
 			expect(spawner.spawn).toHaveBeenCalledTimes(1);
@@ -610,7 +611,7 @@ describe("runStage", () => {
 				domainContext: "docs",
 			});
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(true);
 			expect(spawner.spawn).toHaveBeenCalledWith(
@@ -638,7 +639,7 @@ describe("runStage", () => {
 			const stage = makeStage("coordinator", true, completionCheck);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner, {
+			const result = await runStage(stage, withCodingChain(config), spawner, {
 				maxTotalIterations: 10,
 				deadlineMs: FIXED_NOW + 60_000,
 			});
@@ -658,7 +659,7 @@ describe("runStage", () => {
 			const stage = makeStage("coordinator", true, completionCheck);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner, {
+			const result = await runStage(stage, withCodingChain(config), spawner, {
 				maxTotalIterations: 3,
 				deadlineMs: FIXED_NOW + 60_000,
 			});
@@ -698,7 +699,7 @@ describe("runStage", () => {
 			const stage = makeStage("worker", true, completionCheck);
 			const config = makeConfig([stage], { signal: controller.signal });
 
-			const result = await runStage(stage, config, spawner, {
+			const result = await runStage(stage, withCodingChain(config), spawner, {
 				maxTotalIterations: 10,
 				deadlineMs: FIXED_NOW + 60_000,
 			});
@@ -724,7 +725,7 @@ describe("runStage", () => {
 			const stage = makeStage("coordinator", true, completionCheck);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner, {
+			const result = await runStage(stage, withCodingChain(config), spawner, {
 				maxTotalIterations: 5,
 				deadlineMs: FIXED_NOW + 60_000,
 			});
@@ -748,7 +749,7 @@ describe("runStage", () => {
 			});
 
 			try {
-				const result = await runStage(stage, config, spawner, {
+				const result = await runStage(stage, withCodingChain(config), spawner, {
 					maxTotalIterations: 10,
 					deadlineMs: FIXED_NOW + 60_000,
 				});
@@ -790,7 +791,7 @@ describe("runStage", () => {
 			});
 
 			try {
-				const result = await runStage(stage, config, spawner, {
+				const result = await runStage(stage, withCodingChain(config), spawner, {
 					maxTotalIterations: 10,
 					deadlineMs: FIXED_NOW + 60_000,
 				});
@@ -813,7 +814,7 @@ describe("runStage", () => {
 				projectRoot: tmpDir,
 				completionLabel: "plan:alpha",
 			});
-			return runStage(stage, config, spawner, {
+			return runStage(stage, withCodingChain(config), spawner, {
 				maxTotalIterations: 10,
 				deadlineMs: FIXED_NOW + 60_000,
 			});
@@ -1043,7 +1044,7 @@ describe("runStage", () => {
 				compaction: { enabled: true, keepRecentTokens: 4000 },
 			});
 
-			await runStage(stage, config, spawner, {
+			await runStage(stage, withCodingChain(config), spawner, {
 				maxTotalIterations: 5,
 				deadlineMs: FIXED_NOW + 60_000,
 			});
@@ -1068,7 +1069,7 @@ describe("runStage", () => {
 				completionLabel: "review-round:1",
 			});
 
-			const result = await runStage(stage, config, spawner, {
+			const result = await runStage(stage, withCodingChain(config), spawner, {
 				maxTotalIterations: 3,
 				deadlineMs: Date.now() + 60_000,
 			});
@@ -1250,7 +1251,7 @@ describe("event emission", () => {
 			onEvent: (event) => events.push(event),
 		});
 
-		await runStage(stage, config, spawner);
+		await runStage(stage, withCodingChain(config), spawner);
 
 		const eventTypes = events.map((e) => e.type);
 		expect(eventTypes).toContain("agent_spawned");
@@ -1270,7 +1271,7 @@ describe("event emission", () => {
 			onEvent: (event) => events.push(event),
 		});
 
-		await runStage(stage, config, spawner, {
+		await runStage(stage, withCodingChain(config), spawner, {
 			maxTotalIterations: 3,
 			deadlineMs: FIXED_NOW + 60_000,
 		});
@@ -1313,7 +1314,7 @@ describe("event emission", () => {
 			onEvent: (event) => events.push(event),
 		});
 
-		await runStage(stage, config, spawner);
+		await runStage(stage, withCodingChain(config), spawner);
 
 		const turnEvents = events.filter((e) => e.type === "agent_turn");
 		const toolEvents = events.filter((e) => e.type === "agent_tool_use");
@@ -1374,7 +1375,7 @@ describe("event emission", () => {
 		const config = makeConfig([stage], {
 			onEvent: (event) => events.push(event),
 		});
-		const runPromise = runStage(stage, config, spawner);
+		const runPromise = runStage(stage, withCodingChain(config), spawner);
 		await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 		const earlyTypes = events.map((event) => event.type);
@@ -1417,7 +1418,7 @@ describe("event emission", () => {
 			onEvent: (event) => events.push(event),
 		});
 
-		await runStage(stage, config, spawner, {
+		await runStage(stage, withCodingChain(config), spawner, {
 			maxTotalIterations: 3,
 			deadlineMs: Date.now() + 60_000,
 		});
@@ -1464,7 +1465,7 @@ describe("event emission", () => {
 			onEvent: (event) => events.push(event),
 		});
 
-		await runStage(stage, config, spawner);
+		await runStage(stage, withCodingChain(config), spawner);
 
 		const turnEvents = events.filter((e) => e.type === "agent_turn") as Extract<
 			ChainEvent,
@@ -1492,7 +1493,7 @@ describe("event emission", () => {
 		const stage = makeStage("planner", false);
 		const config = makeConfig([stage]); // no onEvent
 
-		await runStage(stage, config, spawner);
+		await runStage(stage, withCodingChain(config), spawner);
 
 		expect(spawner.spawn).toHaveBeenCalledTimes(1);
 	});
@@ -1507,7 +1508,7 @@ describe("event emission", () => {
 		});
 
 		// Should not reject even though the listener throws
-		const result = await runStage(stage, config, spawner);
+		const result = await runStage(stage, withCodingChain(config), spawner);
 		expect(result.success).toBe(true);
 	});
 });
@@ -1532,7 +1533,7 @@ describe("runChain", () => {
 		];
 		const config = makeConfig(stages);
 
-		const result = await runChain(config);
+		const result = await runChain(withCodingChain(config));
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
@@ -1551,13 +1552,15 @@ describe("runChain", () => {
 
 		try {
 			const result = await runChain(
-				makeConfig([stage], {
-					projectRoot,
-					onEvent: (event) => events.push(event),
-				}),
+				withCodingChain(
+					makeConfig([stage], {
+						projectRoot,
+						onEvent: (event) => events.push(event),
+					}),
+				),
 			);
 
-			expect(result).toEqual({
+			expect(result).toMatchObject({
 				success: true,
 				stageResults: [
 					{
@@ -1672,10 +1675,12 @@ describe("runChain", () => {
 
 			try {
 				const execution = runChain(
-					makeConfig([makeStage("planner", false)], {
-						projectRoot,
-						signal: controller.signal,
-					}),
+					withCodingChain(
+						makeConfig([makeStage("planner", false)], {
+							projectRoot,
+							signal: controller.signal,
+						}),
+					),
 				);
 				if (testCase.name === "throw") {
 					await expect(execution).rejects.toThrow("dispose exploded");
@@ -1740,9 +1745,14 @@ describe("runChain", () => {
 				dispose: vi.fn(),
 			};
 			await runChain(
-				makeConfig(
-					parseChain("[planner, reviewer] -> task-manager", defaultRegistry),
-					{ projectRoot: groupRoot, onEvent: () => {} },
+				withCodingChain(
+					makeConfig(
+						parseCodingChain(
+							"[planner, reviewer] -> task-manager",
+							defaultRegistry,
+						),
+						{ projectRoot: groupRoot, onEvent: () => {} },
+					),
 				),
 			);
 			const groupEpisodes = await readProjectChainEpisodes(groupRoot);
@@ -1755,26 +1765,26 @@ describe("runChain", () => {
 			await writeEpisodicConfig(fallbackRoot, true);
 			spawnerRef.current = createMockSpawner();
 			await runChain(
-				makeConfig(
-					[
-						{
-							kind: "parallel",
-							stages: [
-								makeStage("unresolved-first", false),
-								makeStage("reviewer", false),
-							],
-							syntax: { kind: "group" },
-						},
-					],
-					{ projectRoot: fallbackRoot },
+				withCodingChain(
+					makeConfig(
+						[
+							{
+								kind: "parallel",
+								stages: [
+									makeStage("unresolved-first", false),
+									makeStage("reviewer", false),
+								],
+								syntax: { kind: "group" },
+							},
+						],
+						{ projectRoot: fallbackRoot },
+					),
 				),
 			);
 			const fallbackEpisodes = await readProjectChainEpisodes(fallbackRoot);
-			expect(fallbackEpisodes).toHaveLength(2);
-			expect(fallbackEpisodes.map((episode) => episode.source)).toEqual([
-				"unresolved-first",
-				"unresolved-first",
-			]);
+			// No declaration was normalized, so no actor may own a runner episode.
+			expect(fallbackEpisodes).toHaveLength(0);
+			expect(spawnerRef.current?.spawn).not.toHaveBeenCalled();
 		} finally {
 			await Promise.all([
 				rm(groupRoot, { recursive: true, force: true }),
@@ -1792,10 +1802,12 @@ describe("runChain", () => {
 			spawnerRef.current = createMockSpawner();
 			const baselineEvents: ChainEvent[] = [];
 			const baseline = await runChain(
-				makeConfig([makeStage("planner", false)], {
-					projectRoot: baselineRoot,
-					onEvent: (event) => baselineEvents.push(event),
-				}),
+				withCodingChain(
+					makeConfig([makeStage("planner", false)], {
+						projectRoot: baselineRoot,
+						onEvent: (event) => baselineEvents.push(event),
+					}),
+				),
 			);
 
 			await writeEpisodicConfig(captureFailureRoot, true);
@@ -1804,14 +1816,16 @@ describe("runChain", () => {
 			const failureEvents: ChainEvent[] = [];
 			spawnerRef.current = createMockSpawner();
 			const withCaptureFailure = await runChain(
-				makeConfig([makeStage("planner", false)], {
-					projectRoot: captureFailureRoot,
-					onEvent: (event) => failureEvents.push(event),
-					reportEpisodeWarning: async (warning) => {
-						await Promise.resolve();
-						warnings.push(warning);
-					},
-				}),
+				withCodingChain(
+					makeConfig([makeStage("planner", false)], {
+						projectRoot: captureFailureRoot,
+						onEvent: (event) => failureEvents.push(event),
+						reportEpisodeWarning: async (warning) => {
+							await Promise.resolve();
+							warnings.push(warning);
+						},
+					}),
+				),
 			);
 
 			expect(withCaptureFailure).toEqual(baseline);
@@ -1835,7 +1849,9 @@ describe("runChain", () => {
 	});
 
 	test("keeps inline chain results explicitly non-durable", async () => {
-		const result = await runChain(makeConfig([makeStage("planner", false)]));
+		const result = await runChain(
+			withCodingChain(makeConfig([makeStage("planner", false)])),
+		);
 
 		expect(result.run).toBeUndefined();
 	});
@@ -1848,25 +1864,27 @@ describe("runChain", () => {
 			await initQualityReviewRepository(projectRoot);
 			await writePlanReviewTarget({ projectRoot, planSlug: "example" });
 			spawnerRef.current = reviewReportSpawner(planReviewReport("example", 1));
-			const steps = parseChain(chain.chain, defaultRegistry);
+			const steps = parseCodingChain(chain.chain ?? "", defaultRegistry);
 			for (const step of steps) {
 				if (!("kind" in step) && step.name === "coordinator") {
 					step.completionCheck = async () => true;
 				}
 			}
 			const result = await runChain(
-				makeConfig(steps, {
-					projectRoot,
-					completionLabel: "plan:example",
-					qualityReview: {
-						execute: async () => ({
-							markdown: renderQualityReviewReport({
-								verdict: "not-ready",
-								reason: "assessed",
+				withCodingChain(
+					makeConfig(steps, {
+						projectRoot,
+						completionLabel: "plan:example",
+						terminalGateContext: {
+							execute: async () => ({
+								markdown: renderQualityReviewReport({
+									verdict: "not-ready",
+									reason: "assessed",
+								}),
 							}),
-						}),
-					},
-				}),
+						},
+					}),
+				),
 			);
 			expect(result.success).toBe(true);
 			expect(result.stageResults.at(-1)?.artifacts?.[0]?.id).toBe(
@@ -1894,10 +1912,15 @@ describe("runChain", () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-"));
 		try {
 			const result = await runChain(
-				makeConfig(parseChain("planner -> quality-manager", defaultRegistry), {
-					projectRoot,
-					completionLabel: "plan:example",
-				}),
+				withCodingChain(
+					makeConfig(
+						parseCodingChain("planner -> quality-manager", defaultRegistry),
+						{
+							projectRoot,
+							completionLabel: "plan:example",
+						},
+					),
+				),
 			);
 			expect(result.run?.runId).toMatch(/^qm-/);
 			expect(result.stageResults.at(-1)?.run).toEqual(result.run);
@@ -1927,9 +1950,11 @@ describe("runChain", () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-placement-"));
 		try {
 			const result = await runChain(
-				makeConfig(parseChain("quality-manager -> planner", defaultRegistry), {
-					projectRoot,
-				}),
+				withCodingChain(
+					makeConfig(parseChain("quality-manager -> planner"), {
+						projectRoot,
+					}),
+				),
 			);
 			expect(result.success).toBe(false);
 			expect(result.run?.runId).toMatch(/^qm-/);
@@ -1962,11 +1987,13 @@ describe("runChain", () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-ambiguous-"));
 		try {
 			const result = await runChain(
-				makeConfig(parseChain("quality-manager", defaultRegistry), {
-					projectRoot,
-					completionLabel: "plan:first",
-					planSlug: "second",
-				}),
+				withCodingChain(
+					makeConfig(parseCodingChain("quality-manager", defaultRegistry), {
+						projectRoot,
+						completionLabel: "plan:first",
+						planSlug: "second",
+					}),
+				),
 			);
 			expect(result.run?.runId).toMatch(/^qm-/);
 			await expect(
@@ -1985,7 +2012,9 @@ describe("runChain", () => {
 				agentReference:
 					defaultRegistry.resolveReference("quality-manager")?.reference,
 			};
-			const result = await runChain(makeConfig([forged], { projectRoot }));
+			const result = await runChain(
+				withCodingChain(makeConfig([forged], { projectRoot })),
+			);
 			expect(result.success).toBe(false);
 			expect(result.run?.runId).toMatch(/^qm-/);
 			expect(spawnerRef.current?.spawn).not.toHaveBeenCalled();
@@ -2002,18 +2031,20 @@ describe("runChain", () => {
 		try {
 			await initQualityReviewRepository(projectRoot);
 			const result = await runChain(
-				makeConfig(parseChain("quality-manager", defaultRegistry), {
-					projectRoot,
-					completionLabel: "plan:example",
-					qualityReview: {
-						execute: async () => ({
-							markdown: renderQualityReviewReport({
-								verdict,
-								reason: "assessed",
+				withCodingChain(
+					makeConfig(parseCodingChain("quality-manager", defaultRegistry), {
+						projectRoot,
+						completionLabel: "plan:example",
+						terminalGateContext: {
+							execute: async () => ({
+								markdown: renderQualityReviewReport({
+									verdict,
+									reason: "assessed",
+								}),
 							}),
-						}),
-					},
-				}),
+						},
+					}),
+				),
 			);
 			expect(result.success).toBe(true);
 			expect(result.run?.runId).toMatch(/^qm-/);
@@ -2061,24 +2092,26 @@ describe("runChain", () => {
 		try {
 			await initQualityReviewRepository(projectRoot);
 			const result = await runChain(
-				makeConfig(parseChain("quality-manager", defaultRegistry), {
-					projectRoot,
-					signal: controller.signal,
-					qualityReview: {
-						execute: async () => {
-							if (scenario === "cancellation") controller.abort();
-							return {
-								markdown:
-									scenario === "cancellation"
-										? renderQualityReviewReport({
-												verdict: "ready",
-												reason: "clear",
-											})
-										: "Verdict: ready\nMissing sections",
-							};
+				withCodingChain(
+					makeConfig(parseCodingChain("quality-manager", defaultRegistry), {
+						projectRoot,
+						signal: controller.signal,
+						terminalGateContext: {
+							execute: async () => {
+								if (scenario === "cancellation") controller.abort();
+								return {
+									markdown:
+										scenario === "cancellation"
+											? renderQualityReviewReport({
+													verdict: "ready",
+													reason: "clear",
+												})
+											: "Verdict: ready\nMissing sections",
+								};
+							},
 						},
-					},
-				}),
+					}),
+				),
 			);
 			expect(result.success).toBe(false);
 			const report = await readFile(
@@ -2104,10 +2137,10 @@ describe("runChain", () => {
 	});
 
 	test("user prompt injection preserves default first-stage role prompt", async () => {
-		const steps = parseChain("planner -> task-manager", defaultRegistry);
+		const steps = parseCodingChain("planner -> task-manager", defaultRegistry);
 		injectUserPrompt(steps, "build auth");
 
-		await runChain(makeConfig(steps));
+		await runChain(withCodingChain(makeConfig(steps)));
 
 		expect(spawnerRef.current?.spawn).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -2119,7 +2152,7 @@ describe("runChain", () => {
 	});
 
 	test("gives a plan-review cycle distinct jobs while preserving the first planner prompt", async () => {
-		const steps = parseChain(
+		const steps = parseCodingChain(
 			"planner -> plan-reviewer -> planner",
 			defaultRegistry,
 		);
@@ -2131,7 +2164,9 @@ describe("runChain", () => {
 		);
 
 		await runChain(
-			makeConfig(steps, { projectRoot, planSlug: "example-plan" }),
+			withCodingChain(
+				makeConfig(steps, { projectRoot, planSlug: "example-plan" }),
+			),
 		);
 
 		const spawnMock = spawnerRef.current?.spawn;
@@ -2289,16 +2324,18 @@ describe("runChain", () => {
 						})),
 						dispose: vi.fn(),
 					};
-					const steps = parseChain(
+					const steps = parseCodingChain(
 						"planner -> plan-reviewer -> planner",
 						defaultRegistry,
 					);
 					const result = await runChain(
-						makeConfig(steps, {
-							projectRoot,
-							...(expectedSlugPresent && { planSlug: "review-target" }),
-							onEvent: (event) => events.push(event),
-						}),
+						withCodingChain(
+							makeConfig(steps, {
+								projectRoot,
+								...(expectedSlugPresent && { planSlug: "review-target" }),
+								onEvent: (event) => events.push(event),
+							}),
+						),
 					);
 
 					if (testCase.name === "valid") {
@@ -2356,12 +2393,17 @@ describe("runChain", () => {
 					planReviewReport("reported-target", 1),
 				);
 				const result = await runChain(
-					makeConfig(
-						parseChain("planner -> plan-reviewer -> planner", defaultRegistry),
-						{
-							projectRoot,
-							...(expectedSlugPresent && { planSlug: "expected-target" }),
-						},
+					withCodingChain(
+						makeConfig(
+							parseCodingChain(
+								"planner -> plan-reviewer -> planner",
+								defaultRegistry,
+							),
+							{
+								projectRoot,
+								...(expectedSlugPresent && { planSlug: "expected-target" }),
+							},
+						),
 					),
 				);
 				expect(result.success).toBe(!expectedSlugPresent);
@@ -2395,15 +2437,17 @@ describe("runChain", () => {
 					});
 					spawnerRef.current = reviewReportSpawner(terminal);
 					const result = await runChain(
-						makeConfig(
-							parseChain(
-								"planner -> plan-reviewer -> planner",
-								defaultRegistry,
+						withCodingChain(
+							makeConfig(
+								parseCodingChain(
+									"planner -> plan-reviewer -> planner",
+									defaultRegistry,
+								),
+								{
+									projectRoot,
+									...(expectedSlugPresent && { planSlug: "review-target" }),
+								},
 							),
-							{
-								projectRoot,
-								...(expectedSlugPresent && { planSlug: "review-target" }),
-							},
 						),
 					);
 					expect(result.stageResults[1]?.reviewRoundBlock).toMatchObject({
@@ -2610,15 +2654,17 @@ Review incomplete.
 					dispose: vi.fn(),
 				};
 				const result = await runChain(
-					makeConfig(
-						parseChain(
-							"planner -> plan-reviewer -> planner -> task-manager",
-							defaultRegistry,
+					withCodingChain(
+						makeConfig(
+							parseCodingChain(
+								"planner -> plan-reviewer -> planner -> task-manager",
+								defaultRegistry,
+							),
+							{
+								projectRoot,
+								onEvent: (event) => events.push(event),
+							},
 						),
-						{
-							projectRoot,
-							onEvent: (event) => events.push(event),
-						},
 					),
 				);
 
@@ -2663,7 +2709,7 @@ Review incomplete.
 		const boundRegistry = new AgentRegistry(codingDefinitions, {
 			bindingResolver: bindingResolver({ project: "coding" }) as never,
 		});
-		const projectBoundSteps = parseChain(
+		const projectBoundSteps = parseCodingChain(
 			"plan-reviewer -> project/task-manager",
 			boundRegistry,
 		);
@@ -2678,7 +2724,7 @@ Review incomplete.
 		const cases = [
 			{
 				name: "no reviser sequential chain",
-				steps: parseChain(
+				steps: parseCodingChain(
 					"planner -> plan-reviewer -> task-manager",
 					defaultRegistry,
 				),
@@ -2686,7 +2732,7 @@ Review incomplete.
 			},
 			{
 				name: "intervening nonreviser chain",
-				steps: parseChain(
+				steps: parseCodingChain(
 					"planner -> plan-reviewer -> worker -> task-manager",
 					defaultRegistry,
 				),
@@ -2694,7 +2740,7 @@ Review incomplete.
 			},
 			{
 				name: "qualified stages",
-				steps: parseChain(
+				steps: parseCodingChain(
 					"coding/plan-reviewer -> coding/task-manager",
 					defaultRegistry,
 				),
@@ -2708,7 +2754,7 @@ Review incomplete.
 			...["[planner, task-manager]", "[task-manager, planner]"].map(
 				(group) => ({
 					name: `same-index reviser ${group}`,
-					steps: parseChain(
+					steps: parseCodingChain(
 						`planner -> plan-reviewer -> ${group}`,
 						defaultRegistry,
 					),
@@ -2718,7 +2764,7 @@ Review incomplete.
 			...["[plan-reviewer, task-manager]", "[task-manager, plan-reviewer]"].map(
 				(group) => ({
 					name: `same-index reviewer ${group}`,
-					steps: parseChain(group, defaultRegistry),
+					steps: parseCodingChain(group, defaultRegistry),
 					registry: defaultRegistry,
 				}),
 			),
@@ -2762,11 +2808,13 @@ Review incomplete.
 					dispose: vi.fn(),
 				};
 				const result = await runChain(
-					makeConfig(testCase.steps, {
-						projectRoot,
-						registry: testCase.registry,
-						onEvent: (event) => events.push(event),
-					}),
+					withCodingChain(
+						makeConfig(testCase.steps, {
+							projectRoot,
+							registry: testCase.registry,
+							onEvent: (event) => events.push(event),
+						}),
+					),
 				);
 				const spawnRoles = vi
 					.mocked(spawnerRef.current.spawn)
@@ -2904,25 +2952,27 @@ Review incomplete.
 					planReviewReport("review-target", 1),
 				);
 				const result = await runChain(
-					makeConfig(
-						parseChain(
-							"planner -> plan-reviewer -> planner -> task-manager",
-							defaultRegistry,
-						),
-						{
-							projectRoot,
-							onEvent: (event) => {
-								events.push(event);
-								if (
-									event.type === "stage_end" &&
-									event.stage.name === "planner" &&
-									event.result.success &&
-									++plannerEnds === 2
-								) {
-									mutation.apply(projectRoot);
-								}
+					withCodingChain(
+						makeConfig(
+							parseCodingChain(
+								"planner -> plan-reviewer -> planner -> task-manager",
+								defaultRegistry,
+							),
+							{
+								projectRoot,
+								onEvent: (event) => {
+									events.push(event);
+									if (
+										event.type === "stage_end" &&
+										event.stage.name === "planner" &&
+										event.result.success &&
+										++plannerEnds === 2
+									) {
+										mutation.apply(projectRoot);
+									}
+								},
 							},
-						},
+						),
 					),
 				);
 				const taskResult = result.stageResults.at(-1);
@@ -2953,8 +3003,8 @@ Review incomplete.
 
 		const unchangedShapes = [
 			[makeStage("task-manager", false)],
-			parseChain("planner -> task-manager", defaultRegistry),
-			parseChain("planner -> reviewer -> task-manager", defaultRegistry),
+			parseCodingChain("planner -> task-manager", defaultRegistry),
+			parseCodingChain("planner -> reviewer -> task-manager", defaultRegistry),
 			...defaultRegistry
 				.listAll()
 				.filter((definition) => definition.id !== "quality-manager")
@@ -2962,7 +3012,7 @@ Review incomplete.
 		];
 		for (const steps of unchangedShapes) {
 			spawnerRef.current = createMockSpawner();
-			const result = await runChain(makeConfig(steps));
+			const result = await runChain(withCodingChain(makeConfig(steps)));
 			expect(result.success, `unchanged ${steps.length}-step shape`).toBe(true);
 			expect(spawnerRef.current.spawn).toHaveBeenCalledTimes(steps.length);
 		}
@@ -2979,12 +3029,14 @@ Review incomplete.
 				planReviewReport("review-target", 1),
 			);
 			const result = await runChain(
-				makeConfig(
-					parseChain(
-						"planner -> plan-reviewer -> planner -> task-manager",
-						defaultRegistry,
+				withCodingChain(
+					makeConfig(
+						parseCodingChain(
+							"planner -> plan-reviewer -> planner -> task-manager",
+							defaultRegistry,
+						),
+						{ projectRoot },
 					),
-					{ projectRoot },
 				),
 			);
 			const taskSpawn = vi
@@ -3088,15 +3140,17 @@ Review complete.
 					}),
 					dispose: vi.fn(),
 				};
-				const steps = parseChain(
+				const steps = parseCodingChain(
 					"planner -> plan-reviewer -> planner -> task-manager",
 					defaultRegistry,
 				);
 				const result = await runChain(
-					makeConfig(steps, {
-						projectRoot,
-						onEvent: (event) => events.push(event),
-					}),
+					withCodingChain(
+						makeConfig(steps, {
+							projectRoot,
+							onEvent: (event) => events.push(event),
+						}),
+					),
 				);
 
 				expect(result.success, findings).toBe(true);
@@ -3116,7 +3170,9 @@ Review complete.
 				spawnerRef.current = reviewReportSpawner(
 					"Fresh run must repeat plan review.",
 				);
-				const freshResult = await runChain(makeConfig(steps, { projectRoot }));
+				const freshResult = await runChain(
+					withCodingChain(makeConfig(steps, { projectRoot })),
+				);
 				expect(freshResult.success, `${findings} fresh run`).toBe(false);
 				expect(
 					vi
@@ -3135,7 +3191,7 @@ Review complete.
 		try {
 			await writePlanReviewTarget({ projectRoot, planSlug: "review-target" });
 			const createLoopingSteps = () => {
-				const steps = parseChain(
+				const steps = parseCodingChain(
 					"planner -> plan-reviewer -> planner -> task-manager",
 					defaultRegistry,
 				);
@@ -3179,10 +3235,12 @@ Review complete.
 				dispose: vi.fn(),
 			};
 			const addressedResult = await runChain(
-				makeConfig(createLoopingSteps(), {
-					projectRoot,
-					onEvent: (event) => addressedEvents.push(event),
-				}),
+				withCodingChain(
+					makeConfig(createLoopingSteps(), {
+						projectRoot,
+						onEvent: (event) => addressedEvents.push(event),
+					}),
+				),
 			);
 
 			expect(addressedResult.success).toBe(true);
@@ -3231,10 +3289,12 @@ Review complete.
 				dispose: vi.fn(),
 			};
 			const omittedResult = await runChain(
-				makeConfig(createLoopingSteps(), {
-					projectRoot,
-					onEvent: (event) => omittedEvents.push(event),
-				}),
+				withCodingChain(
+					makeConfig(createLoopingSteps(), {
+						projectRoot,
+						onEvent: (event) => omittedEvents.push(event),
+					}),
+				),
 			);
 
 			expect(omittedResult.success).toBe(false);
@@ -3296,12 +3356,14 @@ Review complete.
 				dispose: vi.fn(),
 			};
 			const result = await runChain(
-				makeConfig(
-					parseChain(
-						"planner -> plan-reviewer -> planner -> plan-reviewer -> planner",
-						defaultRegistry,
+				withCodingChain(
+					makeConfig(
+						parseCodingChain(
+							"planner -> plan-reviewer -> planner -> plan-reviewer -> planner",
+							defaultRegistry,
+						),
+						{ projectRoot },
 					),
-					{ projectRoot },
 				),
 			);
 			const plannerPrompts = vi
@@ -3328,11 +3390,13 @@ Review complete.
 			),
 			dispose: vi.fn(),
 		};
-		const genericSteps = parseChain(
+		const genericSteps = parseCodingChain(
 			"planner -> reviewer -> planner",
 			defaultRegistry,
 		);
-		const genericResult = await runChain(makeConfig(genericSteps));
+		const genericResult = await runChain(
+			withCodingChain(makeConfig(genericSteps)),
+		);
 		const genericReviserPrompt = vi
 			.mocked(spawnerRef.current.spawn)
 			.mock.calls.at(-1)?.[0].prompt;
@@ -3341,7 +3405,7 @@ Review complete.
 
 		spawnerRef.current = createMockSpawner();
 		const nonparticipatingResult = await runChain(
-			makeConfig([makeStage("plan-reviewer", false)]),
+			withCodingChain(makeConfig([makeStage("plan-reviewer", false)])),
 		);
 		expect(nonparticipatingResult.success).toBe(true);
 		expect(
@@ -3381,12 +3445,14 @@ Review complete.
 					dispose: vi.fn(),
 				};
 				const result = await runChain(
-					makeConfig(
-						parseChain(
-							"planner -> plan-reviewer[2] -> planner",
-							defaultRegistry,
+					withCodingChain(
+						makeConfig(
+							parseCodingChain(
+								"planner -> plan-reviewer[2] -> planner",
+								defaultRegistry,
+							),
+							{ projectRoot },
 						),
-						{ projectRoot },
 					),
 				);
 
@@ -3418,9 +3484,14 @@ Review complete.
 				planReviewReport("shared-target", 1),
 			);
 			const result = await runChain(
-				makeConfig(
-					parseChain("planner -> plan-reviewer[2] -> planner", defaultRegistry),
-					{ projectRoot },
+				withCodingChain(
+					makeConfig(
+						parseCodingChain(
+							"planner -> plan-reviewer[2] -> planner",
+							defaultRegistry,
+						),
+						{ projectRoot },
+					),
 				),
 			);
 
@@ -3436,13 +3507,13 @@ Review complete.
 	});
 
 	test("parallel first-stage members preserve role prompts with injected user request", async () => {
-		const steps = parseChain(
+		const steps = parseCodingChain(
 			"[planner, reviewer] -> task-manager",
 			defaultRegistry,
 		);
 		injectUserPrompt(steps, "focus on security");
 
-		await runChain(makeConfig(steps));
+		await runChain(withCodingChain(makeConfig(steps)));
 
 		const spawnMock = spawnerRef.current?.spawn;
 		expect(spawnMock).toBeDefined();
@@ -3477,7 +3548,7 @@ Review complete.
 		];
 		const config = makeConfig(stages);
 
-		const result = await runChain(config);
+		const result = await runChain(withCodingChain(config));
 
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(2);
@@ -3493,7 +3564,7 @@ Review complete.
 		];
 		const config = makeConfig(stages);
 
-		const result = await runChain(config);
+		const result = await runChain(withCodingChain(config));
 
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(1);
@@ -3510,7 +3581,7 @@ Review complete.
 			onEvent: (event) => events.push(event),
 		});
 
-		await runChain(config);
+		await runChain(withCodingChain(config));
 
 		const eventTypes = events.map((e) => e.type);
 		expect(eventTypes[0]).toBe("chain_start");
@@ -3536,7 +3607,7 @@ Review complete.
 		const stages = [makeStage("planner", false), makeStage("worker", false)];
 		const config = makeConfig(stages, { signal: controller.signal });
 
-		const result = await runChain(config);
+		const result = await runChain(withCodingChain(config));
 
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(1);
@@ -3546,7 +3617,7 @@ Review complete.
 		const stages = [makeStage("planner", false)];
 		const config = makeConfig(stages);
 
-		await runChain(config);
+		await runChain(withCodingChain(config));
 
 		expect(spawnerRef.current?.dispose).toHaveBeenCalledTimes(1);
 	});
@@ -3577,7 +3648,7 @@ Review complete.
 		];
 		const config = makeConfig(stages, { maxTotalIterations: 3 });
 
-		const result = await runChain(config);
+		const result = await runChain(withCodingChain(config));
 
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(3);
@@ -3618,7 +3689,7 @@ Review complete.
 		];
 		const config = makeConfig(stages, { maxTotalIterations: 3 });
 
-		const result = await runChain(config);
+		const result = await runChain(withCodingChain(config));
 
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(2);
@@ -3658,7 +3729,7 @@ Review complete.
 		];
 		const config = makeConfig(stages, { timeoutMs: 3000 });
 
-		const result = await runChain(config);
+		const result = await runChain(withCodingChain(config));
 
 		// Timeout skips remaining stages — only the first stage ran
 		expect(result.stageResults).toHaveLength(1);
@@ -3706,14 +3777,16 @@ describe("qualified stage chain end-to-end", () => {
 		]);
 
 		// Parse with the same registry that runChain will use
-		const stages = parseChain("ops/designer -> ops/builder", registry);
+		const stages = parseCodingChain("ops/designer -> ops/builder", registry);
 
-		expect(stages).toEqual([
+		expect(stages).toMatchObject([
 			{ name: "ops/designer", loop: false },
 			{ name: "ops/builder", loop: false },
 		]);
 
-		const result = await runChain(makeConfig(stages, { registry }));
+		const result = await runChain(
+			withCodingChain(makeConfig(stages, { registry })),
+		);
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
@@ -3727,7 +3800,10 @@ describe("qualified stage chain end-to-end", () => {
 			makeDef("orchestrator", true, "ops"),
 		]);
 
-		const stages = parseChain("ops/scheduler -> ops/orchestrator", registry);
+		const stages = parseCodingChain(
+			"ops/scheduler -> ops/orchestrator",
+			registry,
+		);
 
 		// Verify loop detection used the registry (not false positive)
 		expect((stages[0] as ChainStage | undefined)?.loop).toBe(false);
@@ -3738,7 +3814,9 @@ describe("qualified stage chain end-to-end", () => {
 		const loopStage = stages[1] as ChainStage | undefined;
 		if (loopStage) stages[1] = { ...loopStage, completionCheck };
 
-		const result = await runChain(makeConfig(stages, { registry }));
+		const result = await runChain(
+			withCodingChain(makeConfig(stages, { registry })),
+		);
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
@@ -3753,7 +3831,7 @@ describe("qualified stage chain end-to-end", () => {
 		]);
 
 		// "planner" unqualified resolves via scan-all, "coding/coordinator" qualified
-		const stages = parseChain("planner -> coding/coordinator", registry);
+		const stages = parseCodingChain("planner -> coding/coordinator", registry);
 
 		expect((stages[0] as ChainStage | undefined)?.loop).toBe(false);
 		expect((stages[1] as ChainStage | undefined)?.loop).toBe(true);
@@ -3762,24 +3840,28 @@ describe("qualified stage chain end-to-end", () => {
 		const loopStage2 = stages[1] as ChainStage | undefined;
 		if (loopStage2) stages[1] = { ...loopStage2, completionCheck };
 
-		const result = await runChain(makeConfig(stages, { registry }));
+		const result = await runChain(
+			withCodingChain(makeConfig(stages, { registry })),
+		);
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
 	});
 
-	test("unknown qualified name fails at run time", async () => {
+	test("unknown qualified name refuses the whole chain before execution", async () => {
 		const registry = new AgentRegistry([makeDef("designer", false, "ops")]);
 
-		const stages = parseChain("ops/designer -> ops/missing", registry);
+		const stages = parseChain("ops/designer -> ops/missing");
 
-		const result = await runChain(makeConfig(stages, { registry }));
+		const result = await runChain(
+			withCodingChain(makeConfig(stages, { registry })),
+		);
 
 		expect(result.success).toBe(false);
-		expect(result.stageResults).toHaveLength(2);
-		expect(result.stageResults[0]?.success).toBe(true);
-		expect(result.stageResults[1]?.success).toBe(false);
-		expect(result.stageResults[1]?.error).toContain(
+		expect(result.stageResults).toHaveLength(1);
+		expect(result.stageResults[0]?.success).toBe(false);
+		expect(spawnerRef.current?.spawn).not.toHaveBeenCalled();
+		expect(result.stageResults[0]?.error).toContain(
 			'Unknown agent role "ops/missing"',
 		);
 	});
@@ -3816,7 +3898,7 @@ describe("stats tracking", () => {
 			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.success).toBe(true);
 			expect(result.stats).toEqual(stats);
@@ -3829,7 +3911,7 @@ describe("stats tracking", () => {
 			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, withCodingChain(config), spawner);
 
 			expect(result.stats).toBeUndefined();
 		});
@@ -3852,7 +3934,7 @@ describe("stats tracking", () => {
 			const stage = makeStage("coordinator", true, completionCheck);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner, {
+			const result = await runStage(stage, withCodingChain(config), spawner, {
 				maxTotalIterations: 3,
 				deadlineMs: FIXED_NOW + 60_000,
 			});
@@ -3890,7 +3972,7 @@ describe("stats tracking", () => {
 			const stage = makeStage("coordinator", true, completionCheck);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner, {
+			const result = await runStage(stage, withCodingChain(config), spawner, {
 				maxTotalIterations: 5,
 				deadlineMs: FIXED_NOW + 60_000,
 			});
@@ -3917,7 +3999,7 @@ describe("stats tracking", () => {
 			];
 			const config = makeConfig(stages);
 
-			const result = await runChain(config);
+			const result = await runChain(withCodingChain(config));
 
 			expect(result.success).toBe(true);
 			expect(result.stats).toBeDefined();
@@ -3945,7 +4027,7 @@ describe("stats tracking", () => {
 				onEvent: (event) => events.push(event),
 			});
 
-			await runChain(config);
+			await runChain(withCodingChain(config));
 
 			const chainEnd = events.find((e) => e.type === "chain_end");
 			expect(chainEnd).toBeDefined();
@@ -3978,7 +4060,7 @@ describe("stats tracking", () => {
 				onEvent: (event) => events.push(event),
 			});
 
-			await runChain(config);
+			await runChain(withCodingChain(config));
 
 			const stageStatsEvents = events.filter(
 				(e) => e.type === "stage_stats",
@@ -4002,7 +4084,7 @@ describe("stats tracking", () => {
 				onEvent: (event) => events.push(event),
 			});
 
-			await runChain(config);
+			await runChain(withCodingChain(config));
 
 			const eventTypes = events.map((e) => e.type);
 			const statsIdx = eventTypes.indexOf("stage_stats");
@@ -4022,7 +4104,7 @@ describe("stats tracking", () => {
 				onEvent: (event) => events.push(event),
 			});
 
-			await runChain(config);
+			await runChain(withCodingChain(config));
 
 			const stageStatsEvents = events.filter((e) => e.type === "stage_stats");
 			expect(stageStatsEvents).toHaveLength(0);
@@ -4045,7 +4127,7 @@ describe("stats tracking", () => {
 			];
 			const config = makeConfig(stages);
 
-			const result = await runChain(config);
+			const result = await runChain(withCodingChain(config));
 
 			expect(result.stats).toBeDefined();
 			expect(result.stats?.stages).toHaveLength(1);
@@ -4093,7 +4175,7 @@ describe("stats tracking", () => {
 			];
 			const config = makeConfig(stages, { maxTotalIterations: 10 });
 
-			const result = await runChain(config);
+			const result = await runChain(withCodingChain(config));
 
 			expect(result.success).toBe(true);
 			expect(result.stats).toBeDefined();
@@ -4127,7 +4209,7 @@ describe("stats tracking", () => {
 			const stages = [makeStage("planner", false)];
 			const config = makeConfig(stages);
 
-			const result = await runChain(config);
+			const result = await runChain(withCodingChain(config));
 
 			// Stats exist on the returned object
 			expect(result.stats).toBeDefined();
@@ -4182,7 +4264,7 @@ describe("parallel group execution", () => {
 			makeStage("planner", false),
 			makeStage("worker", false),
 		);
-		const result = await runChain(makeConfig([step]));
+		const result = await runChain(withCodingChain(makeConfig([step])));
 
 		// Completing without deadlock proves worker was started while planner was blocked.
 		expect(result.success).toBe(true);
@@ -4210,7 +4292,9 @@ describe("parallel group execution", () => {
 			makeStage("planner", false),
 			makeStage("worker", false),
 		);
-		await runChain(makeConfig([step], { onEvent: (e) => events.push(e) }));
+		await runChain(
+			withCodingChain(makeConfig([step], { onEvent: (e) => events.push(e) })),
+		);
 
 		const types = events.map((e) => e.type);
 		const parallelStartIdx = types.indexOf("parallel_start");
@@ -4273,7 +4357,7 @@ describe("parallel group execution", () => {
 			makeStage("planner", false),
 			makeStage("worker", false),
 		);
-		const result = await runChain(makeConfig([step]));
+		const result = await runChain(withCodingChain(makeConfig([step])));
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
@@ -4301,9 +4385,11 @@ describe("parallel group execution", () => {
 		const nextStep = makeStage("task-manager", false);
 
 		const result = await runChain(
-			makeConfig([parallelStep, nextStep], {
-				onEvent: (e) => events.push(e),
-			}),
+			withCodingChain(
+				makeConfig([parallelStep, nextStep], {
+					onEvent: (e) => events.push(e),
+				}),
+			),
 		);
 
 		// parallel_end carries success: false
@@ -4378,7 +4464,9 @@ describe("parallel group execution", () => {
 			makeStage("planner", false),
 			makeStage("worker", false),
 		);
-		const chainPromise = runChain(makeConfig([step], { onEvent }));
+		const chainPromise = runChain(
+			withCodingChain(makeConfig([step], { onEvent })),
+		);
 
 		await workerStarted;
 		try {
@@ -4425,7 +4513,9 @@ describe("parallel group execution", () => {
 		const afterStep = makeStage("task-manager", false);
 
 		const result = await runChain(
-			makeConfig([parallelStep, afterStep], { signal: controller.signal }),
+			withCodingChain(
+				makeConfig([parallelStep, afterStep], { signal: controller.signal }),
+			),
 		);
 
 		// Both parallel members ran.
@@ -4450,7 +4540,7 @@ describe("parallel group execution", () => {
 			makeStage("planner", false),
 			makeStage("worker", false),
 		);
-		const result = await runChain(makeConfig([step]));
+		const result = await runChain(withCodingChain(makeConfig([step])));
 
 		expect(result.success).toBe(true);
 		expect(result.stats).toBeDefined();

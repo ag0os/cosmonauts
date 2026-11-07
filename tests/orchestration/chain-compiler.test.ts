@@ -1,14 +1,15 @@
 import { describe, expect, test } from "vitest";
+import {
+	buildStagePrompt,
+	deriveStagePromptPurpose,
+} from "../../bundled/coding/chain-prompts.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { injectUserPrompt } from "../../lib/orchestration/chain-steps.ts";
 import { compileChainToGraph } from "../../lib/orchestration/durable-chain-compiler.ts";
-import {
-	appendBoundReviewTarget,
-	buildStagePrompt,
-	deriveStagePromptPurpose,
-} from "../../lib/orchestration/stage-prompts.ts";
+import { appendBoundReviewTarget } from "../../lib/orchestration/stage-prompts.ts";
+import { withCodingChain } from "../helpers/coding-chain.ts";
 
 const registry = new AgentRegistry([
 	agent("planner"),
@@ -20,14 +21,16 @@ const registry = new AgentRegistry([
 
 describe("compileChainToGraph", () => {
 	test("compiles sequential stages into a dependency chain", () => {
-		const parsed = parseChain("planner -> reviewer", registry);
+		const parsed = parseChain("planner -> reviewer");
 
-		const compiled = compileChainToGraph({
-			runId: "run-chain-compiler-sequential",
-			steps: parsed,
-			projectRoot: "/tmp/cosmonauts/project",
-			registry,
-		});
+		const compiled = compileChainToGraph(
+			withCodingChain({
+				runId: "run-chain-compiler-sequential",
+				steps: parsed,
+				projectRoot: "/tmp/cosmonauts/project",
+				registry,
+			}),
+		);
 
 		expect(compiled.graph.steps.map((step) => step.id)).toEqual([
 			"chain-1-planner",
@@ -50,15 +53,16 @@ describe("compileChainToGraph", () => {
 	test("compiles bracket groups as sibling steps and joins the next frontier", () => {
 		const parsed = parseChain(
 			"planner -> [task-manager, reviewer] -> quality-manager",
-			registry,
 		);
 
-		const compiled = compileChainToGraph({
-			runId: "run-chain-compiler-bracket",
-			steps: parsed,
-			projectRoot: "/tmp/cosmonauts/project",
-			registry,
-		});
+		const compiled = compileChainToGraph(
+			withCodingChain({
+				runId: "run-chain-compiler-bracket",
+				steps: parsed,
+				projectRoot: "/tmp/cosmonauts/project",
+				registry,
+			}),
+		);
 
 		expect(compiled.graph.steps.map((step) => step.id)).toEqual([
 			"chain-1-planner",
@@ -87,17 +91,16 @@ describe("compileChainToGraph", () => {
 	});
 
 	test("compiles fan-out as same-role sibling steps", () => {
-		const parsed = parseChain(
-			"planner -> reviewer[3] -> quality-manager",
-			registry,
-		);
+		const parsed = parseChain("planner -> reviewer[3] -> quality-manager");
 
-		const compiled = compileChainToGraph({
-			runId: "run-chain-compiler-fanout",
-			steps: parsed,
-			projectRoot: "/tmp/cosmonauts/project",
-			registry,
-		});
+		const compiled = compileChainToGraph(
+			withCodingChain({
+				runId: "run-chain-compiler-fanout",
+				steps: parsed,
+				projectRoot: "/tmp/cosmonauts/project",
+				registry,
+			}),
+		);
 
 		expect(compiled.graph.steps.map((step) => step.id)).toEqual([
 			"chain-1-planner",
@@ -129,14 +132,16 @@ describe("compileChainToGraph", () => {
 		const boundRegistry = new AgentRegistry([agent("worker")], {
 			bindingResolver: bindingResolver({ a: "coding", coding: "c" }) as never,
 		});
-		const parsed = parseChain("a/worker", boundRegistry);
+		const parsed = parseChain("a/worker");
 
-		const compiled = compileChainToGraph({
-			runId: "run-chain-compiler-resolved-target",
-			steps: parsed,
-			projectRoot: "/tmp/cosmonauts/project",
-			registry: boundRegistry,
-		});
+		const compiled = compileChainToGraph(
+			withCodingChain({
+				runId: "run-chain-compiler-resolved-target",
+				steps: parsed,
+				projectRoot: "/tmp/cosmonauts/project",
+				registry: boundRegistry,
+			}),
+		);
 
 		const options = compiled.graph.steps[0]?.backend.options;
 		expect(resolvedQualifiedId(options, "stage")).toBe("coding/worker");
@@ -144,29 +149,27 @@ describe("compileChainToGraph", () => {
 	});
 
 	test("persists chain stage options for prompt injection model and thinking", () => {
-		const parsed = parseChain(
-			"[planner, reviewer] -> quality-manager",
-			registry,
-			"coding",
-		);
+		const parsed = parseChain("[planner, reviewer] -> quality-manager");
 		const userPrompt = "Preserve chain options for durable scheduling.";
 		const projectSkills = ["tasks", "testing"];
 		const skillPaths = ["/tmp/cosmonauts/skills"];
 		injectUserPrompt(parsed, userPrompt);
 
-		const compiled = compileChainToGraph({
-			runId: "run-chain-compiler-options",
-			steps: parsed,
-			domainContext: "coding",
-			projectRoot: "/tmp/cosmonauts/project",
-			projectSkills,
-			skillPaths,
-			completionLabel: "plan:durable-frontend-migration",
-			models: { planner: "test/planner-override" },
-			thinking: { default: "high", reviewer: "low" },
-			compaction: { enabled: true, keepRecentTokens: 2000 },
-			registry,
-		});
+		const compiled = compileChainToGraph(
+			withCodingChain({
+				runId: "run-chain-compiler-options",
+				steps: parsed,
+				domainContext: "coding",
+				projectRoot: "/tmp/cosmonauts/project",
+				projectSkills,
+				skillPaths,
+				planSlug: "durable-frontend-migration",
+				models: { planner: "test/planner-override" },
+				thinking: { default: "high", reviewer: "low" },
+				compaction: { enabled: true, keepRecentTokens: 2000 },
+				registry,
+			}),
+		);
 
 		const [planner, reviewer, qualityManager] = compiled.graph.steps;
 
@@ -232,7 +235,7 @@ describe("compileChainToGraph", () => {
 	});
 
 	test("compiles inline-equivalent purposes before converting to persisted step indexes", () => {
-		const steps = parseChain("planner -> plan-reviewer -> planner", registry);
+		const steps = parseChain("planner -> plan-reviewer -> planner");
 		injectUserPrompt(steps, "strengthen the active plan");
 		const expectedPlanSlug = "chain-stage-context";
 		const completionLabel = `plan:${expectedPlanSlug}`;
@@ -244,13 +247,15 @@ describe("compileChainToGraph", () => {
 			});
 		});
 
-		const compiled = compileChainToGraph({
-			runId: "run-chain-stage-purpose-parity",
-			steps,
-			projectRoot: "/tmp/cosmonauts/project",
-			registry,
-			completionLabel,
-		});
+		const compiled = compileChainToGraph(
+			withCodingChain({
+				runId: "run-chain-stage-purpose-parity",
+				steps,
+				projectRoot: "/tmp/cosmonauts/project",
+				registry,
+				planSlug: expectedPlanSlug,
+			}),
+		);
 
 		expect(
 			compiled.graph.steps.map((step) =>
@@ -286,7 +291,7 @@ describe("compileChainToGraph", () => {
 				stepIndex: 2,
 				purpose: {
 					kind: "plan-review",
-					authorIdentity: "planner",
+					targetStageIds: ["chain-1-planner"],
 				},
 				requiresPlanReviewTarget: false,
 				expectedPlanSlug,
@@ -295,9 +300,8 @@ describe("compileChainToGraph", () => {
 				topologyIndex: 2,
 				stepIndex: 3,
 				purpose: {
-					kind: "revision",
-					reviewKind: "plan",
-					authorIdentity: "planner",
+					kind: "plan-revision",
+					targetStageIds: ["chain-1-planner"],
 				},
 				requiresPlanReviewTarget: false,
 				expectedPlanSlug,
@@ -329,12 +333,14 @@ describe("compileChainToGraph", () => {
 			`${inlinePrompts[2]}\n\nBound plan-review target: {"planSlug":"chain-stage-context","reviewRound":3}.`,
 		);
 
-		const guarded = compileChainToGraph({
-			runId: "run-chain-stage-guarded-task",
-			steps: parseChain("planner -> plan-reviewer -> task-manager", registry),
-			projectRoot: "/tmp/cosmonauts/project",
-			registry,
-		});
+		const guarded = compileChainToGraph(
+			withCodingChain({
+				runId: "run-chain-stage-guarded-task",
+				steps: parseChain("planner -> plan-reviewer -> task-manager"),
+				projectRoot: "/tmp/cosmonauts/project",
+				registry,
+			}),
+		);
 		expect(guarded.steps.map((step) => step.requiresPlanReviewTarget)).toEqual([
 			false,
 			false,

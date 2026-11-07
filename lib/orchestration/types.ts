@@ -8,33 +8,28 @@ import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import type { EpisodeWarningReporter } from "../memory/episode.ts";
 import type { PlanReviewTarget, ReviewRoundBlock } from "./review-revision.ts";
 
-// ============================================================================
-// Agent Roles
-// ============================================================================
-
-/** Agent roles as defined in AGENTS.md */
-export type AgentRole =
-	| "planner"
-	| "task-manager"
-	| "coordinator"
-	| "worker"
-	| "quality-manager"
-	| "integration-verifier"
-	| "reviewer"
-	| "fixer";
-
-// ============================================================================
-// Chain DSL Types
-// ============================================================================
-
 /** A single stage in a chain pipeline */
 export interface ChainStage {
-	/** Agent role name (matches AgentRole or custom skill name) */
+	stageId?: string;
+	declarationId?: string;
+	purpose?: StagePromptPurpose;
+	reviewTarget?: {
+		source: "active-plan-review";
+		producerStageIds: readonly string[];
+	};
+	requiresPlanReviewTarget?: boolean;
+	expectedPlanSlug?: string;
+	completionPolicy?: ChainCompletionPolicy;
+	terminalGate?: string;
+	instruction?: string;
+	model?: string;
+	thinkingLevel?: ThinkingLevel;
+	/** Agent role name (resolved against the consumer declarations) */
 	name: string;
 	/** Binding-aware requested/resolved reference for execution, when different from the visible stage name. */
 	agentReference?: ResolvedAgentReference;
 	/** Whether this stage loops until its completion check passes */
-	loop: boolean;
+	loop?: boolean;
 	/** Optional completion check — loop exits when it returns true */
 	completionCheck?: (projectRoot: string) => Promise<boolean>;
 	/** Optional prompt override — replaces the default stage prompt */
@@ -62,48 +57,95 @@ export type ChainStep = ChainStage | ParallelGroupStep;
 // Configuration
 // ============================================================================
 
-/** Model assignment per agent role */
+/** Open declaration-id model and thinking overrides. */
 export interface ModelConfig {
-	/** Model for planner agents (default: opus) */
-	planner?: string;
-	/** Model for task-manager agents (default: sonnet) */
-	taskManager?: string;
-	/** Model for coordinator agents (default: sonnet) */
-	coordinator?: string;
-	/** Model for worker agents (default: sonnet) */
-	worker?: string;
-	/** Model for quality-manager agents */
-	qualityManager?: string;
-	/** Model for integration-verifier agents */
-	integrationVerifier?: string;
-	/** Model for reviewer agents */
-	reviewer?: string;
-	/** Model for fixer agents */
-	fixer?: string;
-	/** Fallback model for unknown roles */
-	default?: string;
+	[agentId: string]: string | undefined;
+}
+export interface ThinkingConfig {
+	[agentId: string]: ThinkingLevel | undefined;
 }
 
-/** Thinking level assignment per agent role */
-export interface ThinkingConfig {
-	/** Thinking level for planner agents */
-	planner?: ThinkingLevel;
-	/** Thinking level for task-manager agents */
-	taskManager?: ThinkingLevel;
-	/** Thinking level for coordinator agents */
-	coordinator?: ThinkingLevel;
-	/** Thinking level for worker agents */
-	worker?: ThinkingLevel;
-	/** Thinking level for quality-manager agents */
-	qualityManager?: ThinkingLevel;
-	/** Thinking level for integration-verifier agents */
-	integrationVerifier?: ThinkingLevel;
-	/** Thinking level for reviewer agents */
-	reviewer?: ThinkingLevel;
-	/** Thinking level for fixer agents */
-	fixer?: ThinkingLevel;
-	/** Fallback thinking level for unknown roles */
-	default?: ThinkingLevel;
+export type StagePromptPurpose =
+	| { kind: "default" }
+	| { kind: "plan-review"; targetStageIds: readonly string[] }
+	| { kind: "plan-revision"; targetStageIds: readonly string[] };
+
+export type ChainCompletionState =
+	| { status: "pending" }
+	| { status: "complete" }
+	| { status: "terminal"; reason: string };
+export type ChainCompletionPolicy =
+	| { kind: "once" }
+	| {
+			kind: "state";
+			evaluate: (projectRoot: string) => Promise<ChainCompletionState>;
+	  };
+
+export interface NormalizedChainStage extends ChainStage {
+	stageId: string;
+	declarationId: string;
+	loop: boolean;
+	purpose: StagePromptPurpose;
+	requiresPlanReviewTarget: boolean;
+	completionPolicy: ChainCompletionPolicy;
+	instruction: string;
+	model: string;
+}
+
+export interface ChainStageContext {
+	stage: ChainStage;
+	steps: readonly ChainStep[];
+	topologyIndex: number;
+	definition: import("../agents/types.ts").AgentDefinition;
+	registry: AgentRegistry;
+	completionLabel?: string;
+	models?: ModelConfig;
+	thinking?: ThinkingConfig;
+}
+export interface ChainNormalizationError {
+	code:
+		| "binding"
+		| "declaration"
+		| "stage-id"
+		| "completion"
+		| "parallel-loop"
+		| "terminal"
+		| "target"
+		| "model";
+	stageId?: string;
+	stageName?: string;
+	message: string;
+}
+export interface TerminalGateContext {
+	completionLabel?: string;
+	configuredPlanSlug?: string;
+	hostContext?: unknown;
+	stage: ChainStage;
+	prompt?: string;
+	projectRoot: string;
+	signal?: AbortSignal;
+	planSlug?: string;
+	refusalReason?: string;
+}
+export interface ChainAdapter {
+	/** Capture default explicitly selected by this consumer for dynamically assembled chains. */
+	defaultEpisodes?: boolean;
+	classifyStage?: (
+		context: ChainStageContext,
+	) => Partial<ChainStage> & { errors?: readonly ChainNormalizationError[] };
+	buildStagePrompt?: (context: ChainStageContext) => string;
+	terminalGates?: Readonly<
+		Record<
+			string,
+			(context: TerminalGateContext) => Promise<Omit<StageResult, "stage">>
+		>
+	>;
+	refuse?: (
+		config: ChainConfig,
+		errors: readonly ChainNormalizationError[],
+	) => Promise<ChainResult | undefined>;
+	defaultModel?: string;
+	defaultThinkingLevel?: ThinkingLevel;
 }
 
 /** Compaction settings for spawned agent sessions */
@@ -116,15 +158,16 @@ export interface CompactionConfig {
 
 /** Configuration for a chain execution */
 export interface ChainConfig {
+	chainAdapter?: ChainAdapter;
+	defaultModel?: string;
+	episodes?: boolean;
+	requesterDomain?: string;
 	/** Chain steps to execute (parsed from DSL or provided directly) */
 	steps: ChainStep[];
 	/** Project root directory (for task system, cwd) */
 	projectRoot: string;
-	/** Host-only QM preparation and assessment ports attached by the domain runtime. */
-	qualityReview?: Pick<
-		import("./quality-review-run.ts").QualityReviewRunOptions,
-		"execute"
-	>;
+	/** Opaque host input interpreted only by the consumer terminal executor. */
+	terminalGateContext?: unknown;
 	/** Default domain context for resolving unqualified stage names. */
 	domainContext?: string;
 	/** Model overrides per role */
@@ -219,11 +262,13 @@ export type InlinePlanReviewState =
 	| {
 			target: PlanReviewTarget;
 			addressedAtTopologyIndex?: undefined;
+			addressedStageId?: undefined;
 			addressedReviewRound?: undefined;
 	  }
 	| {
 			target: PlanReviewTarget;
 			addressedAtTopologyIndex: number;
+			addressedStageId?: string;
 			addressedReviewRound: number;
 	  };
 

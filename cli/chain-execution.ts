@@ -1,14 +1,13 @@
 import { join } from "node:path";
-import { parseChain } from "../lib/orchestration/chain-parser.ts";
+import { loadNamedChains } from "../lib/chains/loader.ts";
+import { runConfiguredChain } from "../lib/orchestration/chain-dispatch.ts";
 import { ChainProfiler } from "../lib/orchestration/chain-profiler.ts";
 import {
 	derivePlanSlug,
 	injectUserPrompt,
-	runChain,
 } from "../lib/orchestration/chain-runner.ts";
-import { shouldRunChainInline } from "../lib/orchestration/durable-chain-compiler.ts";
-import { runDurableChain } from "../lib/orchestration/durable-chain-runner.ts";
-import type { ChainConfig, ChainResult } from "../lib/orchestration/types.ts";
+import { selectChain } from "../lib/orchestration/chain-selection.ts";
+import type { ChainResult } from "../lib/orchestration/types.ts";
 import type { CosmonautsRuntime } from "../lib/runtime.ts";
 import { sessionsDirForPlan } from "../lib/sessions/session-store.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
@@ -23,13 +22,13 @@ export async function executeChainExpression({
 	options,
 	cwd,
 	chainExpr,
-	qualityReview,
+	terminalGateContext,
 }: {
 	runtime: CosmonautsRuntime;
 	options: ChainExecutionOptions;
 	cwd: string;
 	chainExpr: string;
-	qualityReview?: ChainConfig["qualityReview"];
+	terminalGateContext?: unknown;
 }): Promise<ChainResult> {
 	const {
 		agentRegistry: registry,
@@ -38,7 +37,11 @@ export async function executeChainExpression({
 		skillPaths,
 	} = runtime;
 
-	const steps = parseChain(chainExpr, registry, domainContext);
+	const { steps, episodes } = selectChain(
+		chainExpr,
+		await loadNamedChains(cwd, runtime.chains),
+		runtime.chainAdapter?.defaultEpisodes,
+	);
 	injectUserPrompt(steps, options.prompt);
 
 	let profiler: ChainProfiler | undefined;
@@ -60,6 +63,9 @@ export async function executeChainExpression({
 
 	try {
 		const chainConfig = {
+			episodes,
+			chainAdapter: runtime.chainAdapter,
+			defaultModel: runtime.defaultModel,
 			steps,
 			projectRoot: cwd,
 			domainContext,
@@ -70,15 +76,11 @@ export async function executeChainExpression({
 			registry,
 			domainsDir: runtime.domainsDir,
 			resolver: runtime.domainResolver,
-			qualityReview,
+			terminalGateContext,
 			...(options.model && { models: { default: options.model } }),
 			...(options.thinking && { thinking: { default: options.thinking } }),
 		};
-		return shouldRunChainInline(steps, {
-			completionLabel: options.completionLabel,
-		})
-			? await runChain(chainConfig)
-			: await runDurableChain(chainConfig);
+		return await runConfiguredChain(chainConfig);
 	} finally {
 		if (profiler) {
 			try {

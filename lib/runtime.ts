@@ -28,6 +28,9 @@ export { DomainBindingTargetError };
 
 /** Options for creating a CosmonautsRuntime instance. */
 export interface CosmonautsRuntimeOptions {
+	chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
+	defaultModel?: string;
+	workerAgent?: string;
 	/** Absolute path to the framework's built-in domains directory. */
 	builtinDomainsDir: string;
 	/** Absolute path to the project root (where .cosmonauts/ lives). */
@@ -53,6 +56,9 @@ export interface CosmonautsRuntimeOptions {
  * domain context resolution, and workflow selection.
  */
 export class CosmonautsRuntime {
+	readonly chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
+	readonly defaultModel?: string;
+	readonly workerAgent?: string;
 	readonly projectConfig: ProjectConfig;
 	readonly domains: readonly LoadedDomain[];
 	readonly domainRegistry: DomainRegistry;
@@ -82,6 +88,9 @@ export class CosmonautsRuntime {
 	readonly domainsDir: string;
 
 	private constructor(fields: {
+		chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
+		defaultModel?: string;
+		workerAgent?: string;
 		projectConfig: ProjectConfig;
 		domains: readonly LoadedDomain[];
 		domainRegistry: DomainRegistry;
@@ -95,6 +104,9 @@ export class CosmonautsRuntime {
 		skillPaths: readonly string[];
 		domainsDir: string;
 	}) {
+		this.chainAdapter = fields.chainAdapter;
+		this.defaultModel = fields.defaultModel;
+		this.workerAgent = fields.workerAgent;
 		this.projectConfig = fields.projectConfig;
 		this.domains = fields.domains;
 		this.domainRegistry = fields.domainRegistry;
@@ -194,7 +206,9 @@ export class CosmonautsRuntime {
 		];
 
 		// 10. Return frozen immutable runtime
+
 		const runtime = new CosmonautsRuntime({
+			...runtimeConsumerOptions(options, domains, resolvedDomainContext),
 			projectConfig,
 			domains,
 			domainRegistry,
@@ -218,4 +232,33 @@ function activeDomainIdSet(
 ): ReadonlySet<string> | undefined {
 	if (activeDomains === undefined) return undefined;
 	return new Set(["shared", ...activeDomains]);
+}
+
+function runtimeConsumerOptions(
+	options: CosmonautsRuntimeOptions,
+	domains: readonly LoadedDomain[],
+	context?: string,
+) {
+	const defaults: Partial<import("./domains/types.ts").DomainManifest> =
+		selectChainConsumer(domains, context) ?? {};
+	const chainAdapter = options.chainAdapter ?? defaults.chainAdapter;
+	return {
+		chainAdapter,
+		defaultModel:
+			options.defaultModel ??
+			defaults.defaultModel ??
+			chainAdapter?.defaultModel,
+		workerAgent: options.workerAgent ?? defaults.workerAgent,
+	};
+}
+function selectChainConsumer(
+	domains: readonly LoadedDomain[],
+	context?: string,
+): import("./domains/types.ts").DomainManifest | undefined {
+	const selected = domains.find(
+		(domain) => domain.manifest.id === context,
+	)?.manifest;
+	if (selected?.chainAdapter) return selected;
+	const providers = domains.filter((domain) => domain.manifest.chainAdapter);
+	return providers.length === 1 ? providers[0]?.manifest : selected;
 }
