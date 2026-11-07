@@ -1,8 +1,14 @@
+import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import worker from "../../bundled/coding/agents/worker.ts";
 import cosmo from "../../domains/main/agents/cosmo.ts";
 import authoredAdapter from "../../domains/shared/extensions/agent-memory/index.ts";
 import architectureAdapter from "../../domains/shared/extensions/architecture-memory/index.ts";
+import { resolveMemoryGrants } from "../../lib/agents/declaration.ts";
+import { buildSessionParams } from "../../lib/agents/session-assembly.ts";
+import { loadDomains } from "../../lib/domains/loader.ts";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
@@ -57,5 +63,85 @@ describe("current content memory adapters", () => {
 		} finally {
 			Object.assign(worker, { memory: saved });
 		}
+	});
+});
+
+// Derived from the base providers actually selected, not the now-removed id allowlist.
+const BASE_GRANTS: Record<string, readonly string[]> = {
+	"main/cosmo": ["authored", "episodes"],
+	"coding/cody": ["episodes"],
+	"coding/coordinator": ["architecture", "episodes"],
+	"coding/distiller": ["proposals"],
+	"coding/explorer": [],
+	"coding/fixer": [],
+	"coding/integration-verifier": ["episodes"],
+	"coding/performance-reviewer": [],
+	"coding/plan-reviewer": ["architecture", "episodes"],
+	"coding/planner": ["architecture", "episodes"],
+	"coding/quality-manager": [],
+	"coding/refactorer": ["episodes"],
+	"coding/reviewer": [],
+	"coding/security-reviewer": [],
+	"coding/spec-writer": ["episodes"],
+	"coding/task-manager": ["episodes"],
+	"coding/ux-reviewer": [],
+	"coding/verifier": [],
+	"coding/worker": ["architecture", "episodes"],
+	"lean/lead": [],
+	"lean/builder": [],
+	"lean/checker": [],
+	"lean/code-reviewer": [],
+};
+
+test("shipped declarations retain exactly their base-derived memory surface", async () => {
+	const domains = [
+		...(await loadDomains(resolve("domains"))),
+		...(await loadDomains(resolve("bundled"))),
+	];
+	const found = Object.fromEntries(
+		domains.flatMap((domain) =>
+			[...domain.agents.values()].map((def) => {
+				const key = `${def.domain}/${def.id}`;
+				const expected = BASE_GRANTS[key];
+				expect(expected, key).toBeDefined();
+				if (!expected) throw new Error(`Unexpected shipped agent ${key}`);
+				expect(resolveMemoryGrants(def.memory), key).toEqual({
+					knowledge: true,
+					authored: expected.includes("authored"),
+					proposals: expected.includes("proposals"),
+					architecture: expected.includes("architecture"),
+					episodes: expected.includes("episodes"),
+				});
+				return [key, def];
+			}),
+		),
+	);
+	expect(Object.keys(found).sort()).toEqual(Object.keys(BASE_GRANTS).sort());
+	const distiller = found["coding/distiller"];
+	if (!distiller) throw new Error("Missing shipped distiller");
+	const assembled = await buildSessionParams({
+		def: distiller,
+		cwd: tmp.path,
+		resolver: new DomainResolver(new DomainRegistry(domains)),
+		loadConfig: async () => ({ knowledgeSurface: { enabled: true } }),
+	});
+	const pi = createMockPi({
+		cwd: tmp.path,
+		systemPrompt: assembled.promptContent,
+	});
+	for (const ext of assembled.extensionFactories)
+		await (typeof ext === "function" ? ext : ext.factory)(pi as never);
+	const result = await pi.callTool("propose_knowledge", {
+		planSlug: "surface",
+		type: "decision",
+		title: "Preserve writer",
+		description: "Existing identity",
+		content: "The consumer owns its declaration.",
+		tags: [],
+		source: "missions/plans/surface/plan.md",
+		sourceDate: "2026-11-07T00:00:00.000Z",
+	});
+	expect(result).toMatchObject({
+		details: { status: "written", record: { writer: "coding/distiller" } },
 	});
 });

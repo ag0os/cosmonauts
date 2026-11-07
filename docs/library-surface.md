@@ -33,7 +33,7 @@ choice.
 | Cosmonauts | Troupe | User dynamic-agents design |
 | --- | --- | --- |
 | `id`, `description` | Path-derived name, `description` | Definition key and descriptive metadata |
-| `instructions: { kind: "inline", content }` or `{ kind: "file", path }` | Markdown body and ordered `includes` | Explicit persona source; replaces the persona layer |
+| `instructions: { kind: "inline", content }` or `{ kind: "file", path }` | Markdown body and ordered `includes` | Explicit persona source; replaces persona. File paths must be absolute; session cwd may differ from declaration root (Drive worktrees). Declaration-root resolution is deferred to step 4 |
 | `resourceDomain` | Consumer declaration/include roots; no equivalent domain authority | Resource lookup scope separate from runtime identity |
 | `capabilities`, `skills`, `extensions` | Includes, discoverable guides and optional same-stem extension; different shapes | Instruction packs, knowledge selection and executable providers |
 | `tools`: preset or exact name array | Backend tools plus `mcp`; no exact Pi tool-list field | Presets expanded or exact names selected; providers do not expand an exact grant |
@@ -43,14 +43,13 @@ choice.
 | `thinkingLevel`: Pi level | Per-backend `effort`; different shape | Definition/host thinking settings; no rename |
 | `projectContext`, `session`, `loop` | Backend access/mode/native settings; not equivalent | Existing execution settings retained |
 
-File instructions resolve relative to the host's working directory unless an
-absolute path is supplied. They are read on assembly. Resume/fork rebuild from
+File instructions require absolute paths (consumers may derive them from `import.meta.url`) and are read on assembly. Session cwd is not a declaration root; relative paths are rejected. A declaration-root seam belongs to step 4. Resume/fork rebuild from
 the current declaration: these are **restore-by-id** paths with accepted drift,
 not restoration of an immutable configuration snapshot. No snapshot machinery,
 creator-delegation schema, saved-agent UI or live provider mutation is introduced.
 
 The library's base voice becomes consumer input rather than an implicit prompt.
-This is the departure from `dynamic-agents.md` explicitly approved by R8; the
+This departs from `dynamic-agents.md`; the Shepherd ruled it in R8 and user acceptance remains pending in the PR; the
 current content supplies its base instructions. Explicit host prompt-directory
 inputs remain available for consumers that use that composition convention.
 
@@ -74,7 +73,8 @@ an implicit surface. `knowledgeSurface.enabled` is frozen at session assembly.
 | `authored` | `remember` and authored `recall`, plus authored context, when the authored provider is selected and its ID check passes | Path-loaded agent-memory authorizes itself; same remember/recall pair, legacy context and record-type filtering | One grant enables both remember and authored recall; no default privileged ID; keep record/scope and gate-mode semantics |
 | `proposals` | `propose_knowledge`, gated twice by the distiller identity | Not enabled | Grant registration explicitly and inject the declared writer; preserve the original consumer's writer and proposal hashes |
 | `architecture` | `architecture_map_read` and architecture context when provider/ID checks pass | Path-loaded architecture-memory authorizes its fixed ID set and owns context | Grant enables the operation group; remove the library's default ID set |
-| `episodes` | Tasks/plans, Drive and successful authored-memory writes capture when episodicLog is enabled | Same episodicLog gate and attribution paths | Explicit grant in the executing declaration; no capture merely because a prompt has an identity marker |
+| `episodes` | Tasks/plans, Drive and successful authored-memory writes capture when episodicLog is enabled | Same episodicLog gate and attribution paths | Explicit grant in the executing declaration for these paths |
+| Runner-owned chain capture (outside agent grants in 3a) | `lib/orchestration/chain-episodes.ts` captures `chain.run`, attributed to the first stage, without consulting its episodes grant | Same runner capture | Existing behavior retained in 3a, including verify starting at QM without an episodes grant. 3b Shepherd ruling: explicit chain-level episodes flag (new consumer chains default false), current coding chains explicitly preserve capture, attribution uses normalized first-stage declaration id; no agent grant added |
 
 Assembly currently identifies authored/architecture enablement by exact shim
 paths; the on-mode composer is `lib/extensions/knowledge-surface/session-extension.ts`.
@@ -149,8 +149,7 @@ ordinary provider evaluation to Pi, preserving one module evaluation; default,
 ambient, type-only and wildcard-only exports do not opt into the hook. Directory/resolver precedence remains
 intact, including a consumer provider with a native provider's name. Only selected
 providers are imported during assembly; this is execution preparation, not a
-catalog scan. With no directory/resolver inputs, the built-in task/plan/memory
-providers can be selected by name. Exact tool selection still constrains exposure
+catalog scan. Directory/resolver providers win; when the selected name is absent, native task/plan factories are the final tier, including resolver-only consumers without framework shims. Obsolete memory extension selections fail with grant migration guidance. Exact tool selection still constrains exposure
 and a host tool-call hook blocks names outside that selection after activation
 changes. Unknown executable tools fail after provider loading, before a model
 request. Unsupported exact-tool agent-package export fails explicitly.
@@ -180,3 +179,12 @@ contract. The legacy review profile must not expand an exact tool grant. A saved
 authored note must not create an episode without an episodes grant, even when the
 project enables episodicLog. These are covered by the declaration and Drive grant
 tests above.
+
+
+**S3A-QUALIFIED-IDENTITY (consumer namespace rule):** Every identity segment uses `[a-z0-9][a-z0-9-]*`, validated without normalization before provider/model preparation. An id is one segment or exactly `segment/segment`. A supplied domain is one segment and requires a one-segment id; omit domain for a pre-qualified id. `{ domain: "archive", id: "writer" }` and `{ id: "archive/writer" }` yield the same marker/provider/proposal identity. Uppercase, underscores, whitespace, leading separators, empty segments and extra path levels fail loudly. Proposals use the same grammar and require a qualified identity, with no separate proposal regex. `resourceDomain` remains lookup only, never identity authority. Test: `tests/agents/declaration.test.ts`.
+
+Pre-3a installed/ejected declarations are not granted legacy defaults: without explicit updates they lose task/plan episode capture, the implicit base voice, and formerly selected architecture context/tools. This includes ejected coding definitions outside repository content. The Shepherd proposes rejecting file-loaded declarations that omit both memory and framework-base, and obsolete agent-memory/architecture-memory extension selections, with migration guidance. This is a user decision before merge; no silently restored defaults. Bare Pi discovery now loads task/plan defaults with no episode grant, so that path no longer captures their episodes; it is scheduled to disappear with content in step 6 unless the user chooses otherwise.
+
+Instruction-kind validation is independent of path validity: an unknown kind with an absolute path still fails before provider/model preparation. Dumping a prompt validates the same declaration before reading its persona or writing output. Absolute file composition also works when the lower-level prompt composer receives no cwd. Tests: declaration, dump-prompt and prompt-assembly suites.
+
+The legacy directory convention with neither declared instructions nor resourceDomain retains its default-domain requester behavior in 3a; explicit borrowing never acquires internal-skill visibility. The empty sentinel and that default convention are owned by 3c. Test: `tests/agents/declaration.test.ts` covers both explicit borrowing without instructions and the legacy branch.

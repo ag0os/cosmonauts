@@ -553,3 +553,15 @@ describe("assemblePrompts", () => {
 		});
 	});
 });
+
+it("reads absolute declared instructions without depending on an optional cwd", async () => {
+	const path = join(tmp.path, "absolute-persona.md");
+	await writeFile(path, "ABSOLUTE_PERSONA_WITHOUT_CWD");
+	const prompt = await assemblePrompts({
+		agentId: "writer",
+		domain: "",
+		capabilities: [],
+		instructions: { kind: "file", path },
+	});
+	expect(prompt).toContain("ABSOLUTE_PERSONA_WITHOUT_CWD");
+});

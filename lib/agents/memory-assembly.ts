@@ -14,13 +14,16 @@ export function buildMemoryExtensions(
 	recallEnabled: boolean;
 } {
 	const grants = resolveMemoryGrants(def.memory);
+	const knowledge =
+		grants.knowledge &&
+		(typeof def.tools === "string" || def.tools.includes("recall"));
 	const agentId = qualifyAgentId(def.id, def.domain);
 	const factories: InlineExtension[] = [];
 	if (enabled) {
 		factories.push(
 			createKnowledgeSurfaceSessionExtension({
 				agentId,
-				knowledge: grants.knowledge,
+				knowledge,
 				episodes: grants.episodes,
 				registerAgentMemoryTools: grants.authored,
 				authorizeAuthoredMemory: grants.authored,
@@ -49,6 +52,6 @@ export function buildMemoryExtensions(
 	}
 	return {
 		factories,
-		recallEnabled: grants.knowledge || grants.authored,
+		recallEnabled: knowledge || grants.authored,
 	};
 }

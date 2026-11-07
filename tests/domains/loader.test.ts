@@ -31,6 +31,7 @@ async function writeAgentDef(agentsDir: string, id: string): Promise<void> {
 		join(agentsDir, `${id}.ts`),
 		`const definition = {
 	id: "${id}",
+	memory: {},
 	description: "Agent ${id}",
 	capabilities: ["core"],
 	model: "test/model",
@@ -46,6 +47,52 @@ export default definition;
 }
 
 describe("loadDomains", () => {
+	it.each([
+		{
+			declaration: { id: "legacy", capabilities: [], extensions: [] },
+			message: "memory grants",
+		},
+		{ declaration: { id: "legacy", extensions: [] }, message: "memory grants" },
+		{
+			declaration: { id: "legacy", memory: {}, extensions: ["agent-memory"] },
+			message: "memory.authored",
+		},
+		{
+			declaration: {
+				id: "legacy",
+				memory: {},
+				extensions: ["architecture-memory"],
+			},
+			message: "memory.architecture",
+		},
+		{ declaration: { id: "under_score", memory: {} }, message: "Agent id" },
+	])("rejects an unmigrated file declaration with guidance: $message", async ({
+		declaration,
+		message,
+	}) => {
+		const domainDir = join(tmp.path, "outside");
+		await mkdir(join(domainDir, "agents"), { recursive: true });
+		await writeDomainManifest(domainDir, "outside");
+		await writeFile(
+			join(domainDir, "agents", "legacy.ts"),
+			`export default ${JSON.stringify(declaration)};`,
+		);
+		await expect(loadDomains(tmp.path)).rejects.toThrow(message);
+	});
+
+	it.each([
+		{ memory: {} },
+		{ capabilities: ["framework-base"] },
+	])("accepts an explicitly migrated file declaration %j", async (choice) => {
+		const domainDir = join(tmp.path, "outside");
+		await mkdir(join(domainDir, "agents"), { recursive: true });
+		await writeDomainManifest(domainDir, "outside");
+		await writeFile(
+			join(domainDir, "agents", "agent.ts"),
+			`export default ${JSON.stringify({ id: "agent", ...choice })};`,
+		);
+		expect((await loadDomains(tmp.path))[0]?.agents.has("agent")).toBe(true);
+	});
 	it("loads conventional domains without registration and assembles persona by agent id", async () => {
 		const frameworkPromptsDir = join(tmp.path, "framework");
 		await mkdir(frameworkPromptsDir, { recursive: true });

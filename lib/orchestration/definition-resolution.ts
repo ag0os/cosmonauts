@@ -122,6 +122,14 @@ export interface ResolveExtensionOptions {
  *
  * Throws if an extension name cannot be found in either location.
  */
+export class UnknownExtensionError extends Error {
+	constructor(name: string, searched: string) {
+		super(
+			`Unknown extension "${name}" in agent definition. Searched: ${searched}`,
+		);
+	}
+}
+
 export function resolveExtensionPaths(
 	extensions: readonly string[],
 	options: ResolveExtensionOptions,
@@ -152,9 +160,7 @@ export function resolveExtensionPaths(
 			domain !== "shared"
 				? `domains/${domain}/extensions/${name}, domains/shared/extensions/${name}`
 				: `domains/shared/extensions/${name}`;
-		throw new Error(
-			`Unknown extension "${name}" in agent definition. Searched: ${searched}`,
-		);
+		throw new UnknownExtensionError(name, searched);
 	});
 }
 

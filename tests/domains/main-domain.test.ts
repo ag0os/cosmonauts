@@ -6,6 +6,10 @@ import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRegistryFromDomains } from "../../lib/agents/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
+import {
+	buildSessionParams,
+	type SessionParams,
+} from "../../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
 	DomainRegistry,
@@ -17,7 +21,6 @@ import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { createMarkdownMemoryStore } from "../../lib/memory/index.ts";
 import {
 	buildToolAllowlist,
-	resolveExtensionPaths,
 	resolveTools,
 } from "../../lib/orchestration/definition-resolution.ts";
 import { scanDomainSources } from "../../lib/packages/scanner.ts";
@@ -127,15 +130,17 @@ describe("main domain built-in discovery", () => {
 	});
 
 	it("builds main/cosmo tools none allowlist only from extension-registered tools", async () => {
-		const extensionPaths = resolveExtensionPaths(cosmo.extensions, {
-			domain: "main",
+		const params = await buildSessionParams({
+			def: cosmo,
+			cwd: tmp.path,
 			resolver,
+			loadConfig: async () => ({ knowledgeSurface: { enabled: true } }),
 		});
-		expect(extensionPaths).toContain(
-			join(SHARED_DOMAIN_DIR, "extensions", "agent-memory"),
+		expect(cosmo.memory?.authored).toBe(true);
+		const extensionToolGroups = await collectExtensionToolGroups(
+			params.extensionPaths,
+			params.extensionFactories,
 		);
-		const extensionToolGroups =
-			await collectExtensionToolGroups(extensionPaths);
 		const registeredToolNames = [...new Set(extensionToolGroups.flat())].sort();
 		const builtInTools = resolveTools(cosmo.tools, REPO_ROOT);
 		const allowlist = buildToolAllowlist(
@@ -166,7 +171,7 @@ describe("main domain built-in discovery", () => {
 	it("wires agent memory only to main/cosmo", async () => {
 		const agentDefinitions = await loadBuiltinAgentDefinitions();
 		const consumers = agentDefinitions
-			.filter((definition) => definition.extensions.includes("agent-memory"))
+			.filter((definition) => definition.memory?.authored)
 			.map((definition) => definition.ref)
 			.sort();
 
@@ -217,22 +222,26 @@ describe("main domain built-in discovery", () => {
 	});
 
 	it("keeps W2 memory Cosmo only without broadening the tool allowlist", async () => {
-		const extensionPaths = resolveExtensionPaths(cosmo.extensions, {
-			domain: "main",
+		const params = await buildSessionParams({
+			def: cosmo,
+			cwd: tmp.path,
 			resolver,
+			loadConfig: async () => ({ knowledgeSurface: { enabled: true } }),
 		});
-		const agentMemoryPath = extensionPaths.find((path) =>
-			path.endsWith(join("extensions", "agent-memory")),
+		const extensionToolGroups = await collectExtensionToolGroups(
+			params.extensionPaths,
+			params.extensionFactories,
 		);
-		expect(agentMemoryPath).toBeDefined();
-		if (!agentMemoryPath)
-			throw new Error("agent-memory extension not resolved");
-
-		const extensionToolGroups =
-			await collectExtensionToolGroups(extensionPaths);
 		const registeredToolNames = [...new Set(extensionToolGroups.flat())].sort();
 		const agentMemoryTools = (
-			await collectExtensionToolGroups([agentMemoryPath])
+			await collectExtensionToolGroups(
+				[],
+				params.extensionFactories.filter(
+					(factory) =>
+						typeof factory !== "function" &&
+						factory.name === "cosmonauts-knowledge-surface",
+				),
+			)
 		)
 			.flat()
 			.sort();
@@ -247,7 +256,7 @@ describe("main domain built-in discovery", () => {
 		expect(allowlist).toEqual(registeredToolNames);
 
 		const consumers = (await loadBuiltinAgentDefinitions())
-			.filter((definition) => definition.extensions.includes("agent-memory"))
+			.filter((definition) => definition.memory?.authored)
 			.map((definition) => definition.ref)
 			.sort();
 		expect(consumers).toEqual([MAIN_AGENT_REF]);
@@ -342,6 +351,7 @@ type ExtensionFactory = (api: unknown) => void;
 
 async function collectExtensionToolGroups(
 	extensionPaths: readonly string[],
+	factories: SessionParams["extensionFactories"] = [],
 ): Promise<string[][]> {
 	const groups: string[][] = [];
 
@@ -352,6 +362,13 @@ async function collectExtensionToolGroups(
 		groups.push(names);
 	}
 
+	for (const factory of factories) {
+		const names: string[] = [];
+		await (typeof factory === "function" ? factory : factory.factory)(
+			createToolCollector(names) as never,
+		);
+		groups.push(names);
+	}
 	return groups;
 }
 
@@ -392,9 +409,17 @@ function fakeLoader(
 }
 
 async function loadBuiltinAgentDefinitions(): Promise<
-	{ ref: string; extensions: readonly string[] }[]
+	{
+		ref: string;
+		extensions: readonly string[];
+		memory?: AgentDefinition["memory"];
+	}[]
 > {
-	const definitions: { ref: string; extensions: readonly string[] }[] = [];
+	const definitions: {
+		ref: string;
+		extensions: readonly string[];
+		memory?: AgentDefinition["memory"];
+	}[] = [];
 	const roots = [
 		{ domain: "main", dir: join(DOMAINS_DIR, "main", "agents") },
 		{ domain: "coding", dir: join(REPO_ROOT, "bundled", "coding", "agents") },
@@ -411,6 +436,7 @@ async function loadBuiltinAgentDefinitions(): Promise<
 			definitions.push({
 				ref: `${root.domain}/${mod.default.id}`,
 				extensions: mod.default.extensions,
+				memory: mod.default.memory,
 			});
 		}
 	}

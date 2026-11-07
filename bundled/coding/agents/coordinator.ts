@@ -13,12 +13,7 @@ const definition: AgentDefinition = {
 	],
 	model: "openai-codex/gpt-5.6-sol",
 	tools: "none",
-	extensions: [
-		"tasks",
-		"orchestration",
-		"observability",
-		"architecture-memory",
-	],
+	extensions: ["tasks", "orchestration", "observability"],
 	skills: [],
 	subagents: ["worker"],
 	projectContext: false,

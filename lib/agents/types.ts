@@ -27,7 +27,7 @@ export type AgentToolSet = "coding" | "readonly" | "verification" | "none";
 /** Session persistence mode. */
 export type AgentSessionMode = "ephemeral" | "persistent";
 
-/** Consumer-supplied persona instructions. Relative files use the host cwd. */
+/** Consumer-supplied persona instructions. File paths must be absolute. */
 export type AgentInstructions =
 	| { readonly kind: "inline"; readonly content: string }
 	| { readonly kind: "file"; readonly path: string };
@@ -71,6 +71,6 @@ export interface AgentDefinition {
 	readonly loop: boolean;
 	/** Optional thinking/reasoning level for this agent. */
 	readonly thinkingLevel?: ThinkingLevel;
-	/** Domain this agent belongs to. Set at runtime by the domain loader, not in definition files. */
+	/** Identity namespace supplied by a consumer or directory loader. Prefixes id verbatim; omit for a pre-qualified id. */
 	domain?: string;
 }

@@ -12,7 +12,10 @@ import type {
 	SessionProviderContext,
 } from "../extensions/session-provider.ts";
 import { createSessionExtension as tasksProvider } from "../extensions/tasks/index.ts";
-import { resolveExtensionPaths } from "../orchestration/definition-resolution.ts";
+import {
+	resolveExtensionPaths,
+	UnknownExtensionError,
+} from "../orchestration/definition-resolution.ts";
 
 const NATIVE_PROVIDERS: Readonly<Record<string, SessionExtensionProvider>> = {
 	tasks: tasksProvider,
@@ -93,13 +96,15 @@ async function selectProvider(
 	path?: string;
 	factory?: InlineExtension;
 }> {
-	const native =
-		!options.domainsDir && !options.resolver
-			? NATIVE_PROVIDERS[name]
-			: undefined;
-	if (native) return { factory: native(options.context) };
-	// One requested name produces exactly one path, or resolveExtensionPaths throws.
-	const path = resolveExtensionPaths([name], options)[0] as string;
+	const native = NATIVE_PROVIDERS[name];
+	let path: string;
+	try {
+		path = resolveExtensionPaths([name], options)[0] as string;
+	} catch (error) {
+		if (error instanceof UnknownExtensionError && native)
+			return { factory: native(options.context) };
+		throw error;
+	}
 	const entry = join(path, "index.ts");
 	const provider = (await hasBindingExport(entry))
 		? ((await import(entry)).createSessionExtension as

@@ -328,7 +328,7 @@ describe("buildSessionParams", () => {
 			}
 			const def = makeDef({
 				domain: "main",
-				extensions: ["agent-memory", "architecture-memory", "unrelated"],
+				extensions: ["unrelated"],
 				memory: { authored: true, architecture: true },
 			});
 			const off = await buildSessionParams(
@@ -396,7 +396,7 @@ describe("buildSessionParams", () => {
 			const def = makeDef({
 				id: "synthetic",
 				domain: "main",
-				extensions: ["agent-memory", "architecture-memory"],
+				extensions: [],
 			});
 			const params = await buildSessionParams(
 				makeOptions({

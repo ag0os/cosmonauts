@@ -1,5 +1,20 @@
+import { isAbsolute } from "node:path";
 import { qualifyAgentId } from "./runtime-identity.ts";
 import type { AgentDefinition, AgentMemoryGrants } from "./types.ts";
+
+/** Same alphabet as the runtime marker; do not silently normalize identity. */
+export function validateAgentId(
+	value: unknown,
+	field = "Agent id",
+): asserts value is string {
+	if (
+		typeof value !== "string" ||
+		!/^[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)?$/u.test(value)
+	)
+		throw new Error(
+			`${field} requires lowercase [a-z0-9][a-z0-9-]* segments (at most domain/id)`,
+		);
+}
 
 export function resolveMemoryGrants(
 	grants: AgentMemoryGrants | undefined,
@@ -25,10 +40,12 @@ function validateInstructions(source: unknown): void {
 	if (
 		source.kind === "file" &&
 		typeof source.path === "string" &&
-		source.path.trim()
+		isAbsolute(source.path)
 	)
 		return;
-	throw new Error("Agent instructions require inline content or a file path");
+	throw new Error(
+		"Agent instructions require inline content or an absolute file path",
+	);
 }
 
 function validateTools(tools: unknown): void {
@@ -64,10 +81,40 @@ function validateMemory(memory: unknown): void {
 	}
 }
 
+function validateIdentity(def: AgentDefinition): void {
+	validateAgentId(def.id);
+	if (def.domain !== undefined) {
+		validateAgentId(def.domain, "Agent domain");
+		if (def.domain.includes("/") || def.id.includes("/"))
+			throw new Error(
+				"Agent domain requires a single-segment id and domain; omit domain for a pre-qualified id",
+			);
+	}
+}
+
+function rejectLegacyMemoryExtensions(def: AgentDefinition): void {
+	for (const name of def.extensions ?? []) {
+		if (name === "agent-memory" || name === "architecture-memory")
+			throw new Error(
+				`Agent extension "${name}" is obsolete; remove it and declare memory.${name === "agent-memory" ? "authored" : "architecture"} explicitly`,
+			);
+	}
+}
+
+/** Shepherd-proposed migration policy for file-loaded declarations; user acceptance pending. */
+export function validateLoadedAgentDefinition(def: AgentDefinition): void {
+	validateIdentity(def);
+	rejectLegacyMemoryExtensions(def);
+	if (def.memory === undefined && !def.capabilities?.includes("framework-base"))
+		throw new Error(
+			`Agent "${def.id}" needs explicit memory grants (use memory: {} to decline) or the framework-base capability; legacy defaults are not inferred`,
+		);
+}
+
 /** Validate new declaration inputs before loading providers or requesting a model. */
 export function validateAgentDefinition(def: AgentDefinition): void {
-	if (typeof def.id !== "string" || !def.id.trim())
-		throw new Error("Agent id must be non-empty");
+	validateIdentity(def);
+	rejectLegacyMemoryExtensions(def);
 	if (
 		def.resourceDomain !== undefined &&
 		(typeof def.resourceDomain !== "string" || !def.resourceDomain.trim())
@@ -79,10 +126,7 @@ export function validateAgentDefinition(def: AgentDefinition): void {
 	validateMemory(def.memory);
 	if (
 		def.memory?.proposals &&
-		!/^[a-z0-9][a-z0-9_-]*\/[a-z0-9][a-z0-9_/-]*$/u.test(
-			qualifyAgentId(def.id, def.domain),
-		)
-	) {
+		!qualifyAgentId(def.id, def.domain).includes("/")
+	)
 		throw new Error("Knowledge proposal writer must be a qualified agent id");
-	}
 }

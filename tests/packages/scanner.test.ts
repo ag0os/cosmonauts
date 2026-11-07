@@ -628,7 +628,7 @@ describe("bundled dirs", () => {
 		await actualFs.mkdir(join(bundledAlphaDir, "agents"), { recursive: true });
 		await actualFs.writeFile(
 			join(bundledAlphaDir, "agents", "captain.ts"),
-			'export default { id: "captain", description: "Captain", capabilities: [], tools: "none", extensions: [], skills: [], projectContext: false, session: "ephemeral", loop: false } as const;\n',
+			'export default { id: "captain", description: "Captain", memory: {}, capabilities: [], tools: "none", extensions: [], skills: [], projectContext: false, session: "ephemeral", loop: false } as const;\n',
 			"utf-8",
 		);
 		mockReadFile.mockImplementation(

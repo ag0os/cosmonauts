@@ -4,7 +4,11 @@
  * Re-exports types, built-in definitions, and the registry.
  */
 
-export { resolveMemoryGrants, validateAgentDefinition } from "./declaration.ts";
+export {
+	resolveMemoryGrants,
+	validateAgentDefinition,
+	validateAgentId,
+} from "./declaration.ts";
 
 export {
 	qualifyRole,

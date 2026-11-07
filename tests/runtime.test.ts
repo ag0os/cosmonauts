@@ -50,6 +50,7 @@ async function writeAgentDef(
 ): Promise<void> {
 	const merged = {
 		id,
+		memory: {},
 		description: `Agent ${id}`,
 		capabilities: [],
 		model: "test/model",

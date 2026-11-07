@@ -613,12 +613,10 @@ describe("architecture-memory extension", () => {
 		expect(result.message.content).not.toContain("lib/module-79");
 	});
 
-	test("only the four consuming coding agents declare architecture-memory", async () => {
+	test("only the four consuming coding agents grant architecture memory", async () => {
 		const agentDefinitions = await loadBundledCodingAgents();
 		const consumers = agentDefinitions
-			.filter((definition) =>
-				definition.extensions.includes("architecture-memory"),
-			)
+			.filter((definition) => definition.memory?.architecture)
 			.map((definition) => definition.id)
 			.sort();
 

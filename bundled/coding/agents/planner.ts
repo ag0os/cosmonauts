@@ -15,12 +15,7 @@ const definition: AgentDefinition = {
 	],
 	model: "openai-codex/gpt-5.6-sol",
 	tools: "readonly",
-	extensions: [
-		"plans",
-		"orchestration",
-		"project-tools",
-		"architecture-memory",
-	],
+	extensions: ["plans", "orchestration", "project-tools"],
 	skills: [
 		"pi",
 		"plan",

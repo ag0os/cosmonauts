@@ -90,6 +90,11 @@ async function install(assembled: SessionParams) {
 }
 
 describe("consumer agent declarations", () => {
+	test("strips markers exposed by removing a nested marker", () => {
+		const nested =
+			"<!-- COSMONAUTS_AGENT_<!-- COSMONAUTS_AGENT_ID:x -->ID:main/cosmo -->";
+		expect(stripAgentIdentityMarkers(nested)).toBe("");
+	});
 	test("starts domainless inline instructions without a persona or implicit base voice", async () => {
 		const assembled = await params(
 			definition({
@@ -124,7 +129,7 @@ describe("consumer agent declarations", () => {
 		);
 	});
 
-	test("reads file instructions relative to the host cwd on each assembly", async () => {
+	test("rereads absolute file instructions on each assembly", async () => {
 		await mkdir(join(tmp.path, "prompts"));
 		const path = join(tmp.path, "prompts", "agent.md");
 		await writeFile(
@@ -132,14 +137,16 @@ describe("consumer agent declarations", () => {
 			"---\ntitle: Persona\n---\nOriginal <!-- COSMONAUTS_AGENT_ID:other -->",
 		);
 		const def = definition({
-			instructions: { kind: "file", path: "prompts/agent.md" },
+			instructions: { kind: "file", path: join(tmp.path, "prompts/agent.md") },
 		});
 		expect((await params(def)).promptContent).toContain("Original");
 		await writeFile(path, "Current instructions");
 		expect((await params(def)).promptContent).toContain("Current instructions");
 		await expect(
 			params(
-				definition({ instructions: { kind: "file", path: "missing.md" } }),
+				definition({
+					instructions: { kind: "file", path: join(tmp.path, "missing.md") },
+				}),
 			),
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
@@ -198,6 +205,10 @@ describe("consumer agent declarations", () => {
 		{ input: { id: " " }, message: "Agent id" },
 		{ input: { id: 12 }, message: "Agent id" },
 		{ input: { resourceDomain: " " }, message: "Agent resourceDomain" },
+		{
+			input: { instructions: { kind: "file", path: "relative.md" } },
+			message: "absolute file path",
+		},
 		{ input: { resourceDomain: 12 }, message: "Agent resourceDomain" },
 		{ input: { instructions: null }, message: "Agent instructions" },
 		{ input: { instructions: [] }, message: "Agent instructions" },
@@ -241,12 +252,20 @@ describe("consumer agent declarations", () => {
 		{ input: { memory: true }, message: "Agent memory grants" },
 		{ input: { memory: { proposals: true } }, message: "qualified agent id" },
 		{
+			input: { id: "-archive/writer", memory: { proposals: true } },
+			message: "Agent id",
+		},
+		{
+			input: { id: "/archive/writer", memory: { proposals: true } },
+			message: "Agent id",
+		},
+		{
 			input: { id: "!archive/writer", memory: { proposals: true } },
-			message: "qualified agent id",
+			message: "Agent id",
 		},
 		{
 			input: { id: "archive/writer!", memory: { proposals: true } },
-			message: "qualified agent id",
+			message: "Agent id",
 		},
 	])("reports the invalid field: $message ($input)", ({ input, message }) => {
 		expect(() =>
@@ -255,6 +274,113 @@ describe("consumer agent declarations", () => {
 				...input,
 			} as unknown as AgentDefinition),
 		).toThrow(message);
+	});
+
+	test.each([
+		"UPPER",
+		"under_score",
+		"space name",
+		"punctuation!",
+		"-leading",
+		"/leading",
+		"trailing/",
+		"double//slash",
+		"three/path/segments",
+		"é",
+		"name\n",
+	])("rejects non-marker identity %j even without proposal grants", async (id) => {
+		await expect(
+			params(definition({ id, extensions: ["missing-provider"] })),
+		).rejects.toThrow("Agent id");
+	});
+
+	test.each([
+		"Upper",
+		"under_score",
+		"bad domain",
+		"",
+	])("rejects non-marker domain %j before provider preparation", async (domain) => {
+		await expect(
+			params(definition({ domain, extensions: ["missing-provider"] })),
+		).rejects.toThrow("Agent domain");
+	});
+
+	test.each([
+		{ id: "archive/writer", domain: "archive" },
+		{ id: "writer", domain: "archive/other" },
+	])("rejects ambiguous qualified declarations %j", async (identity) => {
+		await expect(params(definition(identity))).rejects.toThrow("Agent domain");
+	});
+
+	test("uses consumer domain or pre-qualified id as the same qualified identity", async () => {
+		for (const identity of [
+			{ id: "writer", domain: "archive" },
+			{ id: "archive/writer" },
+		]) {
+			const assembled = await params(
+				definition({ ...identity, memory: { proposals: true } }),
+			);
+			expect(
+				extractAgentIdFromSystemPrompt(assembled.promptContent ?? ""),
+			).toBe("archive/writer");
+			const pi = await install(assembled);
+			expect(pi.tools.has("propose_knowledge")).toBe(true);
+		}
+	});
+
+	test("rejects a non-file instruction kind even when its path is absolute", async () => {
+		await expect(
+			params(
+				definition({
+					instructions: {
+						kind: "other",
+						path: join(tmp.path, "persona.md"),
+					} as never,
+				}),
+			),
+		).rejects.toThrow("Agent instructions");
+	});
+
+	test("retains the legacy default-domain requester when neither instructions nor resourceDomain is declared", async () => {
+		await mkdir(join(tmp.path, "main", "prompts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, "main", "prompts", "researcher.md"),
+			"Legacy persona",
+		);
+		const resolver = new DomainResolver(
+			new DomainRegistry([
+				{
+					manifest: {
+						id: "main",
+						description: "Legacy default",
+						internal: { skills: ["secret"] },
+					},
+					portable: false,
+					agents: new Map(),
+					capabilities: new Set(),
+					prompts: new Set(["researcher"]),
+					skills: new Set(["secret", "public"]),
+					extensions: new Set(),
+					chains: [],
+					provenance: [],
+					rootDirs: [join(tmp.path, "main")],
+				},
+			]),
+		);
+		const assembled = await buildSessionParams({
+			def: definition({ instructions: undefined, skills: ["*"] }),
+			cwd: tmp.path,
+			resolver,
+			loadConfig: async () => ({}),
+		});
+		expect(
+			assembled
+				.skillsOverride?.({
+					skills: [{ name: "secret" }, { name: "public" }],
+					diagnostics: [],
+				} as never)
+				?.skills.map((skill) => skill.name),
+		).toEqual(["secret", "public"]);
 	});
 
 	test("validates declarations before loading providers or resolving model requests", async () => {
@@ -442,12 +568,40 @@ describe("consumer agent declarations", () => {
 		expect(JSON.stringify(recalled)).toContain("Declared permission");
 	});
 
+	test.each([
+		false,
+		true,
+	])("only injects the knowledge index when an exact list grants recall (%s)", async (recall) => {
+		await seedKnowledge();
+		const assembled = await params(
+			definition({ tools: recall ? ["recall"] : [] }),
+		);
+		const pi = await install(assembled);
+		expect(pi.tools.has("recall")).toBe(recall);
+		expect(assembled.recallEnabled).toBe(recall);
+		const context = await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: assembled.promptContent },
+			{ cwd: tmp.path },
+		);
+		expect(JSON.stringify(context) ?? "").toEqual(
+			recall
+				? expect.stringContaining("KNOWLEDGE_METADATA_SENTINEL")
+				: expect.not.stringContaining("KNOWLEDGE_METADATA_SENTINEL"),
+		);
+	});
+
 	test("does not enable memory by privileged identity or old wrapper spelling", async () => {
+		await expect(
+			params(definition({ extensions: ["agent-memory"] })),
+		).rejects.toThrow("memory.authored");
+		await expect(
+			params(definition({ extensions: ["architecture-memory"] })),
+		).rejects.toThrow("memory.architecture");
 		const assembled = await params(
 			definition({
 				id: "cosmo",
 				domain: "main",
-				extensions: ["agent-memory", "architecture-memory"],
 				memory: { knowledge: false },
 			}),
 		);
@@ -483,14 +637,19 @@ describe("consumer agent declarations", () => {
 					portable: true,
 					agents: new Map(),
 					capabilities: new Set(),
-					prompts: new Set(),
+					prompts: new Set(["researcher"]),
 					skills: new Set(["secret", "public"]),
 					extensions: new Set(),
 					chains: [],
 					provenance: [],
-					rootDirs: [],
+					rootDirs: [join(tmp.path, "borrowed")],
 				},
 			]),
+		);
+		await mkdir(join(tmp.path, "borrowed", "prompts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, "borrowed", "prompts", "researcher.md"),
+			"Borrowed persona",
 		);
 		const assembled = await buildSessionParams({
 			def: definition({ resourceDomain: "borrowed", skills: ["*"] }),
@@ -506,6 +665,24 @@ describe("consumer agent declarations", () => {
 			diagnostics: [],
 		} as never);
 		expect(result?.skills.map((skill) => skill.name)).toEqual(["public"]);
+		const withoutInstructions = await buildSessionParams({
+			def: definition({
+				instructions: undefined,
+				resourceDomain: "borrowed",
+				skills: ["*"],
+			}),
+			cwd: tmp.path,
+			resolver,
+			loadConfig: async () => ({}),
+		});
+		expect(
+			withoutInstructions
+				.skillsOverride?.({
+					skills: [{ name: "secret" }, { name: "public" }],
+					diagnostics: [],
+				} as never)
+				?.skills.map((skill) => skill.name),
+		).toEqual(["public"]);
 		const owner = await buildSessionParams({
 			def: definition({ domain: "borrowed", skills: ["*"] }),
 			cwd: tmp.path,

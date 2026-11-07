@@ -8,6 +8,7 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { validateLoadedAgentDefinition } from "../agents/declaration.ts";
 import type { AgentDefinition } from "../agents/types.ts";
 import type { NamedChain } from "../chains/types.ts";
 import type {
@@ -168,6 +169,7 @@ function normalizeAgentDefinition(
 				: ["*"],
 	};
 
+	validateLoadedAgentDefinition(normalized as AgentDefinition);
 	return normalized as AgentDefinition;
 }
 

@@ -1,3 +1,4 @@
+import { validateAgentDefinition } from "../lib/agents/declaration.ts";
 /**
  * CLI entry point for cosmonauts.
  *
@@ -343,7 +344,10 @@ export function resolveInteractiveExtensionPaths(
 }
 
 interface ResolveDumpPromptDomainOptions {
-	readonly definition: Pick<AgentDefinition, "id" | "domain">;
+	readonly definition: Pick<
+		AgentDefinition,
+		"id" | "domain" | "resourceDomain"
+	>;
 	readonly resolver?: DomainResolver;
 	readonly resolveDefault?: typeof resolveDefaultDomain;
 }
@@ -353,7 +357,8 @@ export function resolveDumpPromptDomain(
 ): string {
 	const resolveDefault = options.resolveDefault ?? resolveDefaultDomain;
 	return resolveDefault({
-		explicitDomain: options.definition.domain,
+		explicitDomain:
+			options.definition.resourceDomain ?? options.definition.domain,
 		resolver: options.resolver,
 		purpose: `dump-prompt for agent "${options.definition.id}"`,
 	});
@@ -532,11 +537,12 @@ async function handleListAgents(
 	emit(renderAgentsList(items, resolveCliOutputMode(options)));
 }
 
-async function handleDumpPrompt(
+export async function handleDumpPrompt(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
 ): Promise<void> {
 	const definition = resolveDefaultLead(runtime, options);
+	validateAgentDefinition(definition);
 	const domain = resolveDumpPromptDomain({
 		definition,
 		resolver: runtime.domainResolver,
@@ -546,12 +552,14 @@ async function handleDumpPrompt(
 		agentId: definition.id,
 		domain,
 		capabilities: definition.capabilities,
+		instructions: definition.instructions,
+		cwd: process.cwd(),
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
 	});
 	prompt = appendAgentIdentityMarker(
 		prompt,
-		qualifyAgentId(definition.id, domain),
+		qualifyAgentId(definition.id, definition.domain),
 	);
 
 	if (options.dumpPromptFile) {

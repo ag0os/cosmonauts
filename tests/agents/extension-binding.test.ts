@@ -4,6 +4,8 @@ import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test, vi } from "vitest";
 import { buildSessionParams } from "../../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
@@ -38,6 +40,43 @@ async function provider(name: string, source: string) {
 }
 
 describe("selected session providers", () => {
+	test("does not turn resolver failures into native fallback", async () => {
+		const resolver = new DomainResolver(new DomainRegistry([]));
+		vi.spyOn(resolver, "resolveExtensionPath").mockImplementation(() => {
+			throw new Error("provider index failed");
+		});
+		await expect(
+			buildSessionParams({
+				def: definition(["tasks"]),
+				cwd: tmp.path,
+				resolver,
+				loadConfig: async () => ({}),
+			}),
+		).rejects.toThrow("provider index failed");
+	});
+	test.each([
+		"resolver",
+		"directory",
+	])("uses native providers after a missing %s provider", async (kind) => {
+		const params = await buildSessionParams({
+			def: definition(["tasks", "plans"]),
+			cwd: tmp.path,
+			...(kind === "resolver"
+				? { resolver: new DomainResolver(new DomainRegistry([])) }
+				: { domainsDir: tmp.path }),
+			loadConfig: async () => ({}),
+		});
+		expect(params.extensionPaths).toEqual([]);
+		const pi = createMockPi({
+			cwd: tmp.path,
+			systemPrompt: params.promptContent,
+		});
+		for (const ext of params.extensionFactories)
+			await (typeof ext === "function" ? ext : ext.factory)(pi as never);
+		expect(pi.tools.has("task_list")).toBe(true);
+		expect(pi.tools.has("plan_list")).toBe(true);
+	});
+
 	test("preserves a consumer's same-name directory provider over native defaults", async () => {
 		const path = await provider(
 			"tasks",

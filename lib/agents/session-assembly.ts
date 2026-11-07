@@ -273,7 +273,9 @@ export async function buildSessionParams(
 				agent: { skills: def.skills, domain: resourceDomain },
 			});
 	const hiddenSkillNames = resolveHiddenSkillNames({
-		requesterDomain: def.domain ?? (def.instructions ? "" : resourceDomain),
+		requesterDomain:
+			def.domain ??
+			(def.instructions || def.resourceDomain ? "" : resourceDomain),
 		resolver,
 	});
 	const skillsOverride = buildSkillsOverride(

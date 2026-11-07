@@ -908,7 +908,7 @@ describe("agent-memory extension", () => {
 
 		expect(cosmo).toMatchObject({
 			tools: "none",
-			extensions: expect.arrayContaining(["agent-memory"]),
+			memory: expect.objectContaining({ authored: true }),
 		});
 		expect([...pi.tools.keys()]).toEqual(["remember", "recall"]);
 		expect(storeFactory).not.toHaveBeenCalled();
