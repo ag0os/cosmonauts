@@ -14,7 +14,6 @@ import {
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { runProviderProcess } from "../../../../domains/shared/extensions/project-tools/process-runner.ts";
 import {
 	isDestructiveGitCommand,
 	outstandingProbeJournal,
@@ -25,6 +24,7 @@ import {
 	EntityFileLockTimeoutError,
 	withEntityFileLock,
 } from "../../../../lib/entity-file-lock.ts";
+import { runProviderProcess } from "../../../../lib/extensions/project-tools/process-runner.ts";
 import type { ProbeCommandOutcome } from "./command-runner.ts";
 import { runProbeCommand } from "./command-runner.ts";
 

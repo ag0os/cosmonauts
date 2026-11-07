@@ -845,14 +845,7 @@ describe("cosmonauts run drive compat run", () => {
 		);
 		expect(runStepSource).not.toContain("writeRunCompletion");
 		const driverToolSource = await readFile(
-			join(
-				originalCwd,
-				"domains",
-				"shared",
-				"extensions",
-				"orchestration",
-				"driver-tool.ts",
-			),
+			join(originalCwd, "lib", "extensions", "orchestration", "driver-tool.ts"),
 			"utf-8",
 		);
 		const settleStart = driverToolSource.indexOf(

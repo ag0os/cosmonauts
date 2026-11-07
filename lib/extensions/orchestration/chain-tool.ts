@@ -1,18 +1,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
-import type { MemoryWarning } from "../../../../lib/memory/types.ts";
-import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
-import { runChain } from "../../../../lib/orchestration/chain-runner.ts";
-import { injectUserPrompt } from "../../../../lib/orchestration/chain-steps.ts";
-import { shouldRunChainInline } from "../../../../lib/orchestration/durable-chain-compiler.ts";
-import { runDurableChain } from "../../../../lib/orchestration/durable-chain-runner.ts";
-import type {
-	ChainEvent,
-	ChainResult,
-} from "../../../../lib/orchestration/types.ts";
-import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
+import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
+import type { MemoryWarning } from "../../memory/types.ts";
+import { parseChain } from "../../orchestration/chain-parser.ts";
+import { runChain } from "../../orchestration/chain-runner.ts";
+import { injectUserPrompt } from "../../orchestration/chain-steps.ts";
+import { shouldRunChainInline } from "../../orchestration/durable-chain-compiler.ts";
+import { runDurableChain } from "../../orchestration/durable-chain-runner.ts";
+import type { ChainEvent, ChainResult } from "../../orchestration/types.ts";
+import type { CosmonautsRuntime } from "../../runtime.ts";
 import { authorizeAgentStart } from "./authorization.ts";
 import {
 	buildCostTable,

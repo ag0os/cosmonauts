@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isSubagentAllowed } from "../domains/shared/extensions/orchestration/authorization.ts";
 import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
 import { DomainValidationError } from "../lib/domains/validator.ts";
+import { isSubagentAllowed } from "../lib/extensions/orchestration/authorization.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import { compileChainToGraph } from "../lib/orchestration/durable-chain-compiler.ts";
 import { CosmonautsRuntime, DomainBindingTargetError } from "../lib/runtime.ts";

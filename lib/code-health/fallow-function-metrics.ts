@@ -16,8 +16,8 @@ import { fileURLToPath } from "node:url";
 import {
 	FALLOW_VALIDATED_ENGINE_VERSION,
 	fallowPlatformPackageName,
-} from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
-import { runProviderProcess } from "../../domains/shared/extensions/project-tools/process-runner.ts";
+} from "../extensions/project-tools/fallow-provider.ts";
+import { runProviderProcess } from "../extensions/project-tools/process-runner.ts";
 
 export interface FunctionMetrics {
 	readonly file: string;

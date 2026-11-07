@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { createSnapshotAnalysisAuthorization } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
+import { createSnapshotAnalysisAuthorization } from "../../lib/extensions/project-tools/analysis-consent.ts";
 
 const roots: string[] = [];
 afterEach(async () => {

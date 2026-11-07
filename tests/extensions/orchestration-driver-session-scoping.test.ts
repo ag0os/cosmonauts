@@ -2,9 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
 import { createEventSink } from "../../lib/driver/event-stream.ts";
 import type { DriverEvent } from "../../lib/driver/types.ts";
+import orchestrationExtension from "../../lib/extensions/orchestration/index.ts";
 import {
 	activityBus,
 	runSessionCleanup,

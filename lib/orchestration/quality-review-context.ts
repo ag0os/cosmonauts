@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { SnapshotAnalysisAuthorization } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
+import type { SnapshotAnalysisAuthorization } from "../extensions/project-tools/analysis-consent.ts";
 import type { CosmonautsRuntime } from "../runtime.ts";
 import type { QualityReviewArtifactSink } from "./quality-review-artifacts.ts";
 

@@ -8,12 +8,12 @@
  */
 
 import { isAbsolute, relative, resolve } from "node:path";
+import { resolveFallowExecutable } from "../../code-health/fallow-function-metrics.ts";
 import {
 	type ProviderProcessExecutor,
 	type ProviderProcessOutcome,
 	runProviderProcess,
-} from "../../../domains/shared/extensions/project-tools/process-runner.ts";
-import { resolveFallowExecutable } from "../../code-health/fallow-function-metrics.ts";
+} from "../../extensions/project-tools/process-runner.ts";
 import { unavailableData } from "../signal-availability.ts";
 import type { Signal, SignalContext, SignalProvider } from "../types.ts";
 

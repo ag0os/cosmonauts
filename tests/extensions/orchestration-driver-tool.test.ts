@@ -6,8 +6,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import "./orchestration-mocks.ts";
-import { registerDriverTool } from "../../domains/shared/extensions/orchestration/driver-tool.ts";
-import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
 import { AgentRegistry } from "../../lib/agents/index.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import type {
@@ -38,6 +36,8 @@ import {
 	type DriverRunSpec,
 	resolveStateCommitPolicy,
 } from "../../lib/driver/types.ts";
+import { registerDriverTool } from "../../lib/extensions/orchestration/driver-tool.ts";
+import { registerWatchEventsTool } from "../../lib/extensions/orchestration/watch-events-tool.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";

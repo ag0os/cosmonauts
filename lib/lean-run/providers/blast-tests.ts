@@ -22,15 +22,15 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-	type ProviderProcessExecutor,
-	type ProviderProcessOutcome,
-	runProviderProcess,
-} from "../../../domains/shared/extensions/project-tools/process-runner.ts";
-import {
 	dependentsOf,
 	type FileGraph,
 	loadFileGraph,
 } from "../../architecture-map/index.ts";
+import {
+	type ProviderProcessExecutor,
+	type ProviderProcessOutcome,
+	runProviderProcess,
+} from "../../extensions/project-tools/process-runner.ts";
 import { unavailableData } from "../signal-availability.ts";
 import type { Signal, SignalContext, SignalProvider } from "../types.ts";
 import { isSpecFile, mirroredTestPath } from "./mutation-tests.ts";

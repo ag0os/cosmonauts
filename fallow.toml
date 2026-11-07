@@ -34,6 +34,7 @@ production = { dupes = true }
 # Framework convention: domain packages and extension entry points are loaded by
 # Cosmonauts/Pi through runtime discovery and dynamic import, not static imports.
 dynamicallyLoaded = [
+  "lib/extensions/*/index.ts",
   "bundled/*/agents/*.ts",
   "bundled/*/chains.ts",
   "bundled/*/domain.ts",

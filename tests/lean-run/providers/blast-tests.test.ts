@@ -1,12 +1,12 @@
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
+import type { FileGraph } from "../../../lib/architecture-map/index.ts";
 import type {
 	ProviderProcessExecutor,
 	ProviderProcessInvocation,
 	ProviderProcessOutcome,
-} from "../../../domains/shared/extensions/project-tools/process-runner.ts";
-import type { FileGraph } from "../../../lib/architecture-map/index.ts";
+} from "../../../lib/extensions/project-tools/process-runner.ts";
 import {
 	type BlastTestsData,
 	type BlastTestsProviderOptions,

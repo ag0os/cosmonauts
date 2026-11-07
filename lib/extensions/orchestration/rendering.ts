@@ -1,15 +1,12 @@
 import { Text } from "@earendil-works/pi-tui";
-import { unqualifyRole } from "../../../../lib/agents/qualified-role.ts";
-import { formatChainSteps } from "../../../../lib/orchestration/chain-steps.ts";
-import { formatDuration } from "../../../../lib/orchestration/duration.ts";
-import { formatReviewRoundBlockError } from "../../../../lib/orchestration/review-revision.ts";
-import { summarizeToolCall } from "../../../../lib/orchestration/tool-call-summary.ts";
-import type {
-	ChainEvent,
-	ChainStats,
-} from "../../../../lib/orchestration/types.ts";
+import { unqualifyRole } from "../../agents/qualified-role.ts";
+import { formatChainSteps } from "../../orchestration/chain-steps.ts";
+import { formatDuration } from "../../orchestration/duration.ts";
+import { formatReviewRoundBlockError } from "../../orchestration/review-revision.ts";
+import { summarizeToolCall } from "../../orchestration/tool-call-summary.ts";
+import type { ChainEvent, ChainStats } from "../../orchestration/types.ts";
 
-export { formatDuration } from "../../../../lib/orchestration/duration.ts";
+export { formatDuration } from "../../orchestration/duration.ts";
 
 // ============================================================================
 // Rendering Helpers
@@ -35,7 +32,7 @@ export function roleLabel(role: string): string {
  * Produce a one-line summary of a tool call for progress display.
  * Extracts the most useful argument (file path, command, pattern) per tool.
  */
-export { summarizeToolCall } from "../../../../lib/orchestration/tool-call-summary.ts";
+export { summarizeToolCall } from "../../orchestration/tool-call-summary.ts";
 
 /** Build a progress line from a chain event for onUpdate streaming. */
 export function chainEventToProgressLine(

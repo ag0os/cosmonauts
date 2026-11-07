@@ -2,8 +2,6 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { registerRunControlTools } from "../../domains/shared/extensions/orchestration/run-control-tools.ts";
-import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
 import type {
 	Backend,
 	BackendInvocation,
@@ -25,6 +23,8 @@ import {
 	runWatch,
 	type StoredOrchestrationEvent,
 } from "../../lib/durable-runtime/index.ts";
+import { registerRunControlTools } from "../../lib/extensions/orchestration/run-control-tools.ts";
+import { registerWatchEventsTool } from "../../lib/extensions/orchestration/watch-events-tool.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { createMockPi } from "../extensions/orchestration-helpers.ts";

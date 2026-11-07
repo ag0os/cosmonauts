@@ -434,8 +434,8 @@ describe("pre-W3 disabled baselines", () => {
 		const pi = createMockPi({ cwd: projectRoot });
 		const [{ default: plansExtension }, { default: tasksExtension }] =
 			await Promise.all([
-				import("../../domains/shared/extensions/plans/index.ts"),
-				import("../../domains/shared/extensions/tasks/index.ts"),
+				import("../../lib/extensions/plans/index.ts"),
+				import("../../lib/extensions/tasks/index.ts"),
 			]);
 		plansExtension(pi as never);
 		tasksExtension(pi as never);

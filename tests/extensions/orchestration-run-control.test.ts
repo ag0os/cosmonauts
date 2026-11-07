@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import "./orchestration-mocks.ts";
 
-import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
 import {
 	FileRunStore,
 	type RunStatusSummary,
@@ -11,6 +10,7 @@ import {
 	runStatus,
 	runWatch,
 } from "../../lib/durable-runtime/index.ts";
+import orchestrationExtension from "../../lib/extensions/orchestration/index.ts";
 import { runQualityReview } from "../../lib/orchestration/quality-review-run.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "./orchestration-helpers.ts";

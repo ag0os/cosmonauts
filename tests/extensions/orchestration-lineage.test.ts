@@ -74,7 +74,7 @@ vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 	createPiSpawner: vi.fn(),
 }));
 
-import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
+import orchestrationExtension from "../../lib/extensions/orchestration/index.ts";
 import {
 	getPlanSlugForSession,
 	registerPlanContext,

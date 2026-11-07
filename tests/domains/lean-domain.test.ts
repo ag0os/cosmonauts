@@ -9,7 +9,6 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { authorizeAgentStart } from "../../domains/shared/extensions/orchestration/authorization.ts";
 import {
 	type AgentRegistry,
 	createRegistryFromDomains,
@@ -17,6 +16,7 @@ import {
 import { loadDomainsFromSources } from "../../lib/domains/loader.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { validateDomains } from "../../lib/domains/validator.ts";
+import { authorizeAgentStart } from "../../lib/extensions/orchestration/authorization.ts";
 import { getModelForRole } from "../../lib/orchestration/model-resolution.ts";
 import { resolveSpawnAgent } from "../../lib/orchestration/spawn-resolution.ts";
 import {

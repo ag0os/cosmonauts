@@ -25,7 +25,7 @@ vi.mock("../../lib/agents/runtime-identity.ts", () => ({
 	extractAgentIdFromSystemPrompt: mocks.extractAgentId,
 }));
 
-import agentSwitchExtension from "../../domains/shared/extensions/agent-switch/index.ts";
+import agentSwitchExtension from "../../lib/extensions/agent-switch/index.ts";
 
 // ============================================================================
 // Helpers

@@ -15,10 +15,6 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import {
-	createSnapshotAnalysisAuthorization,
-	type SnapshotAnalysisAuthorization,
-} from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
 import { parseQualityReviewConfig } from "../config/loader.ts";
 import type { ProjectConfig } from "../config/types.ts";
 import {
@@ -29,6 +25,10 @@ import {
 	runStart,
 	type StepResult,
 } from "../durable-runtime/index.ts";
+import {
+	createSnapshotAnalysisAuthorization,
+	type SnapshotAnalysisAuthorization,
+} from "../extensions/project-tools/analysis-consent.ts";
 import { summarizeAssistantText } from "./assistant-text.ts";
 import {
 	createQualityReviewArtifactSink,
@@ -1473,7 +1473,7 @@ export const HOST_GATE_OWNED_PATHS: readonly string[] = [
 	".cosmonauts/suppression-exceptions.json",
 	"scripts/check-new-suppressions.ts",
 	"scripts/suppression-policy.ts",
-	"domains/shared/extensions/project-tools/fallow-provider.ts",
+	"lib/extensions/project-tools/fallow-provider.ts",
 ];
 export const HOST_GATE_OWNED_DIRECTORY = ".fallow-baselines/";
 

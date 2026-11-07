@@ -2,8 +2,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { registerDriverTool } from "../../domains/shared/extensions/orchestration/driver-tool.ts";
-import { registerRunControlTools } from "../../domains/shared/extensions/orchestration/run-control-tools.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import type {
@@ -11,6 +9,8 @@ import type {
 	BackendInvocation,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
+import { registerDriverTool } from "../../lib/extensions/orchestration/driver-tool.ts";
+import { registerRunControlTools } from "../../lib/extensions/orchestration/run-control-tools.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runDurableChain } from "../../lib/orchestration/durable-chain-runner.ts";
 import type {

@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import domainBindingsExtension from "../../domains/shared/extensions/domain-bindings/index.ts";
-import { isSubagentAllowed } from "../../domains/shared/extensions/orchestration/authorization.ts";
+import { isSubagentAllowed } from "../../lib/extensions/orchestration/authorization.ts";
 import {
 	clearSharedDomainBindings,
 	setSharedDomainBindings,

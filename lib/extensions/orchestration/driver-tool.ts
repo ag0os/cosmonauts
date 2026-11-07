@@ -3,37 +3,37 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
+import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
 import {
 	createClaudeCliBackend,
 	readClaudeArgsFromEnv,
-} from "../../../../lib/driver/backends/claude-cli.ts";
+} from "../../driver/backends/claude-cli.ts";
 import {
 	createCodexBackend,
 	readCodexArgsFromEnv,
 	readCodexExecArgsFromEnv,
-} from "../../../../lib/driver/backends/codex.ts";
-import { createCosmonautsSubagentBackend } from "../../../../lib/driver/backends/cosmonauts-subagent.ts";
-import type { Backend } from "../../../../lib/driver/backends/types.ts";
-import { resolveDefaultDriveEnvelopePath } from "../../../../lib/driver/default-envelope.ts";
-import { runInline, startDetached } from "../../../../lib/driver/driver.ts";
+} from "../../driver/backends/codex.ts";
+import { createCosmonautsSubagentBackend } from "../../driver/backends/cosmonauts-subagent.ts";
+import type { Backend } from "../../driver/backends/types.ts";
+import { resolveDefaultDriveEnvelopePath } from "../../driver/default-envelope.ts";
+import { runInline, startDetached } from "../../driver/driver.ts";
 import {
 	type DriveEpisodeIdentity,
 	isDriveEpisodeCaptureEnabled,
 	mintDriveEpisodeIdentity,
 	reportDriveEpisodeLaunchWarning,
 	resolveDriveEpisodeWorker,
-} from "../../../../lib/driver/episode-identity.ts";
-import { formatError } from "../../../../lib/driver/errors.ts";
-import { DEFAULT_TASK_TIMEOUT_MS } from "../../../../lib/driver/run-one-task.ts";
+} from "../../driver/episode-identity.ts";
+import { formatError } from "../../driver/errors.ts";
+import { DEFAULT_TASK_TIMEOUT_MS } from "../../driver/run-one-task.ts";
 import {
 	writeFallbackRunCompletion,
 	writeInlineRunState,
-} from "../../../../lib/driver/run-state.ts";
+} from "../../driver/run-state.ts";
 import {
 	assertDriveTasksNotCancelled,
 	listPendingPlanTaskIds,
-} from "../../../../lib/driver/task-selection.ts";
+} from "../../driver/task-selection.ts";
 import {
 	type BackendName,
 	DETACHED_DEFAULT_TASK_THRESHOLD,
@@ -42,12 +42,12 @@ import {
 	type DriverRunSpec,
 	type StateCommitPolicy,
 	validateDriverPlanSlug,
-} from "../../../../lib/driver/types.ts";
-import { activityBus } from "../../../../lib/orchestration/activity-bus.ts";
-import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
-import type { SpawnAgentResolution } from "../../../../lib/orchestration/spawn-resolution.ts";
-import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
-import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
+} from "../../driver/types.ts";
+import { activityBus } from "../../orchestration/activity-bus.ts";
+import { createPiSpawner } from "../../orchestration/agent-spawner.ts";
+import type { SpawnAgentResolution } from "../../orchestration/spawn-resolution.ts";
+import type { CosmonautsRuntime } from "../../runtime.ts";
+import { TaskManager } from "../../tasks/task-manager.ts";
 import { authorizeAgentStart } from "./authorization.ts";
 
 interface ActiveDriverRun {

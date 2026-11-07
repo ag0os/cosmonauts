@@ -6,51 +6,51 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
-import type { AgentDefinition } from "../../../../lib/agents/types.ts";
+import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
+import type { AgentDefinition } from "../../agents/types.ts";
 import {
 	activityBus,
 	runSessionCleanup,
-} from "../../../../lib/orchestration/activity-bus.ts";
+} from "../../orchestration/activity-bus.ts";
 import {
 	extractAssistantText,
 	finalAssistantEvidence,
 	summarizeAssistantText,
-} from "../../../../lib/orchestration/assistant-text.ts";
-import type { SpawnActivityEvent } from "../../../../lib/orchestration/message-bus.ts";
+} from "../../orchestration/assistant-text.ts";
+import type { SpawnActivityEvent } from "../../orchestration/message-bus.ts";
 import {
 	getPlanSlugForSession,
 	registerPlanContext,
 	removePlanContext,
-} from "../../../../lib/orchestration/plan-session-context.ts";
+} from "../../orchestration/plan-session-context.ts";
 import {
 	assertQualityReviewModelIdentity,
 	buildQualityReviewPanelPrompt,
 	getQualityReviewSession,
 	type QualityReviewSessionContext,
-} from "../../../../lib/orchestration/quality-review-context.ts";
+} from "../../orchestration/quality-review-context.ts";
 import {
 	isQualityReviewReference,
 	launchQualityReview,
-} from "../../../../lib/orchestration/quality-review-launch.ts";
-import { qualityReviewPanelModel } from "../../../../lib/orchestration/quality-review-models.ts";
-import { createAgentSessionFromDefinition } from "../../../../lib/orchestration/session-factory.ts";
+} from "../../orchestration/quality-review-launch.ts";
+import { qualityReviewPanelModel } from "../../orchestration/quality-review-models.ts";
+import { createAgentSessionFromDefinition } from "../../orchestration/session-factory.ts";
 import {
 	awaitNextCompletionMessages,
 	formatSpawnCompletionMessage,
-} from "../../../../lib/orchestration/spawn-completion-loop.ts";
-import type { SpawnTracker } from "../../../../lib/orchestration/spawn-tracker.ts";
+} from "../../orchestration/spawn-completion-loop.ts";
+import type { SpawnTracker } from "../../orchestration/spawn-tracker.ts";
 import {
 	getOrCreateTracker,
 	removeTracker,
-} from "../../../../lib/orchestration/spawn-tracker.ts";
-import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
-import { appendSession } from "../../../../lib/sessions/manifest.ts";
+} from "../../orchestration/spawn-tracker.ts";
+import type { CosmonautsRuntime } from "../../runtime.ts";
+import { appendSession } from "../../sessions/manifest.ts";
 import {
 	generateTranscript,
 	writeTranscript,
-} from "../../../../lib/sessions/session-store.ts";
-import type { SessionRecord } from "../../../../lib/sessions/types.ts";
+} from "../../sessions/session-store.ts";
+import type { SessionRecord } from "../../sessions/types.ts";
 import { authorizeAgentStart } from "./authorization.ts";
 import {
 	renderTextFallback,

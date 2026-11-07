@@ -3,7 +3,6 @@ import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test, vi } from "vitest";
-import tasksExtension from "../../domains/shared/extensions/tasks/index.ts";
 import { probeJournalDirectory } from "../../lib/agents/drive-worker-tool-guard.ts";
 import type {
 	Backend,
@@ -25,6 +24,7 @@ import type {
 	Report,
 	ReportOutcome,
 } from "../../lib/driver/types.ts";
+import tasksExtension from "../../lib/extensions/tasks/index.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import type { Task, TaskUpdateInput } from "../../lib/tasks/task-types.ts";
 import { useTempDir } from "../helpers/fs.ts";

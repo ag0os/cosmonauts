@@ -12,20 +12,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
-	FALLOW_VALIDATED_ENGINE_VERSION,
-	fallowPlatformPackageName,
-} from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
-import projectToolsExtension, {
-	createProjectToolsExtension,
-} from "../../domains/shared/extensions/project-tools/index.ts";
-import {
-	type ProviderProcessExecutor,
-	runProviderProcess,
-} from "../../domains/shared/extensions/project-tools/process-runner.ts";
-import {
 	ANALYSIS_CAPABILITIES,
 	ANALYSIS_TOOL_NAMES,
 } from "../../lib/analysis/index.ts";
+import {
+	FALLOW_VALIDATED_ENGINE_VERSION,
+	fallowPlatformPackageName,
+} from "../../lib/extensions/project-tools/fallow-provider.ts";
+import projectToolsExtension, {
+	createProjectToolsExtension,
+} from "../../lib/extensions/project-tools/index.ts";
+import {
+	type ProviderProcessExecutor,
+	runProviderProcess,
+} from "../../lib/extensions/project-tools/process-runner.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 let tmpDir: string;

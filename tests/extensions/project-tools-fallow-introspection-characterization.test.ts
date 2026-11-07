@@ -13,12 +13,12 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
 	discoverFallowProvider,
 	FALLOW_VALIDATED_ENGINE_VERSION,
-} from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
+} from "../../lib/extensions/project-tools/fallow-provider.ts";
 import type {
 	ProviderProcessExecutor,
 	ProviderProcessInvocation,
 	ProviderProcessOutcome,
-} from "../../domains/shared/extensions/project-tools/process-runner.ts";
+} from "../../lib/extensions/project-tools/process-runner.ts";
 
 const REPOSITORY_ROOT = resolve(
 	dirname(fileURLToPath(import.meta.url)),

@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { loadProjectConfig } from "../../config/index.ts";
+import type { QualityReviewCommand } from "../../config/types.ts";
 import {
 	type ProviderProcessExecutor,
 	type ProviderProcessOutcome,
 	runProviderProcess,
-} from "../../../domains/shared/extensions/project-tools/process-runner.ts";
-import { loadProjectConfig } from "../../config/index.ts";
-import type { QualityReviewCommand } from "../../config/types.ts";
+} from "../../extensions/project-tools/process-runner.ts";
 import type {
 	Signal,
 	SignalContext,

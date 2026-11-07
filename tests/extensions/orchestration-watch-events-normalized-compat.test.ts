@@ -1,7 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
 import { normalizeDriverEvent } from "../../lib/driver/durable-events.ts";
 import { createEventSink } from "../../lib/driver/event-stream.ts";
 import type { DriverEvent } from "../../lib/driver/types.ts";
@@ -10,6 +9,7 @@ import {
 	FileRunStore,
 	type RuntimeDiagnostic,
 } from "../../lib/durable-runtime/index.ts";
+import { registerWatchEventsTool } from "../../lib/extensions/orchestration/watch-events-tool.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "./orchestration-helpers.ts";
 

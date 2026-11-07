@@ -2,7 +2,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { createProjectToolsExtension } from "../../domains/shared/extensions/project-tools/index.ts";
 import {
 	ANALYSIS_CAPABILITIES,
 	ANALYSIS_CAPABILITY_TOOL_NAMES,
@@ -18,6 +17,7 @@ import {
 	resolveAnalysisRequest,
 } from "../../lib/analysis/index.ts";
 import { loadProjectConfig } from "../../lib/config/index.ts";
+import { createProjectToolsExtension } from "../../lib/extensions/project-tools/index.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 const FALLOW_PROVIDER = {

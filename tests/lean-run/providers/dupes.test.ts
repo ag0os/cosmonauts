@@ -8,8 +8,8 @@ import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { ProviderProcessExecutor } from "../../../domains/shared/extensions/project-tools/process-runner.ts";
 import { resolveFallowExecutable } from "../../../lib/code-health/fallow-function-metrics.ts";
+import type { ProviderProcessExecutor } from "../../../lib/extensions/project-tools/process-runner.ts";
 import {
 	createDupesProvider,
 	type DupesData,
