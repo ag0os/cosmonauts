@@ -5,20 +5,20 @@ import type { ChainAdapter } from "../../lib/orchestration/types.ts";
 import { consumerChainAdapter } from "../fixtures/library-consumer/policies.ts";
 
 /** Retained orchestration fixtures explicitly select synthetic consumer policy. */
-export function withCodingChain<T extends object>(
+export function withConsumerChain<T extends object>(
 	options: T,
 ): T & { chainAdapter: ChainAdapter; episodes: boolean } {
 	return { chainAdapter: consumerChainAdapter, episodes: true, ...options };
 }
 
-export function parseCodingChain(
+export function parseConsumerChain(
 	expression: string,
 	registry: AgentRegistry,
 	domainContext?: string,
 	requesterDomain = domainContext,
 ): import("../../lib/orchestration/types.ts").ChainStep[] {
 	const normalized = normalizeChain(
-		withCodingChain({
+		withConsumerChain({
 			steps: parseChain(expression),
 			registry,
 			domainContext,

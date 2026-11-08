@@ -546,7 +546,6 @@ pins terminal completion after one successful iteration. Retained spawner/resour
 fixtures pass nonexistent temporary resource roots, exposing any hidden content read.
 Additional QM-only cases now have explicit `.content.test.ts` retirement homes.
 
-
 P2 consumer memory proof uses only synthetic temporary records and the public
 session factory. `tests/library-consumer.test.ts` exercises the same scenarios
 in process and from a separate lib-only install: grant removal and gate off/on/off
@@ -563,7 +562,6 @@ An explicit unknown agent on an empty install reports `Available agents: (none)`
 `tests/agents/resolver.test.ts` and the actual-bin case in
 `tests/cli/host-startup.test.ts` pin the diagnostic.
 
-
 P7 requires stale-target restore warnings to retain installation guidance, and
 restore with no shared binding state to remain inert even when persisted binding
 entries exist. `tests/extensions/domain-bindings.test.ts` pins both contracts;
@@ -572,3 +570,15 @@ The extension exports its own directory path for the CLI's actual mount, making
 that live dependency explicit to reachability without adding a root or changing
 the gate. A fresh-process manual mutation of that module-level path is rejected
 by the CLI mount and empty-runtime assertions.
+
+P2b retains consumer-policy interactive denial and picker filtering in
+`tests/extensions/agent-switch.test.ts`. Synthetic artifact-written and disposition
+events in `tests/extensions/orchestration-run-control.test.ts` pin artifact metadata,
+post-terminal disposition and its visible text without a QM artifact identifier.
+The fixture import guard permits only named public package entries and its explicit
+local, Node and Pi dependencies; negative dependency cases and retained-suite import
+boundaries are pinned in `tests/library-consumer.test.ts`. Consumer chain helpers use
+`withConsumerChain`/`parseConsumerChain` from `tests/helpers/consumer-chain.ts`.
+The architecture-provider test pins actual authorized injection as well as absence
+of content-hash work. The consumer transcript proof asserts distinct user sentinels;
+it makes no claim about persistence of tool outputs invoked outside those sessions.

@@ -1,4 +1,4 @@
-import { withCodingChain } from "../helpers/coding-chain.ts";
+import { withConsumerChain } from "../helpers/consumer-chain.ts";
 /**
  * Tests for per-stage stats on the durable chain path (durable-chain-runner.ts):
  * spawn stats are persisted in the run's event log and come back as stage
@@ -78,7 +78,7 @@ async function runExpression(
 	options: { planSlug?: string } = {},
 ): Promise<ChainResult> {
 	return runDurableChain(
-		withCodingChain({
+		withConsumerChain({
 			steps: parseChain(expression),
 			projectRoot: join(temp.path, "project"),
 			registry,
@@ -112,7 +112,7 @@ async function runPlannerThenReviewer(
 	events: ChainEvent[] = [],
 ): Promise<ChainResult> {
 	return runDurableChain(
-		withCodingChain({
+		withConsumerChain({
 			steps: parseChain("planner -> reviewer"),
 			projectRoot: join(temp.path, "project"),
 			registry,
@@ -150,7 +150,7 @@ describe("runDurableChain stage stats", () => {
 			forAgent: () => undefined,
 		};
 		const result = await runDurableChain(
-			withCodingChain({
+			withConsumerChain({
 				steps: parseChain("planner"),
 				projectRoot,
 				registry,

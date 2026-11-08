@@ -8,7 +8,7 @@ import type {
 	ChainConfig,
 	SpawnResult,
 } from "../../lib/orchestration/types.ts";
-import { withCodingChain } from "../helpers/coding-chain.ts";
+import { withConsumerChain } from "../helpers/consumer-chain.ts";
 
 const spawnerRef = vi.hoisted(() => ({
 	current: undefined as AgentSpawner | undefined,
@@ -66,7 +66,7 @@ describe("chain-runner cosmo migration (cosmo-migration)", () => {
 		const steps = parseChain("cosmo");
 
 		const result = await runChain(
-			withCodingChain(makeConfig({ steps, registry })),
+			withConsumerChain(makeConfig({ steps, registry })),
 		);
 
 		expect(result.success).toBe(false);

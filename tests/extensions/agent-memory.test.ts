@@ -3,7 +3,6 @@ import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test, vi } from "vitest";
-import cosmo from "../../domains/main/agents/cosmo.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import { createAgentMemoryExtension as createPublicAgentMemoryExtension } from "../../lib/extensions/agent-memory/index.ts";
 import { writeKnowledgeProposalThroughStore } from "../../lib/extensions/knowledge-surface/knowledge-tools.ts";
@@ -906,10 +905,6 @@ describe("agent-memory extension", () => {
 			now: () => new Date("2026-07-08T14:00:00.000Z"),
 		})(pi as never);
 
-		expect(cosmo).toMatchObject({
-			tools: "none",
-			memory: expect.objectContaining({ authored: true }),
-		});
 		expect([...pi.tools.keys()]).toEqual(["remember", "recall"]);
 		expect(storeFactory).not.toHaveBeenCalled();
 

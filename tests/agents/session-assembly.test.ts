@@ -1,4 +1,3 @@
-import { qualityReviewPolicyFor } from "../../lib/orchestration/quality-review-profile.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 /**
  * Tests for the shared session parameter builder (buildSessionParams).
@@ -276,25 +275,6 @@ describe("buildSessionParams", () => {
 	});
 
 	describe("tool resolution", () => {
-		it("does not give an ordinary reviewer session the quality child profile", async () => {
-			await setupMinimalDomains(tmp.path, {
-				domain: "coding",
-				agentId: "reviewer",
-			});
-			const def = makeDef({
-				id: "reviewer",
-				domain: "coding",
-				tools: "coding",
-			});
-			const ordinary = await buildSessionParams(makeOptions({ def }));
-			const panel = await buildSessionParams(
-				makeOptions({ def, sessionPolicy: qualityReviewPolicyFor(def, true) }),
-			);
-			expect(ordinary.sessionPolicy).toBeUndefined();
-			expect(ordinary.tools).toContain("bash");
-			expect(panel.sessionPolicy?.toolPreset).toBe("readonly");
-			expect(panel.tools).toEqual(["read", "grep", "find", "ls"]);
-		});
 		it('resolves "none" tool set to empty array', async () => {
 			await setupMinimalDomains(tmp.path);
 			const params = await buildSessionParams(makeOptions());

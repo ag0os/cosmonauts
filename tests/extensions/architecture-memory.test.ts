@@ -677,12 +677,13 @@ describe("architecture-memory extension", () => {
 			authorizedAgentIds: new Set(["visitor/mapper"]),
 		})(pi as never);
 
-		await pi.fireEvent(
+		const injection = await pi.fireEvent(
 			"before_agent_start",
 			{ systemPrompt: buildAgentIdentityMarker("visitor/mapper") },
 			{ cwd: tmp.path },
 		);
 
+		expect(JSON.stringify(injection)).toContain("Architecture Map");
 		expect(contentHashFreshness).not.toHaveBeenCalled();
 		contentHashFreshness.mockRestore();
 	});

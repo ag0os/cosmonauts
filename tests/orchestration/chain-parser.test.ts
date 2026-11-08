@@ -1,5 +1,5 @@
 import { normalizeChain } from "../../lib/orchestration/chain-normalization.ts";
-import { withCodingChain } from "../helpers/coding-chain.ts";
+import { withConsumerChain } from "../helpers/consumer-chain.ts";
 /**
  * Tests for chain-parser.ts
  * Covers pipeline parsing, loop detection from role lifecycle,
@@ -501,7 +501,7 @@ function normalizeForTest(
 	requesterDomain = domainContext,
 ) {
 	const result = normalizeChain(
-		withCodingChain({
+		withConsumerChain({
 			steps: parseChain(expression),
 			projectRoot: "/tmp",
 			registry,

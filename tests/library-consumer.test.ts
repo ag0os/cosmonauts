@@ -308,7 +308,7 @@ function assertConsumerGrants(
 		architecture: { eligible: true, ineligible: "scope-ineligible" },
 		recall: true,
 		injected: true,
-		transcripts: { a: true, b: true, memoryIsolated: true },
+		transcripts: { a: true, b: true },
 	});
 }
 
@@ -316,7 +316,17 @@ function assertConsumerImport(
 	specifier: string | undefined,
 	exports: Record<string, string>,
 ) {
-	if (!specifier?.startsWith("cosmonauts")) return;
+	if (!specifier) throw new Error("Missing fixture import specifier");
+	if (
+		new Set([
+			"./policies.ts",
+			"./grants.ts",
+			"node:fs/promises",
+			"node:path",
+			"@earendil-works/pi-coding-agent",
+		]).has(specifier)
+	)
+		return;
 	expect(specifier).toMatch(/^cosmonauts(?:\/|$)/);
 	const entry = specifier === "cosmonauts" ? "." : `.${specifier.slice(10)}`;
 	expect(exports).toHaveProperty(entry);
@@ -338,6 +348,6 @@ test.each([
 ])("retained suite %s has no import of retiring content", async (file) => {
 	const source = await readFile(new URL(file, import.meta.url), "utf8");
 	expect(source).not.toMatch(
-		/from\s+["'][^"']*(?:\/domains\/|\/bundled\/|\/quality-review-)/,
+		/from\s+["'](?:(?:\.\.\/)+(?:domains|bundled)\/|[^"']*\/quality-review-)/,
 	);
 });

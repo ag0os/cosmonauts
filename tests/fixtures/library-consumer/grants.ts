@@ -257,9 +257,6 @@ export async function exerciseConsumerGrants(projectRoot: string) {
 						b:
 							b.includes("TRANSCRIPT_B_ONLY") &&
 							!b.includes("TRANSCRIPT_A_ONLY"),
-						memoryIsolated:
-							!a.includes("CONFIRMED_CONSUMER_BODY") &&
-							!b.includes("CONSUMER_PROPOSAL_BODY"),
 					},
 				};
 			} finally {

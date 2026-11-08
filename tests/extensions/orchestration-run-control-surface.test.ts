@@ -19,7 +19,7 @@ import type {
 } from "../../lib/orchestration/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { consumerChainAdapter } from "../fixtures/library-consumer/policies.ts";
-import { withCodingChain } from "../helpers/coding-chain.ts";
+import { withConsumerChain } from "../helpers/consumer-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import {
 	authorizedToolRegistry,
@@ -100,7 +100,7 @@ describe("orchestration run control surface", () => {
 		const projectRoot = join(temp.path, "project");
 		await mkdir(projectRoot, { recursive: true });
 		const chainResult = await runDurableChain(
-			withCodingChain({
+			withConsumerChain({
 				steps: parseChain("planner"),
 				projectRoot,
 				registry,

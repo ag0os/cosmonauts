@@ -9,7 +9,7 @@ import {
 	buildStagePrompt,
 	deriveStagePromptPurpose,
 } from "../fixtures/library-consumer/policies.ts";
-import { withCodingChain } from "../helpers/coding-chain.ts";
+import { withConsumerChain } from "../helpers/consumer-chain.ts";
 
 const registry = new AgentRegistry([
 	agent("planner"),
@@ -24,7 +24,7 @@ describe("compileChainToGraph", () => {
 		const parsed = parseChain("planner -> reviewer");
 
 		const compiled = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "run-chain-compiler-sequential",
 				steps: parsed,
 				projectRoot: "/tmp/cosmonauts/project",
@@ -56,7 +56,7 @@ describe("compileChainToGraph", () => {
 		);
 
 		const compiled = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "run-chain-compiler-bracket",
 				steps: parsed,
 				projectRoot: "/tmp/cosmonauts/project",
@@ -94,7 +94,7 @@ describe("compileChainToGraph", () => {
 		const parsed = parseChain("planner -> reviewer[3] -> quality-manager");
 
 		const compiled = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "run-chain-compiler-fanout",
 				steps: parsed,
 				projectRoot: "/tmp/cosmonauts/project",
@@ -135,7 +135,7 @@ describe("compileChainToGraph", () => {
 		const parsed = parseChain("a/worker");
 
 		const compiled = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "run-chain-compiler-resolved-target",
 				steps: parsed,
 				projectRoot: "/tmp/cosmonauts/project",
@@ -156,7 +156,7 @@ describe("compileChainToGraph", () => {
 		injectUserPrompt(parsed, userPrompt);
 
 		const compiled = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "run-chain-compiler-options",
 				steps: parsed,
 				domainContext: "coding",
@@ -248,7 +248,7 @@ describe("compileChainToGraph", () => {
 		});
 
 		const compiled = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "run-chain-stage-purpose-parity",
 				steps,
 				projectRoot: "/tmp/cosmonauts/project",
@@ -334,7 +334,7 @@ describe("compileChainToGraph", () => {
 		);
 
 		const guarded = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "run-chain-stage-guarded-task",
 				steps: parseChain("planner -> plan-reviewer -> task-manager"),
 				projectRoot: "/tmp/cosmonauts/project",

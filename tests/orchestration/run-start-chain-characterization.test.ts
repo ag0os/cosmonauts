@@ -35,7 +35,7 @@ import {
 	buildStagePrompt,
 	deriveStagePromptPurpose,
 } from "../fixtures/library-consumer/policies.ts";
-import { withCodingChain } from "../helpers/coding-chain.ts";
+import { withConsumerChain } from "../helpers/consumer-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const spawnerMocks = vi.hoisted(() => ({
@@ -109,7 +109,7 @@ describe("runStart durable chain characterization", () => {
 		const projectRoot = join(temp.path, "project");
 
 		const result = await runDurableChain(
-			withCodingChain({
+			withConsumerChain({
 				steps: parseChain("planner -> reviewer -> integration-verifier"),
 				projectRoot,
 				registry,
@@ -209,7 +209,7 @@ describe("runStart durable chain characterization", () => {
 		});
 
 		const result = await runDurableChain(
-			withCodingChain({
+			withConsumerChain({
 				steps,
 				projectRoot,
 				registry,
@@ -246,7 +246,7 @@ describe("runStart durable chain characterization", () => {
 		});
 
 		const successful = await runDurableChain(
-			withCodingChain({
+			withConsumerChain({
 				steps: parseChain(
 					"planner -> plan-reviewer -> planner -> task-manager",
 				),
@@ -338,7 +338,7 @@ describe("runStart durable chain characterization", () => {
 			});
 
 			const result = await runDurableChain(
-				withCodingChain({
+				withConsumerChain({
 					steps: parseChain(expression),
 					projectRoot,
 					planSlug: slug,
@@ -394,7 +394,7 @@ describe("runStart durable chain characterization", () => {
 				return reviewGateSpawn(config, slug);
 			});
 			const result = await runDurableChain(
-				withCodingChain({
+				withConsumerChain({
 					steps: parseChain(
 						"planner -> plan-reviewer -> planner -> task-manager",
 					),
@@ -720,7 +720,7 @@ describe("runStart durable chain characterization", () => {
 		configureSpawner(async (config) => successfulSpawn(config));
 
 		const success = await runDurableChain(
-			withCodingChain({
+			withConsumerChain({
 				steps: parseChain("[planner, reviewer] -> integration-verifier"),
 				projectRoot: successRoot,
 				registry,
@@ -796,7 +796,7 @@ describe("runStart durable chain characterization", () => {
 				: successfulSpawn(config),
 		);
 		const failure = await runDurableChain(
-			withCodingChain({
+			withConsumerChain({
 				steps: parseChain("planner -> reviewer"),
 				projectRoot: failureRoot,
 				registry,
@@ -824,7 +824,7 @@ describe("runStart durable chain characterization", () => {
 		const warnings: unknown[] = [];
 		configureSpawner(async (config) => successfulSpawn(config));
 		const withCaptureFailure = await runDurableChain(
-			withCodingChain({
+			withConsumerChain({
 				steps: parseChain("planner -> reviewer"),
 				projectRoot: captureFailureRoot,
 				registry,
@@ -1060,7 +1060,7 @@ async function runWithActivityHook(options: {
 		});
 	try {
 		return await runDurableChain(
-			withCodingChain({
+			withConsumerChain({
 				steps: parseChain(options.expression),
 				projectRoot: options.projectRoot,
 				planSlug: basename(options.projectRoot),
@@ -1119,7 +1119,7 @@ async function captureDisabledBaselines(
 }> {
 	const inlineEvents: ChainEvent[] = [];
 	const inlineResult = await runChain(
-		withCodingChain({
+		withConsumerChain({
 			steps: parseChain("planner -> reviewer"),
 			projectRoot,
 			registry,
@@ -1128,7 +1128,7 @@ async function captureDisabledBaselines(
 	);
 	const durableEvents: ChainEvent[] = [];
 	const durableResult = await runDurableChain(
-		withCodingChain({
+		withConsumerChain({
 			steps: parseChain("planner -> reviewer"),
 			projectRoot,
 			registry,

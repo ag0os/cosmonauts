@@ -9,7 +9,10 @@ import {
 } from "../../lib/interactive/domain-bindings.ts";
 import { compileChainToGraph } from "../../lib/orchestration/durable-chain-compiler.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
-import { parseCodingChain, withCodingChain } from "../helpers/coding-chain.ts";
+import {
+	parseConsumerChain,
+	withConsumerChain,
+} from "../helpers/consumer-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("domain-bindings-extension-");
@@ -259,13 +262,13 @@ describe("domain-bindings extension", () => {
 		const alreadyRunningAgent =
 			runtime.agentRegistry.resolveReference("ruby-coding/worker");
 		expect(alreadyRunningAgent?.definition.description).toBe("Original worker");
-		const alreadySpawnedSteps = parseCodingChain(
+		const alreadySpawnedSteps = parseConsumerChain(
 			"worker",
 			runtime.agentRegistry,
 			runtime.domainContext,
 		);
 		const alreadySpawnedGraph = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "pre-switch-spawn",
 				steps: alreadySpawnedSteps,
 				projectRoot: tmp.path,
@@ -318,7 +321,7 @@ describe("domain-bindings extension", () => {
 			),
 		).toBe(true);
 
-		const chainSteps = parseCodingChain(
+		const chainSteps = parseConsumerChain(
 			"worker",
 			runtime.agentRegistry,
 			runtime.domainContext,
@@ -332,7 +335,7 @@ describe("domain-bindings extension", () => {
 		);
 
 		const compiled = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "live-binding-chain",
 				steps: chainSteps,
 				projectRoot: tmp.path,
