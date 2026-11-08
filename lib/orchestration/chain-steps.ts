@@ -98,10 +98,10 @@ export function resolveStagePrompt(
  *
  * @example
  * formatChainSteps([
- *   { name: "planner", loop: false },
+ *   { name: "author", loop: false },
  *   { kind: "parallel", stages: [...], syntax: { kind: "group" } }
  * ])
- * // => "planner -> [task-manager, reviewer]"
+ * // => "author -> [editor, critic]"
  */
 export function formatChainSteps(steps: ChainStep[]): string {
 	return steps.map(formatStep).join(" -> ");
@@ -118,44 +118,4 @@ function formatStep(step: ChainStep): string {
 
 	// group
 	return `[${step.stages.map((s) => s.name).join(", ")}]`;
-}
-
-// ============================================================================
-// DSL detection
-// ============================================================================
-
-/**
- * Returns true for any structurally valid chain DSL expression:
- * - A multi-step chain:      `planner -> coordinator`
- * - A bracket group:         `[planner, reviewer]`
- * - A fanout expression:     `reviewer[2]`
- * - A single stage name:     `planner` or `task-manager` or `coding/planner`
- *
- * Returns false for compound workflow-style names (`plan-and-build`) and
- * empty / whitespace-only input.
- *
- * Stage names follow the pattern `word` or `word-word` (at most one hyphen
- * per path segment), optionally qualified with a `/` domain prefix.
- * Compound names with two or more hyphens are treated as workflow names,
- * not DSL expressions.
- */
-export function isChainDslExpression(expression: string): boolean {
-	const trimmed = expression.trim();
-	if (!trimmed) return false;
-
-	// Arrow separator → definitely a chain
-	if (trimmed.includes("->")) return true;
-
-	// Bracket syntax → parallel group or fanout count
-	if (trimmed.includes("[") || trimmed.includes("]")) return true;
-
-	// Single stage name: each path segment may have at most one hyphen.
-	// Valid:   planner, task-manager, coding/planner, coding/task-manager
-	// Invalid: plan-and-build (two hyphens → compound workflow name)
-	const STAGE_SEGMENT = "[a-z0-9]+(?:-[a-z0-9]+)?";
-	const STAGE_NAME = new RegExp(
-		`^${STAGE_SEGMENT}(?:\\/${STAGE_SEGMENT})?$`,
-		"i",
-	);
-	return STAGE_NAME.test(trimmed);
 }

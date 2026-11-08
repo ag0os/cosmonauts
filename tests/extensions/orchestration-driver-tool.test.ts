@@ -263,6 +263,7 @@ describe("driver e2e run_driver integration", () => {
 			pi as never,
 			async () =>
 				({
+					workerAgent: "coding/worker",
 					agentRegistry: authorizedToolRegistry(),
 					domainContext: "coding",
 				}) as never,
@@ -397,6 +398,42 @@ describe("driver e2e run_driver integration", () => {
 		}
 	});
 
+	test("authorizes and executes the consumer assembler without a worker alias", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		backendMocks.run.mockResolvedValue(successResult());
+		const runtime = {
+			...workerRuntime("coding", "coding"),
+			workerAgent: "coding/assembler",
+			agentRegistry: new AgentRegistry([
+				{ ...workerDefinition("coding"), id: "assembler" },
+				{
+					...workerDefinition("coding"),
+					id: "lead",
+					subagents: ["coding/assembler"],
+				},
+			]),
+		};
+		const result = await launchDriver(fixture, { runtime });
+		expect(result).not.toHaveProperty("error");
+		if ("error" in result) throw new Error("Expected admitted consumer worker");
+		await waitForCompletion(result.workdir);
+		expect(backendMocks.createCosmonautsSubagentBackend).toHaveBeenCalledWith(
+			expect.objectContaining({ workerAgent: "coding/assembler" }),
+		);
+		expect(backendMocks.run).toHaveBeenCalled();
+	});
+	test("denies an undeclared consumer worker before backend execution", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const runtime = {
+			...workerRuntime("coding", "coding"),
+			workerAgent: undefined,
+		};
+		expect(await launchDriver(fixture, { runtime })).toMatchObject({
+			error: "unauthorized",
+			message: "Drive requires workerAgent from the consumer runtime.",
+		});
+		expect(backendMocks.run).not.toHaveBeenCalled();
+	});
 	test("denies a missing worker before starting an enabled run", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		await writeEpisodicConfig(fixture.projectRoot, true);
@@ -684,6 +721,7 @@ interface RunDriverOverrides {
 	omitEnvelopePath?: boolean;
 	runtime?: Pick<
 		CosmonautsRuntime,
+		| "workerAgent"
 		| "agentRegistry"
 		| "domainContext"
 		| "domainResolver"
@@ -775,6 +813,7 @@ async function launchDriver(
 		async () =>
 			(overrides.runtime ??
 				({
+					workerAgent: "coding/worker",
 					agentRegistry: authorizedToolRegistry(),
 					domainResolver: {},
 					domainsDir: fixture.projectRoot,
@@ -830,6 +869,7 @@ function workerRuntime(
 	targetDomain: string | undefined,
 ): Pick<
 	CosmonautsRuntime,
+	| "workerAgent"
 	| "agentRegistry"
 	| "domainContext"
 	| "domainResolver"
@@ -869,6 +909,7 @@ function workerRuntime(
 		},
 	} as never;
 	return {
+		workerAgent: "coding/worker",
 		agentRegistry: new AgentRegistry(definitions, { bindingResolver }),
 		domainContext,
 		domainResolver: {} as never,

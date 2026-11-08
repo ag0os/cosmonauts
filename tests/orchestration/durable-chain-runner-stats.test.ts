@@ -1,3 +1,4 @@
+import { withCodingChain } from "../helpers/coding-chain.ts";
 /**
  * Tests for per-stage stats on the durable chain path (durable-chain-runner.ts):
  * spawn stats are persisted in the run's event log and come back as stage
@@ -76,12 +77,14 @@ async function runExpression(
 	expression: string,
 	options: { planSlug?: string } = {},
 ): Promise<ChainResult> {
-	return runDurableChain({
-		steps: parseChain(expression, registry),
-		projectRoot: join(temp.path, "project"),
-		registry,
-		...options,
-	});
+	return runDurableChain(
+		withCodingChain({
+			steps: parseChain(expression),
+			projectRoot: join(temp.path, "project"),
+			registry,
+			...options,
+		}),
+	);
 }
 
 async function writePlanFixture(planSlug: string): Promise<void> {
@@ -108,12 +111,14 @@ async function writePlanFixture(planSlug: string): Promise<void> {
 async function runPlannerThenReviewer(
 	events: ChainEvent[] = [],
 ): Promise<ChainResult> {
-	return runDurableChain({
-		steps: parseChain("planner -> reviewer", registry),
-		projectRoot: join(temp.path, "project"),
-		registry,
-		onEvent: (event) => events.push(event),
-	});
+	return runDurableChain(
+		withCodingChain({
+			steps: parseChain("planner -> reviewer"),
+			projectRoot: join(temp.path, "project"),
+			registry,
+			onEvent: (event) => events.push(event),
+		}),
+	);
 }
 
 describe("runDurableChain stage stats", () => {
@@ -131,6 +136,148 @@ describe("runDurableChain stage stats", () => {
 
 	afterEach(() => {
 		vi.useRealTimers();
+	});
+
+	test.each([
+		[undefined, { kind: "default" }],
+		[
+			{ kind: "plan-review", targetStageIds: ["author", 42] },
+			{ kind: "plan-review", targetStageIds: ["author"] },
+		],
+		[
+			{ kind: "plan-revision", targetStageIds: ["author", false] },
+			{ kind: "plan-revision", targetStageIds: ["author"] },
+		],
+		[
+			{ kind: "revision", reviewKind: "plan" },
+			{ kind: "plan-revision", targetStageIds: [] },
+		],
+		[{ kind: "revision", reviewKind: "code" }, { kind: "default" }],
+		[{ kind: "unknown" }, { kind: "default" }],
+	])("projects stage purpose %j and sanitizes persisted selectors without reexecution", async (purpose, expected) => {
+		let projecting = false;
+		spawnerMocks.createPiSpawner.mockReturnValue({
+			spawn: spawnerMocks.spawn,
+			dispose: () => {
+				projecting = true;
+			},
+		});
+		const original = FileRunStore.prototype.readRunGraph;
+		const read = vi
+			.spyOn(FileRunStore.prototype, "readRunGraph")
+			.mockImplementation(async function (this: FileRunStore, ref) {
+				const persisted = await original.call(this, ref);
+				if (!projecting) return persisted;
+				return {
+					...persisted,
+					graph: {
+						...persisted.graph,
+						steps: persisted.graph.steps.map((step, index) => ({
+							...step,
+							backend: {
+								...step.backend,
+								options: {
+									...step.backend.options,
+									stage: {
+										name: index === 0 ? "planner" : "reviewer",
+										loop: false,
+										purpose,
+										requiresPlanReviewTarget: index === 0,
+										reviewTarget: {
+											source: "active-plan-review",
+											producerStageIds: ["producer", 17],
+										},
+									},
+								},
+							},
+						})),
+					},
+				};
+			});
+		try {
+			const result = await runPlannerThenReviewer();
+			expect(result.success).toBe(true);
+			expect(result.stageResults.map((r) => r.stage)).toMatchObject(
+				[true, false].map((requiresPlanReviewTarget) => ({
+					purpose: expected,
+					requiresPlanReviewTarget,
+					completionPolicy: { kind: "once" },
+					reviewTarget: {
+						source: "active-plan-review",
+						producerStageIds: ["producer"],
+					},
+				})),
+			);
+			expect(spawnerMocks.spawn).toHaveBeenCalledTimes(2);
+		} finally {
+			read.mockRestore();
+		}
+	});
+
+	test("projects completed legacy graphs without new stage fields and accepts old purposes", async () => {
+		let projection = false;
+		spawnerMocks.createPiSpawner.mockReturnValue({
+			spawn: spawnerMocks.spawn,
+			dispose: () => {
+				projection = true;
+			},
+		});
+		const readGraph = FileRunStore.prototype.readRunGraph;
+		const read = vi
+			.spyOn(FileRunStore.prototype, "readRunGraph")
+			.mockImplementation(async function (this: FileRunStore, ref) {
+				const persisted = await readGraph.call(this, ref);
+				if (!projection) return persisted;
+				return {
+					...persisted,
+					graph: {
+						...persisted.graph,
+						steps: persisted.graph.steps.map((step, index) => ({
+							...step,
+							backend: {
+								...step.backend,
+								options: {
+									...step.backend.options,
+									stage: {
+										name: index === 0 ? "planner" : "reviewer",
+										loop: false,
+									},
+									purpose:
+										index === 0
+											? undefined
+											: {
+													kind: "revision",
+													reviewKind: "plan",
+													authorIdentity: "planner",
+												},
+									topologyIndex: undefined,
+									requiresPlanReviewTarget: undefined,
+									expectedPlanSlug: undefined,
+								},
+							},
+						})),
+					},
+				};
+			});
+		try {
+			const result = await runPlannerThenReviewer();
+			expect(result.success).toBe(true);
+			expect(
+				result.stageResults.map(({ stage, success }) => ({ stage, success })),
+			).toMatchObject([
+				{
+					stage: { name: "planner", purpose: { kind: "default" } },
+					success: true,
+				},
+				{
+					stage: { name: "reviewer", purpose: { kind: "default" } },
+					success: true,
+				},
+			]);
+			expect(spawnerMocks.spawn).toHaveBeenCalledTimes(2);
+		} finally {
+			read.mockRestore();
+		}
 	});
 
 	test("stage results carry the spawn stats and the step wall time", async () => {

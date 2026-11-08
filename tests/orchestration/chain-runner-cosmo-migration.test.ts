@@ -8,6 +8,7 @@ import type {
 	ChainConfig,
 	SpawnResult,
 } from "../../lib/orchestration/types.ts";
+import { withCodingChain } from "../helpers/coding-chain.ts";
 
 const spawnerRef = vi.hoisted(() => ({
 	current: undefined as AgentSpawner | undefined,
@@ -60,19 +61,21 @@ describe("chain-runner cosmo migration (cosmo-migration)", () => {
 		spawnerRef.current = createMockSpawner();
 	});
 
-	test("adds migration hint when an unresolved cosmo stage fails", async () => {
+	test("reports an unresolved stage without content-specific migration hints", async () => {
 		const registry = new AgentRegistry([makeDef("cody", "coding")]);
-		const steps = parseChain("cosmo", registry);
+		const steps = parseChain("cosmo");
 
-		const result = await runChain(makeConfig({ steps, registry }));
+		const result = await runChain(
+			withCodingChain(makeConfig({ steps, registry })),
+		);
 
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(1);
 		expect(result.stageResults[0]?.error).toContain(
 			'Unknown agent role "cosmo"',
 		);
-		expect(result.stageResults[0]?.error).toContain("main/cosmo");
-		expect(result.stageResults[0]?.error).toContain("coding/cody");
+		expect(result.stageResults[0]?.error).not.toContain("main/cosmo");
+		expect(result.stageResults[0]?.error).not.toContain("coding/cody");
 		expect(spawnerRef.current?.spawn).not.toHaveBeenCalled();
 	});
 });

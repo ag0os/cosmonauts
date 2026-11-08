@@ -3,11 +3,13 @@ import {
 	qualityReviewPlacement,
 	qualityReviewPlanSlug,
 } from "./quality-review-launch.ts";
+import type { QualityReviewRunOptions } from "./quality-review-run.ts";
 import type { ChainConfig, ChainResult } from "./types.ts";
 
 /** Refuse a Quality Manager stage that cannot run terminally. */
 export async function misplacedQualityReviewResult(
 	config: ChainConfig,
+	hostOptions?: Pick<QualityReviewRunOptions, "execute">,
 ): Promise<ChainResult | undefined> {
 	if (
 		qualityReviewPlacement({
@@ -18,7 +20,7 @@ export async function misplacedQualityReviewResult(
 	)
 		return undefined;
 	const refusal = await launchQualityReview({
-		...config.qualityReview,
+		...hostOptions,
 		projectRoot: config.projectRoot,
 		planSlug: qualityReviewPlanSlug(config),
 		refusalReason: "Quality Manager must be a terminal sequential stage.",

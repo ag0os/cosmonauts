@@ -31,6 +31,7 @@ const createMockPi = (
 		...options,
 	});
 const authorizedRuntime = () => ({
+	workerAgent: "coding/worker",
 	agentRegistry: authorizedToolRegistry(),
 	domainContext: "coding",
 	domainResolver: {},
@@ -363,6 +364,7 @@ describe("run_driver detached mode", () => {
 			sessionId: PARENT_SESSION_ID,
 		});
 		const getRuntime = vi.fn(async () => ({
+			workerAgent: "coding/worker",
 			agentRegistry: authorizedToolRegistry(),
 			domainResolver: {},
 			domainsDir: fixture.projectRoot,
@@ -542,7 +544,7 @@ async function writeEpisodicConfig(
 function workerRuntime(
 	domainContext: string | undefined,
 	targetDomain: string,
-): Pick<CosmonautsRuntime, "agentRegistry" | "domainContext"> {
+): Pick<CosmonautsRuntime, "workerAgent" | "agentRegistry" | "domainContext"> {
 	const definitions = [...new Set(["coding", targetDomain])].map(
 		workerDefinition,
 	);
@@ -578,6 +580,7 @@ function workerRuntime(
 		},
 	} as never;
 	return {
+		workerAgent: "coding/worker",
 		agentRegistry: new AgentRegistry(definitions, { bindingResolver }),
 		domainContext,
 	};

@@ -8,6 +8,10 @@ import {
 } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+	buildStagePrompt,
+	deriveStagePromptPurpose,
+} from "../../bundled/coding/chain-prompts.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
@@ -24,17 +28,14 @@ import {
 	validatePlanReviewReport,
 	validateReviewRevisionReport,
 } from "../../lib/orchestration/review-revision.ts";
-import {
-	appendBoundReviewTarget,
-	buildStagePrompt,
-	deriveStagePromptPurpose,
-} from "../../lib/orchestration/stage-prompts.ts";
+import { appendBoundReviewTarget } from "../../lib/orchestration/stage-prompts.ts";
 import type {
 	ChainEvent,
 	ChainResult,
 	SpawnConfig,
 	SpawnResult,
 } from "../../lib/orchestration/types.ts";
+import { withCodingChain } from "../helpers/coding-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const spawnerMocks = vi.hoisted(() => ({
@@ -107,14 +108,13 @@ describe("runStart durable chain characterization", () => {
 		});
 		const projectRoot = join(temp.path, "project");
 
-		const result = await runDurableChain({
-			steps: parseChain(
-				"planner -> reviewer -> integration-verifier",
+		const result = await runDurableChain(
+			withCodingChain({
+				steps: parseChain("planner -> reviewer -> integration-verifier"),
+				projectRoot,
 				registry,
-			),
-			projectRoot,
-			registry,
-		});
+			}),
+		);
 		expect(Object.keys(result).sort()).toEqual([
 			"errors",
 			"run",
@@ -132,15 +132,18 @@ describe("runStart durable chain characterization", () => {
 			errors: [],
 			stageResults: [
 				expect.objectContaining({
-					stage: { name: "planner", loop: false },
+					stage: expect.objectContaining({ name: "planner", loop: false }),
 					summary: "planner durable summary",
 				}),
 				expect.objectContaining({
-					stage: { name: "reviewer", loop: false },
+					stage: expect.objectContaining({ name: "reviewer", loop: false }),
 					summary: "reviewer durable summary",
 				}),
 				expect.objectContaining({
-					stage: { name: "integration-verifier", loop: false },
+					stage: expect.objectContaining({
+						name: "integration-verifier",
+						loop: false,
+					}),
 					summary: "integration-verifier durable summary",
 				}),
 			],
@@ -198,7 +201,6 @@ describe("runStart durable chain characterization", () => {
 		await writePlanReviewFixture(projectRoot, target.planSlug);
 		const steps = parseChain(
 			"planner -> plan-reviewer -> planner -> task-manager",
-			registry,
 		);
 		const prompts: string[] = [];
 		configureSpawner(async (config) => {
@@ -206,11 +208,13 @@ describe("runStart durable chain characterization", () => {
 			return reviewGateSpawn(config, target.planSlug);
 		});
 
-		const result = await runDurableChain({
-			steps,
-			projectRoot,
-			registry,
-		});
+		const result = await runDurableChain(
+			withCodingChain({
+				steps,
+				projectRoot,
+				registry,
+			}),
+		);
 
 		expect(result.success).toBe(true);
 		expect(prompts).toHaveLength(4);
@@ -244,15 +248,16 @@ describe("runStart durable chain characterization", () => {
 			return reviewGateSpawn(config, "durable-review-gate-success");
 		});
 
-		const successful = await runDurableChain({
-			steps: parseChain(
-				"planner -> plan-reviewer -> planner -> task-manager",
+		const successful = await runDurableChain(
+			withCodingChain({
+				steps: parseChain(
+					"planner -> plan-reviewer -> planner -> task-manager",
+				),
+				projectRoot: successfulRoot,
+				planSlug: "durable-review-gate-success",
 				registry,
-			),
-			projectRoot: successfulRoot,
-			planSlug: "durable-review-gate-success",
-			registry,
-		});
+			}),
+		);
 
 		expect(successful.success).toBe(true);
 		expect(successfulSpawns).toEqual([
@@ -335,12 +340,14 @@ describe("runStart durable chain characterization", () => {
 				return reviewGateSpawn(config, slug);
 			});
 
-			const result = await runDurableChain({
-				steps: parseChain(expression, registry),
-				projectRoot,
-				planSlug: slug,
-				registry,
-			});
+			const result = await runDurableChain(
+				withCodingChain({
+					steps: parseChain(expression),
+					projectRoot,
+					planSlug: slug,
+					registry,
+				}),
+			);
 
 			expect(result.success, name).toBe(false);
 			expect(result.errors[0], name).toMatch(/Plan review target/u);
@@ -389,15 +396,16 @@ describe("runStart durable chain characterization", () => {
 				}
 				return reviewGateSpawn(config, slug);
 			});
-			const result = await runDurableChain({
-				steps: parseChain(
-					"planner -> plan-reviewer -> planner -> task-manager",
+			const result = await runDurableChain(
+				withCodingChain({
+					steps: parseChain(
+						"planner -> plan-reviewer -> planner -> task-manager",
+					),
+					projectRoot,
+					planSlug: slug,
 					registry,
-				),
-				projectRoot,
-				planSlug: slug,
-				registry,
-			});
+				}),
+			);
 			expect(result.success, unaddressed).toBe(false);
 			expect(spawns, unaddressed).not.toContain("task-manager");
 			const persisted = await latestChainStore(projectRoot);
@@ -714,14 +722,13 @@ describe("runStart durable chain characterization", () => {
 		await writeEpisodicConfig(successRoot, true);
 		configureSpawner(async (config) => successfulSpawn(config));
 
-		const success = await runDurableChain({
-			steps: parseChain(
-				"[planner, reviewer] -> integration-verifier",
+		const success = await runDurableChain(
+			withCodingChain({
+				steps: parseChain("[planner, reviewer] -> integration-verifier"),
+				projectRoot: successRoot,
 				registry,
-			),
-			projectRoot: successRoot,
-			registry,
-		});
+			}),
+		);
 		const successEpisodes = await readProjectChainEpisodes(successRoot);
 		expect(successEpisodes).toHaveLength(2);
 		expect(success.run?.runId).toMatch(/^chain-/u);
@@ -791,11 +798,13 @@ describe("runStart durable chain characterization", () => {
 					}
 				: successfulSpawn(config),
 		);
-		const failure = await runDurableChain({
-			steps: parseChain("planner -> reviewer", registry),
-			projectRoot: failureRoot,
-			registry,
-		});
+		const failure = await runDurableChain(
+			withCodingChain({
+				steps: parseChain("planner -> reviewer"),
+				projectRoot: failureRoot,
+				registry,
+			}),
+		);
 		const failureEpisodes = await readProjectChainEpisodes(failureRoot);
 		expect(failure.success).toBe(false);
 		expect(failure.errors).toEqual(["review failed"]);
@@ -817,15 +826,17 @@ describe("runStart durable chain characterization", () => {
 		await writeFile(join(captureFailureRoot, "memory"), "path collision");
 		const warnings: unknown[] = [];
 		configureSpawner(async (config) => successfulSpawn(config));
-		const withCaptureFailure = await runDurableChain({
-			steps: parseChain("planner -> reviewer", registry),
-			projectRoot: captureFailureRoot,
-			registry,
-			reportEpisodeWarning: async (warning) => {
-				await Promise.resolve();
-				warnings.push(warning);
-			},
-		});
+		const withCaptureFailure = await runDurableChain(
+			withCodingChain({
+				steps: parseChain("planner -> reviewer"),
+				projectRoot: captureFailureRoot,
+				registry,
+				reportEpisodeWarning: async (warning) => {
+					await Promise.resolve();
+					warnings.push(warning);
+				},
+			}),
+		);
 		expect(withCaptureFailure.success).toBe(true);
 		expect(withCaptureFailure.stageResults).toHaveLength(2);
 		expect(withCaptureFailure.errors).toEqual([]);
@@ -1051,12 +1062,14 @@ async function runWithActivityHook(options: {
 			return stored;
 		});
 	try {
-		return await runDurableChain({
-			steps: parseChain(options.expression, registry),
-			projectRoot: options.projectRoot,
-			planSlug: basename(options.projectRoot),
-			registry,
-		});
+		return await runDurableChain(
+			withCodingChain({
+				steps: parseChain(options.expression),
+				projectRoot: options.projectRoot,
+				planSlug: basename(options.projectRoot),
+				registry,
+			}),
+		);
 	} finally {
 		appendSpy.mockRestore();
 	}
@@ -1108,19 +1121,23 @@ async function captureDisabledBaselines(
 	files: Record<string, string>;
 }> {
 	const inlineEvents: ChainEvent[] = [];
-	const inlineResult = await runChain({
-		steps: parseChain("planner -> reviewer", registry),
-		projectRoot,
-		registry,
-		onEvent: (event) => inlineEvents.push(event),
-	});
+	const inlineResult = await runChain(
+		withCodingChain({
+			steps: parseChain("planner -> reviewer"),
+			projectRoot,
+			registry,
+			onEvent: (event) => inlineEvents.push(event),
+		}),
+	);
 	const durableEvents: ChainEvent[] = [];
-	const durableResult = await runDurableChain({
-		steps: parseChain("planner -> reviewer", registry),
-		projectRoot,
-		registry,
-		onEvent: (event) => durableEvents.push(event),
-	});
+	const durableResult = await runDurableChain(
+		withCodingChain({
+			steps: parseChain("planner -> reviewer"),
+			projectRoot,
+			registry,
+			onEvent: (event) => durableEvents.push(event),
+		}),
+	);
 
 	return {
 		inline: { result: inlineResult, events: inlineEvents },

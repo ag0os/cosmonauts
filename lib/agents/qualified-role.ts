@@ -9,8 +9,6 @@
  * An "unqualified" role is just the bare id (e.g. `"worker"`).
  */
 
-import type { ModelConfig } from "../orchestration/types.ts";
-
 // ============================================================================
 // Qualify / Unqualify
 // ============================================================================
@@ -43,37 +41,4 @@ export function splitRole(qualified: string): {
 		domain: qualified.slice(0, slashIndex),
 		id: qualified.slice(slashIndex + 1),
 	};
-}
-
-// ============================================================================
-// Config-key mapping
-// ============================================================================
-
-/**
- * Map a role string (qualified or unqualified) to its corresponding
- * {@link ModelConfig} key.  Returns `undefined` for unknown roles.
- */
-export function roleToConfigKey(
-	role: string,
-): keyof Omit<ModelConfig, "default"> | undefined {
-	switch (unqualifyRole(role)) {
-		case "planner":
-			return "planner";
-		case "task-manager":
-			return "taskManager";
-		case "coordinator":
-			return "coordinator";
-		case "worker":
-			return "worker";
-		case "quality-manager":
-			return "qualityManager";
-		case "integration-verifier":
-			return "integrationVerifier";
-		case "reviewer":
-			return "reviewer";
-		case "fixer":
-			return "fixer";
-		default:
-			return undefined;
-	}
 }

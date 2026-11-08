@@ -245,7 +245,7 @@ describe("chainEventToProgressLine — agent_tool_use", () => {
 				sessionId: "s1",
 			},
 		};
-		expect(chainEventToProgressLine(event)).toBe("  🔧 Worker: read auth.ts");
+		expect(chainEventToProgressLine(event)).toBe("  🔧 worker: read auth.ts");
 	});
 
 	test("returns undefined for tool_execution_end", () => {
@@ -264,7 +264,7 @@ describe("chainEventToProgressLine — agent_tool_use", () => {
 		expect(chainEventToProgressLine(event)).toBeUndefined();
 	});
 
-	test("uses role label for known roles", () => {
+	test("renders the declared id for every role", () => {
 		const event: ChainEvent = {
 			type: "agent_tool_use",
 			role: "quality-manager",
@@ -278,7 +278,7 @@ describe("chainEventToProgressLine — agent_tool_use", () => {
 			},
 		};
 		expect(chainEventToProgressLine(event)).toBe(
-			"  🔧 Quality Manager: bash npm test",
+			"  🔧 quality-manager: bash npm test",
 		);
 	});
 
@@ -294,6 +294,6 @@ describe("chainEventToProgressLine — agent_tool_use", () => {
 				sessionId: "s1",
 			},
 		};
-		expect(chainEventToProgressLine(event)).toBe("  🔧 Worker: read");
+		expect(chainEventToProgressLine(event)).toBe("  🔧 worker: read");
 	});
 });

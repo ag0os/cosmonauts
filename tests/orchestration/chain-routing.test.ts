@@ -1,15 +1,14 @@
-import { readFile } from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import chains from "../../bundled/coding/chains.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
-import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { injectUserPrompt } from "../../lib/orchestration/chain-steps.ts";
 import {
 	compileChainToGraph,
 	shouldRunChainInline,
 } from "../../lib/orchestration/durable-chain-compiler.ts";
 import type { ChainStep } from "../../lib/orchestration/types.ts";
+import { parseCodingChain, withCodingChain } from "../helpers/coding-chain.ts";
 
 const registry = new AgentRegistry([
 	agent("planner", false),
@@ -25,7 +24,7 @@ const registry = new AgentRegistry([
 describe("chain durable routing", () => {
 	test("routes shipped QM-ending named chains through their supported runner", () => {
 		for (const chain of chains) {
-			const steps = parseChain(chain.chain, registry);
+			const steps = parseCodingChain(chain.chain ?? "", registry);
 			expect(shouldRunChainInline(steps)).toBe(chain.name !== "verify");
 			expect(steps.at(-1)).toMatchObject({ name: "quality-manager" });
 		}
@@ -36,7 +35,7 @@ describe("chain durable routing", () => {
 		const runChain = vi.fn();
 
 		const loopRoute = routeChainForTest({
-			steps: parseChain("planner -> coordinator", registry),
+			steps: parseCodingChain("planner -> coordinator", registry),
 			prompt: "Ship unsupported chain semantics inline.",
 			runChain,
 			durableGraphWriter,
@@ -45,7 +44,10 @@ describe("chain durable routing", () => {
 		expect(runChain).toHaveBeenCalledTimes(1);
 		expect(durableGraphWriter).not.toHaveBeenCalled();
 
-		const completionCheckSteps = parseChain("planner -> reviewer", registry);
+		const completionCheckSteps = parseCodingChain(
+			"planner -> reviewer",
+			registry,
+		);
 		const completionStage = completionCheckSteps[1];
 		if (!completionStage || "kind" in completionStage) {
 			throw new Error("expected a sequential completion-check stage");
@@ -63,7 +65,7 @@ describe("chain durable routing", () => {
 		expect(durableGraphWriter).not.toHaveBeenCalled();
 
 		const completionLabelRoute = routeChainForTest({
-			steps: parseChain("planner -> reviewer", registry),
+			steps: parseCodingChain("planner -> reviewer", registry),
 			prompt: "Use caller completion labels inline.",
 			completionLabel: "plan:durable-frontend-migration",
 			runChain,
@@ -79,7 +81,7 @@ describe("chain durable routing", () => {
 			"planner -> reviewer[2] -> quality-manager",
 		]) {
 			const route = routeChainForTest({
-				steps: parseChain(expression, registry),
+				steps: parseCodingChain(expression, registry),
 				prompt: "Keep supported loop-free chains durable.",
 				runChain,
 				durableGraphWriter,
@@ -93,16 +95,21 @@ describe("chain durable routing", () => {
 			durableGraphWriter.mock.calls.map(([graph]) => graph.steps.length),
 		).toEqual([3, 4, 4]);
 
-		const compilerSource = await readFile(
-			new URL(
-				"../../lib/orchestration/durable-chain-compiler.ts",
-				import.meta.url,
-			),
-			"utf-8",
-		);
-		expect(compilerSource).toContain(
-			"const hasLoop = steps.some((s) => !isParallelGroupStep(s) && s.loop);",
-		);
+		for (const steps of [
+			parseCodingChain("coordinator", registry),
+			completionCheckSteps,
+		]) {
+			expect(() =>
+				compileChainToGraph(
+					withCodingChain({
+						runId: "refused-inline",
+						steps,
+						projectRoot: "/tmp/cosmonauts/project",
+						registry,
+					}),
+				),
+			).toThrow("Cannot compile inline-only chain steps.");
+		}
 	});
 });
 
@@ -126,13 +133,15 @@ function routeChainForTest(options: {
 		return "inline";
 	}
 
-	const compiled = compileChainToGraph({
-		runId: "run-chain-routing-test",
-		steps: options.steps,
-		projectRoot: "/tmp/cosmonauts/project",
-		registry,
-		completionLabel: options.completionLabel,
-	});
+	const compiled = compileChainToGraph(
+		withCodingChain({
+			runId: "run-chain-routing-test",
+			steps: options.steps,
+			projectRoot: "/tmp/cosmonauts/project",
+			registry,
+			completionLabel: options.completionLabel,
+		}),
+	);
 	options.durableGraphWriter(compiled.graph);
 	return "durable";
 }

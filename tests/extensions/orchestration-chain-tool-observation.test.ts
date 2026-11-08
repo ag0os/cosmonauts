@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import { executeChainExpression } from "../../cli/chain-execution.ts";
 import { registerChainTool } from "../../lib/extensions/orchestration/chain-tool.ts";
 import { recordEpisode } from "../../lib/memory/episode.ts";
@@ -76,7 +77,7 @@ describe("chain_run observation surface", () => {
 		expect(response.details.result).toEqual(durableResult);
 		expect(chainMocks.runDurableChain).toHaveBeenCalledWith(
 			expect.objectContaining({
-				steps: durableSteps,
+				steps: durableSteps.map((stage) => expect.objectContaining(stage)),
 				projectRoot: PROJECT_ROOT,
 			}) satisfies Partial<ChainConfig>,
 		);
@@ -199,6 +200,8 @@ describe("chain_run observation surface", () => {
 function runtimeFor() {
 	return async () =>
 		({
+			chainAdapter: codingChainAdapter,
+			workerAgent: "coding/worker",
 			agentRegistry: authorizedToolRegistry(["planner", "coordinator"]),
 			domainResolver: {},
 			domainsDir: PROJECT_ROOT,

@@ -34,6 +34,7 @@ describe("run_driver caller authority", () => {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/reviewer -->",
 		});
 		const runtime = {
+			workerAgent: "coding/worker",
 			agentRegistry: new AgentRegistry([agent("reviewer"), agent("worker")]),
 			domainContext: "coding",
 		} as CosmonautsRuntime;
@@ -46,7 +47,9 @@ describe("run_driver caller authority", () => {
 			});
 			expect(result).toMatchObject({
 				content: [
-					{ text: "run_driver denied: coding/reviewer cannot start worker" },
+					{
+						text: "run_driver denied: coding/reviewer cannot start coding/worker",
+					},
 				],
 			});
 			expect(init).not.toHaveBeenCalled();
@@ -62,18 +65,19 @@ describe("run_driver caller authority", () => {
 				[
 					"coding/missing",
 					[agent("worker")],
-					"unknown caller coding/missing cannot start worker",
+					"unknown caller coding/missing cannot start coding/worker",
 				],
 				[
 					"coding/reviewer",
 					[agent("reviewer")],
-					"coding/reviewer cannot start worker: unknown target",
+					"coding/reviewer cannot start coding/worker: unknown target",
 				],
 			] as const) {
 				const pi = createMockPi(temp.path, {
 					systemPrompt: `<!-- COSMONAUTS_AGENT_ID:${callerRole} -->`,
 				});
 				const runtime = {
+					workerAgent: "coding/worker",
 					agentRegistry: new AgentRegistry(definitions),
 					domainContext: "coding",
 				} as CosmonautsRuntime;
@@ -94,6 +98,7 @@ describe("run_driver caller authority", () => {
 
 	test("allows a listed lead and denies a markerless tool invocation", async () => {
 		const runtime = {
+			workerAgent: "coding/worker",
 			agentRegistry: new AgentRegistry([
 				agent("lead", ["worker"]),
 				agent("worker"),

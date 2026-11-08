@@ -913,6 +913,47 @@ describe("cosmonauts run drive compat run", () => {
 		expect(firstRunInlineSpec().runId).toBe("run-previous");
 	});
 
+	test("live subagent execution resolves the declared worker even with capture disabled", async () => {
+		await setupFixture(1);
+		await writeEpisodicConfig(process.cwd(), false);
+		const runtime = workerRuntime("coding", "live-coding", []);
+		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue(
+			runtime as CosmonautsRuntime,
+		);
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--backend",
+			"cosmonauts-subagent",
+			"--mode",
+			"inline",
+		]);
+		expect(backendMocks.createCosmonautsSubagentBackend).toHaveBeenCalledWith(
+			expect.objectContaining({
+				workerResolution: expect.objectContaining({
+					qualifiedId: "live-coding/worker",
+				}),
+			}),
+		);
+	});
+
+	test("external resume skips unavailable frozen capture without minting fallback provenance", async () => {
+		const fixture = await setupFixture(2);
+		const taskIds = fixture.tasks.map((task) => task.id);
+		await writeEpisodicConfig(process.cwd(), true);
+		await writeResumeRun(
+			taskIds,
+			[{ type: "task_done", taskId: taskIds[0] ?? "TASK-001" }],
+			{ episodeSource: "missing/worker", episodeAttemptId: "attempt-old" },
+		);
+		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue(
+			workerRuntime("coding", "live-coding", []) as CosmonautsRuntime,
+		);
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+		expect(firstRunInlineSpec()).not.toHaveProperty("episodeSource");
+		expect(firstRunInlineSpec()).not.toHaveProperty("episodeAttemptId");
+	});
+
 	test("enabled resume preserves the frozen source and mints only when worker execution remains", async () => {
 		const fixture = await setupFixture(2);
 		const taskIds = fixture.tasks.map((task) => task.id);
@@ -925,7 +966,13 @@ describe("cosmonauts run drive compat run", () => {
 				episodeAttemptId: "attempt-original",
 			},
 		);
-		const runtimeCreate = vi.spyOn(CosmonautsRuntime, "create");
+		const runtimeCreate = vi
+			.spyOn(CosmonautsRuntime, "create")
+			.mockResolvedValue(
+				workerRuntime("coding", "live-coding", [
+					workerDefinition("project-coding"),
+				]) as CosmonautsRuntime,
+			);
 
 		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
 
@@ -934,7 +981,7 @@ describe("cosmonauts run drive compat run", () => {
 		expect(spec.episodeAttemptId).toMatch(/^attempt-/u);
 		expect(spec.episodeAttemptId).not.toBe("attempt-original");
 		expect(spec.remainingTaskIds).toEqual(taskIds.slice(1));
-		expect(runtimeCreate).not.toHaveBeenCalled();
+		expect(runtimeCreate).toHaveBeenCalledTimes(1);
 	});
 
 	test("trusts only frozen worker agent ids for execution and preserves reconcile provenance", async () => {
@@ -961,23 +1008,11 @@ describe("cosmonauts run drive compat run", () => {
 			episodeSource: "project-coding/planner",
 			episodeAttemptId: "attempt-arbitrary-agent",
 		});
-		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
-
-		const arbitraryAgentSpec = firstRunInlineSpec();
-		expect(arbitraryAgentSpec.episodeSource).toBe("live-coding/worker");
-		expect(arbitraryAgentSpec.episodeAttemptId).toMatch(/^attempt-/u);
-		expect(arbitraryAgentSpec.episodeAttemptId).not.toBe(
-			"attempt-arbitrary-agent",
-		);
-		expect(
-			backendMocks.createCosmonautsSubagentBackend,
-		).toHaveBeenLastCalledWith(
-			expect.objectContaining({
-				workerResolution: expect.objectContaining({
-					qualifiedId: "live-coding/worker",
-				}),
-			}),
-		);
+		await expect(
+			parseDrive(["--plan", PLAN, "--resume", "run-previous"]),
+		).rejects.toThrow("no fallback is permitted");
+		expect(backendMocks.createCosmonautsSubagentBackend).not.toHaveBeenCalled();
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
 
 		await writeResumeRun(taskIds, firstTaskDone, {
 			backendName: "cosmonauts-subagent",
@@ -2011,6 +2046,7 @@ function workerRuntime(
 	additionalDefinitions: AgentDefinition[] = [],
 ): Pick<
 	CosmonautsRuntime,
+	| "workerAgent"
 	| "agentRegistry"
 	| "domainContext"
 	| "domainResolver"
@@ -2043,6 +2079,7 @@ function workerRuntime(
 		},
 	} as never;
 	return {
+		workerAgent: "coding/worker",
 		agentRegistry: new AgentRegistry(definitions, { bindingResolver }),
 		domainContext,
 		domainResolver: {} as never,

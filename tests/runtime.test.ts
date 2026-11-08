@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
 import { DomainValidationError } from "../lib/domains/validator.ts";
 import { isSubagentAllowed } from "../lib/extensions/orchestration/authorization.ts";
-import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import { compileChainToGraph } from "../lib/orchestration/durable-chain-compiler.ts";
 import { CosmonautsRuntime, DomainBindingTargetError } from "../lib/runtime.ts";
+import { parseCodingChain, withCodingChain } from "./helpers/coding-chain.ts";
 import { useTempDir } from "./helpers/fs.ts";
 import { writeSyntheticInstallableDomainPackage } from "./helpers/packages.ts";
 
@@ -174,6 +174,65 @@ async function setupNamedDomain(
 // ============================================================================
 // Tests
 // ============================================================================
+
+describe("consumer chain runtime inputs", () => {
+	async function domainsWithAdapters(ids: string[]) {
+		const domainsDir = join(tmp.path, "domains");
+		await mkdir(domainsDir, { recursive: true });
+		await setupSharedDomain(domainsDir);
+		for (const id of ids) {
+			await setupNamedDomain(domainsDir, id, []);
+			await writeDomainManifest(
+				join(domainsDir, id),
+				id,
+				`, chainAdapter: { defaultModel: "${id}/adapter" }, workerAgent: "${id}/assembler", defaultModel: "${id}/manifest"`,
+			);
+		}
+		return domainsDir;
+	}
+
+	it("uses the selected consumer when multiple adapters are present", async () => {
+		const runtime = await CosmonautsRuntime.create({
+			builtinDomainsDir: await domainsWithAdapters(["studio", "vendor"]),
+			projectRoot: tmp.path,
+			domainOverride: "vendor",
+		});
+		expect(runtime.chainAdapter?.defaultModel).toBe("vendor/adapter");
+		expect(runtime.defaultModel).toBe("vendor/manifest");
+		expect(runtime.workerAgent).toBe("vendor/assembler");
+	});
+
+	it("selects a sole active adapter and lets explicit host inputs override it", async () => {
+		const builtinDomainsDir = await domainsWithAdapters(["studio"]);
+		const defaults = await CosmonautsRuntime.create({
+			builtinDomainsDir,
+			projectRoot: tmp.path,
+		});
+		expect(defaults.chainAdapter?.defaultModel).toBe("studio/adapter");
+		expect(defaults.workerAgent).toBe("studio/assembler");
+		const chainAdapter = { defaultModel: "host/adapter" };
+		const explicit = await CosmonautsRuntime.create({
+			builtinDomainsDir,
+			projectRoot: tmp.path,
+			chainAdapter,
+			defaultModel: "host/model",
+			workerAgent: "host/dispatcher",
+		});
+		expect(explicit.chainAdapter).toBe(chainAdapter);
+		expect(explicit.defaultModel).toBe("host/model");
+		expect(explicit.workerAgent).toBe("host/dispatcher");
+	});
+
+	it("does not infer a consumer when multiple adapters lack a selected domain", async () => {
+		const runtime = await CosmonautsRuntime.create({
+			builtinDomainsDir: await domainsWithAdapters(["studio", "vendor"]),
+			projectRoot: tmp.path,
+		});
+		expect(runtime.chainAdapter).toBeUndefined();
+		expect(runtime.workerAgent).toBeUndefined();
+		expect(runtime.defaultModel).toBeUndefined();
+	});
+});
 
 describe("CosmonautsRuntime", () => {
 	describe("create()", () => {
@@ -790,7 +849,7 @@ describe("CosmonautsRuntime", () => {
 			expect(listedIds).toEqual(expect.arrayContaining(["cody", "worker"]));
 			expect(listedIds).not.toContain("placeholder");
 
-			const steps = parseChain(
+			const steps = parseCodingChain(
 				"worker",
 				runtime.agentRegistry,
 				runtime.domainContext,
@@ -819,13 +878,15 @@ describe("CosmonautsRuntime", () => {
 				},
 			});
 
-			const compiled = compileChainToGraph({
-				runId: "chain-binding-test",
-				steps,
-				projectRoot: tmp.path,
-				registry: runtime.agentRegistry,
-				domainContext: runtime.domainContext,
-			});
+			const compiled = compileChainToGraph(
+				withCodingChain({
+					runId: "chain-binding-test",
+					steps,
+					projectRoot: tmp.path,
+					registry: runtime.agentRegistry,
+					domainContext: runtime.domainContext,
+				}),
+			);
 			const backendOptions = compiled.graph.steps[0]?.backend.options as
 				| {
 						stage: {

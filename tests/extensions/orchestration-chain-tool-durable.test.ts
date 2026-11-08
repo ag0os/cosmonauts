@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
@@ -320,8 +321,8 @@ describe("chain_run durable tool routing", () => {
 			1,
 			expect.objectContaining({
 				steps: [
-					{ name: "planner", loop: false },
-					{ name: "coordinator", loop: true },
+					expect.objectContaining({ name: "planner", loop: false }),
+					expect.objectContaining({ name: "coordinator", loop: true }),
 				],
 			}),
 		);
@@ -330,8 +331,8 @@ describe("chain_run durable tool routing", () => {
 			expect.objectContaining({
 				completionLabel: "plan:durable-frontend-migration",
 				steps: [
-					{ name: "planner", loop: false },
-					{ name: "reviewer", loop: false },
+					expect.objectContaining({ name: "planner", loop: false }),
+					expect.objectContaining({ name: "reviewer", loop: false }),
 				],
 			}),
 		);
@@ -396,6 +397,8 @@ async function callChainTool(
 
 function runtime(): CosmonautsRuntime {
 	return {
+		chainAdapter: codingChainAdapter,
+		workerAgent: "coding/worker",
 		agentRegistry: registry,
 		domainContext: "coding",
 		projectSkills: ["testing"],

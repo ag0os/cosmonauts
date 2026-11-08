@@ -146,7 +146,7 @@ describe("cosmonauts run", () => {
 		expect(chainMocks.executeChainExpression).toHaveBeenCalledWith({
 			runtime,
 			cwd: temp.path,
-			chainExpr: "quality-manager",
+			chainExpr: "verify",
 			options: {
 				...runtimeOptions,
 				prompt: "check this",
@@ -496,7 +496,7 @@ describe("cosmonauts run", () => {
 		expect(chainMocks.executeChainExpression).toHaveBeenCalledWith({
 			runtime,
 			cwd: temp.path,
-			chainExpr: "ruby-planner",
+			chainExpr: "ruby-chain",
 			options: {
 				piFlags: {},
 				prompt: "check ruby",
@@ -542,6 +542,30 @@ describe("cosmonauts run", () => {
 		expect(chainMocks.executeChainExpression).not.toHaveBeenCalled();
 	});
 
+	test("lists consumer stages-form chains as readable topology", async () => {
+		const runtime = runtimeFixture([
+			{
+				name: "assemble",
+				description: "Consumer",
+				stages: [
+					{ name: "assembler" },
+					{
+						kind: "parallel",
+						stages: [{ name: "critic" }, { name: "editor" }],
+						syntax: { kind: "group" },
+					},
+				],
+			},
+		]);
+		await parseRun(["chain", "list"], { runtime });
+		expect(JSON.parse(output.stdout())).toEqual([
+			{
+				name: "assemble",
+				description: "Consumer",
+				chain: "assembler -> [critic, editor]",
+			},
+		]);
+	});
 	test("chain list is reserved while --name list executes a project chain", async () => {
 		await mkdir(join(temp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
@@ -588,7 +612,7 @@ describe("cosmonauts run", () => {
 		expect(chainMocks.executeChainExpression).toHaveBeenCalledWith({
 			runtime,
 			cwd: temp.path,
-			chainExpr: "planner -> reviewer",
+			chainExpr: "list",
 			options: {
 				piFlags: {},
 				prompt: "do it",
@@ -603,6 +627,16 @@ describe("cosmonauts run", () => {
 			},
 			result: { success: true },
 		});
+	});
+
+	test("resolves a named stages declaration and passes the collection name to execution", async () => {
+		const runtime = runtimeFixture([
+			{ name: "declared", description: "Stages", stages: [{ name: "scribe" }] },
+		]);
+		await parseRun(["chain", "declared"], { runtime });
+		expect(chainMocks.executeChainExpression).toHaveBeenCalledWith(
+			expect.objectContaining({ runtime, chainExpr: "declared" }),
+		);
 	});
 
 	async function parseRun(

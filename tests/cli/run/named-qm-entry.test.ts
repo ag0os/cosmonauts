@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
+import { codingChainAdapter } from "../../../bundled/coding/chain-adapter.ts";
 import chains from "../../../bundled/coding/chains.ts";
 import { executeChainExpression } from "../../../cli/chain-execution.ts";
 import { createRunProgram } from "../../../cli/run/subcommand.ts";
@@ -87,6 +88,7 @@ test.each([
 		agent("fixer"),
 	]);
 	const runtime = {
+		chainAdapter: codingChainAdapter,
 		chains,
 		domains: [],
 		domainsDir: join(projectRoot, "domains"),
@@ -112,7 +114,7 @@ test.each([
 			executeChain: (input) =>
 				executeChainExpression({
 					...input,
-					qualityReview: { execute: review },
+					terminalGateContext: { execute: review },
 				}),
 		});
 		program.exitOverride();
@@ -127,7 +129,7 @@ test.each([
 				(stage: { stage: { name: string } }) => stage.stage.name,
 			),
 		).toEqual(
-			chains.find((candidate) => candidate.name === name)?.chain.split(" -> "),
+			chains.find((candidate) => candidate.name === name)?.chain?.split(" -> "),
 		);
 		expect(result.stageResults.at(-1).stage.name).toBe("quality-manager");
 		expect(result.stageResults.at(-1).artifacts[0].id).toBe("qm/final.md");

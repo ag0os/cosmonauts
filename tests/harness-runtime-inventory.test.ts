@@ -118,3 +118,34 @@ describe("harness runtime inventory characterization", () => {
 		]);
 	});
 });
+
+test("inventory formats consumer declared stages without a DSL string", async () => {
+	const runtime = {
+		projectConfig: {},
+		domains: [],
+		chains: [
+			{
+				name: "declared",
+				description: "Stages",
+				stages: [
+					{ name: "scribe" },
+					{
+						kind: "parallel",
+						syntax: { kind: "group" },
+						stages: [{ name: "critic" }, { name: "editor" }],
+					},
+				],
+			},
+		],
+	} as unknown as CosmonautsRuntime;
+	expect(
+		(await composeHarnessRuntimeInventory({ projectRoot: tmp.path, runtime }))
+			.chains,
+	).toEqual([
+		{
+			name: "declared",
+			description: "Stages",
+			expression: "scribe -> [critic, editor]",
+		},
+	]);
+});

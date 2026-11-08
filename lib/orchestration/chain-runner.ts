@@ -1,3 +1,5 @@
+import { normalizeChain, refuseNormalization } from "./chain-normalization.ts";
+import { buildTerminalGateContext } from "./terminal-gate.ts";
 /**
  * Chain runner — the main orchestration engine.
  * Executes a chain of agent stages sequentially, supporting both
@@ -6,8 +8,6 @@
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TaskManager } from "../tasks/task-manager.ts";
-import { isTaskClosed } from "../tasks/task-types.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
 import {
 	extractAssistantText,
@@ -23,13 +23,8 @@ import {
 	emptySpawnStats,
 } from "./chain-stats.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
-import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
-import { misplacedQualityReviewResult } from "./quality-review-chain.ts";
-import {
-	launchQualityReview,
-	qualityReviewPlacement,
-	qualityReviewPlanSlug,
-} from "./quality-review-launch.ts";
+import type { getThinkingForRole } from "./model-resolution.ts";
+
 import {
 	assessTaskManagerReviewGate,
 	formatReviewRoundBlockError,
@@ -42,9 +37,6 @@ import {
 import type { StagePromptPurpose } from "./stage-prompts.ts";
 import {
 	appendBoundReviewTarget,
-	buildStagePrompt,
-	deriveStagePromptPurpose,
-	requiresPlanReviewTarget,
 	resolvePlanSlug,
 	shouldAppendBoundReviewTarget,
 } from "./stage-prompts.ts";
@@ -65,7 +57,7 @@ import type {
 } from "./types.ts";
 
 export { injectUserPrompt } from "./chain-steps.ts";
-export { derivePlanSlug, getDefaultStagePrompt } from "./stage-prompts.ts";
+export { derivePlanSlug } from "./stage-prompts.ts";
 
 // ============================================================================
 // Defaults
@@ -91,140 +83,6 @@ function resolveDomainsDir(config: ChainConfig): string {
 // ============================================================================
 // Default Completion Check
 // ============================================================================
-
-/**
- * Create a completion check that returns true when all tasks in the
- * project are Done or Cancelled.
- */
-export function createDefaultCompletionCheck(
-	projectRoot: string,
-	label?: string,
-): () => Promise<boolean> {
-	return async (): Promise<boolean> => {
-		const state = await evaluateDefaultCompletionState(projectRoot, label);
-		return state.status === "complete";
-	};
-}
-
-type DefaultCompletionState =
-	| { status: "complete" }
-	| { status: "pending" }
-	| { status: "terminal"; reason: string };
-
-/**
- * Evaluate completion for the default coordinator loop.
- *
- * Terminal states let loop stages exit immediately instead of burning
- * iterations when there is no actionable work left.
- */
-async function evaluateDefaultCompletionState(
-	projectRoot: string,
-	label?: string,
-): Promise<DefaultCompletionState> {
-	const tm = new TaskManager(projectRoot);
-	const tasks = await tm.listTasks(label ? { label } : undefined);
-
-	if (tasks.length === 0) {
-		return {
-			status: "terminal",
-			reason: label
-				? `No tasks found for completion label "${label}"`
-				: "No tasks found for completion check",
-		};
-	}
-
-	if (tasks.every(taskCompleteForChain)) {
-		return { status: "complete" };
-	}
-
-	if (tasks.every((task) => task.status === "Blocked")) {
-		return {
-			status: "terminal",
-			reason: label
-				? `All tasks for completion label "${label}" are Blocked`
-				: "All tasks are Blocked",
-		};
-	}
-
-	// A scope whose tasks are all closed (Done or Cancelled) but not yet
-	// complete has Done tasks with unchecked criteria; it stays pending, since
-	// re-invoking the coordinator is how those criteria get finished.
-	const noActionableDetails = await describeNoActionableTasks(tm, tasks);
-	if (
-		tasks.some((task) => !isTaskClosed(task.status)) &&
-		noActionableDetails !== undefined
-	) {
-		const summary = label
-			? `No actionable tasks for completion label "${label}": none is In Progress or To Do with every dependency Done`
-			: "No actionable tasks: none is In Progress or To Do with every dependency Done";
-		return {
-			status: "terminal",
-			reason: `${summary}. ${noActionableDetails}`,
-		};
-	}
-
-	return { status: "pending" };
-}
-
-function taskCompleteForChain(
-	task: Awaited<ReturnType<TaskManager["listTasks"]>>[number],
-): boolean {
-	return (
-		isTaskClosed(task.status) &&
-		(task.status === "Cancelled" || taskAcceptanceCriteriaComplete(task))
-	);
-}
-
-/**
- * Only an In Progress task, or a To Do task whose dependencies are all Done,
- * can move the scope forward. A Cancelled dependency never becomes Done.
- */
-async function describeNoActionableTasks(
-	tm: TaskManager,
-	tasks: Awaited<ReturnType<TaskManager["listTasks"]>>,
-): Promise<string | undefined> {
-	if (tasks.some((task) => task.status === "In Progress")) return undefined;
-	const todo = tasks.filter((task) => task.status === "To Do");
-	const statuses = await tm.getTaskStatuses(
-		todo.flatMap((task) => task.dependencies),
-	);
-	if (
-		todo.some((task) =>
-			task.dependencies.every(
-				(id) => statuses.get(id.toUpperCase()) === "Done",
-			),
-		)
-	) {
-		return undefined;
-	}
-
-	const details: string[] = [];
-	const stranded = todo.map((task) => {
-		const unsatisfied = task.dependencies
-			.filter((id) => statuses.get(id.toUpperCase()) !== "Done")
-			.map((id) => `${id}: ${statuses.get(id.toUpperCase()) ?? "missing"}`);
-		return `${task.id} (${unsatisfied.join(", ")})`;
-	});
-	if (stranded.length > 0) {
-		details.push(`Stranded: ${stranded.join("; ")}`);
-	}
-	const blocked = tasks
-		.filter((task) => task.status === "Blocked")
-		.map((task) => task.id);
-	if (blocked.length > 0) {
-		details.push(`Blocked: ${blocked.join(", ")}`);
-	}
-	return details.join(". ");
-}
-
-function taskAcceptanceCriteriaComplete(
-	task: Awaited<ReturnType<TaskManager["listTasks"]>>[number],
-): boolean {
-	return (
-		task.acceptanceCriteria.length === 0 ||
-		task.acceptanceCriteria.every((criterion) => criterion.checked)
-	);
-}
 
 // ============================================================================
 // Emit Helper
@@ -378,18 +236,8 @@ async function runChainStep(
 	}
 
 	const stage = step;
-	if (
-		qualityReviewPlacement({
-			steps: [stage],
-			registry: config.registry,
-			domainContext: config.domainContext,
-		}) === "terminal"
-	) {
-		return runQualityReviewChainStep(stage, stepIndex, config);
-	}
+	if (stage.terminalGate) return runTerminalChainStep(stage, stepIndex, config);
 	const promptContext = stagePromptContext(
-		config.steps,
-		stepIndex,
 		stage,
 		state.activePlanReview?.target,
 	);
@@ -410,10 +258,7 @@ async function runChainStep(
 		if (!result) throw new Error("Missing participating reviewer result.");
 		return singleStageOutcome(stage, result);
 	}
-	if (
-		promptContext.purpose.kind === "revision" &&
-		promptContext.purpose.reviewKind === "plan"
-	) {
+	if (promptContext.purpose.kind === "plan-revision") {
 		const result = await runPlanRevisionStage(
 			stage,
 			stepIndex,
@@ -449,30 +294,20 @@ async function runChainStep(
 	return singleStageOutcome(stage, result);
 }
 
-async function runQualityReviewChainStep(
+async function runTerminalChainStep(
 	stage: ChainStage,
 	stepIndex: number,
 	config: ChainConfig,
 ): Promise<ChainStepOutcome> {
 	const started = Date.now();
-	const review = await launchQualityReview({
-		...config.qualityReview,
-		projectRoot: config.projectRoot,
-		operatorNote: stage.prompt,
-		planSlug: qualityReviewPlanSlug(config),
-		signal: config.signal,
-	});
+	const gate =
+		stage.terminalGate &&
+		config.chainAdapter?.terminalGates?.[stage.terminalGate];
+	if (!gate) throw new Error("Terminal executor is unavailable.");
 	const result: StageResult = {
+		...(await gate(buildTerminalGateContext({ ...config, stage }))),
 		stage,
-		success: review.stepResult.outcome === "success",
-		iterations: 1,
 		durationMs: Date.now() - started,
-		summary: review.stepResult.summary,
-		run: review.ref,
-		artifacts: review.stepResult.artifacts,
-		...(review.stepResult.outcome === "success"
-			? {}
-			: { error: review.stepResult.summary }),
 	};
 	emit(config, { type: "stage_start", stage, stageIndex: stepIndex });
 	emitStageCompletion(config, stage, result);
@@ -514,6 +349,7 @@ async function runPlanRevisionStage(
 				state.activePlanReview = {
 					...activePlanReview,
 					addressedAtTopologyIndex: stageIndex,
+					addressedStageId: stage.stageId,
 					addressedReviewRound: check.target.reviewRound,
 				};
 			}
@@ -541,6 +377,7 @@ async function runGuardedTaskManagerStage(
 		state.activePlanReview,
 		stageIndex,
 		config,
+		stage,
 	);
 	if (block) {
 		const result = blockPlanReviewStage(
@@ -572,12 +409,27 @@ async function assessTaskManagerEntry(
 	activePlanReview: InlinePlanReviewState | undefined,
 	taskManagerTopologyIndex: number,
 	config: ChainConfig,
+	stage?: ChainStage,
 ): Promise<ReviewRoundBlock | undefined> {
-	return assessTaskManagerReviewGate({
+	const block = await assessTaskManagerReviewGate({
 		activePlanReview,
 		taskManagerTopologyIndex,
 		projectRoot: config.projectRoot,
 	});
+	if (block) return block;
+	if (
+		stage?.reviewTarget &&
+		activePlanReview &&
+		!stage.reviewTarget.producerStageIds.includes(
+			activePlanReview.addressedStageId ?? "",
+		)
+	)
+		return {
+			reason: "mismatched-addressed-evidence",
+			...activePlanReview.target,
+			taskManagerTopologyIndex,
+		};
+	return undefined;
 }
 
 async function runObservedStage(
@@ -640,7 +492,7 @@ async function runParticipatingPlanReviewer(
 			reviewCheck = validatePlanReviewReport({
 				assistantText,
 				projectRoot: config.projectRoot,
-				expectedPlanSlug: resolvePlanSlug(config),
+				expectedPlanSlug: stage.expectedPlanSlug,
 			});
 		},
 	);
@@ -818,13 +670,16 @@ function finalizeChainResult(
  * caps (maxTotalIterations, timeoutMs).
  */
 export async function runChain(config: ChainConfig): Promise<ChainResult> {
+	const normalized = normalizeChain(config);
+	if (!normalized.ok) {
+		return refuseNormalization(config, normalized.errors);
+	}
+	config = { ...config, steps: normalized.stages };
 	const lifecycle = createInlineChainEpisodeLifecycle(config);
 	return withChainEpisode(config, lifecycle, () => executeChain(config));
 }
 
 async function executeChain(config: ChainConfig): Promise<ChainResult> {
-	const refusal = await misplacedQualityReviewResult(config);
-	if (refusal) return refusal;
 	const state = createChainExecutionState(config);
 	const chainStart = state.chainStart;
 	const spawner = createPiSpawner(config.registry, resolveDomainsDir(config), {
@@ -900,8 +755,6 @@ async function runParallelMember(
 	state: ChainExecutionState,
 ): Promise<ParallelMemberOutcome> {
 	const promptContext = stagePromptContext(
-		config.steps,
-		stepIndex,
 		stage,
 		state.activePlanReview?.target,
 	);
@@ -921,10 +774,7 @@ async function runParallelMember(
 			),
 		};
 	}
-	if (
-		promptContext.purpose.kind === "revision" &&
-		promptContext.purpose.reviewKind === "plan"
-	) {
+	if (promptContext.purpose.kind === "plan-revision") {
 		return {
 			kind: "ordinary",
 			result: await runPlanRevisionStage(
@@ -1103,18 +953,12 @@ interface StagePromptContext {
 }
 
 function stagePromptContext(
-	steps: readonly ChainStep[],
-	topologyIndex: number,
 	stage: ChainStage,
 	target?: PlanReviewTarget,
 ): StagePromptContext {
 	return {
-		purpose: deriveStagePromptPurpose(steps, topologyIndex, stage),
-		requiresPlanReviewTarget: requiresPlanReviewTarget(
-			steps,
-			topologyIndex,
-			stage,
-		),
+		purpose: stage.purpose ?? { kind: "default" },
+		requiresPlanReviewTarget: stage.requiresPlanReviewTarget ?? false,
 		...(target !== undefined && { target }),
 	};
 }
@@ -1162,41 +1006,35 @@ export async function runStage(
 	spawner: AgentSpawner,
 	constraints?: StageConstraints,
 ): Promise<StageResult> {
-	const placement = qualityReviewPlacement({
-		steps: [stage],
-		registry: config.registry,
-		domainContext: config.domainContext,
-	});
-	if (placement !== "absent") {
-		const review = await launchQualityReview({
-			...config.qualityReview,
-			projectRoot: config.projectRoot,
-			operatorNote: stage.prompt,
-			planSlug: qualityReviewPlanSlug(config),
-			signal: config.signal,
-			...(placement === "refused"
-				? {
-						refusalReason: "Quality Manager must be a terminal non-loop stage.",
-					}
-				: {}),
-		});
+	const normalized = normalizeChain({ ...config, steps: [stage] });
+	if (!normalized.ok) {
+		const failure = await refuseNormalization(
+			{ ...config, steps: [stage] },
+			normalized.errors,
+		);
 		return {
 			stage,
-			success: review.stepResult.outcome === "success",
-			iterations: placement === "refused" ? 0 : 1,
-			durationMs: 0,
-			summary: review.stepResult.summary,
-			run: review.ref,
-			artifacts: review.stepResult.artifacts,
-			...(review.stepResult.outcome === "success"
-				? {}
-				: { error: review.stepResult.summary }),
+			success: false,
+			iterations: 0,
+			durationMs: failure.totalDurationMs,
+			error: failure.errors.join("\n"),
+			...(failure.run ? { run: failure.run } : {}),
 		};
 	}
-	return runStageWithPromptContext(stage, config, spawner, constraints, {
-		purpose: { kind: "default" },
-		requiresPlanReviewTarget: false,
-	});
+	const first = normalized.stages[0];
+	if (!first || isParallelGroupStep(first))
+		throw new Error("Expected a single stage.");
+	stage = first;
+	config = { ...config, steps: normalized.stages };
+	const state = createChainExecutionState(config);
+	if (constraints) {
+		state.maxTotalIterations = constraints.maxTotalIterations;
+		state.timeoutMs = Math.max(0, constraints.deadlineMs - state.chainStart);
+	}
+	const outcome = await runChainStep(stage, 0, config, spawner, state);
+	const result = outcome.results[0];
+	if (!result) throw new Error("Missing stage result.");
+	return result;
 }
 
 async function runStageWithPromptContext(
@@ -1264,10 +1102,7 @@ function prepareStageExecution(
 			? { ...stage, agentReference: stageReference }
 			: stage;
 
-	const purposePrompt = buildStagePrompt(stage, {
-		completionLabel: config.completionLabel,
-		purpose: promptContext.purpose,
-	});
+	const purposePrompt = stage.instruction ?? "";
 	const prompt = shouldAppendBoundReviewTarget(
 		promptContext.purpose,
 		promptContext.requiresPlanReviewTarget,
@@ -1279,18 +1114,8 @@ function prepareStageExecution(
 		stage: resolvedStage,
 		config,
 		stageStart,
-		model: getModelForRole(
-			stage.name,
-			config.models,
-			config.registry,
-			config.domainContext,
-		),
-		thinkingLevel: getThinkingForRole(
-			stage.name,
-			config.thinking,
-			config.registry,
-			config.domainContext,
-		),
+		model: stage.model,
+		thinkingLevel: stage.thinkingLevel,
 		prompt,
 		planSlug: resolvePlanSlug(config),
 		iterations: 0,
@@ -1306,12 +1131,7 @@ function unknownStageResult(
 	config: ChainConfig,
 	stageStart: number,
 ): StageResult {
-	let message = `Unknown agent role "${stage.name}"`;
-	const legacyCosmoStageName = "main/cosmo".slice("main/".length);
-	if (stage.name === legacyCosmoStageName) {
-		message +=
-			'\nMigration hint: use "main/cosmo" for the cross-domain orchestrator or "coding/cody" for the coding-domain lead.';
-	}
+	const message = `Unknown agent role "${stage.name}"`;
 	emit(config, { type: "error", message, stage });
 	return {
 		stage,
@@ -1437,16 +1257,9 @@ async function evaluateLoopState(
 	stage: ChainStage,
 	config: ChainConfig,
 ): Promise<LoopState> {
-	if (stage.completionCheck) {
-		return (await stage.completionCheck(config.projectRoot))
-			? { status: "complete" }
-			: { status: "pending" };
-	}
-
-	const state = await evaluateDefaultCompletionState(
-		config.projectRoot,
-		config.completionLabel,
-	);
+	if (stage.completionPolicy?.kind !== "state")
+		throw new Error("Loop requires a state completion policy.");
+	const state = await stage.completionPolicy.evaluate(config.projectRoot);
 
 	if (state.status === "complete") return { status: "complete" };
 	if (state.status === "terminal") {

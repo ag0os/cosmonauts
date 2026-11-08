@@ -59,6 +59,7 @@ export async function withChainEpisode(
 	lifecycle: ChainEpisodeLifecycle,
 	execute: () => Promise<ChainResult>,
 ): Promise<ChainResult> {
+	if (!config.episodes) return execute();
 	await recordChainEpisode(lifecycle, "started");
 	try {
 		const result = await execute();
@@ -94,17 +95,11 @@ function resolveChainEpisodeSource(config: ChainConfig): string {
 	const firstStage = getFirstExecutableStages(config.steps)[0];
 	if (!firstStage) return "cosmonauts/chain";
 
-	const frozenSource = firstStage.agentReference?.resolved.qualifiedId;
-	if (frozenSource) return frozenSource;
-
-	try {
-		return (
-			config.registry.resolveReference(firstStage.name, config.domainContext)
-				?.reference.resolved.qualifiedId ?? firstStage.name
-		);
-	} catch {
-		return firstStage.name;
-	}
+	return (
+		firstStage.declarationId ??
+		firstStage.agentReference?.resolved.qualifiedId ??
+		firstStage.name
+	);
 }
 
 function chainEpisodeSummary(
