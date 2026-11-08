@@ -86,3 +86,13 @@ test("declaration order is deterministic when directory enumeration is reversed"
 		{ id: "zeta" },
 	]);
 });
+
+test("a primitive default export reports the declaration shape error", async () => {
+	await writeFile(
+		join(tmp.path, "primitive.mjs"),
+		'export default "not-an-agent"',
+	);
+	await expect(loadAgentDeclarations(tmp.path)).rejects.toThrow(
+		"must default-export an AgentDefinition",
+	);
+});

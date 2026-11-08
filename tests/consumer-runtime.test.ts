@@ -279,3 +279,25 @@ test("user domain discovery requires opt-in and honors explicit user-source excl
 		vi.unstubAllEnvs();
 	}
 });
+
+test("a registered physical actor cannot bypass an explicit binding for its known role", async () => {
+	const original = actor({ domain: "studio", description: "Original" });
+	const replacement = actor({ domain: "vendor", description: "Bound target" });
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: { domainBindings: { studio: "vendor" } },
+		domains: [domain("studio"), domain("vendor")],
+		agents: [original, replacement],
+	});
+	expect(runtime.agentRegistry.resolve("studio/scribe")).toBe(replacement);
+	expect(
+		runtime.agentRegistry.resolveReference("studio/scribe")?.reference,
+	).toMatchObject({
+		requested: { qualifiedId: "studio/scribe" },
+		resolved: { qualifiedId: "vendor/scribe" },
+		binding: { source: "project" },
+	});
+	expect(runtime.agentRegistry.getResolvedTarget("studio/scribe")).toBe(
+		original,
+	);
+});

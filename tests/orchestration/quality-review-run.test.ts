@@ -5014,7 +5014,7 @@ describe("quality review durable lifecycle", () => {
 				},
 			});
 			expect(spawned).toHaveBeenCalled();
-			expect(await readFile(attackMarker, "utf8")).toBe("done");
+			await expect(readFile(attackMarker, "utf8")).resolves.toBe("done");
 			const report = await readFile(
 				join(
 					projectRoot,

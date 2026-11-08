@@ -414,3 +414,11 @@ Declaration directory ordering is deterministic even with reversed enumeration,
 and source-map files are ignored. Tests: consumer-runtime and directory-loader.
 Package-export targets are reachability roots and missing targets are diagnosed;
 test: check-reachability-visit.
+
+Malformed default exports report the declaration-shape error. Ordinary extension
+directories without a binding entry stay on the SDK discovery path without native
+deprecation warnings. A known bound role is resolved through its binding even
+when its original physical actor exists; frozen target lookup still bypasses
+rebinding. Durable execution forwards the host runtime, resolver, policy and timeout
+and excludes live runtime/policy objects from persisted graph data. Tests:
+directory-loader, extension-binding, consumer-runtime and durable-chain-runner-stats.

@@ -363,3 +363,26 @@ test("directory providers retain precedence over same-name explicit host callbac
 	expect(params.extensionPaths).toEqual([path]);
 	expect(fallback).not.toHaveBeenCalled();
 });
+
+test("an ordinary provider without an index remains a directory without deprecation warnings", async () => {
+	const path = join(tmp.path, "alpha", "extensions", "ordinary");
+	await mkdir(path, { recursive: true });
+	const warning = vi.fn();
+	process.on("warning", warning);
+	try {
+		const params = await buildSessionParams({
+			def: definition(["ordinary"]),
+			cwd: tmp.path,
+			domainsDir: tmp.path,
+			loadConfig: async () => ({}),
+		});
+		expect(params.extensionPaths).toEqual([path]);
+		expect(params.extensionFactories).toEqual([]);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(warning.mock.calls).not.toContainEqual([
+			expect.objectContaining({ code: "DEP0187" }),
+		]);
+	} finally {
+		process.removeListener("warning", warning);
+	}
+});
