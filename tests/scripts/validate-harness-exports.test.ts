@@ -951,16 +951,19 @@ async function execJsonAllowFailure(
 	cwd: string,
 	home: string,
 ): Promise<{ readonly processExit: number; readonly body: HarnessJsonReport }> {
+	// This retained shipped-asset acceptance uses the explicit content consumer;
+	// the content-free bin intentionally has no shipped skill catalog.
+	const entry = join(dirname(cwd), "content-entry.ts");
+	await writeFile(
+		entry,
+		`import ${JSON.stringify(join(cwd, "domains/host-runtime.ts"))};\nimport ${JSON.stringify(join(cwd, "cli/main.ts"))};\n`,
+	);
 	try {
-		const { stdout } = await execFileAsync(
-			"bun",
-			[join(cwd, "bin/cosmonauts"), ...args],
-			{
-				cwd,
-				env: { ...process.env, HOME: home },
-				maxBuffer: 10 * 1024 * 1024,
-			},
-		);
+		const { stdout } = await execFileAsync("bun", [entry, ...args], {
+			cwd,
+			env: { ...process.env, HOME: home },
+			maxBuffer: 10 * 1024 * 1024,
+		});
 		return { processExit: 0, body: JSON.parse(stdout) as HarnessJsonReport };
 	} catch (error) {
 		const failed = error as {

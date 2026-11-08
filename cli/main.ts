@@ -285,7 +285,7 @@ export function selectRunMode({
 		options.listDomains ||
 		options.listAgents ||
 		options.dumpPrompt;
-	if (!hasRunnableDefault && !isBypassCommand) {
+	if (!hasRunnableDefault && !isBypassCommand && !options.agent) {
 		return "no-domain-guard";
 	}
 
@@ -329,7 +329,10 @@ async function run(options: CliOptions): Promise<void> {
 }
 
 export function hasRunnableDefaultDomain(runtime: CosmonautsRuntime): boolean {
-	return runtime.domains.some((domain) => !domain.manifest.resourceFallback);
+	return runtime.domains.some(
+		(domain) =>
+			!domain.manifest.resourceFallback && Boolean(domain.manifest.lead),
+	);
 }
 
 /** Agent switching is library-owned; bindings stay with content until the step6 registry edit. */

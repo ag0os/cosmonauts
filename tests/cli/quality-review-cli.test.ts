@@ -79,11 +79,16 @@ async function snapshot(root: string): Promise<Record<string, string>> {
 async function runCli(
 	cwd: string,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
+	const entry = join(cwd, "content-entry.ts");
+	await writeFile(
+		entry,
+		`import ${JSON.stringify(join(repoRoot, "domains/host-runtime.ts"))};\nimport ${JSON.stringify(join(repoRoot, "cli/main.ts"))};\n`,
+	);
 	return new Promise((resolve, reject) => {
 		const child = spawn(
 			"bun",
 			[
-				join(repoRoot, "bin", "cosmonauts"),
+				entry,
 				"--plugin-dir",
 				join(repoRoot, "bundled", "coding"),
 				"--print",

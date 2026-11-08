@@ -21,8 +21,8 @@ afterEach(() => {
 beforeEach(async () => {
 	const { setRuntimeHost } = await import("../lib/runtime-host.ts");
 	setRuntimeHost((request) =>
-		import("../domains/host-runtime.ts").then(({ createContentRuntime }) =>
-			createContentRuntime(request),
+		import("./helpers/library-host.ts").then(({ createLibraryTestRuntime }) =>
+			createLibraryTestRuntime(request),
 		),
 	);
 });

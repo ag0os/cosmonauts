@@ -1,10 +1,11 @@
+import { installContentTestHost } from "../helpers/library-host.ts";
 /**
  * The claude-cli and codex-cli lean backends never load Pi: every Pi package
  * fails on import here, and a lean run's backends are built and run through
  * the CLI's runtime path with a stub process runner in place of the harness.
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	createExternalBuilderBackend,
 	leanPackageResolver,
@@ -72,3 +73,5 @@ describe("external lean backends without Pi", () => {
 		expect(piLoads).not.toEqual([]);
 	});
 });
+
+beforeEach(installContentTestHost);

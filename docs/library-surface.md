@@ -443,11 +443,12 @@ are a runtime collection: config-file edits require a new session after resettin
 before chain_run/lean sees them. No per-call config reread is promised.
 
 The coding manifest carries its quality-review seal for direct runtime creation;
-the current host's explicit provider still wins. Scaffold/eject outputs use public
+the content host's explicit provider still wins. Scaffold/eject outputs use public
 aliases; eject rejects an unexported framework target rather than emitting a broken
 specifier. Pi catalog tests bind the actual pinned1.0.3 ToolName union to the local
-allowlist. Toolless Pi helpers and memory consolidate need the content host when
-choosing a default model; an explicit model bypasses that bootstrap.
+allowlist. Toolless Pi helpers and memory consolidate use the selected host when
+choosing a default model; an explicit model bypasses that bootstrap. The CLI host
+supplies its own fallback without loading framework content.
 
 ### External consumer proof (step 5)
 
@@ -504,3 +505,40 @@ Generic session factory/spawner suites use `createConsumerSessionPolicy` to pin
 resource overrides, creation/disposal, observed tool-result projection and child
 completion timeout delivery. Runtime policy composition uses the same consumer
 provider. No library policy field or package export changed in this test-only PR.
+
+
+### Content-free executable and test hosts (step 6 P3)
+
+The bin entry installs `cli/host-runtime.ts` only when a consumer host is absent.
+The CLI explicitly discovers project/user packages and domain directories plus
+plugin roots, loads project config and provides library orchestration. It supplies
+its executable model fallback without choosing a coding adapter, session seal,
+worker or framework resource root. An empty installation remains useful for list
+and check commands; ordinary interaction needs a declared lead or an explicit actor.
+The library still accepts leadless resource providers.
+
+Tests: `cli/host-startup` exercises the real bin with isolated HOME, empty discovery,
+the interaction guard, a leadless provider and an installed synthetic lead;
+`cli/runtime-host` pins empty policy, user discovery, config and host preservation;
+`cli/host-scope` pins DomainBindingTargetError refusal for a plugin-only target
+through base execution scope; `cli/pi-session` and `cli/memory/subcommand` pin model helpers against
+the content-free CLI factory. `cli/host-policy-dispatch` pins base extension scope alongside the selected
+interactive definition/runtime and policy in init, print and interactive sessions. No live model is prompted.
+
+The default test host owns one synthetic reader and has no worker or content
+policy. Lean build/review and backend acceptance explicitly select the old host while
+that content remains; direct-import content suites use the synthetic host.
+Subprocess content tests generate an explicit content entry. A generic
+Drive characterization instead declares the synthetic reader as its worker.
+Discovered domains continue declaring their extension resource entry; the synthetic
+plugin fixture forwards that entry to its host's orchestration provider. Resource
+precedence and validation are unchanged.
+
+
+P3 deliberately removes the bin's implicit cosmo/cody, lean build/review, QM,
+shipped coding/skill export and Drive worker defaults before D1/D2 retire their
+content. A coding install that relies on shared resources fails validation loudly,
+including list commands (`cli/host-startup`). Explicitly adding both repository
+`domains` and `bundled` roots restores resource discovery for inspection while
+content remains; it does not restore the old adapter or default worker. Inline
+tools keep base scope even when a plugin lead was selected interactively.

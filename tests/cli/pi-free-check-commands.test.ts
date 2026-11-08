@@ -1,9 +1,8 @@
 /**
- * The check CLI's commands load no Pi module when they run through the real
- * entry, `bin/cosmonauts`, with a non-Pi lean backend or without the
- * architecture narrative. Each runs under bun with a preload that records
- * every `@earendil-works/*` module loaded, start to exit. The lean backends
- * reach stub `claude` and `codex` binaries on PATH, so no model is called.
+ * Library check commands use the real bin without loading Pi. Retained lean
+ * build/review acceptance explicitly installs the old content host and uses a
+ * non-Pi backend. A preload records every Pi module loaded from start to exit;
+ * claude/codex stubs stand in for the harnesses, so no model is called.
  */
 
 import { spawnSync } from "node:child_process";
@@ -87,12 +86,19 @@ interface CliRun {
 }
 
 function runCli(args: readonly string[], envelope = BLOCKED): CliRun {
-	const result = spawnSync("bun", ["--preload", RECORDER, BIN, ...args], {
+	// Lean's retained content acceptance explicitly uses its old consumer host.
+	const entry =
+		args[0] === "lean" && (args[1] === "build" || args[1] === "review")
+			? join(dir, "content-entry.ts")
+			: BIN;
+	const result = spawnSync("bun", ["--preload", RECORDER, entry, ...args], {
 		cwd: project,
 		encoding: "utf8",
 		timeout: COMMAND_TIMEOUT_MS,
 		env: {
 			...process.env,
+			HOME: join(dir, "home"),
+			PI_CODING_AGENT_DIR: join(dir, "home", ".pi", "agent"),
 			PATH: `${stubs}:${process.env.PATH ?? ""}`,
 			PI_LOAD_LOG: piLog,
 			HARNESS_LOG: harnessLog,
@@ -135,6 +141,10 @@ beforeAll(async () => {
 	mkdirSync(join(project, "src"));
 	mkdirSync(stubs);
 	writeStubs();
+	writeFileSync(
+		join(dir, "content-entry.ts"),
+		`import ${JSON.stringify(join(REPO_ROOT, "domains/host-runtime.ts"))};\nimport ${JSON.stringify(join(REPO_ROOT, "cli/main.ts"))};\n`,
+	);
 	git("init", "-q", "-b", "main");
 	git("config", "user.email", "test@example.com");
 	git("config", "user.name", "Test");

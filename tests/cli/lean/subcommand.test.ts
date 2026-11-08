@@ -1,3 +1,4 @@
+import { installContentTestHost } from "../../helpers/library-host.ts";
 /**
  * Tests for cli/lean/subcommand.ts: `cosmonauts lean check` on fixture
  * plans, and `lean build` / `lean review` as thin callers of an injected
@@ -10,7 +11,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createLeanProgram } from "../../../cli/lean/subcommand.ts";
 import type {
 	RunBuildOptions,
@@ -294,6 +295,7 @@ function doubles(result: RunRecord) {
 }
 
 describe("lean build", () => {
+	beforeEach(installContentTestHost);
 	test("calls runBuild with the plan, spec and backend, and no required-signals or budget override", async () => {
 		const { builds, kinds, options } = doubles(record("done"));
 
@@ -521,6 +523,7 @@ describe("lean build", () => {
 });
 
 describe("lean review", () => {
+	beforeEach(installContentTestHost);
 	test("passes clearStaleLock when --clear-stale-lock is given", async () => {
 		const { reviews, options } = doubles(record("done"));
 
@@ -714,6 +717,7 @@ async function helpText(command: string): Promise<string> {
 }
 
 describe("lean build", () => {
+	beforeEach(installContentTestHost);
 	test("runs the reviewer on the --backend harness when no reviewer backend is given", async () => {
 		const { builds, options } = recordedRuns();
 
@@ -860,6 +864,7 @@ describe("lean build", () => {
 });
 
 describe("lean review", () => {
+	beforeEach(installContentTestHost);
 	test("defaults the reviewer backend to pi", async () => {
 		const { reviews, options } = recordedRuns();
 
