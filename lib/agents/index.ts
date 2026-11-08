@@ -31,4 +31,5 @@ export type {
 	AgentMemoryGrants,
 	AgentSessionMode,
 	AgentToolSet,
+	ThinkingLevel,
 } from "./types.ts";

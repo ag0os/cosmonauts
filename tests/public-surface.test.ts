@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { expect, test } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -52,3 +54,34 @@ test("the locator stays on its Pi-discovery bridge entry and chains exports conf
 		"function",
 	);
 });
+
+test("every type sent from an eject types module to a barrel remains exported there", () => {
+	const pairs = [
+		["agents/types.ts", "agents/index.ts"],
+		["domains/types.ts", "domains/index.ts"],
+		["chains/types.ts", "chains/index.ts"],
+	];
+	const paths = pairs
+		.flat()
+		.map((path) => fileURLToPath(new URL(`../lib/${path}`, import.meta.url)));
+	const program = ts.createProgram(paths, {
+		module: ts.ModuleKind.NodeNext,
+		moduleResolution: ts.ModuleResolutionKind.NodeNext,
+		allowImportingTsExtensions: true,
+		noEmit: true,
+		skipLibCheck: true,
+	});
+	const checker = program.getTypeChecker();
+	const names = (path: string) => {
+		const file = program.getSourceFile(
+			fileURLToPath(new URL(`../lib/${path}`, import.meta.url)),
+		);
+		const symbol = file && checker.getSymbolAtLocation(file);
+		if (!symbol) throw new Error(`Missing module ${path}`);
+		return checker.getExportsOfModule(symbol).map((value) => value.name);
+	};
+	for (const [source, target] of pairs)
+		expect(names(target ?? "")).toEqual(
+			expect.arrayContaining(names(source ?? "")),
+		);
+}, 30000);

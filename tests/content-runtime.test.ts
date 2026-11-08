@@ -1,7 +1,9 @@
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { codingChainAdapter } from "../bundled/coding/chain-adapter.ts";
+import { resolveInteractiveExtensionPaths } from "../cli/main.ts";
 import {
 	createContentRuntime,
 	installContentRuntimeHost,
@@ -151,4 +153,15 @@ test("coding content carries its seal into a direct runtime without the CLI host
 			runtime.agentRegistry.resolve("coding/quality-manager"),
 		),
 	).toContain("private snapshot");
+});
+
+test("the real content runtime discovers and mounts the existing domain-bindings extension", async () => {
+	const runtime = await createContentRuntime({ projectRoot: tmp.path });
+	const paths = resolveInteractiveExtensionPaths(runtime);
+	const binding = new URL(
+		"../domains/shared/extensions/domain-bindings",
+		import.meta.url,
+	).pathname;
+	expect(paths).toContain(binding);
+	expect(existsSync(binding)).toBe(true);
 });

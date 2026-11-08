@@ -397,6 +397,43 @@ describe("ejectDomain — import rewriting", () => {
 			"Cannot eject unexported framework import lib/private.ts",
 		);
 	});
+	test("a rejected import leaves no target and can be retried after fixing the source", async () => {
+		const pkg = await createPkgFixture(localStore, {
+			name: "retry-import",
+			extraFiles: {
+				"domain.ts": 'import { hidden } from "../../lib/private.ts";',
+			},
+		});
+		const target = join(projectRoot, ".cosmonauts", "domains", "alpha");
+		await expect(
+			ejectDomain({ domainId: "alpha", projectRoot }),
+		).rejects.toThrow("unexported framework import");
+		await expect(stat(target)).rejects.toMatchObject({ code: "ENOENT" });
+		await writeFile(
+			join(pkg, "domains", "alpha", "domain.ts"),
+			'export const manifest = {id:"alpha"};',
+		);
+		await expect(
+			ejectDomain({ domainId: "alpha", projectRoot }),
+		).resolves.toMatchObject({ ejectedTo: target });
+	});
+	test("invalid source leaves an existing forced target untouched", async () => {
+		await createPkgFixture(localStore, {
+			name: "force-import",
+			extraFiles: {
+				"domain.ts": 'import { hidden } from "../../lib/private.ts";',
+			},
+		});
+		const target = join(projectRoot, ".cosmonauts", "domains", "alpha");
+		await mkdir(target, { recursive: true });
+		await writeFile(join(target, "domain.ts"), "LOCAL_OVERRIDE");
+		await expect(
+			ejectDomain({ domainId: "alpha", projectRoot, force: true }),
+		).rejects.toThrow("unexported framework import");
+		expect(await readFile(join(target, "domain.ts"), "utf8")).toBe(
+			"LOCAL_OVERRIDE",
+		);
+	});
 	test("does not modify files that have no matching imports", async () => {
 		const originalContent = 'export const id = "alpha";\n';
 		await createPkgFixture(localStore, {
