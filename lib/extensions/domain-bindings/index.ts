@@ -138,6 +138,7 @@ export default function domainBindingsExtension(pi: ExtensionAPI): void {
 
 			try {
 				shared.bindingResolver.bindLiveRole(parsed.role, parsed.targetDomain);
+				shared.liveBindings.set(parsed.role, parsed.targetDomain);
 			} catch (error: unknown) {
 				if (error instanceof DomainBindingTargetError) {
 					notifyUnavailable(ctx, error);

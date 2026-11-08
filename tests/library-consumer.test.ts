@@ -345,9 +345,13 @@ test.each([
 test.each([
 	"agents/session-assembly.test.ts",
 	"extensions/agent-memory.test.ts",
-])("retained suite %s has no import of retiring content", async (file) => {
+	"extensions/architecture-memory.test.ts",
+])("retained suite %s has no imports or literal paths to retiring content", async (file) => {
 	const source = await readFile(new URL(file, import.meta.url), "utf8");
 	expect(source).not.toMatch(
 		/from\s+["'](?:(?:\.\.\/)+(?:domains|bundled)\/|[^"']*\/quality-review-)/,
+	);
+	expect(source).not.toMatch(
+		/["'`](?:\.\.?\/)*(?:domains|bundled)(?:\/[^"'`]*)?["'`]/,
 	);
 });

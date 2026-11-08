@@ -1,4 +1,3 @@
-import { CosmonautsRuntime } from "../../lib/runtime.ts";
 /**
  * Tests for the shared session parameter builder (buildSessionParams).
  *
@@ -8,8 +7,7 @@ import { CosmonautsRuntime } from "../../lib/runtime.ts";
 
 import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { extractAgentIdFromSystemPrompt } from "../../lib/agents/runtime-identity.ts";
 import {
@@ -17,7 +15,6 @@ import {
 	buildSessionParams,
 } from "../../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
-import { loadDomainsFromSources } from "../../lib/domains/loader.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
@@ -35,8 +32,6 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
 }));
 
 const tmp = useTempDir("session-assembly-");
-const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const REPO_DOMAINS_DIR = join(REPO_ROOT, "domains");
 
 // ============================================================================
 // Helpers
@@ -412,66 +407,6 @@ describe("buildSessionParams", () => {
 					}
 				).details,
 			).toMatchObject({ status: "no_match", records: [] });
-		});
-
-		it("composes exactly one framework recall for every shipped definition", async () => {
-			const loadedDomains = await loadDomainsFromSources([
-				{
-					domainsDir: REPO_DOMAINS_DIR,
-					origin: "builtin",
-					precedence: 1,
-				},
-				{
-					domainsDir: join(REPO_ROOT, "bundled", "coding"),
-					sourceType: "domain-root",
-					origin: "bundled",
-					precedence: 2,
-				},
-			]);
-			const resolver = new DomainResolver(new DomainRegistry(loadedDomains));
-			const definitions = loadedDomains.flatMap((domain) =>
-				[...domain.agents.values()].map((definition) => ({
-					...definition,
-					domain: domain.manifest.id,
-				})),
-			);
-
-			for (const def of definitions) {
-				const params = await buildSessionParams({
-					runtime: await CosmonautsRuntime.create({
-						projectRoot: tmp.path,
-						projectConfig: { knowledgeSurface: { enabled: true } },
-						domains: loadedDomains,
-					}),
-					def,
-					cwd: tmp.path,
-					domainsDir: REPO_DOMAINS_DIR,
-					resolver,
-					loadConfig: async () => ({
-						knowledgeSurface: { enabled: true },
-					}),
-				});
-				const inline = params.extensionFactories[0];
-				if (!inline || typeof inline === "function") {
-					throw new Error(`Expected named inline extension for ${def.id}`);
-				}
-				const pi = createMockPi({ cwd: tmp.path });
-				pi.registerTool({
-					name: "unrelated",
-					execute: async () => ({ content: [], details: { status: "ok" } }),
-				});
-				await inline.factory(pi as never);
-
-				expect(
-					[...pi.tools.keys()].filter((name) => name === "recall"),
-					def.id,
-				).toHaveLength(1);
-				expect(pi.tools.has("unrelated"), def.id).toBe(true);
-				expect(
-					((await pi.callTool("unrelated", {})) as { details: unknown })
-						.details,
-				).toEqual({ status: "ok" });
-			}
 		});
 
 		it("returns empty array for agent with no extensions", async () => {

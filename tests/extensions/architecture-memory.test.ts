@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, test, vi } from "vitest";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
-import type { AgentDefinition } from "../../lib/agents/types.ts";
 import * as architectureMap from "../../lib/architecture-map/index.ts";
 import {
 	ARCHITECTURE_MAP_OUTPUT_DIR,
@@ -613,21 +611,6 @@ describe("architecture-memory extension", () => {
 		expect(result.message.content).not.toContain("lib/module-79");
 	});
 
-	test("only the four consuming coding agents grant architecture memory", async () => {
-		const agentDefinitions = await loadBundledCodingAgents();
-		const consumers = agentDefinitions
-			.filter((definition) => definition.memory?.architecture)
-			.map((definition) => definition.id)
-			.sort();
-
-		expect(consumers).toEqual([
-			"coordinator",
-			"plan-reviewer",
-			"planner",
-			"worker",
-		]);
-	});
-
 	test("auto-loaded extension stays inert for non-consuming agents", async () => {
 		await writeArchitectureMap(tmp.path);
 		const retrieve = vi.fn();
@@ -1187,21 +1170,4 @@ async function writeArchitectureMap(
 		"---\ntype: code-structure-module\nresource: lib/tasks\n---\n\n# lib/tasks\n",
 		"utf-8",
 	);
-}
-
-async function loadBundledCodingAgents(): Promise<AgentDefinition[]> {
-	const agentsDir = fileURLToPath(
-		new URL("../../bundled/coding/agents/", import.meta.url),
-	);
-	const files = (await readdir(agentsDir))
-		.filter((file) => file.endsWith(".ts"))
-		.sort();
-	const definitions: AgentDefinition[] = [];
-	for (const file of files) {
-		const module = (await import(
-			pathToFileURL(join(agentsDir, file)).href
-		)) as { default: AgentDefinition };
-		definitions.push(module.default);
-	}
-	return definitions;
 }

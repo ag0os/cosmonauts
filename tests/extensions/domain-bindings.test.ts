@@ -719,3 +719,41 @@ test("restore writes the slot store only after resolver validation when their st
 		clearSharedDomainBindings();
 	}
 });
+
+test("the live binding command writes the slot store only after resolver validation when their stores differ", async () => {
+	const runtime = await setupRuntime();
+	const slotStore = getLiveDomainBindingStore(
+		join(tmp.path, "separate-command-store"),
+	);
+	setSharedDomainBindings({
+		domainRegistry: runtime.domainRegistry,
+		bindingResolver: runtime.bindingResolver,
+		liveBindings: slotStore,
+	});
+	const pi = createMockPi();
+	domainBindingsExtension(pi as never);
+	const ctx = createCommandContext();
+	try {
+		await getCommand(pi, "domain-bind").handler(
+			"ruby-coding ruby-experimental",
+			ctx,
+		);
+		expect(slotStore.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		await getCommand(pi, "domain-bind").handler("ruby-coding missing", ctx);
+		expect(slotStore.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(runtime.liveDomainBindings.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(pi.entries).toHaveLength(1);
+		expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+			expect.stringContaining("missing"),
+			"error",
+		);
+	} finally {
+		clearSharedDomainBindings();
+	}
+});
