@@ -260,3 +260,7 @@ test("the consumer declares chain classification, terminal and session policies 
 		expect.any(Function),
 	);
 });
+
+test("the consumer owns memory-grant scenarios without shipped agents or raw shims", () => {
+ expect(consumer).toHaveProperty("exerciseConsumerGrants", expect.any(Function));
+});

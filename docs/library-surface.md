@@ -523,7 +523,6 @@ Discovered domains continue declaring their extension resource entry; the synthe
 plugin fixture forwards that entry to its host's orchestration provider. Resource
 precedence and validation are unchanged.
 
-
 P3 deliberately removes the bin's implicit cosmo/cody, lean build/review, QM,
 shipped coding/skill export and Drive worker defaults before D1/D2 retire their
 content. A coding install that relies on shared resources fails validation loudly,
