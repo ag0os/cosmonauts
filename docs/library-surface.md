@@ -439,7 +439,7 @@ is a later owner choice. Tests: review45-runtime-contracts and cli/runtime-host.
 Inline factories stay bound to the launch runtime after a cross-project resume;
 chain/Drive still receive ctx.cwd. The runtime does not record its root and no
 cross-project refusal guard is claimed (orchestration.test.ts). Configured chains
-are a runtime collection: config-file edits require a host reset or process restart
+are a runtime collection: config-file edits require a new session after resetting the host, or process restart
 before chain_run/lean sees them. No per-call config reread is promised.
 
 The coding manifest carries its quality-review seal for direct runtime creation;
@@ -474,3 +474,13 @@ built-ins; the memory agent exposes `recall` and `remember` without an id/path
 exception. It verifies declared episode opt-in, not model output, episode capture,
 persistent transcript creation or authored-memory writes. Their existing suites
 retain those contracts. No live model credentials or network are needed.
+
+
+Review45 fixture coverage mounts orchestration through the public extension entry,
+asserts actual stage-spawn runtime identity, and normalizes its ordinary stage with
+no adapter. Enabled and disabled knowledgeSurface settings come only from the
+consumer runtime config; both execute in the content-free external process and in
+process, pinning recall inclusion for the ordinary knowledge-granted agent.
+Package exports target TypeScript ESM source: consumers need a TypeScript-capable
+ESM runtime (such as Bun or a configured TypeScript loader); plain Node execution
+without source support is not promised, and no engines field has been added.

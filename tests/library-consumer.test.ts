@@ -26,6 +26,7 @@ const root = new URL("../", import.meta.url);
 test("the fixture declares independent qualified actors and a stages-form chain by package name", async () => {
 	const runtime = await createConsumerRuntime(tmp.path);
 	expect(runtime.domains).toEqual([]);
+	expect(runtime.projectConfig.knowledgeSurface?.enabled).toBe(false);
 	expect(runtime.domainsDir).toBeUndefined();
 	expect(runtime.agentRegistry.resolve("visitor/explorer")).toMatchObject({
 		id: "explorer",
@@ -38,7 +39,7 @@ test("the fixture declares independent qualified actors and a stages-form chain 
 			content: "Explore files and report facts.",
 		},
 		capabilities: [],
-		extensions: [],
+		extensions: ["orchestration"],
 		skills: [],
 		subagents: [],
 		projectContext: false,
@@ -80,7 +81,7 @@ test("the fixture's library imports resolve exclusively through the public expor
 	const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map(
 		(match) => match[1],
 	);
-	expect(imports).toHaveLength(5);
+	expect(imports).toHaveLength(6);
 	const require = createRequire(import.meta.url);
 	const pkg = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
 	for (const specifier of imports) {
@@ -122,7 +123,7 @@ test("an external consumer executes its chain and assembles granted memory tools
 		join(tmp.path, "run.ts"),
 		`globalThis.fetch = () => { throw new Error("NETWORK_FORBIDDEN"); };
 const { exerciseConsumer } = await import("./consumer.ts");
-console.log(JSON.stringify(await exerciseConsumer(process.cwd())));
+console.log(JSON.stringify([await exerciseConsumer(process.cwd()), await exerciseConsumer(process.cwd(),true)]));
 `,
 	);
 	const { stdout, stderr } = await exec("bun", ["run.ts"], {
@@ -136,31 +137,48 @@ console.log(JSON.stringify(await exerciseConsumer(process.cwd())));
 	});
 	expect(stderr).toBe("");
 	const result = JSON.parse(stdout);
-	assertConsumerResult(result);
+	assertConsumerResult(result[0]);
+	assertConsumerResult(result[1], true);
 }, 40_000);
 
 function assertConsumerResult(
 	result: Awaited<ReturnType<typeof exerciseConsumer>>,
+	knowledgeEnabled = false,
 ) {
 	expect(result.domains).toEqual([]);
 	expect(result.workerAgent).toBe("visitor/explorer");
 	expect(result.domainsDir).toBeNull();
 	expect(result.agentIds).toEqual(["explorer", "notebook"]);
 	expect(result.episodes).toBe(true);
+	expect(result.normalized).toEqual({
+		adapterAbsent: true,
+		declarationId: "visitor/explorer",
+		loop: false,
+	});
 	expect(result.chain).toEqual({ success: true, iterations: 1 });
 	expect(result.spawns).toEqual([
 		{
 			role: "visitor/explorer",
 			prompt: "Report the project facts.",
 			model: "openai-codex/gpt-5.6-sol",
+			sameRuntime: true,
 		},
 	]);
-	expect(result.tools["visitor/explorer"]).toEqual([
-		"find",
-		"grep",
-		"ls",
-		"read",
-	]);
+	expect(result.tools["visitor/explorer"]).toEqual(
+		[
+			"find",
+			"grep",
+			"ls",
+			"read",
+			...(knowledgeEnabled ? ["recall"] : []),
+			"spawn_agent",
+			"chain_run",
+			"run_driver",
+			"watch_events",
+			"run_status",
+			"run_watch",
+		].sort(),
+	);
 	expect(result.tools["visitor/notebook"]).toEqual(["recall", "remember"]);
 }
 
@@ -175,7 +193,8 @@ test("the same fixture exercises the public seams in process for mutation covera
 	const dispose = vi.spyOn(AgentSession.prototype, "dispose");
 	try {
 		assertConsumerResult(await exerciseConsumer(tmp.path));
-		expect(dispose).toHaveBeenCalledTimes(2);
+		assertConsumerResult(await exerciseConsumer(tmp.path, true), true);
+		expect(dispose).toHaveBeenCalledTimes(4);
 	} finally {
 		dispose.mockRestore();
 		vi.unstubAllGlobals();
