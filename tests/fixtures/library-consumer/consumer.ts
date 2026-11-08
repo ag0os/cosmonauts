@@ -348,27 +348,20 @@ async function exerciseConsumerDenial(
 			sessionManager: { getSessionId: () => "consumer-denial" },
 		},
 	);
-	if (
-		!denied ||
-		typeof denied !== "object" ||
-		!("details" in denied) ||
-		!denied.details ||
-		typeof denied.details !== "object" ||
-		!("status" in denied.details) ||
-		denied.details.status !== "denied" ||
-		!("content" in denied) ||
-		!Array.isArray(denied.content)
-	)
+	return consumerDenialResult(denied);
+}
+
+function consumerDenialResult(value: unknown) {
+	if (!value || typeof value !== "object")
 		throw new Error("Consumer denial missing");
-	const first = denied.content[0];
-	if (
-		!first ||
-		typeof first !== "object" ||
-		!("text" in first) ||
-		typeof first.text !== "string"
-	)
-		throw new Error("Consumer denial text missing");
-	return { status: denied.details.status, text: first.text };
+	const result = value as {
+		details?: { status?: unknown };
+		content?: Array<{ text?: unknown }>;
+	};
+	const text = result.content?.[0]?.text;
+	if (result.details?.status !== "denied" || typeof text !== "string")
+		throw new Error("Consumer denial missing");
+	return { status: result.details.status, text };
 }
 
 export { exerciseConsumerGrants } from "./grants.ts";
