@@ -73,7 +73,7 @@ test("CLI quality review carries the print prompt and aborts on SIGINT", async (
 
 function makeDomain(id: string): LoadedDomain {
 	return {
-		manifest: { id, description: `Domain ${id}` },
+		manifest: { id, description: `Domain ${id}`, default: id === "main" },
 		portable: false,
 		agents: new Map(),
 		capabilities: new Set(),
@@ -619,10 +619,14 @@ describe("buildInitSessionConfig", () => {
 describe("resolveInteractiveExtensionPaths", () => {
 	test("registers normal live-session commands including domain-bind", () => {
 		expect(
-			resolveInteractiveExtensionPaths({ domainsDir: "/framework/domains" }),
+			resolveInteractiveExtensionPaths({
+				domainResolver: {
+					resolveExtensionPath: (name) => `/consumer/extensions/${name}`,
+				},
+			}),
 		).toEqual([
-			"/framework/domains/shared/extensions/agent-switch",
-			"/framework/domains/shared/extensions/domain-bindings",
+			"/consumer/extensions/agent-switch",
+			"/consumer/extensions/domain-bindings",
 		]);
 	});
 });

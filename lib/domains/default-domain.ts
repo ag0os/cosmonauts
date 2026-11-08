@@ -1,48 +1,53 @@
 import type { DomainResolver } from "./resolver.ts";
-
-export const FRAMEWORK_DEFAULT_DOMAIN = "main";
+import type { LoadedDomain } from "./types.ts";
 
 export interface ResolveDefaultDomainOptions {
-	/** Already-known domain from an agent definition, project config, or caller. */
+	/** Already-known resource domain from the declaration or caller. */
 	readonly explicitDomain?: string;
-	/** Resolver whose registry can prove whether the framework default is installed. */
+	/** Explicit fallback for directory-only callers. */
+	readonly defaultDomain?: string;
 	readonly resolver?: DomainResolver;
-	/** Human-readable operation included in no-default-domain diagnostics. */
 	readonly purpose?: string;
 }
 
 export class NoDefaultDomainError extends Error {
-	readonly domain: string;
-
-	constructor(domain: string, purpose = "default-domain resolution") {
+	constructor(purpose = "default-domain resolution") {
 		super(
-			`[no-default-domain] No default domain "${domain}" is installed; ${purpose} requires an explicit domain. Install or activate the "${domain}" domain, or set an explicit domain.`,
+			`[no-default-domain] No default domain is declared; ${purpose} requires an explicit domain or a declared default.`,
 		);
 		this.name = "NoDefaultDomainError";
-		this.domain = domain;
 	}
 }
 
-/**
- * Resolve the framework fallback domain for domainless definitions.
- *
- * Resolver-backed paths can prove whether `main` is installed, so absence is
- * an actionable configuration error. Resolver-less paths cannot distinguish a
- * missing default from a simple file fixture, so they return the framework
- * default and let resource lookup produce path-specific diagnostics.
- */
+export class AmbiguousDefaultDomainError extends Error {
+	constructor(readonly domains: readonly string[]) {
+		super(
+			`Multiple default domains are declared: ${domains.join(", ")}. Declare at most one active default domain.`,
+		);
+		this.name = "AmbiguousDefaultDomainError";
+	}
+}
+
+/** Selection uses declared traits, never a preferred domain spelling. */
+export function selectDefaultDomain(
+	domains: readonly LoadedDomain[],
+): LoadedDomain | undefined {
+	const defaults = domains.filter((domain) => domain.manifest.default);
+	if (defaults.length > 1)
+		throw new AmbiguousDefaultDomainError(
+			defaults.map((domain) => domain.manifest.id),
+		);
+	return defaults[0];
+}
+
 export function resolveDefaultDomain(
 	options: ResolveDefaultDomainOptions = {},
 ): string {
 	const explicitDomain = options.explicitDomain?.trim();
 	if (explicitDomain) return explicitDomain;
-
-	if (
-		options.resolver &&
-		!options.resolver.registry.has(FRAMEWORK_DEFAULT_DOMAIN)
-	) {
-		throw new NoDefaultDomainError(FRAMEWORK_DEFAULT_DOMAIN, options.purpose);
-	}
-
-	return FRAMEWORK_DEFAULT_DOMAIN;
+	const selected = options.resolver
+		? selectDefaultDomain(options.resolver.registry.listAll())?.manifest.id
+		: options.defaultDomain?.trim();
+	if (!selected) throw new NoDefaultDomainError(options.purpose);
+	return selected;
 }

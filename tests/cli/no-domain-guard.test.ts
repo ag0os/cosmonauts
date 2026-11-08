@@ -19,7 +19,14 @@ function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 
 function runtimeWithDomains(...ids: string[]): CosmonautsRuntime {
 	return {
-		domains: ids.map((id) => ({ manifest: { id } })),
+		domains: ids.map((id) => ({
+			manifest: {
+				id,
+				resourceFallback: id === "shared",
+				default: id === "main",
+				lead: id === "shared" ? undefined : "lead",
+			},
+		})),
 	} as unknown as CosmonautsRuntime;
 }
 

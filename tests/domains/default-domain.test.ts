@@ -9,7 +9,7 @@ import type { LoadedDomain } from "../../lib/domains/types.ts";
 
 function makeDomain(id: string): LoadedDomain {
 	return {
-		manifest: { id, description: `Test ${id}` },
+		manifest: { id, description: `Test ${id}`, default: id === "main" },
 		portable: false,
 		agents: new Map(),
 		capabilities: new Set(),
@@ -36,7 +36,7 @@ function makeResolver(domainIds: readonly string[]): DomainResolver {
 }
 
 describe("resolveDefaultDomain", () => {
-	it("returns main for missing explicit domain when main is installed", () => {
+	it("returns the declared default when no explicit domain is given", () => {
 		const resolver = makeResolver(["shared", "main"]);
 
 		expect(resolveDefaultDomain({ resolver })).toBe("main");
@@ -53,7 +53,7 @@ describe("resolveDefaultDomain", () => {
 		).toBe("custom");
 	});
 
-	it("throws a no default domain error when main is unavailable", () => {
+	it("throws a neutral no default domain error when no default is declared", () => {
 		const resolver = makeResolver(["shared"]);
 
 		expect(() =>
@@ -68,7 +68,7 @@ describe("resolveDefaultDomain", () => {
 				purpose: "synthetic agent definition",
 			}),
 		).toThrow(
-			'[no-default-domain] No default domain "main" is installed; synthetic agent definition requires an explicit domain.',
+			"[no-default-domain] No default domain is declared; synthetic agent definition requires an explicit domain or a declared default.",
 		);
 
 		try {
@@ -78,12 +78,13 @@ describe("resolveDefaultDomain", () => {
 			});
 		} catch (error) {
 			expect(error).toBeInstanceOf(NoDefaultDomainError);
-			expect((error as NoDefaultDomainError).domain).toBe("main");
+			expect((error as Error).message).not.toContain('"main"');
 			expect((error as Error).message).not.toContain("coding");
 		}
 	});
 
-	it("returns main for missing explicit domain when no resolver can prove absence", () => {
-		expect(resolveDefaultDomain()).toBe("main");
+	it("requires a consumer default for resolver-less callers", () => {
+		expect(() => resolveDefaultDomain()).toThrow(NoDefaultDomainError);
+		expect(resolveDefaultDomain({ defaultDomain: "studio" })).toBe("studio");
 	});
 });

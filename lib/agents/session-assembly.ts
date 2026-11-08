@@ -1,3 +1,4 @@
+import { splitRole } from "./qualified-role.ts";
 /**
  * Shared session parameter builder for all agent session creation paths.
  *
@@ -63,6 +64,8 @@ export interface BuildSessionParamsOptions {
 	domainsDir?: string;
 	/** Explicit directory fallback resource providers. */
 	fallbackDomains?: readonly string[];
+	/** Explicit default for directory-only resource lookup. */
+	defaultDomain?: string;
 	/** Absolute path to framework prompt templates. Defaults to lib/prompts/framework. */
 	frameworkPromptsDir?: string;
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
@@ -179,6 +182,8 @@ export async function buildSessionParams(
 	} = options;
 	validateAgentDefinition(def);
 
+	const identity = splitRole(qualifyAgentId(def.id, def.domain));
+
 	// Tool resolution
 	const qualityReviewProfile = qualityReviewProfileFor(def, qualityReviewChild);
 	const tools = resolveTools(
@@ -188,18 +193,20 @@ export async function buildSessionParams(
 		cwd,
 	);
 	const resourceDomain =
-		def.instructions && !def.domain && !def.resourceDomain
-			? ""
+		def.instructions && !identity.domain && !def.resourceDomain
+			? undefined
 			: resolveDefaultDomain({
-					explicitDomain: def.resourceDomain ?? def.domain,
+					explicitDomain: def.resourceDomain ?? identity.domain,
+					defaultDomain: options.defaultDomain,
 					resolver,
 					purpose: `session parameters for agent "${qualifyAgentId(def.id, def.domain)}"`,
 				});
 
 	// Four-layer prompt assembly
 	let promptContent: string | undefined = await assemblePrompts({
-		agentId: def.id,
+		agentId: identity.id,
 		domain: resourceDomain,
+		fallbackDomains: options.fallbackDomains,
 		capabilities: def.capabilities,
 		domainsDir,
 		frameworkPromptsDir,
@@ -222,6 +229,7 @@ export async function buildSessionParams(
 	const selected = await bindSessionExtensions({
 		names: def.extensions,
 		domain: resourceDomain,
+		fallbackDomains: options.fallbackDomains,
 		domainsDir,
 		resolver,
 		context: {
@@ -273,12 +281,10 @@ export async function buildSessionParams(
 				projectSkills,
 				domainsDir,
 				resolver,
-				agent: { skills: def.skills, domain: resourceDomain },
+				agent: { skills: def.skills, domain: identity.domain },
 			});
 	const hiddenSkillNames = resolveHiddenSkillNames({
-		requesterDomain:
-			def.domain ??
-			(def.instructions || def.resourceDomain ? "" : resourceDomain),
+		requesterDomain: identity.domain,
 		resolver,
 	});
 	const skillsOverride = buildSkillsOverride(

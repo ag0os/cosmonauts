@@ -1,12 +1,19 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { resolveDefaultLead } from "../../lib/agents/resolve-default-lead.ts";
+import { createRegistryFromDomains } from "../../lib/agents/resolver.ts";
 import { resolveEffectiveProjectSkills } from "../../lib/agents/skills.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
 	loadNamedChains,
 	selectDomainChains,
 } from "../../lib/chains/loader.ts";
+import {
+	AmbiguousDefaultDomainError,
+	NoDefaultDomainError,
+	resolveDefaultDomain,
+} from "../../lib/domains/default-domain.ts";
 import {
 	DomainIdConflictError,
 	loadDomainsFromSources,
@@ -15,6 +22,7 @@ import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { DomainManifest, LoadedDomain } from "../../lib/domains/types.ts";
 import { validateDomains } from "../../lib/domains/validator.ts";
+import { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("declared-domain-policy-");
@@ -307,4 +315,88 @@ test("effective project skills use every declared fallback and directory callers
 			fallbackDomains: ["second"],
 		}),
 	).toEqual(["second"]);
+});
+
+test("a renamed declared default supplies resources and its lead ahead of ordinary domain names", () => {
+	const ordinary = domain({
+		id: "main",
+		description: "Ordinary",
+		lead: "actor",
+	});
+	ordinary.agents.set("actor", { ...actor(), domain: "main" });
+	const control = domain({
+		id: "control",
+		description: "Default",
+		default: true,
+		lead: "actor",
+	});
+	control.agents.set("actor", { ...actor(), domain: "control" });
+	const domains = [ordinary, control];
+	const registry = new DomainRegistry(domains);
+	expect(resolveDefaultDomain({ resolver: new DomainResolver(registry) })).toBe(
+		"control",
+	);
+	expect(
+		resolveDefaultLead(
+			{
+				domains,
+				domainRegistry: registry,
+				agentRegistry: createRegistryFromDomains(domains),
+			},
+			{},
+		).domain,
+	).toBe("control");
+	expect(() =>
+		resolveDefaultDomain({
+			resolver: new DomainResolver(new DomainRegistry([ordinary])),
+		}),
+	).toThrow(NoDefaultDomainError);
+});
+
+test("multiple default declarations fail direct selection and runtime loading", async () => {
+	const first = domain({ id: "first", description: "First", default: true });
+	const second = domain({ id: "second", description: "Second", default: true });
+	expect(() =>
+		resolveDefaultDomain({
+			resolver: new DomainResolver(new DomainRegistry([first, second])),
+		}),
+	).toThrow(AmbiguousDefaultDomainError);
+	await provider("first", first.manifest, 0);
+	await provider("second", second.manifest, 0);
+	await expect(
+		CosmonautsRuntime.create({
+			builtinDomainsDir: tmp.path,
+			projectRoot: tmp.path,
+			includeUserSources: false,
+		}),
+	).rejects.toBeInstanceOf(AmbiguousDefaultDomainError);
+});
+
+test("only the owning identity keeps its explicitly named private skills under a project filter", async () => {
+	const path = join(tmp.path, "owner", "skills", "secret");
+	await mkdir(path, { recursive: true });
+	await writeFile(
+		join(path, "SKILL.md"),
+		"---\nname: secret\ndescription: Secret\n---\n",
+	);
+	const owner = domain({
+		id: "owner",
+		description: "Owner",
+		internal: { skills: ["secret"] },
+	});
+	const resolver = new DomainResolver(new DomainRegistry([owner]));
+	expect(
+		await resolveEffectiveProjectSkills({
+			resolver,
+			projectSkills: [],
+			agent: { domain: "owner", skills: ["secret"] },
+		}),
+	).toEqual(["secret"]);
+	expect(
+		await resolveEffectiveProjectSkills({
+			resolver,
+			projectSkills: [],
+			agent: { skills: ["secret"] },
+		}),
+	).toEqual([]);
 });

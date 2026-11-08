@@ -22,7 +22,8 @@ const NATIVE_PROVIDERS: Readonly<Record<string, SessionExtensionProvider>> = {
 
 interface BindingOptions {
 	names: readonly string[];
-	domain: string;
+	domain?: string;
+	fallbackDomains?: readonly string[];
 	domainsDir?: string;
 	resolver?: DomainResolver;
 	context: SessionProviderContext;

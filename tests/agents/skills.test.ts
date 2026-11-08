@@ -270,7 +270,7 @@ describe("buildSkillsOverride", () => {
 		]);
 	});
 
-	test("defaults omitted requester domain to main for direct visibility resolution", () => {
+	test("treats an omitted requester as outside every domain", () => {
 		const resolver = new DomainResolver(
 			new DomainRegistry([
 				makeDomain("main", {
@@ -295,7 +295,7 @@ describe("buildSkillsOverride", () => {
 		const hiddenSkillNames = resolveHiddenSkillNames({ resolver });
 
 		expect(hiddenSkillNames).toContain("coding-internal");
-		expect(hiddenSkillNames).not.toContain("main-internal");
+		expect(hiddenSkillNames).toContain("main-internal");
 	});
 
 	test("wildcard cross-domain agents keep recursive public skills", () => {

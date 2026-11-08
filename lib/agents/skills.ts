@@ -6,7 +6,6 @@
  */
 
 import { join } from "node:path";
-import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import { canAccessSurfaceName } from "../domains/public-surface.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import type { LoadedDomain } from "../domains/types.ts";
@@ -52,7 +51,7 @@ interface ResolveEffectiveProjectSkillsOptions {
 }
 
 interface ResolveSkillVisibilityOptions {
-	/** Domain requesting visibility. Defaults to the framework default domain. */
+	/** Domain requesting visibility. Undefined means outside every domain. */
 	readonly requesterDomain?: string;
 	/** Domain resolver for loaded-domain visibility rules. */
 	readonly resolver?: DomainResolver;
@@ -119,7 +118,9 @@ async function listOwnDomainSkillNames(
 	const domain = resolver?.registry.get(agent.domain);
 	if (!domain) return [];
 	const shipped = new Set(
-		(await discoverSkills([domain])).map((skill) => skill.name),
+		(await discoverSkills([domain], [], { domainContext: agent.domain })).map(
+			(skill) => skill.name,
+		),
 	);
 	return agent.skills.filter((name) => shipped.has(name));
 }
@@ -145,14 +146,7 @@ export function resolveHiddenSkillNames(
 ): readonly string[] | undefined {
 	if (!options.resolver) return undefined;
 
-	const requesterDomain =
-		options.requesterDomain === ""
-			? ""
-			: resolveDefaultDomain({
-					explicitDomain: options.requesterDomain,
-					resolver: options.resolver,
-					purpose: "skill visibility resolution",
-				});
+	const requesterDomain = options.requesterDomain;
 	return [
 		...new Set(
 			options.resolver.registry.listAll().flatMap((domain) =>

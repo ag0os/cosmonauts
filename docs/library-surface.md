@@ -241,4 +241,11 @@ Domain resource fallback and activation are separate inputs: `resourceFallback` 
 
 Validator capability, extension and persona checks use declared resource providers. Explicit instructions remove the persona-file requirement independently of the domain's spelling; no domain name exempts an undeclared persona. Declared fallback chains participate in contextual collections, with the contextual domain winning name collisions. Effective project skills include every declared fallback provider, in discovery order. Directory-only skill callers pass `fallbackDomains` explicitly. Tests: the declared-domain-policy contracts, validator, named-chain loader and skill/session suites.
 
-Default-domain selection, undefined domainless propagation and the host session-policy port remain incomplete at this checkpoint; these sentences do not claim LS-2 or all of step 3c is complete.
+The host session-policy port remains incomplete at this checkpoint; these sentences do not claim LS-2 or all of step 3c is complete.
+
+
+The default resource domain comes from `DomainManifest.default`, with at most one active default; runtime loading and direct default selection reject ambiguity. Resolver-less callers supply `defaultDomain` when they need a default, rather than receiving a framework domain name. Default lead selection uses the declared default and then another eligible lead. Interactive commands resolve extension providers through the consumer resolver. Tests: declared-domain-policy, default-domain, CLI default-lead/main/no-domain-guard suites.
+
+Domainless resource identity is `undefined` throughout session assembly, prompt and extension lookup, and skill visibility. Explicit instructions need no default-domain lookup. Directory resource fallback is the caller's `fallbackDomains` list; no undeclared directory name is invented. Borrowed resources and a default persona never grant private skill ownership; only the declared identity (including a pre-qualified id) does. Package source-agent prompts use the same instructions/resource separation. Tests: agent declaration and skill suites, domainless prompt-assembly and package-build contracts.
+
+The LS-1 AST boundary checks `require.resolve`, `import.meta.resolve`, module-relative `new URL(..., import.meta.url)`, import-equals, absolute/file URL references and self-package or bare content roots, while retaining legitimate library domain APIs and ignoring comments/prose. Test: `tests/coding-agnostic-framework.test.ts`.

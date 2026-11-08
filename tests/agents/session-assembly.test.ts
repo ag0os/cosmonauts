@@ -93,7 +93,7 @@ function makeDomain(
 ): LoadedDomain {
 	const rootDir = join(tmp.path, id);
 	return {
-		manifest: { id, description: `Domain ${id}` },
+		manifest: { id, description: `Domain ${id}`, default: id === "main" },
 		portable: false,
 		agents: new Map(),
 		capabilities: new Set(),
@@ -133,6 +133,7 @@ function makeOptions(
 		cwd: tmp.path,
 		domainsDir: tmp.path,
 		fallbackDomains: ["shared"],
+		defaultDomain: "main",
 		frameworkPromptsDir: join(tmp.path, "framework"),
 		...overrides,
 	};
@@ -617,7 +618,7 @@ describe("buildSessionParams", () => {
 			expect(result?.skills).toEqual([]);
 		});
 
-		it("uses main as the requester domain for domainless skill visibility", async () => {
+		it("keeps domainless skill visibility outside every domain while using declared default resources", async () => {
 			await setupMinimalDomains(tmp.path);
 			const resolver = new DomainResolver(
 				new DomainRegistry([

@@ -1,4 +1,5 @@
 import type { DomainBindingResolver } from "../domains/bindings.ts";
+import { selectDefaultDomain } from "../domains/default-domain.ts";
 import type { LoadedDomain } from "../domains/types.ts";
 import type { AgentDefinition } from "./types.ts";
 
@@ -39,14 +40,15 @@ export function resolveDefaultLead(
 		throw new Error(`Domain "${leadDomain}" has no lead agent`);
 	}
 
-	const mainLead = runtime.domainRegistry.get("main")?.manifest.lead;
-	if (mainLead) {
-		return runtime.agentRegistry.resolve(mainLead, "main");
+	const defaultDomain = selectDefaultDomain(runtime.domains);
+	if (defaultDomain?.manifest.lead) {
+		return runtime.agentRegistry.resolve(
+			defaultDomain.manifest.lead,
+			defaultDomain.manifest.id,
+		);
 	}
-
 	const fallback = runtime.domains.find(
-		(domain) =>
-			!["shared", "main"].includes(domain.manifest.id) && domain.manifest.lead,
+		(domain) => !domain.manifest.resourceFallback && domain.manifest.lead,
 	);
 	if (fallback?.manifest.lead) {
 		return runtime.agentRegistry.resolve(

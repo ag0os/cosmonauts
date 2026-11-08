@@ -1,4 +1,4 @@
-import { qualifyRole } from "../agents/qualified-role.ts";
+import { qualifyRole, splitRole } from "../agents/qualified-role.ts";
 import type { AgentRegistry } from "../agents/resolver.ts";
 import type { AgentDefinition } from "../agents/types.ts";
 import { resolveDefaultDomain } from "../domains/default-domain.ts";
@@ -21,6 +21,8 @@ export interface BuildAgentPackageOptions {
 	readonly agentRegistry: AgentRegistry;
 	readonly domainContext?: string;
 	readonly domainsDir?: string;
+	readonly defaultDomain?: string;
+	readonly fallbackDomains?: readonly string[];
 	readonly frameworkPromptsDir?: string;
 	readonly resolver?: DomainResolver;
 	readonly projectSkills?: readonly string[];
@@ -47,6 +49,7 @@ export async function buildAgentPackage(
 		sourceAgent,
 		projectSkills: options.projectSkills,
 		domainsDir: options.domainsDir,
+		fallbackDomains: options.fallbackDomains,
 		resolver: options.resolver,
 	});
 	const systemPrompt = appendPackageIdentity(
@@ -116,14 +119,24 @@ async function resolveSystemPrompt(
 	}
 
 	assertRawSourcePromptExportable({ definition, sourceAgent });
-	const promptDomain = resolveDefaultDomain({
-		explicitDomain: sourceAgent.domain ?? options.domainContext,
-		resolver: options.resolver,
-		purpose: `source-agent package prompt assembly for "${sourceAgent.id}"`,
-	});
+	const identity = splitRole(qualifyRole(sourceAgent.id, sourceAgent.domain));
+	const promptDomain =
+		sourceAgent.instructions && !sourceAgent.resourceDomain && !identity.domain
+			? undefined
+			: resolveDefaultDomain({
+					explicitDomain:
+						sourceAgent.resourceDomain ??
+						identity.domain ??
+						options.domainContext,
+					defaultDomain: options.defaultDomain,
+					resolver: options.resolver,
+					purpose: `source-agent package prompt assembly for "${sourceAgent.id}"`,
+				});
 	return assemblePrompts({
-		agentId: sourceAgent.id,
+		agentId: identity.id,
+		instructions: sourceAgent.instructions,
 		domain: promptDomain,
+		fallbackDomains: options.fallbackDomains,
 		capabilities: sourceAgent.capabilities,
 		domainsDir: options.domainsDir,
 		frameworkPromptsDir: options.frameworkPromptsDir,

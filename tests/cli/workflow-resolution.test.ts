@@ -55,7 +55,11 @@ describe("CLI chain resolution — domain chains without project config", () => 
 				],
 			},
 			{
-				manifest: { id: "shared", description: "Shared" },
+				manifest: {
+					id: "shared",
+					description: "Shared",
+					resourceFallback: true,
+				},
 				chains: [],
 			},
 		];
@@ -234,7 +238,11 @@ describe("CLI chain resolution — multiple domains", () => {
 	test("aggregates chains from multiple domains", async () => {
 		const domainChains = aggregateDomainChains([
 			{
-				manifest: { id: "shared", description: "Shared" },
+				manifest: {
+					id: "shared",
+					description: "Shared",
+					resourceFallback: true,
+				},
 				chains: [],
 			},
 			{
@@ -265,7 +273,11 @@ describe("CLI chain resolution — multiple domains", () => {
 		// Simulates two domains both defining 'build'
 		const domainChains = aggregateDomainChains([
 			{
-				manifest: { id: "shared", description: "Shared" },
+				manifest: {
+					id: "shared",
+					description: "Shared",
+					resourceFallback: true,
+				},
 				chains: [
 					{
 						name: "build",
@@ -299,7 +311,11 @@ describe("CLI chain resolution — multiple domains", () => {
 		const domainChains = aggregateDomainChains(
 			[
 				{
-					manifest: { id: "shared", description: "Shared" },
+					manifest: {
+						id: "shared",
+						description: "Shared",
+						resourceFallback: true,
+					},
 					chains: [
 						{
 							name: "shared-check",

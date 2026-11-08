@@ -169,7 +169,7 @@ describe("buildAgentPackage", () => {
 		);
 	});
 
-	it("uses main as the final source-agent prompt fallback while preserving source identity", async () => {
+	it("uses the consumer default for source-agent resources while preserving source identity", async () => {
 		await writeDomainPromptFiles("main", "Main explorer persona.");
 		const sourceAgent = makeAgent({
 			domain: undefined,
@@ -182,6 +182,7 @@ describe("buildAgentPackage", () => {
 				prompt: { kind: "source-agent" },
 			}),
 			agentRegistry: new AgentRegistry([sourceAgent]),
+			defaultDomain: "main",
 			domainsDir: join(tmp.path, "domains"),
 			frameworkPromptsDir: join(tmp.path, "framework-prompts"),
 			skillPaths: [],
@@ -199,6 +200,25 @@ describe("buildAgentPackage", () => {
 		expect(agentPackage.systemPrompt).not.toContain("coding core capability.");
 	});
 
+	it("exports domainless declared instructions without a default resource domain", async () => {
+		const sourceAgent = makeAgent({
+			id: "solo",
+			domain: undefined,
+			capabilities: [],
+			instructions: { kind: "inline", content: "INLINE_CONSUMER_PERSONA" },
+		});
+		const built = await buildAgentPackage({
+			definition: makeDefinition({
+				sourceAgent: "solo",
+				prompt: { kind: "source-agent" },
+			}),
+			agentRegistry: new AgentRegistry([sourceAgent]),
+			skillPaths: [],
+			target: "claude-cli",
+		});
+		expect(built.sourceAgentId).toBe("solo");
+		expect(built.systemPrompt).toContain("INLINE_CONSUMER_PERSONA");
+	});
 	it("embeds allowlisted full skill markdown under a packaged skills heading", async () => {
 		await writeFlatSkill("flat", "# Flat Skill\n\nFull flat body.");
 		await writeDirectorySkill(

@@ -1,3 +1,4 @@
+import { selectDefaultDomain } from "./domains/default-domain.ts";
 /**
  * CosmonautsRuntime — centralized bootstrap sequence.
  *
@@ -154,6 +155,9 @@ export class CosmonautsRuntime {
 		const domains = await loadDomainsFromSources(sources, undefined, {
 			activeDomainIds,
 		});
+
+		// Reject ambiguous active defaults before building consumer services.
+		selectDefaultDomain(domains);
 
 		// 4. Build the domain registry and validate active binding targets/domains
 		const domainRegistry = new DomainRegistry(domains as LoadedDomain[]);

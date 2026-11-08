@@ -45,7 +45,12 @@ function makeDomain(
 ): LoadedDomain {
 	const rootDir = join(baseDir, id);
 	return {
-		manifest: { id, description: `Test ${id}`, portable: resources.portable },
+		manifest: {
+			id,
+			description: `Test ${id}`,
+			portable: resources.portable,
+			resourceFallback: id === "shared",
+		},
 		portable: resources.portable ?? false,
 		agents: new Map(),
 		capabilities: new Set(resources.capabilities ?? []),
@@ -72,6 +77,7 @@ function frameworkPromptsDir(): string {
 function assembleTestPrompts(options: AssemblePromptsOptions): Promise<string> {
 	return assemblePrompts({
 		frameworkPromptsDir: frameworkPromptsDir(),
+		fallbackDomains: ["shared"],
 		...options,
 	});
 }
@@ -224,7 +230,7 @@ describe("assemblePrompts", () => {
 					resolver,
 				}),
 			).rejects.toThrow(
-				'Capability "nonexistent" not found in domain "coding" or shared',
+				'Capability "nonexistent" not found in domain "coding" or declared fallback providers',
 			);
 		});
 
@@ -564,4 +570,33 @@ it("reads absolute declared instructions without depending on an optional cwd", 
 		instructions: { kind: "file", path },
 	});
 	expect(prompt).toContain("ABSOLUTE_PERSONA_WITHOUT_CWD");
+});
+
+it("assembles domainless instructions with explicitly declared fallback resources", async () => {
+	await setupFiles(tmp.path, {
+		"support/capabilities/common.md": "DECLARED_CAPABILITY",
+	});
+	const support = {
+		...makeDomain(tmp.path, "support", { capabilities: ["common"] }),
+		manifest: { id: "support", description: "Support", resourceFallback: true },
+	};
+	const options = {
+		agentId: "solo",
+		instructions: { kind: "inline" as const, content: "DECLARED_PERSONA" },
+		capabilities: ["common"],
+	};
+	const resolved = await assemblePrompts({
+		...options,
+		resolver: makeResolver([support]),
+	});
+	const directory = await assemblePrompts({
+		...options,
+		domainsDir: tmp.path,
+		fallbackDomains: ["support"],
+	});
+	expect(resolved).toBe("DECLARED_CAPABILITY\n\nDECLARED_PERSONA");
+	expect(directory).toBe(resolved);
+	await expect(
+		assemblePrompts({ ...options, domainsDir: tmp.path }),
+	).rejects.toThrow("declared fallback providers");
 });

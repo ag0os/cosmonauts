@@ -13,9 +13,10 @@ export {
 } from "./bindings.ts";
 export type { ResolveDefaultDomainOptions } from "./default-domain.ts";
 export {
-	FRAMEWORK_DEFAULT_DOMAIN,
+	AmbiguousDefaultDomainError,
 	NoDefaultDomainError,
 	resolveDefaultDomain,
+	selectDefaultDomain,
 } from "./default-domain.ts";
 export { loadDomains, loadDomainsFromSources } from "./loader.ts";
 export type {

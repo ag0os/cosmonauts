@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, test } from "vitest";
@@ -72,34 +72,96 @@ describe("coding-agnostic framework source defaults", () => {
 	});
 });
 
-/** LS-1 includes type-only imports and re-exports: content cannot define core types. */
+function isImportMeta(node: ts.Node): boolean {
+	return (
+		ts.isMetaProperty(node) &&
+		node.keywordToken === ts.SyntaxKind.ImportKeyword &&
+		node.name.text === "meta"
+	);
+}
+
+function isModuleResolver(expression: ts.Expression): boolean {
+	if (
+		!ts.isPropertyAccessExpression(expression) ||
+		expression.name.text !== "resolve"
+	)
+		return false;
+	return (
+		isImportMeta(expression.expression) ||
+		(ts.isIdentifier(expression.expression) &&
+			expression.expression.text === "require")
+	);
+}
+
+function isModuleCall(expression: ts.Expression): boolean {
+	return (
+		expression.kind === ts.SyntaxKind.ImportKeyword ||
+		(ts.isIdentifier(expression) && expression.text === "require") ||
+		isModuleResolver(expression)
+	);
+}
+
+function urlReference(node: ts.NewExpression): ts.Node | undefined {
+	if (!ts.isIdentifier(node.expression) || node.expression.text !== "URL")
+		return undefined;
+	const base = node.arguments?.[1];
+	if (
+		!base ||
+		!ts.isPropertyAccessExpression(base) ||
+		base.name.text !== "url" ||
+		!isImportMeta(base.expression)
+	)
+		return undefined;
+	return node.arguments?.[0];
+}
+
+function declarationReference(node: ts.Node): ts.Node | undefined {
+	if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+		return node.moduleSpecifier;
+	if (
+		ts.isImportEqualsDeclaration(node) &&
+		ts.isExternalModuleReference(node.moduleReference)
+	)
+		return node.moduleReference.expression;
+	if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument))
+		return node.argument.literal;
+	return undefined;
+}
+
+function referenceArgument(node: ts.Node): ts.Node | undefined {
+	const declared = declarationReference(node);
+	if (declared) return declared;
+	if (ts.isCallExpression(node) && isModuleCall(node.expression))
+		return node.arguments[0];
+	if (ts.isNewExpression(node)) return urlReference(node);
+	return undefined;
+}
+
+function isContentSpecifier(file: string, specifier: string): boolean {
+	// Bare content roots and self-package paths must not bypass the filesystem guard.
+	if (/^(?:cosmonauts\/)?(?:domains|bundled)(?:\/|$)/.test(specifier))
+		return true;
+	let path: string;
+	if (specifier.startsWith("file:")) path = fileURLToPath(specifier);
+	else if (specifier.startsWith(".") || isAbsolute(specifier))
+		path = resolve(dirname(file), specifier);
+	else return false;
+	const target = relative(REPO_ROOT, path);
+	return /^(?:domains|bundled)(?:\/|$)/.test(target);
+}
+
+/** LS-1 includes types, resolvers and module-relative URL resources. */
 function contentImports(file: string, text: string): string[] {
 	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
 	const violations: string[] = [];
-	const check = (node: ts.Node | undefined) => {
-		if (!node || !ts.isStringLiteralLike(node)) return;
-		if (!node.text.startsWith(".")) return;
-		const target = relative(REPO_ROOT, resolve(dirname(file), node.text));
-		if (target.startsWith("domains/") || target.startsWith("bundled/")) {
-			violations.push(node.text);
-		}
-	};
 	const visit = (node: ts.Node): void => {
-		if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-			check(node.moduleSpecifier);
-		} else if (
-			ts.isImportTypeNode(node) &&
-			ts.isLiteralTypeNode(node.argument)
-		) {
-			check(node.argument.literal);
-		} else if (
-			ts.isCallExpression(node) &&
-			(node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-				(ts.isIdentifier(node.expression) &&
-					node.expression.text === "require"))
-		) {
-			check(node.arguments[0]);
-		}
+		const argument = referenceArgument(node);
+		if (
+			argument &&
+			ts.isStringLiteralLike(argument) &&
+			isContentSpecifier(file, argument.text)
+		)
+			violations.push(argument.text);
 		ts.forEachChild(node, visit);
 	};
 	visit(source);
@@ -147,4 +209,58 @@ const example = "../domains/prose.ts";`,
 			"../domains/example/legacy.ts",
 		]);
 	});
+});
+
+test.each([
+	[
+		'const value = require.resolve("../domains/example/tool.ts");',
+		"../domains/example/tool.ts",
+	],
+	[
+		'const value = import.meta.resolve("../bundled/example/tool.ts");',
+		"../bundled/example/tool.ts",
+	],
+	[
+		'const value = new URL("../domains/example/prompt.md", import.meta.url);',
+		"../domains/example/prompt.md",
+	],
+	[
+		'import value = require("../bundled/example/value.ts");',
+		"../bundled/example/value.ts",
+	],
+	[
+		'import value from "cosmonauts/domains/example/agent.ts";',
+		"cosmonauts/domains/example/agent.ts",
+	],
+	['export * from "bundled/example/agent.ts";', "bundled/example/agent.ts"],
+	[
+		`require.resolve(${JSON.stringify(join(REPO_ROOT, "domains/example/tool.ts"))});`,
+		join(REPO_ROOT, "domains/example/tool.ts"),
+	],
+	[
+		`import(${JSON.stringify(new URL("../domains/example/tool.ts", import.meta.url).href)});`,
+		new URL("../domains/example/tool.ts", import.meta.url).href,
+	],
+])("detects additional content reference %s", (source, expected) => {
+	expect(contentImports(join(REPO_ROOT, "lib/example.ts"), source)).toEqual([
+		expected,
+	]);
+});
+
+test("keeps library domain APIs and unrelated URLs or resolver calls valid", () => {
+	expect(
+		contentImports(
+			join(REPO_ROOT, "lib/example.ts"),
+			`
+ import { DomainRegistry } from "cosmonauts/lib/domains/registry.ts";
+ const a = require.resolve("./domains/registry.ts");
+ const b = import.meta.resolve("./domains/resolver.ts");
+ const c = new URL("./domains/schema.json", import.meta.url);
+ const d = new URL("../domains/example.md", "https://example.com");
+ const e = other.resolve("../domains/prose.ts");
+ const f = {url: "../domains/prose.ts"};
+ // require.resolve("../domains/comment.ts");
+ `,
+		),
+	).toEqual([]);
 });
