@@ -370,3 +370,38 @@ deterministic-only consolidation does not request a runtime/model. Injected test
 sessions without a model are labeled as injected rather than as a real model.
 Tests: `tests/cli/memory/subcommand.test.ts` provider identity contracts.
 
+
+
+### Domain manifest fields and host ownership
+
+| Field | Meaning | Layering and host rule |
+| --- | --- | --- |
+| `id`, `description` | Resource-provider identity and description | Names have no built-in significance |
+| `lead` | Agent used when a mode selects the domain lead | Optional; not a prerequisite for general runnability |
+| `portable` | Allows its resources to participate in portable lookup | Independent of activation, fallback and default |
+| `alwaysActive` | Participates despite an active-domain filter | Highest layer wins; dropping a lower true flag warns |
+| `resourceFallback` | Final resource-lookup tier | Highest layer wins; no implicit provider name |
+| `default` | Consumer-selected default resource domain/lead | At most one active default; omission drops and warns |
+| `internal.agents`, `.skills`, `.chains` | Hide listed assets from outside the owning domain | Resource borrowing grants no private visibility |
+| `defaultModel` | Retained domain metadata | Not an implicit runtime model default; the host supplies model policy |
+| `sessionPolicies` | Optional composed policy metadata | Omission inherits; distinct providers conflict; explicit host choice wins |
+
+Chain adapters, runtime worker and model defaults are host runtime inputs, not
+manifest chain-consumer hints. Session policy remains compatibility composition
+metadata while the actual current host always supplies its policy explicitly.
+The internal policy port has no dedicated package export. Tests: runtime policy,
+consumer-runtime and content-runtime suites.
+
+A registered session binds its host runtime alongside the policy, shared across
+extension module caches and removed on disposal; a bound spawn policy with no
+runtime fails before checkout discovery. Spawn policy no longer exposes a runtime
+getter. Detached child policy selection occurs once, including an absent result.
+Tests: session-policy registry/spawner and spawn-policy-hooks suites.
+
+The CLI host mounts `lib/extensions/agent-switch` and `domain-bindings` directly;
+resource-provider omission cannot disable those commands. Its content catalog is
+owned by `cli/package-catalog.ts`; core catalog lookup takes explicit entries and
+relative sources require an explicit root. Current CLI install/update behavior
+and its catalog entries remain pinned by package/update/catalog tests. The library
+ships no implicit catalog content. Catalog's step4 name debt is closed; the named
+step6 lean/QM import exceptions remain.

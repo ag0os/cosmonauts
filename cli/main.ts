@@ -24,6 +24,7 @@ import { validateAgentDefinition } from "../lib/agents/declaration.ts";
  */
 
 import { writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Command, CommanderError } from "commander";
 import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
@@ -330,13 +331,13 @@ export function hasRunnableDefaultDomain(runtime: CosmonautsRuntime): boolean {
 	return runtime.domains.some((domain) => !domain.manifest.resourceFallback);
 }
 
-export function resolveInteractiveExtensionPaths(runtime: {
+/** Host-owned interactive extensions do not depend on a resource domain or its shims. */
+export function resolveInteractiveExtensionPaths(_runtime: {
 	readonly domainResolver: Pick<DomainResolver, "resolveExtensionPath">;
 }): string[] {
-	return ["agent-switch", "domain-bindings"].flatMap((name) => {
-		const path = runtime.domainResolver.resolveExtensionPath(name, undefined);
-		return path ? [path] : [];
-	});
+	return ["agent-switch", "domain-bindings"].map((name) =>
+		fileURLToPath(new URL(`../lib/extensions/${name}`, import.meta.url)),
+	);
 }
 
 interface ResolveDumpPromptDomainOptions {

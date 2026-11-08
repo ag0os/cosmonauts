@@ -63,9 +63,7 @@ function setup(
 		sessionId: parentId,
 		systemPrompt: "<!-- COSMONAUTS_AGENT_ID:studio/lead -->",
 	});
-	registerSessionPolicy(parentId, {
-		spawn: { runtime: () => runtime, ...policy },
-	});
+	registerSessionPolicy(parentId, { spawn: policy }, runtime);
 	registerSpawnTool(pi as never, bootstrap);
 	const tracker = getOrCreateTracker(parentId, undefined, {
 		deliveryMode: "external",
@@ -203,20 +201,25 @@ test("a host delegated launch is tracked without creating an ordinary child sess
 });
 
 for (const bound of [false, true]) {
-	test(`ordinary spawning supports omitted runtime and optional host callbacks (${bound})`, async () => {
-		const { pi, tracker, bootstrap } = setup({ authorize: () => undefined });
+	test(`ordinary spawning supports an unbound host or a registered runtime (${bound})`, async () => {
+		const { pi, tracker, bootstrap, runtime } = setup({
+			authorize: () => undefined,
+		});
 		removeSessionPolicy(parentId);
 		if (bound)
-			registerSessionPolicy(parentId, {
-				spawn: { authorize: () => undefined },
-			});
+			registerSessionPolicy(
+				parentId,
+				{ spawn: { authorize: () => undefined } },
+				runtime,
+			);
 		const session = child();
 		mocks.factory.mockResolvedValue({ session });
 		await expect(
 			pi.callTool("spawn_agent", { role: "reader", prompt: "work" }),
 		).resolves.toMatchObject({ details: { status: "accepted" } });
 		expect((await tracker.nextCompletion()).type).toBe("spawn_completed");
-		expect(bootstrap).toHaveBeenCalledWith("/untrusted/checkout");
+		if (bound) expect(bootstrap).not.toHaveBeenCalled();
+		else expect(bootstrap).toHaveBeenCalledWith("/untrusted/checkout");
 		await flushAsync();
 		expect(session.dispose).toHaveBeenCalledOnce();
 	});
@@ -260,3 +263,25 @@ for (const bound of [false, true]) {
 		}
 	});
 }
+
+test("a bound spawn policy missing its runtime fails before untrusted discovery", async () => {
+	const { pi, bootstrap } = setup({ authorize: () => undefined });
+	removeSessionPolicy(parentId);
+	registerSessionPolicy(parentId, { spawn: { authorize: () => undefined } });
+	await expect(
+		pi.callTool("spawn_agent", { role: "reader", prompt: "work" }),
+	).rejects.toThrow("Host spawn policy runtime is missing");
+	expect(bootstrap).not.toHaveBeenCalled();
+	expect(mocks.factory).not.toHaveBeenCalled();
+});
+
+test("an ordinary child resolves its host session policy exactly once even when absent", async () => {
+	const { pi, tracker, runtime } = setup({ authorize: () => undefined });
+	const select = vi.fn(() => undefined);
+	if (!runtime.sessionPolicies) throw new Error("Missing test policy provider");
+	runtime.sessionPolicies.forAgent = select;
+	mocks.factory.mockResolvedValue({ session: child() });
+	await pi.callTool("spawn_agent", { role: "reader", prompt: "work" });
+	await tracker.nextCompletion();
+	expect(select).toHaveBeenCalledOnce();
+});

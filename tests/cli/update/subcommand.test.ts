@@ -30,9 +30,9 @@ vi.mock("../../../lib/packages/store.ts", () => ({
 	resolveStorePath: vi.fn(),
 }));
 
-vi.mock("../../../lib/packages/catalog.ts", async (importOriginal) => {
+vi.mock("../../../cli/package-catalog.ts", async (importOriginal) => {
 	const actual =
-		await importOriginal<typeof import("../../../lib/packages/catalog.ts")>();
+		await importOriginal<typeof import("../../../cli/package-catalog.ts")>();
 	return {
 		...actual,
 		resolveCatalogEntry: vi.fn(),
@@ -40,11 +40,11 @@ vi.mock("../../../lib/packages/catalog.ts", async (importOriginal) => {
 });
 
 import { spawn } from "node:child_process";
+import { resolveCatalogEntry } from "../../../cli/package-catalog.ts";
 import {
 	createUpdateProgram,
 	updateAction,
 } from "../../../cli/update/subcommand.ts";
-import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
 import {
 	installPackage,
 	loadInstallMeta,

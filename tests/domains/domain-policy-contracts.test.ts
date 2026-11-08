@@ -71,12 +71,17 @@ test("runnable selection accepts ordinary providers with or without a lead and e
 	expect(hasRunnableDefaultDomain(runtime([]))).toBe(false);
 });
 
-test("interactive extension selection omits missing providers rather than inventing paths", () => {
+test("the CLI host mounts library interactive extensions without domain providers", () => {
 	expect(
 		resolveInteractiveExtensionPaths({
 			domainResolver: { resolveExtensionPath: () => undefined },
 		}),
-	).toEqual([]);
+	).toEqual(
+		["agent-switch", "domain-bindings"].map(
+			(name) =>
+				new URL(`../../lib/extensions/${name}`, import.meta.url).pathname,
+		),
+	);
 });
 
 test("fallback lead selection skips both fallback providers and providers without a lead", () => {

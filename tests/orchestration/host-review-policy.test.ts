@@ -71,20 +71,24 @@ test("content selects manager policy exactly and accepts only declared child rol
 	);
 });
 
-test("manager child spawning needs a host context and a base runtime before checkout discovery", () => {
+test("manager child spawning needs a host context and a registered base runtime", async () => {
 	const empty = qualityReviewSpawnPolicy();
 	expect(empty.authorize(request)).toBe("quality review context missing");
 	expect(
 		empty.authorize({ ...request, callerRole: "studio/lead" }),
 	).toBeUndefined();
-	const missingBase = qualityReviewSpawnPolicy(context());
-	expect(() => missingBase.runtime?.()).toThrow(
-		"Quality review base runtime is missing",
-	);
+	expect(qualityReviewSpawnPolicy(context())).not.toHaveProperty("runtime");
+	const { registerSessionPolicy, getSessionRuntime, removeSessionPolicy } =
+		await import("../../lib/agents/session-policy.ts");
 	const baseRuntime = {} as CosmonautsRuntime;
-	expect(qualityReviewSpawnPolicy(context({ baseRuntime })).runtime?.()).toBe(
-		baseRuntime,
-	);
+	const policy = createQualityReviewSessionPolicy(context({ baseRuntime }));
+	registerSessionPolicy("sealed-runtime", policy, baseRuntime);
+	try {
+		expect(getSessionRuntime("sealed-runtime")).toBe(baseRuntime);
+	} finally {
+		removeSessionPolicy("sealed-runtime");
+	}
+	expect(getSessionRuntime("sealed-runtime")).toBeUndefined();
 });
 
 test("panel admission checks actual reviewer, caller, lens and both override fields independently", () => {

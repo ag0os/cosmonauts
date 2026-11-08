@@ -4,6 +4,7 @@ import { expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import {
 	getSessionPolicy,
+	getSessionRuntime,
 	registerSessionPolicy,
 	type SessionPolicy,
 } from "../../lib/agents/session-policy.ts";
@@ -49,6 +50,7 @@ function session(sessionId: string) {
 
 test("consumer policy reaches creation, pre-prompt binding, completion observation and disposal", async () => {
 	const child = session("consumer-hooks");
+	const runtime = {} as import("../../lib/runtime.ts").CosmonautsRuntime;
 	const policy: SessionPolicy = {
 		onCreated: vi.fn(),
 		onDisposed: vi.fn(),
@@ -56,6 +58,7 @@ test("consumer policy reaches creation, pre-prompt binding, completion observati
 	};
 	child.prompt.mockImplementationOnce(async () => {
 		expect(getSessionPolicy(child.sessionId)).toBe(policy);
+		expect(getSessionRuntime(child.sessionId)).toBe(runtime);
 		const tracker = getOrCreateTracker(child.sessionId);
 		tracker.register("nested", "scribe", 1);
 		tracker.complete("nested", "finished");
@@ -64,6 +67,7 @@ test("consumer policy reaches creation, pre-prompt binding, completion observati
 	const selectPolicy = vi.fn(() => policy);
 	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path, {
 		sessionPolicies: { forAgent: selectPolicy },
+		runtime,
 	});
 	const result = await spawner.spawn({
 		role: actor.id,
@@ -80,6 +84,7 @@ test("consumer policy reaches creation, pre-prompt binding, completion observati
 	);
 	expect(policy.onDisposed).toHaveBeenCalledWith(child.sessionId);
 	expect(getSessionPolicy(child.sessionId)).toBeUndefined();
+	expect(getSessionRuntime(child.sessionId)).toBeUndefined();
 	expect(child.dispose).toHaveBeenCalledOnce();
 });
 

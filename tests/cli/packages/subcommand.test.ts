@@ -27,15 +27,16 @@ vi.mock("../../../lib/packages/store.ts", () => ({
 	listInstalledPackages: vi.fn(),
 }));
 
-vi.mock("../../../lib/packages/catalog.ts", async (importOriginal) => {
+vi.mock("../../../cli/package-catalog.ts", async (importOriginal) => {
 	const actual =
-		await importOriginal<typeof import("../../../lib/packages/catalog.ts")>();
+		await importOriginal<typeof import("../../../cli/package-catalog.ts")>();
 	return {
 		...actual,
 		resolveCatalogEntry: vi.fn(),
 	};
 });
 
+import { resolveCatalogEntry } from "../../../cli/package-catalog.ts";
 import {
 	createInstallProgram,
 	createPackagesProgram,
@@ -49,7 +50,6 @@ import {
 	resolveSource,
 	uninstallAction,
 } from "../../../cli/packages/subcommand.ts";
-import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
 import {
 	installPackage,
 	uninstallPackage,
@@ -492,9 +492,7 @@ describe("installAction — conflict prompt", () => {
 		answerConflictPrompts("invalid", "m");
 		mockInstallPackage.mockResolvedValue(
 			createInstallResultFixture({
-				domainMergeResults: [
-					{ domainId: "alpha", existingPackage: "old-pkg" },
-				],
+				domainMergeResults: [{ domainId: "alpha", existingPackage: "old-pkg" }],
 			}),
 		);
 
@@ -512,9 +510,7 @@ describe("installAction — conflict prompt", () => {
 		answerConflictPrompts("s");
 		mockInstallPackage.mockResolvedValue(
 			createInstallResultFixture({
-				domainMergeResults: [
-					{ domainId: "alpha", existingPackage: "old-pkg" },
-				],
+				domainMergeResults: [{ domainId: "alpha", existingPackage: "old-pkg" }],
 			}),
 		);
 		mockUninstallPackage.mockRejectedValue(new Error("rollback failed"));
@@ -710,7 +706,9 @@ describe("renderPackagesList", () => {
 		const rendered = renderPackagesList(sample, "human");
 		expect(rendered.kind).toBe("lines");
 		if (rendered.kind === "lines") {
-			expect(rendered.lines[0]).toMatch(/^PACKAGE.*VERSION.*SCOPE.*PORTABLE.*DOMAINS/);
+			expect(rendered.lines[0]).toMatch(
+				/^PACKAGE.*VERSION.*SCOPE.*PORTABLE.*DOMAINS/,
+			);
 			expect(rendered.lines[1]).toMatch(/^-+/);
 		}
 	});

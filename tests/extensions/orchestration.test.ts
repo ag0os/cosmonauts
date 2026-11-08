@@ -59,7 +59,11 @@ function registerQualityReviewSession(
 	sessionId: string,
 	context: QualityReviewSessionContext,
 ) {
-	registerSessionPolicy(sessionId, createQualityReviewSessionPolicy(context));
+	registerSessionPolicy(
+		sessionId,
+		createQualityReviewSessionPolicy(context),
+		context.baseRuntime,
+	);
 }
 const removeQualityReviewSession = removeSessionPolicy;
 

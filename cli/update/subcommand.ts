@@ -8,10 +8,6 @@
 import { spawn } from "node:child_process";
 import { Command } from "commander";
 import {
-	resolveCatalogEntry,
-	resolveCatalogSource,
-} from "../../lib/packages/catalog.ts";
-import {
 	installPackage,
 	loadInstallMeta,
 	uninstallPackage,
@@ -21,6 +17,10 @@ import {
 	resolveStorePath,
 } from "../../lib/packages/store.ts";
 import type { PackageScope } from "../../lib/packages/types.ts";
+import {
+	resolveCatalogEntry,
+	resolveCatalogSource,
+} from "../package-catalog.ts";
 
 // ============================================================================
 // Types

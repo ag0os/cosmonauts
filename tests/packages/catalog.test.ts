@@ -1,5 +1,5 @@
 /**
- * Tests for lib/packages/catalog.ts
+ * Tests for the current CLI consumer catalog
  * Covers getBundledCatalog() and resolveCatalogEntry()
  */
 
@@ -7,7 +7,7 @@ import { describe, expect, test } from "vitest";
 import {
 	getBundledCatalog,
 	resolveCatalogEntry,
-} from "../../lib/packages/catalog.ts";
+} from "../../cli/package-catalog.ts";
 
 describe("getBundledCatalog", () => {
 	test("returns an array", () => {
@@ -63,4 +63,16 @@ describe("resolveCatalogEntry", () => {
 		const entry = resolveCatalogEntry("");
 		expect(entry).toBeUndefined();
 	});
+});
+
+test("the library has no implicit content catalog or framework source root",async()=>{
+    const {getBundledCatalog,resolveCatalogEntry,resolveCatalogSource}=await import("../../lib/packages/catalog.ts");
+    expect(getBundledCatalog()).toEqual([]);
+    expect(resolveCatalogEntry("coding")).toBeUndefined();
+    const catalog=[{name:"studio",description:"Consumer",source:"./provided"}];
+    expect(getBundledCatalog(catalog)).toBe(catalog);
+    expect(resolveCatalogEntry("studio",catalog)).toBe(catalog[0]);
+    expect(()=>resolveCatalogSource("./provided")).toThrow("explicit consumer root");
+    expect(resolveCatalogSource("./provided","/consumer")).toBe("/consumer/provided");
+    expect(resolveCatalogSource("/absolute/source")).toBe("/absolute/source");
 });

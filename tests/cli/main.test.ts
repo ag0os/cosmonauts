@@ -625,8 +625,8 @@ describe("resolveInteractiveExtensionPaths", () => {
 				},
 			}),
 		).toEqual([
-			"/consumer/extensions/agent-switch",
-			"/consumer/extensions/domain-bindings",
+			new URL("../../lib/extensions/agent-switch", import.meta.url).pathname,
+			new URL("../../lib/extensions/domain-bindings", import.meta.url).pathname,
 		]);
 	});
 });

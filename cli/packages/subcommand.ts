@@ -12,7 +12,7 @@ import { Command } from "commander";
 import {
 	resolveCatalogEntry,
 	resolveCatalogSource,
-} from "../../lib/packages/catalog.ts";
+} from "../package-catalog.ts";
 import type { DomainMergeResult } from "../../lib/packages/installer.ts";
 import {
 	installPackage,

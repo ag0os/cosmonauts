@@ -195,7 +195,11 @@ async function prepareSpawnSession(
 		resolver,
 	);
 	if (config.sessionPolicy)
-		registerSessionPolicy(session.sessionId, config.sessionPolicy);
+		registerSessionPolicy(
+			session.sessionId,
+			config.sessionPolicy,
+			config.runtime,
+		);
 	config.sessionPolicy?.onCreated?.(session);
 	emitSpawnEvent(config, {
 		type: "agent_resolved",
