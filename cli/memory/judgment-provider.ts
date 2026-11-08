@@ -9,6 +9,7 @@ import type {
 	JudgedProposal,
 	ProposedMemoryRecord,
 } from "../../lib/memory/index.ts";
+import { requireModelId } from "../../lib/orchestration/model-resolution.ts";
 import { createToollessPiSession } from "../pi-session.ts";
 
 const OBSERVATION_KINDS = new Set([
@@ -62,9 +63,12 @@ interface PiCorpusJudgmentProviderOptions {
 export function createPiCorpusJudgmentProvider(
 	options: PiCorpusJudgmentProviderOptions,
 ): CorpusJudgmentProvider {
+	const model = options.createSession
+		? (options.model ?? "injected-session")
+		: requireModelId(options.model);
 	let requested = false;
 	return {
-		id: `pi/${options.model ?? "host-default"}`,
+		id: `pi/${model}`,
 		async judge(input, requestOptions) {
 			if (requested) {
 				throw new Error(

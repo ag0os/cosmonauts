@@ -1023,3 +1023,76 @@ async function listRegularFiles(root: string, prefix = ""): Promise<string[]> {
 	}
 	return paths.sort();
 }
+
+test.each([
+	{ override: undefined, expected: "test/host-choice", hostCalls: 1 },
+	{
+		override: "test/explicit-choice",
+		expected: "test/explicit-choice",
+		hostCalls: 0,
+	},
+])("records the resolved judgment model in provider and batch identity ($expected)", async ({
+	override,
+	expected,
+	hostCalls,
+}) => {
+	const { setRuntimeHost } = await import("../../../lib/runtime-host.ts");
+	const providerModule = await import(
+		"../../../cli/memory/judgment-provider.ts"
+	);
+	const factory = vi.fn(
+		async () =>
+			({
+				defaultModel: "test/host-choice",
+			}) as import("../../../lib/runtime.ts").CosmonautsRuntime,
+	);
+	setRuntimeHost(factory);
+	const provider = vi.spyOn(providerModule, "createPiCorpusJudgmentProvider");
+	try {
+		await executeMemoryConsolidate({
+			projectRoot: tmp.path,
+			noModel: false,
+			dryRun: true,
+			outputMode: "json",
+			model: override,
+		});
+		expect(factory).toHaveBeenCalledTimes(hostCalls);
+		expect(provider).toHaveBeenCalledWith(
+			expect.objectContaining({ model: expected }),
+		);
+		expect(provider.mock.results[0]?.value.id).toBe(`pi/${expected}`);
+	} finally {
+		provider.mockRestore();
+	}
+});
+
+test("deterministic consolidation does not request a runtime or judgment model", async () => {
+	const { setRuntimeHost } = await import("../../../lib/runtime-host.ts");
+	const factory = vi.fn(async () => {
+		throw new Error("no model is needed");
+	});
+	setRuntimeHost(factory);
+	await executeMemoryConsolidate({
+		projectRoot: tmp.path,
+		noModel: true,
+		dryRun: true,
+		outputMode: "json",
+	});
+	expect(factory).not.toHaveBeenCalled();
+});
+
+test("an unbound judgment provider requires an explicit model and labels injected sessions truthfully", () => {
+	expect(() =>
+		createPiCorpusJudgmentProvider({ projectRoot: tmp.path }),
+	).toThrow("No model configured");
+	const provider = createPiCorpusJudgmentProvider({
+		projectRoot: tmp.path,
+		createSession: async () => ({
+			messages: [],
+			prompt: async () => {},
+			abort: async () => {},
+			dispose: () => {},
+		}),
+	});
+	expect(provider.id).toBe("pi/injected-session");
+});

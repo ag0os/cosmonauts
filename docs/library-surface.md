@@ -356,3 +356,17 @@ There is no wildcard exposing private internals. Session
 creation stays on its separate Pi-dependent public entries. Test:
 `tests/public-surface.test.ts`; the external package-name-only fixture is step 5.
 
+Consumers import topology/normalization helpers from `cosmonauts/chains`; session
+orchestration factories from `cosmonauts/extensions/orchestration`; and inline or
+durable execution from the explicit `cosmonauts/orchestration/chain-runner` and
+`cosmonauts/orchestration/durable-chain-runner` entries. These let an external
+consumer bind the shipped orchestration tools and execute its declared chain
+without a private deep import. Pi session execution remains on separate entries.
+
+Memory consolidation resolves the consumer's effective model before creating the
+judgment provider, so provider IDs and durable batch keys retain the actual model
+(the current content's default is unchanged). Explicit models bypass host lookup;
+deterministic-only consolidation does not request a runtime/model. Injected test
+sessions without a model are labeled as injected rather than as a real model.
+Tests: `tests/cli/memory/subcommand.test.ts` provider identity contracts.
+

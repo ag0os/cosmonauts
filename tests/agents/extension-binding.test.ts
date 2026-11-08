@@ -312,3 +312,54 @@ test("consumer runtime providers receive the same runtime and grants without a d
 		);
 	expect(pi.tools.has("consumer-tool")).toBe(true);
 });
+
+test.each([
+	undefined,
+	42,
+])("validates optional host provider factory output (%s)", async (value) => {
+	const { CosmonautsRuntime } = await import("../../lib/runtime.ts");
+	const def = { ...definition(["host-hook"]), resourceDomain: undefined };
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+		agents: [def],
+		extensionProviders: { "host-hook": async () => value },
+	});
+	const assembly = buildSessionParams({
+		def,
+		runtime,
+		cwd: tmp.path,
+		loadConfig: async () => ({}),
+	});
+	if (value === undefined)
+		expect((await assembly).extensionFactories).toEqual([]);
+	else
+		await expect(assembly).rejects.toThrow(
+			"must return an inline factory or undefined",
+		);
+});
+
+test("directory providers retain precedence over same-name explicit host callbacks", async () => {
+	const { CosmonautsRuntime } = await import("../../lib/runtime.ts");
+	const path = await provider(
+		"tasks",
+		"export default function extension() {}",
+	);
+	const fallback = vi.fn(() => {
+		throw new Error("unselected host provider");
+	});
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+		extensionProviders: { tasks: fallback },
+	});
+	const params = await buildSessionParams({
+		def: definition(["tasks"]),
+		runtime,
+		cwd: tmp.path,
+		domainsDir: tmp.path,
+		loadConfig: async () => ({}),
+	});
+	expect(params.extensionPaths).toEqual([path]);
+	expect(fallback).not.toHaveBeenCalled();
+});

@@ -118,6 +118,10 @@
 		"./packages/scanner": "./lib/packages/scanner.ts",
 		"./lib/packages/scanner.ts": "./lib/packages/scanner.ts",
 		"./runtime-host": "./lib/runtime-host.ts",
-		"./lib/lean-run/providers/default.ts": "./lib/lean-run/providers/default.ts"
+		"./lib/lean-run/providers/default.ts": "./lib/lean-run/providers/default.ts",
+		"./chains": "./lib/chains/index.ts",
+		"./orchestration/chain-runner": "./lib/orchestration/chain-runner.ts",
+		"./orchestration/durable-chain-runner": "./lib/orchestration/durable-chain-runner.ts",
+		"./extensions/orchestration": "./lib/extensions/orchestration/index.ts"
 	}
 }

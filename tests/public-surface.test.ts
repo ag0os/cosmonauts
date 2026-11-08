@@ -31,4 +31,11 @@ test("exports retain all stable deep entries with explicit friendly aliases and 
 		require.resolve("cosmonauts/lib/agents/session-assembly.ts"),
 	).toThrow(/not defined by "exports"/);
 	expect(require.resolve("cosmonauts")).toMatch(/lib\/index\.ts$/);
+	for (const entry of [
+		"chains",
+		"extensions/orchestration",
+		"orchestration/chain-runner",
+		"orchestration/durable-chain-runner",
+	])
+		expect(require.resolve(`cosmonauts/${entry}`)).toMatch(/\.ts$/);
 });

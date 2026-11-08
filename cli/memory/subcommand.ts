@@ -23,6 +23,8 @@ import {
 	type MemoryConsolidateResult,
 	type MemoryStore,
 } from "../../lib/memory/index.ts";
+import { requireModelId } from "../../lib/orchestration/model-resolution.ts";
+import { getHostRuntime } from "../../lib/runtime-host.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import {
 	type CliOutputMode,
@@ -45,7 +47,9 @@ interface MemoryProgramOptions {
 	readonly projectRoot?: string;
 	readonly createConsolidationStore?: (
 		options: MemoryConsolidationStoreOptions,
-	) => Pick<MemoryStore, "consolidate">;
+	) =>
+		| Pick<MemoryStore, "consolidate">
+		| Promise<Pick<MemoryStore, "consolidate">>;
 	readonly improveResolver?: ImproveProposalResolver;
 	readonly retirementStore?: LivingMemoryRestorationStore;
 	readonly now?: () => Date;
@@ -232,7 +236,7 @@ export async function executeMemoryConsolidate(
 	const modelMode = options.noModel ? "deterministic-only" : "full";
 	const createStore =
 		options.createConsolidationStore ?? createDefaultConsolidationStore;
-	const store = createStore({
+	const store = await createStore({
 		projectRoot: options.projectRoot,
 		modelMode,
 		...(options.model === undefined ? {} : { model: options.model }),
@@ -412,16 +416,17 @@ async function assertRegularContainedFile(
 	}
 }
 
-function createDefaultConsolidationStore(
+async function createDefaultConsolidationStore(
 	options: MemoryConsolidationStoreOptions,
-): Pick<MemoryStore, "consolidate"> {
+): Promise<Pick<MemoryStore, "consolidate">> {
+	const model = await resolveJudgmentModel(options);
 	const durableFiles = createDurableMachineFiles();
 	const userCosmonautsRoot = join(homedir(), ".cosmonauts");
 	const judgmentProvider =
 		options.modelMode === "full"
 			? createPiCorpusJudgmentProvider({
 					projectRoot: options.projectRoot,
-					...(options.model === undefined ? {} : { model: options.model }),
+					model,
 				})
 			: undefined;
 	const consolidator = createLivingMemoryConsolidator({
@@ -583,4 +588,14 @@ function errorCode(error: unknown): string | undefined {
 	return error !== null && typeof error === "object" && "code" in error
 		? String((error as NodeJS.ErrnoException).code)
 		: undefined;
+}
+
+async function resolveJudgmentModel(
+	options: MemoryConsolidationStoreOptions,
+): Promise<string | undefined> {
+	if (options.modelMode !== "full") return undefined;
+	return requireModelId(
+		options.model ??
+			(await getHostRuntime({ projectRoot: options.projectRoot })).defaultModel,
+	);
 }
