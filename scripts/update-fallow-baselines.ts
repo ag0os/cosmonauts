@@ -69,7 +69,7 @@ try {
 		requested.some((item) => !item || !(item in categories))
 	) {
 		throw new Error(
-			"Usage: bun scripts/update-fallow-baselines.ts --base <revision> --reason <text> --category <dead-code|health|dupes> [--category ...] [--root <path>]",
+			"Usage: bun scripts/update-fallow-baselines.ts --base <revision> --reason <text> --category <dead-code|health|dupes> [--category ...] [--root <path>] [--rekey-paths <mapping.json>]",
 		);
 	}
 	const commit = run("git", ["rev-parse", "--verify", `${base}^{commit}`]);
@@ -87,69 +87,147 @@ try {
 	};
 	if (manifest.version !== 1 || !manifest.baselines)
 		throw new Error("invalid baseline manifest");
-	const scratch = mkdtempSync(join(tmpdir(), "fallow-baseline-refresh-"));
-	const checkout = join(scratch, "base");
-	let worktreeAdded = false;
-	try {
-		run("git", ["worktree", "add", "--detach", checkout, commit]);
-		worktreeAdded = true;
-		const dependencies = join(root, "node_modules");
-		if (existsSync(dependencies))
-			symlinkSync(dependencies, join(checkout, "node_modules"), "dir");
-		const writes: Array<{ path: string; content: string }> = [];
-		for (const category of new Set(requested as Category[])) {
-			const { command, path } = categories[category];
-			const output = join(scratch, `${category}.json`);
-			run(
-				fallow,
-				[
-					command,
-					"--save-baseline",
-					output,
-					"--format",
-					"json",
-					"--quiet",
-					"--no-cache",
-				],
-				checkout,
-				true,
-			);
-			const content = readFileSync(output, "utf8");
-			JSON.parse(content);
-			const sha256 = createHash("sha256").update(content).digest("hex");
-			const entry = manifest.baselines[category];
-			if (!entry || entry.path !== path || !Array.isArray(entry.provenance))
-				throw new Error(`invalid manifest entry: ${category}`);
-			entry.sha256 = sha256;
-			entry.provenance.push({
-				action: "refresh",
-				base,
-				baseCommit: commit,
-				sha256,
-				reason: reason.trim(),
-				recordedAt: new Date().toISOString(),
-			});
-			writes.push({ path: join(root, path), content });
+	const rekeyPaths = option("--rekey-paths");
+	if (rekeyPaths) {
+		if (requested.length !== 1 || requested[0] !== "health")
+			throw new Error("Path rekeys require only --category health");
+		const entry = manifest.baselines.health;
+		if (
+			!entry ||
+			entry.path !== categories.health.path ||
+			!Array.isArray(entry.provenance)
+		)
+			throw new Error("invalid manifest entry: health");
+		const baselinePath = join(root, entry.path);
+		const original = readFileSync(baselinePath, "utf8");
+		const priorSha256 = createHash("sha256").update(original).digest("hex");
+		if (entry.sha256 !== priorSha256)
+			throw new Error("health baseline does not match its manifest hash");
+		const mappingContent = readFileSync(resolve(rekeyPaths), "utf8");
+		const mapping: unknown = JSON.parse(mappingContent);
+		if (
+			!mapping ||
+			typeof mapping !== "object" ||
+			Array.isArray(mapping) ||
+			Object.keys(mapping).length === 0
+		)
+			throw new Error("Path rekeys require a nonempty object mapping");
+		const baseline = JSON.parse(original) as {
+			finding_counts: Record<string, unknown>;
+		};
+		const counts = baseline.finding_counts;
+		if (!counts || typeof counts !== "object" || Array.isArray(counts))
+			throw new Error("health baseline has no finding_counts");
+		const moves = new Map<string, string>();
+		for (const [from, to] of Object.entries(mapping)) {
+			if (
+				typeof to !== "string" ||
+				!to ||
+				from === to ||
+				from.startsWith("/") ||
+				to.startsWith("/") ||
+				from.split("/").includes("..") ||
+				to.split("/").includes("..")
+			)
+				throw new Error("Path rekeys require distinct relative file paths");
+			if (
+				!Object.hasOwn(counts, from) ||
+				Object.hasOwn(counts, to) ||
+				[...moves.values()].includes(to)
+			)
+				throw new Error(`Invalid or colliding path rekey: ${from} -> ${to}`);
+			moves.set(from, to);
 		}
-		for (const write of writes) {
-			const staged = `${write.path}.refresh-${process.pid}-${writes.indexOf(write)}.tmp`;
-			writeFileSync(staged, write.content);
-			try {
-				renameSync(staged, write.path);
-			} finally {
-				rmSync(staged, { force: true });
-			}
-		}
+		baseline.finding_counts = Object.fromEntries(
+			Object.entries(counts).map(([path, value]) => [
+				moves.get(path) ?? path,
+				value,
+			]),
+		);
+		const content = `${JSON.stringify(baseline, null, 2)}\n`;
+		const sha256 = createHash("sha256").update(content).digest("hex");
+		entry.sha256 = sha256;
+		entry.provenance.push({
+			action: "path-rekey",
+			base,
+			baseCommit: commit,
+			priorSha256,
+			sha256,
+			mapping: JSON.stringify(Object.fromEntries(moves)),
+			mappingSha256: createHash("sha256").update(mappingContent).digest("hex"),
+			reason: reason.trim(),
+			recordedAt: new Date().toISOString(),
+		});
+		writeFileSync(baselinePath, content);
 		writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 		console.log(
-			`Refreshed ${requested.join(", ")} against ${base} (${commit}).`,
+			`Rekeyed ${moves.size} health paths without regenerating findings.`,
 		);
-	} finally {
+	} else {
+		const scratch = mkdtempSync(join(tmpdir(), "fallow-baseline-refresh-"));
+		const checkout = join(scratch, "base");
+		let worktreeAdded = false;
 		try {
-			if (worktreeAdded)
-				run("git", ["worktree", "remove", "--force", checkout]);
+			run("git", ["worktree", "add", "--detach", checkout, commit]);
+			worktreeAdded = true;
+			const dependencies = join(root, "node_modules");
+			if (existsSync(dependencies))
+				symlinkSync(dependencies, join(checkout, "node_modules"), "dir");
+			const writes: Array<{ path: string; content: string }> = [];
+			for (const category of new Set(requested as Category[])) {
+				const { command, path } = categories[category];
+				const output = join(scratch, `${category}.json`);
+				run(
+					fallow,
+					[
+						command,
+						"--save-baseline",
+						output,
+						"--format",
+						"json",
+						"--quiet",
+						"--no-cache",
+					],
+					checkout,
+					true,
+				);
+				const content = readFileSync(output, "utf8");
+				JSON.parse(content);
+				const sha256 = createHash("sha256").update(content).digest("hex");
+				const entry = manifest.baselines[category];
+				if (!entry || entry.path !== path || !Array.isArray(entry.provenance))
+					throw new Error(`invalid manifest entry: ${category}`);
+				entry.sha256 = sha256;
+				entry.provenance.push({
+					action: "refresh",
+					base,
+					baseCommit: commit,
+					sha256,
+					reason: reason.trim(),
+					recordedAt: new Date().toISOString(),
+				});
+				writes.push({ path: join(root, path), content });
+			}
+			for (const write of writes) {
+				const staged = `${write.path}.refresh-${process.pid}-${writes.indexOf(write)}.tmp`;
+				writeFileSync(staged, write.content);
+				try {
+					renameSync(staged, write.path);
+				} finally {
+					rmSync(staged, { force: true });
+				}
+			}
+			writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+			console.log(
+				`Refreshed ${requested.join(", ")} against ${base} (${commit}).`,
+			);
 		} finally {
-			rmSync(scratch, { recursive: true, force: true });
+			try {
+				if (worktreeAdded)
+					run("git", ["worktree", "remove", "--force", checkout]);
+			} finally {
+				rmSync(scratch, { recursive: true, force: true });
+			}
 		}
 	}
 } catch (error) {

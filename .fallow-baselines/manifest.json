@@ -29,7 +29,7 @@
     },
     "health": {
       "path": ".fallow-baselines/health.json",
-      "sha256": "271787e1a1d9f0f3efb476d0249e8ae2879525a202f6a300e3cbe892450d7651",
+      "sha256": "4b90a8013352681d90df440b241e73882860db9f324844809c35bb2bad25a723",
       "provenance": [
         {
           "action": "adopted as-is",
@@ -50,6 +50,17 @@
           "sha256": "271787e1a1d9f0f3efb476d0249e8ae2879525a202f6a300e3cbe892450d7651",
           "reason": "Project-health closeout: 172 justified identities in ### Baselined complexity (project-health-audit); after-snapshot complexity result digest 2f16bf07a204e05de16432d212621656a4ac8a913dbfdd1c2c890986e797368c at analyzedCommit ea27538ef242155767d64804111997e0e037ad1d.",
           "recordedAt": "2026-09-29T07:54:12.434Z"
+        },
+        {
+          "action": "path-rekey",
+          "base": "7f9e35fc",
+          "baseCommit": "7f9e35fcca987900ef53134084d4e04ea8700ab2",
+          "priorSha256": "271787e1a1d9f0f3efb476d0249e8ae2879525a202f6a300e3cbe892450d7651",
+          "sha256": "4b90a8013352681d90df440b241e73882860db9f324844809c35bb2bad25a723",
+          "mapping": "{\"domains/shared/extensions/orchestration/spawn-tool.ts\":\"lib/extensions/orchestration/spawn-tool.ts\",\"domains/shared/extensions/plans/index.ts\":\"lib/extensions/plans/index.ts\",\"domains/shared/extensions/project-tools/fallow-provider.ts\":\"lib/extensions/project-tools/fallow-provider.ts\",\"domains/shared/extensions/project-tools/index.ts\":\"lib/extensions/project-tools/index.ts\",\"domains/shared/extensions/tasks/index.ts\":\"lib/extensions/tasks/index.ts\"}",
+          "mappingSha256": "5eaea2347f9f3a6bbc267a4e115bc3d4ec21147938bf2927d69005d4099b1be1",
+          "reason": "User answer 2 on 2026-11-08: apply only the five step2-baseline-rekey.diff path moves; retain every finding count and all other floor data. Mapping and hashes recorded as path-rekey provenance.",
+          "recordedAt": "2026-11-08T05:13:30.011Z"
         }
       ]
     },
