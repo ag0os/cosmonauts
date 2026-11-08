@@ -460,6 +460,7 @@ describe("buildSessionParams", () => {
 				const params = await buildSessionParams({
 					runtime: await CosmonautsRuntime.create({
 						projectRoot: tmp.path,
+						projectConfig: { knowledgeSurface: { enabled: true } },
 						domains: loadedDomains,
 					}),
 					def,

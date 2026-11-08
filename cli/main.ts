@@ -58,6 +58,7 @@ import { type PiFlagParseResult, parsePiFlags } from "./pi-flags.ts";
 import {
 	type CliRuntimeOptions,
 	createCliRuntimeContext,
+	getCliExecutionRuntime,
 	parseCliRuntimeOptions,
 	parseThinkingLevel,
 } from "./runtime-bootstrap.ts";
@@ -331,13 +332,18 @@ export function hasRunnableDefaultDomain(runtime: CosmonautsRuntime): boolean {
 	return runtime.domains.some((domain) => !domain.manifest.resourceFallback);
 }
 
-/** Host-owned interactive extensions do not depend on a resource domain or its shims. */
-export function resolveInteractiveExtensionPaths(_runtime: {
+/** Agent switching is library-owned; bindings stay with content until the step6 registry edit. */
+export function resolveInteractiveExtensionPaths(runtime: {
 	readonly domainResolver: Pick<DomainResolver, "resolveExtensionPath">;
 }): string[] {
-	return ["agent-switch", "domain-bindings"].map((name) =>
-		fileURLToPath(new URL(`../lib/extensions/${name}`, import.meta.url)),
+	const binding = runtime.domainResolver.resolveExtensionPath(
+		"domain-bindings",
+		undefined,
 	);
+	return [
+		fileURLToPath(new URL("../lib/extensions/agent-switch", import.meta.url)),
+		...(binding ? [binding] : []),
+	];
 }
 
 interface ResolveDumpPromptDomainOptions {
@@ -589,6 +595,7 @@ async function handleInitMode(
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
 		runtime,
+		extensionRuntime: await getCliExecutionRuntime(cwd),
 		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
@@ -650,6 +657,7 @@ async function handlePrintMode(
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
 		runtime,
+		extensionRuntime: await getCliExecutionRuntime(cwd),
 		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
@@ -698,6 +706,7 @@ async function handleInteractiveMode(
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
 		runtime,
+		extensionRuntime: await getCliExecutionRuntime(cwd),
 		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,

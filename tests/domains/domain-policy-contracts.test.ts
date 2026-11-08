@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -71,17 +72,22 @@ test("runnable selection accepts ordinary providers with or without a lead and e
 	expect(hasRunnableDefaultDomain(runtime([]))).toBe(false);
 });
 
-test("the CLI host mounts library interactive extensions without domain providers", () => {
-	expect(
-		resolveInteractiveExtensionPaths({
-			domainResolver: { resolveExtensionPath: () => undefined },
-		}),
-	).toEqual(
-		["agent-switch", "domain-bindings"].map(
-			(name) =>
-				new URL(`../../lib/extensions/${name}`, import.meta.url).pathname,
-		),
-	);
+test("registers real live-session commands including domain-bind", () => {
+	const binding = new URL(
+		"../../domains/shared/extensions/domain-bindings",
+		import.meta.url,
+	).pathname;
+	const paths = resolveInteractiveExtensionPaths({
+		domainResolver: {
+			resolveExtensionPath: (name: string) =>
+				name === "domain-bindings" ? binding : undefined,
+		},
+	});
+	expect(paths).toEqual([
+		new URL("../../lib/extensions/agent-switch", import.meta.url).pathname,
+		binding,
+	]);
+	for (const path of paths) expect(existsSync(path)).toBe(true);
 });
 
 test("fallback lead selection skips both fallback providers and providers without a lead", () => {
@@ -354,4 +360,14 @@ test("domain modules are evaluated in deterministic discovery order before resou
 	} finally {
 		delete globals[key];
 	}
+});
+
+test("an absent bindings provider leaves only the existing library agent-switch mount", () => {
+	const paths = resolveInteractiveExtensionPaths({
+		domainResolver: { resolveExtensionPath: () => undefined },
+	});
+	expect(paths).toEqual([
+		new URL("../../lib/extensions/agent-switch", import.meta.url).pathname,
+	]);
+	expect(existsSync(paths[0] ?? "")).toBe(true);
 });

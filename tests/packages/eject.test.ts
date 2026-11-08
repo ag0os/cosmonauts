@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 /**
  * Tests for lib/packages/eject.ts
  */
@@ -117,12 +118,7 @@ describe("ejectDomain — basic copy", () => {
 
 		const result = await ejectDomain({ domainId: "alpha", projectRoot });
 
-		const expectedTarget = join(
-			projectRoot,
-			".cosmonauts",
-			"domains",
-			"alpha",
-		);
+		const expectedTarget = join(projectRoot, ".cosmonauts", "domains", "alpha");
 		expect(result.ejectedTo).toBe(expectedTarget);
 
 		const s = await stat(expectedTarget);
@@ -281,7 +277,7 @@ describe("ejectDomain — import rewriting", () => {
 		await createPkgFixture(localStore, {
 			name: "my-pkg",
 			extraFiles: {
-				"domain.ts": 'import { foo } from "../../lib/something.ts";\n',
+				"domain.ts": 'import { foo } from "../../lib/domains/types.ts";\n',
 			},
 		});
 
@@ -291,8 +287,11 @@ describe("ejectDomain — import rewriting", () => {
 			join(projectRoot, ".cosmonauts", "domains", "alpha", "domain.ts"),
 			"utf-8",
 		);
-		expect(content).toContain('from "cosmonauts/lib/something.ts"');
+		expect(content).toContain('from "cosmonauts/domains"');
 		expect(content).not.toContain("../../lib/");
+		expect(
+			createRequire(import.meta.url).resolve("cosmonauts/domains"),
+		).toContain("/lib/domains/index.ts");
 	});
 
 	test("rewrites single-quoted relative lib imports", async () => {
@@ -300,7 +299,7 @@ describe("ejectDomain — import rewriting", () => {
 			name: "my-pkg",
 			extraFiles: {
 				"agents/single-quote.ts":
-					"import { bar } from '../../../lib/core.ts';\n",
+					"import { bar } from '../../../lib/agents/types.ts';\n",
 			},
 		});
 
@@ -317,7 +316,7 @@ describe("ejectDomain — import rewriting", () => {
 			),
 			"utf-8",
 		);
-		expect(content).toContain("from 'cosmonauts/lib/core.ts'");
+		expect(content).toContain("from 'cosmonauts/agents'");
 		expect(content).not.toContain("../../../lib/");
 	});
 
@@ -325,7 +324,8 @@ describe("ejectDomain — import rewriting", () => {
 		await createPkgFixture(localStore, {
 			name: "my-pkg",
 			extraFiles: {
-				"agents/worker.ts": 'import { bar } from "../../../lib/core.ts";\n',
+				"agents/worker.ts":
+					'import { bar } from "../../../lib/agents/types.ts";\n',
 			},
 		});
 
@@ -342,7 +342,7 @@ describe("ejectDomain — import rewriting", () => {
 			),
 			"utf-8",
 		);
-		expect(content).toContain('from "cosmonauts/lib/core.ts"');
+		expect(content).toContain('from "cosmonauts/agents"');
 		expect(content).not.toContain("../../../lib/");
 	});
 
@@ -351,7 +351,7 @@ describe("ejectDomain — import rewriting", () => {
 			name: "my-pkg",
 			extraFiles: {
 				"workflows.ts":
-					'import { step } from "../../../../lib/workflows.ts";\n',
+					'import { step } from "../../../../lib/chains/types.ts";\n',
 			},
 		});
 
@@ -361,9 +361,42 @@ describe("ejectDomain — import rewriting", () => {
 			join(projectRoot, ".cosmonauts", "domains", "alpha", "workflows.ts"),
 			"utf-8",
 		);
-		expect(content).toContain('from "cosmonauts/lib/workflows.ts"');
+		expect(content).toContain('from "cosmonauts/chains"');
 	});
 
+	test("rewrites root and barrel imports to resolvable friendly aliases including multiline imports", async () => {
+		await createPkgFixture(localStore, {
+			name: "public-barrels",
+			extraFiles: {
+				"public.ts":
+					'import type { AgentDefinition } from\n  "../../lib/agents/index.ts";\nimport { CosmonautsRuntime } from "../../lib/index.ts";\n',
+			},
+		});
+		await ejectDomain({ domainId: "alpha", projectRoot });
+		const content = await readFile(
+			join(projectRoot, ".cosmonauts", "domains", "alpha", "public.ts"),
+			"utf8",
+		);
+		expect(content).toContain('from "cosmonauts/agents"');
+		expect(content).toContain('from "cosmonauts"');
+		for (const match of content.matchAll(/from "([^"]+)"/g))
+			expect(createRequire(import.meta.url).resolve(match[1] ?? "")).toContain(
+				"/lib/",
+			);
+	});
+	test("rejects unexported framework targets instead of generating broken specifiers", async () => {
+		await createPkgFixture(localStore, {
+			name: "private-import",
+			extraFiles: {
+				"domain.ts": 'import { hidden } from "../../lib/private.ts";',
+			},
+		});
+		await expect(
+			ejectDomain({ domainId: "alpha", projectRoot }),
+		).rejects.toThrow(
+			"Cannot eject unexported framework import lib/private.ts",
+		);
+	});
 	test("does not modify files that have no matching imports", async () => {
 		const originalContent = 'export const id = "alpha";\n';
 		await createPkgFixture(localStore, {
@@ -441,12 +474,7 @@ describe("ejectDomain — domain.name differs from domain.path last segment", ()
 		const result = await ejectDomain({ domainId: "alpha", projectRoot });
 
 		// Target must be named by domain.name ("alpha"), not "alpha-v2"
-		const expectedTarget = join(
-			projectRoot,
-			".cosmonauts",
-			"domains",
-			"alpha",
-		);
+		const expectedTarget = join(projectRoot, ".cosmonauts", "domains", "alpha");
 		expect(result.ejectedTo).toBe(expectedTarget);
 
 		const s = await stat(expectedTarget);

@@ -3,6 +3,7 @@
  * so it can be customized locally.
  */
 
+import { readFileSync } from "node:fs";
 import {
 	cp,
 	mkdir,
@@ -121,16 +122,37 @@ export async function ejectDomain(options: EjectOptions): Promise<EjectResult> {
  * (e.g. from "../../lib/) with package paths (from "cosmonauts/lib/).
  */
 async function rewriteImports(dir: string): Promise<void> {
-	const pattern = /from\s+(["'])(\.\.\/)+lib\//g;
-	const replacement = "from $1cosmonauts/lib/";
-
-	for (const file of await collectTsFiles(dir)) {
-		const original = await readFile(file, "utf-8");
-		const rewritten = original.replace(pattern, replacement);
-		if (rewritten !== original) {
-			await writeFile(file, rewritten, "utf-8");
-		}
+	const { exports: entries } = JSON.parse(
+		readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+	) as { exports: Record<string, string> };
+	const aliases: Record<string, string> = {
+		"index.ts": "cosmonauts",
+		"agents/types.ts": "cosmonauts/agents",
+		"domains/types.ts": "cosmonauts/domains",
+		"chains/types.ts": "cosmonauts/chains",
+	};
+	for (const [name, target] of Object.entries(entries)) {
+		if (name !== "." && !name.startsWith("./lib/"))
+			aliases[target.replace(/^\.\/lib\//, "")] = `cosmonauts/${name.slice(2)}`;
 	}
+	const pending = [];
+	for (const file of await collectTsFiles(dir)) {
+		const original = await readFile(file, "utf8");
+		const rewritten = original.replace(
+			/from\s+(["'])(?:\.\.\/)+lib\/([^"']+)\1/g,
+			(_match, quote: string, target: string) => {
+				const specifier = aliases[target];
+				if (!specifier)
+					throw new Error(
+						`Cannot eject unexported framework import lib/${target} in ${file}`,
+					);
+				return `from ${quote}${specifier}${quote}`;
+			},
+		);
+		if (rewritten !== original) pending.push({ file, rewritten });
+	}
+	for (const { file, rewritten } of pending)
+		await writeFile(file, rewritten, "utf8");
 }
 
 function findLastDomainProvider(

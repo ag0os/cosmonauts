@@ -56,6 +56,8 @@ type PiResourceLoaderOptions = NonNullable<
 >;
 
 export interface BuildSessionParamsOptions {
+	/** Optional host execution scope for inline extensions, distinct from CLI discovery. */
+	extensionRuntime?: import("../runtime.ts").CosmonautsRuntime;
 	runtime?: import("../runtime.ts").CosmonautsRuntime;
 	/** Agent definition. */
 	def: AgentDefinition;
@@ -202,7 +204,7 @@ export async function buildSessionParams(
 	);
 
 	const knowledgeSurfaceEnabled = resolveKnowledgeSurfaceConfig(
-		await loadConfig(cwd),
+		options.runtime?.projectConfig ?? (await loadConfig(cwd)),
 	).enabled;
 	const memoryExtensions = buildMemoryExtensions(def, knowledgeSurfaceEnabled);
 	const selected = await bindSessionExtensions({
@@ -212,7 +214,7 @@ export async function buildSessionParams(
 		domainsDir,
 		resolver,
 		context: {
-			runtime: options.runtime,
+			runtime: options.extensionRuntime ?? options.runtime,
 			agentId: qualifyAgentId(def.id, def.domain),
 			memory: resolveMemoryGrants(def.memory),
 		},

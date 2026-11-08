@@ -39,3 +39,16 @@ test("exports retain all stable deep entries with explicit friendly aliases and 
 	])
 		expect(require.resolve(`cosmonauts/${entry}`)).toMatch(/\.ts$/);
 });
+
+test("the locator stays on its Pi-discovery bridge entry and chains exports configured dispatch", async () => {
+	const root = await import("cosmonauts");
+	expect(root).not.toHaveProperty("getHostRuntime");
+	expect(root).not.toHaveProperty("setRuntimeHost");
+	expect(root).not.toHaveProperty("hasRuntimeHost");
+	expect((await import("cosmonauts/runtime-host")).getHostRuntime).toBeTypeOf(
+		"function",
+	);
+	expect((await import("cosmonauts/chains")).runConfiguredChain).toBeTypeOf(
+		"function",
+	);
+});

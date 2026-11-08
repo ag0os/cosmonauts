@@ -1141,6 +1141,7 @@ function createStageSpawnConfig(
 	const { config, stage } = context;
 
 	return {
+		runtime: config.runtime,
 		role: stage.name,
 		...(stage.agentReference !== undefined && {
 			agentReference: stage.agentReference,

@@ -10,9 +10,3 @@ export {
 	CosmonautsRuntime,
 	RuntimeDeclarationCollisionError,
 } from "./runtime.ts";
-export type { RuntimeHostFactory, RuntimeHostRequest } from "./runtime-host.ts";
-export {
-	getHostRuntime,
-	hasRuntimeHost,
-	setRuntimeHost,
-} from "./runtime-host.ts";

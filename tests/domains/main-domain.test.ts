@@ -1,4 +1,11 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -224,6 +231,11 @@ describe("main domain built-in discovery", () => {
 	});
 
 	it("keeps W2 memory Cosmo only without broadening the tool allowlist", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ knowledgeSurface: { enabled: true } }),
+		);
 		const params = await buildSessionParams({
 			runtime: await getHostRuntime({ projectRoot: tmp.path }),
 			def: cosmo,

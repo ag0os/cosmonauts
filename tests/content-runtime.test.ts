@@ -7,7 +7,7 @@ import {
 	installContentRuntimeHost,
 } from "../domains/host-runtime.ts";
 import { qualityReviewSessionPolicies } from "../lib/orchestration/quality-review-session-provider.ts";
-import type { CosmonautsRuntime } from "../lib/runtime.ts";
+import { CosmonautsRuntime } from "../lib/runtime.ts";
 import {
 	getHostRuntime,
 	hasRuntimeHost,
@@ -137,4 +137,18 @@ test("orchestration binding requires a runtime and registers Drive with the inli
 	expect(pi.registerTool).toHaveBeenCalledWith(
 		expect.objectContaining({ name: "run_driver" }),
 	);
+});
+
+test("coding content carries its seal into a direct runtime without the CLI host", async () => {
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		builtinDomainsDir: new URL("../domains", import.meta.url).pathname,
+		bundledDirs: [new URL("../bundled/coding", import.meta.url).pathname],
+		projectConfig: {},
+	});
+	expect(
+		runtime.sessionPolicies?.interactiveDenial?.(
+			runtime.agentRegistry.resolve("coding/quality-manager"),
+		),
+	).toContain("private snapshot");
 });

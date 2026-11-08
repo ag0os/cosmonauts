@@ -318,9 +318,7 @@ The current content consumer lives in `domains/host-runtime.ts`: it chooses root
 model default, coding chain adapter, worker and session policies. Library/CLI entry
 points request the host runtime through `setRuntimeHost`/`getHostRuntime`; equal
 project/domain/plugin requests share construction, failed construction can retry,
-and an unconfigured host fails explicitly. Session assembly and nested spawns,
-chains and Drive pass the same runtime; orchestration inline factories close over
-it. Tests: `tests/runtime-host.test.ts`, orchestration/CLI suites and extension
+and an unconfigured host fails explicitly. Explicit library session assembly and nested spawns, chains and Drive retain the supplied runtime. The current CLI mounts inline extensions with its base execution runtime, excluding interactive --domain/--plugin-dir additions, preserving pre-step4 reach. Tests: `tests/runtime-host.test.ts`, orchestration/CLI suites and extension
 binding contracts. Restore-by-id continues to use the current declaration; no
 snapshots are introduced.
 
@@ -353,8 +351,8 @@ retain those exact paths, add explicit friendly aliases, a declaration/runtime r
 and a runtime-host entry. The legacy `lib/lean-run/providers/default.ts` path is a named temporary content
 compatibility export until step 6, pinned by the packed-package test.
 There is no wildcard exposing private internals. Session
-creation stays on its separate Pi-dependent public entries. Test:
-`tests/public-surface.test.ts`; the external package-name-only fixture is step 5.
+creation stays on its separate Pi-dependent public entries. Configured chain dispatch is exported from cosmonauts/chains. Test:
+`tests/public-surface.test.ts`; the external package-name-only fixture is step 5. The locator is available only at cosmonauts/runtime-host as the Pi-discovery bridge, not on the declaration root.
 
 Consumers import topology/normalization helpers from `cosmonauts/chains`; session
 orchestration factories from `cosmonauts/extensions/orchestration`; and inline or
@@ -398,8 +396,7 @@ runtime fails before checkout discovery. Spawn policy no longer exposes a runtim
 getter. Detached child policy selection occurs once, including an absent result.
 Tests: session-policy registry/spawner and spawn-policy-hooks suites.
 
-The CLI host mounts `lib/extensions/agent-switch` and `domain-bindings` directly;
-resource-provider omission cannot disable those commands. Its content catalog is
+The CLI mounts lib/extensions/agent-switch directly and resolves domain-bindings through the selected resource provider. The latter stays at domains/shared/extensions/domain-bindings until step6 and the human registry edit; real-path existence and command/resume/fork behavior are pinned. Its content catalog is
 owned by `cli/package-catalog.ts`; core catalog lookup takes explicit entries and
 relative sources require an explicit root. Current CLI install/update behavior
 and its catalog entries remain pinned by package/update/catalog tests. The library
@@ -427,3 +424,27 @@ The library also preserves diagnostic quality for invalid module exports and
 omitted provider entries; native deprecation warnings are not treated as equivalent
 behavior. The remaining contract-equivalent mutation cases are documented with
 fresh-source evidence in the step4 review artifact.
+
+
+### Review45 compatibility boundaries
+
+Session assembly uses runtime.projectConfig before any disk fallback; the explicit
+consumer configuration controls knowledgeSurface. The CLI's inline extension
+scope uses the base host request (project root only), excluding its interactive
+plugin directories and domain override. Those flags still govern interactive
+selection, resources and agent switching. A caller available only in that added
+scope cannot resolve for spawn/chain. This preserves10e4f5c0 behavior; wider reach
+is a later owner choice. Tests: review45-runtime-contracts and cli/runtime-host.
+
+Inline factories stay bound to the launch runtime after a cross-project resume;
+chain/Drive still receive ctx.cwd. The runtime does not record its root and no
+cross-project refusal guard is claimed (orchestration.test.ts). Configured chains
+are a runtime collection: config-file edits require a host reset or process restart
+before chain_run/lean sees them. No per-call config reread is promised.
+
+The coding manifest carries its quality-review seal for direct runtime creation;
+the current host's explicit provider still wins. Scaffold/eject outputs use public
+aliases; eject rejects an unexported framework target rather than emitting a broken
+specifier. Pi catalog tests bind the actual pinned1.0.3 ToolName union to the local
+allowlist. Toolless Pi helpers and memory consolidate need the content host when
+choosing a default model; an explicit model bypasses that bootstrap.

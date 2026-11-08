@@ -132,3 +132,10 @@ function readRequiredValue(
 	}
 	return value;
 }
+
+/** Base-compatible execution scope: CLI-only domain/plugin additions stay interactive. */
+export function getCliExecutionRuntime(
+	projectRoot: string,
+): Promise<CosmonautsRuntime> {
+	return getHostRuntime({ projectRoot });
+}

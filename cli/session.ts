@@ -117,6 +117,7 @@ function toResourceLoaderOptions(
 }
 
 interface CreateSessionOptions {
+	extensionRuntime?: import("../lib/runtime.ts").CosmonautsRuntime;
 	runtime?: import("../lib/runtime.ts").CosmonautsRuntime;
 	sessionPolicies?: import("../lib/agents/session-policy.ts").SessionPolicyProvider;
 	/** Agent definition to build the session from */
@@ -533,6 +534,7 @@ export async function createSession(
 	const params = await buildSessionParams({
 		def,
 		runtime: options.runtime,
+		extensionRuntime: options.extensionRuntime,
 		sessionPolicy: options.sessionPolicies?.forAgent(def),
 		cwd,
 		domainsDir,
@@ -578,6 +580,7 @@ export async function createSession(
 					const newParams = await buildSessionParams({
 						def: newDef,
 						runtime: options.runtime,
+						extensionRuntime: options.extensionRuntime,
 						sessionPolicy: options.sessionPolicies?.forAgent(newDef),
 						cwd,
 						domainsDir,
