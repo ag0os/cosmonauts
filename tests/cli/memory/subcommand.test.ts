@@ -1048,6 +1048,7 @@ test.each([
 	);
 	setRuntimeHost(factory);
 	const provider = vi.spyOn(providerModule, "createPiCorpusJudgmentProvider");
+	vi.stubEnv("HOME", join(tmp.path, "isolated-home"));
 	try {
 		await executeMemoryConsolidate({
 			projectRoot: tmp.path,
@@ -1063,6 +1064,7 @@ test.each([
 		expect(provider.mock.results[0]?.value.id).toBe(`pi/${expected}`);
 	} finally {
 		provider.mockRestore();
+		vi.unstubAllEnvs();
 	}
 });
 
@@ -1072,13 +1074,18 @@ test("deterministic consolidation does not request a runtime or judgment model",
 		throw new Error("no model is needed");
 	});
 	setRuntimeHost(factory);
-	await executeMemoryConsolidate({
-		projectRoot: tmp.path,
-		noModel: true,
-		dryRun: true,
-		outputMode: "json",
-	});
-	expect(factory).not.toHaveBeenCalled();
+	vi.stubEnv("HOME", join(tmp.path, "isolated-home"));
+	try {
+		await executeMemoryConsolidate({
+			projectRoot: tmp.path,
+			noModel: true,
+			dryRun: true,
+			outputMode: "json",
+		});
+		expect(factory).not.toHaveBeenCalled();
+	} finally {
+		vi.unstubAllEnvs();
+	}
 });
 
 test("an unbound judgment provider requires an explicit model and labels injected sessions truthfully", () => {
