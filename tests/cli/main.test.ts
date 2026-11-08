@@ -620,15 +620,10 @@ describe("buildInitSessionConfig", () => {
 describe("resolveInteractiveExtensionPaths", () => {
 	test("registers real live-session commands including domain-bind", () => {
 		const binding = new URL(
-			"../../domains/shared/extensions/domain-bindings",
+			"../../lib/extensions/domain-bindings",
 			import.meta.url,
 		).pathname;
-		const paths = resolveInteractiveExtensionPaths({
-			domainResolver: {
-				resolveExtensionPath: (name: string) =>
-					name === "domain-bindings" ? binding : undefined,
-			},
-		});
+		const paths = resolveInteractiveExtensionPaths();
 		expect(paths).toEqual([
 			new URL("../../lib/extensions/agent-switch", import.meta.url).pathname,
 			binding,
