@@ -448,3 +448,29 @@ aliases; eject rejects an unexported framework target rather than emitting a bro
 specifier. Pi catalog tests bind the actual pinned1.0.3 ToolName union to the local
 allowlist. Toolless Pi helpers and memory consolidate need the content host when
 choosing a default model; an explicit model bypasses that bootstrap.
+
+### External consumer proof (step 5)
+
+LS-5/6/7: `tests/fixtures/library-consumer/consumer.ts` imports only the named
+package's public entries and declares two qualified agents plus a stages-form
+named chain. `tests/library-consumer.test.ts` installs a separate copy containing
+only `lib/` and `package.json` (dependencies remain installed), rejects a private
+import, and runs the fixture with an isolated HOME/Pi directory and blocked fetch.
+No framework domains, bundled content or CLI are present in that package copy.
+The same fixture runs in process so mutation coverage does not rely on child
+process instrumentation.
+
+The ordinary agent ports the shipped explorer's readonly, ephemeral, low-thinking
+settings. The memory agent ports Cosmo's authored/episode grants and persistent,
+high-thinking settings; the consumer supplies inline instructions instead of the
+original capabilities, extensions and specialist roster. The chain ports the
+shipped verify declaration's single-stage topology, assigned to the fixture
+explorer; it does not implement quality review. These are intentionally small
+content slices, with provenance comments in the fixture.
+
+The proof executes a stage with an injected offline spawner and assembles actual
+Pi sessions without prompting a model. The explorer exposes exactly readonly
+built-ins; the memory agent exposes `recall` and `remember` without an id/path
+exception. It verifies declared episode opt-in, not model output, episode capture,
+persistent transcript creation or authored-memory writes. Their existing suites
+retain those contracts. No live model credentials or network are needed.
