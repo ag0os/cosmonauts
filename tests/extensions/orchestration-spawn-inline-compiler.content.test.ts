@@ -21,7 +21,6 @@ import {
 import { getOrchestrationMocks } from "./orchestration-mocks.ts";
 
 const mocks = getOrchestrationMocks();
-const _PLAN_SLUG = "orchestration-surface-consolidation";
 
 describe("spawn_agent inline compiler boundary", () => {
 	test("uses the configured reviewer model only for the quality panel generalist", async () => {

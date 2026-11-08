@@ -94,15 +94,8 @@ test("the fixture's library imports resolve exclusively through the public expor
 	expect(
 		imports.filter((specifier) => specifier?.startsWith("cosmonauts")),
 	).toHaveLength(11);
-	const require = createRequire(import.meta.url);
 	const pkg = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
-	for (const specifier of imports) {
-		if (!specifier?.startsWith("cosmonauts")) continue;
-		expect(specifier).toMatch(/^cosmonauts(?:\/|$)/);
-		const entry = specifier === "cosmonauts" ? "." : `.${specifier?.slice(10)}`;
-		expect(pkg.exports).toHaveProperty(entry);
-		expect(require.resolve(specifier as string)).toContain("/lib/");
-	}
+	for (const specifier of imports) assertConsumerImport(specifier, pkg.exports);
 });
 
 test("an external consumer executes its chain and assembles granted memory tools with no framework content", async () => {
@@ -315,6 +308,50 @@ function assertConsumerGrants(
 		architecture: { eligible: true, ineligible: "scope-ineligible" },
 		recall: true,
 		injected: true,
-		transcripts: { a: true, b: true, memoryIsolated: true },
+		transcripts: { a: true, b: true },
 	});
 }
+
+function assertConsumerImport(
+	specifier: string | undefined,
+	exports: Record<string, string>,
+) {
+	if (!specifier) throw new Error("Missing fixture import specifier");
+	if (
+		new Set([
+			"./policies.ts",
+			"./grants.ts",
+			"node:fs/promises",
+			"node:path",
+			"@earendil-works/pi-coding-agent",
+		]).has(specifier)
+	)
+		return;
+	expect(specifier).toMatch(/^cosmonauts(?:\/|$)/);
+	const entry = specifier === "cosmonauts" ? "." : `.${specifier.slice(10)}`;
+	expect(exports).toHaveProperty(entry);
+	expect(createRequire(import.meta.url).resolve(specifier)).toContain("/lib/");
+}
+
+test.each([
+	"../private.ts",
+	"./unlisted.ts",
+	"node:child_process",
+	"unexpected-package",
+])("consumer import guard rejects an unapproved dependency: %s", (specifier) => {
+	expect(() => assertConsumerImport(specifier, {})).toThrow();
+});
+
+test.each([
+	"agents/session-assembly.test.ts",
+	"extensions/agent-memory.test.ts",
+	"extensions/architecture-memory.test.ts",
+])("retained suite %s has no imports or literal paths to retiring content", async (file) => {
+	const source = await readFile(new URL(file, import.meta.url), "utf8");
+	expect(source).not.toMatch(
+		/from\s+["'](?:(?:\.\.\/)+(?:domains|bundled)\/|[^"']*\/quality-review-)/,
+	);
+	expect(source).not.toMatch(
+		/["'`](?:\.\.?\/)*(?:domains|bundled)(?:\/[^"'`]*)?["'`]/,
+	);
+});

@@ -6,7 +6,10 @@ import { DomainValidationError } from "../lib/domains/validator.ts";
 import { isSubagentAllowed } from "../lib/extensions/orchestration/authorization.ts";
 import { compileChainToGraph } from "../lib/orchestration/durable-chain-compiler.ts";
 import { CosmonautsRuntime, DomainBindingTargetError } from "../lib/runtime.ts";
-import { parseCodingChain, withCodingChain } from "./helpers/coding-chain.ts";
+import {
+	parseConsumerChain,
+	withConsumerChain,
+} from "./helpers/consumer-chain.ts";
 import { useTempDir } from "./helpers/fs.ts";
 import { writeSyntheticInstallableDomainPackage } from "./helpers/packages.ts";
 
@@ -859,7 +862,7 @@ describe("CosmonautsRuntime", () => {
 			expect(listedIds).toEqual(expect.arrayContaining(["cody", "worker"]));
 			expect(listedIds).not.toContain("placeholder");
 
-			const steps = parseCodingChain(
+			const steps = parseConsumerChain(
 				"worker",
 				runtime.agentRegistry,
 				runtime.domainContext,
@@ -889,7 +892,7 @@ describe("CosmonautsRuntime", () => {
 			});
 
 			const compiled = compileChainToGraph(
-				withCodingChain({
+				withConsumerChain({
 					runId: "chain-binding-test",
 					steps,
 					projectRoot: tmp.path,

@@ -89,6 +89,7 @@ function restoreBinding(options: {
 			entry.data.role,
 			entry.data.targetDomain,
 		);
+		shared.liveBindings.set(entry.data.role, entry.data.targetDomain);
 	} catch (error: unknown) {
 		const message = restoreFailureMessage(error);
 		ctx.ui.notify(
@@ -137,6 +138,7 @@ export default function domainBindingsExtension(pi: ExtensionAPI): void {
 
 			try {
 				shared.bindingResolver.bindLiveRole(parsed.role, parsed.targetDomain);
+				shared.liveBindings.set(parsed.role, parsed.targetDomain);
 			} catch (error: unknown) {
 				if (error instanceof DomainBindingTargetError) {
 					notifyUnavailable(ctx, error);

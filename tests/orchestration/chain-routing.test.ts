@@ -8,7 +8,10 @@ import {
 } from "../../lib/orchestration/durable-chain-compiler.ts";
 import type { ChainStep } from "../../lib/orchestration/types.ts";
 import { consumerChains } from "../fixtures/library-consumer/policies.ts";
-import { parseCodingChain, withCodingChain } from "../helpers/coding-chain.ts";
+import {
+	parseConsumerChain,
+	withConsumerChain,
+} from "../helpers/consumer-chain.ts";
 
 const registry = new AgentRegistry([
 	agent("planner", false),
@@ -25,7 +28,7 @@ const registry = new AgentRegistry([
 describe("chain durable routing", () => {
 	test("routes consumer named declarations through their supported runner", () => {
 		for (const chain of consumerChains) {
-			const steps = parseCodingChain(chain.chain ?? "", registry);
+			const steps = parseConsumerChain(chain.chain ?? "", registry);
 			expect(shouldRunChainInline(steps)).toBe(chain.name === "loop");
 			expect(steps).toHaveLength(
 				chain.name === "review-cycle" ? 4 : chain.name === "loop" ? 2 : 1,
@@ -33,12 +36,12 @@ describe("chain durable routing", () => {
 		}
 	});
 
-	test("keeps loop and completion-check consumerChains on the legacy inline runner", async () => {
+	test("keeps loop and completion-check chains on the legacy inline runner", async () => {
 		const durableGraphWriter = vi.fn();
 		const runChain = vi.fn();
 
 		const loopRoute = routeChainForTest({
-			steps: parseCodingChain("planner -> coordinator", registry),
+			steps: parseConsumerChain("planner -> coordinator", registry),
 			prompt: "Ship unsupported chain semantics inline.",
 			runChain,
 			durableGraphWriter,
@@ -47,7 +50,7 @@ describe("chain durable routing", () => {
 		expect(runChain).toHaveBeenCalledTimes(1);
 		expect(durableGraphWriter).not.toHaveBeenCalled();
 
-		const completionCheckSteps = parseCodingChain(
+		const completionCheckSteps = parseConsumerChain(
 			"planner -> reviewer",
 			registry,
 		);
@@ -68,7 +71,7 @@ describe("chain durable routing", () => {
 		expect(durableGraphWriter).not.toHaveBeenCalled();
 
 		const completionLabelRoute = routeChainForTest({
-			steps: parseCodingChain("planner -> reviewer", registry),
+			steps: parseConsumerChain("planner -> reviewer", registry),
 			prompt: "Use caller completion labels inline.",
 			completionLabel: "plan:durable-frontend-migration",
 			runChain,
@@ -84,8 +87,8 @@ describe("chain durable routing", () => {
 			"planner -> reviewer[2] -> quality-manager",
 		]) {
 			const route = routeChainForTest({
-				steps: parseCodingChain(expression, registry),
-				prompt: "Keep supported loop-free consumerChains durable.",
+				steps: parseConsumerChain(expression, registry),
+				prompt: "Keep supported loop-free chains durable.",
 				runChain,
 				durableGraphWriter,
 			});
@@ -99,12 +102,12 @@ describe("chain durable routing", () => {
 		).toEqual([3, 4, 4]);
 
 		for (const steps of [
-			parseCodingChain("coordinator", registry),
+			parseConsumerChain("coordinator", registry),
 			completionCheckSteps,
 		]) {
 			expect(() =>
 				compileChainToGraph(
-					withCodingChain({
+					withConsumerChain({
 						runId: "refused-inline",
 						steps,
 						projectRoot: "/tmp/cosmonauts/project",
@@ -137,7 +140,7 @@ function routeChainForTest(options: {
 	}
 
 	const compiled = compileChainToGraph(
-		withCodingChain({
+		withConsumerChain({
 			runId: "run-chain-routing-test",
 			steps: options.steps,
 			projectRoot: "/tmp/cosmonauts/project",

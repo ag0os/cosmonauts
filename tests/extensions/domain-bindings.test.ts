@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { getLiveDomainBindingStore } from "../../lib/domains/bindings.ts";
 import domainBindingsExtension from "../../lib/extensions/domain-bindings/index.ts";
 import { isSubagentAllowed } from "../../lib/extensions/orchestration/authorization.ts";
 import {
@@ -9,7 +10,10 @@ import {
 } from "../../lib/interactive/domain-bindings.ts";
 import { compileChainToGraph } from "../../lib/orchestration/durable-chain-compiler.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
-import { parseCodingChain, withCodingChain } from "../helpers/coding-chain.ts";
+import {
+	parseConsumerChain,
+	withConsumerChain,
+} from "../helpers/consumer-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("domain-bindings-extension-");
@@ -259,13 +263,13 @@ describe("domain-bindings extension", () => {
 		const alreadyRunningAgent =
 			runtime.agentRegistry.resolveReference("ruby-coding/worker");
 		expect(alreadyRunningAgent?.definition.description).toBe("Original worker");
-		const alreadySpawnedSteps = parseCodingChain(
+		const alreadySpawnedSteps = parseConsumerChain(
 			"worker",
 			runtime.agentRegistry,
 			runtime.domainContext,
 		);
 		const alreadySpawnedGraph = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "pre-switch-spawn",
 				steps: alreadySpawnedSteps,
 				projectRoot: tmp.path,
@@ -318,7 +322,7 @@ describe("domain-bindings extension", () => {
 			),
 		).toBe(true);
 
-		const chainSteps = parseCodingChain(
+		const chainSteps = parseConsumerChain(
 			"worker",
 			runtime.agentRegistry,
 			runtime.domainContext,
@@ -332,7 +336,7 @@ describe("domain-bindings extension", () => {
 		);
 
 		const compiled = compileChainToGraph(
-			withCodingChain({
+			withConsumerChain({
 				runId: "live-binding-chain",
 				steps: chainSteps,
 				projectRoot: tmp.path,
@@ -673,4 +677,83 @@ test("the library binding extension stays inert when session bindings are unavai
 		"error",
 	);
 	expect(pi.entries).toEqual([]);
+});
+
+test("restore writes the slot store only after resolver validation when their stores differ", async () => {
+	const runtime = await setupRuntime();
+	const slotStore = getLiveDomainBindingStore(
+		join(tmp.path, "separate-slot-store"),
+	);
+	setSharedDomainBindings({
+		domainRegistry: runtime.domainRegistry,
+		bindingResolver: runtime.bindingResolver,
+		liveBindings: slotStore,
+	});
+	const pi = createMockPi();
+	domainBindingsExtension(pi as never);
+	const ctx = createCommandContext([
+		{
+			type: "custom",
+			customType: "cosmonauts.domain-binding",
+			data: { role: "ruby-coding", targetDomain: "ruby-experimental" },
+		},
+		{
+			type: "custom",
+			customType: "cosmonauts.domain-binding",
+			data: { role: "ruby-coding", targetDomain: "missing" },
+		},
+	]);
+	try {
+		await pi.fireEvent("session_start", {}, ctx);
+		expect(slotStore.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(runtime.liveDomainBindings.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("missing"),
+			"warning",
+		);
+	} finally {
+		clearSharedDomainBindings();
+	}
+});
+
+test("the live binding command writes the slot store only after resolver validation when their stores differ", async () => {
+	const runtime = await setupRuntime();
+	const slotStore = getLiveDomainBindingStore(
+		join(tmp.path, "separate-command-store"),
+	);
+	setSharedDomainBindings({
+		domainRegistry: runtime.domainRegistry,
+		bindingResolver: runtime.bindingResolver,
+		liveBindings: slotStore,
+	});
+	const pi = createMockPi();
+	domainBindingsExtension(pi as never);
+	const ctx = createCommandContext();
+	try {
+		await getCommand(pi, "domain-bind").handler(
+			"ruby-coding ruby-experimental",
+			ctx,
+		);
+		expect(slotStore.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		await getCommand(pi, "domain-bind").handler("ruby-coding missing", ctx);
+		expect(slotStore.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(runtime.liveDomainBindings.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(pi.entries).toHaveLength(1);
+		expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+			expect.stringContaining("missing"),
+			"error",
+		);
+	} finally {
+		clearSharedDomainBindings();
+	}
 });

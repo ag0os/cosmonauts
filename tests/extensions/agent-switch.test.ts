@@ -218,6 +218,29 @@ describe("agent-switch extension", () => {
 		});
 	});
 
+	test("refuses an interactive switch denied by the consumer session policy", async () => {
+		const pi = createMockPi();
+		agentSwitchExtension(pi as never);
+		setupSharedRegistry(["policy-reader", "worker"]);
+		const ctx = createMockCtx();
+		await getCommand(pi, "agent").handler("policy-reader", ctx);
+		expect(ctx.newSession).not.toHaveBeenCalled();
+		expect(consumePendingSwitch()).toBeUndefined();
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			"Consumer requires a controlled launch",
+			"error",
+		);
+	});
+
+	test("the interactive picker omits actors denied by the consumer session policy", async () => {
+		const pi = createMockPi();
+		agentSwitchExtension(pi as never);
+		setupSharedRegistry(["policy-reader", "worker"]);
+		const ctx = createMockCtx();
+		await getCommand(pi, "agent").handler("", ctx);
+		expect(ctx.ui.select).toHaveBeenCalledWith("Select agent", ["worker"]);
+	});
+
 	describe("/agent with unknown ID", () => {
 		test("notifies error and skips newSession (QC-008)", async () => {
 			const pi = createMockPi();
