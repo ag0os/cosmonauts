@@ -127,7 +127,7 @@ describe("spawn_agent inline compiler boundary", () => {
 		const parentSessionId = "parent-session-inline";
 		const pi = createMockPi(cwd, {
 			sessionId: parentSessionId,
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/cody -->",
 		});
 		orchestrationExtension(pi as never);
 		registerPlanContext(parentSessionId, PLAN_SLUG);

@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { expect, test, vi } from "vitest";
+import * as consumer from "./fixtures/library-consumer/consumer.ts";
 import {
 	createConsumerRuntime,
 	exerciseConsumer,
@@ -78,13 +79,20 @@ test("the fixture's library imports resolve exclusively through the public expor
 		new URL("./fixtures/library-consumer/consumer.ts", import.meta.url),
 		"utf8",
 	);
-	const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map(
-		(match) => match[1],
+	const policies = await readFile(
+		new URL("./fixtures/library-consumer/policies.ts", import.meta.url),
+		"utf8",
 	);
-	expect(imports).toHaveLength(6);
+	const imports = [
+		...`${source}\n${policies}`.matchAll(/from\s+"([^"]+)"/g),
+	].map((match) => match[1]);
+	expect(
+		imports.filter((specifier) => specifier !== "./policies.ts"),
+	).toHaveLength(9);
 	const require = createRequire(import.meta.url);
 	const pkg = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
 	for (const specifier of imports) {
+		if (specifier === "./policies.ts") continue;
 		expect(specifier).toMatch(/^cosmonauts(?:\/|$)/);
 		const entry = specifier === "cosmonauts" ? "." : `.${specifier?.slice(10)}`;
 		expect(pkg.exports).toHaveProperty(entry);
@@ -106,6 +114,11 @@ test("an external consumer executes its chain and assembles granted memory tools
 		new URL("./fixtures/library-consumer/consumer.ts", import.meta.url),
 		join(tmp.path, "consumer.ts"),
 	);
+	await cp(
+		new URL("./fixtures/library-consumer/policies.ts", import.meta.url),
+		join(tmp.path, "policies.ts"),
+	);
+
 	expect((await readdir(installed)).sort()).toEqual([
 		"lib",
 		"node_modules",
@@ -180,6 +193,24 @@ function assertConsumerResult(
 		].sort(),
 	);
 	expect(result.tools["visitor/notebook"]).toEqual(["recall", "remember"]);
+	expect(result.policies).toEqual({
+		purposes: ["default", "plan-review", "plan-revision", "default"],
+		requiresTarget: [false, false, false, true],
+		loop: { success: true, iterations: 2 },
+		terminal: {
+			success: false,
+			iterations: 0,
+			error: "Consumer scope exhausted",
+		},
+		checkpoint: { success: true, summary: "Consumer checkpoint accepted" },
+		refused: {
+			success: false,
+			error: 'Consumer refused: Unknown terminal gate "missing".',
+		},
+		spawns: 2,
+		tools: ["read"],
+		denial: "Consumer delegation denied",
+	});
 }
 
 test("the same fixture exercises the public seams in process for mutation coverage", async () => {
@@ -194,10 +225,29 @@ test("the same fixture exercises the public seams in process for mutation covera
 	try {
 		assertConsumerResult(await exerciseConsumer(tmp.path));
 		assertConsumerResult(await exerciseConsumer(tmp.path, true), true);
-		expect(dispose).toHaveBeenCalledTimes(4);
+		expect(dispose).toHaveBeenCalledTimes(6);
 	} finally {
 		dispose.mockRestore();
 		vi.unstubAllGlobals();
 		vi.unstubAllEnvs();
 	}
+});
+
+test("the consumer declares chain classification, terminal and session policies independently of content", () => {
+	expect(consumer).toHaveProperty(
+		"consumerChainAdapter.classifyStage",
+		expect.any(Function),
+	);
+	expect(consumer).toHaveProperty(
+		"consumerChainAdapter.terminalGates.fixture",
+		expect.any(Function),
+	);
+	expect(consumer).toHaveProperty(
+		"consumerChainAdapter.refuse",
+		expect.any(Function),
+	);
+	expect(consumer).toHaveProperty(
+		"consumerSessionPolicies.forAgent",
+		expect.any(Function),
+	);
 });

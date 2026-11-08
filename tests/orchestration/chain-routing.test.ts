@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import chains from "../../bundled/coding/chains.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { injectUserPrompt } from "../../lib/orchestration/chain-steps.ts";
@@ -8,6 +7,7 @@ import {
 	shouldRunChainInline,
 } from "../../lib/orchestration/durable-chain-compiler.ts";
 import type { ChainStep } from "../../lib/orchestration/types.ts";
+import { consumerChains as chains } from "../fixtures/library-consumer/policies.ts";
 import { parseCodingChain, withCodingChain } from "../helpers/coding-chain.ts";
 
 const registry = new AgentRegistry([
@@ -18,15 +18,18 @@ const registry = new AgentRegistry([
 	agent("quality-manager", false),
 	agent("plan-reviewer", false),
 	agent("spec-writer", false),
+	agent("checkpoint", false),
 	agent("integration-verifier", false),
 ]);
 
 describe("chain durable routing", () => {
-	test("routes shipped QM-ending named chains through their supported runner", () => {
+	test("routes consumer named declarations through their supported runner", () => {
 		for (const chain of chains) {
 			const steps = parseCodingChain(chain.chain ?? "", registry);
-			expect(shouldRunChainInline(steps)).toBe(chain.name !== "verify");
-			expect(steps.at(-1)).toMatchObject({ name: "quality-manager" });
+			expect(shouldRunChainInline(steps)).toBe(chain.name === "loop");
+			expect(steps).toHaveLength(
+				chain.name === "review-cycle" ? 4 : chain.name === "loop" ? 2 : 1,
+			);
 		}
 	});
 

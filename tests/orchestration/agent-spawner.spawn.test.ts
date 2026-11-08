@@ -1,4 +1,4 @@
-import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
+import { createConsumerSessionPolicy } from "../fixtures/library-consumer/policies.ts";
 /**
  * Regression tests for createPiSpawner() spawn behavior.
  */
@@ -63,8 +63,6 @@ import {
 	createPiSpawner,
 	resolveModel,
 } from "../../lib/orchestration/agent-spawner.ts";
-import { qualityReviewAuditFindingLines } from "../../lib/orchestration/quality-review-launch.ts";
-import type { SpawnEvent } from "../../lib/orchestration/types.ts";
 
 const DOMAINS_DIR = resolve(
 	fileURLToPath(import.meta.url),
@@ -83,6 +81,7 @@ beforeAll(async () => {
 	);
 	await writeSyntheticDomainPackage(syntheticPackageRoot, {
 		packageName: "alpha-pkg",
+		capabilities: { tasks: "Synthetic task capability." },
 		domainId: "alpha",
 		lead: "planner",
 		agents: [{ id: "planner" }, { id: "worker" }],
@@ -92,7 +91,6 @@ beforeAll(async () => {
 		},
 	});
 	const domains = await loadDomainsFromSources([
-		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
 		{
 			domainsDir: syntheticPackageRoot,
 			sourceType: "domain-root",
@@ -100,7 +98,7 @@ beforeAll(async () => {
 			precedence: 2,
 		},
 	]);
-	realResolver = DomainResolver.fromSingleDir(DOMAINS_DIR, domains);
+	realResolver = DomainResolver.fromSingleDir(syntheticPackageRoot, domains);
 });
 
 afterAll(async () => {
@@ -508,195 +506,6 @@ describe("createPiSpawner", () => {
 			]);
 		});
 
-		test("captures compact analysis gate observations only for quality sessions", async () => {
-			let listener: ((event: unknown) => void) | undefined;
-			const session = createMockSession({
-				subscribe: vi.fn((callback: (event: unknown) => void) => {
-					listener = callback;
-					return vi.fn();
-				}),
-				prompt: vi.fn(async () => {
-					listener?.({
-						type: "tool_execution_end",
-						toolCallId: "audit",
-						toolName: "analysis_audit",
-						isError: false,
-						result: {
-							details: {
-								kind: "findings",
-								capability: "changed-scope-audit",
-								scope: { kind: "changed", base: "abc" },
-								verdict: "pass",
-								native: { secret: "not forwarded" },
-							},
-						},
-					});
-				}),
-			});
-			mocks.createAgentSession.mockResolvedValue({ session });
-			const received: unknown[] = [];
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
-				resolver: realResolver,
-			});
-			await spawner.spawn({
-				role: "planner",
-				cwd: "/tmp/test-project",
-				prompt: "Plan",
-				onEvent: (event) => received.push(event),
-			});
-			expect(JSON.stringify(received)).not.toContain("not forwarded");
-			expect(received).toContainEqual(
-				expect.objectContaining({
-					type: "tool_execution_end",
-					toolName: "analysis_audit",
-				}),
-			);
-			expect(JSON.stringify(received)).not.toContain("changed-scope-audit");
-			const hostRunStoreRoot = await mkdtemp(join(tmpdir(), "qm-events-"));
-			try {
-				const qualityEvents: unknown[] = [];
-				const qualityResult = await spawner.spawn({
-					role: "planner",
-					cwd: "/tmp/test-project",
-					prompt: "Plan",
-					onEvent: (event) => qualityEvents.push(event),
-					sessionPolicy: createQualityReviewSessionPolicy(
-						{
-							runId: "qm-test",
-							workspaceRoot: "/tmp/test-project",
-							materialsRoot: "/tmp/test-project",
-							base: "abc",
-							changedFiles: [],
-							hostRunStoreRoot,
-							artifactSink: {
-								write: vi.fn(),
-								writeReviewer: vi.fn(),
-								references: () => [],
-								reviewersOpen: () => true,
-								sealReviewers: vi.fn(),
-							},
-							activeSpawns: new Set(),
-							allowedLenses: new Set(),
-							attemptedLenses: new Set(),
-							integrityFailures: [],
-						},
-						false,
-					),
-				});
-				expect(qualityResult.success, qualityResult.error).toBe(true);
-				expect(qualityEvents).toContainEqual(
-					expect.objectContaining({
-						type: "tool_execution_end",
-						result: {
-							details: {
-								kind: "findings",
-								capability: "changed-scope-audit",
-								scope: { base: "abc" },
-								verdict: "pass",
-							},
-						},
-					}),
-				);
-			} finally {
-				await rm(hostRunStoreRoot, { recursive: true, force: true });
-			}
-		});
-
-		test("a quality spawn carries failing audit findings through to host report lines", async () => {
-			const base = "b".repeat(40);
-			let listener: ((event: unknown) => void) | undefined;
-			const session = createMockSession({
-				subscribe: vi.fn((callback: (event: unknown) => void) => {
-					listener = callback;
-					return vi.fn();
-				}),
-				prompt: vi.fn(async () => {
-					listener?.({
-						type: "tool_execution_end",
-						toolCallId: "audit",
-						toolName: "analysis_audit",
-						isError: false,
-						result: {
-							details: {
-								kind: "findings",
-								capability: "changed-scope-audit",
-								scope: { kind: "changed", base },
-								verdict: "fail",
-								findings: [
-									{
-										id: "f1",
-										category: "dead-code",
-										severity: "error",
-										message: "unused export",
-										locations: [{ path: "lib/a.ts", line: 17, column: 3 }],
-										actions: [
-											{
-												description: "remove export",
-												providerDetails: { secret: "not forwarded" },
-											},
-										],
-										providerDetails: { secret: "not forwarded" },
-									},
-									{
-										id: "f2",
-										category: "complexity",
-										severity: "warning",
-										message: "complex branch",
-										locations: [{ path: "lib/b.ts", line: 23 }],
-										actions: [],
-									},
-								],
-							},
-						},
-					});
-				}),
-			});
-			mocks.createAgentSession.mockResolvedValue({ session });
-			const hostRunStoreRoot = await mkdtemp(join(tmpdir(), "qm-findings-"));
-			try {
-				const events: SpawnEvent[] = [];
-				const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
-					resolver: realResolver,
-				});
-				const result = await spawner.spawn({
-					role: "planner",
-					cwd: "/tmp/test-project",
-					prompt: "Plan",
-					onEvent: (event) => events.push(event),
-					sessionPolicy: createQualityReviewSessionPolicy(
-						{
-							runId: "qm-test",
-							workspaceRoot: "/tmp/test-project",
-							materialsRoot: "/tmp/test-project",
-							base,
-							changedFiles: [],
-							hostRunStoreRoot,
-							artifactSink: {
-								write: vi.fn(),
-								writeReviewer: vi.fn(),
-								references: () => [],
-								reviewersOpen: () => true,
-								sealReviewers: vi.fn(),
-							},
-							activeSpawns: new Set(),
-							allowedLenses: new Set(),
-							attemptedLenses: new Set(),
-							integrityFailures: [],
-						},
-						false,
-					),
-				});
-				expect(result.success, result.error).toBe(true);
-				expect(JSON.stringify(events)).not.toContain("not forwarded");
-				expect(qualityReviewAuditFindingLines(events, base)).toEqual([
-					"f1 P1 lib/a.ts:17 dead-code error: unused export; fix: remove export",
-					"f2 P2 lib/b.ts:23 complexity warning: complex branch; fix: Address complexity finding.",
-				]);
-			} finally {
-				await rm(hostRunStoreRoot, { recursive: true, force: true });
-			}
-		});
-
 		test("forwards compaction_start/end events through onEvent", async () => {
 			let subscribeListener: ((event: unknown) => void) | undefined;
 			const mockSession = createMockSession({
@@ -925,4 +734,60 @@ describe("resolveModel", () => {
 		expect(result).toBe(mockModel);
 		expect(mocks.getModel).toHaveBeenCalledWith("openai", "gpt-4.1");
 	});
+});
+
+test("consumer session hooks observe tool output and pair creation with disposal", async () => {
+	mocks.getModel.mockReturnValue({ id: "mock-model" });
+	const session = createMockSession({ sessionId: "consumer-hooks" });
+	let listener: ((event: unknown) => void) | undefined;
+	session.subscribe = vi.fn((callback: (event: unknown) => void) => {
+		listener = callback;
+		return vi.fn();
+	});
+	session.prompt = vi.fn(async () => {
+		listener?.({
+			type: "tool_execution_end",
+			toolName: "fixture_status",
+			toolCallId: "fixture",
+			isError: false,
+			result: { private: "not forwarded" },
+		});
+	});
+	mocks.createAgentSession.mockResolvedValue({ session });
+	const onCreated = vi.fn();
+	const onDisposed = vi.fn();
+	const observeToolResult = vi.fn(() => ({ approved: true }));
+	const events: unknown[] = [];
+	const policy = createConsumerSessionPolicy({
+		onCreated,
+		onDisposed,
+		observeToolResult,
+	});
+	const spawner = createPiSpawner(FIXTURE_REGISTRY, undefined, {
+		resolver: realResolver,
+	});
+	try {
+		const result = await spawner.spawn({
+			role: "planner",
+			cwd: "/tmp",
+			prompt: "inspect",
+			sessionPolicy: policy,
+			onEvent: (event) => events.push(event),
+		});
+		expect(result.success, result.error).toBe(true);
+		expect(onCreated).toHaveBeenCalledWith(session);
+		expect(onDisposed).toHaveBeenCalledWith("consumer-hooks");
+		expect(observeToolResult).toHaveBeenCalledWith("fixture_status", {
+			private: "not forwarded",
+		});
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "tool_execution_end",
+				result: { approved: true },
+			}),
+		);
+		expect(JSON.stringify(events)).not.toContain("not forwarded");
+	} finally {
+		spawner.dispose();
+	}
 });

@@ -1,14 +1,13 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { createContentRuntime } from "../domains/host-runtime.ts";
-import { qualityReviewSessionPolicies } from "../lib/orchestration/quality-review-session-provider.ts";
 import { CosmonautsRuntime } from "../lib/runtime.ts";
+import { consumerSessionPolicies as qualityReviewSessionPolicies } from "./fixtures/library-consumer/policies.ts";
 import { useTempDir } from "./helpers/fs.ts";
 
 const tmp = useTempDir("runtime-seals-");
 const policyURL = new URL(
-	"../lib/orchestration/quality-review-session-provider.ts",
+	"./fixtures/library-consumer/policies.ts",
 	import.meta.url,
 ).href;
 beforeEach(() => {
@@ -22,37 +21,10 @@ async function domain(id: string, extra: string) {
 	await mkdir(dir, { recursive: true });
 	await writeFile(
 		join(dir, "domain.ts"),
-		`import {qualityReviewSessionPolicies as seal} from ${JSON.stringify(policyURL)}; export default {id:${JSON.stringify(id)},description:"Fixture",${extra}};`,
+		`import {consumerSessionPolicies as seal} from ${JSON.stringify(policyURL)}; export default {id:${JSON.stringify(id)},description:"Fixture",${extra}};`,
 	);
 	return join(tmp.path, "domains");
 }
-
-test("the current host retains the coding session seal with an older project override", async () => {
-	const override = join(tmp.path, ".cosmonauts", "domains", "coding");
-	await mkdir(override, { recursive: true });
-	await writeFile(
-		join(override, "domain.ts"),
-		'export default {id:"coding",description:"Older override",chainAdapter:{defaultModel:"test/override"}}',
-	);
-	const runtime = await createContentRuntime({ projectRoot: tmp.path });
-	expect(runtime.sessionPolicies).toBe(qualityReviewSessionPolicies);
-	const manager = runtime.agentRegistry.resolve("coding/quality-manager");
-	expect(runtime.sessionPolicies?.interactiveDenial?.(manager)).toContain(
-		"quality review launcher",
-	);
-	expect(
-		runtime.sessionPolicies
-			?.forAgent(manager)
-			?.filterTools?.(["read", "write", "bash"]),
-	).toEqual(["read"]);
-	expect(
-		runtime.sessionPolicies?.spawnPolicy?.("unbound").authorize({
-			callerRole: "coding/quality-manager",
-			resolvedTargetRole: "coding/reviewer",
-			prompt: "Review",
-		}),
-	).toBe("quality review context missing");
-});
 
 test("a sole declaring policy survives multiple adapters and a different selected adapter", async () => {
 	await domain(

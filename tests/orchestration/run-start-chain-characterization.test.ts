@@ -8,10 +8,6 @@ import {
 } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-	buildStagePrompt,
-	deriveStagePromptPurpose,
-} from "../../bundled/coding/chain-prompts.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
@@ -35,6 +31,10 @@ import type {
 	SpawnConfig,
 	SpawnResult,
 } from "../../lib/orchestration/types.ts";
+import {
+	buildStagePrompt,
+	deriveStagePromptPurpose,
+} from "../fixtures/library-consumer/policies.ts";
 import { withCodingChain } from "../helpers/coding-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -232,10 +232,7 @@ describe("runStart durable chain characterization", () => {
 			appendBoundReviewTarget(inlinePurposePrompt, target),
 		);
 		expect(prompts[3]).toBe(
-			appendBoundReviewTarget(
-				"Review the plan and create atomic implementation tasks.",
-				target,
-			),
+			appendBoundReviewTarget("Fixture stage: task-manager.", target),
 		);
 	});
 
