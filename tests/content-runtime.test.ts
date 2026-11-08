@@ -155,13 +155,12 @@ test("coding content carries its seal into a direct runtime without the CLI host
 	).toContain("private snapshot");
 });
 
-test("the real content runtime discovers and mounts the existing domain-bindings extension", async () => {
+test("the content runtime uses the library-owned domain-bindings mount", async () => {
 	const runtime = await createContentRuntime({ projectRoot: tmp.path });
-	const paths = resolveInteractiveExtensionPaths(runtime);
-	const binding = new URL(
-		"../domains/shared/extensions/domain-bindings",
-		import.meta.url,
-	).pathname;
+	expect(runtime.domains.length).toBeGreaterThan(0);
+	const paths = resolveInteractiveExtensionPaths();
+	const binding = new URL("../lib/extensions/domain-bindings", import.meta.url)
+		.pathname;
 	expect(paths).toContain(binding);
 	expect(existsSync(binding)).toBe(true);
 });

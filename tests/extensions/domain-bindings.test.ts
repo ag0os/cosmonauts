@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import domainBindingsExtension from "../../domains/shared/extensions/domain-bindings/index.ts";
+import domainBindingsExtension from "../../lib/extensions/domain-bindings/index.ts";
 import { isSubagentAllowed } from "../../lib/extensions/orchestration/authorization.ts";
 import {
 	clearSharedDomainBindings,
@@ -523,4 +523,154 @@ describe("domain-bindings extension", () => {
 			source: "live",
 		});
 	});
+});
+
+test("the library binding command mounts with no domains and rejects missing targets without persistence", async () => {
+	clearSharedDomainBindings();
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+	});
+	expect(runtime.domains).toEqual([]);
+	setSharedDomainBindings({
+		domainRegistry: runtime.domainRegistry,
+		bindingResolver: runtime.bindingResolver,
+		liveBindings: runtime.liveDomainBindings,
+	});
+	try {
+		const pi = createMockPi();
+		domainBindingsExtension(pi as never);
+		const ctx = createCommandContext([
+			{
+				type: "custom",
+				customType: "cosmonauts.domain-binding",
+				data: { role: "consumer", targetDomain: "missing" },
+			},
+		]);
+		await pi.fireEvent("session_start", {}, ctx);
+		await getCommand(pi, "domain-bind").handler("consumer missing", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining(
+				'Install or activate "missing" before binding "consumer" to it.',
+			),
+			"warning",
+		);
+		expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+			expect.stringContaining('Install or activate "missing"'),
+			"error",
+		);
+		expect(runtime.liveDomainBindings.snapshot()).toEqual({});
+		expect(pi.entries).toEqual([]);
+	} finally {
+		clearSharedDomainBindings();
+	}
+});
+
+test("restore ignores unrelated entries and malformed data and retains the last valid binding before stale targets", async () => {
+	const runtime = await setupRuntime();
+	const pi = createMockPi();
+	domainBindingsExtension(pi as never);
+	const valid = { role: "ruby-coding", targetDomain: "ruby-experimental" };
+	const ctx = createCommandContext([
+		{
+			type: "message",
+			customType: "cosmonauts.domain-binding",
+			data: { role: "consumer", targetDomain: "ruby-experimental" },
+		},
+		{
+			type: "custom",
+			customType: "unrelated",
+			data: { role: "consumer", targetDomain: "ruby-experimental" },
+		},
+		...[
+			undefined,
+			null,
+			"garbage",
+			{},
+			{ role: " ", targetDomain: "consumer" },
+			{ role: "consumer", targetDomain: " " },
+		].map((data) => ({
+			type: "custom",
+			customType: "cosmonauts.domain-binding",
+			data,
+		})),
+		{ type: "custom", customType: "cosmonauts.domain-binding", data: valid },
+		{
+			type: "custom",
+			customType: "cosmonauts.domain-binding",
+			data: { ...valid, targetDomain: "missing" },
+		},
+	]);
+	try {
+		await pi.fireEvent("session_start", {}, ctx);
+		expect(runtime.liveDomainBindings.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(7);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			"Skipping malformed stale domain binding entry.",
+			"warning",
+		);
+		expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+			expect.stringContaining("missing"),
+			"warning",
+		);
+		expect(pi.entries).toEqual([]);
+	} finally {
+		clearSharedDomainBindings();
+	}
+});
+
+test.each([
+	new Error("restore failed"),
+	"opaque restore failure",
+])("restore reports non-target failures without persisting a binding: %s", async (error) => {
+	const runtime = await setupRuntime();
+	const bind = vi
+		.spyOn(runtime.bindingResolver, "bindLiveRole")
+		.mockImplementation(() => {
+			throw error;
+		});
+	const pi = createMockPi();
+	domainBindingsExtension(pi as never);
+	const ctx = createCommandContext([
+		{
+			type: "custom",
+			customType: "cosmonauts.domain-binding",
+			data: { role: "ruby-coding", targetDomain: "ruby-experimental" },
+		},
+	]);
+	try {
+		await pi.fireEvent("session_start", {}, ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			`Skipping invalid stale domain binding entry for \`ruby-coding\`: ${error instanceof Error ? error.message : error}`,
+			"warning",
+		);
+		expect(runtime.liveDomainBindings.snapshot()).toEqual({});
+		expect(pi.entries).toEqual([]);
+	} finally {
+		bind.mockRestore();
+		clearSharedDomainBindings();
+	}
+});
+
+test("the library binding extension stays inert when session bindings are unavailable", async () => {
+	clearSharedDomainBindings();
+	const pi = createMockPi();
+	domainBindingsExtension(pi as never);
+	const ctx = createCommandContext([
+		{
+			type: "custom",
+			customType: "cosmonauts.domain-binding",
+			data: { role: "consumer", targetDomain: "missing" },
+		},
+	]);
+	await pi.fireEvent("session_start", {}, ctx);
+	expect(ctx.ui.notify).not.toHaveBeenCalled();
+	await getCommand(pi, "domain-bind").handler("consumer target", ctx);
+	expect(ctx.ui.notify).toHaveBeenCalledWith(
+		"Domain binding is not available in this session.",
+		"error",
+	);
+	expect(pi.entries).toEqual([]);
 });

@@ -37,6 +37,7 @@ import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
 import { resolveDefaultDomain } from "../lib/domains/default-domain.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
+import { domainBindingsExtensionPath } from "../lib/extensions/domain-bindings/index.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { setSharedDomainBindings } from "../lib/interactive/domain-bindings.ts";
@@ -335,17 +336,11 @@ export function hasRunnableDefaultDomain(runtime: CosmonautsRuntime): boolean {
 	);
 }
 
-/** Agent switching is library-owned; bindings stay with content until the step6 registry edit. */
-export function resolveInteractiveExtensionPaths(runtime: {
-	readonly domainResolver: Pick<DomainResolver, "resolveExtensionPath">;
-}): string[] {
-	const binding = runtime.domainResolver.resolveExtensionPath(
-		"domain-bindings",
-		undefined,
-	);
+/** Live-session commands mount independently of consumer domain discovery. */
+export function resolveInteractiveExtensionPaths(): string[] {
 	return [
 		fileURLToPath(new URL("../lib/extensions/agent-switch", import.meta.url)),
-		...(binding ? [binding] : []),
+		domainBindingsExtensionPath,
 	];
 }
 
@@ -719,7 +714,7 @@ async function handleInteractiveMode(
 		skillPaths: runtime.skillPaths,
 		agentRegistry: runtime.agentRegistry,
 		domainContext: runtime.domainContext,
-		extraExtensionPaths: resolveInteractiveExtensionPaths(runtime),
+		extraExtensionPaths: resolveInteractiveExtensionPaths(),
 	});
 
 	const { InteractiveMode } = await import("@earendil-works/pi-coding-agent");
