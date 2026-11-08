@@ -550,7 +550,9 @@ test("the library binding command mounts with no domains and rejects missing tar
 		await pi.fireEvent("session_start", {}, ctx);
 		await getCommand(pi, "domain-bind").handler("consumer missing", ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("Skipping invalid stale domain binding"),
+			expect.stringContaining(
+				'Install or activate "missing" before binding "consumer" to it.',
+			),
 			"warning",
 		);
 		expect(ctx.ui.notify).toHaveBeenLastCalledWith(
@@ -656,7 +658,13 @@ test("the library binding extension stays inert when session bindings are unavai
 	clearSharedDomainBindings();
 	const pi = createMockPi();
 	domainBindingsExtension(pi as never);
-	const ctx = createCommandContext();
+	const ctx = createCommandContext([
+		{
+			type: "custom",
+			customType: "cosmonauts.domain-binding",
+			data: { role: "consumer", targetDomain: "missing" },
+		},
+	]);
 	await pi.fireEvent("session_start", {}, ctx);
 	expect(ctx.ui.notify).not.toHaveBeenCalled();
 	await getCommand(pi, "domain-bind").handler("consumer target", ctx);

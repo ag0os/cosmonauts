@@ -2,8 +2,8 @@ import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import { DomainBindingTargetError } from "../../../../lib/domains/bindings.ts";
-import { getSharedDomainBindings } from "../../../../lib/interactive/domain-bindings.ts";
+import { DomainBindingTargetError } from "../../domains/bindings.ts";
+import { getSharedDomainBindings } from "../../interactive/domain-bindings.ts";
 
 const DOMAIN_BINDING_CUSTOM_TYPE = "cosmonauts.domain-binding";
 
@@ -61,54 +61,47 @@ function isDomainBindEntry(data: unknown): data is DomainBindEntry {
 	);
 }
 
+/** Replay only validated binding entries; a later stale target leaves the last valid one live. */
+function restoreBinding(
+	entry: SessionEntry,
+	shared: NonNullable<ReturnType<typeof getSharedDomainBindings>>,
+	ctx: Pick<ExtensionCommandContext, "ui">,
+): void {
+	if (
+		entry.type !== "custom" ||
+		entry.customType !== DOMAIN_BINDING_CUSTOM_TYPE
+	)
+		return;
+	if (!isDomainBindEntry(entry.data)) {
+		ctx.ui.notify("Skipping malformed stale domain binding entry.", "warning");
+		return;
+	}
+	try {
+		shared.bindingResolver.bindLiveRole(
+			entry.data.role,
+			entry.data.targetDomain,
+		);
+	} catch (error: unknown) {
+		const message = restoreFailureMessage(error);
+		ctx.ui.notify(
+			`Skipping invalid stale domain binding entry for \`${entry.data.role}\`: ${message}`,
+			"warning",
+		);
+	}
+}
+
+function restoreFailureMessage(error: unknown): string {
+	if (error instanceof DomainBindingTargetError)
+		return unavailableTargetMessage(error);
+	return error instanceof Error ? error.message : String(error);
+}
+
 export default function domainBindingsExtension(pi: ExtensionAPI): void {
-	// fallow-ignore-next-line complexity
 	pi.on("session_start", async (_event, ctx) => {
 		const shared = getSharedDomainBindings();
 		if (!shared) return;
-
 		const entries = ctx.sessionManager.getEntries() as SessionEntry[];
-		const latestValidByRole = new Map<string, DomainBindEntry>();
-
-		for (const entry of entries) {
-			if (
-				entry.type !== "custom" ||
-				entry.customType !== DOMAIN_BINDING_CUSTOM_TYPE
-			) {
-				continue;
-			}
-
-			if (!isDomainBindEntry(entry.data)) {
-				ctx.ui.notify(
-					"Skipping malformed stale domain binding entry.",
-					"warning",
-				);
-				continue;
-			}
-
-			try {
-				shared.bindingResolver.bindLiveRole(
-					entry.data.role,
-					entry.data.targetDomain,
-				);
-				latestValidByRole.set(entry.data.role, entry.data);
-			} catch (error: unknown) {
-				const message =
-					error instanceof DomainBindingTargetError
-						? unavailableTargetMessage(error)
-						: error instanceof Error
-							? error.message
-							: String(error);
-				ctx.ui.notify(
-					`Skipping invalid stale domain binding entry for \`${entry.data.role}\`: ${message}`,
-					"warning",
-				);
-			}
-		}
-
-		for (const [role, entry] of latestValidByRole) {
-			shared.liveBindings.set(role, entry.targetDomain);
-		}
+		for (const entry of entries) restoreBinding(entry, shared, ctx);
 	});
 
 	pi.registerCommand("domain-bind", {

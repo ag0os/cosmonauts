@@ -10,9 +10,10 @@ The public declaration and runtime contracts will be documented as those seams l
 re-exports, literal dynamic imports and literal `require` calls across `lib/` and
 `cli/`, including content subsystems still awaiting later removal.
 
-Extension implementations live in `lib/extensions/`, except `domain-bindings`,
-whose move is deferred until its human-owned suppression registry entry can be
-retired. Its implementation and directive remain unchanged at the original path.
+Extension implementations live in `lib/extensions/`. P7 moves `domain-bindings`
+there after extracting stored-entry replay and error formatting, removing its
+complexity directive and the matching suppression-registry row in the same diff.
+That registry diff requires human approval before merge.
 Eight `domains/shared/extensions/*/index.ts` entry points forward to the moved
 implementations to preserve
 current domain and Pi discovery. Existing memory forwarding entries already
@@ -387,7 +388,13 @@ runtime fails before checkout discovery. Spawn policy no longer exposes a runtim
 getter. Detached child policy selection occurs once, including an absent result.
 Tests: session-policy registry/spawner and spawn-policy-hooks suites.
 
-The CLI mounts lib/extensions/agent-switch directly and resolves domain-bindings through the selected resource provider. The latter stays at domains/shared/extensions/domain-bindings until step6 and the human registry edit; real-path existence and command/resume/fork behavior are pinned. Its content catalog is
+The CLI directly mounts `lib/extensions/agent-switch` and
+`lib/extensions/domain-bindings`, including with zero discovered domains.
+Real-path existence, missing shared state/targets, malformed and stale restore
+entries, live rebinding and persistence are pinned by the CLI mount, domain-policy
+and domain-bindings suites. Replay applies each validated entry through
+`bindLiveRole`, which immediately updates the shared live store; a later invalid
+entry leaves the previous valid binding intact. Its content catalog is
 owned by `cli/package-catalog.ts`; core catalog lookup takes explicit entries and
 relative sources require an explicit root. Current CLI install/update behavior
 and its catalog entries remain pinned by package/update/catalog tests. The library
