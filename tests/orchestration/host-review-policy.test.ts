@@ -1,3 +1,5 @@
+import { mkdir, realpath } from "node:fs/promises";
+import { join } from "node:path";
 import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { expect, test, vi } from "vitest";
 import type { SpawnPolicyRequest } from "../../lib/agents/session-policy.ts";
@@ -11,6 +13,7 @@ import { qualityReviewPolicyFor } from "../../lib/orchestration/quality-review-p
 import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
 import { qualityReviewSpawnPolicy } from "../../lib/orchestration/quality-review-spawn-policy.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
+import { useTempDir } from "../helpers/fs.ts";
 
 function actor(id: string, domain = "coding"): AgentDefinition {
 	return {
@@ -261,4 +264,44 @@ test("the bound parent creates a readonly child policy and preserves unrelated c
 	});
 	expect(options?.additionalExtensionPaths).toEqual(["/consumer/unrelated"]);
 	expect(options?.extensionFactories).toEqual([inline, expect.any(Function)]);
+});
+
+const skillFixture = useTempDir("policy-framework-skills-");
+test("consented resource policy rejects a missing root rather than mounting an unfiltered provider", async () => {
+	const policy = createQualityReviewSessionPolicy(
+		context({
+			analysisConsent: {
+				runId: "scope",
+				snapshotRealPath: "/captured/checkout",
+				consented: true,
+			} as never,
+		}),
+	);
+	const resources = policy.resourceOptions;
+	if (!resources) throw new Error("Missing resource policy");
+	await expect(
+		resources(
+			{ projectContext: false, extensionPaths: [], extensionFactories: [] },
+			undefined,
+		),
+	).rejects.toThrow("requires an explicit resource root");
+});
+
+test("quality skill fallback admits only the explicit framework root and handles an omitted root", async () => {
+	const fixtureRoot = await realpath(skillFixture.path);
+	const root = join(fixtureRoot, "framework");
+	const domains = join(root, "domains");
+	const inside = join(root, "skills");
+	const outside = join(fixtureRoot, "outside");
+	for (const path of [domains, inside, outside])
+		await mkdir(path, { recursive: true });
+	const omittedSkillPaths: string[] = [];
+	const policy = createQualityReviewSessionPolicy(
+		context({ omittedSkillPaths }),
+	);
+	const prepare = policy.prepareSkills;
+	if (!prepare) throw new Error("Missing skill policy");
+	await expect(prepare([inside, outside], domains)).resolves.toEqual([inside]);
+	expect(omittedSkillPaths).toEqual([outside]);
+	await expect(prepare([inside], undefined)).resolves.toEqual([]);
 });

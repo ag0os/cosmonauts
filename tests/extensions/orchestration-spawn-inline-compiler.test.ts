@@ -49,6 +49,15 @@ describe("spawn_agent inline compiler boundary", () => {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/quality-manager -->",
 		});
 		orchestrationExtension(pi as never);
+		const baseRuntime = {
+			agentRegistry: fixtures.agentRegistry,
+			domainContext: "coding",
+			projectSkills: [],
+			skillPaths: [],
+			domainRegistry: fixtures.domainRegistry,
+			domainResolver: resolver,
+			domainsDir: testDomainsDir,
+		} as never;
 		registerSessionPolicy(
 			sessionId,
 			createQualityReviewSessionPolicy({
@@ -64,16 +73,9 @@ describe("spawn_agent inline compiler boundary", () => {
 				attemptedLenses: new Set(),
 				integrityFailures: [],
 				reviewerModel: "anthropic/claude-sonnet-5",
-				baseRuntime: {
-					agentRegistry: fixtures.agentRegistry,
-					domainContext: "coding",
-					projectSkills: [],
-					skillPaths: [],
-					domainRegistry: fixtures.domainRegistry,
-					domainResolver: resolver,
-					domainsDir: testDomainsDir,
-				} as never,
+				baseRuntime,
 			}),
+			baseRuntime,
 		);
 		const configs: Array<{ role: string; model?: string }> = [];
 		mocks.createAgentSessionFromDefinition.mockImplementation(
