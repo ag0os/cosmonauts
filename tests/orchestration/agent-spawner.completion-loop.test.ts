@@ -1,3 +1,4 @@
+import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
 /**
  * Tests for the multi-turn completion loop in createPiSpawner().
  * Covers ACs #1–#5 of TASK-110.
@@ -279,7 +280,10 @@ describe("createPiSpawner — completion loop", () => {
 			role: "planner",
 			cwd: "/tmp",
 			prompt: "go",
-			qualityReviewContext,
+			sessionPolicy: createQualityReviewSessionPolicy(
+				qualityReviewContext,
+				false,
+			),
 		});
 		expect(result.error).toBeUndefined();
 		expect(integrityFailures).toContain(

@@ -1,0 +1,100 @@
+import type { ProjectConfig } from "../config/types.ts";
+import type { AgentDefinition } from "./types.ts";
+
+/** SDK values stay opaque here so consumer discovery and non-Pi backends remain Pi-free. */
+interface SessionPolicyResources {
+	projectContext: boolean;
+	extensionPaths: readonly string[];
+	extensionFactories: readonly unknown[];
+}
+interface HostSessionEvidence {
+	sessionId: string;
+	model?: { provider: string; id: string };
+	messages: readonly unknown[];
+}
+
+/** Host-only hooks, carried by runtime code; never accepted as model tool arguments. */
+export interface SessionPolicy {
+	validateDefinition?: (definition: AgentDefinition) => void;
+	spawn?: SessionSpawnPolicy;
+	toolPreset?: "readonly";
+	filterTools?: (tools: readonly string[]) => string[];
+	loadConfig?: (cwd: string) => Promise<ProjectConfig>;
+	prepareSkills?: (
+		paths: string[] | undefined,
+		domainsDir: string,
+	) => Promise<string[] | undefined>;
+	resourceOptions?: (
+		params: SessionPolicyResources,
+		domainsDir: string,
+	) => Promise<Record<string, unknown>>;
+	settingsManager?: () => unknown;
+	transcriptPath?: () => Promise<string>;
+	retainTranscript?: boolean;
+	onCreated?: (session: HostSessionEvidence) => void;
+	onDisposed?: (sessionId: string) => void;
+	onCompletionWait?: (messages: readonly string[], timeoutMs: number) => void;
+	observeToolResult?: (toolName: string, result: unknown) => unknown;
+}
+
+export interface SessionPolicyProvider {
+	spawnPolicy?: (sessionId: string) => SessionSpawnPolicy;
+	launchTarget?: (
+		reference: import("../domains/bindings.ts").ResolvedAgentReference,
+		options: {
+			projectRoot: string;
+			operatorNote: string;
+			planSlug?: string;
+			signal?: AbortSignal;
+		},
+	) => Promise<{ outcome: "success" | "failed"; summary: string }> | undefined;
+	forAgent: (definition: AgentDefinition) => SessionPolicy | undefined;
+	interactiveDenial?: (definition: AgentDefinition) => string | undefined;
+}
+
+export interface SpawnPolicyRequest {
+	callerRole: string;
+	resolvedTargetRole: string;
+	prompt: string;
+	model?: string;
+	thinkingLevel?: import("./types.ts").ThinkingLevel;
+}
+
+export interface ChildSessionEvidence {
+	session: HostSessionEvidence;
+	spawnId: string;
+	resolvedRole?: string;
+	resolvedModel?: { provider: string; id: string };
+}
+
+/** A bound host policy, obtained before any checkout-owned runtime is loaded. */
+export interface SessionSpawnPolicy {
+	runtime?: () => import("../runtime.ts").CosmonautsRuntime;
+	authorize: (request: SpawnPolicyRequest) => string | undefined;
+	prepare?: (request: SpawnPolicyRequest) => {
+		cwd: string;
+		prompt: string;
+		model?: string;
+		sessionPolicy: SessionPolicy;
+	};
+	onRegistered?: (spawnId: string, resolvedRole: string) => void;
+	onFailure?: (message: string) => void;
+	onSettled?: (spawnId: string) => void;
+	onCompleted?: (evidence: ChildSessionEvidence) => Promise<void>;
+}
+
+const policies = new Map<string, SessionPolicy>();
+export function registerSessionPolicy(
+	sessionId: string,
+	policy: SessionPolicy,
+): void {
+	if (policies.has(sessionId))
+		throw new Error(`Duplicate host session policy: ${sessionId}`);
+	policies.set(sessionId, policy);
+}
+export function getSessionPolicy(sessionId: string): SessionPolicy | undefined {
+	return policies.get(sessionId);
+}
+export function removeSessionPolicy(sessionId: string): void {
+	policies.delete(sessionId);
+}

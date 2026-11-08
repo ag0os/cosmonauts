@@ -1,3 +1,4 @@
+import { qualityReviewPolicyFor } from "../../lib/orchestration/quality-review-profile.ts";
 /**
  * Tests for the shared session parameter builder (buildSessionParams).
  *
@@ -286,11 +287,11 @@ describe("buildSessionParams", () => {
 			});
 			const ordinary = await buildSessionParams(makeOptions({ def }));
 			const panel = await buildSessionParams(
-				makeOptions({ def, qualityReviewChild: true }),
+				makeOptions({ def, sessionPolicy: qualityReviewPolicyFor(def, true) }),
 			);
-			expect(ordinary.qualityReviewProfile).toBeUndefined();
+			expect(ordinary.sessionPolicy).toBeUndefined();
 			expect(ordinary.tools).toContain("bash");
-			expect(panel.qualityReviewProfile).toBe("reviewer");
+			expect(panel.sessionPolicy?.toolPreset).toBe("readonly");
 			expect(panel.tools).toEqual(["read", "grep", "find", "ls"]);
 		});
 		it('resolves "none" tool set to empty array', async () => {

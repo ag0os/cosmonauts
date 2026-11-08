@@ -518,6 +518,7 @@ function createBackend(
 				runtime.domainsDir,
 				{
 					resolver: runtime.domainResolver,
+					sessionPolicies: runtime.sessionPolicies,
 				},
 			);
 			const executionWorker = workerResolution ?? resolveDriveWorker(runtime);

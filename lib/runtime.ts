@@ -29,6 +29,7 @@ export { DomainBindingTargetError };
 
 /** Options for creating a CosmonautsRuntime instance. */
 export interface CosmonautsRuntimeOptions {
+	sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
 	chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	defaultModel?: string;
 	workerAgent?: string;
@@ -57,6 +58,7 @@ export interface CosmonautsRuntimeOptions {
  * domain context resolution, and workflow selection.
  */
 export class CosmonautsRuntime {
+	readonly sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
 	readonly chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	readonly defaultModel?: string;
 	readonly workerAgent?: string;
@@ -89,6 +91,7 @@ export class CosmonautsRuntime {
 	readonly domainsDir: string;
 
 	private constructor(fields: {
+		sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
 		chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 		defaultModel?: string;
 		workerAgent?: string;
@@ -105,6 +108,7 @@ export class CosmonautsRuntime {
 		skillPaths: readonly string[];
 		domainsDir: string;
 	}) {
+		this.sessionPolicies = fields.sessionPolicies;
 		this.chainAdapter = fields.chainAdapter;
 		this.defaultModel = fields.defaultModel;
 		this.workerAgent = fields.workerAgent;
@@ -247,6 +251,7 @@ function runtimeConsumerOptions(
 		selectChainConsumer(domains, context) ?? {};
 	const chainAdapter = options.chainAdapter ?? defaults.chainAdapter;
 	return {
+		sessionPolicies: options.sessionPolicies ?? defaults.sessionPolicies,
 		chainAdapter,
 		defaultModel:
 			options.defaultModel ??

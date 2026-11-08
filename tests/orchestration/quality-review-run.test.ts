@@ -34,6 +34,7 @@ import * as workspaceModule from "../../lib/orchestration/quality-review-workspa
 import { removePrivateReviewWorkspace } from "../../lib/orchestration/quality-review-workspace.ts";
 import type { SpawnEvent } from "../../lib/orchestration/types.ts";
 import { writeSyntheticInstallableDomainPackage } from "../helpers/packages.ts";
+import { reviewContextForPolicy } from "../helpers/quality-review-policy.ts";
 
 describe("quality review durable lifecycle", () => {
 	it("uses the configured workspace removal timeout on a stalled remover", async () => {
@@ -4960,7 +4961,7 @@ describe("quality review durable lifecycle", () => {
 				);
 				return {
 					spawn: async (config) => {
-						const context = config.qualityReviewContext;
+						const context = reviewContextForPolicy(config.sessionPolicy);
 						if (!context) throw new Error("missing quality context");
 						expect(context.reviewerModel).toBe("anthropic/reviewer");
 						for (const lens of ["reviewer", "security-reviewer"]) {
@@ -5043,7 +5044,7 @@ describe("quality review durable lifecycle", () => {
 	): Promise<{ outcome: string; report: string }> {
 		const spawned = vi.spyOn(spawnerModule, "createPiSpawner").mockReturnValue({
 			spawn: async (config) => {
-				const context = config.qualityReviewContext;
+				const context = reviewContextForPolicy(config.sessionPolicy);
 				if (!context) throw new Error("missing quality context");
 				const fullText = "reviewer completed";
 				context.attemptedLenses.add("reviewer");

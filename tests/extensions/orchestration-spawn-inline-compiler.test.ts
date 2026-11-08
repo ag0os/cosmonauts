@@ -1,5 +1,10 @@
 import { join } from "node:path";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+	registerSessionPolicy,
+	removeSessionPolicy,
+} from "../../lib/agents/session-policy.ts";
+import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
 import "./orchestration-mocks.ts";
 
 import type { AgentRegistry } from "../../lib/agents/index.ts";
@@ -11,10 +16,6 @@ import {
 	registerPlanContext,
 	removePlanContext,
 } from "../../lib/orchestration/plan-session-context.ts";
-import {
-	registerQualityReviewSession,
-	removeQualityReviewSession,
-} from "../../lib/orchestration/quality-review-context.ts";
 import { removeTracker } from "../../lib/orchestration/spawn-tracker.ts";
 import {
 	createMockPi,
@@ -48,29 +49,32 @@ describe("spawn_agent inline compiler boundary", () => {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/quality-manager -->",
 		});
 		orchestrationExtension(pi as never);
-		registerQualityReviewSession(sessionId, {
-			runId: "qm-test",
-			workspaceRoot: "/tmp/qm-panel",
-			materialsRoot: "/tmp/qm-panel/materials",
-			base: "base",
-			changedFiles: [],
-			hostRunStoreRoot: "/tmp/qm-host",
-			artifactSink: {} as never,
-			activeSpawns: new Set(),
-			allowedLenses: new Set(["reviewer", "security-reviewer"]),
-			attemptedLenses: new Set(),
-			integrityFailures: [],
-			reviewerModel: "anthropic/claude-sonnet-5",
-			baseRuntime: {
-				agentRegistry: fixtures.agentRegistry,
-				domainContext: "coding",
-				projectSkills: [],
-				skillPaths: [],
-				domainRegistry: fixtures.domainRegistry,
-				domainResolver: resolver,
-				domainsDir: testDomainsDir,
-			} as never,
-		});
+		registerSessionPolicy(
+			sessionId,
+			createQualityReviewSessionPolicy({
+				runId: "qm-test",
+				workspaceRoot: "/tmp/qm-panel",
+				materialsRoot: "/tmp/qm-panel/materials",
+				base: "base",
+				changedFiles: [],
+				hostRunStoreRoot: "/tmp/qm-host",
+				artifactSink: {} as never,
+				activeSpawns: new Set(),
+				allowedLenses: new Set(["reviewer", "security-reviewer"]),
+				attemptedLenses: new Set(),
+				integrityFailures: [],
+				reviewerModel: "anthropic/claude-sonnet-5",
+				baseRuntime: {
+					agentRegistry: fixtures.agentRegistry,
+					domainContext: "coding",
+					projectSkills: [],
+					skillPaths: [],
+					domainRegistry: fixtures.domainRegistry,
+					domainResolver: resolver,
+					domainsDir: testDomainsDir,
+				} as never,
+			}),
+		);
 		const configs: Array<{ role: string; model?: string }> = [];
 		mocks.createAgentSessionFromDefinition.mockImplementation(
 			async (_definition, config) => {
@@ -87,7 +91,7 @@ describe("spawn_agent inline compiler boundary", () => {
 				{ role: "coding/security-reviewer", model: undefined },
 			]);
 		} finally {
-			removeQualityReviewSession(sessionId);
+			removeSessionPolicy(sessionId);
 			removeTracker(sessionId);
 		}
 	});

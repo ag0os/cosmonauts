@@ -7,6 +7,7 @@ import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it, vi } from "vitest";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { launchQualityReview } from "../../lib/orchestration/quality-review-launch.ts";
+import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 
 const roots: string[] = [];
@@ -65,23 +66,26 @@ it("launches a quality session without clone Pi settings or appended prompt", as
 			role: "coding/reviewer",
 			cwd: projectRoot,
 			prompt: "review",
-			qualityReviewChild: true,
+
 			projectSkills: [],
 			skillPaths: [],
-			qualityReviewContext: {
-				runId: "qm-pi-settings-panel",
-				workspaceRoot: projectRoot,
-				baseProjectRoot: projectRoot,
-				materialsRoot: projectRoot,
-				base: "a".repeat(40),
-				changedFiles: [],
-				hostRunStoreRoot: projectRoot,
-				artifactSink: {} as never,
-				activeSpawns: new Set(),
-				allowedLenses: new Set(["reviewer"]),
-				attemptedLenses: new Set(),
-				integrityFailures: [],
-			},
+			sessionPolicy: createQualityReviewSessionPolicy(
+				{
+					runId: "qm-pi-settings-panel",
+					workspaceRoot: projectRoot,
+					baseProjectRoot: projectRoot,
+					materialsRoot: projectRoot,
+					base: "a".repeat(40),
+					changedFiles: [],
+					hostRunStoreRoot: projectRoot,
+					artifactSink: {} as never,
+					activeSpawns: new Set(),
+					allowedLenses: new Set(["reviewer"]),
+					attemptedLenses: new Set(),
+					integrityFailures: [],
+				},
+				true,
+			),
 		});
 		expect(panel.success, panel.error).toBe(true);
 	} finally {

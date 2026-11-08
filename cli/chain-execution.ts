@@ -65,6 +65,7 @@ export async function executeChainExpression({
 		const chainConfig = {
 			episodes,
 			chainAdapter: runtime.chainAdapter,
+			sessionPolicies: runtime.sessionPolicies,
 			defaultModel: runtime.defaultModel,
 			steps,
 			projectRoot: cwd,

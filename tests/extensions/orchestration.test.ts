@@ -18,6 +18,10 @@ vi.mock("../../lib/packages/dev-bundled.ts", () => ({
 
 import type { AgentDefinition } from "../../lib/agents/index.ts";
 import { AgentRegistry } from "../../lib/agents/index.ts";
+import {
+	registerSessionPolicy,
+	removeSessionPolicy,
+} from "../../lib/agents/session-policy.ts";
 import type { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
@@ -28,13 +32,12 @@ import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
 import { createQualityReviewArtifactSink } from "../../lib/orchestration/quality-review-artifacts.ts";
-import {
-	registerQualityReviewSession,
-	removeQualityReviewSession,
-} from "../../lib/orchestration/quality-review-context.ts";
+import type { QualityReviewSessionContext } from "../../lib/orchestration/quality-review-context.ts";
 import { launchQualityReview } from "../../lib/orchestration/quality-review-launch.ts";
 import { enforceQualityReviewProfile } from "../../lib/orchestration/quality-review-profile.ts";
 import { renderQualityReviewReport } from "../../lib/orchestration/quality-review-report.ts";
+import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
+import { qualityReviewSessionPolicies } from "../../lib/orchestration/quality-review-session-provider.ts";
 import {
 	getOrCreateTracker,
 	removeTracker,
@@ -50,6 +53,13 @@ import {
 import { getOrchestrationMocks } from "./orchestration-mocks.ts";
 
 const mocks = getOrchestrationMocks();
+function registerQualityReviewSession(
+	sessionId: string,
+	context: QualityReviewSessionContext,
+) {
+	registerSessionPolicy(sessionId, createQualityReviewSessionPolicy(context));
+}
+const removeQualityReviewSession = removeSessionPolicy;
 
 async function assertToolsRefused(
 	pi: ReturnType<typeof createMockPi>,
@@ -134,6 +144,7 @@ describe("orchestration extension", () => {
 		const resolver = new DomainResolver(realDomainRegistry);
 		runtimeCreateMock.mockResolvedValue({
 			chainAdapter: codingChainAdapter,
+			sessionPolicies: qualityReviewSessionPolicies,
 			workerAgent: "alpha/worker",
 			chains: [],
 			agentRegistry: overrides?.agentRegistry ?? realRegistry,
@@ -1070,6 +1081,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		]);
 		runtimeCreateMock.mockResolvedValue({
 			chainAdapter: codingChainAdapter,
+			sessionPolicies: qualityReviewSessionPolicies,
 			workerAgent: "alpha/worker",
 			chains: [],
 			agentRegistry: registry,

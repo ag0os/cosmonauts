@@ -685,6 +685,7 @@ async function executeChain(config: ChainConfig): Promise<ChainResult> {
 	const spawner = createPiSpawner(config.registry, resolveDomainsDir(config), {
 		resolver: config.resolver,
 		spawnTimeoutMs: config.spawnTimeoutMs,
+		sessionPolicies: config.sessionPolicies,
 	});
 
 	emit(config, { type: "chain_start", steps: config.steps });

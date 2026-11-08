@@ -264,3 +264,21 @@ test("keeps library domain APIs and unrelated URLs or resolver calls valid", () 
 		),
 	).toEqual([]);
 });
+
+// The library host paths consume neutral hooks; the review implementation remains content.
+test("session host paths do not import review policy or name review actors", async () => {
+	for (const path of [
+		"lib/agents/session-assembly.ts",
+		"lib/agents/session-policy.ts",
+		"lib/orchestration/session-factory.ts",
+		"lib/orchestration/agent-spawner.ts",
+		"lib/extensions/orchestration/spawn-tool.ts",
+		"lib/extensions/agent-switch/index.ts",
+		"cli/session.ts",
+	]) {
+		const source = await readFile(join(REPO_ROOT, path), "utf8");
+		expect(source, path).not.toMatch(
+			/quality-review|qualityReview|coding\/(?:quality-manager|reviewer|security-reviewer|performance-reviewer|ux-reviewer)/,
+		);
+	}
+});

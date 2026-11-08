@@ -596,6 +596,7 @@ async function handleInitMode(
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
+		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
 		persistent: false,
@@ -655,6 +656,7 @@ async function handlePrintMode(
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
+		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
 		persistent: false,
@@ -684,7 +686,11 @@ async function handleInteractiveMode(
 	// Expose the main registry to extensions via process-global slot.
 	// This ensures the /agent command validates against the same registry
 	// the session factory uses, including --domain and --plugin-dir overrides.
-	setSharedRegistry(runtime.agentRegistry, runtime.domainContext);
+	setSharedRegistry(
+		runtime.agentRegistry,
+		runtime.domainContext,
+		runtime.sessionPolicies,
+	);
 	setSharedDomainBindings({
 		domainRegistry: runtime.domainRegistry,
 		bindingResolver: runtime.bindingResolver,
@@ -697,6 +703,7 @@ async function handleInteractiveMode(
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
+		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
 		persistent: true,

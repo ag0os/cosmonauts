@@ -48,7 +48,6 @@ import {
 	assertEnabledRecallOwner,
 	buildToolAllowlist,
 } from "../lib/orchestration/definition-resolution.ts";
-import { enforceQualityReviewProfile } from "../lib/orchestration/quality-review-profile.ts";
 import type { PiFlags } from "./pi-flags.ts";
 import { GracefulExitError } from "./shared/errors.ts";
 
@@ -57,8 +56,8 @@ function sessionToolAllowlist(
 	loader: Parameters<typeof buildToolAllowlist>[1],
 ): string[] {
 	const resolved = buildToolAllowlist(params.tools, loader, params.exactTools);
-	return params.qualityReviewProfile
-		? enforceQualityReviewProfile(resolved, params.qualityReviewProfile)
+	return params.sessionPolicy?.filterTools
+		? params.sessionPolicy.filterTools(resolved)
 		: resolved;
 }
 
@@ -118,6 +117,7 @@ function toResourceLoaderOptions(
 }
 
 interface CreateSessionOptions {
+	sessionPolicies?: import("../lib/agents/session-policy.ts").SessionPolicyProvider;
 	/** Agent definition to build the session from */
 	definition: AgentDefinition;
 	/** Working directory */
@@ -531,6 +531,7 @@ export async function createSession(
 
 	const params = await buildSessionParams({
 		def,
+		sessionPolicy: options.sessionPolicies?.forAgent(def),
 		cwd,
 		domainsDir,
 		resolver,
@@ -574,6 +575,7 @@ export async function createSession(
 					const newDef = agentRegistry.resolve(pendingAgentId, domainContext);
 					const newParams = await buildSessionParams({
 						def: newDef,
+						sessionPolicy: options.sessionPolicies?.forAgent(newDef),
 						cwd,
 						domainsDir,
 						resolver,

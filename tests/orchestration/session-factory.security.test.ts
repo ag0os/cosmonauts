@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { qualityReviewPolicyFor } from "../../lib/orchestration/quality-review-profile.ts";
+import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
 
 const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
@@ -147,21 +149,24 @@ describe("session-factory planSlug validation", () => {
 					role: "coding/reviewer",
 					cwd: workspaceRoot,
 					prompt: "review",
-					qualityReviewChild: true,
-					qualityReviewContext: {
-						runId: "one",
-						workspaceRoot,
-						baseProjectRoot,
-						materialsRoot: join(root, "materials"),
-						base: "a".repeat(40),
-						changedFiles: [],
-						hostRunStoreRoot,
-						artifactSink: {} as never,
-						activeSpawns: new Set(),
-						allowedLenses: new Set(["reviewer"]),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							runId: "one",
+							workspaceRoot,
+							baseProjectRoot,
+							materialsRoot: join(root, "materials"),
+							base: "a".repeat(40),
+							changedFiles: [],
+							hostRunStoreRoot,
+							artifactSink: {} as never,
+							activeSpawns: new Set(),
+							allowedLenses: new Set(["reviewer"]),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
+						},
+						true,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -209,20 +214,23 @@ describe("session-factory planSlug validation", () => {
 					role: "coding/quality-manager",
 					cwd: "/tmp/review-clone",
 					prompt: "review",
-					qualityReviewContext: {
-						hostRunStoreRoot,
-						workspaceRoot: "/tmp/review-clone",
-						materialsRoot: "/tmp/materials",
-						base: "a".repeat(40),
-						changedFiles: [],
-						runId: "one",
-						analysisConsent: authorization,
-						artifactSink: {} as never,
-						activeSpawns: new Set(),
-						allowedLenses: new Set(["reviewer"]),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							hostRunStoreRoot,
+							workspaceRoot: "/tmp/review-clone",
+							materialsRoot: "/tmp/materials",
+							base: "a".repeat(40),
+							changedFiles: [],
+							runId: "one",
+							analysisConsent: authorization,
+							artifactSink: {} as never,
+							activeSpawns: new Set(),
+							allowedLenses: new Set(["reviewer"]),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
+						},
+						false,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -230,7 +238,7 @@ describe("session-factory planSlug validation", () => {
 				additionalExtensionPaths?: string[];
 				extensionFactories?: unknown[];
 			};
-			expect(options.additionalExtensionPaths).toBeUndefined();
+			expect(options.additionalExtensionPaths).toEqual([]);
 			expect(options.extensionFactories).toHaveLength(1);
 		} finally {
 			await rm(hostRunStoreRoot, { recursive: true, force: true });
@@ -290,22 +298,25 @@ describe("session-factory planSlug validation", () => {
 					cwd: workspaceRoot,
 					prompt: "review",
 					skillPaths: [join(sourceRoot, suffix), suffix],
-					qualityReviewChild: true,
-					qualityReviewContext: {
-						runId: "qm-skills",
-						sourceRoot,
-						baseProjectRoot,
-						workspaceRoot,
-						materialsRoot: workspaceRoot,
-						base: "a".repeat(40),
-						changedFiles: [],
-						hostRunStoreRoot,
-						artifactSink: {} as never,
-						activeSpawns: new Set(),
-						allowedLenses: new Set(["reviewer"]),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							runId: "qm-skills",
+							sourceRoot,
+							baseProjectRoot,
+							workspaceRoot,
+							materialsRoot: workspaceRoot,
+							base: "a".repeat(40),
+							changedFiles: [],
+							hostRunStoreRoot,
+							artifactSink: {} as never,
+							activeSpawns: new Set(),
+							allowedLenses: new Set(["reviewer"]),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
+						},
+						true,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -497,7 +508,16 @@ describe("session-factory planSlug validation", () => {
 		});
 		await createAgentSessionFromDefinition(
 			TEST_AGENT,
-			{ role: "quality-manager", cwd: "/tmp/project", prompt: "review" },
+			{
+				role: "quality-manager",
+				cwd: "/tmp/project",
+				prompt: "review",
+				sessionPolicy: qualityReviewPolicyFor({
+					...TEST_AGENT,
+					id: "quality-manager",
+					domain: "coding",
+				}),
+			},
 			"/tmp/domains",
 		);
 		expect(mocks.createAgentSession.mock.calls[0]?.[0].tools).toEqual([
@@ -530,20 +550,23 @@ describe("session-factory planSlug validation", () => {
 					role: "coding/reviewer",
 					cwd: "/tmp/review-clone",
 					prompt: "review",
-					qualityReviewChild: true,
-					qualityReviewContext: {
-						hostRunStoreRoot,
-						workspaceRoot: "/tmp/review-clone",
-						materialsRoot: "/tmp/materials",
-						base: "a".repeat(40),
-						changedFiles: [],
-						runId: "one",
-						artifactSink: {} as never,
-						activeSpawns: new Set(),
-						allowedLenses: new Set(["reviewer"]),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							hostRunStoreRoot,
+							workspaceRoot: "/tmp/review-clone",
+							materialsRoot: "/tmp/materials",
+							base: "a".repeat(40),
+							changedFiles: [],
+							runId: "one",
+							artifactSink: {} as never,
+							activeSpawns: new Set(),
+							allowedLenses: new Set(["reviewer"]),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
+						},
+						true,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -604,7 +627,10 @@ describe("session-factory planSlug validation", () => {
 					role: "quality-manager",
 					cwd: workspaceRoot,
 					prompt: "review",
-					qualityReviewContext,
+					sessionPolicy: createQualityReviewSessionPolicy(
+						qualityReviewContext,
+						false,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -614,8 +640,11 @@ describe("session-factory planSlug validation", () => {
 					role: "coding/reviewer",
 					cwd: workspaceRoot,
 					prompt: "review",
-					qualityReviewChild: true,
-					qualityReviewContext,
+
+					sessionPolicy: createQualityReviewSessionPolicy(
+						qualityReviewContext,
+						true,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -707,7 +736,10 @@ describe("session-factory planSlug validation", () => {
 					...config,
 					cwd: workspaceRoot,
 					prompt: "review",
-					qualityReviewContext,
+					sessionPolicy: createQualityReviewSessionPolicy(
+						qualityReviewContext,
+						config.qualityReviewChild,
+					),
 				});
 				expect(result.success, result.error).toBe(true);
 			}

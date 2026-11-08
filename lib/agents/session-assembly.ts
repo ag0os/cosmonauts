@@ -28,7 +28,6 @@ import {
 	FALLBACK_MODEL,
 	resolveModel,
 } from "../orchestration/model-resolution.ts";
-import type { QualityReviewProfile } from "../orchestration/quality-review-profile.ts";
 import { resolveMemoryGrants, validateAgentDefinition } from "./declaration.ts";
 import {
 	isDestructiveGitCommand,
@@ -40,6 +39,7 @@ import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
 } from "./runtime-identity.ts";
+import type { SessionPolicy } from "./session-policy.ts";
 import {
 	buildSkillsOverride,
 	resolveEffectiveProjectSkills,
@@ -89,7 +89,7 @@ export interface BuildSessionParamsOptions {
 	/** Injectable project config loader for frozen gate tests. */
 	loadConfig?: (projectRoot: string) => Promise<ProjectConfig>;
 	/** Set only by the host when launching a panel child. */
-	qualityReviewChild?: boolean;
+	sessionPolicy?: SessionPolicy;
 }
 
 export interface SessionParams {
@@ -123,35 +123,12 @@ export interface SessionParams {
 	 * typecheck here.
 	 */
 	thinkingLevel: ThinkingLevel | undefined;
-	qualityReviewProfile?: QualityReviewProfile;
+	sessionPolicy?: SessionPolicy;
 }
 
 // ============================================================================
 // Builder
 // ============================================================================
-
-function qualityReviewProfileFor(
-	def: BuildSessionParamsOptions["def"],
-	qualityReviewChild: boolean | undefined,
-): QualityReviewProfile | undefined {
-	const profile =
-		qualifyAgentId(def.id, def.domain) === "coding/quality-manager"
-			? "manager"
-			: qualityReviewChild
-				? "reviewer"
-				: undefined;
-	if (
-		qualityReviewChild &&
-		![
-			"reviewer",
-			"security-reviewer",
-			"performance-reviewer",
-			"ux-reviewer",
-		].includes(def.id)
-	)
-		throw new Error(`Quality review child role is forbidden: ${def.id}`);
-	return profile;
-}
 
 /**
  * Build all Pi session parameters from an agent definition and options.
@@ -178,17 +155,17 @@ export async function buildSessionParams(
 		thinkingLevelOverride,
 		extraExtensionPaths,
 		loadConfig = loadProjectConfig,
-		qualityReviewChild,
+		sessionPolicy,
 	} = options;
 	validateAgentDefinition(def);
+	sessionPolicy?.validateDefinition?.(def);
 
 	const identity = splitRole(qualifyAgentId(def.id, def.domain));
 
 	// Tool resolution
-	const qualityReviewProfile = qualityReviewProfileFor(def, qualityReviewChild);
 	const tools = resolveTools(
-		qualityReviewProfile && typeof def.tools === "string"
-			? "readonly"
+		sessionPolicy?.toolPreset && typeof def.tools === "string"
+			? sessionPolicy.toolPreset
 			: def.tools,
 		cwd,
 	);
@@ -316,6 +293,6 @@ export async function buildSessionParams(
 		projectContext: def.projectContext,
 		model,
 		thinkingLevel,
-		qualityReviewProfile,
+		sessionPolicy,
 	};
 }

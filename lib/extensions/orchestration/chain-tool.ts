@@ -178,6 +178,7 @@ export function registerChainTool(
 				signal,
 				episodes,
 				chainAdapter: runtime.chainAdapter,
+				sessionPolicies: runtime.sessionPolicies,
 				defaultModel: runtime.defaultModel,
 				requesterDomain: callerDef?.domain,
 				steps,

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
 import { createAgentSessionFromDefinition } from "../../lib/orchestration/session-factory.ts";
 
 it("keeps source and host paths out of a real panel reviewer's full system prompt", async () => {
@@ -53,23 +54,26 @@ it("keeps source and host paths out of a real panel reviewer's full system promp
 					join(sourceRoot, "bundled", "coding", "skills"),
 					join(sourceRoot, "bundled", "coding", "skills", "source-only"),
 				],
-				qualityReviewChild: true,
-				qualityReviewContext: {
-					runId: "qm-prompt",
-					sourceRoot,
-					baseProjectRoot,
-					workspaceRoot,
-					materialsRoot: workspaceRoot,
-					base: "a".repeat(40),
-					changedFiles: [],
-					hostRunStoreRoot,
-					artifactSink: {} as never,
-					activeSpawns: new Set(),
-					allowedLenses: new Set(["reviewer"]),
-					attemptedLenses: new Set(),
-					integrityFailures: [],
-					omittedSkillPaths,
-				},
+
+				sessionPolicy: createQualityReviewSessionPolicy(
+					{
+						runId: "qm-prompt",
+						sourceRoot,
+						baseProjectRoot,
+						workspaceRoot,
+						materialsRoot: workspaceRoot,
+						base: "a".repeat(40),
+						changedFiles: [],
+						hostRunStoreRoot,
+						artifactSink: {} as never,
+						activeSpawns: new Set(),
+						allowedLenses: new Set(["reviewer"]),
+						attemptedLenses: new Set(),
+						integrityFailures: [],
+						omittedSkillPaths,
+					},
+					true,
+				),
 			},
 			domainsDir,
 		);

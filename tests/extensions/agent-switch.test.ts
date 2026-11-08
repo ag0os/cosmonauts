@@ -1,3 +1,4 @@
+import { qualityReviewSessionPolicies } from "../../lib/orchestration/quality-review-session-provider.ts";
 /**
  * Tests for the agent-switch extension (/agent and /handoff commands).
  *
@@ -21,7 +22,10 @@ const mocks = vi.hoisted(() => ({
 	extractAgentId: vi.fn(),
 }));
 
-vi.mock("../../lib/agents/runtime-identity.ts", () => ({
+vi.mock("../../lib/agents/runtime-identity.ts", async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import("../../lib/agents/runtime-identity.ts")
+	>()),
 	extractAgentIdFromSystemPrompt: mocks.extractAgentId,
 }));
 
@@ -154,7 +158,11 @@ function setupSharedRegistry(agentIds: string[], domainContext?: string) {
 		resolve: vi.fn(resolveInContext),
 	};
 
-	setSharedRegistry(registry as never, domainContext);
+	setSharedRegistry(
+		registry as never,
+		domainContext,
+		qualityReviewSessionPolicies,
+	);
 	return registry;
 }
 

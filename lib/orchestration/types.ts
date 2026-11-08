@@ -158,6 +158,7 @@ export interface CompactionConfig {
 
 /** Configuration for a chain execution */
 export interface ChainConfig {
+	sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider;
 	chainAdapter?: ChainAdapter;
 	defaultModel?: string;
 	episodes?: boolean;
@@ -429,10 +430,8 @@ export interface SpawnHandle {
 
 /** Configuration for spawning an agent */
 export interface SpawnConfig {
-	/** Private host context for the QM parent session. */
-	qualityReviewContext?: import("./quality-review-context.ts").QualityReviewSessionContext;
-	/** Host marker for a panel child; never copied from model tool arguments. */
-	qualityReviewChild?: boolean;
+	/** Host-bound session hooks; never copied from model tool arguments. */
+	sessionPolicy?: import("../agents/session-policy.ts").SessionPolicy;
 	/** Agent role to spawn */
 	role: string;
 	/** Binding-aware requested/resolved reference. Execution uses `resolved`; user-facing records keep `role`. */

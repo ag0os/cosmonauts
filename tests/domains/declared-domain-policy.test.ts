@@ -400,3 +400,31 @@ test("only the owning identity keeps its explicitly named private skills under a
 		}),
 	).toEqual([]);
 });
+
+for (const lowerGrant of [true, false]) {
+	test(`a skipped provider cannot change the retained activation grant (${lowerGrant})`, async () => {
+		const lower = await provider(
+			"skip-lower",
+			{ id: "support", description: "Retained", alwaysActive: lowerGrant },
+			0,
+		);
+		const higher = await provider(
+			"skip-higher",
+			{ id: "support", description: "Discarded", alwaysActive: !lowerGrant },
+			1,
+		);
+		let decisions = 0;
+		const result = await loadDomainsFromSources(
+			[higher, lower],
+			() => {
+				decisions++;
+				return "skip";
+			},
+			{ activeDomainIds: [] },
+		);
+		expect(result.map((domain) => domain.manifest.description)).toEqual(
+			lowerGrant ? ["Retained"] : [],
+		);
+		expect(decisions).toBe(1);
+	});
+}

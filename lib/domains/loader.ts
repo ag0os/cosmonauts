@@ -249,7 +249,17 @@ export async function loadDomainsFromSources(
 				: await loadDomainsInDir(source.domainsDir, sourceProvenance);
 		providers.push(...domains);
 	}
-	const activeDomainIds = selectActiveDomainIds(providers, requestedIds);
+	const activation =
+		mergeStrategy && requestedIds
+			? activationProviders(providers, mergeStrategy)
+			: {
+					providers,
+					actions: new Map<LoadedDomain, ReturnType<MergeStrategy>>(),
+				};
+	const activeDomainIds = selectActiveDomainIds(
+		activation.providers,
+		requestedIds,
+	);
 	const accumulated = new Map<string, LoadedDomain>();
 	for (const domain of providers) {
 		const id = domain.manifest.id;
@@ -276,24 +286,8 @@ export async function loadDomainsFromSources(
 			});
 		}
 
-		const conflict: DomainMergeConflict = {
-			domainId: id,
-			existing,
-			incoming: domain,
-			overlapping: {
-				agents: [...domain.agents.keys()].filter((k) => existing.agents.has(k)),
-				capabilities: [...domain.capabilities].filter((k) =>
-					existing.capabilities.has(k),
-				),
-				skills: [...domain.skills].filter((k) => existing.skills.has(k)),
-				extensions: [...domain.extensions].filter((k) =>
-					existing.extensions.has(k),
-				),
-				prompts: [...domain.prompts].filter((k) => existing.prompts.has(k)),
-			},
-		};
-
-		const action = strategy(conflict);
+		const conflict = domainMergeConflict(existing, domain);
+		const action = activation.actions.get(domain) ?? strategy(conflict);
 
 		if (action === "skip") {
 		} else if (action === "replace") {
@@ -306,6 +300,56 @@ export async function loadDomainsFromSources(
 	}
 
 	return sortDomains([...accumulated.values()]);
+}
+
+/** Custom strategies choose which provider's manifest may supply activation. Decisions are reused during resource merging. */
+function activationProviders(
+	providers: LoadedDomain[],
+	strategy: MergeStrategy,
+) {
+	const accumulated = new Map<string, LoadedDomain>();
+	const accepted: LoadedDomain[] = [];
+	const actions = new Map<LoadedDomain, ReturnType<MergeStrategy>>();
+	for (const domain of providers) {
+		const existing = accumulated.get(domain.manifest.id);
+		const samePrecedence = existing?.provenance.some(
+			(p) => p.precedence === firstProvenance(domain).precedence,
+		);
+		const action =
+			existing && !samePrecedence
+				? strategy(domainMergeConflict(existing, domain))
+				: "merge";
+		actions.set(domain, action);
+		if (action === "skip") continue;
+		accepted.push(domain);
+		accumulated.set(
+			domain.manifest.id,
+			existing && action === "merge" ? mergeDomains(existing, domain) : domain,
+		);
+	}
+	return { providers: accepted, actions };
+}
+
+function domainMergeConflict(
+	existing: LoadedDomain,
+	domain: LoadedDomain,
+): DomainMergeConflict {
+	return {
+		domainId: domain.manifest.id,
+		existing,
+		incoming: domain,
+		overlapping: {
+			agents: [...domain.agents.keys()].filter((k) => existing.agents.has(k)),
+			capabilities: [...domain.capabilities].filter((k) =>
+				existing.capabilities.has(k),
+			),
+			skills: [...domain.skills].filter((k) => existing.skills.has(k)),
+			extensions: [...domain.extensions].filter((k) =>
+				existing.extensions.has(k),
+			),
+			prompts: [...domain.prompts].filter((k) => existing.prompts.has(k)),
+		},
+	};
 }
 
 function sortDomains(domains: LoadedDomain[]): LoadedDomain[] {
