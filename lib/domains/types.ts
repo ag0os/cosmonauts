@@ -11,7 +11,9 @@ import type { NamedChain } from "../chains/types.ts";
 
 /** Declarative configuration for a domain, exported from each domain's domain.ts. */
 export interface DomainManifest {
+	/** Interim content bridge; replaced by consumer runtime inputs in step 4. */
 	readonly chainAdapter?: import("../orchestration/types.ts").ChainAdapter;
+	/** Interim content bridge; replaced by consumer runtime inputs in step 4. */
 	readonly workerAgent?: string;
 	/** Unique domain identifier (e.g. "shared", "coding"). */
 	readonly id: string;

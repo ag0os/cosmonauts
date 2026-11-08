@@ -41,7 +41,6 @@ import {
 	type DurableChainStageSpawnOptions,
 	shouldRunChainInline,
 } from "./durable-chain-compiler.ts";
-
 import {
 	assessTaskManagerReviewGate,
 	formatReviewRoundBlockError,
@@ -56,6 +55,7 @@ import {
 	appendBoundReviewTarget,
 	shouldAppendBoundReviewTarget,
 } from "./stage-prompts.ts";
+import { buildTerminalGateContext } from "./terminal-gate.ts";
 import type {
 	AgentSpawner,
 	ChainConfig,
@@ -421,14 +421,16 @@ async function executeTerminalStep(
 	const gate =
 		stage.terminalGate && chainAdapter?.terminalGates?.[stage.terminalGate];
 	if (!gate) throw new Error("Terminal executor is unavailable.");
-	const result = await gate({
-		hostContext: options.terminalGateContext,
-		stage,
-		prompt: stage.prompt,
-		projectRoot: spawn.cwd,
-		planSlug: stage.expectedPlanSlug ?? spawn.planSlug,
-		signal: options.signal,
-	});
+	const result = await gate(
+		buildTerminalGateContext({
+			stage,
+			terminalGateContext: options.terminalGateContext,
+			projectRoot: spawn.cwd,
+			planSlug: spawn.planSlug,
+			completionLabel: spawn.completionLabel,
+			signal: options.signal,
+		}),
+	);
 	await persistStageStats({
 		...options,
 		role: stage.name,
@@ -438,7 +440,10 @@ async function executeTerminalStep(
 }
 function terminalStepResult(result: Omit<StageResult, "stage">): StepResult {
 	return {
-		outcome: result.success ? "success" : "failed",
+		outcome: result.outcome ?? (result.success ? "success" : "failed"),
+		...(result.nextAction !== undefined
+			? { nextAction: result.nextAction }
+			: {}),
 		summary: result.summary ?? result.error ?? "",
 		artifacts: result.artifacts ?? [],
 		...(result.run ? { childRun: result.run } : {}),

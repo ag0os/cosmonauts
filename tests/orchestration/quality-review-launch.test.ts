@@ -1,3 +1,4 @@
+import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import type { QualityReviewRunOptions } from "../../lib/orchestration/quality-review-run.ts";
 
 type QualityExecutionContext = Parameters<
@@ -904,6 +905,49 @@ describe("quality review launch policy", () => {
 		}
 	});
 
+	it.each([
+		"blocked",
+		"cancelled",
+	] as const)("preserves the durable QM %s scheduler outcome", async (outcome) => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "qm-durable-outcome-"));
+		roots.push(projectRoot);
+		// No git repository: the real QM host refuses with blocked/wait_for_human.
+		const controller = new AbortController();
+		if (outcome === "cancelled") controller.abort();
+		const gate = codingChainAdapter.terminalGates?.["quality-review"];
+		if (!gate) throw new Error("Missing coding terminal gate");
+		const result = await runDurableChain(
+			withCodingChain({
+				steps: parseChain("quality-manager"),
+				projectRoot,
+				registry: new AgentRegistry([agent("quality-manager")]),
+				// Abort the QM child after the parent scheduler admits the terminal gate.
+				chainAdapter: {
+					...codingChainAdapter,
+					terminalGates: {
+						"quality-review": (context) =>
+							gate({
+								...context,
+								signal: controller.signal,
+							}),
+					},
+				},
+			}),
+		);
+		const { FileRunStore } = await import("../../lib/durable-runtime/index.ts");
+		const store = new FileRunStore({
+			rootDir: join(projectRoot, "missions", "sessions"),
+		});
+		if (!result.run) throw new Error("Missing durable run");
+		const record = await store.readStepRecord({
+			...result.run,
+			stepId: "chain-1-quality-manager",
+		});
+		expect(record?.result?.outcome).toBe(outcome);
+		if (outcome === "blocked")
+			expect(record?.result?.nextAction).toBe("wait_for_human");
+		expect(record?.result?.childRun?.runId).toMatch(/^qm-/);
+	});
 	it("delegates a durable terminal QM into a child run with a complete report", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "qm-durable-terminal-"));
 		roots.push(projectRoot);

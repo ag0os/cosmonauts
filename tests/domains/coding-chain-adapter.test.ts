@@ -139,9 +139,14 @@ test("invalid quality bindings retain the consumer refusal diagnostic", () => {
 	});
 });
 
-test("ordinary errors bypass quality refusal while terminal or binding errors reach it", async () => {
+test("all normalization errors consult consumer placement for a possible QM refusal", async () => {
 	host.refusal.mockResolvedValue({ success: false });
-	for (const code of ["target", "binding", "terminal"] as const) {
+	for (const code of [
+		"target",
+		"binding",
+		"terminal",
+		"declaration",
+	] as const) {
 		const result = await codingChainAdapter.refuse?.(
 			config([{ name: "planner" }]),
 			[
@@ -149,9 +154,9 @@ test("ordinary errors bypass quality refusal while terminal or binding errors re
 				{ code: "model", message: "missing" },
 			],
 		);
-		expect(result).toEqual(code === "target" ? undefined : { success: false });
+		expect(result).toEqual({ success: false });
 	}
-	expect(host.refusal).toHaveBeenCalledTimes(2);
+	expect(host.refusal).toHaveBeenCalledTimes(4);
 });
 
 test("quality host execution retains configured plan, outcome, and supplied executor", async () => {

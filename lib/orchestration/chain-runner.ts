@@ -1,4 +1,5 @@
 import { normalizeChain, refuseNormalization } from "./chain-normalization.ts";
+import { buildTerminalGateContext } from "./terminal-gate.ts";
 /**
  * Chain runner — the main orchestration engine.
  * Executes a chain of agent stages sequentially, supporting both
@@ -304,16 +305,7 @@ async function runTerminalChainStep(
 		config.chainAdapter?.terminalGates?.[stage.terminalGate];
 	if (!gate) throw new Error("Terminal executor is unavailable.");
 	const result: StageResult = {
-		...(await gate({
-			hostContext: config.terminalGateContext,
-			stage,
-			prompt: stage.prompt,
-			projectRoot: config.projectRoot,
-			planSlug: stage.expectedPlanSlug,
-			completionLabel: config.completionLabel,
-			configuredPlanSlug: config.planSlug,
-			signal: config.signal,
-		})),
+		...(await gate(buildTerminalGateContext({ ...config, stage }))),
 		stage,
 		durationMs: Date.now() - started,
 	};

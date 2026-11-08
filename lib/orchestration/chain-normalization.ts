@@ -26,6 +26,8 @@ type AgentResolutionResult = ReturnType<
 type ChainNormalizationResult =
 	| { ok: true; stages: ChainStep[] }
 	| { ok: false; errors: ChainNormalizationError[] };
+class StageBindingError extends Error {}
+
 interface BoundDeclaration {
 	definition: AgentDefinition;
 	reference?: ResolvedAgentReference;
@@ -87,10 +89,11 @@ function requestedDeclaration(
 	run: NormalizationRun,
 	stage: ChainStage,
 ): AgentResolutionResult {
-	const cached = run.requested.get(stage.name);
+	const requestedId = stage.agentReference?.requested.qualifiedId ?? stage.name;
+	const cached = run.requested.get(requestedId);
 	if (cached) return cached;
 	const result = run.config.registry.resolveReferenceResult(
-		stage.name,
+		requestedId,
 		run.config.domainContext,
 		run.config.requesterDomain ?? run.config.domainContext,
 	);
@@ -102,7 +105,7 @@ function requestedDeclaration(
 						result.reference ?? defaultReference(stage, result.definition),
 				}
 			: result;
-	run.requested.set(stage.name, frozen);
+	run.requested.set(requestedId, frozen);
 	return frozen;
 }
 // Only values produced by this module skip repeated consumer classification.
@@ -190,6 +193,14 @@ function resolveDeclaration(
 		if (!definition)
 			throw new Error(
 				`Frozen declaration "${stage.agentReference.resolved.qualifiedId}" is unavailable or internal.`,
+			);
+		if (
+			result.kind !== "found" ||
+			result.reference?.resolved.qualifiedId !==
+				stage.agentReference.resolved.qualifiedId
+		)
+			throw new StageBindingError(
+				"Stage reference does not match the registry binding.",
 			);
 		validateAgentDefinition(definition);
 		return {
@@ -301,7 +312,7 @@ function bindStage(options: StageBindingInput): ChainStage {
 		fail({
 			run: run,
 			stage: stage,
-			code: "declaration",
+			code: error instanceof StageBindingError ? "binding" : "declaration",
 			message: error instanceof Error ? error.message : String(error),
 		});
 		return stage;
@@ -679,9 +690,16 @@ export function normalizeChain(config: ChainConfig): ChainNormalizationResult {
 		}),
 	);
 	if (run.errors.length) return { ok: false, errors: run.errors };
+	const classifierDeclarations = new Map(run.requested);
+	for (const stage of config.steps.flatMap(stagesOf)) {
+		const declaration = run.requested.get(
+			stage.agentReference?.requested.qualifiedId ?? stage.name,
+		);
+		if (declaration) classifierDeclarations.set(stage.name, declaration);
+	}
 	run.registry = new ChainDeclarationRegistry(
 		config.registry.listAll(config.requesterDomain ?? config.domainContext),
-		run.requested,
+		classifierDeclarations,
 	);
 	// Make all occurrence ids and effective lifecycles visible to the classifier.
 	run.steps = mapSteps(run.steps, (stage) => ({

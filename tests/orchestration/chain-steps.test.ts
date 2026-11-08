@@ -2,6 +2,7 @@ import {
 	buildStagePrompt,
 	deriveStagePromptPurpose,
 } from "../../bundled/coding/chain-prompts.ts";
+import { selectChain } from "../../lib/orchestration/chain-selection.ts";
 import { withCodingChain } from "../helpers/coding-chain.ts";
 /**
  * Tests for chain-steps.ts
@@ -17,7 +18,6 @@ import {
 	formatChainSteps,
 	getFirstExecutableStages,
 	injectUserPrompt,
-	isChainDslExpression,
 	isChainStage,
 	isParallelGroupStep,
 	resolveStagePrompt,
@@ -688,90 +688,102 @@ describe("formatChainSteps", () => {
 // isChainDslExpression
 // ============================================================================
 
-describe("isChainDslExpression", () => {
+describe("unnamed inputs use topology parsing", () => {
 	describe("single names defer to declaration lookup", () => {
 		test("plain agent name", () => {
-			expect(isChainDslExpression("planner")).toBe(false);
+			expect(selectChain("planner", []).steps).toEqual([{ name: "planner" }]);
 		});
 
 		test("hyphenated agent name", () => {
-			expect(isChainDslExpression("task-manager")).toBe(false);
+			expect(selectChain("task-manager", []).steps).toEqual([
+				{ name: "task-manager" },
+			]);
 		});
 
 		test("hyphenated two-part name", () => {
-			expect(isChainDslExpression("quality-manager")).toBe(false);
+			expect(selectChain("quality-manager", []).steps).toEqual([
+				{ name: "quality-manager" },
+			]);
 		});
 
 		test("qualified name with domain prefix", () => {
-			expect(isChainDslExpression("coding/planner")).toBe(false);
+			expect(selectChain("coding/planner", []).steps).toEqual([
+				{ name: "coding/planner" },
+			]);
 		});
 
 		test("qualified hyphenated name", () => {
-			expect(isChainDslExpression("coding/task-manager")).toBe(false);
+			expect(selectChain("coding/task-manager", []).steps).toEqual([
+				{ name: "coding/task-manager" },
+			]);
 		});
 	});
 
 	describe("fanout expressions (true)", () => {
 		test("fanout with count", () => {
-			expect(isChainDslExpression("reviewer[2]")).toBe(true);
+			expect(selectChain("reviewer[2]", []).steps.length).toBe(1);
 		});
 
 		test("fanout with larger count", () => {
-			expect(isChainDslExpression("worker[5]")).toBe(true);
+			expect(selectChain("worker[5]", []).steps.length).toBe(1);
 		});
 	});
 
 	describe("bracket groups (true)", () => {
 		test("two-member group", () => {
-			expect(isChainDslExpression("[planner, reviewer]")).toBe(true);
+			expect(selectChain("[planner, reviewer]", []).steps.length).toBe(1);
 		});
 
 		test("three-member group", () => {
-			expect(isChainDslExpression("[planner, task-manager, reviewer]")).toBe(
-				true,
-			);
+			expect(
+				selectChain("[planner, task-manager, reviewer]", []).steps.length,
+			).toBe(1);
 		});
 	});
 
 	describe("arrow chains (true)", () => {
 		test("two-step chain", () => {
-			expect(isChainDslExpression("planner -> coordinator")).toBe(true);
+			expect(selectChain("planner -> coordinator", []).steps.length).toBe(2);
 		});
 
 		test("chain with bracket group", () => {
-			expect(isChainDslExpression("planner -> [task-manager, reviewer]")).toBe(
-				true,
-			);
+			expect(
+				selectChain("planner -> [task-manager, reviewer]", []).steps.length,
+			).toBe(2);
 		});
 
 		test("chain with fanout", () => {
-			expect(isChainDslExpression("planner -> reviewer[2]")).toBe(true);
+			expect(selectChain("planner -> reviewer[2]", []).steps.length).toBe(2);
 		});
 
 		test("three-step chain", () => {
 			expect(
-				isChainDslExpression("planner -> task-manager -> coordinator"),
-			).toBe(true);
+				selectChain("planner -> task-manager -> coordinator", []).steps,
+			).toHaveLength(3);
 		});
 	});
 
 	describe("workflow names (false)", () => {
 		test("compound workflow name with multiple hyphens", () => {
-			expect(isChainDslExpression("plan-and-build")).toBe(false);
+			expect(selectChain("plan-and-build", []).steps).toEqual([
+				{ name: "plan-and-build" },
+			]);
 		});
 
 		test("another compound workflow name", () => {
-			expect(isChainDslExpression("plan-and-run")).toBe(false);
+			expect(selectChain("plan-and-run", []).steps).toEqual([
+				{ name: "plan-and-run" },
+			]);
 		});
 	});
 
 	describe("invalid inputs (false)", () => {
 		test("empty string", () => {
-			expect(isChainDslExpression("")).toBe(false);
+			expect(() => selectChain("", [])).toThrow();
 		});
 
 		test("whitespace only", () => {
-			expect(isChainDslExpression("   ")).toBe(false);
+			expect(() => selectChain("   ", [])).toThrow();
 		});
 	});
 });

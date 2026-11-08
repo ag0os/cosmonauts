@@ -542,6 +542,30 @@ describe("cosmonauts run", () => {
 		expect(chainMocks.executeChainExpression).not.toHaveBeenCalled();
 	});
 
+	test("lists consumer stages-form chains as readable topology", async () => {
+		const runtime = runtimeFixture([
+			{
+				name: "assemble",
+				description: "Consumer",
+				stages: [
+					{ name: "assembler" },
+					{
+						kind: "parallel",
+						stages: [{ name: "critic" }, { name: "editor" }],
+						syntax: { kind: "group" },
+					},
+				],
+			},
+		]);
+		await parseRun(["chain", "list"], { runtime });
+		expect(JSON.parse(output.stdout())).toEqual([
+			{
+				name: "assemble",
+				description: "Consumer",
+				chain: "assembler -> [critic, editor]",
+			},
+		]);
+	});
 	test("chain list is reserved while --name list executes a project chain", async () => {
 		await mkdir(join(temp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(

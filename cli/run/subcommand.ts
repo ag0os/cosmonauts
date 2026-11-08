@@ -296,7 +296,7 @@ async function listRunChains(
 		chains.map((chain) => ({
 			name: chain.name,
 			description: chain.description,
-			chain: chain.chain,
+			chain: chain.chain ?? formatChainSteps([...(chain.stages ?? [])]),
 		})),
 	);
 }

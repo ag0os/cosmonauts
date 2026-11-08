@@ -39,20 +39,12 @@ export function authorizeAgentStart(options: {
 	const caller = registry.get(callerRole, domainContext);
 	if (!caller) return `unknown caller ${callerRole} cannot start ${targetRole}`;
 
-	if (options.targetReference) {
-		const reference = options.targetReference;
-		const definition = registry.getResolvedTarget(
-			reference.resolved.qualifiedId,
-			caller.domain,
-		);
-		if (!definition)
-			return `${callerRole} cannot start ${targetRole}: unavailable or internal target`;
-		if (reference.requested.agentId !== reference.resolved.agentId)
-			return `${callerRole} cannot start ${targetRole}: invalid binding target`;
-		return isSubagentAllowed(caller, definition, reference)
-			? undefined
-			: `${callerRole} cannot start ${targetRole}`;
-	}
+	if (options.targetReference)
+		return authorizeReferencedStart({
+			...options,
+			reference: options.targetReference,
+			caller,
+		});
 
 	const target = registry.resolveReferenceResult(
 		targetRole,
@@ -70,4 +62,35 @@ export function authorizeAgentStart(options: {
 		return `${callerRole} cannot start ${targetRole}`;
 	}
 	return undefined;
+}
+
+function authorizeReferencedStart(options: {
+	registry: AgentRegistry;
+	domainContext?: string;
+	callerRole: string;
+	targetRole: string;
+	reference: ResolvedAgentReference;
+	caller: AgentDefinition;
+}): string | undefined {
+	const { registry, domainContext, callerRole, targetRole, reference, caller } =
+		options;
+
+	const definition = registry.getResolvedTarget(
+		reference.resolved.qualifiedId,
+		caller.domain,
+	);
+	if (!definition)
+		return `${callerRole} cannot start ${targetRole}: unavailable or internal target`;
+	if (reference.requested.agentId !== reference.resolved.agentId)
+		return `${callerRole} cannot start ${targetRole}: invalid binding target`;
+	const bound = registry.resolveReference(
+		reference.requested.qualifiedId,
+		domainContext,
+		caller.domain,
+	);
+	if (bound?.reference.resolved.qualifiedId !== reference.resolved.qualifiedId)
+		return `${callerRole} cannot start ${targetRole}: invalid binding target`;
+	return isSubagentAllowed(caller, definition, reference)
+		? undefined
+		: `${callerRole} cannot start ${targetRole}`;
 }

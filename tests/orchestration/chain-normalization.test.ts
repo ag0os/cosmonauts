@@ -1093,3 +1093,36 @@ test("a global diagnostic without an actor name does not invent a stage failure"
 		stageResults: [],
 	});
 });
+
+test("a supplied reference cannot replace a registered provider", () => {
+	const ref = {
+		requested: {
+			role: "studio",
+			agentId: definition.id,
+			qualifiedId: `studio/${definition.id}`,
+		},
+		resolved: {
+			role: "vendor",
+			agentId: definition.id,
+			qualifiedId: `vendor/${definition.id}`,
+		},
+		binding: { role: "studio", domainId: "vendor", source: "default" as const },
+	};
+	expect(
+		normalizeChain({
+			...config([{ name: definition.id, agentReference: ref }]),
+			registry: new AgentRegistry([
+				definition,
+				{ ...definition, domain: "vendor" },
+			]),
+		}),
+	).toMatchObject({
+		ok: false,
+		errors: [
+			{
+				code: "binding",
+				message: "Stage reference does not match the registry binding.",
+			},
+		],
+	});
+});

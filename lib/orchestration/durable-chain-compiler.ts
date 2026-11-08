@@ -81,6 +81,7 @@ export interface DurableChainStageOptions {
 }
 
 export interface DurableChainStageSpawnOptions {
+	completionLabel?: string;
 	role: string;
 	agentReference?: ResolvedAgentReference;
 	domainContext?: string;
@@ -339,6 +340,7 @@ function durableStageSpawnOptions(
 			compaction: { ...options.compaction },
 		}),
 		...(options.planSlug !== undefined && { planSlug: options.planSlug }),
+		completionLabel: options.completionLabel,
 	};
 }
 

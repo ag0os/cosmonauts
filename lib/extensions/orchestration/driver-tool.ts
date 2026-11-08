@@ -134,12 +134,17 @@ async function driverCallerDenial(
 			details: { error: "unauthorized", message: "caller role unresolved" },
 		};
 	const runtime = await getRuntime(cwd);
-	const denial = authorizeAgentStart({
-		registry: runtime.agentRegistry,
-		domainContext: runtime.domainContext,
-		callerRole,
-		targetRole: "worker",
-	});
+	let denial: string | undefined;
+	try {
+		denial = authorizeAgentStart({
+			registry: runtime.agentRegistry,
+			domainContext: runtime.domainContext,
+			callerRole,
+			targetRole: requireDriveWorkerAgent(runtime),
+		});
+	} catch (error) {
+		denial = error instanceof Error ? error.message : String(error);
+	}
 	if (denial)
 		return {
 			content: [

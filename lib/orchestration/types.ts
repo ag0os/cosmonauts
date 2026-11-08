@@ -278,6 +278,9 @@ export interface StageResult {
 	stage: ChainStage;
 	/** Whether the stage completed successfully */
 	success: boolean;
+	/** Preserve terminal executor scheduler semantics. */
+	outcome?: import("../durable-runtime/types.ts").StepResult["outcome"];
+	nextAction?: import("../durable-runtime/types.ts").StepResult["nextAction"];
 	/** Number of iterations actually executed (for loop stages) */
 	iterations: number;
 	/** Duration in milliseconds */

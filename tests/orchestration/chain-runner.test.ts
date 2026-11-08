@@ -1983,6 +1983,43 @@ describe("runChain", () => {
 		}
 	});
 
+	test("writes the misplaced QM refusal even beside an unknown agent", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-placement-"));
+		try {
+			const result = await runChain(
+				withCodingChain(
+					makeConfig(parseChain("quality-manager -> unknown-actor"), {
+						projectRoot,
+					}),
+				),
+			);
+			expect(result.success).toBe(false);
+			expect(result.run?.runId).toMatch(/^qm-/);
+			expect(spawnerRef.current?.spawn).not.toHaveBeenCalled();
+			expect(
+				await readFile(
+					join(
+						projectRoot,
+						"missions",
+						"sessions",
+						"chain",
+						"runs",
+						`${result.run?.runId}`,
+						"artifacts",
+						"qm",
+						"final.md",
+					),
+					"utf8",
+				),
+			).toContain("Verdict: refused");
+			await expect(
+				readdir(join(projectRoot, "missions", "plans")),
+			).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
 	test("leaves plans byte-identical when QM plan context is ambiguous", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "inline-qm-ambiguous-"));
 		try {

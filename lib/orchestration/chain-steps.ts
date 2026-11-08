@@ -101,7 +101,7 @@ export function resolveStagePrompt(
  *   { name: "author", loop: false },
  *   { kind: "parallel", stages: [...], syntax: { kind: "group" } }
  * ])
- * // => "planner -> [editor, critic]"
+ * // => "author -> [editor, critic]"
  */
 export function formatChainSteps(steps: ChainStep[]): string {
 	return steps.map(formatStep).join(" -> ");
@@ -118,13 +118,4 @@ function formatStep(step: ChainStep): string {
 
 	// group
 	return `[${step.stages.map((s) => s.name).join(", ")}]`;
-}
-
-// ============================================================================
-// DSL detection
-// ============================================================================
-
-/** Detect explicit topology syntax. Single names are resolved from the host collection. */
-export function isChainDslExpression(expression: string): boolean {
-	return /->|\[|\]/.test(expression.trim());
 }

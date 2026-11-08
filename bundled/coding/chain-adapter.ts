@@ -176,6 +176,8 @@ export const codingChainAdapter: ChainAdapter = {
 			});
 			return {
 				success: review.stepResult.outcome === "success",
+				outcome: review.stepResult.outcome,
+				nextAction: review.stepResult.nextAction,
 				iterations: context.refusalReason ? 0 : 1,
 				durationMs: 0,
 				summary: review.stepResult.summary,
@@ -187,13 +189,7 @@ export const codingChainAdapter: ChainAdapter = {
 			};
 		},
 	},
-	async refuse(config, errors) {
-		if (
-			!errors.some(
-				(error) => error.code === "terminal" || error.code === "binding",
-			)
-		)
-			return undefined;
+	async refuse(config) {
 		return misplacedQualityReviewResult(
 			config,
 			qualityOptions(config.terminalGateContext),
