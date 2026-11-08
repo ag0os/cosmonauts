@@ -422,3 +422,8 @@ when its original physical actor exists; frozen target lookup still bypasses
 rebinding. Durable execution forwards the host runtime, resolver, policy and timeout
 and excludes live runtime/policy objects from persisted graph data. Tests:
 directory-loader, extension-binding, consumer-runtime and durable-chain-runner-stats.
+
+The library also preserves diagnostic quality for invalid module exports and
+omitted provider entries; native deprecation warnings are not treated as equivalent
+behavior. The remaining contract-equivalent mutation cases are documented with
+fresh-source evidence in the step4 review artifact.
