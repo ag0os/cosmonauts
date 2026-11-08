@@ -484,3 +484,23 @@ process, pinning recall inclusion for the ordinary knowledge-granted agent.
 Package exports target TypeScript ESM source: consumers need a TypeScript-capable
 ESM runtime (such as Bun or a configured TypeScript loader); plain Node execution
 without source support is not promised, and no engines field has been added.
+
+
+### Content-independent test policies (step 6 P1)
+
+LS-5/6/7 consumer proof now includes a synthetic adapter, named review/loop/checkpoint
+chains and a session-policy provider. Classification and review targets survive
+normalization; explicit state predicates complete or terminate loops; terminal gates
+execute and malformed terminal declarations refuse without spawning. The external
+lib-only install and in-process proof in `tests/library-consumer.test.ts` both pin
+these outcomes, tool filtering and consumer delegation denial. The fixture's own
+policy module imports library types only through public package exports.
+
+Retained orchestration suites select this synthetic policy. Coding/QM prompt,
+completion, transcript and audit acceptance assertions remain in adjacent
+`*.content.test.ts` suites with an explicit `tests/helpers/content-chain.ts` helper;
+these are content retirement homes for D2, not additional library contracts.
+Generic session factory/spawner suites use `createConsumerSessionPolicy` to pin
+resource overrides, creation/disposal, observed tool-result projection and child
+completion timeout delivery. Runtime policy composition uses the same consumer
+provider. No library policy field or package export changed in this test-only PR.

@@ -8,6 +8,11 @@ import { createSessionExtension } from "cosmonauts/extensions/orchestration";
 import { runStage } from "cosmonauts/orchestration/chain-runner";
 import { createAgentSessionFromDefinition } from "cosmonauts/orchestration/session-factory";
 import type { SpawnConfig } from "cosmonauts/orchestration/types";
+import {
+	consumerChainAdapter,
+	consumerChains,
+	consumerSessionPolicies,
+} from "./policies.ts";
 
 // Port of bundled/coding/agents/explorer.ts: readonly, ephemeral, low effort.
 // The consumer supplies its own voice rather than borrowing content resources.
@@ -135,5 +140,136 @@ export async function exerciseConsumer(
 			sameRuntime: config.runtime === runtime,
 		})),
 		tools,
+		policies: await exerciseConsumerPolicies(projectRoot),
+	};
+}
+
+export {
+	consumerChainAdapter,
+	consumerChains,
+	consumerSessionPolicies,
+	createConsumerSessionPolicy,
+} from "./policies.ts";
+
+/** Offline protocol proof reused in process and in the separate installed copy. */
+async function exerciseConsumerPolicies(projectRoot: string) {
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot,
+		projectConfig: {},
+		agents: [
+			"planner",
+			"plan-reviewer",
+			"task-manager",
+			"coordinator",
+			"checkpoint",
+			"policy-reader",
+		].map((id) => ({
+			...explorer,
+			id: `visitor/${id}`,
+			extensions: [],
+			loop: id === "coordinator",
+		})),
+		chains: consumerChains,
+		chainAdapter: consumerChainAdapter,
+		sessionPolicies: consumerSessionPolicies,
+	});
+	const config = {
+		runtime,
+		projectRoot,
+		registry: runtime.agentRegistry,
+		chainAdapter: runtime.chainAdapter,
+		episodes: false,
+	};
+	const selected = selectChain("review-cycle", runtime.chains);
+	const review = normalizeChain({ ...config, steps: selected.steps });
+	if (!review.ok) throw new Error(JSON.stringify(review.errors));
+	let spawns = 0;
+	const spawner = {
+		async spawn() {
+			spawns++;
+			return { success: true, sessionId: "consumer-loop", messages: [] };
+		},
+		dispose() {},
+	};
+	const loop = await runStage(
+		{
+			name: "coordinator",
+			loop: true,
+			completionPolicy: {
+				kind: "state",
+				evaluate: async () => ({
+					status: spawns >= 2 ? "complete" : "pending",
+				}),
+			},
+		},
+		{ ...config, steps: [] },
+		spawner,
+	);
+	const terminal = await runStage(
+		{
+			name: "coordinator",
+			loop: true,
+			completionPolicy: {
+				kind: "state",
+				evaluate: async () => ({
+					status: "terminal",
+					reason: "Consumer scope exhausted",
+				}),
+			},
+		},
+		{ ...config, steps: [] },
+		spawner,
+	);
+	const checkpoint = await runStage(
+		{ name: "checkpoint" },
+		{ ...config, steps: [] },
+		spawner,
+	);
+	const refused = await runStage(
+		{ name: "checkpoint", terminalGate: "missing" },
+		{ ...config, steps: [] },
+		spawner,
+	);
+	const reader = runtime.agentRegistry.resolve("visitor/policy-reader");
+	const session = await createAgentSessionFromDefinition(
+		reader,
+		{
+			runtime,
+			role: "visitor/policy-reader",
+			cwd: projectRoot,
+			prompt: "",
+			sessionPolicy: runtime.sessionPolicies?.forAgent(reader),
+		},
+		undefined,
+		runtime.domainResolver,
+	);
+	let tools: string[];
+	try {
+		tools = session.session.getActiveToolNames().sort();
+	} finally {
+		session.session.dispose();
+	}
+	return {
+		purposes: review.stages.map((stage) =>
+			"kind" in stage ? undefined : stage.purpose?.kind,
+		),
+		requiresTarget: review.stages.map((stage) =>
+			"kind" in stage ? false : stage.requiresPlanReviewTarget,
+		),
+		loop: { success: loop.success, iterations: loop.iterations },
+		terminal: {
+			success: terminal.success,
+			iterations: terminal.iterations,
+			error: terminal.error,
+		},
+		checkpoint: { success: checkpoint.success, summary: checkpoint.summary },
+		refused: { success: refused.success, error: refused.error },
+		spawns,
+		tools,
+		denial: runtime.sessionPolicies?.spawnPolicy?.("fixture").authorize({
+			callerRole: "visitor/policy-reader",
+			resolvedTargetRole: "visitor/forbidden",
+			prompt: "delegate",
+		}),
 	};
 }

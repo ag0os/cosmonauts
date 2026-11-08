@@ -2,7 +2,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import type {
@@ -19,6 +18,7 @@ import type {
 	SpawnConfig,
 } from "../../lib/orchestration/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { consumerChainAdapter as codingChainAdapter } from "../fixtures/library-consumer/policies.ts";
 import { withCodingChain } from "../helpers/coding-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import {

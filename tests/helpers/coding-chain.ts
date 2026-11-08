@@ -1,14 +1,14 @@
-import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import type { AgentRegistry } from "../../lib/agents/resolver.ts";
 import { normalizeChain } from "../../lib/orchestration/chain-normalization.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import type { ChainAdapter } from "../../lib/orchestration/types.ts";
+import { consumerChainAdapter } from "../fixtures/library-consumer/policies.ts";
 
-/** Existing coding-behavior fixtures explicitly select their consumer policy. */
+/** Retained orchestration fixtures explicitly select synthetic consumer policy. */
 export function withCodingChain<T extends object>(
 	options: T,
 ): T & { chainAdapter: ChainAdapter; episodes: boolean } {
-	return { chainAdapter: codingChainAdapter, episodes: true, ...options };
+	return { chainAdapter: consumerChainAdapter, episodes: true, ...options };
 }
 
 export function parseCodingChain(

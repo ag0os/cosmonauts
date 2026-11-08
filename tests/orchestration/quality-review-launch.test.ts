@@ -26,7 +26,7 @@ import {
 	renderQualityReviewReport,
 } from "../../lib/orchestration/quality-review-report.ts";
 import * as workspaceModule from "../../lib/orchestration/quality-review-workspace.ts";
-import { withCodingChain } from "../helpers/coding-chain.ts";
+import { withCodingChain } from "../helpers/content-chain.ts";
 
 const agent = (id: string): AgentDefinition => ({
 	id,

@@ -106,7 +106,6 @@ export async function loadOrchestrationDomainFixtures(
 		},
 	});
 	const domains = await loadDomainsFromSources([
-		{ domainsDir: testDomainsDir, origin: "framework", precedence: 1 },
 		{
 			domainsDir: packageRoot,
 			sourceType: "domain-root",

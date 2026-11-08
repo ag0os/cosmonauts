@@ -143,7 +143,7 @@ function createMockPi(
 ) {
 	return createSharedMockPi(cwd, {
 		...options,
-		defaultSystemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+		defaultSystemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/cody -->",
 		sessionId: options?.sessionId ?? PARENT_SESSION_ID,
 	});
 }

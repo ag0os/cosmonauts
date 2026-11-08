@@ -1,12 +1,12 @@
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { registerChainTool } from "../../lib/extensions/orchestration/chain-tool.ts";
 import type { SpawnConfig } from "../../lib/orchestration/types.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
+import { consumerChainAdapter as codingChainAdapter } from "../fixtures/library-consumer/policies.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const chainRunnerMocks = vi.hoisted(() => ({

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import { executeChainExpression } from "../../cli/chain-execution.ts";
 import { registerChainTool } from "../../lib/extensions/orchestration/chain-tool.ts";
 import { recordEpisode } from "../../lib/memory/episode.ts";
@@ -8,6 +7,7 @@ import type {
 	ChainResult,
 	ChainStep,
 } from "../../lib/orchestration/types.ts";
+import { consumerChainAdapter as codingChainAdapter } from "../fixtures/library-consumer/policies.ts";
 import {
 	authorizedToolRegistry,
 	createMockPi as baseCreateMockPi,

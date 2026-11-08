@@ -1,4 +1,4 @@
-import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
+import { createConsumerSessionPolicy } from "../fixtures/library-consumer/policies.ts";
 /**
  * Tests for the multi-turn completion loop in createPiSpawner().
  * Covers ACs #1–#5 of TASK-110.
@@ -22,7 +22,6 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { MessageBus } from "../../lib/orchestration/message-bus.ts";
-import type { QualityReviewSessionContext } from "../../lib/orchestration/quality-review-context.ts";
 import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
 import { writeSyntheticDomainPackage } from "../helpers/domain-package-fixture.ts";
 
@@ -81,6 +80,7 @@ beforeAll(async () => {
 	syntheticPackageRoot = await mkdtemp(join(tmpdir(), "spawner-loop-alpha-"));
 	await writeSyntheticDomainPackage(syntheticPackageRoot, {
 		packageName: "alpha-pkg",
+		capabilities: { tasks: "Synthetic task capability." },
 		domainId: "alpha",
 		lead: "planner",
 		agents: [{ id: "planner" }, { id: "worker" }],
@@ -90,7 +90,6 @@ beforeAll(async () => {
 		},
 	});
 	const domains = await loadDomainsFromSources([
-		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
 		{
 			domainsDir: syntheticPackageRoot,
 			sourceType: "domain-root",
@@ -98,7 +97,7 @@ beforeAll(async () => {
 			precedence: 2,
 		},
 	]);
-	realResolver = DomainResolver.fromSingleDir(DOMAINS_DIR, domains);
+	realResolver = DomainResolver.fromSingleDir(syntheticPackageRoot, domains);
 });
 
 afterAll(async () => {
@@ -243,53 +242,6 @@ describe("createPiSpawner — completion loop", () => {
 		expect(completionMsg).toContain("outcome=failed");
 		expect(completionMsg).toContain("spawnId=spawn-fail");
 		expect(completionMsg).toContain("Something went wrong");
-	});
-
-	test("records a quality panel timeout without aborting its child", async () => {
-		const sessionId = nextSessionId();
-		const session = createMockSession(sessionId);
-		session.prompt = vi.fn(async () => {
-			if (session.prompt.mock.calls.length === 1)
-				getOrCreateTracker(sessionId, bus).register(
-					"slow-reviewer",
-					"reviewer",
-					1,
-				);
-		});
-		mocks.createAgentSession.mockResolvedValue({ session });
-		const integrityFailures: string[] = [];
-		const qualityReviewContext = {
-			runId: "qm-test",
-			workspaceRoot: "/tmp",
-			materialsRoot: "/tmp",
-			base: "a".repeat(40),
-			changedFiles: [],
-			hostRunStoreRoot: syntheticPackageRoot,
-			artifactSink: {},
-			activeSpawns: new Set(["slow-reviewer"]),
-			allowedLenses: new Set(["reviewer"]),
-			attemptedLenses: new Set(["reviewer"]),
-			integrityFailures,
-		} as unknown as QualityReviewSessionContext;
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
-			bus,
-			resolver: realResolver,
-			spawnTimeoutMs: 20,
-		});
-		const result = await spawner.spawn({
-			role: "planner",
-			cwd: "/tmp",
-			prompt: "go",
-			sessionPolicy: createQualityReviewSessionPolicy(
-				qualityReviewContext,
-				false,
-			),
-		});
-		expect(result.error).toBeUndefined();
-		expect(integrityFailures).toContain(
-			"Panel completion timed out after 20ms",
-		);
-		expect(qualityReviewContext.activeSpawns.has("slow-reviewer")).toBe(true);
 	});
 
 	// AC#1: loop iterates once per child when multiple children complete sequentially
@@ -513,4 +465,36 @@ describe("createPiSpawner — completion loop", () => {
 		expect(fresh.activeCount()).toBe(0);
 		fresh.dispose();
 	});
+});
+
+test("consumer completion policy observes timed-out children without cancelling the parent", async () => {
+	mocks.getModel.mockReturnValue({ id: "mock-model" });
+	const sessionId = nextSessionId();
+	const session = createMockSession(sessionId);
+	session.prompt = vi.fn(async () => {
+		if (session.prompt.mock.calls.length === 1)
+			getOrCreateTracker(sessionId).register("consumer-child", "worker", 1);
+	});
+	mocks.createAgentSession.mockResolvedValue({ session });
+	const onCompletionWait = vi.fn();
+	const spawner = createPiSpawner(FIXTURE_REGISTRY, undefined, {
+		resolver: realResolver,
+		spawnTimeoutMs: 20,
+	});
+	try {
+		const result = await spawner.spawn({
+			role: "planner",
+			cwd: "/tmp",
+			prompt: "inspect",
+			sessionPolicy: createConsumerSessionPolicy({ onCompletionWait }),
+		});
+		expect(result.success, result.error).toBe(true);
+		expect(onCompletionWait).toHaveBeenCalledWith(
+			[expect.stringContaining("Timed out after 20ms")],
+			20,
+		);
+		expect(session.prompt).toHaveBeenCalledTimes(2);
+	} finally {
+		spawner.dispose();
+	}
 });

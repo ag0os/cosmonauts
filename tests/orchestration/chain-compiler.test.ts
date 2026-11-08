@@ -1,14 +1,14 @@
 import { describe, expect, test } from "vitest";
-import {
-	buildStagePrompt,
-	deriveStagePromptPurpose,
-} from "../../bundled/coding/chain-prompts.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { injectUserPrompt } from "../../lib/orchestration/chain-steps.ts";
 import { compileChainToGraph } from "../../lib/orchestration/durable-chain-compiler.ts";
 import { appendBoundReviewTarget } from "../../lib/orchestration/stage-prompts.ts";
+import {
+	buildStagePrompt,
+	deriveStagePromptPurpose,
+} from "../fixtures/library-consumer/policies.ts";
 import { withCodingChain } from "../helpers/coding-chain.ts";
 
 const registry = new AgentRegistry([
