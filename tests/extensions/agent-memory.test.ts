@@ -4,8 +4,8 @@ import { join, relative, sep } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test, vi } from "vitest";
 import cosmo from "../../domains/main/agents/cosmo.ts";
-import { default as agentMemoryExtension } from "../../domains/shared/extensions/agent-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
+import { createAgentMemoryExtension as createPublicAgentMemoryExtension } from "../../lib/extensions/agent-memory/index.ts";
 import { writeKnowledgeProposalThroughStore } from "../../lib/extensions/knowledge-surface/knowledge-tools.ts";
 import { createKnowledgeSurfaceSessionExtension } from "../../lib/extensions/knowledge-surface/session-extension.ts";
 import {
@@ -1552,7 +1552,10 @@ describe("agent-memory extension", () => {
 
 	test("registers remember and recall at factory load with short host-safe descriptions", () => {
 		const pi = createMockPi({ cwd: tmp.path });
-		agentMemoryExtension(pi as never);
+		createPublicAgentMemoryExtension({
+			authorizedAgentId: "visitor/notebook",
+			episodes: true,
+		})(pi as never);
 
 		expect(pi.tools.has("remember")).toBe(true);
 		expect(pi.tools.has("recall")).toBe(true);

@@ -382,3 +382,68 @@ test("ordinary session context opt-out is independent of whether a host policy e
 		}
 	}
 });
+
+test("consumer policy hooks reach transcript persistence, validation and both privileged loader overrides", async () => {
+	mocks.sessionOpen.mockReturnValue({ kind: "file-backed" });
+	mocks.createAgentSession.mockResolvedValue({
+		session: { model: { provider: "test", id: "model" } },
+	});
+	const agentsFilesOverride = () => ({
+		agentsFiles: [{ path: "/consumer/AGENTS.md", content: "Consumer context" }],
+	});
+	const extensionFactory = () => {};
+	const validateDefinition = vi.fn();
+	const policy = createConsumerSessionPolicy({
+		transcriptPath: async () => "/consumer/host-session.jsonl",
+		validateDefinition,
+		resourceOptions: async () => ({
+			agentsFilesOverride,
+			extensionFactories: [extensionFactory],
+		}),
+	});
+	mocks.buildSessionParams.mockResolvedValue({
+		promptContent: "Consumer",
+		tools: ["read"],
+		extensionPaths: [],
+		extensionFactories: [],
+		knowledgeSurfaceEnabled: false,
+		projectContext: false,
+		model: { provider: "test", id: "model" },
+	});
+	const actor = {
+		...TEST_AGENT,
+		id: "consumer",
+		instructions: { kind: "inline" as const, content: "Consumer" },
+	};
+	await createAgentSessionFromDefinition(
+		actor,
+		{ role: "consumer", cwd: "/consumer", prompt: "", sessionPolicy: policy },
+		undefined,
+	);
+	expect(mocks.sessionOpen).toHaveBeenCalledWith(
+		"/consumer/host-session.jsonl",
+	);
+	const loader = mocks.loaderOptions.mock.calls.at(-1)?.[0];
+	expect(loader.agentsFilesOverride).toBe(agentsFilesOverride);
+	expect(loader.agentsFilesOverride()).toEqual({
+		agentsFiles: [{ path: "/consumer/AGENTS.md", content: "Consumer context" }],
+	});
+	expect(loader.extensionFactories).toEqual([extensionFactory]);
+	const actual = await vi.importActual<
+		typeof import("../../lib/agents/session-assembly.ts")
+	>("../../lib/agents/session-assembly.ts");
+	mocks.buildSessionParams.mockImplementation(actual.buildSessionParams);
+	validateDefinition.mockImplementation(() => {
+		throw new Error("Consumer definition refused");
+	});
+	const before = mocks.createAgentSession.mock.calls.length;
+	await expect(
+		createAgentSessionFromDefinition(
+			actor,
+			{ role: "consumer", cwd: "/consumer", prompt: "", sessionPolicy: policy },
+			undefined,
+		),
+	).rejects.toThrow("Consumer definition refused");
+	expect(validateDefinition).toHaveBeenCalledWith(actor);
+	expect(mocks.createAgentSession).toHaveBeenCalledTimes(before);
+});

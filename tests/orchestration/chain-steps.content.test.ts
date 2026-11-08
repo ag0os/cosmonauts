@@ -28,10 +28,6 @@ import type {
 	SpawnConfig,
 } from "../../lib/orchestration/types.ts";
 
-// ============================================================================
-// Fixtures
-// ============================================================================
-
 function stage(name: string, prompt?: string): ChainStage {
 	return { name, loop: false, ...(prompt !== undefined && { prompt }) };
 }
@@ -55,10 +51,6 @@ function group(...names: string[]): ParallelGroupStep {
 	];
 	return { kind: "parallel", stages, syntax: { kind: "group" } };
 }
-
-// ============================================================================
-// Stage prompt purposes
-// ============================================================================
 
 describe("deriveStagePromptPurpose", () => {
 	test("derives review purpose from resolved identity and zero-based strict topology order", () => {
@@ -408,7 +400,6 @@ function plannerDefinition(): AgentDefinition {
 	};
 }
 
-// ============================================================================
 // Type guards
 // ============================================================================
 

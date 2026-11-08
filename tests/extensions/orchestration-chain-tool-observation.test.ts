@@ -7,7 +7,7 @@ import type {
 	ChainResult,
 	ChainStep,
 } from "../../lib/orchestration/types.ts";
-import { consumerChainAdapter as codingChainAdapter } from "../fixtures/library-consumer/policies.ts";
+import { consumerChainAdapter } from "../fixtures/library-consumer/policies.ts";
 import {
 	authorizedToolRegistry,
 	createMockPi as baseCreateMockPi,
@@ -201,7 +201,7 @@ function runtimeFor() {
 	return async () =>
 		({
 			chains: [],
-			chainAdapter: codingChainAdapter,
+			chainAdapter: consumerChainAdapter,
 			workerAgent: "coding/worker",
 			agentRegistry: authorizedToolRegistry(["planner", "coordinator"]),
 			domainResolver: {},

@@ -18,7 +18,7 @@ import type {
 	SpawnConfig,
 } from "../../lib/orchestration/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
-import { consumerChainAdapter as codingChainAdapter } from "../fixtures/library-consumer/policies.ts";
+import { consumerChainAdapter } from "../fixtures/library-consumer/policies.ts";
 import { withCodingChain } from "../helpers/coding-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import {
@@ -196,7 +196,7 @@ async function setupDriveFixture(projectRoot: string) {
 function runtimeFor(projectRoot: string) {
 	return async () =>
 		({
-			chainAdapter: codingChainAdapter,
+			chainAdapter: consumerChainAdapter,
 			workerAgent: "coding/worker",
 			agentRegistry: authorizedToolRegistry(),
 			domainResolver: {},

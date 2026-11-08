@@ -5,10 +5,6 @@ import {
 	unqualifyRole,
 } from "../../lib/agents/qualified-role.ts";
 
-// ============================================================================
-// qualifyRole
-// ============================================================================
-
 describe("qualifyRole", () => {
 	it("qualifies an id with a domain", () => {
 		expect(qualifyRole("worker", "alpha")).toBe("alpha/worker");
@@ -27,10 +23,6 @@ describe("qualifyRole", () => {
 	});
 });
 
-// ============================================================================
-// unqualifyRole
-// ============================================================================
-
 describe("unqualifyRole", () => {
 	it("strips the domain prefix from a qualified role", () => {
 		expect(unqualifyRole("alpha/worker")).toBe("worker");
@@ -48,10 +40,6 @@ describe("unqualifyRole", () => {
 		expect(unqualifyRole("alpha/quality-manager")).toBe("quality-manager");
 	});
 });
-
-// ============================================================================
-// splitRole
-// ============================================================================
 
 describe("splitRole", () => {
 	it("splits a qualified role into domain and id", () => {
@@ -82,7 +70,3 @@ describe("splitRole", () => {
 		});
 	});
 });
-
-// ============================================================================
-// roleToConfigKey
-// ============================================================================

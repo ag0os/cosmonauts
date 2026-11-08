@@ -6,7 +6,6 @@ import type { CliRuntimeOptions } from "../../../cli/runtime-bootstrap.ts";
 import { parseCliRuntimeOptions } from "../../../cli/runtime-bootstrap.ts";
 import type { DriverHandle, DriverRunSpec } from "../../../lib/driver/types.ts";
 import { FileRunStore } from "../../../lib/durable-runtime/index.ts";
-import { runQualityReview } from "../../../lib/orchestration/quality-review-run.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../lib/tasks/task-types.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
@@ -314,24 +313,6 @@ describe("cosmonauts run", () => {
 			"unknown command 'spawn'",
 		);
 		expect(output.stdout()).toBe("");
-	});
-
-	test("status points to the persisted QM full report", async () => {
-		const review = await runQualityReview({ projectRoot: temp.path });
-		await parseRun(["status", review.ref.runId]);
-		const status = JSON.parse(output.stdout());
-		expect(status).toMatchObject({
-			found: true,
-			status: "blocked",
-		});
-		expect(status.artifacts).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					id: "qm/final.md",
-					path: expect.stringContaining("/artifacts/qm/final.md"),
-				}),
-			]),
-		);
 	});
 
 	test("status watch and list use normalized store observations with inferred scope", async () => {

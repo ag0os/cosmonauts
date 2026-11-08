@@ -7,7 +7,7 @@ import {
 	shouldRunChainInline,
 } from "../../lib/orchestration/durable-chain-compiler.ts";
 import type { ChainStep } from "../../lib/orchestration/types.ts";
-import { consumerChains as chains } from "../fixtures/library-consumer/policies.ts";
+import { consumerChains } from "../fixtures/library-consumer/policies.ts";
 import { parseCodingChain, withCodingChain } from "../helpers/coding-chain.ts";
 
 const registry = new AgentRegistry([
@@ -24,7 +24,7 @@ const registry = new AgentRegistry([
 
 describe("chain durable routing", () => {
 	test("routes consumer named declarations through their supported runner", () => {
-		for (const chain of chains) {
+		for (const chain of consumerChains) {
 			const steps = parseCodingChain(chain.chain ?? "", registry);
 			expect(shouldRunChainInline(steps)).toBe(chain.name === "loop");
 			expect(steps).toHaveLength(
@@ -33,7 +33,7 @@ describe("chain durable routing", () => {
 		}
 	});
 
-	test("keeps loop and completion-check chains on the legacy inline runner", async () => {
+	test("keeps loop and completion-check consumerChains on the legacy inline runner", async () => {
 		const durableGraphWriter = vi.fn();
 		const runChain = vi.fn();
 
@@ -85,7 +85,7 @@ describe("chain durable routing", () => {
 		]) {
 			const route = routeChainForTest({
 				steps: parseCodingChain(expression, registry),
-				prompt: "Keep supported loop-free chains durable.",
+				prompt: "Keep supported loop-free consumerChains durable.",
 				runChain,
 				durableGraphWriter,
 			});
