@@ -295,6 +295,7 @@ function doubles(result: RunRecord) {
 }
 
 describe("lean build", () => {
+	beforeEach(installContentTestHost);
 	test("calls runBuild with the plan, spec and backend, and no required-signals or budget override", async () => {
 		const { builds, kinds, options } = doubles(record("done"));
 
@@ -522,6 +523,7 @@ describe("lean build", () => {
 });
 
 describe("lean review", () => {
+	beforeEach(installContentTestHost);
 	test("passes clearStaleLock when --clear-stale-lock is given", async () => {
 		const { reviews, options } = doubles(record("done"));
 
@@ -715,6 +717,7 @@ async function helpText(command: string): Promise<string> {
 }
 
 describe("lean build", () => {
+	beforeEach(installContentTestHost);
 	test("runs the reviewer on the --backend harness when no reviewer backend is given", async () => {
 		const { builds, options } = recordedRuns();
 
@@ -861,6 +864,7 @@ describe("lean build", () => {
 });
 
 describe("lean review", () => {
+	beforeEach(installContentTestHost);
 	test("defaults the reviewer backend to pi", async () => {
 		const { reviews, options } = recordedRuns();
 
@@ -944,5 +948,3 @@ describe("bin/cosmonauts lean check", () => {
 		expect(JSON.parse(stdout)).toMatchObject({ plan: "plan.md", ok: true });
 	});
 });
-
-beforeEach(installContentTestHost);

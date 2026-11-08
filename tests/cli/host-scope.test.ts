@@ -4,6 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { createCliRuntime } from "../../cli/host-runtime.ts";
 import { getCliExecutionRuntime } from "../../cli/runtime-bootstrap.ts";
 import { buildSessionParams } from "../../lib/agents/session-assembly.ts";
+import { DomainBindingTargetError } from "../../lib/domains/bindings.ts";
 import { createMockPi } from "../extensions/orchestration-helpers.ts";
 import { writeSyntheticDomainPackage } from "../helpers/domain-package-fixture.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -22,7 +23,7 @@ vi.mock("../../lib/orchestration/session-factory.ts", () => ({
 const tmp = useTempDir("cli-scope-");
 afterEach(() => vi.unstubAllEnvs());
 
-test("domain/plugin actors retain actual spawn and chain reach through the selected CLI execution runtime", async () => {
+test("plugin-only targets are refused by the base CLI execution runtime", async () => {
 	vi.stubEnv("HOME", join(tmp.path, "home"));
 	const plugin = await writeSyntheticDomainPackage(
 		join(tmp.path, "plugin-package"),
@@ -54,48 +55,21 @@ test("domain/plugin actors retain actual spawn and chain reach through the selec
 		resolver: runtime.domainResolver,
 		cwd: tmp.path,
 		runtime,
-		extensionRuntime: await getCliExecutionRuntime(tmp.path, runtime),
+		extensionRuntime: await getCliExecutionRuntime(tmp.path),
 	});
 	const pi = createMockPi(tmp.path, { systemPrompt: params.promptContent });
 	for (const extension of params.extensionFactories)
 		await (typeof extension === "function" ? extension : extension.factory)(
 			pi as never,
 		);
-	mocks.session.mockRejectedValue(
-		new Error("Offline fixture stops after session admission"),
-	);
-	mocks.createSpawner.mockReturnValue({ spawn: mocks.spawn, dispose() {} });
-	mocks.spawn.mockResolvedValue({
-		success: true,
-		sessionId: "offline-chain",
-		messages: [],
-	});
-	const spawned = await pi.callTool("spawn_agent", {
-		role: "worker",
-		prompt: "Work",
-	});
-	expect(spawned).toMatchObject({ details: { status: "accepted" } });
-	expect(mocks.session).toHaveBeenCalledWith(
-		expect.objectContaining({ id: "worker" }),
-		expect.objectContaining({ runtime }),
-		undefined,
-		runtime.domainResolver,
-	);
-	const chained = await pi.callTool("chain_run", { expression: "worker" });
-	expect(chained).toMatchObject({ details: { result: { success: true } } });
-	expect(mocks.spawn).toHaveBeenCalledWith(
-		expect.objectContaining({
-			role: "worker",
-			agentReference: expect.objectContaining({
-				resolved: expect.objectContaining({ qualifiedId: "studio/worker" }),
-			}),
-		}),
-	);
-	expect(mocks.createSpawner).toHaveBeenCalledWith(
-		runtime.agentRegistry,
-		undefined,
-		expect.objectContaining({ runtime }),
-	);
+	await expect(
+		pi.callTool("spawn_agent", { role: "worker", prompt: "Work" }),
+	).rejects.toBeInstanceOf(DomainBindingTargetError);
+	await expect(
+		pi.callTool("chain_run", { expression: "worker" }),
+	).rejects.toBeInstanceOf(DomainBindingTargetError);
+	expect(mocks.session).not.toHaveBeenCalled();
+	expect(mocks.createSpawner).not.toHaveBeenCalled();
 });
 
 vi.mock("@earendil-works/pi-ai/providers/all", () => ({

@@ -7,6 +7,7 @@ import {
 } from "../../cli/runtime-bootstrap.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { getHostRuntime, setRuntimeHost } from "../../lib/runtime-host.ts";
+import { createMockPi } from "../extensions/orchestration-helpers.ts";
 import { writeSyntheticDomainPackage } from "../helpers/domain-package-fixture.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -36,14 +37,6 @@ test("CLI execution asks only for the base project runtime without plugin or dom
 	expect(factory).toHaveBeenCalledExactlyOnceWith({
 		projectRoot: process.cwd(),
 	});
-});
-
-test("CLI execution retains the selected plugin/domain runtime without a second host lookup", async () => {
-	const selected = {} as CosmonautsRuntime;
-	const factory = vi.fn();
-	setRuntimeHost(factory);
-	expect(await getCliExecutionRuntime("/consumer", selected)).toBe(selected);
-	expect(factory).not.toHaveBeenCalled();
 });
 
 test("the CLI factory discovers only consumer sources and keeps host policy explicit", async () => {
@@ -114,4 +107,31 @@ test("importing the CLI host installs a factory when no host exists", async () =
 	const runtime = await getHostRuntime({ projectRoot: tmp.path });
 	expect(runtime.domains).toEqual([]);
 	expect(runtime.defaultModel).toBe("anthropic/claude-opus-4-7");
+});
+
+test("the CLI host's native orchestration provider mounts functioning tool registrations", async () => {
+	const { createCliRuntime } = await import("../../cli/host-runtime.ts");
+	const runtime = await createCliRuntime({ projectRoot: tmp.path });
+	const provider = runtime.extensionProviders?.orchestration;
+	expect(provider).toEqual(expect.any(Function));
+	if (!provider) throw new Error("CLI orchestration provider absent");
+	const extension = await provider({
+		runtime,
+		agentId: "consumer/lead",
+		memory: {
+			knowledge: false,
+			authored: false,
+			architecture: false,
+			proposals: false,
+			episodes: false,
+		},
+	});
+	if (typeof extension !== "function")
+		throw new Error(
+			"CLI orchestration provider did not return its inline factory",
+		);
+	const pi = createMockPi(tmp.path);
+	await extension(pi as never);
+	expect(pi.getTool("spawn_agent")).toBeDefined();
+	expect(pi.getTool("chain_run")).toBeDefined();
 });

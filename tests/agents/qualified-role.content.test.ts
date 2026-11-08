@@ -1,7 +1,6 @@
 // Content acceptance retained until the corresponding deletion PR.
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { roleToConfigKey } from "../../bundled/coding/chain-adapter.ts";
-import { installContentTestHost } from "../helpers/library-host.ts";
 
 // ============================================================================
 // qualifyRole
@@ -49,5 +48,3 @@ describe("roleToConfigKey", () => {
 		expect(roleToConfigKey("alpha/unknown-agent")).toBeUndefined();
 	});
 });
-
-beforeEach(installContentTestHost);

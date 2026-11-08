@@ -4,6 +4,7 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { getSharedRegistry } from "../../lib/interactive/agent-switch.ts";
+import { getHostRuntime } from "../../lib/runtime-host.ts";
 
 const mocks = vi.hoisted(() => ({
 	context: vi.fn(),
@@ -107,7 +108,7 @@ for (const mode of ["interactive", "print", "init"]) {
 		await vi.waitFor(() => expect(mocks.createSession).toHaveBeenCalledOnce());
 		expect(mocks.createSession.mock.calls[0]?.[0]).toMatchObject({
 			sessionPolicies: provider,
-			extensionRuntime: runtime,
+			extensionRuntime: await getHostRuntime({ projectRoot: "/consumer" }),
 			definition: actor,
 		});
 		if (mode === "interactive")

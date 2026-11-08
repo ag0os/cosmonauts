@@ -2,7 +2,6 @@
 import { createDefaultCompletionCheck } from "../../bundled/coding/chain-completion.ts";
 import { getDefaultStagePrompt } from "../../bundled/coding/chain-prompts.ts";
 import { parseCodingChain, withCodingChain } from "../helpers/content-chain.ts";
-import { installContentTestHost } from "../helpers/library-host.ts";
 /**
  * Tests for chain-runner.ts
  * Covers runStage (one-shot and loop modes), runChain (with mocked spawner module),
@@ -1435,5 +1434,3 @@ describe("getDefaultStagePrompt", () => {
 		);
 	});
 });
-
-beforeEach(installContentTestHost);

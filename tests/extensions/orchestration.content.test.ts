@@ -1,7 +1,6 @@
 // Content acceptance retained until the corresponding deletion PR.
 import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
 import { setRuntimeHost } from "../../lib/runtime-host.ts";
-import { installContentTestHost } from "../helpers/library-host.ts";
 /**
  * Tests for orchestration extension wiring.
  * Verifies the cached CosmonautsRuntime is used and forwarded to runtime calls.
@@ -777,5 +776,3 @@ describe("orchestration extension", () => {
 		}
 	});
 });
-
-beforeEach(installContentTestHost);
