@@ -422,5 +422,3 @@ function plannerDefinition(): AgentDefinition {
 // ============================================================================
 // Unnamed input topology parsing
 // ============================================================================
-=======
-beforeEach(installContentTestHost);

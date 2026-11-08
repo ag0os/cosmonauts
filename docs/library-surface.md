@@ -538,3 +538,20 @@ in-process consumer proof now enforces delegation denial through `spawn_agent` a
 pins terminal completion after one successful iteration. Retained spawner/resource
 fixtures pass nonexistent temporary resource roots, exposing any hidden content read.
 Additional QM-only cases now have explicit `.content.test.ts` retirement homes.
+
+
+P2 consumer memory proof uses only synthetic temporary records and the public
+session factory. `tests/library-consumer.test.ts` exercises the same scenarios
+in process and from a separate lib-only install: grant removal and gate off/on/off
+tool composition, confirmed playbook replacement and persistence, host-selected
+proposal writer identity without promotion, architecture eligibility, turn and
+session-start authorization reset, recall/injection, and two isolated host-selected
+transcripts. `tests/fixtures/library-consumer/grants.ts` captures assembled factories
+through `SessionPolicy.resourceOptions`, drives them offline, and checks the actual
+Pi session tool list. No stored records, migration digests or historical backfill
+batches are copied. The two memory suites instantiate public providers with explicit
+consumer grants instead of importing raw content shims.
+
+An explicit unknown agent on an empty install reports `Available agents: (none)`;
+`tests/agents/resolver.test.ts` and the actual-bin case in
+`tests/cli/host-startup.test.ts` pin the diagnostic.

@@ -112,7 +112,7 @@ export class AgentRegistry {
 		}
 
 		{
-			const available = this.listIds(domainContext).join(", ");
+			const available = this.listIds(domainContext).join(", ") || "(none)";
 			throw new Error(
 				`Unknown agent ID "${id}". Available agents: ${available}`,
 			);

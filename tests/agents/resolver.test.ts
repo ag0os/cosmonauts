@@ -171,10 +171,10 @@ describe("AgentRegistry", () => {
 			expect(() => registry.resolve("unknown")).toThrow(/alpha/);
 		});
 
-		it("throws with empty available list for empty registry", () => {
+		it("names the empty available list for an empty registry", () => {
 			const registry = new AgentRegistry([]);
 			expect(() => registry.resolve("any")).toThrow(
-				'Unknown agent ID "any". Available agents: ',
+				'Unknown agent ID "any". Available agents: (none)',
 			);
 		});
 

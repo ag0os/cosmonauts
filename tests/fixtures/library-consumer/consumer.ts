@@ -370,3 +370,5 @@ async function exerciseConsumerDenial(
 		throw new Error("Consumer denial text missing");
 	return { status: denied.details.status, text: first.text };
 }
+
+export { exerciseConsumerGrants } from "./grants.ts";

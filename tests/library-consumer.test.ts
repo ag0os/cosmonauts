@@ -17,6 +17,7 @@ import * as consumer from "./fixtures/library-consumer/consumer.ts";
 import {
 	createConsumerRuntime,
 	exerciseConsumer,
+	exerciseConsumerGrants,
 } from "./fixtures/library-consumer/consumer.ts";
 import { useTempDir } from "./helpers/fs.ts";
 
@@ -83,16 +84,20 @@ test("the fixture's library imports resolve exclusively through the public expor
 		new URL("./fixtures/library-consumer/policies.ts", import.meta.url),
 		"utf8",
 	);
+	const grants = await readFile(
+		new URL("./fixtures/library-consumer/grants.ts", import.meta.url),
+		"utf8",
+	);
 	const imports = [
-		...`${source}\n${policies}`.matchAll(/from\s+"([^"]+)"/g),
+		...`${source}\n${policies}\n${grants}`.matchAll(/from\s+"([^"]+)"/g),
 	].map((match) => match[1]);
 	expect(
-		imports.filter((specifier) => specifier !== "./policies.ts"),
-	).toHaveLength(9);
+		imports.filter((specifier) => specifier?.startsWith("cosmonauts")),
+	).toHaveLength(11);
 	const require = createRequire(import.meta.url);
 	const pkg = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
 	for (const specifier of imports) {
-		if (specifier === "./policies.ts") continue;
+		if (!specifier?.startsWith("cosmonauts")) continue;
 		expect(specifier).toMatch(/^cosmonauts(?:\/|$)/);
 		const entry = specifier === "cosmonauts" ? "." : `.${specifier?.slice(10)}`;
 		expect(pkg.exports).toHaveProperty(entry);
@@ -119,6 +124,10 @@ test("an external consumer executes its chain and assembles granted memory tools
 		join(tmp.path, "policies.ts"),
 	);
 
+	await cp(
+		new URL("./fixtures/library-consumer/grants.ts", import.meta.url),
+		join(tmp.path, "grants.ts"),
+	);
 	expect((await readdir(installed)).sort()).toEqual([
 		"lib",
 		"node_modules",
@@ -135,8 +144,8 @@ test("an external consumer executes its chain and assembles granted memory tools
 	await writeFile(
 		join(tmp.path, "run.ts"),
 		`globalThis.fetch = () => { throw new Error("NETWORK_FORBIDDEN"); };
-const { exerciseConsumer } = await import("./consumer.ts");
-console.log(JSON.stringify([await exerciseConsumer(process.cwd()), await exerciseConsumer(process.cwd(),true)]));
+const { exerciseConsumer, exerciseConsumerGrants } = await import("./consumer.ts");
+console.log(JSON.stringify([await exerciseConsumer(process.cwd()), await exerciseConsumer(process.cwd(),true), await exerciseConsumerGrants(process.cwd())]));
 `,
 	);
 	const { stdout, stderr } = await exec("bun", ["run.ts"], {
@@ -152,6 +161,7 @@ console.log(JSON.stringify([await exerciseConsumer(process.cwd()), await exercis
 	const result = JSON.parse(stdout);
 	assertConsumerResult(result[0]);
 	assertConsumerResult(result[1], true);
+	assertConsumerGrants(result[2]);
 }, 40_000);
 
 function assertConsumerResult(
@@ -261,6 +271,50 @@ test("the consumer declares chain classification, terminal and session policies 
 	);
 });
 
-test("the consumer owns memory-grant scenarios without shipped agents or raw shims", () => {
- expect(consumer).toHaveProperty("exerciseConsumerGrants", expect.any(Function));
+test("the consumer owns memory-grant scenarios without shipped agents or raw shims", async () => {
+	const home = join(tmp.path, "home");
+	await mkdir(home);
+	vi.stubEnv("HOME", home);
+	vi.stubEnv("PI_CODING_AGENT_DIR", join(home, ".pi", "agent"));
+	try {
+		assertConsumerGrants(await exerciseConsumerGrants(tmp.path));
+	} finally {
+		vi.unstubAllEnvs();
+	}
 });
+
+function assertConsumerGrants(
+	result: Awaited<ReturnType<typeof exerciseConsumerGrants>>,
+) {
+	expect(result).toEqual({
+		offTools: ["architecture_map_read", "recall", "remember"],
+		onTools: [
+			"architecture_map_read",
+			"propose_knowledge",
+			"recall",
+			"remember",
+		],
+		revokedTools: ["recall"],
+		offAgainTools: [],
+		writes: {
+			beforeTurn: "unauthorized",
+			first: "created",
+			pending: "confirmation_required",
+			confirmed: "updated",
+			unchanged: true,
+			persisted: true,
+			wrongIdentity: "unauthorized",
+			switched: "unauthorized",
+		},
+		proposal: {
+			status: "written",
+			writer: "visitor/archivist",
+			persisted: true,
+			promoted: false,
+		},
+		architecture: { eligible: true, ineligible: "scope-ineligible" },
+		recall: true,
+		injected: true,
+		transcripts: { a: true, b: true, memoryIsolated: true },
+	});
+}

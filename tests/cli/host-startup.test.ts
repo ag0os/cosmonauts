@@ -110,3 +110,19 @@ test.each([
 		),
 	});
 });
+
+test("an explicit unknown agent on an empty install names the empty available list", async () => {
+	const home = join(tmp.path, "home");
+	await mkdir(home);
+	await expect(
+		exec("bun", [bin, "-a", "unknown", "--print", "hello"], {
+			cwd: tmp.path,
+			env: { ...process.env, HOME: home },
+		}),
+	).rejects.toMatchObject({
+		code: 1,
+		stderr: expect.stringContaining(
+			'Unknown agent ID "unknown". Available agents: (none)',
+		),
+	});
+});

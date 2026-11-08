@@ -3,7 +3,6 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, test, vi } from "vitest";
-import { default as architectureMemoryExtension } from "../../domains/shared/extensions/architecture-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import * as architectureMap from "../../lib/architecture-map/index.ts";
@@ -13,6 +12,7 @@ import {
 	type ArchitectureMapFreshness,
 	type ArchitectureMapMemoryStoreOptions,
 } from "../../lib/architecture-map/index.ts";
+import { createArchitectureMemoryExtension as createPublicArchitectureMemoryExtension } from "../../lib/extensions/architecture-memory/index.ts";
 import {
 	COMBINED_CONTEXT_PREFIX,
 	createKnowledgeIndexPressurePolicy,
@@ -673,11 +673,13 @@ describe("architecture-memory extension", () => {
 			"checkArchitectureMapFreshness",
 		);
 		const pi = createMockPi({ cwd: tmp.path });
-		architectureMemoryExtension(pi as never);
+		createPublicArchitectureMemoryExtension({
+			authorizedAgentIds: new Set(["visitor/mapper"]),
+		})(pi as never);
 
 		await pi.fireEvent(
 			"before_agent_start",
-			{ systemPrompt: buildAgentIdentityMarker("coding/planner") },
+			{ systemPrompt: buildAgentIdentityMarker("visitor/mapper") },
 			{ cwd: tmp.path },
 		);
 
