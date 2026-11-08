@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CosmonautsRuntime } from "../lib/runtime.ts";
-import { consumerSessionPolicies as qualityReviewSessionPolicies } from "./fixtures/library-consumer/policies.ts";
+import { consumerSessionPolicies } from "./fixtures/library-consumer/policies.ts";
 import { useTempDir } from "./helpers/fs.ts";
 
 const tmp = useTempDir("runtime-seals-");
@@ -42,7 +42,7 @@ test("a sole declaring policy survives multiple adapters and a different selecte
 			domainOverride,
 			includeUserSources: false,
 		});
-		expect(runtime.sessionPolicies).toBe(qualityReviewSessionPolicies);
+		expect(runtime.sessionPolicies).toBe(consumerSessionPolicies);
 	}
 });
 
@@ -66,9 +66,9 @@ test("distinct domain policies fail loading unless the host explicitly chooses o
 		projectRoot: tmp.path,
 		builtinDomainsDir,
 		includeUserSources: false,
-		sessionPolicies: qualityReviewSessionPolicies,
+		sessionPolicies: consumerSessionPolicies,
 	});
-	expect(runtime.sessionPolicies).toBe(qualityReviewSessionPolicies);
+	expect(runtime.sessionPolicies).toBe(consumerSessionPolicies);
 });
 
 test("the same policy object declared by multiple domains is unambiguous", async () => {
@@ -79,7 +79,7 @@ test("the same policy object declared by multiple domains is unambiguous", async
 		builtinDomainsDir,
 		includeUserSources: false,
 	});
-	expect(runtime.sessionPolicies).toBe(qualityReviewSessionPolicies);
+	expect(runtime.sessionPolicies).toBe(consumerSessionPolicies);
 });
 
 test("higher generic domain layers inherit omitted policy metadata", async () => {
@@ -96,5 +96,5 @@ test("higher generic domain layers inherit omitted policy metadata", async () =>
 		pluginDirs: [plugins],
 		projectConfig: {},
 	});
-	expect(runtime.sessionPolicies).toBe(qualityReviewSessionPolicies);
+	expect(runtime.sessionPolicies).toBe(consumerSessionPolicies);
 });

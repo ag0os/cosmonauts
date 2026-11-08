@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { setRuntimeHost } from "../../lib/runtime-host.ts";
-import { consumerChainAdapter as codingChainAdapter } from "../fixtures/library-consumer/policies.ts";
+import { consumerChainAdapter } from "../fixtures/library-consumer/policies.ts";
 /**
  * Tests for orchestration extension wiring.
  * Verifies the cached CosmonautsRuntime is used and forwarded to runtime calls.
@@ -16,7 +16,6 @@ vi.mock("../../lib/packages/dev-bundled.ts", () => ({
 
 import type { AgentDefinition } from "../../lib/agents/index.ts";
 import { AgentRegistry } from "../../lib/agents/index.ts";
-import { removeSessionPolicy } from "../../lib/agents/session-policy.ts";
 import type { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import orchestrationExtension, {
@@ -29,7 +28,7 @@ import { runChain } from "../../lib/orchestration/chain-runner.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
 import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
 import type { ChainResult, ChainStep } from "../../lib/orchestration/types.ts";
-import { consumerSessionPolicies as qualityReviewSessionPolicies } from "../fixtures/library-consumer/policies.ts";
+import { consumerSessionPolicies } from "../fixtures/library-consumer/policies.ts";
 import {
 	createMockPi,
 	flushAsync,
@@ -39,8 +38,6 @@ import {
 import { getOrchestrationMocks } from "./orchestration-mocks.ts";
 
 const mocks = getOrchestrationMocks();
-
-const _removeQualityReviewSession = removeSessionPolicy;
 
 describe("orchestration extension", () => {
 	const runtimeCreateMock = vi.mocked(mocks.runtimeCreate);
@@ -67,8 +64,8 @@ describe("orchestration extension", () => {
 	}) {
 		const resolver = new DomainResolver(realDomainRegistry);
 		runtimeCreateMock.mockResolvedValue({
-			chainAdapter: codingChainAdapter,
-			sessionPolicies: qualityReviewSessionPolicies,
+			chainAdapter: consumerChainAdapter,
+			sessionPolicies: consumerSessionPolicies,
 			workerAgent: "alpha/worker",
 			chains: [],
 			agentRegistry: overrides?.agentRegistry ?? realRegistry,

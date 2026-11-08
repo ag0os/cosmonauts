@@ -1,7 +1,6 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { vi } from "vitest";
 import {
 	AgentRegistry,
@@ -11,12 +10,10 @@ import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { writeSyntheticDomainPackage } from "../helpers/domain-package-fixture.ts";
 
-export const testDomainsDir = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"domains",
+export const testDomainsDir = join(
+	tmpdir(),
+	"cosmonauts-absent-domains",
+	crypto.randomUUID(),
 );
 
 export const TEST_CALLER_MARKER = "<!-- COSMONAUTS_AGENT_ID:coding/lead -->";

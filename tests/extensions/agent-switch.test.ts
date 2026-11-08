@@ -1,4 +1,4 @@
-import { qualityReviewSessionPolicies } from "../../lib/orchestration/quality-review-session-provider.ts";
+import { consumerSessionPolicies } from "../fixtures/library-consumer/policies.ts";
 /**
  * Tests for the agent-switch extension (/agent and /handoff commands).
  *
@@ -158,11 +158,7 @@ function setupSharedRegistry(agentIds: string[], domainContext?: string) {
 		resolve: vi.fn(resolveInContext),
 	};
 
-	setSharedRegistry(
-		registry as never,
-		domainContext,
-		qualityReviewSessionPolicies,
-	);
+	setSharedRegistry(registry as never, domainContext, consumerSessionPolicies);
 	return registry;
 }
 
@@ -189,18 +185,6 @@ describe("agent-switch extension", () => {
 	});
 
 	describe("/agent with valid ID", () => {
-		test("refuses an interactive quality-manager switch", async () => {
-			const pi = createMockPi();
-			agentSwitchExtension(pi as never);
-			setupSharedRegistry(["coding/quality-manager"], "coding");
-			const ctx = createMockCtx();
-			await getCommand(pi, "agent").handler("quality-manager", ctx);
-			expect(ctx.newSession).not.toHaveBeenCalled();
-			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining("quality review launcher"),
-				"error",
-			);
-		});
 		test("validates ID and calls newSession without setup", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);

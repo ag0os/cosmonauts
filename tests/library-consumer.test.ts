@@ -197,6 +197,12 @@ function assertConsumerResult(
 		purposes: ["default", "plan-review", "plan-revision", "default"],
 		requiresTarget: [false, false, false, true],
 		loop: { success: true, iterations: 2 },
+		terminalAfterOne: {
+			success: false,
+			iterations: 1,
+			error: "Consumer scope became terminal",
+		},
+		terminalSpawns: 1,
 		terminal: {
 			success: false,
 			iterations: 0,
@@ -209,7 +215,10 @@ function assertConsumerResult(
 		},
 		spawns: 2,
 		tools: ["read"],
-		denial: "Consumer delegation denied",
+		denial: {
+			status: "denied",
+			text: "spawn_agent denied: Consumer delegation denied",
+		},
 	});
 }
 

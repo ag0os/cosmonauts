@@ -6,7 +6,7 @@ import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { registerChainTool } from "../../lib/extensions/orchestration/chain-tool.ts";
 import type { SpawnConfig } from "../../lib/orchestration/types.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
-import { consumerChainAdapter as codingChainAdapter } from "../fixtures/library-consumer/policies.ts";
+import { consumerChainAdapter } from "../fixtures/library-consumer/policies.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const chainRunnerMocks = vi.hoisted(() => ({
@@ -398,7 +398,7 @@ async function callChainTool(
 function runtime(): CosmonautsRuntime {
 	return {
 		chains: [],
-		chainAdapter: codingChainAdapter,
+		chainAdapter: consumerChainAdapter,
 		workerAgent: "coding/worker",
 		agentRegistry: registry,
 		domainContext: "coding",

@@ -163,15 +163,18 @@ async function exerciseConsumerPolicies(projectRoot: string) {
 			"coordinator",
 			"checkpoint",
 			"policy-reader",
+			"forbidden",
 		].map((id) => ({
 			...explorer,
 			id: `visitor/${id}`,
-			extensions: [],
+			extensions: id === "planner" ? ["orchestration"] : [],
+			subagents: id === "planner" ? ["visitor/forbidden"] : [],
 			loop: id === "coordinator",
 		})),
 		chains: consumerChains,
 		chainAdapter: consumerChainAdapter,
 		sessionPolicies: consumerSessionPolicies,
+		extensionProviders: { orchestration: createSessionExtension },
 	});
 	const config = {
 		runtime,
@@ -220,6 +223,29 @@ async function exerciseConsumerPolicies(projectRoot: string) {
 		{ ...config, steps: [] },
 		spawner,
 	);
+	let terminalSpawns = 0;
+	const terminalAfterOne = await runStage(
+		{
+			name: "coordinator",
+			loop: true,
+			completionPolicy: {
+				kind: "state",
+				evaluate: async () =>
+					terminalSpawns
+						? { status: "terminal", reason: "Consumer scope became terminal" }
+						: { status: "pending" },
+			},
+		},
+		{ ...config, steps: [] },
+		{
+			async spawn() {
+				terminalSpawns++;
+				return { success: true, sessionId: "consumer-terminal", messages: [] };
+			},
+			dispose() {},
+		},
+	);
+
 	const checkpoint = await runStage(
 		{ name: "checkpoint" },
 		{ ...config, steps: [] },
@@ -257,6 +283,12 @@ async function exerciseConsumerPolicies(projectRoot: string) {
 			"kind" in stage ? false : stage.requiresPlanReviewTarget,
 		),
 		loop: { success: loop.success, iterations: loop.iterations },
+		terminalAfterOne: {
+			success: terminalAfterOne.success,
+			iterations: terminalAfterOne.iterations,
+			error: terminalAfterOne.error,
+		},
+		terminalSpawns,
 		terminal: {
 			success: terminal.success,
 			iterations: terminal.iterations,
@@ -266,10 +298,75 @@ async function exerciseConsumerPolicies(projectRoot: string) {
 		refused: { success: refused.success, error: refused.error },
 		spawns,
 		tools,
-		denial: runtime.sessionPolicies?.spawnPolicy?.("fixture").authorize({
-			callerRole: "visitor/policy-reader",
-			resolvedTargetRole: "visitor/forbidden",
-			prompt: "delegate",
-		}),
+		denial: await exerciseConsumerDenial(runtime, projectRoot),
 	};
+}
+
+async function exerciseConsumerDenial(
+	runtime: CosmonautsRuntime,
+	projectRoot: string,
+) {
+	const tools = new Map<
+		string,
+		{ execute: (...args: unknown[]) => Promise<unknown> }
+	>();
+	const extension = createSessionExtension({
+		runtime,
+		agentId: "visitor/planner",
+		memory: {
+			knowledge: false,
+			authored: false,
+			architecture: false,
+			proposals: false,
+			episodes: false,
+		},
+	});
+	await (typeof extension === "function" ? extension : extension.factory)({
+		registerTool(tool: {
+			name: string;
+			execute: (...args: unknown[]) => Promise<unknown>;
+		}) {
+			tools.set(tool.name, tool);
+		},
+		on() {},
+		registerMessageRenderer() {},
+		sendMessage() {},
+		sendUserMessage() {
+			throw new Error("Denied delegation must not prompt a session");
+		},
+	} as never);
+	const spawn = tools.get("spawn_agent");
+	if (!spawn) throw new Error("Consumer spawn tool missing");
+	const denied = await spawn.execute(
+		"consumer-denial",
+		{ role: "visitor/forbidden", prompt: "delegate" },
+		undefined,
+		undefined,
+		{
+			cwd: projectRoot,
+			getSystemPrompt: () => "<!-- COSMONAUTS_AGENT_ID:visitor/planner -->",
+			sessionManager: { getSessionId: () => "consumer-denial" },
+		},
+	);
+	if (
+		!denied ||
+		typeof denied !== "object" ||
+		!("details" in denied) ||
+		!denied.details ||
+		typeof denied.details !== "object" ||
+		!("status" in denied.details) ||
+		denied.details.status !== "denied" ||
+		!("content" in denied) ||
+		!Array.isArray(denied.content)
+	)
+		throw new Error("Consumer denial missing");
+	const first = denied.content[0];
+	if (
+		!first ||
+		typeof first !== "object" ||
+		!("text" in first) ||
+		typeof first.text !== "string"
+	)
+		throw new Error("Consumer denial text missing");
+	return { status: denied.details.status, text: first.text };
 }

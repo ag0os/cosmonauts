@@ -6,8 +6,7 @@ import { createConsumerSessionPolicy } from "../fixtures/library-consumer/polici
 
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import {
 	afterAll,
 	beforeAll,
@@ -65,12 +64,10 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { awaitNextCompletionMessages } from "../../lib/orchestration/spawn-completion-loop.ts";
 
-const DOMAINS_DIR = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"domains",
+const DOMAINS_DIR = join(
+	tmpdir(),
+	"cosmonauts-absent-domains",
+	crypto.randomUUID(),
 );
 
 let realResolver: DomainResolver;
