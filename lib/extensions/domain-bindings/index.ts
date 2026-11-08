@@ -69,11 +69,12 @@ function isDomainBindEntry(data: unknown): data is DomainBindEntry {
 }
 
 /** Replay only validated binding entries; a later stale target leaves the last valid one live. */
-function restoreBinding(
-	entry: SessionEntry,
-	shared: NonNullable<ReturnType<typeof getSharedDomainBindings>>,
-	ctx: Pick<ExtensionCommandContext, "ui">,
-): void {
+function restoreBinding(options: {
+	entry: SessionEntry;
+	shared: NonNullable<ReturnType<typeof getSharedDomainBindings>>;
+	ctx: Pick<ExtensionCommandContext, "ui">;
+}): void {
+	const { entry, shared, ctx } = options;
 	if (
 		entry.type !== "custom" ||
 		entry.customType !== DOMAIN_BINDING_CUSTOM_TYPE
@@ -108,7 +109,7 @@ export default function domainBindingsExtension(pi: ExtensionAPI): void {
 		const shared = getSharedDomainBindings();
 		if (!shared) return;
 		const entries = ctx.sessionManager.getEntries() as SessionEntry[];
-		for (const entry of entries) restoreBinding(entry, shared, ctx);
+		for (const entry of entries) restoreBinding({ entry, shared, ctx });
 	});
 
 	pi.registerCommand("domain-bind", {
