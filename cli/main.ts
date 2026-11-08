@@ -24,7 +24,6 @@ import { validateAgentDefinition } from "../lib/agents/declaration.ts";
  */
 
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Command, CommanderError } from "commander";
 import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
@@ -34,10 +33,7 @@ import {
 } from "../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
-import {
-	FRAMEWORK_DEFAULT_DOMAIN,
-	resolveDefaultDomain,
-} from "../lib/domains/default-domain.ts";
+import { resolveDefaultDomain } from "../lib/domains/default-domain.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
@@ -331,16 +327,16 @@ async function run(options: CliOptions): Promise<void> {
 }
 
 export function hasRunnableDefaultDomain(runtime: CosmonautsRuntime): boolean {
-	return runtime.domains.some((domain) => domain.manifest.id !== "shared");
+	return runtime.domains.some((domain) => !domain.manifest.resourceFallback);
 }
 
-export function resolveInteractiveExtensionPaths(
-	runtime: Pick<CosmonautsRuntime, "domainsDir">,
-): string[] {
-	return [
-		join(runtime.domainsDir, "shared", "extensions", "agent-switch"),
-		join(runtime.domainsDir, "shared", "extensions", "domain-bindings"),
-	];
+export function resolveInteractiveExtensionPaths(runtime: {
+	readonly domainResolver: Pick<DomainResolver, "resolveExtensionPath">;
+}): string[] {
+	return ["agent-switch", "domain-bindings"].flatMap((name) => {
+		const path = runtime.domainResolver.resolveExtensionPath(name, undefined);
+		return path ? [path] : [];
+	});
 }
 
 interface ResolveDumpPromptDomainOptions {
@@ -411,7 +407,7 @@ export function buildNoInteractiveTerminalMessage(
 }
 
 function buildNoRunnableDefaultDomainMessage(): string {
-	return `No runnable default domain installed. Install or activate a domain with a lead agent, or restore the built-in "${FRAMEWORK_DEFAULT_DOMAIN}" domain. Run \`cosmonauts --list-domains\` to inspect active domains.`;
+	return `No runnable default domain installed. Install or activate a domain with a declared lead agent. Run \`cosmonauts --list-domains\` to inspect active domains.`;
 }
 
 export function buildInitNoRunnableDefaultDomainLines(): string[] {
@@ -591,6 +587,7 @@ async function handleInitMode(
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
+		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
 		persistent: false,
@@ -650,6 +647,7 @@ async function handlePrintMode(
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
+		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
 		persistent: false,
@@ -679,7 +677,11 @@ async function handleInteractiveMode(
 	// Expose the main registry to extensions via process-global slot.
 	// This ensures the /agent command validates against the same registry
 	// the session factory uses, including --domain and --plugin-dir overrides.
-	setSharedRegistry(runtime.agentRegistry, runtime.domainContext);
+	setSharedRegistry(
+		runtime.agentRegistry,
+		runtime.domainContext,
+		runtime.sessionPolicies,
+	);
 	setSharedDomainBindings({
 		domainRegistry: runtime.domainRegistry,
 		bindingResolver: runtime.bindingResolver,
@@ -692,6 +694,7 @@ async function handleInteractiveMode(
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
+		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
 		persistent: true,

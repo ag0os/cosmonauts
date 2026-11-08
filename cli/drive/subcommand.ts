@@ -2000,6 +2000,7 @@ async function createBackend(
 		executionRuntime.domainsDir,
 		{
 			resolver: executionRuntime.domainResolver,
+			sessionPolicies: executionRuntime.sessionPolicies,
 		},
 	);
 	const executionWorker =

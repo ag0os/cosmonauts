@@ -135,6 +135,7 @@ async function executeDurableChain(
 		{
 			resolver: config.resolver,
 			spawnTimeoutMs: config.spawnTimeoutMs,
+			sessionPolicies: config.sessionPolicies,
 		},
 	);
 
@@ -1004,6 +1005,7 @@ function readSpawnOptions(options: unknown): DurableChainStageSpawnOptions {
 		),
 		...withDefined("compaction", compactionConfigOption(spawn.compaction)),
 		...withDefined("planSlug", stringOption(spawn.planSlug)),
+		...withDefined("completionLabel", stringOption(spawn.completionLabel)),
 	};
 }
 

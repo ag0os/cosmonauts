@@ -56,14 +56,9 @@ function resolveAgentOrNotify(
 	if (!shared) return false;
 	try {
 		const resolved = shared.registry.resolve(agentId, shared.domainContext);
-		if (
-			resolved.id === "coding/quality-manager" ||
-			(resolved.id === "quality-manager" && resolved.domain === "coding")
-		) {
-			ctx.ui.notify(
-				"Interactive /agent quality-manager is unavailable: use the quality review launcher to create a private snapshot.",
-				"error",
-			);
+		const denial = shared.sessionPolicies?.interactiveDenial?.(resolved);
+		if (denial) {
+			ctx.ui.notify(denial, "error");
 			return false;
 		}
 		return true;
@@ -82,9 +77,15 @@ async function selectAgentOrNotify(
 	const ids = shared.registry.listIds();
 	const selected = await ctx.ui.select(
 		"Select agent",
-		ids.filter(
-			(id) => id !== "quality-manager" && id !== "coding/quality-manager",
-		),
+		ids.filter((id) => {
+			try {
+				return !shared.sessionPolicies?.interactiveDenial?.(
+					shared.registry.resolve(id, shared.domainContext),
+				);
+			} catch {
+				return false;
+			}
+		}),
 	);
 	return selected ?? undefined;
 }

@@ -4,10 +4,10 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { join } from "node:path";
 import type { ResourceLoader } from "@earendil-works/pi-coding-agent";
 import type { AgentDefinition } from "../agents/types.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
+import { directoryResourcePaths } from "../domains/resource-paths.ts";
 import { KNOWLEDGE_SURFACE_EXTENSION_NAME } from "../extensions/knowledge-surface/constants.ts";
 
 // ============================================================================
@@ -105,23 +105,16 @@ export function assertEnabledRecallOwner(
 
 /** Options for domain-aware extension resolution. */
 export interface ResolveExtensionOptions {
-	/** Domain the agent belongs to (e.g. "coding", "shared"). */
-	readonly domain: string;
+	/** Resource identity, independent of the agent identity. */
+	readonly domain?: string;
+	readonly fallbackDomains?: readonly string[];
 	/** Absolute path to the root domains directory. Required when no resolver is provided. */
 	readonly domainsDir?: string;
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
 	readonly resolver?: DomainResolver;
 }
 
-/**
- * Resolve extension names to absolute paths with domain-aware lookup.
- *
- * Resolution order per extension name:
- *  1. `domains/<domain>/extensions/<name>` (if domain is not "shared")
- *  2. `domains/shared/extensions/<name>` (fallback)
- *
- * Throws if an extension name cannot be found in either location.
- */
+/** Resolve extensions through a resolver, then explicitly supplied directory providers. */
 export class UnknownExtensionError extends Error {
 	constructor(name: string, searched: string) {
 		super(
@@ -134,32 +127,24 @@ export function resolveExtensionPaths(
 	extensions: readonly string[],
 	options: ResolveExtensionOptions,
 ): string[] {
-	const { domain, domainsDir, resolver } = options;
+	const { domain, resolver } = options;
 	return extensions.map((name) => {
-		// Prefer resolver for multi-source resolution (agent domain → portable → shared)
+		// Prefer resolver for multi-source resolution (own domain → portable → declared fallback)
 		if (resolver) {
 			const resolved = resolver.resolveExtensionPath(name, domain);
 			if (resolved && isDirectory(resolved)) return resolved;
 		}
 
-		// Fallback: two-tier directory-based resolution (requires domainsDir)
-		if (domainsDir) {
-			// Try domain-specific path first (skip if already "shared")
-			if (domain !== "shared") {
-				const domainPath = join(domainsDir, domain, "extensions", name);
-				if (isDirectory(domainPath)) return domainPath;
-			}
-
-			// Fall back to shared
-			const sharedPath = join(domainsDir, "shared", "extensions", name);
-			if (isDirectory(sharedPath)) return sharedPath;
-		}
-
-		// Not found anywhere — fail loud
-		const searched =
-			domain !== "shared"
-				? `domains/${domain}/extensions/${name}, domains/shared/extensions/${name}`
-				: `domains/shared/extensions/${name}`;
+		const paths = directoryResourcePaths({
+			...options,
+			kind: "extensions",
+			filename: name,
+		});
+		const path = paths.find(isDirectory);
+		if (path) return path;
+		const searched = paths.length
+			? paths.join(", ")
+			: "declared resource providers (none available)";
 		throw new UnknownExtensionError(name, searched);
 	});
 }

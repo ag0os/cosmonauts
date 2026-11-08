@@ -77,6 +77,7 @@ describe("resolveEffectiveProjectSkills", () => {
 		const result = await resolveEffectiveProjectSkills({
 			projectSkills: ["typescript"],
 			domainsDir: tmp.path,
+			fallbackDomains: ["shared"],
 		});
 
 		expect(result).toEqual(["plan", "typescript"]);
@@ -90,6 +91,7 @@ describe("resolveEffectiveProjectSkills", () => {
 		const result = await resolveEffectiveProjectSkills({
 			projectSkills: ["typescript"],
 			domainsDir: tmp.path,
+			fallbackDomains: ["shared"],
 		});
 
 		expect(result).toEqual(["typescript"]);
@@ -100,6 +102,7 @@ describe("resolveEffectiveProjectSkills", () => {
 
 		const result = await resolveEffectiveProjectSkills({
 			domainsDir: tmp.path,
+			fallbackDomains: ["shared"],
 		});
 
 		expect(result).toBeUndefined();
@@ -267,7 +270,7 @@ describe("buildSkillsOverride", () => {
 		]);
 	});
 
-	test("defaults omitted requester domain to main for direct visibility resolution", () => {
+	test("treats an omitted requester as outside every domain", () => {
 		const resolver = new DomainResolver(
 			new DomainRegistry([
 				makeDomain("main", {
@@ -292,7 +295,7 @@ describe("buildSkillsOverride", () => {
 		const hiddenSkillNames = resolveHiddenSkillNames({ resolver });
 
 		expect(hiddenSkillNames).toContain("coding-internal");
-		expect(hiddenSkillNames).not.toContain("main-internal");
+		expect(hiddenSkillNames).toContain("main-internal");
 	});
 
 	test("wildcard cross-domain agents keep recursive public skills", () => {

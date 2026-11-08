@@ -33,6 +33,8 @@ function makeDomain(
 		manifest: {
 			id,
 			description: `${id} domain`,
+			default: id === "main",
+			resourceFallback: id === "shared",
 			...(lead ? { lead } : {}),
 		},
 		portable: id !== "shared" && id !== "main",

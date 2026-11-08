@@ -11,6 +11,7 @@ import {
 	DomainBindingTargetError,
 } from "./bindings.ts";
 import { canAccessSurfaceName } from "./public-surface.ts";
+import { DomainRegistry } from "./registry.ts";
 import type { LoadedDomain } from "./types.ts";
 
 /** Severity level for a validation diagnostic. */
@@ -72,7 +73,7 @@ export function validateDomains(
 	domains: readonly LoadedDomain[],
 	options: DomainValidationOptions = {},
 ): DomainValidationDiagnostic[] {
-	const shared = findSharedDomain(domains);
+	const registry = new DomainRegistry([...domains]);
 	const portableDomains = findPortableDomains(domains);
 	const agentIndex = collectKnownAgentIndex(domains);
 
@@ -83,13 +84,7 @@ export function validateDomains(
 			...validateInternalDenyList(domain),
 			...validateDomainLead(domain),
 			...validateNamedChainAgents(domain, agentIndex, options),
-			...validateDomainAgents(
-				domain,
-				shared,
-				portableDomains,
-				agentIndex,
-				options,
-			),
+			...validateDomainAgents({ domain, registry, agentIndex, options }),
 		]),
 	];
 }
@@ -129,15 +124,9 @@ function validateInternalNames(
 		}));
 }
 
-function findSharedDomain(
-	domains: readonly LoadedDomain[],
-): LoadedDomain | undefined {
-	return domains.find((domain) => domain.manifest.id === "shared");
-}
-
 function findPortableDomains(domains: readonly LoadedDomain[]): LoadedDomain[] {
 	return domains.filter(
-		(domain) => domain.portable && domain.manifest.id !== "shared",
+		(domain) => domain.portable && !domain.manifest.resourceFallback,
 	);
 }
 
@@ -249,123 +238,76 @@ function parseChainStages(chain: string): string[] {
 		.filter((stage) => stage.length > 0);
 }
 
-function validateAgentPrompts(
-	agentId: string,
-	domain: LoadedDomain,
-): DomainValidationDiagnostic[] {
-	if (domain.manifest.id === "shared") {
-		return [];
-	}
+function validateDomainAgents(context: {
+	domain: LoadedDomain;
+	registry: DomainRegistry;
+	agentIndex: AgentIndex;
+	options: DomainValidationOptions;
+}): DomainValidationDiagnostic[] {
+	const { domain, registry, agentIndex, options } = context;
+	return [...domain.agents].flatMap(([agentId, agent]) => {
+		const providers = registry.resourceOrder(
+			agent.resourceDomain ?? domain.manifest.id,
+		);
+		return [
+			...validateAgentPrompt({ agentId, agent, domain, providers }),
+			...validateAgentResources({
+				agentId,
+				domain,
+				providers,
+				names: agent.capabilities,
+				kind: "capabilities",
+			}),
+			...validateAgentResources({
+				agentId,
+				domain,
+				providers,
+				names: agent.extensions,
+				kind: "extensions",
+			}),
+			...validateAgentSubagents(agentId, agent, domain, agentIndex, options),
+		];
+	});
+}
 
-	if (domain.prompts.has(agentId)) {
+function validateAgentPrompt(context: {
+	agentId: string;
+	agent: LoadedAgent;
+	domain: LoadedDomain;
+	providers: readonly LoadedDomain[];
+}): DomainValidationDiagnostic[] {
+	const { agentId, agent, domain, providers } = context;
+	if (
+		agent.instructions ||
+		providers.some((provider) => provider.prompts.has(agentId))
+	)
 		return [];
-	}
-
 	return [
 		{
 			domain: domain.manifest.id,
 			agent: agentId,
-			message: `Missing persona prompt for domain "${domain.manifest.id}" agent "${agentId}"; expected prompts/${agentId}.md`,
 			severity: "error",
+			message: `Missing persona prompt for domain "${domain.manifest.id}" agent "${agentId}"; expected prompts/${agentId}.md`,
 		},
 	];
 }
 
-function validateDomainAgents(
-	domain: LoadedDomain,
-	shared: LoadedDomain | undefined,
-	portableDomains: readonly LoadedDomain[],
-	agentIndex: AgentIndex,
-	options: DomainValidationOptions,
-): DomainValidationDiagnostic[] {
-	return [...domain.agents].flatMap(([agentId, agent]) => [
-		...validateAgentPrompts(agentId, domain),
-		...validateAgentCapabilities(
-			agentId,
-			agent,
-			domain,
-			shared,
-			portableDomains,
-		),
-		...validateAgentExtensions(agentId, agent, domain, shared, portableDomains),
-		...validateAgentSubagents(agentId, agent, domain, agentIndex, options),
-	]);
-}
-
-function validateAgentCapabilities(
-	agentId: string,
-	agent: LoadedAgent,
-	domain: LoadedDomain,
-	shared: LoadedDomain | undefined,
-	portableDomains: readonly LoadedDomain[],
-): DomainValidationDiagnostic[] {
-	const diagnostics: DomainValidationDiagnostic[] = [];
-
-	for (const cap of agent.capabilities) {
-		if (isCapabilityResolvable(cap, domain, shared, portableDomains)) {
-			continue;
-		}
-
-		diagnostics.push({
+function validateAgentResources(context: {
+	agentId: string;
+	domain: LoadedDomain;
+	providers: readonly LoadedDomain[];
+	names: readonly string[];
+	kind: "capabilities" | "extensions";
+}): DomainValidationDiagnostic[] {
+	const { agentId, domain, providers, names, kind } = context;
+	return names
+		.filter((name) => !providers.some((provider) => provider[kind].has(name)))
+		.map((name) => ({
 			domain: domain.manifest.id,
 			agent: agentId,
-			message: `Capability "${cap}" not found in domain "${domain.manifest.id}" or "shared"`,
-			severity: "error",
-		});
-	}
-
-	return diagnostics;
-}
-
-function isCapabilityResolvable(
-	capability: string,
-	domain: LoadedDomain,
-	shared: LoadedDomain | undefined,
-	portableDomains: readonly LoadedDomain[],
-): boolean {
-	return (
-		domain.capabilities.has(capability) ||
-		(shared?.capabilities.has(capability) ?? false) ||
-		portableDomains.some((portable) => portable.capabilities.has(capability))
-	);
-}
-
-function validateAgentExtensions(
-	agentId: string,
-	agent: LoadedAgent,
-	domain: LoadedDomain,
-	shared: LoadedDomain | undefined,
-	portableDomains: readonly LoadedDomain[],
-): DomainValidationDiagnostic[] {
-	const diagnostics: DomainValidationDiagnostic[] = [];
-
-	for (const extension of agent.extensions) {
-		if (isExtensionResolvable(extension, domain, shared, portableDomains)) {
-			continue;
-		}
-
-		diagnostics.push({
-			domain: domain.manifest.id,
-			agent: agentId,
-			message: `Extension "${extension}" not found in domain "${domain.manifest.id}" or "shared"`,
-			severity: "error",
-		});
-	}
-
-	return diagnostics;
-}
-
-function isExtensionResolvable(
-	extension: string,
-	domain: LoadedDomain,
-	shared: LoadedDomain | undefined,
-	portableDomains: readonly LoadedDomain[],
-): boolean {
-	return (
-		domain.extensions.has(extension) ||
-		(shared?.extensions.has(extension) ?? false) ||
-		portableDomains.some((portable) => portable.extensions.has(extension))
-	);
+			severity: "error" as const,
+			message: `${kind === "capabilities" ? "Capability" : "Extension"} "${name}" not found in the declared resource providers for domain "${domain.manifest.id}"`,
+		}));
 }
 
 function validateAgentSubagents(

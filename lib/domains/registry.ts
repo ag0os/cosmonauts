@@ -3,7 +3,7 @@
  *
  * Provides lookup methods for domains and their resources,
  * including capability resolution with three-tier fallback:
- * agent domain → portable domains → shared.
+ * agent domain → portable domains → declared fallback domains.
  */
 
 import type { LoadedDomain } from "./types.ts";
@@ -43,36 +43,32 @@ export class DomainRegistry {
 		return [...this.domains.values()].filter((d) => d.portable);
 	}
 
-	/**
-	 * Find which domain provides a given capability.
-	 *
-	 * Resolution order:
-	 * 1. `preferDomain` (agent's own domain) — if specified and has the capability.
-	 * 2. Portable domains in registry discovery order, excluding agent domain and shared.
-	 * 3. "shared" domain.
-	 * 4. Return undefined if no domain provides the capability.
-	 */
+	/** Declared final-tier resource providers, in registry discovery order. */
+	listResourceFallbacks(): LoadedDomain[] {
+		return this.listAll().filter((domain) => domain.manifest.resourceFallback);
+	}
+
+	/** Own non-fallback domain, portable providers, then declared fallback providers. */
+	resourceOrder(preferDomain?: string): LoadedDomain[] {
+		const own = preferDomain ? this.get(preferDomain) : undefined;
+		return [
+			...(own && !own.manifest.resourceFallback ? [own] : []),
+			...this.listPortable().filter(
+				(domain) =>
+					domain.manifest.id !== preferDomain &&
+					!domain.manifest.resourceFallback,
+			),
+			...this.listResourceFallbacks(),
+		];
+	}
+
+	/** Find the first declared capability provider in resource order. */
 	resolveCapability(
 		name: string,
 		preferDomain?: string,
 	): LoadedDomain | undefined {
-		// Tier 1: agent's own domain
-		if (preferDomain) {
-			const domain = this.domains.get(preferDomain);
-			if (domain?.capabilities.has(name)) return domain;
-		}
-
-		// Tier 2: portable domains (registry order, skip agent domain and shared)
-		for (const domain of this.domains.values()) {
-			if (preferDomain && domain.manifest.id === preferDomain) continue;
-			if (domain.manifest.id === "shared") continue;
-			if (domain.portable && domain.capabilities.has(name)) return domain;
-		}
-
-		// Tier 3: shared
-		const shared = this.domains.get("shared");
-		if (shared?.capabilities.has(name)) return shared;
-
-		return undefined;
+		return this.resourceOrder(preferDomain).find((domain) =>
+			domain.capabilities.has(name),
+		);
 	}
 }

@@ -1,3 +1,4 @@
+import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
 /**
  * Regression tests for createPiSpawner() spawn behavior.
  */
@@ -559,25 +560,28 @@ describe("createPiSpawner", () => {
 					cwd: "/tmp/test-project",
 					prompt: "Plan",
 					onEvent: (event) => qualityEvents.push(event),
-					qualityReviewContext: {
-						runId: "qm-test",
-						workspaceRoot: "/tmp/test-project",
-						materialsRoot: "/tmp/test-project",
-						base: "abc",
-						changedFiles: [],
-						hostRunStoreRoot,
-						artifactSink: {
-							write: vi.fn(),
-							writeReviewer: vi.fn(),
-							references: () => [],
-							reviewersOpen: () => true,
-							sealReviewers: vi.fn(),
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							runId: "qm-test",
+							workspaceRoot: "/tmp/test-project",
+							materialsRoot: "/tmp/test-project",
+							base: "abc",
+							changedFiles: [],
+							hostRunStoreRoot,
+							artifactSink: {
+								write: vi.fn(),
+								writeReviewer: vi.fn(),
+								references: () => [],
+								reviewersOpen: () => true,
+								sealReviewers: vi.fn(),
+							},
+							activeSpawns: new Set(),
+							allowedLenses: new Set(),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
 						},
-						activeSpawns: new Set(),
-						allowedLenses: new Set(),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+						false,
+					),
 				});
 				expect(qualityResult.success, qualityResult.error).toBe(true);
 				expect(qualityEvents).toContainEqual(
@@ -659,25 +663,28 @@ describe("createPiSpawner", () => {
 					cwd: "/tmp/test-project",
 					prompt: "Plan",
 					onEvent: (event) => events.push(event),
-					qualityReviewContext: {
-						runId: "qm-test",
-						workspaceRoot: "/tmp/test-project",
-						materialsRoot: "/tmp/test-project",
-						base,
-						changedFiles: [],
-						hostRunStoreRoot,
-						artifactSink: {
-							write: vi.fn(),
-							writeReviewer: vi.fn(),
-							references: () => [],
-							reviewersOpen: () => true,
-							sealReviewers: vi.fn(),
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							runId: "qm-test",
+							workspaceRoot: "/tmp/test-project",
+							materialsRoot: "/tmp/test-project",
+							base,
+							changedFiles: [],
+							hostRunStoreRoot,
+							artifactSink: {
+								write: vi.fn(),
+								writeReviewer: vi.fn(),
+								references: () => [],
+								reviewersOpen: () => true,
+								sealReviewers: vi.fn(),
+							},
+							activeSpawns: new Set(),
+							allowedLenses: new Set(),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
 						},
-						activeSpawns: new Set(),
-						allowedLenses: new Set(),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+						false,
+					),
 				});
 				expect(result.success, result.error).toBe(true);
 				expect(JSON.stringify(events)).not.toContain("not forwarded");

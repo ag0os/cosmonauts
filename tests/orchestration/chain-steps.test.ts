@@ -685,7 +685,7 @@ describe("formatChainSteps", () => {
 });
 
 // ============================================================================
-// isChainDslExpression
+// Unnamed input topology parsing
 // ============================================================================
 
 describe("unnamed inputs use topology parsing", () => {
@@ -719,7 +719,7 @@ describe("unnamed inputs use topology parsing", () => {
 		});
 	});
 
-	describe("fanout expressions (true)", () => {
+	describe("fanout expressions", () => {
 		test("fanout with count", () => {
 			expect(selectChain("reviewer[2]", []).steps.length).toBe(1);
 		});
@@ -729,7 +729,7 @@ describe("unnamed inputs use topology parsing", () => {
 		});
 	});
 
-	describe("bracket groups (true)", () => {
+	describe("bracket groups", () => {
 		test("two-member group", () => {
 			expect(selectChain("[planner, reviewer]", []).steps.length).toBe(1);
 		});
@@ -741,7 +741,7 @@ describe("unnamed inputs use topology parsing", () => {
 		});
 	});
 
-	describe("arrow chains (true)", () => {
+	describe("arrow chains", () => {
 		test("two-step chain", () => {
 			expect(selectChain("planner -> coordinator", []).steps.length).toBe(2);
 		});
@@ -777,7 +777,7 @@ describe("unnamed inputs use topology parsing", () => {
 		});
 	});
 
-	describe("invalid inputs (false)", () => {
+	describe("invalid inputs", () => {
 		test("empty string", () => {
 			expect(() => selectChain("", [])).toThrow();
 		});

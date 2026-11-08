@@ -187,7 +187,7 @@ Pre-3a installed/ejected declarations are not granted legacy defaults: without e
 
 Instruction-kind validation is independent of path validity: an unknown kind with an absolute path still fails before provider/model preparation. Dumping a prompt validates the same declaration before reading its persona or writing output. Absolute file composition also works when the lower-level prompt composer receives no cwd. Tests: declaration, dump-prompt and prompt-assembly suites.
 
-The legacy directory convention with neither declared instructions nor resourceDomain retains its default-domain requester behavior in 3a; explicit borrowing never acquires internal-skill visibility. The empty sentinel and that default convention are owned by 3c. Test: `tests/agents/declaration.test.ts` covers both explicit borrowing without instructions and the legacy branch.
+Session skill ownership and private-skill visibility follow actual declared identity, including pre-qualified ids. Resource-domain borrowing and default resource lookup do not grant identity or private visibility; domainless identity is undefined. Explicit instructions need no default resource domain. Tests: `tests/agents/declaration.test.ts`, `tests/agents/session-assembly-domain-skills.test.ts` and `tests/agents/skill-provider-inputs.test.ts`.
 
 
 The proposed file migration guard requires `memory` explicitly; a capability name never substitutes for it. Loaded declarations run the full programmatic shape validator. Discovery collects errors with the agent file, domain and package/source, and active runtime validation reports `DomainValidationError`; inactive domains are filtered without halting other commands. Tests: `tests/domains/loader.test.ts`, `tests/runtime.test.ts`. The obsolete-name content test in `tests/domains/memory-grants.test.ts` imports modules directly and holds independently of this proposed guard.
@@ -223,7 +223,7 @@ Normalization failures correlate repeated display names by their supplied or gen
 
 **LS-4:** Drive requires consumer `workerAgent`, with no worker spelling or domain fallback. Live and frozen execution resolution is independent of episode permission; capture still requires the selected declaration's episodes grant. A frozen actor resolves by its stored identity without live rebinding; an unavailable actor skips capture non-fatally, and subagent execution cannot substitute a different worker. Terminal-only reconciliation retains prior attempt provenance. Backend labels remain safe plain ids while execution receives the bound declaration reference. Tests: `tests/driver/declared-worker.test.ts`, episode grants, backend resolution, CLI Drive, graph resume and delegated driver suites.
 
-**Remaining coupling, named:** LS-2 is not yet complete. The Shepherd places the host session-policy port for QM/reviewer profile inference in session assembly/spawning in **3c**; it must keep the existing QM implementation behind the port. Domain ids, the domainless sentinel and the additional import-boundary forms also remain 3c. The runtime default-model split at non-chain `session-assembly.ts`, `cli/pi-session.ts` and `cli/memory/judgment-provider.ts` belongs to step 4 under C9. Host-built runtime across launch sites, compiled provider hooks and package exports also remain step 4. No content or stored memories are deleted in this stretch.
+**Remaining coupling, named:** LS-2 is not yet complete. Step 3c moves QM/reviewer session policy behind consumer host callbacks and replaces domain-id defaults and the domainless sentinel with declared inputs; the extended import-boundary forms are pinned by the source guard. The runtime default-model split at non-chain `session-assembly.ts`, `cli/pi-session.ts` and `cli/memory/judgment-provider.ts` belongs to step 4 under C9. Host-built runtime across launch sites, compiled provider hooks and package exports also remain step 4. No content or stored memories are deleted in this stretch.
 
 ### Step 3b review contracts
 
@@ -233,4 +233,69 @@ A stages-form chain reference must resolve through the registry's requested iden
 
 The Shepherd ruled that project-config chains retain their existing coding capture default until step 6; they gain no `episodes` field. Named programmatic declarations can override the consumer default. The Shepherd also ruled that misplaced QM stages continue writing a refusal report even beside an unknown actor. Test: `chain-runner.test.ts` mixed-error refusal.
 
-Remaining vocabulary debt: QM/reviewer session profiles move behind the host session-policy port in 3c; existing plan-review terminology, historical type comments and the reserved `models.default` key remain until their consuming content is removed in step 6. Non-chain fallback model inputs and their legacy exports remain assigned to step 4.
+Remaining vocabulary debt: QM/reviewer session profiles are content behind the host session-policy port after 3c; existing plan-review terminology, historical type comments and the reserved `models.default` key remain until their consuming content is removed in step 6. Non-chain fallback model inputs and their legacy exports remain assigned to step 4.
+
+## Declared domain policy (step 3c)
+
+Domain resource fallback and activation are separate inputs: `resourceFallback` defines the final resource tier, and `alwaysActive` participates when the consumer narrows active domains. The highest-precedence provider supplies the `alwaysActive`, `resourceFallback` and `default` flags; an omitted or false higher flag replaces a lower grant. The loader records a source-attributed warning whenever such an override drops a lower true flag, and runtime validation emits it. Same-precedence providers with a grant remain active conflicts, while a higher inactive override keeps their conflicts outside the active scope. Resource merge precedence remains unchanged. Tests: `tests/domains/declared-domain-policy.test.ts` and existing loader/runtime contracts.
+
+Validator capability, extension and persona checks use declared resource providers. Explicit instructions remove the persona-file requirement independently of the domain's spelling; no domain name exempts an undeclared persona. Declared fallback chains participate in contextual collections, with the contextual domain winning name collisions. Effective project skills include every declared fallback provider, in discovery order. Directory-only skill callers pass `fallbackDomains` explicitly. Tests: the declared-domain-policy contracts, validator, named-chain loader and skill/session suites.
+
+The host session-policy port supplies `SessionPolicy` and `SessionPolicyProvider` callbacks for assembly validation, tool presets/effective filtering, configuration and resource isolation, settings, transcripts, lifecycle, observation and child admission. Core session assembly, the session factory/spawner, spawn tool and interactive switch consume these hooks without importing review content or naming review actors. Coding content declares its provider through the interim manifest bridge. Test: `tests/coding-agnostic-framework.test.ts` enforces this boundary; session assembly, session-factory security, orchestration extension, QM prompt/settings and durable lifecycle suites retain the existing safeguards. Final evidence and named inherited failures are recorded in the step 3c review artifact.
+
+Bound host policy is registered before prompting, lets the parent supply its base runtime before loading reviewed configuration, and is removed at disposal. Spawn tool arguments expose no policy/context fields. The coding host retains missing-context denial, actual bound reviewer/lens checks, override refusal, duplicate tracking, sealed prompts, transcript/evidence correlation, model identity checks, timeout integrity and delegated launcher behavior. Tests: `tests/extensions/orchestration.test.ts`, inline-compiler, spawner and session-factory security suites.
+
+Custom domain merge strategies decide whether incoming providers are retained before activation is calculated. Their decisions are reused during resource merging; a skipped incoming flag has no activation authority. Callback decisions may therefore be needed even for a candidate that ends inactive. Default merging, same-precedence active conflicts and higher inactive overrides retain their contracts. Test: declared-domain-policy includes both directions of competing activation flags with `skip`.
+
+Frozen Drive restoration uses the recorded fully qualified target; matching the declared worker's bare id identifies the episode category but never retargets it to another domain. A missing recorded target is skipped. The domain-strictness question is resolved by retaining this existing restore-by-id behavior, including declared alias/provider separation. Tests: `tests/driver/declared-worker.test.ts` (frozen selection and stored provider contracts).
+
+
+The default resource domain comes from `DomainManifest.default`, with at most one active default; runtime loading and direct default selection reject ambiguity. Resolver-less callers supply `defaultDomain` when they need a default, rather than receiving a framework domain name. Default lead selection uses the declared default and then another eligible lead. Interactive commands resolve extension providers through the consumer resolver. Tests: declared-domain-policy, default-domain, CLI default-lead/main/no-domain-guard suites.
+
+Domainless resource identity is `undefined` throughout session assembly, prompt and extension lookup, and skill visibility. Explicit instructions need no default-domain lookup. Directory resource fallback is the caller's `fallbackDomains` list; no undeclared directory name is invented. Borrowed resources and a default persona never grant private skill ownership; only the declared identity (including a pre-qualified id) does. Package source-agent prompts use the same instructions/resource separation. Tests: agent declaration and skill suites, domainless prompt-assembly and package-build contracts.
+
+The LS-1 AST boundary checks `require.resolve`, `import.meta.resolve`, module-relative `new URL(..., import.meta.url)`, import-equals, absolute/file URL references and self-package or bare content roots, while retaining legitimate library domain APIs and ignoring comments/prose. Test: `tests/coding-agnostic-framework.test.ts`.
+
+
+The host policy binding survives extension-loader module caches and cannot be replaced by a duplicate registration. Tests: `tests/agents/session-policy.test.ts`. Initial CLI, print/init and switched sessions carry the consumer provider and apply the selected effective tool filter; optional denial hooks remain optional. Tests: `tests/cli/host-policy-dispatch.test.ts`, `tests/cli/session.test.ts` and `tests/extensions/agent-switch.test.ts`.
+
+Host denial remains effective when ordinary delegation would allow a target. Detached children receive sealed host parameters and preserve evidence correlation, admission cleanup, delegated results and optional-hook failure handling. Spawner registration precedes prompting, completion observations are forwarded, and explicit retention controls transcripts. Tests: `tests/extensions/spawn-policy-hooks.test.ts` and `tests/orchestration/session-policy-spawner.test.ts`.
+
+The coding policy independently denies unbound managers, wrong callers/actual reviewers/lenses, model/thinking overrides and duplicate attempts; it validates child roles, clears append text, uses untrusted in-memory settings and forwards the exact run-local analysis consent. Tests: `tests/orchestration/host-review-policy.test.ts`, `tests/orchestration/host-review-provider.test.ts` and existing session-factory security/QM suites. Exact declaration tool lists are preserved even when a host supplies a preset. Test: `tests/agents/session-assembly.test.ts`.
+
+Custom merge callbacks see exact resource overlap metadata and the accumulated merge/replace provenance, and same-precedence active conflicts are checked before a skip callback can hide them. Domain module evaluation order remains deterministic. Portable own providers occur once; omitted directory providers invent no paths; prompt I/O failures other than not-found propagate. Tests: `tests/domains/domain-policy-contracts.test.ts`. Source-agent package resource selection prefers its declared resource scope, then actual identity, then caller context. Test: `tests/agent-packages/build.test.ts`.
+
+
+## Step 3c independent-review fixes
+
+Session-policy selection is independent of adapter and selected-domain resolution:
+one active declaring provider supplies the seal; two distinct provider objects
+fail loading with `AmbiguousSessionPolicyProviderError`, and an explicit host
+`sessionPolicies` choice wins. Higher domain layers that omit a seal inherit the
+lower layer's provider; replacing it requires an explicit provider. Override,
+multi-adapter, duplicate-provider and host-override pins:
+`tests/runtime-session-policies.test.ts` (all four fail at6686111a).
+
+The policy resource hook returns only `SessionPolicyResourceOptions`:
+`appendSystemPrompt`, `agentsFilesOverride`, `additionalExtensionPaths` and
+`extensionFactories`. Session creation applies those four keys explicitly; unknown
+keys cannot override cwd, noExtensions, noSkills or the dedicated settings hook.
+Test: `tests/orchestration/session-factory.security.test.ts`; duplicate settings
+were removed from the QM resource hook, with host-review-policy coverage.
+
+LS-2 imports are guarded across all core TypeScript files, including type and
+dynamic/resolver imports. Named temporary debts are config loader/types importing
+lean `SIGNAL_KINDS`/`SignalKind` (relocate in step6), and CLI main importing QM
+launch/run and lean CLI content (remove in step6). The catalog's coding entry
+moves from `lib/packages/catalog.ts` to the CLI host in step4. The coding tool
+preset is a preset vocabulary item, recorded as debt rather than a domain default.
+Test: `tests/coding-agnostic-framework.test.ts`.
+
+Any non-fallback domain remains runnable without a lead; a default lead is only
+needed by modes that actually select it. Test: `tests/cli/no-domain-guard.test.ts`.
+The switch picker skips an unresolvable entry while retaining other eligible
+actors and restrictions. Test: `tests/extensions/agent-switch.test.ts`.
+
+Step4 must supply the session-policy provider explicitly from the host before3c
+reaches user execution: a pre-3c installed coding package can lack any lower
+provider declaration. This stale-install case is not claimed fixed by3c alone.

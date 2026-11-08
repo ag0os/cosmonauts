@@ -6,7 +6,6 @@
  */
 
 import { join } from "node:path";
-import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import { canAccessSurfaceName } from "../domains/public-surface.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import type { LoadedDomain } from "../domains/types.ts";
@@ -37,6 +36,8 @@ interface ResolveEffectiveProjectSkillsOptions {
 	readonly projectSkills?: readonly string[];
 	/** Absolute path to the root domains directory (required when no resolver). */
 	readonly domainsDir?: string;
+	/** Explicit fallback domains for directory-only callers. */
+	readonly fallbackDomains?: readonly string[];
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
 	readonly resolver?: DomainResolver;
 	/**
@@ -50,7 +51,7 @@ interface ResolveEffectiveProjectSkillsOptions {
 }
 
 interface ResolveSkillVisibilityOptions {
-	/** Domain requesting visibility. Defaults to the framework default domain. */
+	/** Domain requesting visibility. Undefined means outside every domain. */
 	readonly requesterDomain?: string;
 	/** Domain resolver for loaded-domain visibility rules. */
 	readonly resolver?: DomainResolver;
@@ -67,12 +68,16 @@ function isWildcard(skills: readonly string[]): boolean {
 	return skills.includes(WILDCARD);
 }
 
-function buildSyntheticSharedDomain(domainsDir: string): LoadedDomain {
-	const rootDir = join(domainsDir, "shared");
+function buildSyntheticFallbackDomain(
+	domainsDir: string,
+	domainId: string,
+): LoadedDomain {
+	const rootDir = join(domainsDir, domainId);
 	return {
 		manifest: {
-			id: "shared",
-			description: "shared",
+			id: domainId,
+			description: domainId,
+			resourceFallback: true,
 		},
 		portable: false,
 		agents: new Map(),
@@ -88,18 +93,19 @@ function buildSyntheticSharedDomain(domainsDir: string): LoadedDomain {
 	};
 }
 
-async function listSharedSkillNames(options: {
+async function listFallbackSkillNames(options: {
 	domainsDir?: string;
+	fallbackDomains?: readonly string[];
 	resolver?: DomainResolver;
 }): Promise<readonly string[]> {
-	const sharedDomain =
-		options.resolver?.registry.get("shared") ??
-		(options.domainsDir
-			? buildSyntheticSharedDomain(options.domainsDir)
-			: undefined);
-	if (!sharedDomain) return [];
-
-	const skills = await discoverSkills([sharedDomain]);
+	const domains = options.resolver
+		? options.resolver.registry.listResourceFallbacks()
+		: (options.fallbackDomains ?? []).flatMap((id) =>
+				options.domainsDir
+					? [buildSyntheticFallbackDomain(options.domainsDir, id)]
+					: [],
+			);
+	const skills = await discoverSkills(domains);
 	return [...new Set(skills.map((skill) => skill.name))];
 }
 
@@ -112,7 +118,9 @@ async function listOwnDomainSkillNames(
 	const domain = resolver?.registry.get(agent.domain);
 	if (!domain) return [];
 	const shipped = new Set(
-		(await discoverSkills([domain])).map((skill) => skill.name),
+		(await discoverSkills([domain], [], { domainContext: agent.domain })).map(
+			(skill) => skill.name,
+		),
 	);
 	return agent.skills.filter((name) => shipped.has(name));
 }
@@ -123,7 +131,8 @@ export async function resolveEffectiveProjectSkills(
 	if (options.projectSkills === undefined) return undefined;
 
 	return [
-		...(await listSharedSkillNames({
+		...(await listFallbackSkillNames({
+			fallbackDomains: options.fallbackDomains,
 			domainsDir: options.domainsDir,
 			resolver: options.resolver,
 		})),
@@ -137,14 +146,7 @@ export function resolveHiddenSkillNames(
 ): readonly string[] | undefined {
 	if (!options.resolver) return undefined;
 
-	const requesterDomain =
-		options.requesterDomain === ""
-			? ""
-			: resolveDefaultDomain({
-					explicitDomain: options.requesterDomain,
-					resolver: options.resolver,
-					purpose: "skill visibility resolution",
-				});
+	const requesterDomain = options.requesterDomain;
 	return [
 		...new Set(
 			options.resolver.registry.listAll().flatMap((domain) =>

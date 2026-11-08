@@ -131,7 +131,11 @@ async function writeProjectConfig(
 async function setupSharedDomain(domainsDir: string): Promise<void> {
 	const sharedDir = join(domainsDir, "shared");
 	await mkdir(join(sharedDir, "capabilities"), { recursive: true });
-	await writeDomainManifest(sharedDir, "shared");
+	await writeDomainManifest(
+		sharedDir,
+		"shared",
+		", resourceFallback: true, alwaysActive: true",
+	);
 	await writeFile(join(sharedDir, "capabilities", "core.md"), "# core");
 }
 

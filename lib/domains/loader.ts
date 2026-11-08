@@ -25,8 +25,8 @@ import type { DomainValidationDiagnostic } from "./validator.ts";
 interface LoadDomainsFromSourcesOptions {
 	/**
 	 * Domain ids allowed to participate in active runtime loading. When omitted,
-	 * every loaded provider participates. Include "shared" in this set when shared
-	 * should remain active.
+	 * every loaded provider participates. Domains whose effective provider declares
+	 * alwaysActive also participate.
 	 */
 	readonly activeDomainIds?: ReadonlySet<string> | readonly string[];
 }
@@ -56,7 +56,7 @@ export class DomainIdConflictError extends Error {
  *
  * Scans for subdirectories containing a `domain.ts` manifest file,
  * imports manifests and agent definitions, and indexes all resources.
- * The `shared` domain is always loaded first, then remaining domains
+ * Domains declaring alwaysActive are listed first, then remaining domains
  * in alphabetical order.
  */
 export async function loadDomains(domainsDir: string): Promise<LoadedDomain[]> {
@@ -75,11 +75,7 @@ async function loadDomainsInDir(
 	const domainDirs = entries
 		.filter((e) => e.isDirectory())
 		.map((e) => e.name)
-		.sort((a, b) => {
-			if (a === "shared") return -1;
-			if (b === "shared") return 1;
-			return a.localeCompare(b);
-		});
+		.sort((a, b) => a.localeCompare(b));
 
 	const domains: LoadedDomain[] = [];
 	for (const dirName of domainDirs) {
@@ -92,7 +88,7 @@ async function loadDomainsInDir(
 		});
 		domains.push(domain);
 	}
-	return domains;
+	return sortDomains(domains);
 }
 
 /**
@@ -222,7 +218,7 @@ const defaultMergeStrategy: MergeStrategy = () => "merge";
  * multiple sources, the mergeStrategy callback (default: merge) decides how to
  * resolve the conflict.
  *
- * The returned list preserves the "shared first, then alphabetical" ordering
+ * The returned list preserves the "always-active first, then alphabetical" ordering
  * convention established by loadDomains().
  */
 // fallow-ignore-next-line complexity
@@ -232,13 +228,13 @@ export async function loadDomainsFromSources(
 	options: LoadDomainsFromSourcesOptions = {},
 ): Promise<LoadedDomain[]> {
 	const strategy = mergeStrategy ?? defaultMergeStrategy;
-	const activeDomainIds = normalizeActiveDomainIds(options.activeDomainIds);
+	const requestedIds = normalizeActiveDomainIds(options.activeDomainIds);
 
 	// Process lowest-precedence sources first so higher-precedence sources
 	// arrive as "incoming" and win on conflicts.
 	const sorted = [...sources].sort((a, b) => a.precedence - b.precedence);
 
-	const accumulated = new Map<string, LoadedDomain>();
+	const providers: LoadedDomain[] = [];
 
 	for (const source of sorted) {
 		const kind = sourceKind(source);
@@ -251,71 +247,147 @@ export async function loadDomainsFromSources(
 			kind === "domain-root"
 				? await loadDomainRoot(source.domainsDir, sourceProvenance)
 				: await loadDomainsInDir(source.domainsDir, sourceProvenance);
-		for (const domain of domains) {
-			const id = domain.manifest.id;
-			if (activeDomainIds && !activeDomainIds.has(id)) {
-				continue;
-			}
+		providers.push(...domains);
+	}
+	const activation =
+		mergeStrategy && requestedIds
+			? activationProviders(providers, mergeStrategy)
+			: {
+					providers,
+					actions: new Map<LoadedDomain, ReturnType<MergeStrategy>>(),
+				};
+	const activeDomainIds = selectActiveDomainIds(
+		activation.providers,
+		requestedIds,
+	);
+	const accumulated = new Map<string, LoadedDomain>();
+	for (const domain of providers) {
+		const id = domain.manifest.id;
+		if (activeDomainIds && !activeDomainIds.has(id)) {
+			continue;
+		}
 
-			const existing = accumulated.get(id);
+		const existing = accumulated.get(id);
 
-			if (!existing) {
-				accumulated.set(id, domain);
-				continue;
-			}
+		if (!existing) {
+			accumulated.set(id, domain);
+			continue;
+		}
 
-			const incomingProvenance = firstProvenance(domain);
-			const samePrecedenceProvider = existing.provenance.find(
-				(provenance) => provenance.precedence === incomingProvenance.precedence,
-			);
-			if (samePrecedenceProvider) {
-				throw new DomainIdConflictError({
-					domainId: id,
-					existing: samePrecedenceProvider,
-					incoming: incomingProvenance,
-				});
-			}
-
-			const conflict: DomainMergeConflict = {
+		const incomingProvenance = firstProvenance(domain);
+		const samePrecedenceProvider = existing.provenance.find(
+			(provenance) => provenance.precedence === incomingProvenance.precedence,
+		);
+		if (samePrecedenceProvider) {
+			throw new DomainIdConflictError({
 				domainId: id,
-				existing,
-				incoming: domain,
-				overlapping: {
-					agents: [...domain.agents.keys()].filter((k) =>
-						existing.agents.has(k),
-					),
-					capabilities: [...domain.capabilities].filter((k) =>
-						existing.capabilities.has(k),
-					),
-					skills: [...domain.skills].filter((k) => existing.skills.has(k)),
-					extensions: [...domain.extensions].filter((k) =>
-						existing.extensions.has(k),
-					),
-					prompts: [...domain.prompts].filter((k) => existing.prompts.has(k)),
-				},
-			};
+				existing: samePrecedenceProvider,
+				incoming: incomingProvenance,
+			});
+		}
 
-			const action = strategy(conflict);
+		const conflict = domainMergeConflict(existing, domain);
+		const action = activation.actions.get(domain) ?? strategy(conflict);
 
-			if (action === "skip") {
-			} else if (action === "replace") {
-				// Incoming domain completely replaces the existing one.
-				accumulated.set(id, domain);
-			} else {
-				// merge: union resources; incoming (higher precedence) wins on key conflicts.
-				accumulated.set(id, mergeDomains(existing, domain));
-			}
+		if (action === "skip") {
+		} else if (action === "replace") {
+			// Incoming domain completely replaces the existing one.
+			accumulated.set(id, domain);
+		} else {
+			// merge: union resources; incoming (higher precedence) wins on key conflicts.
+			accumulated.set(id, mergeDomains(existing, domain));
 		}
 	}
 
-	// Re-sort: shared first, then alphabetical — matching loadDomains() convention.
-	return [...accumulated.values()].sort((a, b) => {
-		const aId = a.manifest.id;
-		const bId = b.manifest.id;
-		if (aId === "shared") return -1;
-		if (bId === "shared") return 1;
-		return aId.localeCompare(bId);
-	});
+	return sortDomains([...accumulated.values()]);
+}
+
+/** Custom strategies choose which provider's manifest may supply activation. Decisions are reused during resource merging. */
+function activationProviders(
+	providers: LoadedDomain[],
+	strategy: MergeStrategy,
+) {
+	const accumulated = new Map<string, LoadedDomain>();
+	const accepted: LoadedDomain[] = [];
+	const actions = new Map<LoadedDomain, ReturnType<MergeStrategy>>();
+	for (const domain of providers) {
+		const existing = accumulated.get(domain.manifest.id);
+		const samePrecedence = existing?.provenance.some(
+			(p) => p.precedence === firstProvenance(domain).precedence,
+		);
+		const action =
+			existing && !samePrecedence
+				? strategy(domainMergeConflict(existing, domain))
+				: "merge";
+		actions.set(domain, action);
+		if (action === "skip") continue;
+		accepted.push(domain);
+		accumulated.set(
+			domain.manifest.id,
+			existing && action === "merge" ? mergeDomains(existing, domain) : domain,
+		);
+	}
+	return { providers: accepted, actions };
+}
+
+function domainMergeConflict(
+	existing: LoadedDomain,
+	domain: LoadedDomain,
+): DomainMergeConflict {
+	return {
+		domainId: domain.manifest.id,
+		existing,
+		incoming: domain,
+		overlapping: {
+			agents: [...domain.agents.keys()].filter((k) => existing.agents.has(k)),
+			capabilities: [...domain.capabilities].filter((k) =>
+				existing.capabilities.has(k),
+			),
+			skills: [...domain.skills].filter((k) => existing.skills.has(k)),
+			extensions: [...domain.extensions].filter((k) =>
+				existing.extensions.has(k),
+			),
+			prompts: [...domain.prompts].filter((k) => existing.prompts.has(k)),
+		},
+	};
+}
+
+function sortDomains(domains: LoadedDomain[]): LoadedDomain[] {
+	return domains.sort(
+		(a, b) =>
+			Number(Boolean(b.manifest.alwaysActive)) -
+				Number(Boolean(a.manifest.alwaysActive)) ||
+			a.manifest.id.localeCompare(b.manifest.id),
+	);
+}
+
+/** Select activation from the highest-precedence provider before checking active conflicts. */
+function selectActiveDomainIds(
+	providers: readonly LoadedDomain[],
+	requested?: ReadonlySet<string>,
+): ReadonlySet<string> | undefined {
+	if (!requested) return undefined;
+
+	const effective = new Map<
+		string,
+		{ precedence: number; alwaysActive: boolean }
+	>();
+	for (const provider of providers) {
+		const id = provider.manifest.id;
+		const precedence = firstProvenance(provider).precedence;
+		const previous = effective.get(id);
+		effective.set(id, {
+			precedence,
+			alwaysActive:
+				Boolean(provider.manifest.alwaysActive) ||
+				(previous?.precedence === precedence && previous.alwaysActive),
+		});
+	}
+	const active = new Set(requested);
+	for (const [id, policy] of effective) {
+		if (policy.alwaysActive) active.add(id);
+	}
+	return active;
 }
 
 function normalizeActiveDomainIds(
@@ -373,10 +445,15 @@ function mergeDomains(
 	}
 
 	return {
-		manifest: incoming.manifest,
+		manifest: {
+			...incoming.manifest,
+			sessionPolicies:
+				incoming.manifest.sessionPolicies ?? existing.manifest.sessionPolicies,
+		},
 		declarationDiagnostics: [
 			...(existing.declarationDiagnostics ?? []),
 			...(incoming.declarationDiagnostics ?? []),
+			...droppedManifestFlagWarnings(existing, incoming),
 		],
 		portable: incoming.portable,
 		agents: mergedAgents,
@@ -448,4 +525,20 @@ async function indexSubdirectories(dirPath: string): Promise<Set<string>> {
 		}
 	}
 	return names;
+}
+
+function droppedManifestFlagWarnings(
+	existing: LoadedDomain,
+	incoming: LoadedDomain,
+): DomainValidationDiagnostic[] {
+	const source = firstProvenance(incoming);
+	return (["alwaysActive", "resourceFallback", "default"] as const)
+		.filter((flag) => existing.manifest[flag] && !incoming.manifest[flag])
+		.map((flag) => ({
+			domain: incoming.manifest.id,
+			file: join(source.rootDir, "domain.ts"),
+			origin: source.origin,
+			severity: "warning" as const,
+			message: `Higher-precedence manifest dropped ${flag}; declare ${flag}: true to retain it.`,
+		}));
 }

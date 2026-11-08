@@ -250,6 +250,7 @@ describe("resolvePackageSkills", () => {
 			sourceAgent: sourceAgent(["typescript", "plan"]),
 			projectSkills: ["typescript"],
 			domainsDir,
+			fallbackDomains: ["shared"],
 			skillPaths: [alphaSkills, sharedSkills],
 		});
 

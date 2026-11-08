@@ -40,6 +40,7 @@ export function clearPendingSwitch(): void {
 // ============================================================================
 
 interface SharedRegistrySlot {
+	sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider;
 	registry: AgentRegistry;
 	domainContext: string | undefined;
 }
@@ -49,10 +50,12 @@ interface SharedRegistrySlot {
 export function setSharedRegistry(
 	registry: AgentRegistry,
 	domainContext: string | undefined,
+	sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider,
 ): void {
 	globals[REGISTRY_KEY] = {
 		registry,
 		domainContext,
+		sessionPolicies,
 	} satisfies SharedRegistrySlot;
 }
 

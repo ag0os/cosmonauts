@@ -1,3 +1,4 @@
+import { qualityReviewSessionPolicies } from "../../lib/orchestration/quality-review-session-provider.ts";
 /**
  * Tests for the agent-switch extension (/agent and /handoff commands).
  *
@@ -21,7 +22,10 @@ const mocks = vi.hoisted(() => ({
 	extractAgentId: vi.fn(),
 }));
 
-vi.mock("../../lib/agents/runtime-identity.ts", () => ({
+vi.mock("../../lib/agents/runtime-identity.ts", async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import("../../lib/agents/runtime-identity.ts")
+	>()),
 	extractAgentIdFromSystemPrompt: mocks.extractAgentId,
 }));
 
@@ -154,7 +158,11 @@ function setupSharedRegistry(agentIds: string[], domainContext?: string) {
 		resolve: vi.fn(resolveInContext),
 	};
 
-	setSharedRegistry(registry as never, domainContext);
+	setSharedRegistry(
+		registry as never,
+		domainContext,
+		qualityReviewSessionPolicies,
+	);
 	return registry;
 }
 
@@ -683,4 +691,38 @@ describe("agent-switch extension", () => {
 			expect(completions).toEqual([{ value: "planner", label: "planner" }]);
 		});
 	});
+});
+
+test("switching remains available when the consumer omits an interactive denial hook", async () => {
+	const pi = createMockPi();
+	agentSwitchExtension(pi as never);
+	const registry = setupSharedRegistry(["studio/archivist"], "studio");
+	setSharedRegistry(registry as never, "studio");
+	const ctx = createMockCtx();
+	await getCommand(pi, "agent").handler("archivist", ctx);
+	expect(ctx.newSession).toHaveBeenCalled();
+	vi.mocked(ctx.ui.select).mockResolvedValue("studio/archivist");
+	await expect(
+		getCommand(pi, "agent").handler("", ctx),
+	).resolves.toBeUndefined();
+	expect(ctx.ui.select).toHaveBeenCalledWith("Select agent", [
+		"studio/archivist",
+	]);
+	clearRegistrySlot();
+});
+
+test("the picker skips a dangling binding without losing other available agents", async () => {
+	const pi = createMockPi();
+	agentSwitchExtension(pi as never);
+	const registry = setupSharedRegistry(["dangling", "worker"]);
+	registry.resolve.mockImplementation((id: string) => {
+		if (id === "dangling") throw new Error("Missing binding target");
+		return { id };
+	});
+	const ctx = createMockCtx();
+	await expect(
+		getCommand(pi, "agent").handler("", ctx),
+	).resolves.toBeUndefined();
+	expect(ctx.ui.select).toHaveBeenCalledWith("Select agent", ["worker"]);
+	expect(ctx.newSession).not.toHaveBeenCalled();
 });

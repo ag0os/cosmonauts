@@ -2,21 +2,24 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, extname, join, relative } from "node:path";
 import matter from "gray-matter";
+import { splitRole } from "../agents/qualified-role.ts";
 import {
 	buildSkillsOverride,
 	resolveEffectiveProjectSkills,
 } from "../agents/skills.ts";
 import type { AgentDefinition } from "../agents/types.ts";
-import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import type { PackagedSkill, PackageSkillSelection } from "./types.ts";
 
 interface ResolvePackageSkillsOptions {
 	readonly selection: PackageSkillSelection;
 	readonly skillPaths: readonly string[];
-	readonly sourceAgent?: Pick<AgentDefinition, "skills" | "domain">;
+	readonly sourceAgent?: Pick<AgentDefinition, "skills" | "domain"> & {
+		readonly id?: string;
+	};
 	readonly projectSkills?: readonly string[];
 	readonly domainsDir?: string;
+	readonly fallbackDomains?: readonly string[];
 	readonly resolver?: DomainResolver;
 }
 
@@ -64,15 +67,17 @@ export async function resolvePackageSkills(
 	}
 
 	const effectiveProjectSkills = await resolveEffectiveProjectSkills({
+		fallbackDomains: options.fallbackDomains,
 		projectSkills: options.projectSkills,
 		domainsDir: options.domainsDir,
 		resolver: options.resolver,
 		agent: {
 			skills: options.sourceAgent.skills,
-			domain: resolveDefaultDomain({
-				explicitDomain: options.sourceAgent.domain,
-				resolver: options.resolver,
-			}),
+			domain:
+				options.sourceAgent.domain ??
+				(options.sourceAgent.id
+					? splitRole(options.sourceAgent.id).domain
+					: undefined),
 		},
 	});
 	const override = buildSkillsOverride(

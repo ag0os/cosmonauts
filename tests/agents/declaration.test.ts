@@ -341,7 +341,7 @@ describe("consumer agent declarations", () => {
 		).rejects.toThrow("Agent instructions");
 	});
 
-	test("retains the legacy default-domain requester when neither instructions nor resourceDomain is declared", async () => {
+	test("uses declared default resources without granting private skills to a domainless identity", async () => {
 		await mkdir(join(tmp.path, "main", "prompts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, "main", "prompts", "researcher.md"),
@@ -352,7 +352,8 @@ describe("consumer agent declarations", () => {
 				{
 					manifest: {
 						id: "main",
-						description: "Legacy default",
+						description: "Declared default",
+						default: true,
 						internal: { skills: ["secret"] },
 					},
 					portable: false,
@@ -380,7 +381,7 @@ describe("consumer agent declarations", () => {
 					diagnostics: [],
 				} as never)
 				?.skills.map((skill) => skill.name),
-		).toEqual(["secret", "public"]);
+		).toEqual(["public"]);
 	});
 
 	test("validates declarations before loading providers or resolving model requests", async () => {
@@ -469,7 +470,7 @@ describe("consumer agent declarations", () => {
 		).rejects.toThrow("domainsDir is required");
 		await expect(
 			params(definition({ instructions: undefined })),
-		).rejects.toThrow("domainsDir is required");
+		).rejects.toThrow("requires an explicit domain or a declared default");
 	});
 
 	test.each([
@@ -689,6 +690,20 @@ describe("consumer agent declarations", () => {
 			resolver,
 			loadConfig: async () => ({}),
 		});
+		const qualifiedOwner = await buildSessionParams({
+			def: definition({ id: "borrowed/researcher", skills: ["*"] }),
+			cwd: tmp.path,
+			resolver,
+			loadConfig: async () => ({}),
+		});
+		expect(
+			qualifiedOwner
+				.skillsOverride?.({
+					skills: [{ name: "secret" }] as never,
+					diagnostics: [],
+				})
+				?.skills.map((skill) => skill.name),
+		).toEqual(["secret"]);
 		const ownedSkills = owner.skillsOverride?.({
 			skills: [{ name: "secret" }, { name: "public" }],
 			diagnostics: [],

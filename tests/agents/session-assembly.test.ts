@@ -1,3 +1,4 @@
+import { qualityReviewPolicyFor } from "../../lib/orchestration/quality-review-profile.ts";
 /**
  * Tests for the shared session parameter builder (buildSessionParams).
  *
@@ -93,7 +94,7 @@ function makeDomain(
 ): LoadedDomain {
 	const rootDir = join(tmp.path, id);
 	return {
-		manifest: { id, description: `Domain ${id}` },
+		manifest: { id, description: `Domain ${id}`, default: id === "main" },
 		portable: false,
 		agents: new Map(),
 		capabilities: new Set(),
@@ -132,6 +133,8 @@ function makeOptions(
 		def: makeDef(),
 		cwd: tmp.path,
 		domainsDir: tmp.path,
+		fallbackDomains: ["shared"],
+		defaultDomain: "main",
 		frameworkPromptsDir: join(tmp.path, "framework"),
 		...overrides,
 	};
@@ -284,11 +287,11 @@ describe("buildSessionParams", () => {
 			});
 			const ordinary = await buildSessionParams(makeOptions({ def }));
 			const panel = await buildSessionParams(
-				makeOptions({ def, qualityReviewChild: true }),
+				makeOptions({ def, sessionPolicy: qualityReviewPolicyFor(def, true) }),
 			);
-			expect(ordinary.qualityReviewProfile).toBeUndefined();
+			expect(ordinary.sessionPolicy).toBeUndefined();
 			expect(ordinary.tools).toContain("bash");
-			expect(panel.qualityReviewProfile).toBe("reviewer");
+			expect(panel.sessionPolicy?.toolPreset).toBe("readonly");
 			expect(panel.tools).toEqual(["read", "grep", "find", "ls"]);
 		});
 		it('resolves "none" tool set to empty array', async () => {
@@ -616,7 +619,7 @@ describe("buildSessionParams", () => {
 			expect(result?.skills).toEqual([]);
 		});
 
-		it("uses main as the requester domain for domainless skill visibility", async () => {
+		it("keeps domainless skill visibility outside every domain while using declared default resources", async () => {
 			await setupMinimalDomains(tmp.path);
 			const resolver = new DomainResolver(
 				new DomainRegistry([
@@ -738,4 +741,16 @@ describe("buildSessionParams", () => {
 			expect(withoutContext.projectContext).toBe(false);
 		});
 	});
+});
+
+it("a host preset cannot widen an exact declaration tool list", async () => {
+	await setupMinimalDomains(tmp.path);
+	const params = await buildSessionParams(
+		makeOptions({
+			def: makeDef({ tools: ["read"] }),
+			sessionPolicy: { toolPreset: "readonly" },
+		}),
+	);
+	expect(params.tools).toEqual(["read"]);
+	expect(params.exactTools).toBe(true);
 });

@@ -38,7 +38,7 @@ async function writeDomainManifest(
 ): Promise<void> {
 	await writeFile(
 		join(dir, "domain.ts"),
-		`export const manifest = { id: "${id}", description: "Test domain ${id}" ${extras} };\n`,
+		`export const manifest = { id: "${id}", description: "Test domain ${id}", ${id === "shared" ? "resourceFallback: true, alwaysActive: true," : id === "main" ? "default: true," : ""} ${extras.replace(/^,/, "")} };\n`,
 	);
 }
 

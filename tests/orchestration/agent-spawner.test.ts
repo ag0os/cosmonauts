@@ -367,7 +367,11 @@ describe("buildToolAllowlist", () => {
 
 describe("resolveExtensionPaths", () => {
 	const sharedOpts = { domain: "shared", domainsDir: DOMAINS_DIR };
-	const codingOpts = { domain: "coding", domainsDir: DOMAINS_DIR };
+	const codingOpts = {
+		domain: "coding",
+		domainsDir: DOMAINS_DIR,
+		fallbackDomains: ["shared"],
+	};
 
 	// ---- Shared fallback ----
 
@@ -466,6 +470,7 @@ describe("resolveExtensionPaths", () => {
 		const paths = resolveExtensionPaths(["common-ext"], {
 			domain: "custom",
 			domainsDir: tmpDomainsDir,
+			fallbackDomains: ["shared"],
 		});
 		expect(paths).toHaveLength(1);
 		expect(paths[0]).toBe(
@@ -477,6 +482,7 @@ describe("resolveExtensionPaths", () => {
 		const paths = resolveExtensionPaths(["shared-only-ext"], {
 			domain: "custom",
 			domainsDir: tmpDomainsDir,
+			fallbackDomains: ["shared"],
 		});
 		expect(paths).toHaveLength(1);
 		expect(paths[0]).toBe(
@@ -488,6 +494,7 @@ describe("resolveExtensionPaths", () => {
 		const paths = resolveExtensionPaths(["custom-ext"], {
 			domain: "custom",
 			domainsDir: tmpDomainsDir,
+			fallbackDomains: ["shared"],
 		});
 		expect(paths).toHaveLength(1);
 		expect(paths[0]).toBe(
@@ -500,6 +507,7 @@ describe("resolveExtensionPaths", () => {
 			resolveExtensionPaths(["missing"], {
 				domain: "custom",
 				domainsDir: tmpDomainsDir,
+				fallbackDomains: ["shared"],
 			}),
 		).toThrowError(/Unknown extension "missing"/);
 	});

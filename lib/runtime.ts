@@ -1,3 +1,4 @@
+import { selectDefaultDomain } from "./domains/default-domain.ts";
 /**
  * CosmonautsRuntime — centralized bootstrap sequence.
  *
@@ -28,6 +29,7 @@ export { DomainBindingTargetError };
 
 /** Options for creating a CosmonautsRuntime instance. */
 export interface CosmonautsRuntimeOptions {
+	sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
 	chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	defaultModel?: string;
 	workerAgent?: string;
@@ -56,6 +58,7 @@ export interface CosmonautsRuntimeOptions {
  * domain context resolution, and workflow selection.
  */
 export class CosmonautsRuntime {
+	readonly sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
 	readonly chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	readonly defaultModel?: string;
 	readonly workerAgent?: string;
@@ -88,6 +91,7 @@ export class CosmonautsRuntime {
 	readonly domainsDir: string;
 
 	private constructor(fields: {
+		sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
 		chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 		defaultModel?: string;
 		workerAgent?: string;
@@ -104,6 +108,7 @@ export class CosmonautsRuntime {
 		skillPaths: readonly string[];
 		domainsDir: string;
 	}) {
+		this.sessionPolicies = fields.sessionPolicies;
 		this.chainAdapter = fields.chainAdapter;
 		this.defaultModel = fields.defaultModel;
 		this.workerAgent = fields.workerAgent;
@@ -154,6 +159,9 @@ export class CosmonautsRuntime {
 		const domains = await loadDomainsFromSources(sources, undefined, {
 			activeDomainIds,
 		});
+
+		// Reject ambiguous active defaults before building consumer services.
+		selectDefaultDomain(domains);
 
 		// 4. Build the domain registry and validate active binding targets/domains
 		const domainRegistry = new DomainRegistry(domains as LoadedDomain[]);
@@ -231,7 +239,7 @@ function activeDomainIdSet(
 	activeDomains: ProjectConfig["activeDomains"],
 ): ReadonlySet<string> | undefined {
 	if (activeDomains === undefined) return undefined;
-	return new Set(["shared", ...activeDomains]);
+	return new Set(activeDomains);
 }
 
 function runtimeConsumerOptions(
@@ -243,6 +251,7 @@ function runtimeConsumerOptions(
 		selectChainConsumer(domains, context) ?? {};
 	const chainAdapter = options.chainAdapter ?? defaults.chainAdapter;
 	return {
+		sessionPolicies: options.sessionPolicies ?? selectSessionPolicies(domains),
 		chainAdapter,
 		defaultModel:
 			options.defaultModel ??
@@ -261,4 +270,30 @@ function selectChainConsumer(
 	if (selected?.chainAdapter) return selected;
 	const providers = domains.filter((domain) => domain.manifest.chainAdapter);
 	return providers.length === 1 ? providers[0]?.manifest : selected;
+}
+
+/** Session restrictions are independent of chain adapters and context selection. */
+export class AmbiguousSessionPolicyProviderError extends Error {
+	constructor(domains: readonly string[]) {
+		super(
+			`Multiple distinct session-policy providers: ${domains.join(", ")}. Supply an explicit host sessionPolicies option.`,
+		);
+		this.name = "AmbiguousSessionPolicyProviderError";
+	}
+}
+
+function selectSessionPolicies(
+	domains: readonly LoadedDomain[],
+): import("./agents/session-policy.ts").SessionPolicyProvider | undefined {
+	const declaring = domains.filter(
+		(domain) => domain.manifest.sessionPolicies !== undefined,
+	);
+	const providers = new Set(
+		declaring.map((domain) => domain.manifest.sessionPolicies),
+	);
+	if (providers.size > 1)
+		throw new AmbiguousSessionPolicyProviderError(
+			declaring.map((domain) => domain.manifest.id),
+		);
+	return declaring[0]?.manifest.sessionPolicies;
 }

@@ -11,6 +11,14 @@ import type { NamedChain } from "../chains/types.ts";
 
 /** Declarative configuration for a domain, exported from each domain's domain.ts. */
 export interface DomainManifest {
+	/** Interim host policy bridge; becomes a runtime input in step 4. */
+	readonly sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider;
+	/** Resource provider searched after an agent's own and portable domains. */
+	readonly resourceFallback?: boolean;
+	/** Participate even when the consumer narrows its active domain list. */
+	readonly alwaysActive?: boolean;
+	/** Consumer-selected default resource domain and lead; at most one may be active. */
+	readonly default?: boolean;
 	/** Interim content bridge; replaced by consumer runtime inputs in step 4. */
 	readonly chainAdapter?: import("../orchestration/types.ts").ChainAdapter;
 	/** Interim content bridge; replaced by consumer runtime inputs in step 4. */

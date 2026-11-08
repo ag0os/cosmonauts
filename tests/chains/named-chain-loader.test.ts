@@ -1,3 +1,4 @@
+import { selectChain } from "../../lib/orchestration/chain-selection.ts";
 /**
  * Tests for chain loader.
  *
@@ -390,5 +391,30 @@ describe("domain chain merging", () => {
 			sameDomainSource,
 		);
 		expect(internalChain.chain).toBe("maintainer");
+	});
+});
+
+// Shepherd ruling: project configuration retains ungated coding capture until step 6.
+test("project-config chains inherit capture even when an unsupported episodes field says false", async () => {
+	await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+	await writeFile(
+		join(tmp.path, ".cosmonauts", "config.json"),
+		JSON.stringify({
+			chains: {
+				custom: {
+					description: "Project chain",
+					chain: "scribe",
+					episodes: false,
+				},
+			},
+		}),
+	);
+	const chains = await loadNamedChains(tmp.path);
+	expect(chains).toEqual([
+		{ name: "custom", description: "Project chain", chain: "scribe" },
+	]);
+	expect(selectChain("custom", chains, true)).toEqual({
+		steps: [{ name: "scribe" }],
+		episodes: true,
 	});
 });

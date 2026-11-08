@@ -1,3 +1,4 @@
+import { directoryResourcePaths } from "./resource-paths.ts";
 /**
  * Convention-based four-layer prompt assembly for agents.
  *
@@ -6,8 +7,8 @@
  *
  *   Layer 0: consumer base.md (only with explicit frameworkPromptsDir)
  *   Layer 1: domains/{domain}/capabilities/{cap}.md       (per capability)
- *            → three-tier resolution via resolver (domain → portable → shared)
- *              OR two-tier directory fallback when no resolver is provided
+ *            → three-tier resolution via resolver (domain → portable → declared fallback)
+ *              OR declared directory fallback when no resolver is provided
  *   Layer 2: explicit instructions, or domain persona convention
  *   Layer 3: lib/prompts/framework/runtime/sub-agent.md   (if sub-agent mode)
  */
@@ -38,7 +39,9 @@ export interface AssemblePromptsOptions {
 	/** The agent's unqualified ID (e.g. "worker"). */
 	agentId: string;
 	/** The agent's domain (e.g. "coding"). */
-	domain: string;
+	domain?: string;
+	/** Explicit fallback identities for directory-only resource lookup. */
+	fallbackDomains?: readonly string[];
 	/** Capability pack names (e.g. ["tasks", "coding-readwrite", "spawning"]). */
 	capabilities: readonly string[];
 	/** Absolute path to the domains/ directory. Required when no resolver is provided. */
@@ -50,7 +53,7 @@ export interface AssemblePromptsOptions {
 	/**
 	 * Optional domain resolver for three-tier capability lookup
 	 * (agent domain → portable domains → shared). When omitted,
-	 * falls back to two-tier directory-based resolution (domain → shared)
+	 * falls back to declared directory-based resolution (domain → declared fallback)
 	 * using domainsDir (which must be provided in that case).
 	 */
 	resolver?: DomainResolver;
@@ -96,12 +99,12 @@ export async function assemblePrompts(
 
 	// Layer 1: Capabilities
 	// With resolver: three-tier (agent domain → portable domains → shared).
-	// Without resolver: two-tier directory-based (domain → shared).
+	// Without resolver: declared directory-based (domain → declared fallback).
 	for (const cap of capabilities) {
 		const content = await loadCapability(cap, options);
 		if (content === null) {
 			throw new Error(
-				`Capability "${cap}" not found in domain "${domain}" or shared`,
+				`Capability "${cap}" not found in domain "${domain}" or declared fallback providers`,
 			);
 		}
 		parts.push(content);
@@ -132,10 +135,12 @@ async function loadCapability(
 		const path = options.resolver.resolveCapabilityPath(cap, options.domain);
 		return path ? loadPromptFile(path) : null;
 	}
-	const dir = options.domainsDir as string;
 	return loadWithFallback(
-		join(dir, options.domain, "capabilities", `${cap}.md`),
-		join(dir, "shared", "capabilities", `${cap}.md`),
+		directoryResourcePaths({
+			...options,
+			kind: "capabilities",
+			filename: `${cap}.md`,
+		}),
 	);
 }
 
@@ -150,15 +155,23 @@ async function loadPersona(options: AssemblePromptsOptions): Promise<string> {
 					);
 		return stripAgentIdentityMarkers(content);
 	}
-	const path =
-		options.resolver?.resolvePersonaPath(options.agentId, options.domain) ??
-		join(
-			options.domainsDir as string,
-			options.domain,
-			"prompts",
-			`${options.agentId}.md`,
+	const resolved = options.resolver?.resolvePersonaPath(
+		options.agentId,
+		options.domain,
+	);
+	if (resolved) return loadPromptFile(resolved);
+	const content = await loadWithFallback(
+		directoryResourcePaths({
+			...options,
+			kind: "prompts",
+			filename: `${options.agentId}.md`,
+		}),
+	);
+	if (content === null)
+		throw new Error(
+			`Persona prompt for agent "${options.agentId}" not found in declared resource providers.`,
 		);
-	return loadPromptFile(path);
+	return content;
 }
 
 // ============================================================================
@@ -181,21 +194,15 @@ async function loadPromptFile(filePath: string): Promise<string> {
  * @returns File content (frontmatter-stripped), or null if neither exists
  */
 async function loadWithFallback(
-	primaryPath: string,
-	fallbackPath: string,
+	paths: readonly string[],
 ): Promise<string | null> {
-	try {
-		return await loadPromptFile(primaryPath);
-	} catch (err: unknown) {
-		if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+	for (const path of paths) {
+		try {
+			return await loadPromptFile(path);
+		} catch (error: unknown) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		}
 	}
-
-	try {
-		return await loadPromptFile(fallbackPath);
-	} catch (err: unknown) {
-		if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-	}
-
 	return null;
 }
 

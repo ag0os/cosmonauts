@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { basename, dirname } from "node:path";
 import type {
 	AgentSession,
@@ -7,6 +6,10 @@ import type {
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
+import {
+	getSessionPolicy,
+	type SessionSpawnPolicy,
+} from "../../agents/session-policy.ts";
 import type { AgentDefinition } from "../../agents/types.ts";
 import {
 	activityBus,
@@ -14,7 +17,6 @@ import {
 } from "../../orchestration/activity-bus.ts";
 import {
 	extractAssistantText,
-	finalAssistantEvidence,
 	summarizeAssistantText,
 } from "../../orchestration/assistant-text.ts";
 import type { SpawnActivityEvent } from "../../orchestration/message-bus.ts";
@@ -23,17 +25,6 @@ import {
 	registerPlanContext,
 	removePlanContext,
 } from "../../orchestration/plan-session-context.ts";
-import {
-	assertQualityReviewModelIdentity,
-	buildQualityReviewPanelPrompt,
-	getQualityReviewSession,
-	type QualityReviewSessionContext,
-} from "../../orchestration/quality-review-context.ts";
-import {
-	isQualityReviewReference,
-	launchQualityReview,
-} from "../../orchestration/quality-review-launch.ts";
-import { qualityReviewPanelModel } from "../../orchestration/quality-review-models.ts";
 import { createAgentSessionFromDefinition } from "../../orchestration/session-factory.ts";
 import {
 	awaitNextCompletionMessages,
@@ -122,7 +113,7 @@ interface DetachedChildSessionParams extends ChildActivityBase {
 	pi: ExtensionAPI;
 	resolvedRole?: string;
 	resolvedModel?: { provider: string; id: string };
-	qualityContext?: QualityReviewSessionContext;
+	spawnPolicy?: SessionSpawnPolicy;
 }
 
 interface ChildPromptRequest {
@@ -204,21 +195,20 @@ async function runDetachedChildSession(
 			...result,
 			stats: captureLineageStats(params, startMs),
 		};
-		await recordReviewerResult(params);
+		await params.spawnPolicy?.onCompleted?.(params);
 		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
-		params.qualityContext?.integrityFailures.push(message);
+		params.spawnPolicy?.onFailure?.(message);
 		result = {
 			role: params.role,
 			startedAt,
 			outcome: "failed",
 			summary: message,
 		};
-		params.qualityContext?.activeSpawns.delete(params.spawnId);
 		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
 	} finally {
-		params.qualityContext?.activeSpawns.delete(params.spawnId);
+		params.spawnPolicy?.onSettled?.(params.spawnId);
 		unsubscribeActivity?.();
 		removeTracker(session.sessionId);
 		sessionDepths.delete(session.sessionId);
@@ -230,38 +220,6 @@ async function runDetachedChildSession(
 			await persistChildLineage(params, result, finalMessages);
 		}
 	}
-}
-
-async function recordReviewerResult(
-	params: DetachedChildSessionParams,
-): Promise<void> {
-	const { qualityContext, session, resolvedRole, resolvedModel } = params;
-	if (
-		!qualityContext ||
-		qualityContext.assessmentActive === false ||
-		!qualityContext.artifactSink.reviewersOpen()
-	)
-		return;
-	if (!resolvedRole || !resolvedModel)
-		throw new Error("Missing reviewer host correlation");
-	assertQualityReviewModelIdentity(resolvedModel, session.model);
-	const lens = resolvedRole.replace(/^coding\//, "");
-	// The spawn summary may fall back to earlier or synthesized text; evidence may not.
-	const evidence = finalAssistantEvidence(session.messages);
-	if ("failure" in evidence)
-		throw new Error(`Reviewer ${lens} evidence rejected: ${evidence.failure}`);
-	await qualityContext.artifactSink.writeReviewer({
-		runId: qualityContext.runId,
-		lens,
-		spawnId: params.spawnId,
-		sessionId: session.sessionId,
-		resolvedRole,
-		resolvedModel,
-		outcome: "success",
-		digest: createHash("sha256").update(evidence.text).digest("hex"),
-		fullText: evidence.text,
-	});
-	qualityContext.activeSpawns.delete(params.spawnId);
 }
 
 function subscribeChildActivity(
@@ -486,8 +444,7 @@ export function registerSpawnTool(
 		description: "Spawn a single agent session with a given role and prompt",
 		parameters: Type.Object({
 			role: Type.String({
-				description:
-					"Agent role (planner, task-manager, coordinator, worker, quality-manager, reviewer, fixer)",
+				description: "Declared agent role",
 			}),
 			prompt: Type.String({ description: "The prompt to send to the agent" }),
 			model: Type.Optional(Type.String({ description: "Model override" })),
@@ -516,11 +473,10 @@ export function registerSpawnTool(
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
 			const parentSessionId = ctx.sessionManager.getSessionId();
-			const qualityContext = getQualityReviewSession(parentSessionId);
-			const baseRuntime = qualityContext?.baseRuntime;
-			if (qualityContext && !baseRuntime)
-				throw new Error("Quality review base runtime is missing");
-			const runtime = baseRuntime ?? (await getRuntime(ctx.cwd));
+			const boundPolicy = getSessionPolicy(parentSessionId)?.spawn;
+			const runtime = boundPolicy?.runtime?.() ?? (await getRuntime(ctx.cwd));
+			const spawnPolicy =
+				boundPolicy ?? runtime.sessionPolicies?.spawnPolicy?.(parentSessionId);
 			const resolved = () => {
 				const systemPrompt = ctx.getSystemPrompt();
 				const callerRole = extractAgentIdFromSystemPrompt(systemPrompt);
@@ -626,74 +582,27 @@ export function registerSpawnTool(
 			if (authorization.kind !== "resolved") return authorization;
 			const { callerRole, callerDef, targetResolution, targetDef } =
 				authorization;
-			const panelPrompt = qualityContext
-				? buildQualityReviewPanelPrompt(qualityContext, params.prompt)
-				: params.prompt;
 			const resolvedTargetRole =
 				targetResolution.reference.resolved.qualifiedId;
+			const policyRequest = {
+				callerRole,
+				resolvedTargetRole,
+				prompt: params.prompt,
+				model: params.model,
+				thinkingLevel: params.thinkingLevel,
+			};
 			const checkAuthorization = () => {
-				if (callerRole === "coding/quality-manager" && !qualityContext) {
+				const denial = spawnPolicy?.authorize(policyRequest);
+				if (denial)
 					return {
 						content: [
-							{
-								type: "text" as const,
-								text: "spawn_agent denied: quality review context missing",
-							},
+							{ type: "text" as const, text: `spawn_agent denied: ${denial}` },
 						],
 						details: {
 							role: params.role,
 							status: "denied",
 						} as SpawnProgressDetails,
 					};
-				}
-				if (
-					qualityContext &&
-					(callerRole !== "coding/quality-manager" ||
-						![
-							"coding/reviewer",
-							"coding/security-reviewer",
-							"coding/performance-reviewer",
-							"coding/ux-reviewer",
-						].includes(resolvedTargetRole) ||
-						!qualityContext.allowedLenses.has(
-							resolvedTargetRole.replace(/^coding\//, ""),
-						) ||
-						params.model !== undefined ||
-						params.thinkingLevel !== undefined)
-				) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: "spawn_agent denied: quality panel permits only configured reviewer lenses",
-							},
-						],
-						details: {
-							role: params.role,
-							status: "denied",
-						} as SpawnProgressDetails,
-					};
-				}
-				if (qualityContext) {
-					const lens = resolvedTargetRole.replace(/^coding\//, "");
-					if (qualityContext.attemptedLenses.has(lens)) {
-						qualityContext.integrityFailures.push(
-							`Duplicate reviewer spawn: ${lens}`,
-						);
-						return {
-							content: [
-								{
-									type: "text" as const,
-									text: `spawn_agent denied: duplicate reviewer ${lens}`,
-								},
-							],
-							details: {
-								role: params.role,
-								status: "denied",
-							} as SpawnProgressDetails,
-						};
-					}
-				}
 
 				if (
 					authorizeAgentStart({
@@ -778,10 +687,7 @@ export function registerSpawnTool(
 				const registerChild = () => {
 					try {
 						tracker.register(spawnId, params.role, childDepth);
-						qualityContext?.activeSpawns.add(spawnId);
-						qualityContext?.attemptedLenses.add(
-							resolvedTargetRole.replace(/^coding\//, ""),
-						);
+						spawnPolicy?.onRegistered?.(spawnId, resolvedTargetRole);
 					} catch (err: unknown) {
 						const reason = err instanceof Error ? err.message : String(err);
 						return {
@@ -812,25 +718,26 @@ export function registerSpawnTool(
 			// artifacts land in the same missions/sessions/<planSlug>/ directory.
 			const planSlug = getPlanSlugForSession(parentSessionId);
 			const launchSpawn = () => {
-				if (isQualityReviewReference(targetResolution.reference)) {
-					void launchQualityReview({
+				const delegated = runtime.sessionPolicies?.launchTarget?.(
+					targetResolution.reference,
+					{
 						projectRoot: ctx.cwd,
 						operatorNote: params.prompt,
 						planSlug,
 						signal: _signal,
-					})
+					},
+				);
+				if (delegated) {
+					void delegated
 						.then((review) => {
-							const summary = `QM run ${review.ref.runId}: ${review.stepResult.summary}`;
+							const summary = review.summary;
 							settleSpawnTracker(
 								tracker,
 								spawnId,
 								{
 									role: params.role,
 									startedAt: new Date().toISOString(),
-									outcome:
-										review.stepResult.outcome === "success"
-											? "success"
-											: "failed",
+									outcome: review.outcome === "success" ? "success" : "failed",
 									summary,
 								},
 								pi,
@@ -866,29 +773,31 @@ export function registerSpawnTool(
 					};
 				}
 
-				const spawnConfig = {
+				const childPolicy = spawnPolicy?.prepare?.(policyRequest) ?? {
+					cwd: ctx.cwd,
+					prompt: params.prompt,
+					model: params.model,
+					sessionPolicy: runtime.sessionPolicies?.forAgent(targetDef),
+				};
+				const buildChildConfig = () => ({
 					role: params.role,
 					agentReference: targetResolution.reference,
 					domainContext: runtime.domainContext,
-					cwd: qualityContext?.workspaceRoot ?? ctx.cwd,
-					prompt: panelPrompt,
-					model: qualityContext
-						? qualityReviewPanelModel(
-								resolvedTargetRole,
-								qualityContext.reviewerModel,
-							)
-						: params.model,
+					cwd: childPolicy.cwd,
+					prompt: childPolicy.prompt,
+					model: childPolicy.model ?? params.model,
 					thinkingLevel: params.thinkingLevel,
 					runtimeContext: params.runtimeContext,
 					projectSkills: runtime.projectSkills,
 					skillPaths: [...runtime.skillPaths],
 					spawnDepth: childDepth,
 					parentSessionId,
-					...(qualityContext
-						? { qualityReviewContext: qualityContext, qualityReviewChild: true }
-						: {}),
+					sessionPolicy:
+						childPolicy?.sessionPolicy ??
+						runtime.sessionPolicies?.forAgent(targetDef),
 					...(planSlug !== undefined && { planSlug }),
-				};
+				});
+				const spawnConfig = buildChildConfig();
 
 				// Launch as a detached background Promise — no await
 				void createAgentSessionFromDefinition(
@@ -907,8 +816,8 @@ export function registerSpawnTool(
 							role: params.role,
 							resolvedRole: resolvedTargetRole,
 							resolvedModel,
-							qualityContext,
-							prompt: panelPrompt,
+							spawnPolicy,
+							prompt: spawnConfig.prompt,
 							planSlug,
 							tracker,
 							pi,
@@ -919,7 +828,7 @@ export function registerSpawnTool(
 						// createAgentSessionFromDefinition() itself failed
 						const message = err instanceof Error ? err.message : String(err);
 						tracker.fail(spawnId, message);
-						qualityContext?.activeSpawns.delete(spawnId);
+						spawnPolicy?.onSettled?.(spawnId);
 						if (tracker.deliveryMode === "self") {
 							sendSpawnCompletion(
 								pi,

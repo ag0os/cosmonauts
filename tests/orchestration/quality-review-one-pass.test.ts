@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { buildQualityReviewPanelPrompt } from "../../lib/orchestration/quality-review-context.ts";
 import type { SpawnConfig } from "../../lib/orchestration/types.ts";
+import { reviewContextForPolicy } from "../helpers/quality-review-policy.ts";
 
 const mocks = vi.hoisted(() => ({
 	runtimeCreate: vi.fn(),
@@ -83,7 +84,7 @@ it("assesses one triaged panel before running one configured check", async () =>
 	mocks.createPiSpawner.mockReturnValue({
 		spawn: async (config: SpawnConfig) => {
 			spawns.push(config.role);
-			const context = config.qualityReviewContext;
+			const context = reviewContextForPolicy(config.sessionPolicy);
 			if (!context) throw new Error("missing quality context");
 			const exposed = `${config.prompt}\n${buildQualityReviewPanelPrompt(context, "Review the scope")}`;
 			expect(exposed).not.toContain(projectRoot);

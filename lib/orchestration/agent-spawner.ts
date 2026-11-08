@@ -14,7 +14,10 @@ import type {
 	AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
-import type { AnalysisFinding } from "../analysis/types.ts";
+import {
+	registerSessionPolicy,
+	removeSessionPolicy,
+} from "../agents/session-policy.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { appendSession } from "../sessions/manifest.ts";
 import {
@@ -33,10 +36,6 @@ import {
 	registerPlanContext,
 	removePlanContext,
 } from "./plan-session-context.ts";
-import {
-	registerQualityReviewSession,
-	removeQualityReviewSession,
-} from "./quality-review-context.ts";
 import { createAgentSessionFromDefinition } from "./session-factory.ts";
 import {
 	awaitNextCompletionMessages,
@@ -77,6 +76,7 @@ export { createAgentSessionFromDefinition } from "./session-factory.ts";
 
 /** Options for {@link createPiSpawner}. */
 export interface PiSpawnerOptions {
+	sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider;
 	/** Shared message bus for parallel spawn coordination. */
 	bus?: MessageBus;
 	/** Per-spawn completion wait timeout in ms (default: 5 minutes). */
@@ -126,7 +126,16 @@ export function createPiSpawner(
 	const spawnTimeoutMs = options?.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
 
 	return {
-		async spawn(config: SpawnConfig): Promise<SpawnResult> {
+		async spawn(input: SpawnConfig): Promise<SpawnResult> {
+			const definition = resolveSpawnAgent(registry, input)?.definition;
+			const config = {
+				...input,
+				sessionPolicy:
+					input.sessionPolicy ??
+					(definition
+						? options?.sessionPolicies?.forAgent(definition)
+						: undefined),
+			};
 			if (config.signal?.aborted) {
 				return toSpawnFailure(new Error("Aborted before spawn"));
 			}
@@ -192,11 +201,9 @@ async function prepareSpawnSession(
 		domainsDir,
 		resolver,
 	);
-	if (config.qualityReviewContext)
-		registerQualityReviewSession(
-			session.sessionId,
-			config.qualityReviewContext,
-		);
+	if (config.sessionPolicy)
+		registerSessionPolicy(session.sessionId, config.sessionPolicy);
+	config.sessionPolicy?.onCreated?.(session);
 	emitSpawnEvent(config, {
 		type: "agent_resolved",
 		sessionId: session.sessionId,
@@ -240,15 +247,7 @@ async function runSpawnSession(
 			const messages = await cancellation.waitFor(
 				awaitNextCompletionMessages(tracker, spawnTimeoutMs),
 			);
-			if (
-				config.qualityReviewContext &&
-				messages.some((message) =>
-					message.includes(`Timed out after ${spawnTimeoutMs}ms`),
-				)
-			)
-				config.qualityReviewContext.integrityFailures.push(
-					`Panel completion timed out after ${spawnTimeoutMs}ms`,
-				);
+			config.sessionPolicy?.onCompletionWait?.(messages, spawnTimeoutMs);
 			for (const message of messages) {
 				await cancellation.waitFor(session.prompt(message));
 			}
@@ -323,7 +322,8 @@ function cleanupSpawnSession(
 
 	prepared.unsubscribe?.();
 	removeTracker(session.sessionId);
-	removeQualityReviewSession(session.sessionId);
+	config.sessionPolicy?.onDisposed?.(session.sessionId);
+	removeSessionPolicy(session.sessionId);
 	if (config.planSlug) {
 		removePlanContext(session.sessionId);
 	}
@@ -340,7 +340,7 @@ async function persistPlanLinkedSpawn(
 	config: SpawnConfig,
 ): Promise<void> {
 	if (!config.planSlug || !prepared.sessionFilePath) {
-		if (config.qualityReviewContext && prepared.sessionFilePath) {
+		if (config.sessionPolicy?.retainTranscript && prepared.sessionFilePath) {
 			const directory = dirname(prepared.sessionFilePath);
 			const name = basename(prepared.sessionFilePath).replace(
 				/\.jsonl$/,
@@ -445,7 +445,7 @@ function subscribeToSpawnEvents(
 	return session.subscribe((event) => {
 		const mapped = mapSessionEvent(
 			event,
-			config.qualityReviewContext !== undefined,
+			config.sessionPolicy?.observeToolResult,
 		);
 		if (!mapped) {
 			return;
@@ -500,77 +500,6 @@ type SpawnEventPayload =
 			errorMessage?: string;
 	  };
 
-function analysisGateObservation(toolName: string, result: unknown): unknown {
-	if (toolName !== "analysis_status" && toolName !== "analysis_audit")
-		return undefined;
-	const details =
-		typeof result === "object" && result !== null && "details" in result
-			? result.details
-			: undefined;
-	if (typeof details !== "object" || details === null) return { details: {} };
-	if (toolName === "analysis_status") return analysisStatusObservation(details);
-	return analysisAuditObservation(details);
-}
-
-function analysisStatusObservation(details: object): unknown {
-	const bindings =
-		"capabilities" in details && Array.isArray(details.capabilities)
-			? details.capabilities.filter(
-					(binding: unknown) =>
-						typeof binding === "object" &&
-						binding !== null &&
-						"capability" in binding &&
-						binding.capability === "changed-scope-audit",
-				)
-			: [];
-	return {
-		details: {
-			capabilities: bindings.map((binding: { state?: unknown }) => ({
-				capability: "changed-scope-audit",
-				state: binding.state,
-			})),
-		},
-	};
-}
-
-function analysisAuditObservation(details: object): unknown {
-	const scope =
-		"scope" in details &&
-		typeof details.scope === "object" &&
-		details.scope !== null
-			? details.scope
-			: undefined;
-	return {
-		details: {
-			kind: "kind" in details ? details.kind : undefined,
-			capability: "capability" in details ? details.capability : undefined,
-			scope: { base: scope && "base" in scope ? scope.base : undefined },
-			verdict: "verdict" in details ? details.verdict : undefined,
-			...auditFindingsObservation(details),
-		},
-	};
-}
-
-function auditFindingsObservation(details: object): {
-	findings?: AnalysisFinding[];
-} {
-	return "findings" in details && Array.isArray(details.findings)
-		? { findings: details.findings.map(auditFindingObservation) }
-		: {};
-}
-
-/** The fields host report lines cite; provider details stay in the QM session. */
-function auditFindingObservation(finding: AnalysisFinding): AnalysisFinding {
-	return {
-		id: finding.id,
-		category: finding.category,
-		severity: finding.severity,
-		message: finding.message,
-		locations: finding.locations.map(({ path, line }) => ({ path, line })),
-		actions: finding.actions.map(({ description }) => ({ description })),
-	};
-}
-
 function attachSessionId(
 	event: SpawnEventPayload,
 	sessionId: string,
@@ -584,7 +513,7 @@ function attachSessionId(
  */
 function mapSessionEvent(
 	event: AgentSessionEvent,
-	captureAnalysisResults: boolean,
+	observeToolResult: import("../agents/session-policy.ts").SessionPolicy["observeToolResult"],
 ): SpawnEventPayload | undefined {
 	switch (event.type) {
 		case "turn_start":
@@ -599,7 +528,7 @@ function mapSessionEvent(
 				...(event.args !== undefined && { args: event.args }),
 			};
 		case "tool_execution_end":
-			return mapToolEndEvent(event, captureAnalysisResults);
+			return mapToolEndEvent(event, observeToolResult);
 		case "compaction_start":
 			return {
 				type: "compaction_start",
@@ -622,11 +551,12 @@ function mapSessionEvent(
 
 function mapToolEndEvent(
 	event: Extract<AgentSessionEvent, { type: "tool_execution_end" }>,
-	captureAnalysisResults: boolean,
+	observeToolResult: import("../agents/session-policy.ts").SessionPolicy["observeToolResult"],
 ): SpawnEventPayload {
-	const observation = captureAnalysisResults
-		? analysisGateObservation(event.toolName as string, event.result)
-		: undefined;
+	const observation = observeToolResult?.(
+		event.toolName as string,
+		event.result,
+	);
 	return {
 		type: "tool_execution_end",
 		toolName: event.toolName as string,

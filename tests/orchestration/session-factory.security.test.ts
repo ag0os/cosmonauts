@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { qualityReviewPolicyFor } from "../../lib/orchestration/quality-review-profile.ts";
+import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
 
 const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
@@ -147,21 +149,24 @@ describe("session-factory planSlug validation", () => {
 					role: "coding/reviewer",
 					cwd: workspaceRoot,
 					prompt: "review",
-					qualityReviewChild: true,
-					qualityReviewContext: {
-						runId: "one",
-						workspaceRoot,
-						baseProjectRoot,
-						materialsRoot: join(root, "materials"),
-						base: "a".repeat(40),
-						changedFiles: [],
-						hostRunStoreRoot,
-						artifactSink: {} as never,
-						activeSpawns: new Set(),
-						allowedLenses: new Set(["reviewer"]),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							runId: "one",
+							workspaceRoot,
+							baseProjectRoot,
+							materialsRoot: join(root, "materials"),
+							base: "a".repeat(40),
+							changedFiles: [],
+							hostRunStoreRoot,
+							artifactSink: {} as never,
+							activeSpawns: new Set(),
+							allowedLenses: new Set(["reviewer"]),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
+						},
+						true,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -209,20 +214,23 @@ describe("session-factory planSlug validation", () => {
 					role: "coding/quality-manager",
 					cwd: "/tmp/review-clone",
 					prompt: "review",
-					qualityReviewContext: {
-						hostRunStoreRoot,
-						workspaceRoot: "/tmp/review-clone",
-						materialsRoot: "/tmp/materials",
-						base: "a".repeat(40),
-						changedFiles: [],
-						runId: "one",
-						analysisConsent: authorization,
-						artifactSink: {} as never,
-						activeSpawns: new Set(),
-						allowedLenses: new Set(["reviewer"]),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							hostRunStoreRoot,
+							workspaceRoot: "/tmp/review-clone",
+							materialsRoot: "/tmp/materials",
+							base: "a".repeat(40),
+							changedFiles: [],
+							runId: "one",
+							analysisConsent: authorization,
+							artifactSink: {} as never,
+							activeSpawns: new Set(),
+							allowedLenses: new Set(["reviewer"]),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
+						},
+						false,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -230,7 +238,7 @@ describe("session-factory planSlug validation", () => {
 				additionalExtensionPaths?: string[];
 				extensionFactories?: unknown[];
 			};
-			expect(options.additionalExtensionPaths).toBeUndefined();
+			expect(options.additionalExtensionPaths).toEqual([]);
 			expect(options.extensionFactories).toHaveLength(1);
 		} finally {
 			await rm(hostRunStoreRoot, { recursive: true, force: true });
@@ -290,22 +298,25 @@ describe("session-factory planSlug validation", () => {
 					cwd: workspaceRoot,
 					prompt: "review",
 					skillPaths: [join(sourceRoot, suffix), suffix],
-					qualityReviewChild: true,
-					qualityReviewContext: {
-						runId: "qm-skills",
-						sourceRoot,
-						baseProjectRoot,
-						workspaceRoot,
-						materialsRoot: workspaceRoot,
-						base: "a".repeat(40),
-						changedFiles: [],
-						hostRunStoreRoot,
-						artifactSink: {} as never,
-						activeSpawns: new Set(),
-						allowedLenses: new Set(["reviewer"]),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							runId: "qm-skills",
+							sourceRoot,
+							baseProjectRoot,
+							workspaceRoot,
+							materialsRoot: workspaceRoot,
+							base: "a".repeat(40),
+							changedFiles: [],
+							hostRunStoreRoot,
+							artifactSink: {} as never,
+							activeSpawns: new Set(),
+							allowedLenses: new Set(["reviewer"]),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
+						},
+						true,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -497,7 +508,16 @@ describe("session-factory planSlug validation", () => {
 		});
 		await createAgentSessionFromDefinition(
 			TEST_AGENT,
-			{ role: "quality-manager", cwd: "/tmp/project", prompt: "review" },
+			{
+				role: "quality-manager",
+				cwd: "/tmp/project",
+				prompt: "review",
+				sessionPolicy: qualityReviewPolicyFor({
+					...TEST_AGENT,
+					id: "quality-manager",
+					domain: "coding",
+				}),
+			},
 			"/tmp/domains",
 		);
 		expect(mocks.createAgentSession.mock.calls[0]?.[0].tools).toEqual([
@@ -530,20 +550,23 @@ describe("session-factory planSlug validation", () => {
 					role: "coding/reviewer",
 					cwd: "/tmp/review-clone",
 					prompt: "review",
-					qualityReviewChild: true,
-					qualityReviewContext: {
-						hostRunStoreRoot,
-						workspaceRoot: "/tmp/review-clone",
-						materialsRoot: "/tmp/materials",
-						base: "a".repeat(40),
-						changedFiles: [],
-						runId: "one",
-						artifactSink: {} as never,
-						activeSpawns: new Set(),
-						allowedLenses: new Set(["reviewer"]),
-						attemptedLenses: new Set(),
-						integrityFailures: [],
-					},
+
+					sessionPolicy: createQualityReviewSessionPolicy(
+						{
+							hostRunStoreRoot,
+							workspaceRoot: "/tmp/review-clone",
+							materialsRoot: "/tmp/materials",
+							base: "a".repeat(40),
+							changedFiles: [],
+							runId: "one",
+							artifactSink: {} as never,
+							activeSpawns: new Set(),
+							allowedLenses: new Set(["reviewer"]),
+							attemptedLenses: new Set(),
+							integrityFailures: [],
+						},
+						true,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -604,7 +627,10 @@ describe("session-factory planSlug validation", () => {
 					role: "quality-manager",
 					cwd: workspaceRoot,
 					prompt: "review",
-					qualityReviewContext,
+					sessionPolicy: createQualityReviewSessionPolicy(
+						qualityReviewContext,
+						false,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -614,8 +640,11 @@ describe("session-factory planSlug validation", () => {
 					role: "coding/reviewer",
 					cwd: workspaceRoot,
 					prompt: "review",
-					qualityReviewChild: true,
-					qualityReviewContext,
+
+					sessionPolicy: createQualityReviewSessionPolicy(
+						qualityReviewContext,
+						true,
+					),
 				},
 				"/tmp/domains",
 			);
@@ -707,7 +736,10 @@ describe("session-factory planSlug validation", () => {
 					...config,
 					cwd: workspaceRoot,
 					prompt: "review",
-					qualityReviewContext,
+					sessionPolicy: createQualityReviewSessionPolicy(
+						qualityReviewContext,
+						config.qualityReviewChild,
+					),
 				});
 				expect(result.success, result.error).toBe(true);
 			}
@@ -730,4 +762,104 @@ describe("session-factory planSlug validation", () => {
 			await rm(hostRunStoreRoot, { recursive: true, force: true });
 		}
 	});
+});
+
+test("applies a consumer host policy to an arbitrary declared actor", async () => {
+	mocks.createAgentSession.mockResolvedValue({
+		session: { model: { provider: "test", id: "model" } },
+	});
+	const settings = { source: "consumer-settings" };
+	const loadConfig = vi.fn();
+	const policy = {
+		toolPreset: "readonly" as const,
+		filterTools: vi.fn((tools: readonly string[]) =>
+			tools.filter((name) => name === "read"),
+		),
+		loadConfig,
+		prepareSkills: vi.fn(async () => ["/consumer/skills"]),
+		resourceOptions: vi.fn(async () => ({
+			cwd: "/hostile",
+			noExtensions: false,
+			noSkills: false,
+			settingsManager: { source: "hostile" },
+			appendSystemPrompt: ["host appendix"],
+			additionalExtensionPaths: ["/policy/provider"],
+			agentsFilesOverride: () => ({ agentsFiles: [] }),
+		})),
+		settingsManager: () => settings,
+	};
+	mocks.buildSessionParams.mockResolvedValue({
+		promptContent: "consumer persona",
+		tools: ["read", "bash"],
+		extensionPaths: [],
+		extensionFactories: [],
+		knowledgeSurfaceEnabled: false,
+		projectContext: true,
+		model: { provider: "test", id: "model" },
+	});
+	await createAgentSessionFromDefinition(
+		{ ...TEST_AGENT, id: "archivist", domain: "studio" },
+		{
+			role: "studio/archivist",
+			cwd: "/consumer",
+			prompt: "catalogue",
+			sessionPolicy: policy,
+			skillPaths: ["/request/skills"],
+			compaction: { enabled: true },
+		},
+		"/consumer/providers",
+	);
+	expect(policy.prepareSkills).toHaveBeenCalledWith(
+		["/request/skills"],
+		"/consumer/providers",
+	);
+	expect(mocks.buildSessionParams.mock.calls.at(-1)?.[0]).toMatchObject({
+		sessionPolicy: policy,
+		loadConfig,
+		skillPaths: ["/consumer/skills"],
+	});
+	expect(policy.resourceOptions).toHaveBeenCalledWith(
+		expect.objectContaining({ promptContent: "consumer persona" }),
+		"/consumer/providers",
+	);
+	expect(mocks.loaderOptions.mock.calls.at(-1)?.[0]).toMatchObject({
+		appendSystemPrompt: ["host appendix"],
+		additionalExtensionPaths: ["/policy/provider"],
+		cwd: "/consumer",
+		noExtensions: true,
+		noSkills: true,
+		settingsManager: settings,
+	});
+	expect(mocks.createAgentSession.mock.calls.at(-1)?.[0]).toMatchObject({
+		tools: ["read"],
+		settingsManager: settings,
+	});
+});
+
+test("ordinary session context opt-out is independent of whether a host policy exists", async () => {
+	mocks.createAgentSession.mockResolvedValue({
+		session: { model: { provider: "test", id: "model" } },
+	});
+	for (const projectContext of [false, true]) {
+		mocks.buildSessionParams.mockResolvedValue({
+			promptContent: "ordinary",
+			tools: [],
+			extensionPaths: [],
+			extensionFactories: [],
+			knowledgeSurfaceEnabled: false,
+			projectContext,
+			model: { provider: "test", id: "model" },
+		});
+		await createAgentSessionFromDefinition(
+			TEST_AGENT,
+			{ role: TEST_AGENT.id, cwd: "/consumer", prompt: "work" },
+			"/consumer/domains",
+		);
+		const loader = mocks.loaderOptions.mock.calls.at(-1)?.[0];
+		if (projectContext) expect(loader.agentsFilesOverride).toBeUndefined();
+		else {
+			expect(loader.agentsFilesOverride).toBeTypeOf("function");
+			expect(loader.agentsFilesOverride()).toEqual({ agentsFiles: [] });
+		}
+	}
 });
