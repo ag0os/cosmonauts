@@ -1,7 +1,9 @@
+import { join } from "node:path";
 import { beforeEach, expect, test, vi } from "vitest";
 import { createToollessPiSession } from "../../cli/pi-session.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { setRuntimeHost } from "../../lib/runtime-host.ts";
+import { useTempDir } from "../helpers/fs.ts";
 
 const mocks = vi.hoisted(() => ({
 	create: vi.fn(),
@@ -63,4 +65,25 @@ test("tool-less sessions fail before Pi setup when no model is supplied", async 
 		}),
 	).rejects.toThrow("No model configured");
 	expect(mocks.runtime).not.toHaveBeenCalled();
+});
+
+const tmp = useTempDir("cli-model-host-");
+test("tool-less Pi sessions resolve the content-free CLI host's explicit fallback", async () => {
+	const { createCliRuntime, CLI_DEFAULT_MODEL } = await import(
+		"../../cli/host-runtime.ts"
+	);
+	vi.stubEnv("HOME", join(tmp.path, "home"));
+	try {
+		setRuntimeHost(createCliRuntime);
+		await createToollessPiSession({
+			projectRoot: tmp.path,
+			systemPrompt: "Offline",
+		});
+		const [provider, ...parts] = CLI_DEFAULT_MODEL.split("/");
+		expect(mocks.create).toHaveBeenCalledWith(
+			expect.objectContaining({ model: { provider, id: parts.join("/") } }),
+		);
+	} finally {
+		vi.unstubAllEnvs();
+	}
 });

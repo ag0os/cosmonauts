@@ -1,5 +1,5 @@
 // Content acceptance until D2.
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import chains from "../../bundled/coding/chains.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
@@ -10,6 +10,7 @@ import {
 } from "../../lib/orchestration/durable-chain-compiler.ts";
 import type { ChainStep } from "../../lib/orchestration/types.ts";
 import { parseCodingChain, withCodingChain } from "../helpers/content-chain.ts";
+import { installContentTestHost } from "../helpers/library-host.ts";
 
 const registry = new AgentRegistry([
 	agent("planner", false),
@@ -162,3 +163,5 @@ function agent(id: string, loop: boolean): AgentDefinition {
 		domain: "coding",
 	};
 }
+
+beforeEach(installContentTestHost);

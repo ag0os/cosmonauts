@@ -1,5 +1,6 @@
 // Content acceptance retained until the corresponding deletion PR.
 import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
+import { installContentTestHost } from "../helpers/library-host.ts";
 /**
  * Regression tests for createPiSpawner() spawn behavior.
  */
@@ -353,3 +354,5 @@ describe("createPiSpawner", () => {
 		});
 	});
 });
+
+beforeEach(installContentTestHost);

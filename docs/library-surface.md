@@ -318,7 +318,7 @@ The current content consumer lives in `domains/host-runtime.ts`: it chooses root
 model default, coding chain adapter, worker and session policies. Library/CLI entry
 points request the host runtime through `setRuntimeHost`/`getHostRuntime`; equal
 project/domain/plugin requests share construction, failed construction can retry,
-and an unconfigured host fails explicitly. Explicit library session assembly and nested spawns, chains and Drive retain the supplied runtime. The current CLI mounts inline extensions with its base execution runtime, excluding interactive --domain/--plugin-dir additions, preserving pre-step4 reach. Tests: `tests/runtime-host.test.ts`, orchestration/CLI suites and extension
+and an unconfigured host fails explicitly. Explicit library session assembly and nested spawns, chains and Drive retain the supplied runtime. The CLI mounts inline extensions with its selected runtime, preserving --domain/--plugin-dir actors for both spawn and chain execution (step 6 P3). Tests: `tests/runtime-host.test.ts`, orchestration/CLI suites and extension
 binding contracts. Restore-by-id continues to use the current declaration; no
 snapshots are introduced.
 
@@ -429,12 +429,11 @@ fresh-source evidence in the step4 review artifact.
 ### Review45 compatibility boundaries
 
 Session assembly uses runtime.projectConfig before any disk fallback; the explicit
-consumer configuration controls knowledgeSurface. The CLI's inline extension
-scope uses the base host request (project root only), excluding its interactive
-plugin directories and domain override. Those flags still govern interactive
-selection, resources and agent switching. A caller available only in that added
-scope cannot resolve for spawn/chain. This preserves10e4f5c0 behavior; wider reach
-is a later owner choice. Tests: review45-runtime-contracts and cli/runtime-host.
+consumer configuration controls knowledgeSurface. The CLI's inline extensions now use its selected runtime,
+including plugin directories and the domain override (step 6 P3). Consumers that
+explicitly supply a narrower `extensionRuntime` retain that isolation contract.
+Tests: review45-runtime-contracts, cli/runtime-host, cli/host-policy-dispatch and
+cli/host-scope.
 
 Inline factories stay bound to the launch runtime after a cross-project resume;
 chain/Drive still receive ctx.cwd. The runtime does not record its root and no
@@ -443,11 +442,12 @@ are a runtime collection: config-file edits require a new session after resettin
 before chain_run/lean sees them. No per-call config reread is promised.
 
 The coding manifest carries its quality-review seal for direct runtime creation;
-the current host's explicit provider still wins. Scaffold/eject outputs use public
+the content host's explicit provider still wins. Scaffold/eject outputs use public
 aliases; eject rejects an unexported framework target rather than emitting a broken
 specifier. Pi catalog tests bind the actual pinned1.0.3 ToolName union to the local
-allowlist. Toolless Pi helpers and memory consolidate need the content host when
-choosing a default model; an explicit model bypasses that bootstrap.
+allowlist. Toolless Pi helpers and memory consolidate use the selected host when
+choosing a default model; an explicit model bypasses that bootstrap. The CLI host
+supplies its own fallback without loading framework content.
 
 ### External consumer proof (step 5)
 
@@ -504,3 +504,30 @@ Generic session factory/spawner suites use `createConsumerSessionPolicy` to pin
 resource overrides, creation/disposal, observed tool-result projection and child
 completion timeout delivery. Runtime policy composition uses the same consumer
 provider. No library policy field or package export changed in this test-only PR.
+
+
+### Content-free executable and test hosts (step 6 P3)
+
+The bin entry installs `cli/host-runtime.ts` only when a consumer host is absent.
+The CLI explicitly discovers project/user packages and domain directories plus
+plugin roots, loads project config and provides library orchestration. It supplies
+its executable model fallback without choosing a coding adapter, session seal,
+worker or framework resource root. An empty installation remains useful for list
+and check commands; ordinary interaction needs a declared lead or an explicit actor.
+The library still accepts leadless resource providers.
+
+Tests: `cli/host-startup` exercises the real bin with isolated HOME, empty discovery,
+the interaction guard, a leadless provider and an installed synthetic lead;
+`cli/runtime-host` pins empty policy, user discovery, config and host preservation;
+`cli/host-scope` pins actual spawn admission and successful chain execution for a
+plugin actor; `cli/pi-session` and `cli/memory/subcommand` pin model helpers against
+the content-free CLI factory. `cli/host-policy-dispatch` pins the same selected
+runtime in init, print and interactive sessions. No live model is prompted.
+
+The default test host owns one synthetic reader and has no worker or content
+policy. Content acceptance explicitly selects the old host while lean/QM content
+remains; subprocess content tests generate an explicit content entry. A generic
+Drive characterization instead declares the synthetic reader as its worker.
+Discovered domains continue declaring their extension resource entry; the synthetic
+plugin fixture forwards that entry to its host's orchestration provider. Resource
+precedence and validation are unchanged.

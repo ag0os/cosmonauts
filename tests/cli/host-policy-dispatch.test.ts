@@ -107,6 +107,7 @@ for (const mode of ["interactive", "print", "init"]) {
 		await vi.waitFor(() => expect(mocks.createSession).toHaveBeenCalledOnce());
 		expect(mocks.createSession.mock.calls[0]?.[0]).toMatchObject({
 			sessionPolicies: provider,
+			extensionRuntime: runtime,
 			definition: actor,
 		});
 		if (mode === "interactive")

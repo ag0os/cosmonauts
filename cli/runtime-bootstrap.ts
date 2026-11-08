@@ -133,9 +133,12 @@ function readRequiredValue(
 	return value;
 }
 
-/** Base-compatible execution scope: CLI-only domain/plugin additions stay interactive. */
+/** Inline tools retain the selected CLI scope; standalone helpers may request the base. */
 export function getCliExecutionRuntime(
 	projectRoot: string,
+	selectedRuntime?: CosmonautsRuntime,
 ): Promise<CosmonautsRuntime> {
-	return getHostRuntime({ projectRoot });
+	return selectedRuntime
+		? Promise.resolve(selectedRuntime)
+		: getHostRuntime({ projectRoot });
 }

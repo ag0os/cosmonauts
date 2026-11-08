@@ -68,16 +68,30 @@ describe("no-domain guard", () => {
 	});
 });
 
-test("a non-fallback domain remains runnable without a lead declaration", () => {
+test("a lead-less domain reports the CLI guard without changing library runnability", () => {
 	const runtime = {
 		domains: [{ manifest: { id: "studio", description: "No lead" } }],
 	} as unknown as CosmonautsRuntime;
-	expect(hasRunnableDefaultDomain(runtime)).toBe(true);
+	expect(hasRunnableDefaultDomain(runtime)).toBe(false);
 	expect(
 		selectRunMode({
 			options: cliOptions({ print: true }),
 			hasRunnableDefault: hasRunnableDefaultDomain(runtime),
 			hasInteractiveTerminal: true,
+		}),
+	).toBe("no-domain-guard");
+});
+
+test("an explicitly selected actor does not require a default domain lead", () => {
+	expect(
+		selectRunMode({
+			options: cliOptions({
+				agent: "studio/scribe",
+				print: true,
+				prompt: "Work",
+			}),
+			hasRunnableDefault: false,
+			hasInteractiveTerminal: false,
 		}),
 	).toBe("print");
 });

@@ -187,10 +187,10 @@ describe("--dump-prompt", () => {
 		expect(prompt).toContain("<!-- COSMONAUTS_AGENT_ID:coding/cody -->");
 		expect(prompt).not.toContain("shared/cody");
 	});
-	test("default routing main installed defaults to main/cosmo when no agent is provided", async () => {
+	test("default routing selects the installed consumer lead when no agent is provided", async () => {
 		const prompt = await dumpPrompt();
 
-		expect(prompt).toContain("<!-- COSMONAUTS_AGENT_ID:main/cosmo -->");
+		expect(prompt).toContain("<!-- COSMONAUTS_AGENT_ID:coding/cody -->");
 	});
 
 	test("default routing coding domain uses coding/cody when no agent is provided", async () => {

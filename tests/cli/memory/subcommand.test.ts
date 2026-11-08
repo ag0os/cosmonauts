@@ -1103,3 +1103,31 @@ test("an unbound judgment provider requires an explicit model and labels injecte
 	});
 	expect(provider.id).toBe("pi/injected-session");
 });
+
+test("consolidation binds the content-free CLI host fallback to its judgment provider", async () => {
+	const { createCliRuntime, CLI_DEFAULT_MODEL } = await import(
+		"../../../cli/host-runtime.ts"
+	);
+	const { setRuntimeHost } = await import("../../../lib/runtime-host.ts");
+	const providerModule = await import(
+		"../../../cli/memory/judgment-provider.ts"
+	);
+	const provider = vi.spyOn(providerModule, "createPiCorpusJudgmentProvider");
+	vi.stubEnv("HOME", join(tmp.path, "isolated-home"));
+	try {
+		setRuntimeHost(createCliRuntime);
+		await executeMemoryConsolidate({
+			projectRoot: tmp.path,
+			noModel: false,
+			dryRun: true,
+			outputMode: "json",
+		});
+		expect(provider).toHaveBeenCalledWith(
+			expect.objectContaining({ model: CLI_DEFAULT_MODEL }),
+		);
+		expect(provider.mock.results[0]?.value.id).toBe(`pi/${CLI_DEFAULT_MODEL}`);
+	} finally {
+		provider.mockRestore();
+		vi.unstubAllEnvs();
+	}
+});

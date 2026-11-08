@@ -9,10 +9,12 @@ import type {
 	DriverResult,
 	DriverRunSpec,
 } from "../../../lib/driver/types.ts";
+import { setRuntimeHost } from "../../../lib/runtime-host.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../lib/tasks/task-types.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
 import { useTempDir } from "../../helpers/fs.ts";
+import { createLibraryTestRuntime } from "../../helpers/library-host.ts";
 
 const driverMocks = vi.hoisted(() => ({
 	runInline: vi.fn(),
@@ -378,6 +380,9 @@ describe("runDrive through the drive compat program (characterization)", () => {
 		});
 
 		test("cosmonauts-subagent inline builds the in-process backend", async () => {
+			setRuntimeHost((request) =>
+				createLibraryTestRuntime(request, "fixture/reader"),
+			);
 			const fixture = await setup(1);
 			inlineReturns({
 				runId: "",
@@ -397,6 +402,9 @@ describe("runDrive through the drive compat program (characterization)", () => {
 				backendMocks.createCosmonautsSubagentBackend,
 			).toHaveBeenCalledTimes(1);
 			expect(backendMocks.resolveBackend).not.toHaveBeenCalled();
+			expect(backendMocks.createCosmonautsSubagentBackend).toHaveBeenCalledWith(
+				expect.objectContaining({ workerAgent: "fixture/reader" }),
+			);
 		});
 	});
 

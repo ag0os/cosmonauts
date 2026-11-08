@@ -1,5 +1,6 @@
 // Content acceptance retained until the corresponding deletion PR.
 import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
+import { installContentTestHost } from "../helpers/library-host.ts";
 /**
  * Tests for the multi-turn completion loop in createPiSpawner().
  * Covers ACs #1–#5 of TASK-110.
@@ -223,3 +224,5 @@ describe("createPiSpawner — completion loop", () => {
 
 	// AC#4: removeTracker called even when a loop prompt throws
 });
+
+beforeEach(installContentTestHost);

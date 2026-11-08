@@ -1,3 +1,4 @@
+import { installContentTestHost } from "../../helpers/library-host.ts";
 /**
  * Tests for cli/lean/subcommand.ts: `cosmonauts lean check` on fixture
  * plans, and `lean build` / `lean review` as thin callers of an injected
@@ -10,7 +11,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createLeanProgram } from "../../../cli/lean/subcommand.ts";
 import type {
 	RunBuildOptions,
@@ -943,3 +944,5 @@ describe("bin/cosmonauts lean check", () => {
 		expect(JSON.parse(stdout)).toMatchObject({ plan: "plan.md", ok: true });
 	});
 });
+
+beforeEach(installContentTestHost);

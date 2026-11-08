@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createContentRuntime } from "../domains/host-runtime.ts";
 import { qualityReviewSessionPolicies } from "../lib/orchestration/quality-review-session-provider.ts";
 import { useTempDir } from "./helpers/fs.ts";
+import { installContentTestHost } from "./helpers/library-host.ts";
 
 const tmp = useTempDir("runtime-seals-");
 const _policyURL = new URL(
@@ -44,3 +45,5 @@ test("the current host retains the coding session seal with an older project ove
 		}),
 	).toBe("quality review context missing");
 });
+
+beforeEach(installContentTestHost);

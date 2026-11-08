@@ -1,9 +1,10 @@
+import { installContentTestHost } from "../helpers/library-host.ts";
 /**
  * Tests for lib/lean-run/runtime-backends.ts: the runtime it builds sees
  * this framework's domains and bundled packages from its computed root.
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runtimeBackends } from "../../lib/lean-run/runtime-backends.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -46,3 +47,5 @@ describe("runtimeBackends", () => {
 		expect(backends.reviewer).toBe(backends.builder);
 	});
 });
+
+beforeEach(installContentTestHost);

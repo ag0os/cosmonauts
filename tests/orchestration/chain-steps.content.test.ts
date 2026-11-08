@@ -1,9 +1,11 @@
+import { beforeEach } from "vitest";
 // Content acceptance retained until the corresponding deletion PR.
 import {
 	buildStagePrompt,
 	deriveStagePromptPurpose,
 } from "../../bundled/coding/chain-prompts.ts";
 import { withCodingChain } from "../helpers/content-chain.ts";
+import { installContentTestHost } from "../helpers/library-host.ts";
 /**
  * Tests for chain-steps.ts
  * Covers type guards, prompt injection, DSL formatting, and DSL detection.
@@ -431,3 +433,5 @@ function plannerDefinition(): AgentDefinition {
 // ============================================================================
 // Unnamed input topology parsing
 // ============================================================================
+
+beforeEach(installContentTestHost);

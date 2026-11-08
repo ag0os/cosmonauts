@@ -15,6 +15,7 @@ import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { qualityReviewPolicyFor } from "../../lib/orchestration/quality-review-profile.ts";
 import { createQualityReviewSessionPolicy } from "../../lib/orchestration/quality-review-session-policy.ts";
+import { installContentTestHost } from "../helpers/library-host.ts";
 
 const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
@@ -611,3 +612,5 @@ describe("session-factory planSlug validation", () => {
 		}
 	});
 });
+
+beforeEach(installContentTestHost);
