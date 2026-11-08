@@ -562,3 +562,13 @@ consumer grants instead of importing raw content shims.
 An explicit unknown agent on an empty install reports `Available agents: (none)`;
 `tests/agents/resolver.test.ts` and the actual-bin case in
 `tests/cli/host-startup.test.ts` pin the diagnostic.
+
+
+P7 requires stale-target restore warnings to retain installation guidance, and
+restore with no shared binding state to remain inert even when persisted binding
+entries exist. `tests/extensions/domain-bindings.test.ts` pins both contracts;
+they kill the two non-equivalent survivors from the first scoped mutation run.
+The extension exports its own directory path for the CLI's actual mount, making
+that live dependency explicit to reachability without adding a root or changing
+the gate. A fresh-process manual mutation of that module-level path is rejected
+by the CLI mount and empty-runtime assertions.

@@ -37,6 +37,7 @@ import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
 import { resolveDefaultDomain } from "../lib/domains/default-domain.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
+import { domainBindingsExtensionPath } from "../lib/extensions/domain-bindings/index.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { setSharedDomainBindings } from "../lib/interactive/domain-bindings.ts";
@@ -339,9 +340,7 @@ export function hasRunnableDefaultDomain(runtime: CosmonautsRuntime): boolean {
 export function resolveInteractiveExtensionPaths(): string[] {
 	return [
 		fileURLToPath(new URL("../lib/extensions/agent-switch", import.meta.url)),
-		fileURLToPath(
-			new URL("../lib/extensions/domain-bindings", import.meta.url),
-		),
+		domainBindingsExtensionPath,
 	];
 }
 

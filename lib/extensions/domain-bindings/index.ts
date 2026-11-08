@@ -1,9 +1,16 @@
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { DomainBindingTargetError } from "../../domains/bindings.ts";
 import { getSharedDomainBindings } from "../../interactive/domain-bindings.ts";
+
+/** Pi loads this directory; CLI imports the mount path as an explicit runtime dependency. */
+export const domainBindingsExtensionPath = dirname(
+	fileURLToPath(import.meta.url),
+);
 
 const DOMAIN_BINDING_CUSTOM_TYPE = "cosmonauts.domain-binding";
 
