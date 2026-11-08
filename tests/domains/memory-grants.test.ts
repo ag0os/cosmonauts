@@ -70,11 +70,7 @@ describe("current content memory adapters", () => {
 // Direct module imports deliberately bypass the proposed loader guard.
 // Removing that policy must not remove the pin on the content migration itself.
 test("shipped content never selects obsolete memory extensions independently of loader validation", async () => {
-	for (const root of [
-		"domains/main/agents",
-		"bundled/coding/agents",
-		"bundled/lean/agents",
-	]) {
+	for (const root of ["domains/main/agents", "bundled/coding/agents"]) {
 		for (const file of await readdir(resolve(root))) {
 			if (!file.endsWith(".ts")) continue;
 			const { default: definition } = await import(resolve(root, file));
@@ -109,10 +105,6 @@ const BASE_GRANTS: Record<string, readonly string[]> = {
 	"coding/ux-reviewer": [],
 	"coding/verifier": [],
 	"coding/worker": ["architecture", "episodes"],
-	"lean/lead": [],
-	"lean/builder": [],
-	"lean/checker": [],
-	"lean/code-reviewer": [],
 };
 
 test("shipped declarations retain exactly their base-derived memory surface", async () => {

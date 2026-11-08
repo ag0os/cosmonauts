@@ -8,15 +8,12 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { SIGNAL_KINDS, type SignalKind } from "../lean-run/types.ts";
 import { createDefaultProjectConfig } from "./defaults.ts";
 import type {
 	ProjectAnalysisConfig,
 	ProjectConfig,
 	ProjectEpisodicLogConfig,
 	ProjectKnowledgeSurfaceConfig,
-	ProjectLeanBudgetConfig,
-	ProjectLeanConfig,
 } from "./types.ts";
 
 export const EPISODE_WARNING_THRESHOLD_DEFAULT = 500;
@@ -112,7 +109,6 @@ export async function loadProjectConfig(
 		analysis?: ProjectConfig["analysis"];
 		knowledgeSurface?: ProjectConfig["knowledgeSurface"];
 		qualityReview?: ProjectConfig["qualityReview"];
-		lean?: ProjectConfig["lean"];
 	} = {};
 
 	if (typeof obj.domain === "string") {
@@ -190,9 +186,6 @@ export async function loadProjectConfig(
 	}
 	if ("qualityReview" in obj) {
 		config.qualityReview = parseQualityReviewConfig(obj.qualityReview);
-	}
-	if ("lean" in obj) {
-		config.lean = parseLeanConfig(obj.lean);
 	}
 
 	return config;
@@ -392,122 +385,6 @@ function parseKnowledgeSurfaceConfig(
 		return {};
 	}
 	return { enabled: obj.enabled };
-}
-
-function parseLeanConfig(value: unknown): ProjectLeanConfig | undefined {
-	if (!isPlainObject(value)) {
-		console.error(
-			`[warning] Skipping malformed lean: expected an object, got ${formatConfigValue(value)}.`,
-		);
-		return undefined;
-	}
-	const repoMapBudgetTokens = leanPositiveInteger(
-		value,
-		"repoMapBudgetTokens",
-		"lean.repoMapBudgetTokens",
-	);
-	const budget = "budget" in value ? parseLeanBudget(value.budget) : undefined;
-	const requiredSignals =
-		"requiredSignals" in value
-			? parseLeanRequiredSignals(value.requiredSignals)
-			: {};
-	const ignoredInputsCapBytes = leanPositiveInteger(
-		value,
-		"ignoredInputsCapBytes",
-		"lean.ignoredInputsCapBytes",
-	);
-	return {
-		...(repoMapBudgetTokens === undefined ? {} : { repoMapBudgetTokens }),
-		...(budget === undefined ? {} : { budget }),
-		...requiredSignals,
-		...(ignoredInputsCapBytes === undefined ? {} : { ignoredInputsCapBytes }),
-	};
-}
-
-type LeanRequiredSignalFields = Pick<
-	ProjectLeanConfig,
-	"requiredSignals" | "unknownRequiredSignals"
->;
-
-/**
- * The known signal kinds, each once, and the other entries with a warning
- * for each. A list with entries but no known kind leaves the default.
- */
-function parseLeanRequiredSignals(value: unknown): LeanRequiredSignalFields {
-	if (!Array.isArray(value)) {
-		console.error(
-			`[warning] Skipping malformed lean.requiredSignals: expected an array of signal kinds, got ${formatConfigValue(value)}.`,
-		);
-		return {};
-	}
-	const kinds = new Set<SignalKind>();
-	const unknown: string[] = [];
-	for (const entry of value as readonly unknown[]) {
-		if (isSignalKind(entry)) {
-			kinds.add(entry);
-			continue;
-		}
-		unknown.push(formatConfigValue(entry));
-		console.error(
-			`[warning] Skipping malformed lean.requiredSignals entry: expected one of ${SIGNAL_KINDS.join(", ")}, got ${formatConfigValue(entry)}.`,
-		);
-	}
-	const unknownFields =
-		unknown.length > 0 ? { unknownRequiredSignals: unknown } : {};
-	if (kinds.size === 0 && unknown.length > 0) return unknownFields;
-	return { requiredSignals: [...kinds], ...unknownFields };
-}
-
-function isSignalKind(value: unknown): value is SignalKind {
-	return (SIGNAL_KINDS as readonly unknown[]).includes(value);
-}
-
-function parseLeanBudget(value: unknown): ProjectLeanBudgetConfig | undefined {
-	if (!isPlainObject(value)) {
-		console.error(
-			`[warning] Skipping malformed lean.budget: expected an object, got ${formatConfigValue(value)}.`,
-		);
-		return undefined;
-	}
-	const tokens = leanPositiveInteger(value, "tokens", "lean.budget.tokens");
-	const timeMs = leanPositiveInteger(
-		value,
-		"timeMs",
-		"lean.budget.timeMs",
-		MAX_TIMER_MS,
-	);
-	return {
-		...(tokens === undefined ? {} : { tokens }),
-		...(timeMs === undefined ? {} : { timeMs }),
-	};
-}
-
-/** The longest delay a timer honours; `lean.budget.timeMs` above it would fire at once or throw. */
-const MAX_TIMER_MS = 2 ** 31 - 1;
-
-/** The field when present and a positive integer up to `max`; a warning and undefined otherwise. */
-function leanPositiveInteger(
-	obj: Record<string, unknown>,
-	key: string,
-	label: string,
-	max = Number.MAX_SAFE_INTEGER,
-): number | undefined {
-	if (!(key in obj)) return undefined;
-	const value = obj[key];
-	if (typeof value === "number" && positiveInteger(value) && value <= max)
-		return value;
-	const expected =
-		max === Number.MAX_SAFE_INTEGER
-			? "a positive integer"
-			: `a positive integer up to ${max}`;
-	console.error(
-		`[warning] Skipping malformed ${label}: expected ${expected}, got ${formatConfigValue(value)}.`,
-	);
-	return undefined;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function resolveEpisodicLogConfig(

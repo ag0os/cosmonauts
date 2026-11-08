@@ -4,8 +4,6 @@
  * Projects declare their configuration in `.cosmonauts/config.json`.
  */
 
-import type { SignalKind } from "../lean-run/types.ts";
-
 /** Named-chain entry in project config. */
 export interface ProjectChainConfig {
 	readonly description?: string;
@@ -33,29 +31,6 @@ export interface ProjectEpisodicLogConfig {
 /** Optional structural-analysis provider preference. */
 export interface ProjectAnalysisConfig {
 	readonly provider?: string;
-}
-
-/** Optional lean-domain settings from `.cosmonauts/config.json`. */
-export interface ProjectLeanConfig {
-	/** Token budget for the builder context pack's repo-map slice (default 1,500). */
-	readonly repoMapBudgetTokens?: number;
-	/** Per-run limits for `lean_build`; a tool parameter overrides each field. */
-	readonly budget?: ProjectLeanBudgetConfig;
-	/**
-	 * Signal kinds a lean run must get from an available provider to be
-	 * `done` (default verify); no tool parameter overrides it.
-	 */
-	readonly requiredSignals?: readonly SignalKind[];
-	/** `lean.requiredSignals` entries that are not signal kinds, as written. */
-	readonly unknownRequiredSignals?: readonly string[];
-	/** The most bytes of gitignored files a lean run copies into the builder clone (default 50 MB). */
-	readonly ignoredInputsCapBytes?: number;
-}
-
-/** Lean run limits. Tokens count input + output only, never cache reads or writes. */
-export interface ProjectLeanBudgetConfig {
-	readonly tokens?: number;
-	readonly timeMs?: number;
 }
 
 /** Project-only, off-by-default knowledge-surface gate. */
@@ -109,6 +84,4 @@ export interface ProjectConfig {
 	/** Project-only knowledge surface. Only literal true enables it. */
 	readonly knowledgeSurface?: ProjectKnowledgeSurfaceConfig;
 	readonly qualityReview?: ProjectQualityReviewConfig;
-	/** Optional lean-domain settings. */
-	readonly lean?: ProjectLeanConfig;
 }

@@ -15,7 +15,6 @@ import { validateAgentDefinition } from "../lib/agents/declaration.ts";
  *   cosmonauts task <command>                     → task management subcommands
  *   cosmonauts plan <command>                     → plan management subcommands
  *   cosmonauts memory <command>                   → living-memory owner commands
- *   cosmonauts lean check|build|review            → lean plan check and runs, no lead session
  *   cosmonauts serve                             → local read-only artifact viewer
  *   cosmonauts export ...                         → export packaged agents as binaries
  *
@@ -802,7 +801,6 @@ if (runInvocation) {
 	subcommand === "architecture" ||
 	subcommand === "arch" ||
 	subcommand === "analysis" ||
-	subcommand === "lean" ||
 	subcommand === "memory"
 ) {
 	// Each subcommand's module loads only when it runs, so one that uses Pi
@@ -810,8 +808,6 @@ if (runInvocation) {
 	const programs: Record<string, () => Promise<Command>> = {
 		analysis: async () =>
 			(await import("./analysis/subcommand.ts")).createAnalysisProgram(),
-		lean: async () =>
-			(await import("./lean/subcommand.ts")).createLeanProgram(),
 		architecture: async () =>
 			(
 				await import("./architecture/subcommand.ts")

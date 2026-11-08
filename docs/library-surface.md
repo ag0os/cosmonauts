@@ -591,3 +591,12 @@ Both restored and live bindings validate through the resolver before updating th
 slot store, even when the resolver owns a different store; the two distinct-store
 cases in `tests/extensions/domain-bindings.test.ts` pin valid writes and stale-target
 rejection without extra persistence entries.
+
+
+D1 removes the Lean implementation, CLI dispatch/export, config parser/types and
+harness contract generation. Legacy `lean` JSON keys are ignored as unknown input;
+the repository config bytes remain unchanged until the separately approved config
+removal. Structural analysis, `lib/code-health`, Stryker/Vitest/forks tooling and all
+three Fallow floors remain. `tests/library-strip-lean.test.ts` pins the removed
+surface and retained tools, and domain-owned skill visibility uses synthetic
+resources in `tests/agents/session-assembly-domain-skills.test.ts`.

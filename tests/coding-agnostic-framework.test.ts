@@ -283,20 +283,8 @@ test("session host paths do not import review policy or name review actors", asy
 	}
 });
 
-// Ruling-3c-review finding4: these are temporary content dependencies, not new library API.
-// The third named debt is lib/packages/catalog.ts: its coding catalog moves to the CLI host in step4.
-// The coding tool preset is vocabulary debt, not a domain-id default.
+// The remaining QM CLI dependencies retire with D2.
 const CONTENT_IMPORT_EXCEPTIONS = [
-	{
-		from: "lib/config/loader.ts",
-		to: "lib/lean-run/types.ts",
-		removal: "step6: relocate SIGNAL_KINDS",
-	},
-	{
-		from: "lib/config/types.ts",
-		to: "lib/lean-run/types.ts",
-		removal: "step6: relocate SignalKind",
-	},
 	{
 		from: "cli/main.ts",
 		to: "lib/orchestration/quality-review-launch.ts",
@@ -306,11 +294,6 @@ const CONTENT_IMPORT_EXCEPTIONS = [
 		from: "cli/main.ts",
 		to: "lib/orchestration/quality-review-run.ts",
 		removal: "step6: delete QM CLI content",
-	},
-	{
-		from: "cli/main.ts",
-		to: "cli/lean/subcommand.ts",
-		removal: "step6: delete lean CLI content",
 	},
 ] as const;
 function isContentCode(path: string): boolean {
