@@ -763,3 +763,94 @@ describe("session-factory planSlug validation", () => {
 		}
 	});
 });
+
+test("applies a consumer host policy to an arbitrary declared actor", async () => {
+	mocks.createAgentSession.mockResolvedValue({
+		session: { model: { provider: "test", id: "model" } },
+	});
+	const settings = { source: "consumer-settings" };
+	const loadConfig = vi.fn();
+	const policy = {
+		toolPreset: "readonly" as const,
+		filterTools: vi.fn((tools: readonly string[]) =>
+			tools.filter((name) => name === "read"),
+		),
+		loadConfig,
+		prepareSkills: vi.fn(async () => ["/consumer/skills"]),
+		resourceOptions: vi.fn(async () => ({
+			appendSystemPrompt: [],
+			agentsFilesOverride: () => ({ agentsFiles: [] }),
+		})),
+		settingsManager: () => settings,
+	};
+	mocks.buildSessionParams.mockResolvedValue({
+		promptContent: "consumer persona",
+		tools: ["read", "bash"],
+		extensionPaths: [],
+		extensionFactories: [],
+		knowledgeSurfaceEnabled: false,
+		projectContext: true,
+		model: { provider: "test", id: "model" },
+	});
+	await createAgentSessionFromDefinition(
+		{ ...TEST_AGENT, id: "archivist", domain: "studio" },
+		{
+			role: "studio/archivist",
+			cwd: "/consumer",
+			prompt: "catalogue",
+			sessionPolicy: policy,
+			skillPaths: ["/request/skills"],
+			compaction: { enabled: true },
+		},
+		"/consumer/providers",
+	);
+	expect(policy.prepareSkills).toHaveBeenCalledWith(
+		["/request/skills"],
+		"/consumer/providers",
+	);
+	expect(mocks.buildSessionParams.mock.calls.at(-1)?.[0]).toMatchObject({
+		sessionPolicy: policy,
+		loadConfig,
+		skillPaths: ["/consumer/skills"],
+	});
+	expect(policy.resourceOptions).toHaveBeenCalledWith(
+		expect.objectContaining({ promptContent: "consumer persona" }),
+		"/consumer/providers",
+	);
+	expect(mocks.loaderOptions.mock.calls.at(-1)?.[0]).toMatchObject({
+		appendSystemPrompt: [],
+		settingsManager: settings,
+	});
+	expect(mocks.createAgentSession.mock.calls.at(-1)?.[0]).toMatchObject({
+		tools: ["read"],
+		settingsManager: settings,
+	});
+});
+
+test("ordinary session context opt-out is independent of whether a host policy exists", async () => {
+	mocks.createAgentSession.mockResolvedValue({
+		session: { model: { provider: "test", id: "model" } },
+	});
+	for (const projectContext of [false, true]) {
+		mocks.buildSessionParams.mockResolvedValue({
+			promptContent: "ordinary",
+			tools: [],
+			extensionPaths: [],
+			extensionFactories: [],
+			knowledgeSurfaceEnabled: false,
+			projectContext,
+			model: { provider: "test", id: "model" },
+		});
+		await createAgentSessionFromDefinition(
+			TEST_AGENT,
+			{ role: TEST_AGENT.id, cwd: "/consumer", prompt: "work" },
+			"/consumer/domains",
+		);
+		const loader = mocks.loaderOptions.mock.calls.at(-1)?.[0];
+		if (projectContext) expect(loader.agentsFilesOverride).toBeUndefined();
+		else {
+			expect(loader.agentsFilesOverride).toBeTypeOf("function");
+			expect(loader.agentsFilesOverride()).toEqual({ agentsFiles: [] });
+		}
+	}
+});

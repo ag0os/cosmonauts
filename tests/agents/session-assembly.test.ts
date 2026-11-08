@@ -742,3 +742,15 @@ describe("buildSessionParams", () => {
 		});
 	});
 });
+
+it("a host preset cannot widen an exact declaration tool list", async () => {
+	await setupMinimalDomains(tmp.path);
+	const params = await buildSessionParams(
+		makeOptions({
+			def: makeDef({ tools: ["read"] }),
+			sessionPolicy: { toolPreset: "readonly" },
+		}),
+	);
+	expect(params.tools).toEqual(["read"]);
+	expect(params.exactTools).toBe(true);
+});

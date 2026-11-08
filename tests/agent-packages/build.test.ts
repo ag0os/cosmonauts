@@ -417,3 +417,29 @@ describe("buildAgentPackage", () => {
 		);
 	});
 });
+
+it("source package resource scope precedes identity and caller context independently", async () => {
+	await writeDomainPromptFiles("alpha", "Own persona");
+	await writeDomainPromptFiles("borrowed", "Borrowed persona");
+	for (const resourceDomain of [undefined, "borrowed"]) {
+		const sourceAgent = makeAgent({
+			resourceDomain,
+			instructions: { kind: "inline", content: "Explicit persona" },
+		});
+		const built = await buildAgentPackage({
+			definition: makeDefinition({
+				sourceAgent: "alpha/explorer",
+				prompt: { kind: "source-agent" },
+			}),
+			agentRegistry: new AgentRegistry([sourceAgent]),
+			domainsDir: join(tmp.path, "domains"),
+			domainContext: "unrelated",
+			skillPaths: [],
+			target: "claude-cli",
+		});
+		expect(built.systemPrompt).toContain(
+			`${resourceDomain ?? "alpha"} core capability.`,
+		);
+		expect(built.systemPrompt).toContain("Explicit persona");
+	}
+});

@@ -202,6 +202,52 @@ describe("createSession", () => {
 			expect(options.tools).toEqual(["read"]);
 	});
 
+	test("reselects and enforces the consumer host policy for initial and switched actors", async () => {
+		const first = { filterTools: vi.fn(() => ["read"]) };
+		const next = { filterTools: vi.fn(() => ["grep"]) };
+		const target = { ...TEST_DEF, id: "archivist", domain: "studio" };
+		const forAgent = vi.fn((def: AgentDefinition) =>
+			def.id === TEST_DEF.id ? first : next,
+		);
+		mocks.buildSessionParams.mockImplementation(async ({ sessionPolicy }) => ({
+			...BASE_PARAMS,
+			tools: ["read", "grep"],
+			sessionPolicy,
+		}));
+		mocks.createAgentSessionRuntime.mockImplementation(
+			async (createRuntime, options) => {
+				await createRuntime({
+					cwd: options.cwd,
+					sessionManager: options.sessionManager,
+				});
+				setPendingSwitch("studio/archivist");
+				return createRuntime({
+					cwd: options.cwd,
+					sessionManager: options.sessionManager,
+				});
+			},
+		);
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/consumer",
+			domainsDir: "/consumer/domains",
+			persistent: false,
+			sessionPolicies: { forAgent },
+			agentRegistry: { resolve: () => target } as unknown as AgentRegistry,
+		});
+		expect(forAgent.mock.calls.map(([def]) => def)).toEqual([TEST_DEF, target]);
+		expect(
+			mocks.buildSessionParams.mock.calls.map(
+				([options]) => options.sessionPolicy,
+			),
+		).toEqual([first, next]);
+		expect(
+			mocks.createAgentSessionFromServices.mock.calls.map(
+				([options]) => options.tools,
+			),
+		).toEqual([["read"], ["grep"]]);
+	});
+
 	test("passes extraExtensionPaths to initial buildSessionParams call", async () => {
 		await createSession({
 			definition: TEST_DEF,

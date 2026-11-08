@@ -17,7 +17,7 @@ interface HostSessionEvidence {
 export interface SessionPolicy {
 	validateDefinition?: (definition: AgentDefinition) => void;
 	spawn?: SessionSpawnPolicy;
-	toolPreset?: "readonly";
+	toolPreset?: import("./types.ts").AgentToolSet;
 	filterTools?: (tools: readonly string[]) => string[];
 	loadConfig?: (cwd: string) => Promise<ProjectConfig>;
 	prepareSkills?: (
@@ -83,7 +83,11 @@ export interface SessionSpawnPolicy {
 	onCompleted?: (evidence: ChildSessionEvidence) => Promise<void>;
 }
 
-const policies = new Map<string, SessionPolicy>();
+// Pi may load the same extension through a separate module cache.
+const POLICY_KEY = Symbol.for("cosmonauts:session-policies");
+const hostGlobals = globalThis as Record<symbol, unknown>;
+hostGlobals[POLICY_KEY] ??= new Map<string, SessionPolicy>();
+const policies = hostGlobals[POLICY_KEY] as Map<string, SessionPolicy>;
 export function registerSessionPolicy(
 	sessionId: string,
 	policy: SessionPolicy,

@@ -692,3 +692,21 @@ describe("agent-switch extension", () => {
 		});
 	});
 });
+
+test("switching remains available when the consumer omits an interactive denial hook", async () => {
+	const pi = createMockPi();
+	agentSwitchExtension(pi as never);
+	const registry = setupSharedRegistry(["studio/archivist"], "studio");
+	setSharedRegistry(registry as never, "studio");
+	const ctx = createMockCtx();
+	await getCommand(pi, "agent").handler("archivist", ctx);
+	expect(ctx.newSession).toHaveBeenCalled();
+	vi.mocked(ctx.ui.select).mockResolvedValue("studio/archivist");
+	await expect(
+		getCommand(pi, "agent").handler("", ctx),
+	).resolves.toBeUndefined();
+	expect(ctx.ui.select).toHaveBeenCalledWith("Select agent", [
+		"studio/archivist",
+	]);
+	clearRegistrySlot();
+});
