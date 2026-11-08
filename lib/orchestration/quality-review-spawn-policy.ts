@@ -17,13 +17,6 @@ export function qualityReviewSpawnPolicy(
 	childPolicy?: () => import("../agents/session-policy.ts").SessionPolicy,
 ): SessionSpawnPolicy {
 	return {
-		...(qualityContext && {
-			runtime: () => {
-				if (!qualityContext.baseRuntime)
-					throw new Error("Quality review base runtime is missing");
-				return qualityContext.baseRuntime;
-			},
-		}),
 		authorize: (request) => {
 			if (request.callerRole === "coding/quality-manager" && !qualityContext)
 				return "quality review context missing";

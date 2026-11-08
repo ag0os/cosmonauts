@@ -1,6 +1,10 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionFactory,
+	InlineExtension,
+} from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import type {
 	DriverActivityBusEvent,
@@ -12,8 +16,9 @@ import {
 	unregisterSessionCleanup,
 } from "../../orchestration/activity-bus.ts";
 import type { SpawnActivityEvent } from "../../orchestration/message-bus.ts";
-import { discoverFrameworkBundledPackageDirs } from "../../packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../../runtime.ts";
+import type { CosmonautsRuntime } from "../../runtime.ts";
+import { getHostRuntime } from "../../runtime-host.ts";
+import type { SessionProviderContext } from "../session-provider.ts";
 import { registerChainTool } from "./chain-tool.ts";
 import { registerDriverTool } from "./driver-tool.ts";
 import { roleLabel } from "./rendering.ts";
@@ -21,40 +26,42 @@ import { registerRunControlTools } from "./run-control-tools.ts";
 import { registerSpawnTool } from "./spawn-tool.ts";
 import { registerWatchEventsTool } from "./watch-events-tool.ts";
 
+const LIBRARY_ASSET_ROOT = resolve(
+	fileURLToPath(import.meta.url),
+	"..",
+	"..",
+	"..",
+	"..",
+);
+
 type LiveActivityMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 
 export default function orchestrationExtension(pi: ExtensionAPI) {
-	const runtimeCache = new Map<string, Promise<CosmonautsRuntime>>();
-	const frameworkRoot = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"..",
-		"..",
+	return registerOrchestration(pi, (cwd) =>
+		getHostRuntime({ projectRoot: cwd }),
 	);
-	const domainsDir = join(frameworkRoot, "domains");
-	const bundledDirsPromise = discoverFrameworkBundledPackageDirs(frameworkRoot);
+}
 
-	function getRuntime(cwd: string): Promise<CosmonautsRuntime> {
-		let promise = runtimeCache.get(cwd);
-		if (!promise) {
-			promise = bundledDirsPromise
-				.then((bundledDirs) =>
-					CosmonautsRuntime.create({
-						builtinDomainsDir: domainsDir,
-						projectRoot: cwd,
-						bundledDirs,
-					}),
-				)
-				.catch((error: unknown) => {
-					runtimeCache.delete(cwd);
-					throw error;
-				});
-			runtimeCache.set(cwd, promise);
-		}
-		return promise;
-	}
+export function createOrchestrationExtension(
+	runtime: CosmonautsRuntime,
+): ExtensionFactory {
+	return (pi) => registerOrchestration(pi, async () => runtime);
+}
 
+export function createSessionExtension(
+	context: SessionProviderContext,
+): InlineExtension {
+	if (!context.runtime)
+		throw new Error(
+			"Orchestration requires the host runtime in session assembly",
+		);
+	return createOrchestrationExtension(context.runtime);
+}
+
+function registerOrchestration(
+	pi: ExtensionAPI,
+	getRuntime: (cwd: string) => Promise<CosmonautsRuntime>,
+) {
 	// ── Spawn activity rendering ──────────────────────────────────────────
 
 	// Custom renderer for spawn-activity messages in the TUI
@@ -228,7 +235,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 
 	registerChainTool(pi, getRuntime);
 	registerSpawnTool(pi, getRuntime);
-	registerDriverTool(pi, getRuntime, frameworkRoot);
+	registerDriverTool(pi, getRuntime, LIBRARY_ASSET_ROOT);
 	registerWatchEventsTool(pi);
 	registerRunControlTools(pi);
 }

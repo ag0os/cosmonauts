@@ -11,7 +11,7 @@ import type { NamedChain } from "../chains/types.ts";
 
 /** Declarative configuration for a domain, exported from each domain's domain.ts. */
 export interface DomainManifest {
-	/** Interim host policy bridge; becomes a runtime input in step 4. */
+	/** Optional composed policy metadata; an explicit host provider takes precedence. */
 	readonly sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider;
 	/** Resource provider searched after an agent's own and portable domains. */
 	readonly resourceFallback?: boolean;
@@ -19,10 +19,6 @@ export interface DomainManifest {
 	readonly alwaysActive?: boolean;
 	/** Consumer-selected default resource domain and lead; at most one may be active. */
 	readonly default?: boolean;
-	/** Interim content bridge; replaced by consumer runtime inputs in step 4. */
-	readonly chainAdapter?: import("../orchestration/types.ts").ChainAdapter;
-	/** Interim content bridge; replaced by consumer runtime inputs in step 4. */
-	readonly workerAgent?: string;
 	/** Unique domain identifier (e.g. "shared", "coding"). */
 	readonly id: string;
 	/** Human-readable description of the domain's purpose. */

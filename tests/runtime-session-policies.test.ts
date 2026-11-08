@@ -1,14 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { createContentRuntime } from "../domains/host-runtime.ts";
 import { qualityReviewSessionPolicies } from "../lib/orchestration/quality-review-session-provider.ts";
-import { discoverFrameworkBundledPackageDirs } from "../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../lib/runtime.ts";
 import { useTempDir } from "./helpers/fs.ts";
 
 const tmp = useTempDir("runtime-seals-");
-const root = fileURLToPath(new URL("../", import.meta.url));
 const policyURL = new URL(
 	"../lib/orchestration/quality-review-session-provider.ts",
 	import.meta.url,
@@ -29,19 +27,14 @@ async function domain(id: string, extra: string) {
 	return join(tmp.path, "domains");
 }
 
-test("an older project override inherits the coding session seal from its lower layer", async () => {
+test("the current host retains the coding session seal with an older project override", async () => {
 	const override = join(tmp.path, ".cosmonauts", "domains", "coding");
 	await mkdir(override, { recursive: true });
 	await writeFile(
 		join(override, "domain.ts"),
 		'export default {id:"coding",description:"Older override",chainAdapter:{defaultModel:"test/override"}}',
 	);
-	const runtime = await CosmonautsRuntime.create({
-		projectRoot: tmp.path,
-		builtinDomainsDir: join(root, "domains"),
-		bundledDirs: await discoverFrameworkBundledPackageDirs(root),
-		includeUserSources: false,
-	});
+	const runtime = await createContentRuntime({ projectRoot: tmp.path });
 	expect(runtime.sessionPolicies).toBe(qualityReviewSessionPolicies);
 	const manager = runtime.agentRegistry.resolve("coding/quality-manager");
 	expect(runtime.sessionPolicies?.interactiveDenial?.(manager)).toContain(
@@ -113,6 +106,23 @@ test("the same policy object declared by multiple domains is unambiguous", async
 		projectRoot: tmp.path,
 		builtinDomainsDir,
 		includeUserSources: false,
+	});
+	expect(runtime.sessionPolicies).toBe(qualityReviewSessionPolicies);
+});
+
+test("higher generic domain layers inherit omitted policy metadata", async () => {
+	const builtinDomainsDir = await domain("sealed", "sessionPolicies:seal");
+	const plugins = join(tmp.path, "plugins");
+	await mkdir(join(plugins, "sealed"), { recursive: true });
+	await writeFile(
+		join(plugins, "sealed", "domain.ts"),
+		'export default {id:"sealed",description:"Older override"}',
+	);
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		builtinDomainsDir,
+		pluginDirs: [plugins],
+		projectConfig: {},
 	});
 	expect(runtime.sessionPolicies).toBe(qualityReviewSessionPolicies);
 });

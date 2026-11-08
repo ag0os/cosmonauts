@@ -6,7 +6,7 @@
  * `setupFiles` entry in vitest.config.ts.
  */
 
-import { afterEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 
 afterEach(() => {
 	// Restore all mocked implementations and spies to originals.
@@ -16,4 +16,13 @@ afterEach(() => {
 	// If fake timers were installed during a test, revert to real timers
 	// so subsequent tests are not affected.
 	vi.useRealTimers();
+});
+
+beforeEach(async () => {
+	const { setRuntimeHost } = await import("../lib/runtime-host.ts");
+	setRuntimeHost((request) =>
+		import("../domains/host-runtime.ts").then(({ createContentRuntime }) =>
+			createContentRuntime(request),
+		),
+	);
 });

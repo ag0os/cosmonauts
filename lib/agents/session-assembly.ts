@@ -25,7 +25,7 @@ import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { resolveTools } from "../orchestration/definition-resolution.ts";
 import {
-	FALLBACK_MODEL,
+	requireModelId,
 	resolveModel,
 } from "../orchestration/model-resolution.ts";
 import { resolveMemoryGrants, validateAgentDefinition } from "./declaration.ts";
@@ -56,6 +56,9 @@ type PiResourceLoaderOptions = NonNullable<
 >;
 
 export interface BuildSessionParamsOptions {
+	/** Optional host execution scope for inline extensions, distinct from CLI discovery. */
+	extensionRuntime?: import("../runtime.ts").CosmonautsRuntime;
+	runtime?: import("../runtime.ts").CosmonautsRuntime;
 	/** Agent definition. */
 	def: AgentDefinition;
 	/** Working directory. */
@@ -80,6 +83,8 @@ export interface BuildSessionParamsOptions {
 	ignoreProjectSkills?: boolean;
 	/** Model ID string override (e.g. "anthropic/claude-sonnet-4-5"). Falls back to def.model. */
 	modelOverride?: string;
+	/** Consumer model policy, used only when the definition omits a model. */
+	defaultModel?: string;
 	/** Pi model registry, including custom models from models.json. */
 	modelRegistry?: ModelRegistry;
 	/** Thinking level override. Falls back to def.thinkingLevel. */
@@ -150,7 +155,6 @@ export async function buildSessionParams(
 		projectSkills,
 		skillPaths,
 		ignoreProjectSkills,
-		modelOverride,
 		modelRegistry,
 		thinkingLevelOverride,
 		extraExtensionPaths,
@@ -200,7 +204,7 @@ export async function buildSessionParams(
 	);
 
 	const knowledgeSurfaceEnabled = resolveKnowledgeSurfaceConfig(
-		await loadConfig(cwd),
+		options.runtime?.projectConfig ?? (await loadConfig(cwd)),
 	).enabled;
 	const memoryExtensions = buildMemoryExtensions(def, knowledgeSurfaceEnabled);
 	const selected = await bindSessionExtensions({
@@ -210,6 +214,7 @@ export async function buildSessionParams(
 		domainsDir,
 		resolver,
 		context: {
+			runtime: options.extensionRuntime ?? options.runtime,
 			agentId: qualifyAgentId(def.id, def.domain),
 			memory: resolveMemoryGrants(def.memory),
 		},
@@ -274,7 +279,7 @@ export async function buildSessionParams(
 	const additionalSkillPaths = skillPaths?.length ? [...skillPaths] : undefined;
 
 	// Model resolution: override → definition → fallback
-	const modelId = modelOverride ?? def.model ?? FALLBACK_MODEL;
+	const modelId = resolveSessionModelId(options);
 	const model = resolveModel(modelId, modelRegistry);
 
 	// Thinking level resolution: override → definition → undefined (Pi default)
@@ -295,4 +300,13 @@ export async function buildSessionParams(
 		thinkingLevel,
 		sessionPolicy,
 	};
+}
+
+function resolveSessionModelId(options: BuildSessionParamsOptions): string {
+	return requireModelId(
+		options.modelOverride ??
+			options.def.model ??
+			options.defaultModel ??
+			options.runtime?.defaultModel,
+	);
 }

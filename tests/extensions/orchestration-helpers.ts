@@ -19,8 +19,6 @@ export const testDomainsDir = resolve(
 	"domains",
 );
 
-export const testBundledAlphaDir = "/framework/bundled/alpha";
-
 export const TEST_CALLER_MARKER = "<!-- COSMONAUTS_AGENT_ID:coding/lead -->";
 
 export function authorizedToolRegistry(

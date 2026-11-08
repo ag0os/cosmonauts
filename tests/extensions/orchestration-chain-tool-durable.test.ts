@@ -397,6 +397,7 @@ async function callChainTool(
 
 function runtime(): CosmonautsRuntime {
 	return {
+		chains: [],
 		chainAdapter: codingChainAdapter,
 		workerAgent: "coding/worker",
 		agentRegistry: registry,

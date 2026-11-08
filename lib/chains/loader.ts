@@ -7,6 +7,7 @@
  */
 
 import { loadProjectConfig } from "../config/index.ts";
+import type { ProjectConfig } from "../config/types.ts";
 import {
 	canAccessSurfaceName,
 	selectPublicChains,
@@ -67,6 +68,14 @@ export async function loadNamedChains(
 	domainChains?: NamedChainSource,
 ): Promise<NamedChain[]> {
 	const config = await loadProjectConfig(projectRoot);
+	return collectNamedChains(config.chains, domainChains);
+}
+
+/** Resolve a host-owned chain collection without rereading project configuration. */
+export function collectNamedChains(
+	config: ProjectConfig["chains"],
+	domainChains?: NamedChainSource,
+): NamedChain[] {
 	const visibleDomainChains = resolveDomainChainSource(domainChains);
 
 	const chainMap = new Map<string, NamedChain>();
@@ -76,8 +85,8 @@ export async function loadNamedChains(
 		}
 	}
 
-	if (config.chains) {
-		for (const [name, def] of Object.entries(config.chains)) {
+	if (config) {
+		for (const [name, def] of Object.entries(config)) {
 			if (def && typeof def.chain === "string") {
 				chainMap.set(name, {
 					name,

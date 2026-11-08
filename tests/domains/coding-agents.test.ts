@@ -1,3 +1,4 @@
+import { getHostRuntime } from "../../lib/runtime-host.ts";
 /**
  * Tests for coding domain agent definition invariants.
  *
@@ -266,6 +267,7 @@ describe("coding domain agent invariants", () => {
 
 		for (const definition of consumers) {
 			const params = await buildSessionParams({
+				runtime: await getHostRuntime({ projectRoot: tmp.path }),
 				def: definition,
 				cwd: tmp.path,
 				resolver,

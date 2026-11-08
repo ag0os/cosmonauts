@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -33,6 +34,17 @@ describe("scaffoldDomain", () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
+	it("generates a DomainManifest specifier that the public export map resolves", async () => {
+		await scaffoldDomain("public-api", tempDir);
+		const source = await readFile(
+			join(tempDir, "public-api", "domain.ts"),
+			"utf8",
+		);
+		expect(source).toContain('from "cosmonauts/domains"');
+		expect(
+			createRequire(import.meta.url).resolve("cosmonauts/domains"),
+		).toContain("/lib/domains/index.ts");
+	});
 	it("creates the package directory at ./<name>/", async () => {
 		await scaffoldDomain("mypkg", tempDir);
 		const { stat } = await import("node:fs/promises");

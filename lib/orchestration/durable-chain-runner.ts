@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import type {
 	PreparedStep,
 	RunGraph,
@@ -71,13 +70,6 @@ import type {
 const CHAIN_RUN_SCOPE = "chain";
 const DEFAULT_HOLDER_ID = "chain-runner";
 const DEFAULT_MAX_SCHEDULER_PASSES = 1_000;
-const FALLBACK_DOMAINS_DIR = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"domains",
-);
 
 export async function runDurableChain(
 	config: ChainConfig,
@@ -129,15 +121,12 @@ async function executeDurableChain(
 		compaction: config.compaction,
 	});
 
-	const spawner = createPiSpawner(
-		config.registry,
-		config.domainsDir ?? FALLBACK_DOMAINS_DIR,
-		{
-			resolver: config.resolver,
-			spawnTimeoutMs: config.spawnTimeoutMs,
-			sessionPolicies: config.sessionPolicies,
-		},
-	);
+	const spawner = createPiSpawner(config.registry, config.domainsDir, {
+		resolver: config.resolver,
+		spawnTimeoutMs: config.spawnTimeoutMs,
+		runtime: config.runtime,
+		sessionPolicies: config.sessionPolicies,
+	});
 
 	try {
 		const backend = createChainSchedulerBackend({

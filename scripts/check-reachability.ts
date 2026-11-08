@@ -320,7 +320,15 @@ try {
 		}
 		return binEntryImports({ root, script, source: read(script) });
 	});
+	const exportEntries = Object.values(
+		(JSON.parse(read("package.json")) as { exports?: Record<string, string> })
+			.exports ?? {},
+	).map((path) => path.replace(/^\.\//, ""));
+	for (const path of exportEntries)
+		if (!existsSync(join(root, path)))
+			errors.push(`missing package export: ${path}`);
 	const roots = new Set<string>([
+		...exportEntries,
 		...declared,
 		...binEntries,
 		...compiledEntries,

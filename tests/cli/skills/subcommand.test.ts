@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createSkillsProgram,
@@ -6,12 +5,9 @@ import {
 	type SkillListItem,
 } from "../../../cli/skills/subcommand.ts";
 import type { LoadedDomain } from "../../../lib/domains/types.ts";
+import { setRuntimeHost } from "../../../lib/runtime-host.ts";
 import type { DiscoveredSkill } from "../../../lib/skills/index.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
-
-const FRAMEWORK_ROOT = fileURLToPath(
-	new URL("../../../", import.meta.url),
-).replace(/\/$/, "");
 
 const runtimeMocks = vi.hoisted(() => ({
 	create: vi.fn(),
@@ -177,6 +173,7 @@ describe("createSkillsProgram list — runtime discovery", () => {
 	let output: ReturnType<typeof captureCliOutput>;
 
 	beforeEach(() => {
+		setRuntimeHost(runtimeMocks.create);
 		output = captureCliOutput();
 		process.exitCode = undefined;
 		runtimeMocks.discoverFrameworkBundledPackageDirs.mockResolvedValue([
@@ -197,17 +194,17 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		process.exitCode = undefined;
 	});
 
-	it("bootstraps a runtime that includes bundled package dirs", async () => {
+	it("requests the consumer runtime without framework discovery", async () => {
 		await createSkillsProgram().parseAsync(["--json", "list"], {
 			from: "user",
 		});
 
 		expect(
 			runtimeMocks.discoverFrameworkBundledPackageDirs,
-		).toHaveBeenCalledWith(FRAMEWORK_ROOT);
+		).not.toHaveBeenCalled();
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				bundledDirs: ["/framework/bundled/alpha"],
+				projectRoot: process.cwd(),
 				pluginDirs: undefined,
 				domainOverride: undefined,
 			}),

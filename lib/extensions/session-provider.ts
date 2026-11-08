@@ -1,12 +1,7 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
-import type { AgentMemoryGrants } from "../agents/types.ts";
+import type { SessionProviderContext } from "../agents/resource-providers.ts";
 
-/** Selected providers may bind to the host's declaration before Pi registers them. */
-export interface SessionProviderContext {
-	readonly agentId: string;
-	readonly memory: Required<AgentMemoryGrants>;
-}
-
+export type { SessionProviderContext } from "../agents/resource-providers.ts";
 export type SessionExtensionProvider = (
 	context: SessionProviderContext,
-) => InlineExtension | undefined;
+) => InlineExtension | undefined | Promise<InlineExtension | undefined>;

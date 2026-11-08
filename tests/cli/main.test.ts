@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 /**
  * Tests for CLI argument parsing (parseCliArgs) and framework dev-mode
  * detection helpers (isCosmonautsFrameworkRepo, discoverBundledPackageDirs).
@@ -617,17 +618,22 @@ describe("buildInitSessionConfig", () => {
 });
 
 describe("resolveInteractiveExtensionPaths", () => {
-	test("registers normal live-session commands including domain-bind", () => {
-		expect(
-			resolveInteractiveExtensionPaths({
-				domainResolver: {
-					resolveExtensionPath: (name) => `/consumer/extensions/${name}`,
-				},
-			}),
-		).toEqual([
-			"/consumer/extensions/agent-switch",
-			"/consumer/extensions/domain-bindings",
+	test("registers real live-session commands including domain-bind", () => {
+		const binding = new URL(
+			"../../domains/shared/extensions/domain-bindings",
+			import.meta.url,
+		).pathname;
+		const paths = resolveInteractiveExtensionPaths({
+			domainResolver: {
+				resolveExtensionPath: (name: string) =>
+					name === "domain-bindings" ? binding : undefined,
+			},
+		});
+		expect(paths).toEqual([
+			new URL("../../lib/extensions/agent-switch", import.meta.url).pathname,
+			binding,
 		]);
+		for (const path of paths) expect(existsSync(path)).toBe(true);
 	});
 });
 

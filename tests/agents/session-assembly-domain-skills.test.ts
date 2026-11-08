@@ -55,6 +55,7 @@ afterAll(async () => {
 async function visibleSkills(role: string, domain: string): Promise<string[]> {
 	const def = runtime.agentRegistry.resolve(role, domain);
 	const params = await buildSessionParams({
+		runtime,
 		def,
 		cwd: projectRoot,
 		domainsDir: runtime.domainsDir,

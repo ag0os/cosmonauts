@@ -138,6 +138,49 @@ describe("runDurableChain stage stats", () => {
 		vi.useRealTimers();
 	});
 
+	test("durable execution forwards the host runtime and policies without persisting them", async () => {
+		const projectRoot = join(temp.path, "project");
+		const runtime = {
+			marker: "host-runtime-only",
+		} as unknown as import("../../lib/runtime.ts").CosmonautsRuntime;
+		const resolver =
+			{} as import("../../lib/domains/resolver.ts").DomainResolver;
+		const sessionPolicies = {
+			marker: "host-policy-only",
+			forAgent: () => undefined,
+		};
+		const result = await runDurableChain(
+			withCodingChain({
+				steps: parseChain("planner"),
+				projectRoot,
+				registry,
+				runtime,
+				resolver,
+				sessionPolicies,
+				spawnTimeoutMs: 777,
+			}),
+		);
+		expect(result.success).toBe(true);
+		expect(spawnerMocks.createPiSpawner).toHaveBeenCalledWith(
+			registry,
+			undefined,
+			{ runtime, resolver, sessionPolicies, spawnTimeoutMs: 777 },
+		);
+		expect(spawnerMocks.createPiSpawner.mock.calls[0]?.[2].runtime).toBe(
+			runtime,
+		);
+		if (!result.run) throw new Error("Missing durable run reference");
+		const store = new FileRunStore({
+			rootDir: join(projectRoot, "missions", "sessions"),
+		});
+		const graph = await store.readRunGraph({
+			scope: "chain",
+			runId: result.run.runId,
+		});
+		expect(JSON.stringify(graph)).not.toContain("host-runtime-only");
+		expect(JSON.stringify(graph)).not.toContain("host-policy-only");
+	});
+
 	test.each([
 		[undefined, { kind: "default" }],
 		[

@@ -27,7 +27,6 @@ import {
 import type { SessionRecord } from "../sessions/types.ts";
 import { MessageBus } from "./message-bus.ts";
 import {
-	FALLBACK_MODEL,
 	getModelForRole,
 	getThinkingForRole,
 	resolveModel,
@@ -65,7 +64,7 @@ export {
 } from "./definition-resolution.ts";
 
 // Re-export model-resolution symbols for backwards compatibility.
-export { FALLBACK_MODEL, getModelForRole, getThinkingForRole, resolveModel };
+export { getModelForRole, getThinkingForRole, resolveModel };
 
 // Re-export session-factory symbol.
 export { createAgentSessionFromDefinition } from "./session-factory.ts";
@@ -76,6 +75,7 @@ export { createAgentSessionFromDefinition } from "./session-factory.ts";
 
 /** Options for {@link createPiSpawner}. */
 export interface PiSpawnerOptions {
+	runtime?: import("../runtime.ts").CosmonautsRuntime;
 	sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider;
 	/** Shared message bus for parallel spawn coordination. */
 	bus?: MessageBus;
@@ -117,7 +117,7 @@ type FinalMessages = unknown[];
  */
 export function createPiSpawner(
 	registry: AgentRegistry,
-	domainsDir: string,
+	domainsDir: string | undefined,
 	options?: PiSpawnerOptions & {
 		resolver?: import("../domains/resolver.ts").DomainResolver;
 	},
@@ -128,14 +128,7 @@ export function createPiSpawner(
 	return {
 		async spawn(input: SpawnConfig): Promise<SpawnResult> {
 			const definition = resolveSpawnAgent(registry, input)?.definition;
-			const config = {
-				...input,
-				sessionPolicy:
-					input.sessionPolicy ??
-					(definition
-						? options?.sessionPolicies?.forAgent(definition)
-						: undefined),
-			};
+			const config = bindSpawnConfig(input, { definition, options });
 			if (config.signal?.aborted) {
 				return toSpawnFailure(new Error("Aborted before spawn"));
 			}
@@ -183,7 +176,7 @@ export function createPiSpawner(
 async function prepareSpawnSession(
 	registry: AgentRegistry,
 	config: SpawnConfig,
-	domainsDir: string,
+	domainsDir: string | undefined,
 	resolver: DomainResolver | undefined,
 	bus: MessageBus,
 ): Promise<PreparedSpawnSession> {
@@ -202,7 +195,11 @@ async function prepareSpawnSession(
 		resolver,
 	);
 	if (config.sessionPolicy)
-		registerSessionPolicy(session.sessionId, config.sessionPolicy);
+		registerSessionPolicy(
+			session.sessionId,
+			config.sessionPolicy,
+			config.runtime,
+		);
 	config.sessionPolicy?.onCreated?.(session);
 	emitSpawnEvent(config, {
 		type: "agent_resolved",
@@ -563,5 +560,23 @@ function mapToolEndEvent(
 		toolCallId: event.toolCallId as string,
 		isError: event.isError as boolean,
 		...(observation === undefined ? {} : { result: observation }),
+	};
+}
+
+function bindSpawnConfig(
+	input: SpawnConfig,
+	context: {
+		definition?: import("../agents/types.ts").AgentDefinition;
+		options?: PiSpawnerOptions;
+	},
+): SpawnConfig {
+	const runtime = input.runtime ?? context.options?.runtime;
+	const policies = context.options?.sessionPolicies ?? runtime?.sessionPolicies;
+	return {
+		...input,
+		runtime,
+		sessionPolicy:
+			input.sessionPolicy ??
+			(context.definition ? policies?.forAgent(context.definition) : undefined),
 	};
 }

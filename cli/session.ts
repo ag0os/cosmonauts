@@ -117,13 +117,15 @@ function toResourceLoaderOptions(
 }
 
 interface CreateSessionOptions {
+	extensionRuntime?: import("../lib/runtime.ts").CosmonautsRuntime;
+	runtime?: import("../lib/runtime.ts").CosmonautsRuntime;
 	sessionPolicies?: import("../lib/agents/session-policy.ts").SessionPolicyProvider;
 	/** Agent definition to build the session from */
 	definition: AgentDefinition;
 	/** Working directory */
 	cwd: string;
 	/** Absolute path to the root domains directory (fallback when no resolver) */
-	domainsDir: string;
+	domainsDir?: string;
 	/** Domain resolver for multi-source path resolution. When provided, takes precedence over domainsDir. */
 	resolver?: DomainResolver;
 	/** Model ID override string, e.g. "anthropic/claude-sonnet-4-5" */
@@ -531,6 +533,8 @@ export async function createSession(
 
 	const params = await buildSessionParams({
 		def,
+		runtime: options.runtime,
+		extensionRuntime: options.extensionRuntime,
 		sessionPolicy: options.sessionPolicies?.forAgent(def),
 		cwd,
 		domainsDir,
@@ -575,6 +579,8 @@ export async function createSession(
 					const newDef = agentRegistry.resolve(pendingAgentId, domainContext);
 					const newParams = await buildSessionParams({
 						def: newDef,
+						runtime: options.runtime,
+						extensionRuntime: options.extensionRuntime,
 						sessionPolicy: options.sessionPolicies?.forAgent(newDef),
 						cwd,
 						domainsDir,

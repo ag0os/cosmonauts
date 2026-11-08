@@ -299,3 +299,152 @@ actors and restrictions. Test: `tests/extensions/agent-switch.test.ts`.
 Step4 must supply the session-policy provider explicitly from the host before3c
 reaches user execution: a pre-3c installed coding package can lack any lower
 provider declaration. This stale-install case is not claimed fixed by3c alone.
+
+
+## Consumer runtime and public entries (step 4)
+
+LS-5: `CosmonautsRuntime.create` accepts explicit `agents`, `chains`, `domains`,
+`domainSources`, and `projectConfig`; no built-in directory is required. Explicit
+`domainSources` (including `[]`) overrides source scanning. Package/domain stores
+are opt-in via `discoverPackages`; directory and plugin roots are explicit inputs.
+Tests: `tests/consumer-runtime.test.ts` and `tests/runtime.test.ts`.
+
+Duplicate agent, domain and chain declarations in a runtime collection fail before
+execution; this does not change `AgentRegistry.register`'s layering overwrite
+contract. Qualified programmatic agents need no resource domain manifest.
+Tests: `tests/consumer-runtime.test.ts`.
+
+The current content consumer lives in `domains/host-runtime.ts`: it chooses roots,
+model default, coding chain adapter, worker and session policies. Library/CLI entry
+points request the host runtime through `setRuntimeHost`/`getHostRuntime`; equal
+project/domain/plugin requests share construction, failed construction can retry,
+and an unconfigured host fails explicitly. Explicit library session assembly and nested spawns, chains and Drive retain the supplied runtime. The current CLI mounts inline extensions with its base execution runtime, excluding interactive --domain/--plugin-dir additions, preserving pre-step4 reach. Tests: `tests/runtime-host.test.ts`, orchestration/CLI suites and extension
+binding contracts. Restore-by-id continues to use the current declaration; no
+snapshots are introduced.
+
+QM's sealed base-owned review runtime is the named temporary R1 content exemption
+until step 6: replacing it with the reviewed project's live runtime would weaken
+its trust boundary. Lean takes the host runtime; neither is generalized.
+The orchestration library's own executable asset root locates the Drive runner
+and envelope code only; it is not a source of domain, agent or model defaults.
+
+A session model resolves explicit override, declaration, then consumer default;
+missing all three fails before requesting a model. The library no longer exports
+a fixed fallback model. The current content consumer preserves its model choice.
+Role-model/thinking compatibility helpers remain neutral utilities; they do not
+infer content identities. Tests: assembly and spawner model-resolution contracts.
+True host identity binding remains deferred under R8: prompt markers are display
+and legacy extension authority, and project context may append later text. The
+runtime host port does not itself fix that independent prompt-authority limitation.
+
+`loadAgentDeclarations` loads default-exported TS/JS/MJS definitions from an
+absolute consumer directory, validates explicit file memory policy, and ignores
+hidden, declaration-only, nested and non-module files. It adds no Markdown parser.
+Tests: `tests/agents/directory-loader.test.ts`.
+Session extension providers may be explicit host callbacks or selected directory
+hooks (`index.ts`, `index.js`, `index.mjs`, in that order); selected directory
+providers retain precedence and unselected providers are not evaluated. Async hooks
+receive the actual runtime, identity and grants. Test: `extension-binding.test.ts`.
+
+LS-6: package exports enumerate all 24 stable deep entries from `fallow.toml`,
+retain those exact paths, add explicit friendly aliases, a declaration/runtime root
+and a runtime-host entry. The legacy `lib/lean-run/providers/default.ts` path is a named temporary content
+compatibility export until step 6, pinned by the packed-package test.
+There is no wildcard exposing private internals. Session
+creation stays on its separate Pi-dependent public entries. Configured chain dispatch is exported from cosmonauts/chains. Test:
+`tests/public-surface.test.ts`; the external package-name-only fixture is step 5. The locator is available only at cosmonauts/runtime-host as the Pi-discovery bridge, not on the declaration root.
+
+Consumers import topology/normalization helpers from `cosmonauts/chains`; session
+orchestration factories from `cosmonauts/extensions/orchestration`; and inline or
+durable execution from the explicit `cosmonauts/orchestration/chain-runner` and
+`cosmonauts/orchestration/durable-chain-runner` entries. These let an external
+consumer bind the shipped orchestration tools and execute its declared chain
+without a private deep import. Pi session execution remains on separate entries.
+
+Memory consolidation resolves the consumer's effective model before creating the
+judgment provider, so provider IDs and durable batch keys retain the actual model
+(the current content's default is unchanged). Explicit models bypass host lookup;
+deterministic-only consolidation does not request a runtime/model. Injected test
+sessions without a model are labeled as injected rather than as a real model.
+Tests: `tests/cli/memory/subcommand.test.ts` provider identity contracts.
+
+
+
+### Domain manifest fields and host ownership
+
+| Field | Meaning | Layering and host rule |
+| --- | --- | --- |
+| `id`, `description` | Resource-provider identity and description | Names have no built-in significance |
+| `lead` | Agent used when a mode selects the domain lead | Optional; not a prerequisite for general runnability |
+| `portable` | Allows its resources to participate in portable lookup | Independent of activation, fallback and default |
+| `alwaysActive` | Participates despite an active-domain filter | Highest layer wins; dropping a lower true flag warns |
+| `resourceFallback` | Final resource-lookup tier | Highest layer wins; no implicit provider name |
+| `default` | Consumer-selected default resource domain/lead | At most one active default; omission drops and warns |
+| `internal.agents`, `.skills`, `.chains` | Hide listed assets from outside the owning domain | Resource borrowing grants no private visibility |
+| `defaultModel` | Retained domain metadata | Not an implicit runtime model default; the host supplies model policy |
+| `sessionPolicies` | Optional composed policy metadata | Omission inherits; distinct providers conflict; explicit host choice wins |
+
+Chain adapters, runtime worker and model defaults are host runtime inputs, not
+manifest chain-consumer hints. Session policy remains compatibility composition
+metadata while the actual current host always supplies its policy explicitly.
+The internal policy port has no dedicated package export. Tests: runtime policy,
+consumer-runtime and content-runtime suites.
+
+A registered session binds its host runtime alongside the policy, shared across
+extension module caches and removed on disposal; a bound spawn policy with no
+runtime fails before checkout discovery. Spawn policy no longer exposes a runtime
+getter. Detached child policy selection occurs once, including an absent result.
+Tests: session-policy registry/spawner and spawn-policy-hooks suites.
+
+The CLI mounts lib/extensions/agent-switch directly and resolves domain-bindings through the selected resource provider. The latter stays at domains/shared/extensions/domain-bindings until step6 and the human registry edit; real-path existence and command/resume/fork behavior are pinned. Its content catalog is
+owned by `cli/package-catalog.ts`; core catalog lookup takes explicit entries and
+relative sources require an explicit root. Current CLI install/update behavior
+and its catalog entries remain pinned by package/update/catalog tests. The library
+ships no implicit catalog content. Catalog's step4 name debt is closed; the named
+step6 lean/QM import exceptions remain.
+
+Runtime collection admission validates each supplied actor before adding its ID to
+the collision collection, so an invalid duplicate reports its declaration error.
+Discovered domains and configured chains also participate in collision checks;
+user-store discovery requires opt-in and respects explicit user-source exclusion.
+Declaration directory ordering is deterministic even with reversed enumeration,
+and source-map files are ignored. Tests: consumer-runtime and directory-loader.
+Package-export targets are reachability roots and missing targets are diagnosed;
+test: check-reachability-visit.
+
+Malformed default exports report the declaration-shape error. Ordinary extension
+directories without a binding entry stay on the SDK discovery path without native
+deprecation warnings. A known bound role is resolved through its binding even
+when its original physical actor exists; frozen target lookup still bypasses
+rebinding. Durable execution forwards the host runtime, resolver, policy and timeout
+and excludes live runtime/policy objects from persisted graph data. Tests:
+directory-loader, extension-binding, consumer-runtime and durable-chain-runner-stats.
+
+The library also preserves diagnostic quality for invalid module exports and
+omitted provider entries; native deprecation warnings are not treated as equivalent
+behavior. The remaining contract-equivalent mutation cases are documented with
+fresh-source evidence in the step4 review artifact.
+
+
+### Review45 compatibility boundaries
+
+Session assembly uses runtime.projectConfig before any disk fallback; the explicit
+consumer configuration controls knowledgeSurface. The CLI's inline extension
+scope uses the base host request (project root only), excluding its interactive
+plugin directories and domain override. Those flags still govern interactive
+selection, resources and agent switching. A caller available only in that added
+scope cannot resolve for spawn/chain. This preserves10e4f5c0 behavior; wider reach
+is a later owner choice. Tests: review45-runtime-contracts and cli/runtime-host.
+
+Inline factories stay bound to the launch runtime after a cross-project resume;
+chain/Drive still receive ctx.cwd. The runtime does not record its root and no
+cross-project refusal guard is claimed (orchestration.test.ts). Configured chains
+are a runtime collection: config-file edits require a host reset or process restart
+before chain_run/lean sees them. No per-call config reread is promised.
+
+The coding manifest carries its quality-review seal for direct runtime creation;
+the current host's explicit provider still wins. Scaffold/eject outputs use public
+aliases; eject rejects an unexported framework target rather than emitting a broken
+specifier. Pi catalog tests bind the actual pinned1.0.3 ToolName union to the local
+allowlist. Toolless Pi helpers and memory consolidate need the content host when
+choosing a default model; an explicit model bypasses that bootstrap.

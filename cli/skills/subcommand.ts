@@ -7,8 +7,6 @@
  * path used by interactive sessions so the CLI never under-reports.
  */
 
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { prepareSkillExportAssets } from "../../lib/harness-adapters/inventory.ts";
 import {
@@ -21,8 +19,7 @@ import type {
 	SourceHealthRow,
 } from "../../lib/harness-adapters/types.ts";
 import { composeHarnessRuntimeInventory } from "../../lib/harness-runtime-inventory.ts";
-import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../../lib/runtime.ts";
+import { getHostRuntime } from "../../lib/runtime-host.ts";
 import type {
 	DiscoveredSkill,
 	ExtraSkillSource,
@@ -97,22 +94,10 @@ async function discoverAllRuntimeSkills(
 	options: SkillsProgramOptions,
 	projectRoot = process.cwd(),
 ): Promise<DiscoveredSkill[]> {
-	const frameworkRoot = resolve(
-		dirname(fileURLToPath(import.meta.url)),
-		"..",
-		"..",
-	);
-	const bundledDirs = await discoverFrameworkBundledPackageDirs(frameworkRoot);
-	const pluginDirs = options.pluginDir?.length
-		? [...options.pluginDir]
-		: undefined;
-
-	const runtime = await CosmonautsRuntime.create({
-		builtinDomainsDir: join(frameworkRoot, "domains"),
+	const runtime = await getHostRuntime({
 		projectRoot,
-		bundledDirs,
 		domainOverride: options.domain,
-		pluginDirs,
+		pluginDirs: options.pluginDir,
 	});
 
 	const projectExtras: ExtraSkillSource[] = (
@@ -137,18 +122,10 @@ export async function discoverRuntimeSkillExports(
 	options: SkillsProgramOptions,
 	projectRoot = process.cwd(),
 ): Promise<RuntimeSkillExportDiscovery> {
-	const frameworkRoot = resolve(
-		dirname(fileURLToPath(import.meta.url)),
-		"..",
-		"..",
-	);
-	const bundledDirs = await discoverFrameworkBundledPackageDirs(frameworkRoot);
-	const runtime = await CosmonautsRuntime.create({
-		builtinDomainsDir: join(frameworkRoot, "domains"),
+	const runtime = await getHostRuntime({
 		projectRoot,
-		bundledDirs,
 		domainOverride: options.domain,
-		pluginDirs: options.pluginDir?.length ? [...options.pluginDir] : undefined,
+		pluginDirs: options.pluginDir,
 	});
 	const runtimeInventory = await composeHarnessRuntimeInventory({
 		projectRoot,

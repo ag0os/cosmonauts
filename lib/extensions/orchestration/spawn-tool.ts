@@ -8,6 +8,7 @@ import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
 import {
 	getSessionPolicy,
+	getSessionRuntime,
 	type SessionSpawnPolicy,
 } from "../../agents/session-policy.ts";
 import type { AgentDefinition } from "../../agents/types.ts";
@@ -473,10 +474,11 @@ export function registerSpawnTool(
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
 			const parentSessionId = ctx.sessionManager.getSessionId();
-			const boundPolicy = getSessionPolicy(parentSessionId)?.spawn;
-			const runtime = boundPolicy?.runtime?.() ?? (await getRuntime(ctx.cwd));
-			const spawnPolicy =
-				boundPolicy ?? runtime.sessionPolicies?.spawnPolicy?.(parentSessionId);
+			const { runtime, spawnPolicy } = await resolveSpawnHost({
+				sessionId: parentSessionId,
+				cwd: ctx.cwd,
+				getRuntime,
+			});
 			const resolved = () => {
 				const systemPrompt = ctx.getSystemPrompt();
 				const callerRole = extractAgentIdFromSystemPrompt(systemPrompt);
@@ -777,9 +779,13 @@ export function registerSpawnTool(
 					cwd: ctx.cwd,
 					prompt: params.prompt,
 					model: params.model,
-					sessionPolicy: runtime.sessionPolicies?.forAgent(targetDef),
+					sessionPolicy: undefined,
 				};
+				const childSessionPolicy =
+					childPolicy.sessionPolicy ??
+					runtime.sessionPolicies?.forAgent(targetDef);
 				const buildChildConfig = () => ({
+					runtime,
 					role: params.role,
 					agentReference: targetResolution.reference,
 					domainContext: runtime.domainContext,
@@ -792,9 +798,7 @@ export function registerSpawnTool(
 					skillPaths: [...runtime.skillPaths],
 					spawnDepth: childDepth,
 					parentSessionId,
-					sessionPolicy:
-						childPolicy?.sessionPolicy ??
-						runtime.sessionPolicies?.forAgent(targetDef),
+					sessionPolicy: childSessionPolicy,
 					...(planSlug !== undefined && { planSlug }),
 				});
 				const spawnConfig = buildChildConfig();
@@ -908,4 +912,21 @@ export function registerSpawnTool(
 			}
 		},
 	});
+}
+
+async function resolveSpawnHost(options: {
+	sessionId: string;
+	cwd: string;
+	getRuntime: (cwd: string) => Promise<CosmonautsRuntime>;
+}) {
+	const boundPolicy = getSessionPolicy(options.sessionId)?.spawn;
+	const boundRuntime = getSessionRuntime(options.sessionId);
+	if (boundPolicy && !boundRuntime)
+		throw new Error("Host spawn policy runtime is missing");
+	const runtime = boundRuntime ?? (await options.getRuntime(options.cwd));
+	return {
+		runtime,
+		spawnPolicy:
+			boundPolicy ?? runtime.sessionPolicies?.spawnPolicy?.(options.sessionId),
+	};
 }

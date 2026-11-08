@@ -146,6 +146,9 @@ const defaultRegistry = new AgentRegistry([
 
 function bindingResolver(bindings: Record<string, string>) {
 	return {
+		resolveKnownRole(role: string) {
+			return { role };
+		},
 		resolveAgentReference(qualifiedId: string) {
 			const [role, agentId] = qualifiedId.split("/");
 			if (!role || !agentId) throw new Error("Expected qualified reference");

@@ -1,8 +1,6 @@
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { discoverFrameworkBundledPackageDirs } from "../lib/packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../lib/runtime.ts";
+import type { CosmonautsRuntime } from "../lib/runtime.ts";
+import { getHostRuntime } from "../lib/runtime-host.ts";
 import {
 	type PiFlagParseResult,
 	type PiFlags,
@@ -30,9 +28,6 @@ export interface CliRuntimeOptions {
 
 export interface CliRuntimeContext {
 	cwd: string;
-	frameworkRoot: string;
-	domainsDir: string;
-	bundledDirs?: string[];
 	runtime: CosmonautsRuntime;
 }
 
@@ -118,18 +113,12 @@ export async function createCliRuntimeContext(
 	options: CliRuntimeOptions,
 ): Promise<CliRuntimeContext> {
 	const cwd = process.cwd();
-	const frameworkRoot = resolve(fileURLToPath(import.meta.url), "..", "..");
-	const domainsDir = join(frameworkRoot, "domains");
-	const bundledDirs = await discoverFrameworkBundledPackageDirs(frameworkRoot);
-	const runtime = await CosmonautsRuntime.create({
-		builtinDomainsDir: domainsDir,
+	const runtime = await getHostRuntime({
 		projectRoot: cwd,
 		domainOverride: options.domain,
-		bundledDirs,
 		pluginDirs: options.pluginDirs,
 	});
-
-	return { cwd, frameworkRoot, domainsDir, bundledDirs, runtime };
+	return { cwd, runtime };
 }
 
 function readRequiredValue(
@@ -142,4 +131,11 @@ function readRequiredValue(
 		throw new Error(`Missing value for ${flag}`);
 	}
 	return value;
+}
+
+/** Base-compatible execution scope: CLI-only domain/plugin additions stay interactive. */
+export function getCliExecutionRuntime(
+	projectRoot: string,
+): Promise<CosmonautsRuntime> {
+	return getHostRuntime({ projectRoot });
 }

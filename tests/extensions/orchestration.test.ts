@@ -1,4 +1,5 @@
 import { codingChainAdapter } from "../../bundled/coding/chain-adapter.ts";
+import { setRuntimeHost } from "../../lib/runtime-host.ts";
 /**
  * Tests for orchestration extension wiring.
  * Verifies the cached CosmonautsRuntime is used and forwarded to runtime calls.
@@ -25,7 +26,9 @@ import {
 import type { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
-import orchestrationExtension from "../../lib/extensions/orchestration/index.ts";
+import orchestrationExtension, {
+	createOrchestrationExtension,
+} from "../../lib/extensions/orchestration/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
@@ -47,7 +50,6 @@ import {
 	createMockPi,
 	flushAsync,
 	loadOrchestrationDomainFixtures,
-	testBundledAlphaDir,
 	testDomainsDir,
 } from "./orchestration-helpers.ts";
 import { getOrchestrationMocks } from "./orchestration-mocks.ts";
@@ -57,7 +59,11 @@ function registerQualityReviewSession(
 	sessionId: string,
 	context: QualityReviewSessionContext,
 ) {
-	registerSessionPolicy(sessionId, createQualityReviewSessionPolicy(context));
+	registerSessionPolicy(
+		sessionId,
+		createQualityReviewSessionPolicy(context),
+		context.baseRuntime,
+	);
 }
 const removeQualityReviewSession = removeSessionPolicy;
 
@@ -158,6 +164,7 @@ describe("orchestration extension", () => {
 	}
 
 	beforeEach(() => {
+		setRuntimeHost(runtimeCreateMock);
 		vi.clearAllMocks();
 		mockRuntime();
 	});
@@ -308,7 +315,26 @@ describe("orchestration extension", () => {
 		expect(parseChainMock).toHaveBeenCalledWith("coordinator");
 	});
 
-	test("orchestration runtime includes a synthetic bundled package in framework dev mode", async () => {
+	test("inline orchestration keeps the supplied runtime when the global host changes", async () => {
+		mockRuntime();
+		const runtime = await runtimeCreateMock();
+		runtimeCreateMock.mockClear();
+		setRuntimeHost(async () => {
+			throw new Error("must not reconstruct");
+		});
+		const pi = createMockPi("/different/project", {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
+		});
+		await createOrchestrationExtension(runtime as never)(pi as never);
+		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
+		await pi.callTool("chain_run", { expression: "coordinator" });
+		expect(runtimeCreateMock).not.toHaveBeenCalled();
+		expect(runChainMock).toHaveBeenCalledWith(
+			expect.objectContaining({ runtime }),
+		);
+	});
+
+	test("orchestration requests the consumer runtime without discovering framework packages", async () => {
 		const { cwd, pi } = createExtensionPi();
 
 		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
@@ -317,9 +343,9 @@ describe("orchestration extension", () => {
 
 		expect(runtimeCreateMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				builtinDomainsDir: testDomainsDir,
 				projectRoot: cwd,
-				bundledDirs: expect.arrayContaining([testBundledAlphaDir]),
+				pluginDirs: undefined,
+				domainOverride: undefined,
 			}),
 		);
 	});
@@ -1601,6 +1627,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		runtimeCreateMock
 			.mockRejectedValueOnce(new Error("invalid config"))
 			.mockResolvedValueOnce({
+				chains: [],
 				agentRegistry: realRegistry,
 				domainContext: undefined,
 				projectSkills: [],

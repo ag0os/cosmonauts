@@ -203,3 +203,27 @@ describe("reachability verdict for the shipped repository", () => {
 		);
 	});
 });
+
+test("package exports are runtime reachability roots even without an import from the CLI", () => {
+	const root = createProject("export {};\n");
+	const path = join(root, "package.json");
+	const manifest = JSON.parse(readFileSync(path, "utf8"));
+	manifest.exports = { "./api": "./lib/probe.ts" };
+	writeFileSync(path, JSON.stringify(manifest));
+	const result = run(root);
+	expect(result.status).toBe(0);
+	expect(result.stdout).toContain("1/1 runtime lib modules reached");
+});
+
+test("a missing package export reports its target instead of silently omitting the public root", () => {
+	const root = createProject("export {};\n");
+	const path = join(root, "package.json");
+	const manifest = JSON.parse(readFileSync(path, "utf8"));
+	manifest.exports = { "./api": "./lib/missing.ts" };
+	writeFileSync(path, JSON.stringify(manifest));
+	const result = run(root);
+	expect(result.status).toBe(1);
+	expect(result.stdout + result.stderr).toContain(
+		"missing package export: lib/missing.ts",
+	);
+});

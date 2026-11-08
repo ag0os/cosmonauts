@@ -24,6 +24,7 @@ import { validateAgentDefinition } from "../lib/agents/declaration.ts";
  */
 
 import { writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Command, CommanderError } from "commander";
 import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
@@ -57,6 +58,7 @@ import { type PiFlagParseResult, parsePiFlags } from "./pi-flags.ts";
 import {
 	type CliRuntimeOptions,
 	createCliRuntimeContext,
+	getCliExecutionRuntime,
 	parseCliRuntimeOptions,
 	parseThinkingLevel,
 } from "./runtime-bootstrap.ts";
@@ -330,13 +332,18 @@ export function hasRunnableDefaultDomain(runtime: CosmonautsRuntime): boolean {
 	return runtime.domains.some((domain) => !domain.manifest.resourceFallback);
 }
 
+/** Agent switching is library-owned; bindings stay with content until the step6 registry edit. */
 export function resolveInteractiveExtensionPaths(runtime: {
 	readonly domainResolver: Pick<DomainResolver, "resolveExtensionPath">;
 }): string[] {
-	return ["agent-switch", "domain-bindings"].flatMap((name) => {
-		const path = runtime.domainResolver.resolveExtensionPath(name, undefined);
-		return path ? [path] : [];
-	});
+	const binding = runtime.domainResolver.resolveExtensionPath(
+		"domain-bindings",
+		undefined,
+	);
+	return [
+		fileURLToPath(new URL("../lib/extensions/agent-switch", import.meta.url)),
+		...(binding ? [binding] : []),
+	];
 }
 
 interface ResolveDumpPromptDomainOptions {
@@ -587,6 +594,8 @@ async function handleInitMode(
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
+		runtime,
+		extensionRuntime: await getCliExecutionRuntime(cwd),
 		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
@@ -647,6 +656,8 @@ async function handlePrintMode(
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
+		runtime,
+		extensionRuntime: await getCliExecutionRuntime(cwd),
 		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,
@@ -694,6 +705,8 @@ async function handleInteractiveMode(
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
+		runtime,
+		extensionRuntime: await getCliExecutionRuntime(cwd),
 		sessionPolicies: runtime.sessionPolicies,
 		model: options.model,
 		thinkingLevel: options.thinking,

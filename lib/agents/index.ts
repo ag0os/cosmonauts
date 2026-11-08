@@ -9,7 +9,7 @@ export {
 	validateAgentDefinition,
 	validateAgentId,
 } from "./declaration.ts";
-
+export { loadAgentDeclarations } from "./directory-loader.ts";
 export {
 	qualifyRole,
 	splitRole,
@@ -31,4 +31,5 @@ export type {
 	AgentMemoryGrants,
 	AgentSessionMode,
 	AgentToolSet,
+	ThinkingLevel,
 } from "./types.ts";

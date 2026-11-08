@@ -244,3 +244,145 @@ ${declaration}`,
 		).rejects.toThrow("Unknown extension");
 	});
 });
+
+test.each([
+	"js",
+	"mjs",
+])("binds a compiled %s provider without evaluating its default path factory", async (suffix) => {
+	const root = join(tmp.path, "alpha", "extensions", "compiled");
+	await mkdir(root, { recursive: true });
+	await writeFile(
+		join(root, `index.${suffix}`),
+		`export async function createSessionExtension(context) { return pi => pi.registerTool({name:context.agentId, execute:async()=>({content:[]})}); } export default function fallback() {throw new Error('path factory')}`,
+	);
+	const params = await buildSessionParams({
+		def: definition(["compiled"]),
+		cwd: tmp.path,
+		domainsDir: tmp.path,
+		loadConfig: async () => ({}),
+	});
+	expect(params.extensionPaths).toEqual([]);
+	const pi = createMockPi({ cwd: tmp.path });
+	for (const factory of params.extensionFactories)
+		await (typeof factory === "function" ? factory : factory.factory)(
+			pi as never,
+		);
+	expect(pi.tools.has("consumer")).toBe(true);
+});
+
+test("consumer runtime providers receive the same runtime and grants without a directory", async () => {
+	const { CosmonautsRuntime } = await import("../../lib/runtime.ts");
+	const seen = vi.fn(
+		async () => (pi: { registerTool: (tool: unknown) => void }) =>
+			pi.registerTool({
+				name: "consumer-tool",
+				execute: async () => ({ content: [] }),
+			}),
+	);
+	const def = { ...definition(["consumer-hook"]), resourceDomain: undefined };
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+		agents: [def],
+		extensionProviders: { "consumer-hook": seen },
+	});
+	const params = await buildSessionParams({
+		def,
+		runtime,
+		cwd: tmp.path,
+		resolver: runtime.domainResolver,
+		loadConfig: async () => ({}),
+	});
+	expect(seen).toHaveBeenCalledWith({
+		runtime,
+		agentId: "consumer",
+		memory: {
+			knowledge: true,
+			authored: false,
+			proposals: false,
+			architecture: false,
+			episodes: true,
+		},
+	});
+	expect(params.extensionPaths).toEqual([]);
+	const pi = createMockPi({ cwd: tmp.path });
+	for (const factory of params.extensionFactories)
+		await (typeof factory === "function" ? factory : factory.factory)(
+			pi as never,
+		);
+	expect(pi.tools.has("consumer-tool")).toBe(true);
+});
+
+test.each([
+	undefined,
+	42,
+])("validates optional host provider factory output (%s)", async (value) => {
+	const { CosmonautsRuntime } = await import("../../lib/runtime.ts");
+	const def = { ...definition(["host-hook"]), resourceDomain: undefined };
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+		agents: [def],
+		extensionProviders: { "host-hook": async () => value },
+	});
+	const assembly = buildSessionParams({
+		def,
+		runtime,
+		cwd: tmp.path,
+		loadConfig: async () => ({}),
+	});
+	if (value === undefined)
+		expect((await assembly).extensionFactories).toEqual([]);
+	else
+		await expect(assembly).rejects.toThrow(
+			"must return an inline factory or undefined",
+		);
+});
+
+test("directory providers retain precedence over same-name explicit host callbacks", async () => {
+	const { CosmonautsRuntime } = await import("../../lib/runtime.ts");
+	const path = await provider(
+		"tasks",
+		"export default function extension() {}",
+	);
+	const fallback = vi.fn(() => {
+		throw new Error("unselected host provider");
+	});
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+		extensionProviders: { tasks: fallback },
+	});
+	const params = await buildSessionParams({
+		def: definition(["tasks"]),
+		runtime,
+		cwd: tmp.path,
+		domainsDir: tmp.path,
+		loadConfig: async () => ({}),
+	});
+	expect(params.extensionPaths).toEqual([path]);
+	expect(fallback).not.toHaveBeenCalled();
+});
+
+test("an ordinary provider without an index remains a directory without deprecation warnings", async () => {
+	const path = join(tmp.path, "alpha", "extensions", "ordinary");
+	await mkdir(path, { recursive: true });
+	const warning = vi.fn();
+	process.on("warning", warning);
+	try {
+		const params = await buildSessionParams({
+			def: definition(["ordinary"]),
+			cwd: tmp.path,
+			domainsDir: tmp.path,
+			loadConfig: async () => ({}),
+		});
+		expect(params.extensionPaths).toEqual([path]);
+		expect(params.extensionFactories).toEqual([]);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(warning.mock.calls).not.toContainEqual([
+			expect.objectContaining({ code: "DEP0187" }),
+		]);
+	} finally {
+		process.removeListener("warning", warning);
+	}
+});

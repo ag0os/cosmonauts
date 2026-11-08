@@ -1,7 +1,4 @@
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { discoverFrameworkBundledPackageDirs } from "../packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../runtime.ts";
+import { getHostRuntime } from "../runtime-host.ts";
 import {
 	createExternalBuilderBackend,
 	leanPackageResolver,
@@ -33,19 +30,10 @@ export type CreateLeanBackends = (
  * the project's own config; the `lean_build` tool and `cosmonauts lean` share it.
  */
 export function runtimeBackends(): CreateLeanBackends {
-	const frameworkRoot = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"..",
-	);
 	return async (kind, projectRoot, choices = {}) => {
-		const runtime = await CosmonautsRuntime.create({
-			builtinDomainsDir: join(frameworkRoot, "domains"),
-			projectRoot,
-			bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
-		});
+		const runtime = await getHostRuntime({ projectRoot });
 		const shared = {
+			runtime,
 			registry: runtime.agentRegistry,
 			domainsDir: runtime.domainsDir,
 			resolver: runtime.domainResolver,

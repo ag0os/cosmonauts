@@ -1,68 +1,29 @@
-/**
- * Bundled domain catalog — static registry of officially bundled domains.
- */
+/** Catalog lookup over explicitly supplied consumer entries. */
+import { isAbsolute, resolve } from "node:path";
 
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * An entry in the bundled domain catalog.
- */
 export interface CatalogEntry {
-	/** Short name used to reference the domain (e.g., "coding") */
 	name: string;
-	/** Human-readable description of the domain */
 	description: string;
-	/** Source path relative to the framework root */
+	/** Absolute source or a path resolved against an explicit consumer root. */
 	source: string;
 }
 
-// ============================================================================
-// Catalog
-// ============================================================================
-
-const BUNDLED_CATALOG: readonly CatalogEntry[] = [
-	{
-		name: "coding",
-		description:
-			"Full-featured coding domain with agents, tools, and skills for software development",
-		source: "./bundled/coding",
-	},
-] as const;
-
-// ============================================================================
-// Functions
-// ============================================================================
-
-/**
- * Returns the static catalog of officially bundled domains.
- */
-export function getBundledCatalog(): readonly CatalogEntry[] {
-	return BUNDLED_CATALOG;
+export function getBundledCatalog(
+	catalog: readonly CatalogEntry[] = [],
+): readonly CatalogEntry[] {
+	return catalog;
 }
-
-/**
- * Looks up a catalog entry by short name.
- * Returns undefined if not found.
- */
-export function resolveCatalogEntry(name: string): CatalogEntry | undefined {
-	return BUNDLED_CATALOG.find((entry) => entry.name === name);
+export function resolveCatalogEntry(
+	name: string,
+	catalog: readonly CatalogEntry[] = [],
+): CatalogEntry | undefined {
+	return catalog.find((entry) => entry.name === name);
 }
-
-/**
- * Resolve a framework-relative catalog source path to an absolute path.
- * e.g. "./bundled/coding" → "/usr/local/lib/cosmonauts/bundled/coding"
- */
-export function resolveCatalogSource(catalogSource: string): string {
-	const frameworkRoot = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"..",
-	);
-	return join(frameworkRoot, catalogSource);
+export function resolveCatalogSource(source: string, root?: string): string {
+	if (isAbsolute(source)) return source;
+	if (!root)
+		throw new Error(
+			"Relative catalog sources require an explicit consumer root",
+		);
+	return resolve(root, source);
 }

@@ -1,6 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import {
+	DefaultResourceLoader,
+	getPackageDir,
+	VERSION,
+} from "@earendil-works/pi-coding-agent";
 import { describe, expect, test, vi } from "vitest";
 import {
 	resolveMemoryGrants,
@@ -182,7 +186,7 @@ describe("consumer agent declarations", () => {
 		).toBeUndefined();
 	});
 
-	test("accepts the complete Pi built-in catalog and preserves an exact empty grant", () => {
+	test("accepts the complete Pi built-in catalog and preserves an exact empty grant", async () => {
 		const loader = {
 			getExtensions: () => ({ extensions: [] }),
 		} as unknown as DefaultResourceLoader;
@@ -196,6 +200,16 @@ describe("consumer agent declarations", () => {
 			"find",
 			"ls",
 		];
+		expect(VERSION).toBe("1.0.3");
+		const declarations = await readFile(
+			join(getPackageDir(), "dist/core/tools/index.d.ts"),
+			"utf8",
+		);
+		const union =
+			declarations.match(/export type ToolName = ([^;]+);/)?.[1] ?? "";
+		expect(
+			[...union.matchAll(/"([^"]+)"/g)].map((match) => match[1]).sort(),
+		).toEqual([...names].sort());
 		expect(buildToolAllowlist(names, loader, true)).toEqual(names);
 		expect(buildToolAllowlist([], loader, true)).toEqual([]);
 	});

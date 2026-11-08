@@ -158,7 +158,10 @@ describe("resolveSource", () => {
 	it("calls resolveCatalogEntry with the provided argument", () => {
 		mockResolveCatalogEntry.mockReturnValue(undefined);
 		resolveSource("some-name");
-		expect(mockResolveCatalogEntry).toHaveBeenCalledWith("some-name");
+		expect(mockResolveCatalogEntry).toHaveBeenCalledWith(
+			"some-name",
+			expect.arrayContaining([expect.objectContaining({ name: "coding" })]),
+		);
 	});
 });
 
@@ -492,9 +495,7 @@ describe("installAction — conflict prompt", () => {
 		answerConflictPrompts("invalid", "m");
 		mockInstallPackage.mockResolvedValue(
 			createInstallResultFixture({
-				domainMergeResults: [
-					{ domainId: "alpha", existingPackage: "old-pkg" },
-				],
+				domainMergeResults: [{ domainId: "alpha", existingPackage: "old-pkg" }],
 			}),
 		);
 
@@ -512,9 +513,7 @@ describe("installAction — conflict prompt", () => {
 		answerConflictPrompts("s");
 		mockInstallPackage.mockResolvedValue(
 			createInstallResultFixture({
-				domainMergeResults: [
-					{ domainId: "alpha", existingPackage: "old-pkg" },
-				],
+				domainMergeResults: [{ domainId: "alpha", existingPackage: "old-pkg" }],
 			}),
 		);
 		mockUninstallPackage.mockRejectedValue(new Error("rollback failed"));
@@ -710,7 +709,9 @@ describe("renderPackagesList", () => {
 		const rendered = renderPackagesList(sample, "human");
 		expect(rendered.kind).toBe("lines");
 		if (rendered.kind === "lines") {
-			expect(rendered.lines[0]).toMatch(/^PACKAGE.*VERSION.*SCOPE.*PORTABLE.*DOMAINS/);
+			expect(rendered.lines[0]).toMatch(
+				/^PACKAGE.*VERSION.*SCOPE.*PORTABLE.*DOMAINS/,
+			);
 			expect(rendered.lines[1]).toMatch(/^-+/);
 		}
 	});

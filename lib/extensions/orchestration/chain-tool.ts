@@ -2,7 +2,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
-import { loadNamedChains } from "../../chains/loader.ts";
 import type { MemoryWarning } from "../../memory/types.ts";
 import { runConfiguredChain } from "../../orchestration/chain-dispatch.ts";
 import {
@@ -163,7 +162,7 @@ export function registerChainTool(
 			);
 			const { steps, episodes } = selectChain(
 				params.expression,
-				await loadNamedChains(ctx.cwd, runtime.chains),
+				runtime.chains,
 				runtime.chainAdapter?.defaultEpisodes,
 			);
 			injectUserPrompt(steps, params.prompt);
@@ -177,6 +176,7 @@ export function registerChainTool(
 			const chainConfig = {
 				signal,
 				episodes,
+				runtime,
 				chainAdapter: runtime.chainAdapter,
 				sessionPolicies: runtime.sessionPolicies,
 				defaultModel: runtime.defaultModel,

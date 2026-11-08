@@ -86,6 +86,18 @@ async function hasBindingExport(entry: string): Promise<boolean> {
 	return source.statements.some(explicitlyExportsBinding);
 }
 
+function extensionFactory(
+	value: unknown,
+	name: string,
+): InlineExtension | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "function")
+		throw new Error(
+			`Session extension provider "${name}" must return an inline factory or undefined`,
+		);
+	return value as InlineExtension;
+}
+
 async function selectProvider(
 	name: string,
 	options: BindingOptions,
@@ -93,23 +105,28 @@ async function selectProvider(
 	path?: string;
 	factory?: InlineExtension;
 }> {
-	const native = NATIVE_PROVIDERS[name];
+	const native =
+		options.context.runtime?.extensionProviders?.[name] ??
+		NATIVE_PROVIDERS[name];
 	let path: string;
 	try {
 		path = resolveExtensionPaths([name], options)[0] as string;
 	} catch (error) {
 		if (error instanceof UnknownExtensionError && native)
-			return { factory: native(options.context) };
+			return { factory: extensionFactory(await native(options.context), name) };
 		throw error;
 	}
-	const entry = join(path, "index.ts");
+	const entry = ["index.ts", "index.js", "index.mjs"]
+		.map((file) => join(path, file))
+		.find(existsSync);
+	if (!entry) return { path };
 	const provider = (await hasBindingExport(entry))
 		? ((await import(entry)).createSessionExtension as
 				| SessionExtensionProvider
 				| undefined)
 		: undefined;
 	if (typeof provider === "function")
-		return { factory: provider(options.context) };
+		return { factory: extensionFactory(await provider(options.context), name) };
 	return { path };
 }
 

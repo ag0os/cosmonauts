@@ -200,6 +200,7 @@ describe("chain_run observation surface", () => {
 function runtimeFor() {
 	return async () =>
 		({
+			chains: [],
 			chainAdapter: codingChainAdapter,
 			workerAgent: "coding/worker",
 			agentRegistry: authorizedToolRegistry(["planner", "coordinator"]),

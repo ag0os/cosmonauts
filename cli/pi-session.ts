@@ -7,9 +7,10 @@ import {
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import {
-	FALLBACK_MODEL,
+	requireModelId,
 	resolveModel,
 } from "../lib/orchestration/model-resolution.ts";
+import { getHostRuntime } from "../lib/runtime-host.ts";
 
 export type ToollessPiSession = Awaited<
 	ReturnType<typeof createAgentSession>
@@ -20,6 +21,10 @@ export async function createToollessPiSession(options: {
 	readonly model?: string;
 	readonly systemPrompt: string;
 }): Promise<ToollessPiSession> {
+	const modelId = requireModelId(
+		options.model ??
+			(await getHostRuntime({ projectRoot: options.projectRoot })).defaultModel,
+	);
 	const modelRuntime = await ModelRuntime.create();
 	const modelRegistry = new ModelRegistry(modelRuntime);
 	const agentDir = getAgentDir();
@@ -39,7 +44,7 @@ export async function createToollessPiSession(options: {
 		cwd: options.projectRoot,
 		agentDir,
 		modelRuntime,
-		model: resolveModel(options.model ?? FALLBACK_MODEL, modelRegistry),
+		model: resolveModel(modelId, modelRegistry),
 		noTools: "all",
 		resourceLoader,
 		sessionManager: SessionManager.inMemory(),
