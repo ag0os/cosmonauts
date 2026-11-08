@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { getLiveDomainBindingStore } from "../../lib/domains/bindings.ts";
 import domainBindingsExtension from "../../lib/extensions/domain-bindings/index.ts";
 import { isSubagentAllowed } from "../../lib/extensions/orchestration/authorization.ts";
 import {
@@ -676,4 +677,45 @@ test("the library binding extension stays inert when session bindings are unavai
 		"error",
 	);
 	expect(pi.entries).toEqual([]);
+});
+
+test("restore writes the slot store only after resolver validation when their stores differ", async () => {
+	const runtime = await setupRuntime();
+	const slotStore = getLiveDomainBindingStore(
+		join(tmp.path, "separate-slot-store"),
+	);
+	setSharedDomainBindings({
+		domainRegistry: runtime.domainRegistry,
+		bindingResolver: runtime.bindingResolver,
+		liveBindings: slotStore,
+	});
+	const pi = createMockPi();
+	domainBindingsExtension(pi as never);
+	const ctx = createCommandContext([
+		{
+			type: "custom",
+			customType: "cosmonauts.domain-binding",
+			data: { role: "ruby-coding", targetDomain: "ruby-experimental" },
+		},
+		{
+			type: "custom",
+			customType: "cosmonauts.domain-binding",
+			data: { role: "ruby-coding", targetDomain: "missing" },
+		},
+	]);
+	try {
+		await pi.fireEvent("session_start", {}, ctx);
+		expect(slotStore.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(runtime.liveDomainBindings.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("missing"),
+			"warning",
+		);
+	} finally {
+		clearSharedDomainBindings();
+	}
 });

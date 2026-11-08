@@ -357,11 +357,12 @@ test("domain modules are evaluated in deterministic discovery order before resou
 	}
 });
 
-test("an empty runtime mounts both library commands without a content provider", () => {
+test("mounts both library commands independently of runtime", () => {
 	const paths = resolveInteractiveExtensionPaths();
 	expect(paths).toEqual([
 		new URL("../../lib/extensions/agent-switch", import.meta.url).pathname,
 		new URL("../../lib/extensions/domain-bindings", import.meta.url).pathname,
 	]);
 	expect(existsSync(paths[0] ?? "")).toBe(true);
+	expect(existsSync(paths[1] ?? "")).toBe(true);
 });

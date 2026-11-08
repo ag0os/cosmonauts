@@ -89,6 +89,7 @@ function restoreBinding(options: {
 			entry.data.role,
 			entry.data.targetDomain,
 		);
+		shared.liveBindings.set(entry.data.role, entry.data.targetDomain);
 	} catch (error: unknown) {
 		const message = restoreFailureMessage(error);
 		ctx.ui.notify(

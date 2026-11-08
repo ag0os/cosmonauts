@@ -393,8 +393,8 @@ The CLI directly mounts `lib/extensions/agent-switch` and
 Real-path existence, missing shared state/targets, malformed and stale restore
 entries, live rebinding and persistence are pinned by the CLI mount, domain-policy
 and domain-bindings suites. Replay applies each validated entry through
-`bindLiveRole`, which immediately updates the shared live store; a later invalid
-entry leaves the previous valid binding intact. Its content catalog is
+`bindLiveRole` before writing the slot's live store, even if the resolver and slot
+own different stores; a later invalid entry leaves the previous valid binding intact. Its content catalog is
 owned by `cli/package-catalog.ts`; core catalog lookup takes explicit entries and
 relative sources require an explicit root. Current CLI install/update behavior
 and its catalog entries remain pinned by package/update/catalog tests. The library
@@ -564,12 +564,12 @@ An explicit unknown agent on an empty install reports `Available agents: (none)`
 
 P7 requires stale-target restore warnings to retain installation guidance, and
 restore with no shared binding state to remain inert even when persisted binding
-entries exist. `tests/extensions/domain-bindings.test.ts` pins both contracts;
-they kill the two non-equivalent survivors from the first scoped mutation run.
+entries exist. `tests/extensions/domain-bindings.test.ts` pins both contracts and
+validated restore into a slot store distinct from the resolver's store.
 The extension exports its own directory path for the CLI's actual mount, making
 that live dependency explicit to reachability without adding a root or changing
-the gate. A fresh-process manual mutation of that module-level path is rejected
-by the CLI mount and empty-runtime assertions.
+the gate. Both mounted library paths must exist, as asserted by the CLI mount and
+domain-policy contract tests.
 
 P2b retains consumer-policy interactive denial and picker filtering in
 `tests/extensions/agent-switch.test.ts`. Synthetic artifact-written and disposition
