@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { registerChainTool } from "../../domains/shared/extensions/orchestration/chain-tool.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
+import { registerChainTool } from "../../lib/extensions/orchestration/chain-tool.ts";
 import type { SpawnConfig } from "../../lib/orchestration/types.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { useTempDir } from "../helpers/fs.ts";

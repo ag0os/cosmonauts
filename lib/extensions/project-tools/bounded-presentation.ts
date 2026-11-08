@@ -3,7 +3,7 @@ import type {
 	AnalysisLocation,
 	AnalysisRequestResolution,
 	AnalysisResult,
-} from "../../../../lib/analysis/index.ts";
+} from "../../analysis/index.ts";
 
 const TEXT_BUDGET = 32_768;
 const FIELD_BUDGET = 512;

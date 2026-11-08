@@ -1,5 +1,5 @@
-import { extractAgentIdFromSystemPrompt } from "../../../lib/agents/runtime-identity.ts";
-import type { MemoryWarning } from "../../../lib/memory/types.ts";
+import { extractAgentIdFromSystemPrompt } from "../agents/runtime-identity.ts";
+import type { MemoryWarning } from "../memory/types.ts";
 
 interface EpisodeCaptureOptions {
 	readonly episodeSource: string;

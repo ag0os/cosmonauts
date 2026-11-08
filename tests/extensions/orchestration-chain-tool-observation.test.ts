@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { executeChainExpression } from "../../cli/chain-execution.ts";
-import { registerChainTool } from "../../domains/shared/extensions/orchestration/chain-tool.ts";
+import { registerChainTool } from "../../lib/extensions/orchestration/chain-tool.ts";
 import { recordEpisode } from "../../lib/memory/episode.ts";
 import type {
 	ChainConfig,

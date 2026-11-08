@@ -19,26 +19,6 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
-	createSnapshotAnalysisAuthorization,
-	hasAnalysisExecutionConsent,
-	readAnalysisExecutionAuthorizationSync,
-} from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
-import { AnalysisProviderError } from "../../domains/shared/extensions/project-tools/analysis-provider-error.ts";
-import {
-	assertFallowFindingsCovered,
-	discoverFallowProvider,
-	FALLOW_VALIDATED_ENGINE_VERSION,
-	fallowPlatformPackageName,
-	resolveInstalledFallowExecutable,
-} from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
-import { createProjectToolsExtension } from "../../domains/shared/extensions/project-tools/index.ts";
-import {
-	type ProviderProcessExecutor,
-	type ProviderProcessInvocation,
-	type ProviderProcessOutcome,
-	runProviderProcess,
-} from "../../domains/shared/extensions/project-tools/process-runner.ts";
-import {
 	ANALYSIS_CAPABILITIES,
 	ANALYSIS_GATE_CAPABILITIES,
 	ANALYSIS_TOOL_NAMES,
@@ -46,6 +26,26 @@ import {
 	type AnalysisResult,
 	type AnalysisTraceTarget,
 } from "../../lib/analysis/index.ts";
+import {
+	createSnapshotAnalysisAuthorization,
+	hasAnalysisExecutionConsent,
+	readAnalysisExecutionAuthorizationSync,
+} from "../../lib/extensions/project-tools/analysis-consent.ts";
+import { AnalysisProviderError } from "../../lib/extensions/project-tools/analysis-provider-error.ts";
+import {
+	assertFallowFindingsCovered,
+	discoverFallowProvider,
+	FALLOW_VALIDATED_ENGINE_VERSION,
+	fallowPlatformPackageName,
+	resolveInstalledFallowExecutable,
+} from "../../lib/extensions/project-tools/fallow-provider.ts";
+import { createProjectToolsExtension } from "../../lib/extensions/project-tools/index.ts";
+import {
+	type ProviderProcessExecutor,
+	type ProviderProcessInvocation,
+	type ProviderProcessOutcome,
+	runProviderProcess,
+} from "../../lib/extensions/project-tools/process-runner.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));

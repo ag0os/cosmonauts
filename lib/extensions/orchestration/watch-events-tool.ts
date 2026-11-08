@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { DriverEvent } from "../../../../lib/driver/types.ts";
-import { watchDriverEventsCompat } from "../../../../lib/driver/watch-events-compat.ts";
+import type { DriverEvent } from "../../driver/types.ts";
+import { watchDriverEventsCompat } from "../../driver/watch-events-compat.ts";
 
 const MAX_RENDERED_EVENTS = 30;
 const MAX_LINE_LENGTH = 160;

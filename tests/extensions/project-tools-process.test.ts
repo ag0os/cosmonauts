@@ -7,7 +7,7 @@ import {
 	DEFAULT_PROVIDER_TIMEOUT_MS,
 	DEFAULT_TERMINATION_GRACE_MS,
 	runProviderProcess,
-} from "../../domains/shared/extensions/project-tools/process-runner.ts";
+} from "../../lib/extensions/project-tools/process-runner.ts";
 
 const CHILD_TIMEOUT_MS = 250;
 const TERMINATION_GRACE_MS = 75;

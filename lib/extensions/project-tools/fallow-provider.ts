@@ -43,7 +43,7 @@ import {
 	type ProviderIdentity,
 	resolveAnalysisBindings,
 	resolveAnalysisRequest,
-} from "../../../../lib/analysis/index.ts";
+} from "../../analysis/index.ts";
 import {
 	readAnalysisExecutionAuthorization,
 	readAnalysisExecutionAuthorizationSync,

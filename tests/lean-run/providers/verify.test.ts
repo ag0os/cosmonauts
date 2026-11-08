@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import type { ProviderProcessOutcome } from "../../../domains/shared/extensions/project-tools/process-runner.ts";
+import type { ProviderProcessOutcome } from "../../../lib/extensions/project-tools/process-runner.ts";
 import {
 	createVerifyProvider,
 	type VerifyCommand,

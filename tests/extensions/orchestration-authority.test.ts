@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
-import { registerDriverTool } from "../../domains/shared/extensions/orchestration/driver-tool.ts";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { registerDriverTool } from "../../lib/extensions/orchestration/driver-tool.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";

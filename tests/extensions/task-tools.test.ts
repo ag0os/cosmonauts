@@ -34,7 +34,7 @@ let pi: MockPi;
 
 async function setupExtension(cwd: string, systemPrompt = ""): Promise<MockPi> {
 	const { default: tasksExtension } = await import(
-		"../../domains/shared/extensions/tasks/index.ts"
+		"../../lib/extensions/tasks/index.ts"
 	);
 	const mock = createMockPi({ cwd, systemPrompt });
 	tasksExtension(mock as never);

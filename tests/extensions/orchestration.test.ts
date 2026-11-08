@@ -15,12 +15,12 @@ vi.mock("../../lib/packages/dev-bundled.ts", () => ({
 	]),
 }));
 
-import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
 import type { AgentDefinition } from "../../lib/agents/index.ts";
 import { AgentRegistry } from "../../lib/agents/index.ts";
 import type { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
+import orchestrationExtension from "../../lib/extensions/orchestration/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";

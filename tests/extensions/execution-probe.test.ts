@@ -49,11 +49,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 	};
 });
 vi.mock(
-	"../../domains/shared/extensions/project-tools/process-runner.ts",
+	"../../lib/extensions/project-tools/process-runner.ts",
 	async (importOriginal) => {
 		const actual =
 			await importOriginal<
-				typeof import("../../domains/shared/extensions/project-tools/process-runner.ts")
+				typeof import("../../lib/extensions/project-tools/process-runner.ts")
 			>();
 		return {
 			...actual,

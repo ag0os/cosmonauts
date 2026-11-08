@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
 	buildInitPrompt,
 	default as initExtension,
-} from "../../domains/shared/extensions/init/index.ts";
+} from "../../lib/extensions/init/index.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 describe("buildInitPrompt", () => {

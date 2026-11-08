@@ -14,15 +14,15 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import {
-	discoverFallowProvider,
-	FALLOW_VALIDATED_ENGINE_VERSION,
-} from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
-import type { ProviderProcessExecutor } from "../../domains/shared/extensions/project-tools/process-runner.ts";
 import type {
 	AnalysisGateCoverage,
 	AnalysisRequest,
 } from "../../lib/analysis/index.ts";
+import {
+	discoverFallowProvider,
+	FALLOW_VALIDATED_ENGINE_VERSION,
+} from "../../lib/extensions/project-tools/fallow-provider.ts";
+import type { ProviderProcessExecutor } from "../../lib/extensions/project-tools/process-runner.ts";
 import {
 	captureFallowEnvelopes,
 	FALLOW_CAPABILITY_FIXTURES,

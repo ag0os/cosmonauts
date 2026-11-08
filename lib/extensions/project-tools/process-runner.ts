@@ -1,12 +1,9 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	type ChildRunOutcome,
-	runChild,
-} from "../../../../lib/process/run-child.ts";
+import { type ChildRunOutcome, runChild } from "../../process/run-child.ts";
 
-export { classifyTaskkillExitCode } from "../../../../lib/process/run-child.ts";
+export { classifyTaskkillExitCode } from "../../process/run-child.ts";
 
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 30_000;
 export const DEFAULT_TERMINATION_GRACE_MS = 250;

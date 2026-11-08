@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
 	chainEventToProgressLine,
 	summarizeToolCall,
-} from "../../domains/shared/extensions/orchestration/rendering.ts";
+} from "../../lib/extensions/orchestration/rendering.ts";
 import type {
 	ChainEvent,
 	ParallelGroupStep,

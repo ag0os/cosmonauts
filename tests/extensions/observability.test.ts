@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-ai";
 import type { TurnEndEvent } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "vitest";
-import observabilityExtension from "../../domains/shared/extensions/observability/index.ts";
+import observabilityExtension from "../../lib/extensions/observability/index.ts";
 
 type HandlerFn = (...args: unknown[]) => Promise<unknown> | unknown;
 

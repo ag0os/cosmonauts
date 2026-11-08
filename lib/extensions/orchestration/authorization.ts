@@ -1,6 +1,6 @@
-import type { AgentRegistry } from "../../../../lib/agents/resolver.ts";
-import type { AgentDefinition } from "../../../../lib/agents/types.ts";
-import type { ResolvedAgentReference } from "../../../../lib/domains/bindings.ts";
+import type { AgentRegistry } from "../../agents/resolver.ts";
+import type { AgentDefinition } from "../../agents/types.ts";
+import type { ResolvedAgentReference } from "../../domains/bindings.ts";
 
 /**
  * Check if a target agent is in the caller's subagents allowlist.

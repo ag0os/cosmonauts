@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
 import type { DriverEvent } from "../../lib/driver/types.ts";
+import { registerWatchEventsTool } from "../../lib/extensions/orchestration/watch-events-tool.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "./orchestration-helpers.ts";
 

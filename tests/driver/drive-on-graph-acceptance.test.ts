@@ -14,7 +14,6 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
-import tasksExtension from "../../domains/shared/extensions/tasks/index.ts";
 import type {
 	Backend,
 	BackendInvocation,
@@ -43,6 +42,7 @@ import {
 	type StepRecord,
 	type StepResult,
 } from "../../lib/durable-runtime/index.ts";
+import tasksExtension from "../../lib/extensions/tasks/index.ts";
 import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
 import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";

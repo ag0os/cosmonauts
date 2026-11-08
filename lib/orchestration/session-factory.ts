@@ -17,11 +17,11 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { createProjectToolsExtension } from "../../domains/shared/extensions/project-tools/index.ts";
 import { buildSessionParams } from "../agents/session-assembly.ts";
 import type { AgentDefinition } from "../agents/types.ts";
 import { loadProjectConfig } from "../config/loader.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
+import { createProjectToolsExtension } from "../extensions/project-tools/index.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { sessionsDirForPlan } from "../sessions/session-store.ts";
 import {

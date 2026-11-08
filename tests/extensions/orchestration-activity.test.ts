@@ -17,7 +17,7 @@ import type {
 } from "../../lib/orchestration/message-bus.ts";
 import "./orchestration-mocks.ts";
 
-import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
+import orchestrationExtension from "../../lib/extensions/orchestration/index.ts";
 
 // ============================================================================
 // Mock Pi with lifecycle event support

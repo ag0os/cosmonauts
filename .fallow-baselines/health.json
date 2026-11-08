@@ -62,17 +62,17 @@
         "count": 1
       }
     },
-    "domains/shared/extensions/orchestration/spawn-tool.ts": {
+    "lib/extensions/orchestration/spawn-tool.ts": {
       "crap_moderate": {
         "count": 2
       }
     },
-    "domains/shared/extensions/plans/index.ts": {
+    "lib/extensions/plans/index.ts": {
       "crap_moderate": {
         "count": 1
       }
     },
-    "domains/shared/extensions/project-tools/fallow-provider.ts": {
+    "lib/extensions/project-tools/fallow-provider.ts": {
       "complexity_high": {
         "count": 1
       },
@@ -86,7 +86,7 @@
         "count": 7
       }
     },
-    "domains/shared/extensions/project-tools/index.ts": {
+    "lib/extensions/project-tools/index.ts": {
       "crap_high": {
         "count": 1
       },
@@ -94,7 +94,7 @@
         "count": 1
       }
     },
-    "domains/shared/extensions/tasks/index.ts": {
+    "lib/extensions/tasks/index.ts": {
       "crap_moderate": {
         "count": 1
       }

@@ -3,8 +3,6 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import "./orchestration-mocks.ts";
-import { registerDriverTool } from "../../domains/shared/extensions/orchestration/driver-tool.ts";
-import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
 import type {
 	Backend,
 	BackendInvocation,
@@ -12,6 +10,8 @@ import type {
 } from "../../lib/driver/backends/types.ts";
 import type { DriverEvent } from "../../lib/driver/types.ts";
 import type { StoredOrchestrationEvent } from "../../lib/durable-runtime/index.ts";
+import { registerDriverTool } from "../../lib/extensions/orchestration/driver-tool.ts";
+import { registerWatchEventsTool } from "../../lib/extensions/orchestration/watch-events-tool.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import {

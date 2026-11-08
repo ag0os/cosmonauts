@@ -7,7 +7,7 @@ import {
 	type RunWatchSummary,
 	runStatus,
 	runWatch,
-} from "../../../../lib/durable-runtime/index.ts";
+} from "../../durable-runtime/index.ts";
 
 export function registerRunControlTools(pi: ExtensionAPI): void {
 	pi.registerTool({

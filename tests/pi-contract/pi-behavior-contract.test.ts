@@ -14,7 +14,7 @@ import {
 import { stream as anthropicStream } from "@earendil-works/pi-ai/api/anthropic-messages";
 import { Type } from "typebox";
 import { describe, expect, test } from "vitest";
-import { AnalysisProviderError } from "../../domains/shared/extensions/project-tools/index.ts";
+import { AnalysisProviderError } from "../../lib/extensions/project-tools/index.ts";
 
 // Contract tests against the REAL @earendil-works/pi-* packages (no MockPi, no
 // network). Cosmonauts depends on undocumented Pi behaviors that nothing in
