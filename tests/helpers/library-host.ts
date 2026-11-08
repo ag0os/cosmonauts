@@ -1,9 +1,6 @@
 import { loadProjectConfig } from "../../lib/config/index.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
-import {
-	type RuntimeHostRequest,
-	setRuntimeHost,
-} from "../../lib/runtime-host.ts";
+import type { RuntimeHostRequest } from "../../lib/runtime-host.ts";
 
 /** An isolated test consumer: no content scans, privileged policy or worker. */
 export async function createLibraryTestRuntime(
@@ -43,13 +40,4 @@ export async function createLibraryTestRuntime(
 				).createSessionExtension(context),
 		},
 	});
-}
-
-/** Content acceptance opts in while its corresponding content still exists. */
-export function installContentTestHost(): void {
-	setRuntimeHost((request) =>
-		import("../../domains/host-runtime.ts").then(({ createContentRuntime }) =>
-			createContentRuntime(request),
-		),
-	);
 }
