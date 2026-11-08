@@ -9,10 +9,7 @@
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Command } from "commander";
-import {
-	resolveCatalogEntry,
-	resolveCatalogSource,
-} from "../package-catalog.ts";
+import { resolveCatalogEntry } from "../../lib/packages/catalog.ts";
 import type { DomainMergeResult } from "../../lib/packages/installer.ts";
 import {
 	installPackage,
@@ -23,6 +20,7 @@ import type {
 	InstalledPackage,
 	PackageScope,
 } from "../../lib/packages/types.ts";
+import { getBundledCatalog, resolveCatalogSource } from "../package-catalog.ts";
 import { printCliError } from "../shared/errors.ts";
 import type { CliOutputMode } from "../shared/output.ts";
 import { getOutputMode, printJson, printLines } from "../shared/output.ts";
@@ -88,7 +86,7 @@ type ConflictChoice = "merge" | "replace" | "skip" | "cancel";
  * Returns the absolute/URL source string to pass to installPackage.
  */
 export function resolveSource(arg: string): string {
-	const entry = resolveCatalogEntry(arg);
+	const entry = resolveCatalogEntry(arg, getBundledCatalog());
 	if (entry) {
 		return resolveCatalogSource(entry.source);
 	}
@@ -101,7 +99,7 @@ export function resolveInstallRequest(
 ): InstallRequest {
 	const cwd = options.projectRoot ?? process.cwd();
 	const scope: PackageScope = options.local ? "project" : "user";
-	const entry = resolveCatalogEntry(arg);
+	const entry = resolveCatalogEntry(arg, getBundledCatalog());
 	const source = entry ? resolveCatalogSource(entry.source) : arg;
 
 	return {
@@ -322,7 +320,9 @@ async function loadDomainPortable(
 }
 
 async function buildPackageListRows(
-	packages: ReadonlyArray<InstalledPackage & { scopeLabel: "global" | "local" }>,
+	packages: ReadonlyArray<
+		InstalledPackage & { scopeLabel: "global" | "local" }
+	>,
 ): Promise<PackageListRow[]> {
 	const rows: PackageListRow[] = [];
 	for (const pkg of packages) {
@@ -407,12 +407,11 @@ export async function packagesListAction(
 		return;
 	}
 
-	const allPkgs: Array<
-		InstalledPackage & { scopeLabel: "global" | "local" }
-	> = [
-		...globalPkgs.map((p) => ({ ...p, scopeLabel: "global" as const })),
-		...localPkgs.map((p) => ({ ...p, scopeLabel: "local" as const })),
-	];
+	const allPkgs: Array<InstalledPackage & { scopeLabel: "global" | "local" }> =
+		[
+			...globalPkgs.map((p) => ({ ...p, scopeLabel: "global" as const })),
+			...localPkgs.map((p) => ({ ...p, scopeLabel: "local" as const })),
+		];
 
 	const rows = await buildPackageListRows(allPkgs);
 	const rendered = renderPackagesList(rows, mode);

@@ -7,6 +7,7 @@
 
 import { spawn } from "node:child_process";
 import { Command } from "commander";
+import { resolveCatalogEntry } from "../../lib/packages/catalog.ts";
 import {
 	installPackage,
 	loadInstallMeta,
@@ -17,10 +18,7 @@ import {
 	resolveStorePath,
 } from "../../lib/packages/store.ts";
 import type { PackageScope } from "../../lib/packages/types.ts";
-import {
-	resolveCatalogEntry,
-	resolveCatalogSource,
-} from "../package-catalog.ts";
+import { getBundledCatalog, resolveCatalogSource } from "../package-catalog.ts";
 
 // ============================================================================
 // Types
@@ -78,7 +76,7 @@ async function updateOne(
 
 	switch (meta.source) {
 		case "catalog": {
-			const entry = resolveCatalogEntry(meta.catalogName);
+			const entry = resolveCatalogEntry(meta.catalogName, getBundledCatalog());
 			const source = entry
 				? resolveCatalogSource(entry.source)
 				: resolveCatalogSource(`./bundled/${meta.catalogName}`);

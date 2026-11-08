@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { AgentRegistry } from "../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import type { LoadedDomain } from "../lib/domains/types.ts";
@@ -194,4 +194,88 @@ test("an explicit empty source list overrides directory scanning options", async
 		pluginDirs: [join(tmp.path, "also-missing")],
 	});
 	expect(runtime.domains).toEqual([]);
+});
+
+test("explicit domains cannot duplicate a discovered provider", async () => {
+	const provider = join(tmp.path, "provider");
+	await mkdir(provider);
+	await writeFile(
+		join(provider, "domain.ts"),
+		'export default {id:"same",description:"Discovered"}',
+	);
+	await expect(
+		CosmonautsRuntime.create({
+			projectRoot: tmp.path,
+			projectConfig: {},
+			domainSources: [
+				{
+					domainsDir: provider,
+					sourceType: "domain-root",
+					origin: "provided",
+					precedence: 0,
+				},
+			],
+			domains: [domain("same")],
+		}),
+	).rejects.toMatchObject({ kind: "domain", id: "same" });
+});
+
+test("explicit chains cannot duplicate an already configured chain", async () => {
+	await expect(
+		CosmonautsRuntime.create({
+			projectRoot: tmp.path,
+			projectConfig: { chains: { publish: { chain: "scribe" } } },
+			chains: [{ name: "publish", description: "Duplicate", chain: "scribe" }],
+		}),
+	).rejects.toMatchObject({ kind: "chain", id: "publish" });
+});
+
+test("invalid declarations are diagnosed before joining the runtime collision collection", async () => {
+	await expect(
+		CosmonautsRuntime.create({
+			projectRoot: tmp.path,
+			projectConfig: {},
+			agents: [
+				actor(),
+				actor({ memory: { episodes: "invalid" as unknown as boolean } }),
+			],
+		}),
+	).rejects.toThrow("Invalid memory grant: episodes");
+});
+
+test("user domain discovery requires opt-in and honors explicit user-source exclusion", async () => {
+	const home = join(tmp.path, "home");
+	const userDomain = join(home, ".cosmonauts", "domains", "user");
+	await mkdir(userDomain, { recursive: true });
+	await writeFile(
+		join(userDomain, "domain.ts"),
+		'throw new Error("USER_DISCOVERY_REACHED"); export default {id:"user",description:"User"}',
+	);
+	vi.stubEnv("HOME", home);
+	try {
+		await expect(
+			CosmonautsRuntime.create({
+				projectRoot: tmp.path,
+				projectConfig: {},
+				includeUserSources: true,
+			}),
+		).resolves.toMatchObject({ domains: [] });
+		await expect(
+			CosmonautsRuntime.create({
+				projectRoot: tmp.path,
+				projectConfig: {},
+				discoverPackages: true,
+				includeUserSources: false,
+			}),
+		).resolves.toMatchObject({ domains: [] });
+		await expect(
+			CosmonautsRuntime.create({
+				projectRoot: tmp.path,
+				projectConfig: {},
+				discoverPackages: true,
+			}),
+		).rejects.toThrow("USER_DISCOVERY_REACHED");
+	} finally {
+		vi.unstubAllEnvs();
+	}
 });

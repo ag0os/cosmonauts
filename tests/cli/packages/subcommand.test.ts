@@ -27,16 +27,15 @@ vi.mock("../../../lib/packages/store.ts", () => ({
 	listInstalledPackages: vi.fn(),
 }));
 
-vi.mock("../../../cli/package-catalog.ts", async (importOriginal) => {
+vi.mock("../../../lib/packages/catalog.ts", async (importOriginal) => {
 	const actual =
-		await importOriginal<typeof import("../../../cli/package-catalog.ts")>();
+		await importOriginal<typeof import("../../../lib/packages/catalog.ts")>();
 	return {
 		...actual,
 		resolveCatalogEntry: vi.fn(),
 	};
 });
 
-import { resolveCatalogEntry } from "../../../cli/package-catalog.ts";
 import {
 	createInstallProgram,
 	createPackagesProgram,
@@ -50,6 +49,7 @@ import {
 	resolveSource,
 	uninstallAction,
 } from "../../../cli/packages/subcommand.ts";
+import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
 import {
 	installPackage,
 	uninstallPackage,
@@ -158,7 +158,10 @@ describe("resolveSource", () => {
 	it("calls resolveCatalogEntry with the provided argument", () => {
 		mockResolveCatalogEntry.mockReturnValue(undefined);
 		resolveSource("some-name");
-		expect(mockResolveCatalogEntry).toHaveBeenCalledWith("some-name");
+		expect(mockResolveCatalogEntry).toHaveBeenCalledWith(
+			"some-name",
+			expect.arrayContaining([expect.objectContaining({ name: "coding" })]),
+		);
 	});
 });
 

@@ -405,3 +405,12 @@ relative sources require an explicit root. Current CLI install/update behavior
 and its catalog entries remain pinned by package/update/catalog tests. The library
 ships no implicit catalog content. Catalog's step4 name debt is closed; the named
 step6 lean/QM import exceptions remain.
+
+Runtime collection admission validates each supplied actor before adding its ID to
+the collision collection, so an invalid duplicate reports its declaration error.
+Discovered domains and configured chains also participate in collision checks;
+user-store discovery requires opt-in and respects explicit user-source exclusion.
+Declaration directory ordering is deterministic even with reversed enumeration,
+and source-map files are ignored. Tests: consumer-runtime and directory-loader.
+Package-export targets are reachability roots and missing targets are diagnosed;
+test: check-reachability-visit.

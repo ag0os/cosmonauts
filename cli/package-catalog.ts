@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	type CatalogEntry,
-	resolveCatalogEntry as lookupEntry,
 	resolveCatalogSource as resolveSource,
 	getBundledCatalog as suppliedCatalog,
 } from "../lib/packages/catalog.ts";
@@ -19,9 +18,6 @@ const CATALOG: readonly CatalogEntry[] = [
 ];
 export function getBundledCatalog(): readonly CatalogEntry[] {
 	return suppliedCatalog(CATALOG);
-}
-export function resolveCatalogEntry(name: string): CatalogEntry | undefined {
-	return lookupEntry(name, CATALOG);
 }
 export function resolveCatalogSource(source: string): string {
 	return resolveSource(source, ROOT);
