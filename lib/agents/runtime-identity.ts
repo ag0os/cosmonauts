@@ -9,6 +9,16 @@ const AGENT_ID_MARKER_PREFIX = "COSMONAUTS_AGENT_ID:";
 const AGENT_ID_MARKER_REGEX =
 	/<!--\s*COSMONAUTS_AGENT_ID:([a-z0-9/-]+)\s*-->/gi;
 
+/** Declared persona text never supplies the host's identity marker. */
+export function stripAgentIdentityMarkers(content: string): string {
+	let previous: string;
+	do {
+		previous = content;
+		content = content.replace(/<!--\s*COSMONAUTS_AGENT_ID:[\s\S]*?-->/gi, "");
+	} while (content !== previous);
+	return content;
+}
+
 /** @deprecated Use `qualifyRole` from `qualified-role.ts` instead. */
 export { qualifyRole as qualifyAgentId } from "./qualified-role.ts";
 

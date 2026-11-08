@@ -4,7 +4,9 @@ const definition: AgentDefinition = {
 	id: "cody",
 	description:
 		"Coding-domain interactive partner. Pairs on code, brainstorms architecture, or conducts drive runs — and delegates to coding specialists when the work warrants it.",
+	memory: { episodes: true },
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readwrite",

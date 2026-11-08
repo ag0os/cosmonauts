@@ -4,7 +4,9 @@ const definition: AgentDefinition = {
 	id: "worker",
 	description:
 		"Implements a single task test-first. Loads relevant skills, writes code, checks off acceptance criteria.",
+	memory: { architecture: true, episodes: true },
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readwrite",
@@ -13,12 +15,7 @@ const definition: AgentDefinition = {
 	],
 	model: "openai-codex/gpt-5.6-sol",
 	tools: "coding",
-	extensions: [
-		"tasks",
-		"project-tools",
-		"architecture-memory",
-		"execution-probe",
-	],
+	extensions: ["tasks", "project-tools", "execution-probe"],
 	skills: ["*"],
 	subagents: [],
 	projectContext: true,

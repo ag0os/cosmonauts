@@ -1,12 +1,12 @@
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { createAgentMemoryExtension } from "../../domains/shared/extensions/agent-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import {
 	createMarkdownMemoryStore,
 	type MemoryRecordDraft,
 } from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { createAgentMemoryExtension } from "../helpers/memory-grants.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 const tmp = useTempDir("agent-memory-remember-params-");

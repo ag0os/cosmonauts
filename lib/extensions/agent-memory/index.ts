@@ -32,10 +32,9 @@ import {
 } from "../context-values.ts";
 import type { KnowledgeRecallHandler } from "../knowledge-surface/knowledge-tools.ts";
 import { normalizeRecallLimit } from "../knowledge-surface/recall-limit.ts";
+import type { SessionExtensionProvider } from "../session-provider.ts";
 
-const COSMO_AGENT_ID = "main/cosmo";
 const AGENT_MEMORY_CONTEXT_TYPE = "agent-memory-context";
-const SOURCE = COSMO_AGENT_ID;
 const INDEX_RETRIEVAL_LIMIT = 50;
 const INDEX_INJECTION_MAX_BYTES = 12_000;
 // Record bodies are bounded on write, but human-edited frontmatter values are not.
@@ -82,8 +81,9 @@ export interface AgentMemoryExtensionDeps {
 	readonly now?: () => Date;
 	readonly loadConfig?: typeof loadProjectConfig;
 	readonly captureEpisode?: typeof recordEpisode;
-	/** Defaults to main/cosmo; null keeps the tools registered but unauthorized. */
+	/** Host-approved identity; omission or null leaves the provider unauthorized. */
 	readonly authorizedAgentId?: string | null;
+	readonly episodes?: boolean;
 	/** Enabled-session knowledge seam. Omitted in the legacy package wrapper. */
 	readonly knowledgeRecall?: KnowledgeRecallHandler;
 	/** Shared by the one enabled session composer and guarded legacy tools. */
@@ -182,11 +182,10 @@ export function createAgentMemoryExtension(
 		deps.userCosmonautsRoot ?? join(homedir(), ".cosmonauts");
 	const now = deps.now ?? (() => new Date());
 	const loadConfig = deps.loadConfig ?? loadProjectConfig;
-	const captureEpisode = deps.captureEpisode ?? recordEpisode;
-	const authorizedAgentId =
-		deps.authorizedAgentId === undefined
-			? COSMO_AGENT_ID
-			: deps.authorizedAgentId;
+	const captureEpisode: typeof recordEpisode = deps.episodes
+		? (deps.captureEpisode ?? recordEpisode)
+		: async () => ({ kind: "disabled" });
+	const authorizedAgentId = deps.authorizedAgentId ?? null;
 	const storeFactory =
 		deps.storeFactory ??
 		((options: AgentMemoryStoreFactoryOptions) =>
@@ -242,12 +241,14 @@ export function createAgentMemoryExtension(
 			}),
 			executionMode: "sequential",
 			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-				if (!auth.authorized) return unauthorizedResult(authorizedAgentId);
+				if (!auth.authorized || !authorizedAgentId)
+					return unauthorizedResult(authorizedAgentId);
 				const parsed = parseRememberParams(params as RememberParams);
 				if (!parsed.ok) return invalidRememberResult(parsed.reason);
 				const projectRoot = getCwd(ctx);
 				return remember({
 					request: parsed.request,
+					source: authorizedAgentId,
 					store: createStore({ ctx, userCosmonautsRoot, now, storeFactory }),
 					now,
 					projectRoot,
@@ -297,7 +298,8 @@ export function createAgentMemoryExtension(
 							: {}),
 					});
 				}
-				if (!auth.authorized) return unauthorizedResult(authorizedAgentId);
+				if (!auth.authorized || !authorizedAgentId)
+					return unauthorizedResult(authorizedAgentId);
 				const settings = resolveEpisodicLogConfig(
 					await loadConfig(projectRoot),
 				);
@@ -403,6 +405,7 @@ export default function agentMemoryExtension(pi: ExtensionAPI): void {
 }
 
 async function remember(options: {
+	readonly source: string;
 	readonly request: RememberRequest;
 	readonly store: MemoryStore;
 	readonly now: () => Date;
@@ -413,7 +416,11 @@ async function remember(options: {
 	const timestamp = options.now().toISOString();
 	switch (options.request.type) {
 		case "note": {
-			const draft = rememberDraft({ request: options.request, timestamp });
+			const draft = rememberDraft({
+				request: options.request,
+				timestamp,
+				source: options.source,
+			});
 			return renderRememberWithCapture({
 				result: await options.store.write(draft),
 				draft,
@@ -421,6 +428,7 @@ async function remember(options: {
 				projectRoot: options.projectRoot,
 				userCosmonautsRoot: options.userCosmonautsRoot,
 				captureEpisode: options.captureEpisode,
+				source: options.source,
 			});
 		}
 		case "profile": {
@@ -428,7 +436,11 @@ async function remember(options: {
 				{ projectRoot: options.projectRoot, scopes: ["user"] },
 				{ text: "", recordTypes: ["profile"] },
 			);
-			const draft = rememberDraft({ request: options.request, timestamp });
+			const draft = rememberDraft({
+				request: options.request,
+				timestamp,
+				source: options.source,
+			});
 			return renderRememberWithCapture({
 				result: await options.store.write(draft),
 				draft,
@@ -437,6 +449,7 @@ async function remember(options: {
 				projectRoot: options.projectRoot,
 				userCosmonautsRoot: options.userCosmonautsRoot,
 				captureEpisode: options.captureEpisode,
+				source: options.source,
 			});
 		}
 		case "playbook": {
@@ -458,7 +471,11 @@ async function remember(options: {
 				});
 			}
 
-			const draft = rememberDraft({ request: options.request, timestamp });
+			const draft = rememberDraft({
+				request: options.request,
+				timestamp,
+				source: options.source,
+			});
 			return renderRememberWithCapture({
 				result: await options.store.write(draft),
 				draft,
@@ -466,12 +483,14 @@ async function remember(options: {
 				projectRoot: options.projectRoot,
 				userCosmonautsRoot: options.userCosmonautsRoot,
 				captureEpisode: options.captureEpisode,
+				source: options.source,
 			});
 		}
 	}
 }
 
 function rememberDraft(options: {
+	readonly source: string;
 	readonly request: RememberRequest;
 	readonly timestamp: string;
 }): MemoryRecordDraft {
@@ -486,7 +505,7 @@ function rememberDraft(options: {
 				content: options.request.content,
 				tags: options.request.tags,
 				timestamp: options.timestamp,
-				source: SOURCE,
+				source: options.source,
 			};
 		case "profile":
 			return {
@@ -498,7 +517,7 @@ function rememberDraft(options: {
 				content: options.request.content,
 				tags: options.request.tags,
 				timestamp: options.timestamp,
-				source: SOURCE,
+				source: options.source,
 			};
 		case "playbook":
 			return {
@@ -510,7 +529,7 @@ function rememberDraft(options: {
 				content: options.request.content,
 				tags: options.request.tags,
 				timestamp: options.timestamp,
-				source: SOURCE,
+				source: options.source,
 			};
 	}
 }
@@ -718,6 +737,7 @@ function formatIndexRecord(options: {
 }
 
 async function renderRememberWithCapture(options: {
+	readonly source: string;
 	readonly result: MemoryWriteResult;
 	readonly draft: MemoryRecordDraft;
 	readonly operation: "saved" | "created" | "updated";
@@ -743,7 +763,7 @@ async function renderRememberWithCapture(options: {
 		userCosmonautsRoot: options.userCosmonautsRoot,
 		event: {
 			scope: options.result.record.scope,
-			source: SOURCE,
+			source: options.source,
 			action: "memory.saved",
 			outcome: "succeeded",
 			subject: {
@@ -1088,7 +1108,7 @@ function unauthorizedResult(
 		"Agent memory is not authorized for the current agent turn.",
 		{
 			status: "unauthorized",
-			authorizedAgent: authorizedAgentId ?? COSMO_AGENT_ID,
+			authorizedAgent: authorizedAgentId,
 		},
 	);
 }
@@ -1340,3 +1360,6 @@ function truncateUtf8(value: string, maxBytes: number): string {
 	}
 	return result;
 }
+
+/** Session memory registration is owned by the grant composer. */
+export const createSessionExtension: SessionExtensionProvider = () => undefined;

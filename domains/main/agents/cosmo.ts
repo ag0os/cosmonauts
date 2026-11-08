@@ -4,7 +4,8 @@ const definition: AgentDefinition = {
 	id: "cosmo",
 	description:
 		"Personal assistant — helps with the user's files, email, calendar, notes, and general work; aware of other Cosmonauts domains and can pull in specialists when the work warrants it.",
-	capabilities: ["tasks", "spawning", "todo", "drive"],
+	memory: { authored: true, episodes: true },
+	capabilities: ["framework-base", "tasks", "spawning", "todo", "drive"],
 	model: "openai-codex/gpt-5.6-sol",
 	tools: "none",
 	extensions: [
@@ -14,7 +15,6 @@ const definition: AgentDefinition = {
 		"todo",
 		"init",
 		"observability",
-		"agent-memory",
 	],
 	skills: ["*"],
 	subagents: [

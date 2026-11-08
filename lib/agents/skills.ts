@@ -137,11 +137,14 @@ export function resolveHiddenSkillNames(
 ): readonly string[] | undefined {
 	if (!options.resolver) return undefined;
 
-	const requesterDomain = resolveDefaultDomain({
-		explicitDomain: options.requesterDomain,
-		resolver: options.resolver,
-		purpose: "skill visibility resolution",
-	});
+	const requesterDomain =
+		options.requesterDomain === ""
+			? ""
+			: resolveDefaultDomain({
+					explicitDomain: options.requesterDomain,
+					resolver: options.resolver,
+					purpose: "skill visibility resolution",
+				});
 	return [
 		...new Set(
 			options.resolver.registry.listAll().flatMap((domain) =>

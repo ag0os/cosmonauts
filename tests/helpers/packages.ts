@@ -218,6 +218,7 @@ async function writeSyntheticAgents(
 	for (const agent of agents) {
 		const definition = {
 			id: agent.id,
+			memory: {},
 			description: agent.description ?? `Synthetic agent ${agent.id}`,
 			capabilities: agent.capabilities ?? [],
 			model: agent.model ?? "test/model",

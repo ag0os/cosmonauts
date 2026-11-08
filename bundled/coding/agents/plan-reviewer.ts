@@ -4,7 +4,9 @@ const definition: AgentDefinition = {
 	id: "plan-reviewer",
 	description:
 		"Adversarial review of implementation plans. Verifies claims against the codebase and produces structured findings for the planner to address.",
+	memory: { architecture: true, episodes: true },
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"architectural-design",
@@ -12,7 +14,7 @@ const definition: AgentDefinition = {
 	],
 	model: "openai-codex/gpt-5.6-sol",
 	tools: "coding",
-	extensions: ["plans", "project-tools", "architecture-memory"],
+	extensions: ["plans", "project-tools"],
 	skills: [
 		"pi",
 		"plan",

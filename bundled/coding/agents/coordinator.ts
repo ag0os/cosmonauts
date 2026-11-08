@@ -4,15 +4,16 @@ const definition: AgentDefinition = {
 	id: "coordinator",
 	description:
 		"Delegates tasks to workers, monitors progress, and verifies completion. Loops until all tasks are done.",
-	capabilities: ["healthy-codebase-harness", "tasks", "spawning"],
+	memory: { architecture: true, episodes: true },
+	capabilities: [
+		"framework-base",
+		"healthy-codebase-harness",
+		"tasks",
+		"spawning",
+	],
 	model: "openai-codex/gpt-5.6-sol",
 	tools: "none",
-	extensions: [
-		"tasks",
-		"orchestration",
-		"observability",
-		"architecture-memory",
-	],
+	extensions: ["tasks", "orchestration", "observability"],
 	skills: [],
 	subagents: ["worker"],
 	projectContext: false,

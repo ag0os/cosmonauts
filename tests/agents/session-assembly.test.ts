@@ -10,10 +10,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import {
-	buildAgentIdentityMarker,
-	extractAgentIdFromSystemPrompt,
-} from "../../lib/agents/runtime-identity.ts";
+import { extractAgentIdFromSystemPrompt } from "../../lib/agents/runtime-identity.ts";
 import {
 	type BuildSessionParamsOptions,
 	buildSessionParams,
@@ -316,16 +313,23 @@ describe("buildSessionParams", () => {
 	});
 
 	describe("extension paths", () => {
-		it("keeps OFF assembly byte-for-byte and composes one enabled inline surface", async () => {
+		it("uses declared grants in both gate modes independently of shim paths", async () => {
 			await setupMinimalDomains(tmp.path);
 			for (const name of ["agent-memory", "architecture-memory", "unrelated"]) {
 				await mkdir(join(tmp.path, "shared", "extensions", name), {
 					recursive: true,
 				});
+				if (name !== "unrelated") {
+					await writeFile(
+						join(tmp.path, "shared", "extensions", name, "index.ts"),
+						"export const createSessionExtension = () => undefined;\n",
+					);
+				}
 			}
 			const def = makeDef({
 				domain: "main",
-				extensions: ["agent-memory", "architecture-memory", "unrelated"],
+				extensions: ["unrelated"],
+				memory: { authored: true, architecture: true },
 			});
 			const off = await buildSessionParams(
 				makeOptions({ def, loadConfig: async () => ({}) }),
@@ -340,10 +344,8 @@ describe("buildSessionParams", () => {
 			);
 
 			expect(off.knowledgeSurfaceEnabled).toBe(false);
-			expect(off.extensionFactories).toEqual([]);
+			expect(off.extensionFactories).toHaveLength(2);
 			expect(off.extensionPaths).toEqual([
-				join(tmp.path, "shared", "extensions", "agent-memory"),
-				join(tmp.path, "shared", "extensions", "architecture-memory"),
 				join(tmp.path, "shared", "extensions", "unrelated"),
 			]);
 			expect(on.knowledgeSurfaceEnabled).toBe(true);
@@ -378,17 +380,23 @@ describe("buildSessionParams", () => {
 			expect(switchedOff.knowledgeSurfaceEnabled).toBe(false);
 		});
 
-		it("keeps exact-wrapper tools registered without widening synthetic authorization", async () => {
+		it("does not grant authored or architecture tools merely by naming their old wrappers", async () => {
 			await setupMinimalDomains(tmp.path, { agentId: "synthetic" });
 			for (const name of ["agent-memory", "architecture-memory"]) {
 				await mkdir(join(tmp.path, "shared", "extensions", name), {
 					recursive: true,
 				});
+				if (name !== "unrelated") {
+					await writeFile(
+						join(tmp.path, "shared", "extensions", name, "index.ts"),
+						"export const createSessionExtension = () => undefined;\n",
+					);
+				}
 			}
 			const def = makeDef({
 				id: "synthetic",
 				domain: "main",
-				extensions: ["agent-memory", "architecture-memory"],
+				extensions: [],
 			});
 			const params = await buildSessionParams(
 				makeOptions({
@@ -405,31 +413,14 @@ describe("buildSessionParams", () => {
 			const pi = createMockPi({ cwd: tmp.path });
 			await inline.factory(pi as never);
 
-			expect([...pi.tools.keys()].sort()).toEqual([
-				"architecture_map_read",
-				"recall",
-				"remember",
-			]);
-			const before = await pi.fireEvent(
-				"before_agent_start",
-				{ systemPrompt: buildAgentIdentityMarker("main/synthetic") },
-				{ cwd: tmp.path },
+			expect([...pi.tools.keys()]).toEqual(["recall"]);
+			await expect(pi.callTool("remember", { content: "no" })).rejects.toThrow(
+				"Tool not found",
 			);
-			expect(before).toBeUndefined();
-			expect(
-				(
-					(await pi.callTool("remember", { content: "no" })) as {
-						details: unknown;
-					}
-				).details,
-			).toMatchObject({ status: "unauthorized" });
-			expect(
-				(
-					(await pi.callTool("architecture_map_read", {})) as {
-						details: unknown;
-					}
-				).details,
-			).toMatchObject({ status: "scope-ineligible" });
+			await expect(pi.callTool("architecture_map_read", {})).rejects.toThrow(
+				"Tool not found",
+			);
+
 			expect(
 				(
 					(await pi.callTool("recall", { query: "surface" })) as {

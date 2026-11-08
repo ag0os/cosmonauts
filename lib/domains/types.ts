@@ -51,6 +51,8 @@ export interface DomainProvenance {
 
 /** A fully discovered and indexed domain, produced by the domain loader. */
 export interface LoadedDomain {
+	/** Declaration diagnostics collected during discovery, validated only for participating domains. */
+	readonly declarationDiagnostics?: readonly import("./validator.ts").DomainValidationDiagnostic[];
 	/** The domain's manifest. */
 	readonly manifest: DomainManifest;
 	/** Whether this domain is portable. Defaults to false for domains without the field. */

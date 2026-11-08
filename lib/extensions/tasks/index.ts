@@ -8,7 +8,9 @@ import type {
 import {
 	appendEpisodeWarning,
 	createEpisodeCapture,
+	type EpisodeCaptureGrant,
 } from "../episode-capture.ts";
+import type { SessionExtensionProvider } from "../session-provider.ts";
 
 const PriorityLiterals = [
 	Type.Literal("high"),
@@ -42,8 +44,13 @@ function textResult(
 	};
 }
 
-function createTaskCaptureEdge(cwd: string, systemPrompt: string) {
+function createTaskCaptureEdge(
+	cwd: string,
+	systemPrompt: string,
+	grant: EpisodeCaptureGrant,
+) {
 	return createEpisodeCapture({
+		...grant,
 		cwd,
 		systemPrompt,
 		createManager: (root, options) => new TaskManager(root, options),
@@ -149,7 +156,10 @@ function setAcceptanceCriterionChecked(
 	);
 }
 
-export default function tasksExtension(pi: ExtensionAPI) {
+export default function tasksExtension(
+	pi: ExtensionAPI,
+	grant: EpisodeCaptureGrant = {},
+) {
 	// task_create
 	pi.registerTool({
 		name: "task_create",
@@ -204,6 +214,7 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			const { manager, warnings } = createTaskCaptureEdge(
 				ctx.cwd,
 				ctx.getSystemPrompt(),
+				grant,
 			);
 			const task = await manager.createTask(createParams);
 			return {
@@ -383,6 +394,7 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			const { manager, warnings } = createTaskCaptureEdge(
 				ctx.cwd,
 				ctx.getSystemPrompt(),
+				grant,
 			);
 			if (checkAc !== undefined || uncheckAc !== undefined) {
 				const task = await manager.getTask(taskId);
@@ -465,3 +477,10 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		},
 	});
 }
+
+export const createSessionExtension: SessionExtensionProvider =
+	(context) => (pi) =>
+		tasksExtension(pi, {
+			enabled: context.memory.episodes,
+			source: context.agentId,
+		});

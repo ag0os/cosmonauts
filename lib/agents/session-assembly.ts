@@ -5,7 +5,6 @@
  * cli/session.ts and lib/orchestration/session-factory.ts.
  */
 
-import { join, resolve } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import {
@@ -23,20 +22,19 @@ import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import type { RuntimeContext } from "../domains/prompt-assembly.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
-import { createKnowledgeSurfaceSessionExtension } from "../extensions/knowledge-surface/session-extension.ts";
-import {
-	resolveExtensionPaths,
-	resolveTools,
-} from "../orchestration/definition-resolution.ts";
+import { resolveTools } from "../orchestration/definition-resolution.ts";
 import {
 	FALLBACK_MODEL,
 	resolveModel,
 } from "../orchestration/model-resolution.ts";
 import type { QualityReviewProfile } from "../orchestration/quality-review-profile.ts";
+import { resolveMemoryGrants, validateAgentDefinition } from "./declaration.ts";
 import {
 	isDestructiveGitCommand,
 	latestDriveSnapshot,
 } from "./drive-worker-tool-guard.ts";
+import { bindSessionExtensions } from "./extension-assembly.ts";
+import { buildMemoryExtensions } from "./memory-assembly.ts";
 import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
@@ -47,14 +45,6 @@ import {
 	resolveHiddenSkillNames,
 } from "./skills.ts";
 import type { AgentDefinition } from "./types.ts";
-
-const ARCHITECTURE_MEMORY_CONSUMERS = new Set([
-	"coding/planner",
-	"coding/plan-reviewer",
-	"coding/coordinator",
-	"coding/worker",
-	"coding/quality-manager",
-]);
 
 // ============================================================================
 // Interfaces
@@ -98,6 +88,8 @@ export interface BuildSessionParamsOptions {
 }
 
 export interface SessionParams {
+	exactTools?: boolean;
+	recallEnabled?: boolean;
 	/** Assembled and identity-marked system prompt content. */
 	promptContent: string;
 	/** Resolved Pi tool instances. */
@@ -183,18 +175,24 @@ export async function buildSessionParams(
 		loadConfig = loadProjectConfig,
 		qualityReviewChild,
 	} = options;
+	validateAgentDefinition(def);
 
 	// Tool resolution
 	const qualityReviewProfile = qualityReviewProfileFor(def, qualityReviewChild);
 	const tools = resolveTools(
-		qualityReviewProfile ? "readonly" : def.tools,
+		qualityReviewProfile && typeof def.tools === "string"
+			? "readonly"
+			: def.tools,
 		cwd,
 	);
-	const resourceDomain = resolveDefaultDomain({
-		explicitDomain: def.domain,
-		resolver,
-		purpose: `session parameters for agent "${qualifyAgentId(def.id, def.domain)}"`,
-	});
+	const resourceDomain =
+		def.instructions && !def.domain && !def.resourceDomain
+			? ""
+			: resolveDefaultDomain({
+					explicitDomain: def.resourceDomain ?? def.domain,
+					resolver,
+					purpose: `session parameters for agent "${qualifyAgentId(def.id, def.domain)}"`,
+				});
 
 	// Four-layer prompt assembly
 	let promptContent: string | undefined = await assemblePrompts({
@@ -205,6 +203,8 @@ export async function buildSessionParams(
 		frameworkPromptsDir,
 		resolver,
 		runtimeContext,
+		instructions: def.instructions,
+		cwd,
 	});
 
 	// Embed runtime identity marker for extension-level authorization checks
@@ -213,60 +213,25 @@ export async function buildSessionParams(
 		qualifyAgentId(def.id, def.domain),
 	);
 
-	// Extension path resolution, with optional extra paths appended
-	const resolvedExtensionPaths = resolveExtensionPaths(def.extensions, {
-		domain: resourceDomain,
-		domainsDir,
-		resolver,
-	});
 	const knowledgeSurfaceEnabled = resolveKnowledgeSurfaceConfig(
 		await loadConfig(cwd),
 	).enabled;
-	const sharedExtensionsDir = resolve(
-		domainsDir ?? join(import.meta.dirname, "..", "..", "domains"),
-		"shared",
-		"extensions",
-	);
-	const exactAgentMemoryPath = join(sharedExtensionsDir, "agent-memory");
-	const exactArchitectureMemoryPath = join(
-		sharedExtensionsDir,
-		"architecture-memory",
-	);
-	const registerAgentMemoryTools = resolvedExtensionPaths.some(
-		(path) => resolve(path) === exactAgentMemoryPath,
-	);
-	const registerArchitectureTool = resolvedExtensionPaths.some(
-		(path) => resolve(path) === exactArchitectureMemoryPath,
-	);
-	const retainedResolvedPaths = knowledgeSurfaceEnabled
-		? resolvedExtensionPaths.filter((path) => {
-				const normalized = resolve(path);
-				return (
-					normalized !== exactAgentMemoryPath &&
-					normalized !== exactArchitectureMemoryPath
-				);
-			})
-		: resolvedExtensionPaths;
-	const extensionPaths = extraExtensionPaths?.length
-		? [...retainedResolvedPaths, ...extraExtensionPaths]
-		: retainedResolvedPaths;
-	const agentId = qualifyAgentId(def.id, def.domain);
-	const extensionFactories: InlineExtension[] = knowledgeSurfaceEnabled
-		? [
-				createKnowledgeSurfaceSessionExtension({
-					agentId,
-					registerAgentMemoryTools,
-					authorizeAuthoredMemory:
-						registerAgentMemoryTools && agentId === "main/cosmo",
-					registerArchitectureTool,
-					authorizeArchitecture:
-						registerArchitectureTool &&
-						ARCHITECTURE_MEMORY_CONSUMERS.has(agentId),
-					recallOwner: registerAgentMemoryTools ? "agent-memory" : "knowledge",
-					canPropose: agentId === "coding/distiller",
-				}),
-			]
-		: [];
+	const memoryExtensions = buildMemoryExtensions(def, knowledgeSurfaceEnabled);
+	const selected = await bindSessionExtensions({
+		names: def.extensions,
+		domain: resourceDomain,
+		domainsDir,
+		resolver,
+		context: {
+			agentId: qualifyAgentId(def.id, def.domain),
+			memory: resolveMemoryGrants(def.memory),
+		},
+	});
+	const extensionPaths = [...selected.paths, ...(extraExtensionPaths ?? [])];
+	const extensionFactories: InlineExtension[] = [
+		...memoryExtensions.factories,
+		...selected.factories,
+	];
 
 	if (runtimeContext?.parentRole === "driver") {
 		extensionFactories.push((pi) => {
@@ -284,6 +249,19 @@ export async function buildSessionParams(
 			});
 		});
 	}
+	if (typeof def.tools !== "string") {
+		const granted = new Set(tools);
+		extensionFactories.push((pi) => {
+			pi.on("tool_call", (event) => {
+				if (!granted.has(event.toolName)) {
+					return {
+						block: true,
+						reason: `Tool is outside the declared grant: ${event.toolName}`,
+					};
+				}
+			});
+		});
+	}
 
 	// Skill override construction
 	const effectiveProjectSkills = ignoreProjectSkills
@@ -295,7 +273,9 @@ export async function buildSessionParams(
 				agent: { skills: def.skills, domain: resourceDomain },
 			});
 	const hiddenSkillNames = resolveHiddenSkillNames({
-		requesterDomain: resourceDomain,
+		requesterDomain:
+			def.domain ??
+			(def.instructions || def.resourceDomain ? "" : resourceDomain),
 		resolver,
 	});
 	const skillsOverride = buildSkillsOverride(
@@ -315,6 +295,8 @@ export async function buildSessionParams(
 	const thinkingLevel = thinkingLevelOverride ?? def.thinkingLevel;
 
 	return {
+		exactTools: typeof def.tools !== "string",
+		recallEnabled: memoryExtensions.recallEnabled,
 		promptContent,
 		tools,
 		extensionPaths,

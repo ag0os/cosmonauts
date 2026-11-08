@@ -2,10 +2,11 @@ import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import { LEAN_SKILLS } from "../agent-skills.ts";
 
 const definition: AgentDefinition = {
+	memory: {},
 	id: "checker",
 	description:
 		"Checks explicit claims by running commands and reading code, and reports pass or fail with evidence. Never edits.",
-	capabilities: [],
+	capabilities: ["framework-base"],
 	model: "openai-codex/gpt-5.6-sol",
 	thinkingLevel: "high",
 	tools: "verification",

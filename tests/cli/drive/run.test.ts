@@ -2053,7 +2053,7 @@ function workerRuntime(
 }
 
 function workerDefinition(domain: string): AgentDefinition {
-	return agentDefinition(domain, "worker");
+	return { ...agentDefinition(domain, "worker"), memory: { episodes: true } };
 }
 
 function agentDefinition(domain: string, id: string): AgentDefinition {

@@ -59,7 +59,7 @@ async function setupExtension() {
 		"../../lib/extensions/plans/index.ts"
 	);
 	const pi = createMockPi();
-	plansExtension(pi as never);
+	plansExtension(pi as never, { enabled: true });
 	return pi;
 }
 

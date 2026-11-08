@@ -4,7 +4,9 @@ const definition: AgentDefinition = {
 	id: "refactorer",
 	description:
 		"Dedicated refactoring agent: restructures existing code without changing observable behavior. All tests must stay green throughout.",
+	memory: { episodes: true },
 	capabilities: [
+		"framework-base",
 		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readwrite",

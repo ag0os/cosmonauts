@@ -35,6 +35,8 @@ interface DomainValidationOptions {
 
 /** A single validation issue found during domain validation. */
 export interface DomainValidationDiagnostic {
+	readonly file?: string;
+	readonly origin?: string;
 	readonly domain: string;
 	readonly agent?: string;
 	readonly chain?: string;
@@ -50,7 +52,7 @@ export class DomainValidationError extends Error {
 		const errors = diagnostics.filter((d) => d.severity === "error");
 		const lines = errors.map(
 			(d) =>
-				`  [${d.domain}${d.agent ? `/${d.agent}` : ""}${d.chain ? ` chain:${d.chain}` : ""}] ${d.message}`,
+				`  [${d.domain}${d.agent ? `/${d.agent}` : ""}${d.chain ? ` chain:${d.chain}` : ""}] ${d.file ? ` ${d.file}` : ""}${d.origin ? ` (package/source: ${d.origin})` : ""} ${d.message}`,
 		);
 		super(
 			`Domain validation failed with ${errors.length} error${errors.length === 1 ? "" : "s"}:\n${lines.join("\n")}`,
@@ -77,6 +79,7 @@ export function validateDomains(
 	return [
 		...validatePortableCapabilityOverlap(portableDomains),
 		...domains.flatMap((domain) => [
+			...(domain.declarationDiagnostics ?? []),
 			...validateInternalDenyList(domain),
 			...validateDomainLead(domain),
 			...validateNamedChainAgents(domain, agentIndex, options),

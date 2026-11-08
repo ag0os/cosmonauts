@@ -6,12 +6,19 @@ import { TaskManager } from "../../tasks/task-manager.ts";
 import {
 	appendEpisodeWarning,
 	createEpisodeCapture,
+	type EpisodeCaptureGrant,
 } from "../episode-capture.ts";
+import type { SessionExtensionProvider } from "../session-provider.ts";
 
 const PlanStatusLiterals = [Type.Literal("active"), Type.Literal("completed")];
 
-function createPlanCaptureEdge(cwd: string, systemPrompt: string) {
+function createPlanCaptureEdge(
+	cwd: string,
+	systemPrompt: string,
+	grant: EpisodeCaptureGrant,
+) {
 	return createEpisodeCapture({
+		...grant,
 		cwd,
 		systemPrompt,
 		createManager: (root, options) => new PlanManager(root, options),
@@ -28,7 +35,10 @@ function createPlanManagers(cwd: string): {
 	};
 }
 
-export default function plansExtension(pi: ExtensionAPI) {
+export default function plansExtension(
+	pi: ExtensionAPI,
+	grant: EpisodeCaptureGrant = {},
+) {
 	// plan_create
 	pi.registerTool({
 		name: "plan_create",
@@ -54,6 +64,7 @@ export default function plansExtension(pi: ExtensionAPI) {
 			const { manager, warnings } = createPlanCaptureEdge(
 				ctx.cwd,
 				ctx.getSystemPrompt(),
+				grant,
 			);
 			const plan = await manager.createPlan({
 				slug: params.slug,
@@ -215,6 +226,7 @@ export default function plansExtension(pi: ExtensionAPI) {
 			const { manager, warnings } = createPlanCaptureEdge(
 				ctx.cwd,
 				ctx.getSystemPrompt(),
+				grant,
 			);
 			const plan = await manager.updatePlan(slug, updates);
 			const changed = [
@@ -281,3 +293,10 @@ export default function plansExtension(pi: ExtensionAPI) {
 		},
 	});
 }
+
+export const createSessionExtension: SessionExtensionProvider =
+	(context) => (pi) =>
+		plansExtension(pi, {
+			enabled: context.memory.episodes,
+			source: context.agentId,
+		});

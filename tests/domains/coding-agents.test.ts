@@ -14,6 +14,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 import architectureMemoryExtension from "../../domains/shared/extensions/architecture-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import {
+	buildSessionParams,
+	type SessionParams,
+} from "../../lib/agents/session-assembly.ts";
+import {
 	buildSkillsOverride,
 	resolveEffectiveProjectSkills,
 } from "../../lib/agents/skills.ts";
@@ -26,7 +30,6 @@ import {
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import {
 	buildToolAllowlist,
-	resolveExtensionPaths,
 	resolveTools,
 } from "../../lib/orchestration/definition-resolution.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -85,7 +88,7 @@ describe("coding domain agent invariants", () => {
 	it("uses valid tools values", () => {
 		const valid = new Set(["coding", "readonly", "verification", "none"]);
 		for (const def of allDefinitions) {
-			expect(valid.has(def.tools)).toBe(true);
+			expect(typeof def.tools === "string" && valid.has(def.tools)).toBe(true);
 		}
 	});
 
@@ -252,9 +255,7 @@ describe("coding domain agent invariants", () => {
 
 	it("registers architecture_map_read at extension factory load for architecture-consuming agents", async () => {
 		const consumers = allDefinitions
-			.filter((definition) =>
-				definition.extensions.includes("architecture-memory"),
-			)
+			.filter((definition) => definition.memory?.architecture)
 			.sort((a, b) => a.id.localeCompare(b.id));
 		expect(consumers.map((definition) => definition.id)).toEqual([
 			"coordinator",
@@ -264,12 +265,16 @@ describe("coding domain agent invariants", () => {
 		]);
 
 		for (const definition of consumers) {
-			const extensionPaths = resolveExtensionPaths(definition.extensions, {
-				domain: definition.domain ?? "coding",
+			const params = await buildSessionParams({
+				def: definition,
+				cwd: tmp.path,
 				resolver,
+				loadConfig: async () => ({ knowledgeSurface: { enabled: true } }),
 			});
-			const extensionToolGroups =
-				await collectExtensionToolGroups(extensionPaths);
+			const extensionToolGroups = await collectExtensionToolGroups(
+				params.extensionPaths,
+				params.extensionFactories,
+			);
 			const allowlist = buildToolAllowlist(
 				resolveTools(definition.tools, tmp.path),
 				fakeLoader(extensionToolGroups),
@@ -325,6 +330,7 @@ type ExtensionFactory = (api: unknown) => void;
 
 async function collectExtensionToolGroups(
 	extensionPaths: readonly string[],
+	factories: SessionParams["extensionFactories"] = [],
 ): Promise<string[][]> {
 	const groups: string[][] = [];
 
@@ -335,6 +341,13 @@ async function collectExtensionToolGroups(
 		groups.push(names);
 	}
 
+	for (const factory of factories) {
+		const names: string[] = [];
+		await (typeof factory === "function" ? factory : factory.factory)(
+			createToolCollector(names) as never,
+		);
+		groups.push(names);
+	}
 	return groups;
 }
 

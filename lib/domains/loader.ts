@@ -8,6 +8,7 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { validateLoadedAgentDefinition } from "../agents/declaration.ts";
 import type { AgentDefinition } from "../agents/types.ts";
 import type { NamedChain } from "../chains/types.ts";
 import type {
@@ -19,6 +20,7 @@ import type {
 	LoadedDomain,
 	MergeStrategy,
 } from "./types.ts";
+import type { DomainValidationDiagnostic } from "./validator.ts";
 
 interface LoadDomainsFromSourcesOptions {
 	/**
@@ -107,13 +109,20 @@ async function loadSingleDomain(
 
 	// Load agent definitions from agents/*.ts
 	const agents = new Map<string, AgentDefinition>();
+	const declarationDiagnostics: DomainValidationDiagnostic[] = [];
 	const agentsDir = join(domainDir, "agents");
 	if (await dirExists(agentsDir)) {
 		const agentFiles = await readdir(agentsDir);
 		for (const file of agentFiles) {
 			if (!file.endsWith(".ts") || file.startsWith(".")) continue;
 			const mod = await import(join(agentsDir, file));
-			const def = normalizeAgentDefinition(mod.default, manifest.id);
+			const def = loadAgentDeclaration({
+				definition: mod.default,
+				domainId: manifest.id,
+				file: join(agentsDir, file),
+				origin: provenance.origin,
+				diagnostics: declarationDiagnostics,
+			});
 			if (def) {
 				agents.set(def.id, def);
 			}
@@ -138,6 +147,7 @@ async function loadSingleDomain(
 
 	return {
 		manifest,
+		declarationDiagnostics,
 		portable: manifest.portable ?? false,
 		agents,
 		capabilities,
@@ -148,6 +158,31 @@ async function loadSingleDomain(
 		provenance: [provenance],
 		rootDirs: [domainDir],
 	};
+}
+
+interface LoadAgentDeclarationOptions {
+	definition: unknown;
+	domainId: string;
+	file: string;
+	origin: string;
+	diagnostics: DomainValidationDiagnostic[];
+}
+
+function loadAgentDeclaration(
+	options: LoadAgentDeclarationOptions,
+): AgentDefinition | undefined {
+	try {
+		return normalizeAgentDefinition(options.definition, options.domainId);
+	} catch (error) {
+		options.diagnostics.push({
+			domain: options.domainId,
+			file: options.file,
+			origin: options.origin,
+			severity: "error",
+			message: error instanceof Error ? error.message : String(error),
+		});
+		return undefined;
+	}
 }
 
 function normalizeAgentDefinition(
@@ -168,6 +203,7 @@ function normalizeAgentDefinition(
 				: ["*"],
 	};
 
+	validateLoadedAgentDefinition(normalized as AgentDefinition);
 	return normalized as AgentDefinition;
 }
 
@@ -338,6 +374,10 @@ function mergeDomains(
 
 	return {
 		manifest: incoming.manifest,
+		declarationDiagnostics: [
+			...(existing.declarationDiagnostics ?? []),
+			...(incoming.declarationDiagnostics ?? []),
+		],
 		portable: incoming.portable,
 		agents: mergedAgents,
 		capabilities: new Set([...existing.capabilities, ...incoming.capabilities]),

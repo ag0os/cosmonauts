@@ -27,6 +27,8 @@ import {
 } from "./knowledge-tools.ts";
 
 interface KnowledgeSurfaceSessionOptions {
+	readonly knowledge?: boolean;
+	readonly episodes?: boolean;
 	readonly agentId: string;
 	readonly registerAgentMemoryTools: boolean;
 	readonly authorizeAuthoredMemory: boolean;
@@ -68,6 +70,7 @@ export function createKnowledgeSurfaceSessionExtension(
 	const recallKnowledge =
 		options.recallKnowledge ??
 		createKnowledgeRecallHandler({
+			knowledge: options.knowledge,
 			createKnowledgeStore: (projectRoot) =>
 				createKnowledgeStore({ projectRoot, userCosmonautsRoot }),
 			...(options.authorizeAuthoredMemory
@@ -100,15 +103,17 @@ export function createKnowledgeSurfaceSessionExtension(
 					userCosmonautsRoot,
 					now,
 					storeFactory: createAuthoredStore,
+					episodes: options.episodes,
 					authorizationState: authoredAuthorization,
 					registerContextHandler: false,
 					...(options.loadConfig ? { loadConfig: options.loadConfig } : {}),
 				})(pi);
-			} else {
+			} else if (options.knowledge !== false) {
 				registerKnowledgeRecallTool(pi, recallKnowledge);
 			}
-			if (options.canPropose && options.agentId === "coding/distiller") {
+			if (options.canPropose) {
 				registerKnowledgeProposalTool(pi, {
+					writer: options.agentId,
 					now,
 					createKnowledgeStore: (projectRoot) =>
 						createKnowledgeStore({ projectRoot, userCosmonautsRoot }),
@@ -127,6 +132,7 @@ export function createKnowledgeSurfaceSessionExtension(
 			}
 
 			registerCombinedContextHandler(pi, {
+				knowledge: options.knowledge,
 				agentId: options.agentId,
 				authorizeAuthoredMemory: options.authorizeAuthoredMemory,
 				authorizeArchitecture: options.authorizeArchitecture,

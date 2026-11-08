@@ -293,7 +293,7 @@ describe("pre-W3 disabled baselines", () => {
 		const userRoot = join(tmp.path, "authored-user");
 		const pi = createMockPi({ cwd: projectRoot });
 		const { createAgentMemoryExtension } = await import(
-			"../../domains/shared/extensions/agent-memory/index.ts"
+			"../helpers/memory-grants.ts"
 		);
 		createAgentMemoryExtension({
 			userCosmonautsRoot: userRoot,

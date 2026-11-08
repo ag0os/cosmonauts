@@ -12,7 +12,6 @@ import {
 import { join, relative, sep } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test } from "vitest";
-import { createAgentMemoryExtension } from "../../domains/shared/extensions/agent-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import { recordEpisode } from "../../lib/memory/episode.ts";
 import {
@@ -27,6 +26,7 @@ import {
 } from "../../lib/memory/index.ts";
 import { PlanManager } from "../../lib/plans/plan-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { createAgentMemoryExtension } from "../helpers/memory-grants.ts";
 import { createMockPi, type MockPi } from "../helpers/mocks/index.ts";
 
 const tmp = useTempDir("w3-episodic-contract-");

@@ -195,7 +195,8 @@ async function createResourceLoader(
 		...resourceSkillOptions(params, baseProjectRoot, baseAgentsFiles),
 	});
 	await loader.reload();
-	if (params.knowledgeSurfaceEnabled) assertEnabledRecallOwner(loader);
+	if (params.knowledgeSurfaceEnabled)
+		assertEnabledRecallOwner(loader, params.recallEnabled);
 	return { loader, qualitySettings };
 }
 
@@ -296,7 +297,11 @@ export async function createAgentSessionFromDefinition(
 		params,
 	);
 
-	const resolvedTools = buildToolAllowlist(params.tools, loader);
+	const resolvedTools = buildToolAllowlist(
+		params.tools,
+		loader,
+		params.exactTools,
+	);
 	const toolAllowlist = params.qualityReviewProfile
 		? enforceQualityReviewProfile(resolvedTools, params.qualityReviewProfile)
 		: resolvedTools;

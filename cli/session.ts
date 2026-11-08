@@ -56,7 +56,7 @@ function sessionToolAllowlist(
 	params: SessionParams,
 	loader: Parameters<typeof buildToolAllowlist>[1],
 ): string[] {
-	const resolved = buildToolAllowlist(params.tools, loader);
+	const resolved = buildToolAllowlist(params.tools, loader, params.exactTools);
 	return params.qualityReviewProfile
 		? enforceQualityReviewProfile(resolved, params.qualityReviewProfile)
 		: resolved;
@@ -600,7 +600,10 @@ export async function createSession(
 						resourceLoaderOptions: newResourceLoaderOptions,
 					});
 					if (newParams.knowledgeSurfaceEnabled) {
-						assertEnabledRecallOwner(services.resourceLoader);
+						assertEnabledRecallOwner(
+							services.resourceLoader,
+							newParams.recallEnabled,
+						);
 					}
 					const result = await createAgentSessionFromServices({
 						services,
@@ -632,7 +635,7 @@ export async function createSession(
 			resourceLoaderOptions,
 		});
 		if (params.knowledgeSurfaceEnabled) {
-			assertEnabledRecallOwner(services.resourceLoader);
+			assertEnabledRecallOwner(services.resourceLoader, params.recallEnabled);
 		}
 		const result = await createAgentSessionFromServices({
 			services,

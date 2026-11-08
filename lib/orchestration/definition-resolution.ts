@@ -6,7 +6,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { ResourceLoader } from "@earendil-works/pi-coding-agent";
-import type { AgentToolSet } from "../agents/index.ts";
+import type { AgentDefinition } from "../agents/types.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { KNOWLEDGE_SURFACE_EXTENSION_NAME } from "../extensions/knowledge-surface/constants.ts";
 
@@ -18,7 +18,11 @@ import { KNOWLEDGE_SURFACE_EXTENSION_NAME } from "../extensions/knowledge-surfac
  * Resolve a tool set name to the Pi built-in tool-name allowlist.
  * Pi's createAgentSession binds these to the session cwd internally.
  */
-export function resolveTools(toolSet: AgentToolSet, _cwd: string): string[] {
+export function resolveTools(
+	toolSet: AgentDefinition["tools"],
+	_cwd: string,
+): string[] {
+	if (typeof toolSet !== "string") return [...new Set(toolSet)];
 	switch (toolSet) {
 		case "coding":
 			return ["read", "bash", "edit", "write"];
@@ -46,7 +50,28 @@ export function resolveTools(toolSet: AgentToolSet, _cwd: string): string[] {
 export function buildToolAllowlist(
 	builtIns: readonly string[],
 	loader: ResourceLoader,
+	exact = false,
 ): string[] {
+	if (exact) {
+		const available = new Set([
+			"read",
+			"bash",
+			"powershell",
+			"edit",
+			"write",
+			"grep",
+			"find",
+			"ls",
+			...loader
+				.getExtensions()
+				.extensions.flatMap((ext) => [...ext.tools.keys()]),
+		]);
+		for (const name of builtIns) {
+			if (!available.has(name))
+				throw new Error(`Unknown tool in agent declaration: ${name}`);
+		}
+		return [...new Set(builtIns)];
+	}
 	const names = new Set<string>(builtIns);
 	for (const ext of loader.getExtensions().extensions) {
 		for (const name of ext.tools.keys()) names.add(name);
@@ -55,14 +80,18 @@ export function buildToolAllowlist(
 }
 
 /** Fail closed if an enabled session does not own exactly one framework recall. */
-export function assertEnabledRecallOwner(loader: ResourceLoader): void {
+export function assertEnabledRecallOwner(
+	loader: ResourceLoader,
+	required = true,
+): void {
 	const expectedOwner = `<inline:${KNOWLEDGE_SURFACE_EXTENSION_NAME}>`;
 	const owners = loader
 		.getExtensions()
 		.extensions.filter((extension) => extension.tools.has("recall"))
 		.map((extension) => extension.path);
 
-	if (owners.length === 1 && owners[0] === expectedOwner) return;
+	if (!required && owners.length === 0) return;
+	if (required && owners.length === 1 && owners[0] === expectedOwner) return;
 
 	const namedOwners = owners.length > 0 ? owners : ["<none>"];
 	throw new Error(
@@ -93,6 +122,14 @@ export interface ResolveExtensionOptions {
  *
  * Throws if an extension name cannot be found in either location.
  */
+export class UnknownExtensionError extends Error {
+	constructor(name: string, searched: string) {
+		super(
+			`Unknown extension "${name}" in agent definition. Searched: ${searched}`,
+		);
+	}
+}
+
 export function resolveExtensionPaths(
 	extensions: readonly string[],
 	options: ResolveExtensionOptions,
@@ -123,9 +160,7 @@ export function resolveExtensionPaths(
 			domain !== "shared"
 				? `domains/${domain}/extensions/${name}, domains/shared/extensions/${name}`
 				: `domains/shared/extensions/${name}`;
-		throw new Error(
-			`Unknown extension "${name}" in agent definition. Searched: ${searched}`,
-		);
+		throw new UnknownExtensionError(name, searched);
 	});
 }
 

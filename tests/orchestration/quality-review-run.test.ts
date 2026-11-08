@@ -4902,7 +4902,7 @@ describe("quality review durable lifecycle", () => {
 			JSON.stringify({ skills: ["base-skill"] }),
 		);
 		const definition = (description: string) =>
-			`export default ${JSON.stringify({ id: "security-reviewer", description, capabilities: [], model: "test/model", tools: "none", extensions: [], skills: [], projectContext: false, session: "ephemeral", loop: false })};\n`;
+			`export default ${JSON.stringify({ id: "security-reviewer", description, memory: {}, capabilities: [], model: "test/model", tools: "none", extensions: [], skills: [], projectContext: false, session: "ephemeral", loop: false })};\n`;
 		await writeFile(
 			join(securityDir, "agents", "security-reviewer.ts"),
 			definition("BASE-OWNED"),

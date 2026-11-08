@@ -236,8 +236,8 @@ const alphaCapabilitiesDir = () => join(tmp.path, "alpha", "capabilities");
 const alphaPromptsDir = () => join(tmp.path, "alpha", "prompts");
 
 describe("domain-based prompt file paths", () => {
-	it("loads base prompt from lib/prompts/framework", async () => {
-		const content = await loadPrompt("base");
+	it("loads the current consumer base as an explicit capability input", async () => {
+		const content = await loadPrompt("framework-base", SHARED_CAPABILITIES_DIR);
 		expect(content.length).toBeGreaterThan(0);
 	});
 

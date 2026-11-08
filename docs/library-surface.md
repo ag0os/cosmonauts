@@ -20,3 +20,176 @@ pointed into `lib/` and remain in place. Discovery and authorization defaults ar
 unchanged in this mechanical move; consumer runtime and memory grants follow in
 later steps. The package Pi extension root remains on those forwarding entries
 so internal knowledge-surface adapters are not accidentally auto-discovered.
+
+## Agent declarations (step 3a)
+
+`AgentDefinition` remains the single programmatic declaration. Directory loading
+is an adapter into the same session assembly; consumer code can supply inline or
+file instructions without a persona directory. The directory loader remains
+rooted at the path its caller supplies. There is no Troupe Markdown parser or
+compiler in this stretch; whether to support that file format is an open user
+choice.
+
+| Cosmonauts | Troupe | User dynamic-agents design |
+| --- | --- | --- |
+| `id`, `description` | Path-derived name, `description` | Definition key and descriptive metadata |
+| `instructions: { kind: "inline", content }` or `{ kind: "file", path }` | Markdown body and ordered `includes` | Explicit persona source; replaces persona. File paths must be absolute; session cwd may differ from declaration root (Drive worktrees). Declaration-root resolution is deferred to step 4 |
+| `resourceDomain` | Consumer declaration/include roots; no equivalent domain authority | Resource lookup scope separate from runtime identity |
+| `capabilities`, `skills`, `extensions` | Includes, discoverable guides and optional same-stem extension; different shapes | Instruction packs, knowledge selection and executable providers |
+| `tools`: preset or exact name array | Backend tools plus `mcp`; no exact Pi tool-list field | Presets expanded or exact names selected; providers do not expand an exact grant |
+| `memory`: operation grants | No equivalent | Explicit host permissions replacing privileged agent IDs |
+| `subagents` | No chain/delegation declaration | Existing named-agent delegation; creator grants remain reserved |
+| `model`: provider/model string | Per-backend model object | Host/definition model settings; no rename |
+| `thinkingLevel`: Pi level | Per-backend `effort`; different shape | Definition/host thinking settings; no rename |
+| `projectContext`, `session`, `loop` | Backend access/mode/native settings; not equivalent | Existing execution settings retained |
+
+File instructions require absolute paths (consumers may derive them with `fileURLToPath(new URL(..., import.meta.url))`) and are read on assembly. Session cwd is not a declaration root; relative paths are rejected. A declaration-root seam belongs to step 4. Resume/fork rebuild from
+the current declaration: these are **restore-by-id** paths with accepted drift,
+not restoration of an immutable configuration snapshot. No snapshot machinery,
+creator-delegation schema, saved-agent UI or live provider mutation is introduced.
+
+The library's base voice becomes consumer input rather than an implicit prompt.
+This departs from `dynamic-agents.md`; the Shepherd ruled it in R8 and user acceptance remains pending in the PR; the
+current content supplies its base instructions. Explicit host prompt-directory
+inputs remain available for consumers that use that composition convention.
+
+Declared instructions have identity markers stripped before the host appends its
+marker. **True host binding is deferred.** The pinned Pi 1.0.3 prompt builder adds
+project context after the prompt addendum, so a marker in project context can
+still follow the host marker. Prompt markers are compatibility metadata, not a
+trust boundary or an operating-system sandbox. Resource-domain selection must
+not change delegation identity or grant internal-skill visibility.
+
+## Memory inventory before grant migration
+
+Memory permissions are operation groups; they do not replace project feature
+gates, storage policy, human promotion, scope restrictions or retirement policy.
+The inventory below records both existing modes so the migration does not lose
+an implicit surface. `knowledgeSurface.enabled` is frozen at session assembly.
+
+| Group | Existing enabled mode | Existing disabled mode | Grant migration obligation |
+| --- | --- | --- | --- |
+| `knowledge` | Every agent gets knowledge `recall` and the knowledge index through the session extension and combined context | No universal knowledge adapter; authored/architecture path extensions retain their legacy behavior | Default on; preserve universal recall/index when the project gate is on, allow explicit opt-out |
+| `authored` | `remember` and authored `recall`, plus authored context, when the authored provider is selected and its ID check passes | Path-loaded agent-memory authorizes itself; same remember/recall pair, legacy context and record-type filtering | One grant enables both remember and authored recall; no default privileged ID; keep record/scope and gate-mode semantics |
+| `proposals` | `propose_knowledge`, gated twice by the distiller identity | Not enabled | Grant registration explicitly and inject the declared writer; preserve the original consumer's writer and proposal hashes |
+| `architecture` | `architecture_map_read` and architecture context when provider/ID checks pass | Path-loaded architecture-memory authorizes its fixed ID set and owns context | Grant enables the operation group; remove the library's default ID set |
+| `episodes` | Tasks/plans, Drive and successful authored-memory writes capture when episodicLog is enabled | Same episodicLog gate and attribution paths | Explicit grant in the executing declaration for these paths |
+| Runner-owned chain capture (outside agent grants in 3a) | `lib/orchestration/chain-episodes.ts` captures `chain.run`, attributed to the first stage, without consulting its episodes grant | Same runner capture | Existing behavior retained in 3a, including verify starting at QM without an episodes grant. 3b Shepherd ruling: explicit chain-level episodes flag (new consumer chains default false), current coding chains explicitly preserve capture, attribution uses normalized first-stage declaration id; no agent grant added |
+
+Assembly currently identifies authored/architecture enablement by exact shim
+paths; the on-mode composer is `lib/extensions/knowledge-surface/session-extension.ts`.
+The off-mode adapters are `lib/extensions/agent-memory/index.ts` and
+`lib/extensions/architecture-memory/index.ts`, reached through content forwarding
+entries. Grants will replace both path selection and their self-authorizing ID
+defaults. Raw providers without host authorization must fail closed.
+
+Other code paths that access memory:
+
+- Knowledge `recall`: `knowledge-tools.ts` combines durable knowledge with
+  authorized authored records; `combined-context.ts` allocates one bounded index
+  across the granted groups. Recall ownership is validated after provider load.
+- Proposal writing: `knowledge-tools.ts` derives the same canonical draft through
+  `deriveKnowledgeProposalIdentity`, then writes via `MemoryStore`. A writer is
+  attribution, not output-path authority; closed request validation remains.
+- Authored writes: `agent-memory/index.ts` preserves note/profile/playbook parsing,
+  confirmation and scope rules. Its successful-write episode is separately
+  subject to the episodes grant and episodicLog gate.
+- Task/plan capture: `lib/extensions/episode-capture.ts` creates managers with an
+  explicit episode source; task and plan transitions use that source. Direct
+  manager APIs and operator CLI maintenance remain host-controlled operations.
+- Drive capture: launch, frozen identity, terminal-only resume and detached runner
+  paths carry the resolved worker actor/attempt. The worker's episodes grant
+  must be checked; the workerAgent identity change itself belongs to step 3b.
+- Operator memory/architecture CLIs perform consolidation, rejection, restoration,
+  retirement and generation independently of model-facing tool grants. They do
+  not silently confer those operations on an agent.
+
+| Durable path | Group / owner |
+| --- | --- |
+| `<project>/knowledge/**`, user `~/.cosmonauts/knowledge/**` | knowledge reads; human promotion; operator retirement may move records to `retired/` |
+| `<project>/memory/agent/{notes,playbooks}/`, `profile.md`, `profile.md.prev`, `index.md`; corresponding user memory root | authored |
+| `<project>/memory/agent/proposals/**`, including `living-memory/` | proposals; operator consolidation also creates proposals |
+| `<project>/memory/agent/episodes/**`, corresponding user episodes root | episodes writes; granted recall reads retain the project gate's record-type policy |
+| `<project>/memory/architecture/{index.md,modules/**,graph.json}` | architecture reads; operator generation |
+| `<project>/memory/agent/{consolidations,retirements}/`, `.cosmonauts/living-memory.lock` | operator maintenance/receipts, not additional model grants |
+| Session/run metadata and episode actor/attempt receipts under `missions/sessions/` | host execution bookkeeping; grants do not delete or rewrite transcripts |
+
+The original content's declarations will carry its previous grants. `knowledge`
+defaults to true; other groups default to false for newly declared agents.
+Library code must not name privileged content IDs. No stored memories or
+knowledge are modified during the migration.
+
+## Grant-bound execution
+
+**LS-3:** Model-facing memory operations and episode capture are authorized and
+enabled by the host-approved `AgentDefinition.memory` grants, rather than a
+privileged agent name or a shim's file path. `tests/agents/declaration.test.ts`
+covers arbitrary identities, both project gate modes, missing grants, knowledge
+opt-out, precise tools, instruction markers and unchanged proposal derivation.
+`tests/driver/episode-grants.test.ts` covers live/frozen worker capture grants.
+Existing memory, task, plan and Drive assertions retain their storage and output
+contracts with grants supplied by their fixtures.
+
+The enabled mode uses one grant-selected knowledge-surface composer. The disabled
+mode uses grant-bound authored/architecture factories and retains its legacy
+record filtering; it does not acquire universal knowledge recall merely because
+that group's default is on. Knowledge opt-out disables both the knowledge index
+and knowledge recall, while authored recall remains available with its own grant.
+A proposal writer must be a qualified identity under the existing storage
+contract; the current content retains `coding/distiller` as its declared writer,
+so its canonical proposal identities do not change. No migration rewrites stores.
+
+A selected provider may explicitly value-export `createSessionExtension(context)`
+(as a named function, variable or named re-export), where context
+contains the host `agentId` and resolved memory grants. The synchronous creator returns a Pi inline factory (which may itself be async)
+closed over those inputs; returning undefined means that session
+registration is owned by the central memory composer. Providers without the hook
+continue through Pi's ordinary path loader. Static export inspection leaves
+ordinary provider evaluation to Pi, preserving one module evaluation; default,
+ambient, type-only and wildcard-only exports do not opt into the hook. Directory/resolver precedence remains
+intact, including a consumer provider with a native provider's name. Only selected
+providers are imported during assembly; this is execution preparation, not a
+catalog scan. Directory/resolver providers win; when the selected name is absent, native task/plan factories are the final tier, including resolver-only consumers without framework shims. Obsolete memory extension selections fail with grant migration guidance. Exact tool selection still constrains exposure
+and a host tool-call hook blocks names outside that selection after activation
+changes. Unknown executable tools fail after provider loading, before a model
+request. Unsupported exact-tool agent-package export fails explicitly.
+
+The current content supplies the former framework base as its first
+`framework-base` capability. Programmatic agents have no implicit Cosmonauts base
+voice. Host-provided `frameworkPromptsDir` can still supply a consumer base file;
+the existing runtime overlay remains to be separated with the remaining prompt
+and runtime seams. Capability/skill text alone does not grant executable tools.
+
+Malformed id, instructions, tools, memory and resourceDomain fields produce
+field-specific errors before provider/model
+preparation. Empty exact tool arrays expose no executable tools; presets retain
+extension-tool exposure. Enabled recall rejects missing, duplicate or foreign
+owners, and an opted-out session rejects a stray recall owner. A knowledge opt-out
+also excludes curated knowledge from authored recall, not only from context;
+authored context refreshes after writes. Both native task and plan providers carry
+the declared episode grant/source. Current content adapters fail closed if their
+declaration grant is removed. These sentences are pinned by
+`tests/agents/declaration.test.ts` and `tests/domains/memory-grants.test.ts`; the
+CLI/spawn propagation cases are in `tests/cli/session.test.ts` and
+`tests/orchestration/session-factory.security.test.ts`.
+
+Missing Drive actors or memory declarations skip capture non-fatally and produce
+bounded skip diagnostics; diagnostic detail wording is not an identity or storage
+contract. The legacy review profile must not expand an exact tool grant. A saved
+authored note must not create an episode without an episodes grant, even when the
+project enables episodicLog. These are covered by the declaration and Drive grant
+tests above.
+
+
+**S3A-QUALIFIED-IDENTITY (consumer namespace rule):** Every identity segment uses `[a-z0-9][a-z0-9-]*`, validated without normalization before provider/model preparation. An id is one segment or exactly `segment/segment`. A supplied domain is one segment and requires a one-segment id; omit domain for a pre-qualified id. `{ domain: "archive", id: "writer" }` and `{ id: "archive/writer" }` yield the same marker/provider/proposal identity. Uppercase, underscores, whitespace, leading separators, empty segments and extra path levels fail loudly. Proposals use the same grammar and require a qualified identity, with no separate proposal regex. `resourceDomain` remains lookup only, never identity authority. Test: `tests/agents/declaration.test.ts`.
+
+Pre-3a installed/ejected declarations are not granted legacy defaults: without explicit updates they lose task/plan episode capture, the implicit base voice, and formerly selected architecture context/tools. This includes ejected coding definitions outside repository content. The Shepherd proposes rejecting file-loaded declarations that omit explicit memory, and obsolete agent-memory/architecture-memory extension selections, with migration guidance. This is a user decision before merge; no silently restored defaults. Bare Pi discovery now loads task/plan defaults with no episode grant, so that path no longer captures their episodes; it is scheduled to disappear with content in step 6 unless the user chooses otherwise.
+
+Instruction-kind validation is independent of path validity: an unknown kind with an absolute path still fails before provider/model preparation. Dumping a prompt validates the same declaration before reading its persona or writing output. Absolute file composition also works when the lower-level prompt composer receives no cwd. Tests: declaration, dump-prompt and prompt-assembly suites.
+
+The legacy directory convention with neither declared instructions nor resourceDomain retains its default-domain requester behavior in 3a; explicit borrowing never acquires internal-skill visibility. The empty sentinel and that default convention are owned by 3c. Test: `tests/agents/declaration.test.ts` covers both explicit borrowing without instructions and the legacy branch.
+
+
+The proposed file migration guard requires `memory` explicitly; a capability name never substitutes for it. Loaded declarations run the full programmatic shape validator. Discovery collects errors with the agent file, domain and package/source, and active runtime validation reports `DomainValidationError`; inactive domains are filtered without halting other commands. Tests: `tests/domains/loader.test.ts`, `tests/runtime.test.ts`. The obsolete-name content test in `tests/domains/memory-grants.test.ts` imports modules directly and holds independently of this proposed guard.
+
+The native task/plan provider tier is keyed by bare extension name, with consumer directory/resolver precedence. This departs from the provider-origin identity in `dynamic-agents.md`; origin-qualified provider identities remain a step-4 owner choice. `agent-memory` and `architecture-memory` are obsolete reserved extension selections, and are absent from the native tier. Dump-prompt domain selection for domainless declarations is deferred to step 4. DSL name detection is replaced in 3b under C7.

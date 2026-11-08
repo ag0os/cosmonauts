@@ -21,17 +21,10 @@ import {
 	getSystemPrompt,
 	valueFromObject,
 } from "../context-values.ts";
+import type { SessionExtensionProvider } from "../session-provider.ts";
 
 const ARCHITECTURE_CONTEXT_TYPE = "architecture-map-context";
 const ARCHITECTURE_DIR = "memory/architecture";
-const CONSUMING_AGENT_IDS = new Set([
-	"coding/planner",
-	"coding/plan-reviewer",
-	"coding/coordinator",
-	"coding/worker",
-	"coding/quality-manager",
-]);
-
 export interface ArchitectureMemoryAuthorizationState {
 	authorized: boolean;
 }
@@ -69,7 +62,7 @@ export function createArchitectureMemoryExtension(
 	deps: Partial<ArchitectureMemoryDeps> = {},
 ): (pi: ExtensionAPI) => void {
 	const resolvedDeps: ArchitectureMemoryDeps = {
-		authorizedAgentIds: deps.authorizedAgentIds ?? CONSUMING_AGENT_IDS,
+		authorizedAgentIds: deps.authorizedAgentIds ?? new Set(),
 		loadConfig: deps.loadConfig ?? loadArchitectureMapConfig,
 		analyzer: deps.analyzer ?? typescriptSourceAnalyzer,
 		checkFreshness: deps.checkFreshness ?? checkArchitectureMapStatFreshness,
@@ -357,7 +350,7 @@ async function architectureDirExists(projectRoot: string): Promise<boolean> {
 
 function isConsumingAgent(
 	systemPrompt: string,
-	authorizedAgentIds: ReadonlySet<string> = CONSUMING_AGENT_IDS,
+	authorizedAgentIds: ReadonlySet<string>,
 ): boolean {
 	const agentId = extractAgentIdFromSystemPrompt(systemPrompt);
 	return agentId !== undefined && authorizedAgentIds.has(agentId);
@@ -408,3 +401,6 @@ function truncateBytes(value: string, maxBytes: number): string {
 	if (bytes.byteLength <= maxBytes) return value;
 	return bytes.subarray(0, maxBytes).toString("utf-8");
 }
+
+/** Session memory registration is owned by the grant composer. */
+export const createSessionExtension: SessionExtensionProvider = () => undefined;
