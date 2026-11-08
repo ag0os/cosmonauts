@@ -279,9 +279,8 @@ Test: `tests/orchestration/session-factory.security.test.ts`; duplicate settings
 were removed from the QM resource hook, with host-review-policy coverage.
 
 LS-2 imports are guarded across all core TypeScript files, including type and
-dynamic/resolver imports. Named temporary debts are config loader/types importing
-lean `SIGNAL_KINDS`/`SignalKind` (relocate in step6), and CLI main importing QM
-launch/run and lean CLI content (remove in step6). The catalog's coding entry
+dynamic/resolver imports. Named temporary debt is CLI main importing QM
+launch/run (remove in D2). The catalog's coding entry
 moves from `lib/packages/catalog.ts` to the CLI host in step4. The coding tool
 preset is a preset vocabulary item, recorded as debt rather than a domain default.
 Test: `tests/coding-agnostic-framework.test.ts`.
@@ -342,8 +341,7 @@ receive the actual runtime, identity and grants. Test: `extension-binding.test.t
 
 LS-6: package exports enumerate all 24 stable deep entries from `fallow.toml`,
 retain those exact paths, add explicit friendly aliases, a declaration/runtime root
-and a runtime-host entry. The legacy `lib/lean-run/providers/default.ts` path is a named temporary content
-compatibility export until step 6, pinned by the packed-package test.
+and a runtime-host entry.
 There is no wildcard exposing private internals. Session
 creation stays on its separate Pi-dependent public entries. Configured chain dispatch is exported from cosmonauts/chains. Test:
 `tests/public-surface.test.ts`; the external package-name-only fixture is step 5. The locator is available only at cosmonauts/runtime-host as the Pi-discovery bridge, not on the declaration root.
@@ -399,7 +397,7 @@ owned by `cli/package-catalog.ts`; core catalog lookup takes explicit entries an
 relative sources require an explicit root. Current CLI install/update behavior
 and its catalog entries remain pinned by package/update/catalog tests. The library
 ships no implicit catalog content. Catalog's step4 name debt is closed; the named
-step6 lean/QM import exceptions remain.
+QM import exceptions remain.
 
 Runtime collection admission validates each supplied actor before adding its ID to
 the collision collection, so an invalid duplicate reports its declaration error.

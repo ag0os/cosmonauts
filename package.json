@@ -37,7 +37,7 @@
 		"compile:drive-step": "bun build --compile lib/driver/run-step.ts --outfile bin/cosmonauts-drive-step",
 		"test": "node ./scripts/vitest-runner.mjs",
 		"test:watch": "vitest",
-		"test:mutation": "stryker run stryker.config.mjs",
+		"test:mutation": "STRYKER_VITEST_POOL=forks stryker run stryker.config.mjs",
 		"test:coverage": "vitest run --coverage",
 		"check:reachability": "bun scripts/check-reachability.ts",
 		"check:suppressions": "bun scripts/check-new-suppressions.ts",

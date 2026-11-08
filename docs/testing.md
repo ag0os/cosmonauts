@@ -237,7 +237,7 @@ without a recorded plan amendment — is drift, and reviewers treat it as such
 (see `domains/shared/skills/work-artifacts/references/deviation-protocol.md`).
 
 
-## Scoped mutation without Lean
+## Scoped mutation testing
 
 Stryker, its Vitest runner, the forks patch and Fallow's three committed floors
 remain independent developer tools. Run one heavy job at a time. For example:
@@ -246,7 +246,7 @@ remain independent developer tools. Run one heavy job at a time. For example:
 STRYKER_VITEST_POOL=forks node node_modules/@stryker-mutator/core/bin/stryker.js run stryker.config.mjs --concurrency 4 --mutate 'lib/config/loader.ts:180:1-192:2' --testFiles 'tests/config/loader.test.ts,tests/library-strip-lean.test.ts'
 ```
 
-`bun run test:mutation` invokes the same installed Stryker CLI; pass explicit
-`--mutate` and `--testFiles` ranges. Do not count excluded mutants or timeouts as
-ordinary kills. Check module-level changes manually in fresh test processes.
-This command needs no Lean domain, provider, run records or agent integration.
+`bun run test:mutation` sets `STRYKER_VITEST_POOL=forks` and invokes the same
+installed Stryker CLI; pass explicit `--mutate` and `--testFiles` ranges and
+`--concurrency 4`. Running it without selectors mutates the whole default glob.
+Do not count excluded mutants or timeouts as ordinary kills. Check module-level changes manually in fresh test processes.

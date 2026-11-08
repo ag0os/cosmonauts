@@ -5,6 +5,7 @@ import {
 	readdir,
 	readFile,
 	readlink,
+	realpath,
 	rm,
 	writeFile,
 } from "node:fs/promises";
@@ -15,6 +16,7 @@ import {
 	parseSyncRequest,
 } from "../../../cli/harness/subcommand.ts";
 import type { RuntimeSkillExportDiscovery } from "../../../cli/skills/subcommand.ts";
+import type { RuntimeInventorySnapshot } from "../../../lib/harness-adapters/types.ts";
 import {
 	type HarnessSyncReport,
 	runHarnessSync,
@@ -396,6 +398,113 @@ describe("cosmonauts harness sync", () => {
 		forgetOutput.restore();
 	});
 
+	test.each([
+		"claude",
+		"codex",
+	])("generated inventory drift is read-only on check and repaired by sync for %s", async (target) => {
+		const fixture = await runtimeSkillFixture("inventory-drift");
+		const inventory = syntheticInventory("initial-chain");
+		const run = (snapshot: RuntimeInventorySnapshot, extra: string[] = []) =>
+			syncInventory({
+				...fixture,
+				inventory: snapshot,
+				target,
+				extra: ["--scope", "project", ...extra],
+			});
+		expect((await run(inventory)).exitCode).toBe(0);
+		const ownerDirectory = target === "claude" ? ".claude" : ".agents";
+		const generated = join(
+			fixture.projectRoot,
+			ownerDirectory,
+			"skills",
+			"cosmonauts",
+			"references",
+			"generated-inventory.md",
+		);
+		expect(await readFile(generated, "utf8")).toContain("initial-chain");
+		const current = await run(inventory, ["--check"]);
+		expect(current.exitCode).toBe(0);
+		expect(current.rows[0]?.before).toBe("current");
+
+		const before = await snapshotRoots(fixture.projectRoot, fixture.homeRoot);
+		const changed = syntheticInventory("updated-chain");
+		const drift = await run(changed, ["--check"]);
+		expect(drift.exitCode).toBe(1);
+		expect(drift.rows[0]).toMatchObject({
+			before: "source-ahead",
+			reason: "source-changed",
+			action: "none",
+		});
+		expect(await snapshotRoots(fixture.projectRoot, fixture.homeRoot)).toEqual(
+			before,
+		);
+
+		const repaired = await run(changed);
+		expect(repaired.exitCode).toBe(0);
+		expect(repaired.rows[0]).toMatchObject({
+			before: "source-ahead",
+			final: "current",
+		});
+		expect(await readFile(generated, "utf8")).toContain("updated-chain");
+		expect(await readFile(generated, "utf8")).not.toContain("initial-chain");
+		expect((await run(changed, ["--check"])).exitCode).toBe(0);
+	});
+
+	test("a personal generated inventory reports the other project and regenerates from its runtime", async () => {
+		const fixture = await runtimeSkillFixture("inventory-a");
+		const otherProject = join(tmp.path, "inventory-b");
+		await mkdir(otherProject);
+		const run = (
+			projectRoot: string,
+			inventory: RuntimeInventorySnapshot,
+			extra: string[] = [],
+		) =>
+			syncInventory({
+				...fixture,
+				projectRoot,
+				inventory,
+				target: "claude",
+				extra,
+			});
+		expect(
+			(await run(fixture.projectRoot, syntheticInventory("project-a-chain")))
+				.exitCode,
+		).toBe(0);
+		const generated = join(
+			fixture.homeRoot,
+			".claude",
+			"skills",
+			"cosmonauts",
+			"references",
+			"generated-inventory.md",
+		);
+		expect(await readFile(generated, "utf8")).toContain("project-a-chain");
+		const before = await snapshotRoots(otherProject, fixture.homeRoot);
+		const inventory = syntheticInventory("project-b-chain");
+		const checked = await run(otherProject, inventory, ["--check"]);
+		expect(checked.exitCode).toBe(1);
+		expect(checked.rows[0]).toMatchObject({
+			scope: "personal",
+			before: "source-ahead",
+			reason: "regenerated-from-other-project",
+			action: "none",
+			generatingProjectRoot: await realpath(otherProject),
+			previousGeneratingProjectRoot: await realpath(fixture.projectRoot),
+		});
+		expect(await snapshotRoots(otherProject, fixture.homeRoot)).toEqual(before);
+		const synced = await run(otherProject, inventory);
+		expect(synced.exitCode).toBe(0);
+		expect(synced.rows[0]?.final).toBe("current");
+		expect(await readFile(generated, "utf8")).toContain("project-b-chain");
+		expect(await readFile(generated, "utf8")).not.toContain("project-a-chain");
+		const current = await run(otherProject, inventory, ["--check"]);
+		expect(current.exitCode).toBe(0);
+		expect(current.rows[0]).toMatchObject({
+			before: "current",
+			reason: "current",
+		});
+	});
+
 	test("rejects command link mode before owner-root or manifest writes", async () => {
 		const projectRoot = join(tmp.path, "command-project");
 		const homeRoot = join(tmp.path, "command-home");
@@ -546,4 +655,74 @@ function reportFixture(): HarnessSyncReport {
 			},
 		],
 	};
+}
+
+function syntheticInventory(chainName: string): RuntimeInventorySnapshot {
+	return {
+		chains: [
+			{
+				name: chainName,
+				description: "Synthetic chain",
+				expression: "studio/author -> studio/reviewer",
+			},
+		],
+		effectiveSkills: [],
+		candidates: [],
+		sourceHealth: [],
+		paths: [
+			{
+				target: "claude",
+				kind: "command",
+				project: ".claude/commands",
+				personal: "~/.claude/commands",
+			},
+			{
+				target: "claude",
+				kind: "skill",
+				project: ".claude/skills",
+				personal: "~/.claude/skills",
+			},
+			{
+				target: "codex",
+				kind: "skill",
+				project: ".agents/skills",
+				personal: "~/.agents/skills",
+			},
+		],
+	};
+}
+
+async function syncInventory(options: {
+	projectRoot: string;
+	homeRoot: string;
+	inventory: RuntimeInventorySnapshot;
+	target: string;
+	extra: string[];
+}): Promise<HarnessSyncReport> {
+	process.exitCode = undefined;
+	const output = captureCliOutput();
+	try {
+		await createHarnessProgram({
+			projectRoot: options.projectRoot,
+			homeRoot: options.homeRoot,
+			discover: async () => ({
+				...emptyDiscovery(),
+				runtimeInventory: options.inventory,
+			}),
+		}).parseAsync(
+			[
+				"--json",
+				"sync",
+				"--target",
+				options.target,
+				"--asset",
+				"external-skill:cosmonauts",
+				...options.extra,
+			],
+			{ from: "user" },
+		);
+		return JSON.parse(output.stdout()) as HarnessSyncReport;
+	} finally {
+		output.restore();
+	}
 }

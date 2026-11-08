@@ -37,7 +37,6 @@ const STATIC_HARNESS_ASSETS = [
 		generatedInputs: "cosmonauts-inventory",
 		reservedNames: COSMONAUTS_BUNDLE_RESERVED_NAMES,
 	},
-
 	{
 		assetId: "command:spec-to-backlog",
 		kind: "command",

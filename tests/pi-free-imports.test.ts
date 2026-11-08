@@ -84,12 +84,14 @@ interface WalkOptions {
 	/** Directories whose files start the walk, relative to `root`. */
 	readonly from: readonly string[];
 	/** The one Pi module a dynamic `import()` may reach, relative to `root`. */
-	readonly piBackend: string;
+	readonly piBackend?: string;
 }
 
 /** Each Pi package or static Pi-backend import reached, as an import chain. */
 function piReachingChains(options: WalkOptions): string[] {
-	const piBackend = resolve(options.root, options.piBackend);
+	const piBackend = options.piBackend
+		? resolve(options.root, options.piBackend)
+		: undefined;
 	const parents = new Map<string, string | undefined>();
 	const queue = options.from
 		.flatMap((dir) => listTypeScriptFiles(resolve(options.root, dir)))
@@ -112,8 +114,9 @@ function piReachingChains(options: WalkOptions): string[] {
 		}
 		if (!specifier.startsWith(".")) return;
 		const target = resolveRelative(file, specifier);
-		if (target === piBackend) {
-			if (!dynamic) chains.push(chainTo(file, options.piBackend));
+		if (piBackend && target === piBackend) {
+			if (!dynamic)
+				chains.push(chainTo(file, relative(options.root, piBackend)));
 			return;
 		}
 		if (!target || parents.has(target)) return;
@@ -143,7 +146,6 @@ describe("Pi-free check-CLI modules", () => {
 			piReachingChains({
 				root: REPO_ROOT,
 				from: PI_FREE_ROOTS,
-				piBackend: "", // No production exception; the project directory is never a module.
 			}),
 		).toEqual([]);
 	});
