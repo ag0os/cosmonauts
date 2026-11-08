@@ -53,6 +53,7 @@ export async function createConsumerRuntime(projectRoot: string) {
 	return CosmonautsRuntime.create({
 		projectRoot,
 		projectConfig: {},
+		workerAgent: "visitor/explorer",
 		agents: [explorer, notebook],
 		chains: [inspect],
 	});
@@ -99,6 +100,7 @@ export async function exerciseConsumer(projectRoot: string) {
 	return {
 		domains: runtime.domains.map((domain) => domain.manifest.id),
 		domainsDir: runtime.domainsDir ?? null,
+		workerAgent: runtime.workerAgent,
 		agentIds: runtime.agentRegistry
 			.listAll()
 			.map((agent) => agent.id)

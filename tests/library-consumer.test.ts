@@ -11,6 +11,7 @@ import {
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { expect, test, vi } from "vitest";
 import {
 	createConsumerRuntime,
@@ -32,6 +33,17 @@ test("the fixture declares independent qualified actors and a stages-form chain 
 		tools: "readonly",
 		session: "ephemeral",
 		memory: {},
+		instructions: {
+			kind: "inline",
+			content: "Explore files and report facts.",
+		},
+		capabilities: [],
+		extensions: [],
+		skills: [],
+		subagents: [],
+		projectContext: false,
+		loop: false,
+		thinkingLevel: "low",
 	});
 	expect(runtime.agentRegistry.resolve("visitor/notebook")).toMatchObject({
 		id: "notebook",
@@ -39,10 +51,20 @@ test("the fixture declares independent qualified actors and a stages-form chain 
 		tools: "none",
 		session: "persistent",
 		memory: { authored: true, episodes: true },
+		instructions: { kind: "inline", content: "Remember useful facts." },
+		capabilities: [],
+		extensions: [],
+		skills: [],
+		subagents: [],
+		projectContext: false,
+		loop: false,
+		thinkingLevel: "high",
 	});
+	expect(runtime.workerAgent).toBe("visitor/explorer");
 	expect(runtime.chains).toEqual([
 		expect.objectContaining({
 			name: "inspect",
+			episodes: true,
 			stages: [
 				{ name: "visitor/explorer", prompt: "Report the project facts." },
 			],
@@ -121,6 +143,7 @@ function assertConsumerResult(
 	result: Awaited<ReturnType<typeof exerciseConsumer>>,
 ) {
 	expect(result.domains).toEqual([]);
+	expect(result.workerAgent).toBe("visitor/explorer");
 	expect(result.domainsDir).toBeNull();
 	expect(result.agentIds).toEqual(["explorer", "notebook"]);
 	expect(result.episodes).toBe(true);
@@ -149,9 +172,12 @@ test("the same fixture exercises the public seams in process for mutation covera
 	vi.stubGlobal("fetch", () => {
 		throw new Error("NETWORK_FORBIDDEN");
 	});
+	const dispose = vi.spyOn(AgentSession.prototype, "dispose");
 	try {
 		assertConsumerResult(await exerciseConsumer(tmp.path));
+		expect(dispose).toHaveBeenCalledTimes(2);
 	} finally {
+		dispose.mockRestore();
 		vi.unstubAllGlobals();
 		vi.unstubAllEnvs();
 	}

@@ -201,7 +201,7 @@ The native task/plan provider tier is keyed by bare extension name, with consume
 
 `NamedChain` requires exactly one of a DSL `chain` string or explicit `stages`, and accepts `episodes`. Selection looks up a named declaration first; single agent names then resolve through the declaration collection, including names with several hyphens. The parser takes no registry and returns topology only: sequence, bracket group, or fan-out. It shares declaration identity validation rather than a second agent-name grammar. Tests: `chain-parser.test.ts`, `chain-normalization.test.ts`, `chain-routing.test.ts` and CLI named-chain tests.
 
-The consumer runtime carries `chainAdapter`, `defaultModel` and `workerAgent`. Its adapter supplies `classifyStage`, `buildStagePrompt`, `terminalGates`, optional typed refusal handling, and model/thinking defaults. Current domain manifests bridge their consumer adapter/worker to runtime construction: an explicit runtime option wins; otherwise the selected domain's adapter or the sole declared active adapter is used. This bridge does not claim the disk-free runtime contract (step 4). Stage bindings and declaration defaults are collected once; classification reads that run's registry view, and execution retains its bound reference. `chain_run` admits each selected declaration before execution using that reference and the caller's existing subagent grants. Tests: normalization cache, domain binding and orchestration authorization suites.
+The consumer runtime carries `chainAdapter`, `defaultModel` and `workerAgent`. Its adapter supplies `classifyStage`, `buildStagePrompt`, `terminalGates`, optional typed refusal handling, and model/thinking defaults. Step 3b temporarily bridged domain adapter/worker hints into runtime construction. Step 4 removed that bridge: the host now supplies those runtime options explicitly, with no domain adapter selector. Session-policy metadata alone retains the separately documented inheritance rule. Stage bindings and declaration defaults are collected once; classification reads that run's registry view, and execution retains its bound reference. `chain_run` admits each selected declaration before execution using that reference and the caller's existing subagent grants. Tests: normalization cache, domain binding and orchestration authorization suites.
 
 | Stage field | Contract |
 | --- | --- |
@@ -453,7 +453,7 @@ choosing a default model; an explicit model bypasses that bootstrap.
 
 LS-5/6/7: `tests/fixtures/library-consumer/consumer.ts` imports only the named
 package's public entries and declares two qualified agents plus a stages-form
-named chain. `tests/library-consumer.test.ts` installs a separate copy containing
+named chain. Its explicit Drive worker is `visitor/explorer`, with no `worker` alias. `tests/library-consumer.test.ts` installs a separate copy containing
 only `lib/` and `package.json` (dependencies remain installed), rejects a private
 import, and runs the fixture with an isolated HOME/Pi directory and blocked fetch.
 No framework domains, bundled content or CLI are present in that package copy.
