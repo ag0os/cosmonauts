@@ -6,8 +6,6 @@ import { buildTerminalGateContext } from "./terminal-gate.ts";
  * single-pass pipeline stages and iterative loop stages.
  */
 
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createPiSpawner } from "./agent-spawner.ts";
 import {
 	extractAssistantText,
@@ -65,20 +63,6 @@ export { derivePlanSlug } from "./stage-prompts.ts";
 
 const DEFAULT_MAX_TOTAL_ITERATIONS = 50;
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-
-/** Fallback domains directory derived from this package's source tree. */
-const FALLBACK_DOMAINS_DIR = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"domains",
-);
-
-/** Resolve the domains directory from config, falling back to the package default. */
-function resolveDomainsDir(config: ChainConfig): string {
-	return config.domainsDir ?? FALLBACK_DOMAINS_DIR;
-}
 
 // ============================================================================
 // Default Completion Check
@@ -682,9 +666,10 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 async function executeChain(config: ChainConfig): Promise<ChainResult> {
 	const state = createChainExecutionState(config);
 	const chainStart = state.chainStart;
-	const spawner = createPiSpawner(config.registry, resolveDomainsDir(config), {
+	const spawner = createPiSpawner(config.registry, config.domainsDir, {
 		resolver: config.resolver,
 		spawnTimeoutMs: config.spawnTimeoutMs,
+		runtime: config.runtime,
 		sessionPolicies: config.sessionPolicies,
 	});
 

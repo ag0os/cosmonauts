@@ -36,7 +36,7 @@ function qualitySkillCandidate(
 	canonicalPath: string,
 	baseProjectRoot: string | undefined,
 	canonicalSourceRoot: string | undefined,
-	domainsDir: string,
+	domainsDir: string | undefined,
 ): string | undefined {
 	if (!isAbsolute(path))
 		return baseProjectRoot ? resolve(baseProjectRoot, path) : undefined;
@@ -51,14 +51,14 @@ function qualitySkillCandidate(
 		);
 	if (baseProjectRoot && isInside(baseProjectRoot, canonicalPath))
 		return canonicalPath;
-	return isInside(resolve(domainsDir, ".."), canonicalPath)
+	return isFrameworkSkill(domainsDir, canonicalPath)
 		? canonicalPath
 		: undefined;
 }
 
 async function resolveQualitySkillPaths(
 	config: QualitySkillConfig,
-	domainsDir: string,
+	domainsDir: string | undefined,
 ): Promise<string[] | undefined> {
 	const sourceRoot = config.qualityReviewContext?.sourceRoot;
 	const canonicalSourceRoot = sourceRoot
@@ -143,12 +143,13 @@ export function createQualityReviewSessionPolicy(
 				params.projectContext,
 			);
 			// Current coding content owns this compatibility provider path.
-			const projectToolsPath = join(
-				domainsDir,
-				"shared",
-				"extensions",
-				"project-tools",
-			);
+			if (context.analysisConsent && !domainsDir)
+				throw new Error(
+					"Quality review policy requires an explicit resource root",
+				);
+			const projectToolsPath = domainsDir
+				? join(domainsDir, "shared", "extensions", "project-tools")
+				: undefined;
 			return {
 				appendSystemPrompt: [],
 				...((!params.projectContext || context.baseProjectRoot) && {
@@ -259,4 +260,11 @@ function auditFindingObservation(finding: AnalysisFinding): AnalysisFinding {
 		locations: finding.locations.map(({ path, line }) => ({ path, line })),
 		actions: finding.actions.map(({ description }) => ({ description })),
 	};
+}
+
+function isFrameworkSkill(
+	domainsDir: string | undefined,
+	path: string,
+): boolean {
+	return domainsDir !== undefined && isInside(resolve(domainsDir, ".."), path);
 }

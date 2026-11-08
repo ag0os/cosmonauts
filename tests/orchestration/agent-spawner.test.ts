@@ -541,9 +541,10 @@ describe("getModelForRole", () => {
 		expect(model).toBe("fixture-provider/fixture-worker-model");
 	});
 
-	test("returns fallback for unknown role (tier 4)", () => {
-		const model = getModelForRole("unknown-role", undefined, FIXTURE_REGISTRY);
-		expect(model).toBe("anthropic/claude-opus-4-7");
+	test("requires an explicit consumer default for unknown roles", () => {
+		expect(() =>
+			getModelForRole("unknown-role", undefined, FIXTURE_REGISTRY),
+		).toThrow("No model configured");
 	});
 
 	test("explicit override takes precedence over definition model (tier 1 > tier 2)", () => {

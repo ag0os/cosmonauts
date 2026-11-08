@@ -555,6 +555,9 @@ function workerRuntime(
 	});
 	if (domainContext === "main") definitions.push(workerDefinition("main"));
 	const bindingResolver = {
+		resolveKnownRole(role: string) {
+			return { role };
+		},
 		resolveAgentReference(qualifiedId: string) {
 			const [role, agentId] = qualifiedId.split("/");
 			if (!role || !agentId) throw new Error("Expected qualified worker");

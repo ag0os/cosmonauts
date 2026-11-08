@@ -518,6 +518,7 @@ function createBackend(
 				runtime.domainsDir,
 				{
 					resolver: runtime.domainResolver,
+					runtime: runtime,
 					sessionPolicies: runtime.sessionPolicies,
 				},
 			);

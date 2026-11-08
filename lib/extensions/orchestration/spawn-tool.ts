@@ -780,6 +780,7 @@ export function registerSpawnTool(
 					sessionPolicy: runtime.sessionPolicies?.forAgent(targetDef),
 				};
 				const buildChildConfig = () => ({
+					runtime,
 					role: params.role,
 					agentReference: targetResolution.reference,
 					domainContext: runtime.domainContext,

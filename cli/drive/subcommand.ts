@@ -1,8 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readdir, readFile, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { Command } from "commander";
 import { resolveConfiguredExternalBackend } from "../../lib/driver/backend-resolution.ts";
@@ -72,8 +71,8 @@ import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import type { SpawnAgentResolution } from "../../lib/orchestration/spawn-resolution.ts";
-import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../../lib/runtime.ts";
+import type { CosmonautsRuntime } from "../../lib/runtime.ts";
+import { getHostRuntime } from "../../lib/runtime-host.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { isTaskClosed } from "../../lib/tasks/task-types.ts";
 
@@ -2000,6 +1999,7 @@ async function createBackend(
 		executionRuntime.domainsDir,
 		{
 			resolver: executionRuntime.domainResolver,
+			runtime: executionRuntime,
 			sessionPolicies: executionRuntime.sessionPolicies,
 		},
 	);
@@ -2024,16 +2024,7 @@ async function createBackend(
 async function createDriveRuntime(
 	projectRoot: string,
 ): Promise<CosmonautsRuntime> {
-	const frameworkRoot = resolve(
-		dirname(fileURLToPath(import.meta.url)),
-		"..",
-		"..",
-	);
-	return CosmonautsRuntime.create({
-		builtinDomainsDir: join(frameworkRoot, "domains"),
-		projectRoot,
-		bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
-	});
+	return getHostRuntime({ projectRoot });
 }
 
 function subscribeToRunEvents(runId: string): () => void {

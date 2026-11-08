@@ -293,13 +293,20 @@ export class AgentRegistry {
 		domainContext?: string,
 	): ResolvedAgentReference | undefined {
 		if (!this.bindingResolver) return undefined;
-		if (id.includes("/")) {
-			return this.bindingResolver.resolveAgentReference(id);
-		}
-		if (domainContext) {
-			return this.bindingResolver.resolveAgentReference(
-				`${domainContext}/${id}`,
-			);
+		const qualified = id.includes("/")
+			? id
+			: domainContext
+				? `${domainContext}/${id}`
+				: undefined;
+		if (qualified) {
+			const role = splitRole(qualified).domain;
+			if (
+				role &&
+				this.definitions.has(qualified) &&
+				!this.bindingResolver.resolveKnownRole(role)
+			)
+				return undefined;
+			return this.bindingResolver.resolveAgentReference(qualified);
 		}
 		return undefined;
 	}

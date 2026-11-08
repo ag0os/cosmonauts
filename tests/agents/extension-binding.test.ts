@@ -244,3 +244,71 @@ ${declaration}`,
 		).rejects.toThrow("Unknown extension");
 	});
 });
+
+test.each([
+	"js",
+	"mjs",
+])("binds a compiled %s provider without evaluating its default path factory", async (suffix) => {
+	const root = join(tmp.path, "alpha", "extensions", "compiled");
+	await mkdir(root, { recursive: true });
+	await writeFile(
+		join(root, `index.${suffix}`),
+		`export async function createSessionExtension(context) { return pi => pi.registerTool({name:context.agentId, execute:async()=>({content:[]})}); } export default function fallback() {throw new Error('path factory')}`,
+	);
+	const params = await buildSessionParams({
+		def: definition(["compiled"]),
+		cwd: tmp.path,
+		domainsDir: tmp.path,
+		loadConfig: async () => ({}),
+	});
+	expect(params.extensionPaths).toEqual([]);
+	const pi = createMockPi({ cwd: tmp.path });
+	for (const factory of params.extensionFactories)
+		await (typeof factory === "function" ? factory : factory.factory)(
+			pi as never,
+		);
+	expect(pi.tools.has("consumer")).toBe(true);
+});
+
+test("consumer runtime providers receive the same runtime and grants without a directory", async () => {
+	const { CosmonautsRuntime } = await import("../../lib/runtime.ts");
+	const seen = vi.fn(
+		async () => (pi: { registerTool: (tool: unknown) => void }) =>
+			pi.registerTool({
+				name: "consumer-tool",
+				execute: async () => ({ content: [] }),
+			}),
+	);
+	const def = { ...definition(["consumer-hook"]), resourceDomain: undefined };
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+		agents: [def],
+		extensionProviders: { "consumer-hook": seen },
+	});
+	const params = await buildSessionParams({
+		def,
+		runtime,
+		cwd: tmp.path,
+		resolver: runtime.domainResolver,
+		loadConfig: async () => ({}),
+	});
+	expect(seen).toHaveBeenCalledWith({
+		runtime,
+		agentId: "consumer",
+		memory: {
+			knowledge: true,
+			authored: false,
+			proposals: false,
+			architecture: false,
+			episodes: true,
+		},
+	});
+	expect(params.extensionPaths).toEqual([]);
+	const pi = createMockPi({ cwd: tmp.path });
+	for (const factory of params.extensionFactories)
+		await (typeof factory === "function" ? factory : factory.factory)(
+			pi as never,
+		);
+	expect(pi.tools.has("consumer-tool")).toBe(true);
+});

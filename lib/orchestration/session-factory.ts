@@ -73,7 +73,7 @@ async function createSessionManager(config: SpawnConfig): Promise<{
 
 async function createResourceLoader(
 	config: SpawnConfig,
-	domainsDir: string,
+	domainsDir: string | undefined,
 	params: Awaited<ReturnType<typeof buildSessionParams>>,
 ): Promise<{
 	loader: DefaultResourceLoader;
@@ -113,7 +113,7 @@ async function createResourceLoader(
 export async function createAgentSessionFromDefinition(
 	def: AgentDefinition,
 	config: SpawnConfig,
-	domainsDir: string,
+	domainsDir: string | undefined,
 	resolver?: DomainResolver,
 ): Promise<SessionCreateResult> {
 	const modelRuntime = await ModelRuntime.create();
@@ -122,6 +122,7 @@ export async function createAgentSessionFromDefinition(
 		? await config.sessionPolicy.prepareSkills(config.skillPaths, domainsDir)
 		: config.skillPaths;
 	const params = await buildSessionParams({
+		runtime: config.runtime,
 		def,
 		cwd: config.cwd,
 		domainsDir,

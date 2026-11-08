@@ -9,7 +9,6 @@ import type {
 	JudgedProposal,
 	ProposedMemoryRecord,
 } from "../../lib/memory/index.ts";
-import { FALLBACK_MODEL } from "../../lib/orchestration/model-resolution.ts";
 import { createToollessPiSession } from "../pi-session.ts";
 
 const OBSERVATION_KINDS = new Set([
@@ -65,7 +64,7 @@ export function createPiCorpusJudgmentProvider(
 ): CorpusJudgmentProvider {
 	let requested = false;
 	return {
-		id: `pi/${options.model ?? FALLBACK_MODEL}`,
+		id: `pi/${options.model ?? "host-default"}`,
 		async judge(input, requestOptions) {
 			if (requested) {
 				throw new Error(

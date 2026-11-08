@@ -1,3 +1,13 @@
+import type { AgentDefinition } from "./agents/types.ts";
+import type { DomainSource } from "./domains/types.ts";
+import {
+	collectRuntimeChains,
+	collectRuntimeDomains,
+	registerRuntimeAgents,
+} from "./runtime-declarations.ts";
+
+export { RuntimeDeclarationCollisionError } from "./runtime-declarations.ts";
+
 import { selectDefaultDomain } from "./domains/default-domain.ts";
 /**
  * CosmonautsRuntime — centralized bootstrap sequence.
@@ -9,7 +19,7 @@ import { selectDefaultDomain } from "./domains/default-domain.ts";
 
 import type { AgentRegistry } from "./agents/index.ts";
 import { createRegistryFromDomains } from "./agents/index.ts";
-import { selectDomainChains } from "./chains/loader.ts";
+import { collectNamedChains, selectDomainChains } from "./chains/loader.ts";
 import type { NamedChain } from "./chains/types.ts";
 import type { ProjectConfig } from "./config/index.ts";
 import { loadProjectConfig } from "./config/index.ts";
@@ -29,12 +39,26 @@ export { DomainBindingTargetError };
 
 /** Options for creating a CosmonautsRuntime instance. */
 export interface CosmonautsRuntimeOptions {
+	extensionProviders?: Readonly<
+		Record<
+			string,
+			import("./agents/resource-providers.ts").HostExtensionProvider
+		>
+	>;
+	/** Explicit providers; when supplied, replaces discovery from directory/package options. */
+	domainSources?: readonly DomainSource[];
+	domains?: readonly LoadedDomain[];
+	agents?: readonly AgentDefinition[];
+	chains?: readonly NamedChain[];
+	projectConfig?: ProjectConfig;
+	/** Opt into project/user package and domain stores. Explicit roots never require this. */
+	discoverPackages?: boolean;
 	sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
 	chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	defaultModel?: string;
 	workerAgent?: string;
 	/** Absolute path to the framework's built-in domains directory. */
-	builtinDomainsDir: string;
+	builtinDomainsDir?: string;
 	/** Absolute path to the project root (where .cosmonauts/ lives). */
 	projectRoot: string;
 	/**
@@ -58,6 +82,12 @@ export interface CosmonautsRuntimeOptions {
  * domain context resolution, and workflow selection.
  */
 export class CosmonautsRuntime {
+	readonly extensionProviders?: Readonly<
+		Record<
+			string,
+			import("./agents/resource-providers.ts").HostExtensionProvider
+		>
+	>;
 	readonly sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
 	readonly chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	readonly defaultModel?: string;
@@ -88,9 +118,15 @@ export class CosmonautsRuntime {
 	 * Used as fallback for prompt assembly and extension resolution when
 	 * no DomainResolver-based lookup is available.
 	 */
-	readonly domainsDir: string;
+	readonly domainsDir: string | undefined;
 
 	private constructor(fields: {
+		extensionProviders?: Readonly<
+			Record<
+				string,
+				import("./agents/resource-providers.ts").HostExtensionProvider
+			>
+		>;
 		sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
 		chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 		defaultModel?: string;
@@ -106,8 +142,9 @@ export class CosmonautsRuntime {
 		chains: readonly NamedChain[];
 		projectSkills: readonly string[] | undefined;
 		skillPaths: readonly string[];
-		domainsDir: string;
+		domainsDir: string | undefined;
 	}) {
+		this.extensionProviders = fields.extensionProviders;
 		this.sessionPolicies = fields.sessionPolicies;
 		this.chainAdapter = fields.chainAdapter;
 		this.defaultModel = fields.defaultModel;
@@ -143,22 +180,14 @@ export class CosmonautsRuntime {
 		options: CosmonautsRuntimeOptions,
 	): Promise<CosmonautsRuntime> {
 		// 1. Load project config
-		const projectConfig = await loadProjectConfig(options.projectRoot);
+		const projectConfig =
+			options.projectConfig ?? (await loadProjectConfig(options.projectRoot));
 
-		// 2. Scan all domain sources (built-in, bundled, global packages, local packages, plugins)
-		const sources = await scanDomainSources({
-			builtinDomainsDir: options.builtinDomainsDir,
-			projectRoot: options.projectRoot,
-			bundledDirs: options.bundledDirs,
-			pluginDirs: options.pluginDirs,
-			includeUserSources: options.includeUserSources,
-		});
-
-		// 3. Load and merge domains from all sources
-		const activeDomainIds = activeDomainIdSet(projectConfig.activeDomains);
-		const domains = await loadDomainsFromSources(sources, undefined, {
-			activeDomainIds,
-		});
+		// 2. Load only host-provided roots/sources; package stores require an explicit opt-in.
+		const domains = await loadRuntimeDomains(
+			options,
+			activeDomainIdSet(projectConfig.activeDomains),
+		);
 
 		// Reject ambiguous active defaults before building consumer services.
 		selectDefaultDomain(domains);
@@ -193,6 +222,12 @@ export class CosmonautsRuntime {
 			bindingResolver,
 		});
 
+		registerRuntimeAgents({
+			registry: agentRegistry,
+			domains,
+			agents: options.agents ?? [],
+		});
+
 		// 6. Build domain resolver from registry
 		const domainResolver = new DomainResolver(domainRegistry);
 
@@ -204,7 +239,13 @@ export class CosmonautsRuntime {
 			: undefined;
 
 		// 8. Compute effective chains
-		const chains = selectDomainChains(domains, resolvedDomainContext);
+		const chains = collectRuntimeChains(
+			collectNamedChains(
+				projectConfig.chains,
+				selectDomainChains(domains, resolvedDomainContext),
+			),
+			options.chains,
+		);
 
 		// 9. Compose skill paths from all domain sources + user config
 		const domainSkillDirs = domainResolver.allSkillDirs();
@@ -216,7 +257,7 @@ export class CosmonautsRuntime {
 		// 10. Return frozen immutable runtime
 
 		const runtime = new CosmonautsRuntime({
-			...runtimeConsumerOptions(options, domains, resolvedDomainContext),
+			...runtimeConsumerOptions(options, domains),
 			projectConfig,
 			domains,
 			domainRegistry,
@@ -235,6 +276,34 @@ export class CosmonautsRuntime {
 	}
 }
 
+async function loadRuntimeDomains(
+	options: CosmonautsRuntimeOptions,
+	activeDomainIds: ReadonlySet<string> | undefined,
+): Promise<LoadedDomain[]> {
+	const sources =
+		options.domainSources ??
+		(await scanDomainSources({
+			builtinDomainsDir: options.builtinDomainsDir,
+			projectRoot: options.projectRoot,
+			bundledDirs: options.bundledDirs,
+			pluginDirs: options.pluginDirs,
+			includeUserSources:
+				options.discoverPackages === true &&
+				options.includeUserSources !== false,
+			includeProjectSources: options.discoverPackages === true,
+		}));
+	const loaded = await loadDomainsFromSources([...sources], undefined, {
+		activeDomainIds,
+	});
+	const supplied = options.domains?.filter(
+		(domain) =>
+			!activeDomainIds ||
+			activeDomainIds.has(domain.manifest.id) ||
+			domain.manifest.alwaysActive,
+	);
+	return collectRuntimeDomains(loaded, supplied);
+}
+
 function activeDomainIdSet(
 	activeDomains: ProjectConfig["activeDomains"],
 ): ReadonlySet<string> | undefined {
@@ -245,31 +314,14 @@ function activeDomainIdSet(
 function runtimeConsumerOptions(
 	options: CosmonautsRuntimeOptions,
 	domains: readonly LoadedDomain[],
-	context?: string,
 ) {
-	const defaults: Partial<import("./domains/types.ts").DomainManifest> =
-		selectChainConsumer(domains, context) ?? {};
-	const chainAdapter = options.chainAdapter ?? defaults.chainAdapter;
 	return {
+		extensionProviders: options.extensionProviders,
 		sessionPolicies: options.sessionPolicies ?? selectSessionPolicies(domains),
-		chainAdapter,
-		defaultModel:
-			options.defaultModel ??
-			defaults.defaultModel ??
-			chainAdapter?.defaultModel,
-		workerAgent: options.workerAgent ?? defaults.workerAgent,
+		chainAdapter: options.chainAdapter,
+		defaultModel: options.defaultModel ?? options.chainAdapter?.defaultModel,
+		workerAgent: options.workerAgent,
 	};
-}
-function selectChainConsumer(
-	domains: readonly LoadedDomain[],
-	context?: string,
-): import("./domains/types.ts").DomainManifest | undefined {
-	const selected = domains.find(
-		(domain) => domain.manifest.id === context,
-	)?.manifest;
-	if (selected?.chainAdapter) return selected;
-	const providers = domains.filter((domain) => domain.manifest.chainAdapter);
-	return providers.length === 1 ? providers[0]?.manifest : selected;
 }
 
 /** Session restrictions are independent of chain adapters and context selection. */

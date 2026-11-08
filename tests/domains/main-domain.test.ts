@@ -24,6 +24,7 @@ import {
 	resolveTools,
 } from "../../lib/orchestration/definition-resolution.ts";
 import { scanDomainSources } from "../../lib/packages/scanner.ts";
+import { getHostRuntime } from "../../lib/runtime-host.ts";
 import { writeProjectInstalledDomainPackage } from "../helpers/domain-package-fixture.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createAgentMemoryExtension } from "../helpers/memory-grants.ts";
@@ -131,6 +132,7 @@ describe("main domain built-in discovery", () => {
 
 	it("builds main/cosmo tools none allowlist only from extension-registered tools", async () => {
 		const params = await buildSessionParams({
+			runtime: await getHostRuntime({ projectRoot: tmp.path }),
 			def: cosmo,
 			cwd: tmp.path,
 			resolver,
@@ -223,6 +225,7 @@ describe("main domain built-in discovery", () => {
 
 	it("keeps W2 memory Cosmo only without broadening the tool allowlist", async () => {
 		const params = await buildSessionParams({
+			runtime: await getHostRuntime({ projectRoot: tmp.path }),
 			def: cosmo,
 			cwd: tmp.path,
 			resolver,

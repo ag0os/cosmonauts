@@ -22,7 +22,7 @@ import type { DomainSource, InstalledPackage } from "./types.ts";
 
 export interface ScanDomainSourcesOptions {
 	/** Absolute path to the framework's built-in domains directory. */
-	builtinDomainsDir: string;
+	builtinDomainsDir?: string;
 	/** Absolute path to the project root (used to locate the local package store). */
 	projectRoot: string;
 	/**
@@ -35,6 +35,8 @@ export interface ScanDomainSourcesOptions {
 	pluginDirs?: string[];
 	/** Exclude user-installed packages and domains for a base-owned review runtime. */
 	includeUserSources?: boolean;
+	/** Include project-installed packages and the project domains directory. */
+	includeProjectSources?: boolean;
 }
 
 /**
@@ -58,11 +60,12 @@ export async function scanDomainSources(
 	const sources: DomainSource[] = [];
 
 	// Built-in: the framework's domains directory
-	sources.push({
-		domainsDir: builtinDomainsDir,
-		origin: "builtin",
-		precedence: 0,
-	});
+	if (builtinDomainsDir)
+		sources.push({
+			domainsDir: builtinDomainsDir,
+			origin: "builtin",
+			precedence: 0,
+		});
 
 	// Bundled packages: framework dev-mode auto-include (lower than global)
 	if (bundledDirs) {
@@ -93,23 +96,25 @@ export async function scanDomainSources(
 		}
 	}
 
-	// Local packages (project scope)
-	const localPackages = await listInstalledPackages("project", projectRoot);
-	addPackageSources(sources, localPackages, "local", 2);
+	if (options.includeProjectSources !== false) {
+		// Local packages (project scope)
+		const localPackages = await listInstalledPackages("project", projectRoot);
+		addPackageSources(sources, localPackages, "local", 2);
 
-	// Project-domains: .cosmonauts/domains/ relative to projectRoot
-	const projectDomainsDir = join(projectRoot, ".cosmonauts", "domains");
-	try {
-		const projectDomainsStat = await stat(projectDomainsDir);
-		if (projectDomainsStat.isDirectory()) {
-			sources.push({
-				domainsDir: projectDomainsDir,
-				origin: "project-domains",
-				precedence: 2.5,
-			});
+		// Project-domains: .cosmonauts/domains/ relative to projectRoot
+		const projectDomainsDir = join(projectRoot, ".cosmonauts", "domains");
+		try {
+			const projectDomainsStat = await stat(projectDomainsDir);
+			if (projectDomainsStat.isDirectory()) {
+				sources.push({
+					domainsDir: projectDomainsDir,
+					origin: "project-domains",
+					precedence: 2.5,
+				});
+			}
+		} catch {
+			// Directory does not exist — skip silently
 		}
-	} catch {
-		// Directory does not exist — skip silently
 	}
 
 	// Plugin dirs: session-only sources, not stored in the package store

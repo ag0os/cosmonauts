@@ -299,3 +299,60 @@ actors and restrictions. Test: `tests/extensions/agent-switch.test.ts`.
 Step4 must supply the session-policy provider explicitly from the host before3c
 reaches user execution: a pre-3c installed coding package can lack any lower
 provider declaration. This stale-install case is not claimed fixed by3c alone.
+
+
+## Consumer runtime and public entries (step 4)
+
+LS-5: `CosmonautsRuntime.create` accepts explicit `agents`, `chains`, `domains`,
+`domainSources`, and `projectConfig`; no built-in directory is required. Explicit
+`domainSources` (including `[]`) overrides source scanning. Package/domain stores
+are opt-in via `discoverPackages`; directory and plugin roots are explicit inputs.
+Tests: `tests/consumer-runtime.test.ts` and `tests/runtime.test.ts`.
+
+Duplicate agent, domain and chain declarations in a runtime collection fail before
+execution; this does not change `AgentRegistry.register`'s layering overwrite
+contract. Qualified programmatic agents need no resource domain manifest.
+Tests: `tests/consumer-runtime.test.ts`.
+
+The current content consumer lives in `domains/host-runtime.ts`: it chooses roots,
+model default, coding chain adapter, worker and session policies. Library/CLI entry
+points request the host runtime through `setRuntimeHost`/`getHostRuntime`; equal
+project/domain/plugin requests share construction, failed construction can retry,
+and an unconfigured host fails explicitly. Session assembly and nested spawns,
+chains and Drive pass the same runtime; orchestration inline factories close over
+it. Tests: `tests/runtime-host.test.ts`, orchestration/CLI suites and extension
+binding contracts. Restore-by-id continues to use the current declaration; no
+snapshots are introduced.
+
+QM's sealed base-owned review runtime is the named temporary R1 content exemption
+until step 6: replacing it with the reviewed project's live runtime would weaken
+its trust boundary. Lean takes the host runtime; neither is generalized.
+The orchestration library's own executable asset root locates the Drive runner
+and envelope code only; it is not a source of domain, agent or model defaults.
+
+A session model resolves explicit override, declaration, then consumer default;
+missing all three fails before requesting a model. The library no longer exports
+a fixed fallback model. The current content consumer preserves its model choice.
+Role-model/thinking compatibility helpers remain neutral utilities; they do not
+infer content identities. Tests: assembly and spawner model-resolution contracts.
+True host identity binding remains deferred under R8: prompt markers are display
+and legacy extension authority, and project context may append later text. The
+runtime host port does not itself fix that independent prompt-authority limitation.
+
+`loadAgentDeclarations` loads default-exported TS/JS/MJS definitions from an
+absolute consumer directory, validates explicit file memory policy, and ignores
+hidden, declaration-only, nested and non-module files. It adds no Markdown parser.
+Tests: `tests/agents/directory-loader.test.ts`.
+Session extension providers may be explicit host callbacks or selected directory
+hooks (`index.ts`, `index.js`, `index.mjs`, in that order); selected directory
+providers retain precedence and unselected providers are not evaluated. Async hooks
+receive the actual runtime, identity and grants. Test: `extension-binding.test.ts`.
+
+LS-6: package exports enumerate all 24 stable deep entries from `fallow.toml`,
+retain those exact paths, add explicit friendly aliases, a declaration/runtime root
+and a runtime-host entry. The legacy `lib/lean-run/providers/default.ts` path is a named temporary content
+compatibility export until step 6, pinned by the packed-package test.
+There is no wildcard exposing private internals. Session
+creation stays on its separate Pi-dependent public entries. Test:
+`tests/public-surface.test.ts`; the external package-name-only fixture is step 5.
+

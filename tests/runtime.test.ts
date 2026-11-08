@@ -191,36 +191,46 @@ describe("consumer chain runtime inputs", () => {
 		return domainsDir;
 	}
 
-	it("uses the selected consumer when multiple adapters are present", async () => {
+	it("uses explicit consumer inputs independently of the selected resource domain", async () => {
+		const chainAdapter = { defaultModel: "host/adapter" };
 		const runtime = await CosmonautsRuntime.create({
 			builtinDomainsDir: await domainsWithAdapters(["studio", "vendor"]),
 			projectRoot: tmp.path,
 			domainOverride: "vendor",
+			chainAdapter,
+			defaultModel: "host/model",
+			workerAgent: "host/dispatcher",
 		});
-		expect(runtime.chainAdapter?.defaultModel).toBe("vendor/adapter");
-		expect(runtime.defaultModel).toBe("vendor/manifest");
-		expect(runtime.workerAgent).toBe("vendor/assembler");
+		expect(runtime.chainAdapter).toBe(chainAdapter);
+		expect(runtime.defaultModel).toBe("host/model");
+		expect(runtime.workerAgent).toBe("host/dispatcher");
+		expect(runtime.domainContext).toBe("vendor");
 	});
 
-	it("selects a sole active adapter and lets explicit host inputs override it", async () => {
+	it("does not install a sole manifest's runtime hints and accepts explicit host policies", async () => {
 		const builtinDomainsDir = await domainsWithAdapters(["studio"]);
 		const defaults = await CosmonautsRuntime.create({
 			builtinDomainsDir,
 			projectRoot: tmp.path,
 		});
-		expect(defaults.chainAdapter?.defaultModel).toBe("studio/adapter");
-		expect(defaults.workerAgent).toBe("studio/assembler");
+		expect(defaults.chainAdapter).toBeUndefined();
+		expect(defaults.workerAgent).toBeUndefined();
+		expect(defaults.defaultModel).toBeUndefined();
+		expect(defaults.sessionPolicies).toBeUndefined();
 		const chainAdapter = { defaultModel: "host/adapter" };
+		const sessionPolicies = { forAgent: () => undefined };
 		const explicit = await CosmonautsRuntime.create({
 			builtinDomainsDir,
 			projectRoot: tmp.path,
 			chainAdapter,
 			defaultModel: "host/model",
 			workerAgent: "host/dispatcher",
+			sessionPolicies,
 		});
 		expect(explicit.chainAdapter).toBe(chainAdapter);
 		expect(explicit.defaultModel).toBe("host/model");
 		expect(explicit.workerAgent).toBe("host/dispatcher");
+		expect(explicit.sessionPolicies).toBe(sessionPolicies);
 	});
 
 	it("does not infer a consumer when multiple adapters lack a selected domain", async () => {
@@ -947,6 +957,7 @@ describe("CosmonautsRuntime", () => {
 			);
 
 			const runtime = await CosmonautsRuntime.create({
+				discoverPackages: true,
 				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});

@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { loadNamedChains } from "../lib/chains/loader.ts";
 import { runConfiguredChain } from "../lib/orchestration/chain-dispatch.ts";
 import { ChainProfiler } from "../lib/orchestration/chain-profiler.ts";
 import {
@@ -39,7 +38,7 @@ export async function executeChainExpression({
 
 	const { steps, episodes } = selectChain(
 		chainExpr,
-		await loadNamedChains(cwd, runtime.chains),
+		runtime.chains,
 		runtime.chainAdapter?.defaultEpisodes,
 	);
 	injectUserPrompt(steps, options.prompt);
@@ -64,6 +63,7 @@ export async function executeChainExpression({
 	try {
 		const chainConfig = {
 			episodes,
+			runtime,
 			chainAdapter: runtime.chainAdapter,
 			sessionPolicies: runtime.sessionPolicies,
 			defaultModel: runtime.defaultModel,

@@ -31,11 +31,11 @@ export interface SessionPolicy {
 	loadConfig?: (cwd: string) => Promise<ProjectConfig>;
 	prepareSkills?: (
 		paths: string[] | undefined,
-		domainsDir: string,
+		domainsDir: string | undefined,
 	) => Promise<string[] | undefined>;
 	resourceOptions?: (
 		params: SessionPolicyResources,
-		domainsDir: string,
+		domainsDir: string | undefined,
 	) => Promise<SessionPolicyResourceOptions>;
 	settingsManager?: () => unknown;
 	transcriptPath?: () => Promise<string>;

@@ -1,4 +1,5 @@
 import { qualityReviewPolicyFor } from "../../lib/orchestration/quality-review-profile.ts";
+import { CosmonautsRuntime } from "../../lib/runtime.ts";
 /**
  * Tests for the shared session parameter builder (buildSessionParams).
  *
@@ -457,6 +458,10 @@ describe("buildSessionParams", () => {
 
 			for (const def of definitions) {
 				const params = await buildSessionParams({
+					runtime: await CosmonautsRuntime.create({
+						projectRoot: tmp.path,
+						domains: loadedDomains,
+					}),
 					def,
 					cwd: tmp.path,
 					domainsDir: REPO_DOMAINS_DIR,
@@ -693,12 +698,16 @@ describe("buildSessionParams", () => {
 			expect(params.model.id).toBe("test-opus");
 		});
 
-		it("falls back to FALLBACK_MODEL when no model specified", async () => {
+		it("requires a consumer model default when the definition omits a model", async () => {
 			await setupMinimalDomains(tmp.path);
 			const def = makeDef({ model: undefined as unknown as string });
-			const params = await buildSessionParams(makeOptions({ def }));
-			// FALLBACK_MODEL is "anthropic/claude-opus-4-7"
-			expect(params.model).toBeDefined();
+			await expect(buildSessionParams(makeOptions({ def }))).rejects.toThrow(
+				"No model configured",
+			);
+			const params = await buildSessionParams(
+				makeOptions({ def, defaultModel: "consumer/selected-model" }),
+			);
+			expect(params.model.id).toBe("selected-model");
 		});
 	});
 

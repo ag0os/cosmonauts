@@ -33,6 +33,7 @@ import {
 	type StepRecord,
 } from "../../../lib/durable-runtime/index.ts";
 import { CosmonautsRuntime } from "../../../lib/runtime.ts";
+import { setRuntimeHost } from "../../../lib/runtime-host.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../lib/tasks/task-types.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
@@ -512,6 +513,10 @@ describe("cosmonauts run drive compat run", () => {
 				testCase.targetDomain,
 			);
 			runtimeCreate.mockResolvedValueOnce(runtime as CosmonautsRuntime);
+			// Each case is a new consumer host, not another internal bootstrap.
+			setRuntimeHost(({ projectRoot }) =>
+				CosmonautsRuntime.create({ projectRoot }),
+			);
 
 			await parseDrive([
 				"--plan",
@@ -1013,6 +1018,10 @@ describe("cosmonauts run drive compat run", () => {
 		).rejects.toThrow("no fallback is permitted");
 		expect(backendMocks.createCosmonautsSubagentBackend).not.toHaveBeenCalled();
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		// The consumer replaces its declaration collection before a fresh resume.
+		setRuntimeHost(({ projectRoot }) =>
+			CosmonautsRuntime.create({ projectRoot }),
+		);
 
 		await writeResumeRun(taskIds, firstTaskDone, {
 			backendName: "cosmonauts-subagent",
@@ -2059,6 +2068,9 @@ function workerRuntime(
 		...additionalDefinitions,
 	];
 	const bindingResolver = {
+		resolveKnownRole(role: string) {
+			return { role };
+		},
 		resolveAgentReference(qualifiedId: string) {
 			const [role, agentId] = qualifiedId.split("/");
 			if (!role || !agentId) throw new Error("Expected qualified worker");

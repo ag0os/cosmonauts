@@ -314,6 +314,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 			runtime = await CosmonautsRuntime.create({
 				builtinDomainsDir: join(frameworkRoot, "domains"),
 				projectRoot: baseProjectRoot,
+				discoverPackages: true,
 				bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
 				includeUserSources: false,
 			});
@@ -363,6 +364,7 @@ export async function launchQualityReview(options: QualityReviewRunOptions) {
 				activeRuntime.agentRegistry,
 				activeRuntime.domainsDir,
 				{
+					runtime: activeRuntime,
 					resolver: activeRuntime.domainResolver,
 					spawnTimeoutMs: context.panelTimeoutMs,
 				},

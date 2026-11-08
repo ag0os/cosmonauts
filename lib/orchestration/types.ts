@@ -158,6 +158,7 @@ export interface CompactionConfig {
 
 /** Configuration for a chain execution */
 export interface ChainConfig {
+	runtime?: import("../runtime.ts").CosmonautsRuntime;
 	sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider;
 	chainAdapter?: ChainAdapter;
 	defaultModel?: string;
@@ -430,6 +431,7 @@ export interface SpawnHandle {
 
 /** Configuration for spawning an agent */
 export interface SpawnConfig {
+	runtime?: import("../runtime.ts").CosmonautsRuntime;
 	/** Host-bound session hooks; never copied from model tool arguments. */
 	sessionPolicy?: import("../agents/session-policy.ts").SessionPolicy;
 	/** Agent role to spawn */

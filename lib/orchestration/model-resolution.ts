@@ -17,7 +17,14 @@ const builtinModelCatalog = builtinModels();
 // Model Resolution
 // ============================================================================
 
-export const FALLBACK_MODEL = "anthropic/claude-opus-4-7";
+/** A model is supplied by the declaration or its consumer; the library has no model policy. */
+export function requireModelId(modelId: string | undefined): string {
+	if (!modelId)
+		throw new Error(
+			"No model configured. Supply an agent model or a consumer defaultModel.",
+		);
+	return modelId;
+}
 
 /**
  * Return the model ID string for a given agent role.
@@ -26,7 +33,7 @@ export const FALLBACK_MODEL = "anthropic/claude-opus-4-7";
  *  1. Explicit override from `models` config (matched by role key)
  *  2. Agent definition model (from registry)
  *  3. `models.default` if provided
- *  4. Sonnet fallback
+ *  4. Error when no consumer default was supplied
  */
 export function getModelForRole(
 	role: string,
@@ -43,8 +50,8 @@ export function getModelForRole(
 		return def.model;
 	}
 
-	// Fallback: models.default or sonnet
-	return models?.default ?? FALLBACK_MODEL;
+	// Consumer default, otherwise fail before requesting a model.
+	return requireModelId(models?.default);
 }
 
 // ============================================================================

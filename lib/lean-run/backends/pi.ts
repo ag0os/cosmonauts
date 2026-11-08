@@ -7,9 +7,10 @@ import { type BuilderBackend, LEAN_DOMAIN } from "../types.ts";
 
 type PiSpawnerSource =
 	| { spawner: AgentSpawner }
-	| { registry: AgentRegistry; domainsDir: string; resolver?: DomainResolver };
+	| { registry: AgentRegistry; domainsDir?: string; resolver?: DomainResolver };
 
 export type PiBuilderBackendOptions = PiSpawnerSource & {
+	runtime?: import("../../runtime.ts").CosmonautsRuntime;
 	projectSkills?: readonly string[];
 	skillPaths?: readonly string[];
 };
@@ -25,6 +26,7 @@ export function createPiBuilderBackend(
 		"spawner" in options
 			? options.spawner
 			: createPiSpawner(options.registry, options.domainsDir, {
+					runtime: options.runtime,
 					resolver: options.resolver,
 				});
 	return {

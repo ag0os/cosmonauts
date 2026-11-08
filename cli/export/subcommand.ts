@@ -1,5 +1,3 @@
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { buildAgentPackage } from "../../lib/agent-packages/build.ts";
 import { rawSourcePromptIssues } from "../../lib/agent-packages/compatibility.ts";
@@ -19,8 +17,7 @@ import {
 	listHarnessPackageTargetLabels,
 	resolveHarnessPackageDefinitionTarget,
 } from "../../lib/harness-adapters/registry.ts";
-import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../../lib/runtime.ts";
+import { getHostRuntime } from "../../lib/runtime-host.ts";
 
 interface ExportOptions {
 	readonly definition?: string;
@@ -152,20 +149,10 @@ function validateInputMode(
 }
 
 async function createExportRuntime(options: ExportOptions) {
-	const frameworkRoot = resolve(
-		dirname(fileURLToPath(import.meta.url)),
-		"..",
-		"..",
-	);
-	const bundledDirs = await discoverFrameworkBundledPackageDirs(frameworkRoot);
-	const pluginDirs = options.pluginDir?.length ? options.pluginDir : undefined;
-
-	return CosmonautsRuntime.create({
-		builtinDomainsDir: join(frameworkRoot, "domains"),
+	return getHostRuntime({
 		projectRoot: process.cwd(),
-		bundledDirs,
 		domainOverride: options.domain,
-		pluginDirs,
+		pluginDirs: options.pluginDir,
 	});
 }
 
