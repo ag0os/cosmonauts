@@ -251,7 +251,7 @@ function runtimeConsumerOptions(
 		selectChainConsumer(domains, context) ?? {};
 	const chainAdapter = options.chainAdapter ?? defaults.chainAdapter;
 	return {
-		sessionPolicies: options.sessionPolicies ?? defaults.sessionPolicies,
+		sessionPolicies: options.sessionPolicies ?? selectSessionPolicies(domains),
 		chainAdapter,
 		defaultModel:
 			options.defaultModel ??
@@ -270,4 +270,30 @@ function selectChainConsumer(
 	if (selected?.chainAdapter) return selected;
 	const providers = domains.filter((domain) => domain.manifest.chainAdapter);
 	return providers.length === 1 ? providers[0]?.manifest : selected;
+}
+
+/** Session restrictions are independent of chain adapters and context selection. */
+export class AmbiguousSessionPolicyProviderError extends Error {
+	constructor(domains: readonly string[]) {
+		super(
+			`Multiple distinct session-policy providers: ${domains.join(", ")}. Supply an explicit host sessionPolicies option.`,
+		);
+		this.name = "AmbiguousSessionPolicyProviderError";
+	}
+}
+
+function selectSessionPolicies(
+	domains: readonly LoadedDomain[],
+): import("./agents/session-policy.ts").SessionPolicyProvider | undefined {
+	const declaring = domains.filter(
+		(domain) => domain.manifest.sessionPolicies !== undefined,
+	);
+	const providers = new Set(
+		declaring.map((domain) => domain.manifest.sessionPolicies),
+	);
+	if (providers.size > 1)
+		throw new AmbiguousSessionPolicyProviderError(
+			declaring.map((domain) => domain.manifest.id),
+		);
+	return declaring[0]?.manifest.sessionPolicies;
 }

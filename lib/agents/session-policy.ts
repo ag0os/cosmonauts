@@ -7,6 +7,15 @@ interface SessionPolicyResources {
 	extensionPaths: readonly string[];
 	extensionFactories: readonly unknown[];
 }
+/** The only resource-loader overrides a host policy may supply. */
+export interface SessionPolicyResourceOptions {
+	appendSystemPrompt?: readonly string[];
+	agentsFilesOverride?: (base: {
+		agentsFiles: Array<{ path: string; content: string }>;
+	}) => { agentsFiles: Array<{ path: string; content: string }> };
+	additionalExtensionPaths?: readonly string[];
+	extensionFactories?: readonly unknown[];
+}
 interface HostSessionEvidence {
 	sessionId: string;
 	model?: { provider: string; id: string };
@@ -27,7 +36,7 @@ export interface SessionPolicy {
 	resourceOptions?: (
 		params: SessionPolicyResources,
 		domainsDir: string,
-	) => Promise<Record<string, unknown>>;
+	) => Promise<SessionPolicyResourceOptions>;
 	settingsManager?: () => unknown;
 	transcriptPath?: () => Promise<string>;
 	retainTranscript?: boolean;

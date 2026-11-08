@@ -237,7 +237,7 @@ Remaining vocabulary debt: QM/reviewer session profiles are content behind the h
 
 ## Declared domain policy (step 3c)
 
-Domain resource fallback and activation are separate inputs: `resourceFallback` defines the final resource tier, and `alwaysActive` participates when the consumer narrows active domains. The highest-precedence provider supplies activation policy; an omitted or false higher flag replaces a lower grant. Same-precedence providers with a grant remain active conflicts, while a higher inactive override keeps their conflicts outside the active scope. Resource merge precedence remains unchanged. Tests: `tests/domains/declared-domain-policy.test.ts` and existing loader/runtime contracts.
+Domain resource fallback and activation are separate inputs: `resourceFallback` defines the final resource tier, and `alwaysActive` participates when the consumer narrows active domains. The highest-precedence provider supplies the `alwaysActive`, `resourceFallback` and `default` flags; an omitted or false higher flag replaces a lower grant. The loader records a source-attributed warning whenever such an override drops a lower true flag, and runtime validation emits it. Same-precedence providers with a grant remain active conflicts, while a higher inactive override keeps their conflicts outside the active scope. Resource merge precedence remains unchanged. Tests: `tests/domains/declared-domain-policy.test.ts` and existing loader/runtime contracts.
 
 Validator capability, extension and persona checks use declared resource providers. Explicit instructions remove the persona-file requirement independently of the domain's spelling; no domain name exempts an undeclared persona. Declared fallback chains participate in contextual collections, with the contextual domain winning name collisions. Effective project skills include every declared fallback provider, in discovery order. Directory-only skill callers pass `fallbackDomains` explicitly. Tests: the declared-domain-policy contracts, validator, named-chain loader and skill/session suites.
 
@@ -264,3 +264,38 @@ Host denial remains effective when ordinary delegation would allow a target. Det
 The coding policy independently denies unbound managers, wrong callers/actual reviewers/lenses, model/thinking overrides and duplicate attempts; it validates child roles, clears append text, uses untrusted in-memory settings and forwards the exact run-local analysis consent. Tests: `tests/orchestration/host-review-policy.test.ts`, `tests/orchestration/host-review-provider.test.ts` and existing session-factory security/QM suites. Exact declaration tool lists are preserved even when a host supplies a preset. Test: `tests/agents/session-assembly.test.ts`.
 
 Custom merge callbacks see exact resource overlap metadata and the accumulated merge/replace provenance, and same-precedence active conflicts are checked before a skip callback can hide them. Domain module evaluation order remains deterministic. Portable own providers occur once; omitted directory providers invent no paths; prompt I/O failures other than not-found propagate. Tests: `tests/domains/domain-policy-contracts.test.ts`. Source-agent package resource selection prefers its declared resource scope, then actual identity, then caller context. Test: `tests/agent-packages/build.test.ts`.
+
+
+## Step 3c independent-review fixes
+
+Session-policy selection is independent of adapter and selected-domain resolution:
+one active declaring provider supplies the seal; two distinct provider objects
+fail loading with `AmbiguousSessionPolicyProviderError`, and an explicit host
+`sessionPolicies` choice wins. Higher domain layers that omit a seal inherit the
+lower layer's provider; replacing it requires an explicit provider. Override,
+multi-adapter, duplicate-provider and host-override pins:
+`tests/runtime-session-policies.test.ts` (all four fail at6686111a).
+
+The policy resource hook returns only `SessionPolicyResourceOptions`:
+`appendSystemPrompt`, `agentsFilesOverride`, `additionalExtensionPaths` and
+`extensionFactories`. Session creation applies those four keys explicitly; unknown
+keys cannot override cwd, noExtensions, noSkills or the dedicated settings hook.
+Test: `tests/orchestration/session-factory.security.test.ts`; duplicate settings
+were removed from the QM resource hook, with host-review-policy coverage.
+
+LS-2 imports are guarded across all core TypeScript files, including type and
+dynamic/resolver imports. Named temporary debts are config loader/types importing
+lean `SIGNAL_KINDS`/`SignalKind` (relocate in step6), and CLI main importing QM
+launch/run and lean CLI content (remove in step6). The catalog's coding entry
+moves from `lib/packages/catalog.ts` to the CLI host in step4. The coding tool
+preset is a preset vocabulary item, recorded as debt rather than a domain default.
+Test: `tests/coding-agnostic-framework.test.ts`.
+
+Any non-fallback domain remains runnable without a lead; a default lead is only
+needed by modes that actually select it. Test: `tests/cli/no-domain-guard.test.ts`.
+The switch picker skips an unresolvable entry while retaining other eligible
+actors and restrictions. Test: `tests/extensions/agent-switch.test.ts`.
+
+Step4 must supply the session-policy provider explicitly from the host before3c
+reaches user execution: a pre-3c installed coding package can lack any lower
+provider declaration. This stale-install case is not claimed fixed by3c alone.

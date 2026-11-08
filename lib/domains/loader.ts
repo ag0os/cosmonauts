@@ -445,10 +445,15 @@ function mergeDomains(
 	}
 
 	return {
-		manifest: incoming.manifest,
+		manifest: {
+			...incoming.manifest,
+			sessionPolicies:
+				incoming.manifest.sessionPolicies ?? existing.manifest.sessionPolicies,
+		},
 		declarationDiagnostics: [
 			...(existing.declarationDiagnostics ?? []),
 			...(incoming.declarationDiagnostics ?? []),
+			...droppedManifestFlagWarnings(existing, incoming),
 		],
 		portable: incoming.portable,
 		agents: mergedAgents,
@@ -520,4 +525,20 @@ async function indexSubdirectories(dirPath: string): Promise<Set<string>> {
 		}
 	}
 	return names;
+}
+
+function droppedManifestFlagWarnings(
+	existing: LoadedDomain,
+	incoming: LoadedDomain,
+): DomainValidationDiagnostic[] {
+	const source = firstProvenance(incoming);
+	return (["alwaysActive", "resourceFallback", "default"] as const)
+		.filter((flag) => existing.manifest[flag] && !incoming.manifest[flag])
+		.map((flag) => ({
+			domain: incoming.manifest.id,
+			file: join(source.rootDir, "domain.ts"),
+			origin: source.origin,
+			severity: "warning" as const,
+			message: `Higher-precedence manifest dropped ${flag}; declare ${flag}: true to retain it.`,
+		}));
 }

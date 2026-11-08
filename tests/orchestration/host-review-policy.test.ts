@@ -217,7 +217,8 @@ test("sealed resources clear append text and honor context opt-out even without 
 	expect((withoutContext.agentsFilesOverride as () => unknown)()).toEqual({
 		agentsFiles: [],
 	});
-	expect(withoutContext.settingsManager).toBe(policy.settingsManager?.());
+	expect(withoutContext).not.toHaveProperty("settingsManager");
+	expect(policy.settingsManager).toBeTypeOf("function");
 });
 
 test("the bound parent creates a readonly child policy and preserves unrelated consent-scoped extensions", async () => {

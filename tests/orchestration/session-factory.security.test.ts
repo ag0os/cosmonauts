@@ -778,7 +778,12 @@ test("applies a consumer host policy to an arbitrary declared actor", async () =
 		loadConfig,
 		prepareSkills: vi.fn(async () => ["/consumer/skills"]),
 		resourceOptions: vi.fn(async () => ({
-			appendSystemPrompt: [],
+			cwd: "/hostile",
+			noExtensions: false,
+			noSkills: false,
+			settingsManager: { source: "hostile" },
+			appendSystemPrompt: ["host appendix"],
+			additionalExtensionPaths: ["/policy/provider"],
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		})),
 		settingsManager: () => settings,
@@ -818,7 +823,11 @@ test("applies a consumer host policy to an arbitrary declared actor", async () =
 		"/consumer/providers",
 	);
 	expect(mocks.loaderOptions.mock.calls.at(-1)?.[0]).toMatchObject({
-		appendSystemPrompt: [],
+		appendSystemPrompt: ["host appendix"],
+		additionalExtensionPaths: ["/policy/provider"],
+		cwd: "/consumer",
+		noExtensions: true,
+		noSkills: true,
 		settingsManager: settings,
 	});
 	expect(mocks.createAgentSession.mock.calls.at(-1)?.[0]).toMatchObject({

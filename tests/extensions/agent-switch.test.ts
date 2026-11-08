@@ -710,3 +710,19 @@ test("switching remains available when the consumer omits an interactive denial 
 	]);
 	clearRegistrySlot();
 });
+
+test("the picker skips a dangling binding without losing other available agents", async () => {
+	const pi = createMockPi();
+	agentSwitchExtension(pi as never);
+	const registry = setupSharedRegistry(["dangling", "worker"]);
+	registry.resolve.mockImplementation((id: string) => {
+		if (id === "dangling") throw new Error("Missing binding target");
+		return { id };
+	});
+	const ctx = createMockCtx();
+	await expect(
+		getCommand(pi, "agent").handler("", ctx),
+	).resolves.toBeUndefined();
+	expect(ctx.ui.select).toHaveBeenCalledWith("Select agent", ["worker"]);
+	expect(ctx.newSession).not.toHaveBeenCalled();
+});

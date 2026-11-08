@@ -33,10 +33,7 @@ import {
 } from "../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
-import {
-	resolveDefaultDomain,
-	selectDefaultDomain,
-} from "../lib/domains/default-domain.ts";
+import { resolveDefaultDomain } from "../lib/domains/default-domain.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
@@ -330,13 +327,7 @@ async function run(options: CliOptions): Promise<void> {
 }
 
 export function hasRunnableDefaultDomain(runtime: CosmonautsRuntime): boolean {
-	const defaultDomain = selectDefaultDomain(runtime.domains);
-	return Boolean(
-		defaultDomain?.manifest.lead ||
-			runtime.domains.some(
-				(domain) => !domain.manifest.resourceFallback && domain.manifest.lead,
-			),
-	);
+	return runtime.domains.some((domain) => !domain.manifest.resourceFallback);
 }
 
 export function resolveInteractiveExtensionPaths(runtime: {

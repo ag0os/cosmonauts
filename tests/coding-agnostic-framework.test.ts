@@ -282,3 +282,101 @@ test("session host paths do not import review policy or name review actors", asy
 		);
 	}
 });
+
+// Ruling-3c-review finding4: these are temporary content dependencies, not new library API.
+// The third named debt is lib/packages/catalog.ts: its coding catalog moves to the CLI host in step4.
+// The coding tool preset is vocabulary debt, not a domain-id default.
+const CONTENT_IMPORT_EXCEPTIONS = [
+	{
+		from: "lib/config/loader.ts",
+		to: "lib/lean-run/types.ts",
+		removal: "step6: relocate SIGNAL_KINDS",
+	},
+	{
+		from: "lib/config/types.ts",
+		to: "lib/lean-run/types.ts",
+		removal: "step6: relocate SignalKind",
+	},
+	{
+		from: "cli/main.ts",
+		to: "lib/orchestration/quality-review-launch.ts",
+		removal: "step6: delete QM CLI content",
+	},
+	{
+		from: "cli/main.ts",
+		to: "lib/orchestration/quality-review-run.ts",
+		removal: "step6: delete QM CLI content",
+	},
+	{
+		from: "cli/main.ts",
+		to: "cli/lean/subcommand.ts",
+		removal: "step6: delete lean CLI content",
+	},
+] as const;
+function isContentCode(path: string): boolean {
+	return /^(?:lib\/lean-run\/|cli\/lean\/|lib\/orchestration\/quality-review-)/.test(
+		path,
+	);
+}
+function contentCodeImports(file: string, text: string): string[] {
+	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+	const paths: string[] = [];
+	const visit = (node: ts.Node): void => {
+		const argument = referenceArgument(node);
+		if (argument && ts.isStringLiteralLike(argument)) {
+			const specifier = argument.text;
+			const target = specifier.startsWith("cosmonauts/")
+				? specifier.slice("cosmonauts/".length)
+				: specifier.startsWith("file:")
+					? relative(REPO_ROOT, fileURLToPath(specifier))
+					: specifier.startsWith(".") || isAbsolute(specifier)
+						? relative(REPO_ROOT, resolve(dirname(file), specifier))
+						: undefined;
+			if (target && isContentCode(target)) paths.push(target);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(source);
+	return paths;
+}
+test("LS-2 rejects imports into lean/QM content outside the named step6 exceptions", async () => {
+	const files = (
+		await Promise.all(
+			SOURCE_ROOTS.map((root) => listTypeScriptFiles(join(REPO_ROOT, root))),
+		)
+	).flat();
+	const violations: string[] = [];
+	const observed = new Set<string>();
+	for (const file of files) {
+		const from = relative(REPO_ROOT, file);
+		if (isContentCode(from)) continue;
+		for (const to of contentCodeImports(file, await readFile(file, "utf8"))) {
+			if (
+				CONTENT_IMPORT_EXCEPTIONS.some(
+					(entry) => entry.from === from && entry.to === to,
+				)
+			)
+				observed.add(`${from} -> ${to}`);
+			else violations.push(`${from} -> ${to}`);
+		}
+	}
+	expect(violations).toEqual([]);
+	expect([...observed].sort()).toEqual(
+		CONTENT_IMPORT_EXCEPTIONS.map(
+			(entry) => `${entry.from} -> ${entry.to}`,
+		).sort(),
+	);
+});
+test("LS-2 sees type, dynamic and resolver imports into content", () => {
+	const file = join(REPO_ROOT, "lib/example.ts");
+	expect(
+		contentCodeImports(
+			file,
+			`import type {T} from "./lean-run/types.ts"; import("./orchestration/quality-review-run.ts"); require.resolve("cosmonauts/lib/lean-run/index.ts");`,
+		),
+	).toEqual([
+		"lib/lean-run/types.ts",
+		"lib/orchestration/quality-review-run.ts",
+		"lib/lean-run/index.ts",
+	]);
+});

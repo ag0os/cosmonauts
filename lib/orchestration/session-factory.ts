@@ -1,3 +1,4 @@
+import type { SessionPolicyResourceOptions } from "../agents/session-policy.ts";
 /**
  * Factory for creating Pi agent sessions from agent definitions.
  * Encapsulates all session setup logic: prompt assembly, tool resolution,
@@ -12,6 +13,7 @@ import {
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
+	type InlineExtension,
 	ModelRegistry,
 	ModelRuntime,
 	SessionManager,
@@ -77,14 +79,10 @@ async function createResourceLoader(
 	loader: DefaultResourceLoader;
 	policySettings: SettingsManager | undefined;
 }> {
-	const policyOptions = (await config.sessionPolicy?.resourceOptions?.(
+	const policyOptions = await config.sessionPolicy?.resourceOptions?.(
 		params,
 		domainsDir,
-	)) as
-		| Partial<
-				NonNullable<ConstructorParameters<typeof DefaultResourceLoader>[0]>
-		  >
-		| undefined;
+	);
 	const policySettings = config.sessionPolicy?.settingsManager?.() as
 		| SettingsManager
 		| undefined;
@@ -104,7 +102,7 @@ async function createResourceLoader(
 		...(!params.projectContext && {
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		}),
-		...policyOptions,
+		...resourceOverrides(policyOptions),
 	});
 	await loader.reload();
 	if (params.knowledgeSurfaceEnabled)
@@ -197,5 +195,28 @@ export async function createAgentSessionFromDefinition(
 		session,
 		sessionFilePath,
 		resolvedModel: { provider: resolvedModel.provider, id: resolvedModel.id },
+	};
+}
+
+/** Copy only the four privileged resource keys; never spread the host's arbitrary object. */
+function resourceOverrides(
+	policyOptions: SessionPolicyResourceOptions | undefined,
+) {
+	if (!policyOptions) return {};
+	return {
+		...(policyOptions.appendSystemPrompt && {
+			appendSystemPrompt: [...policyOptions.appendSystemPrompt],
+		}),
+		...(policyOptions.agentsFilesOverride && {
+			agentsFilesOverride: policyOptions.agentsFilesOverride,
+		}),
+		...(policyOptions.additionalExtensionPaths && {
+			additionalExtensionPaths: [...policyOptions.additionalExtensionPaths],
+		}),
+		...(policyOptions.extensionFactories && {
+			extensionFactories: [
+				...policyOptions.extensionFactories,
+			] as InlineExtension[],
+		}),
 	};
 }

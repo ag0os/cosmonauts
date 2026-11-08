@@ -150,7 +150,6 @@ export function createQualityReviewSessionPolicy(
 				"project-tools",
 			);
 			return {
-				settingsManager: settings,
 				appendSystemPrompt: [],
 				...((!params.projectContext || context.baseProjectRoot) && {
 					agentsFilesOverride: () => ({ agentsFiles: files }),

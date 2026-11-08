@@ -77,12 +77,15 @@ async function selectAgentOrNotify(
 	const ids = shared.registry.listIds();
 	const selected = await ctx.ui.select(
 		"Select agent",
-		ids.filter(
-			(id) =>
-				!shared.sessionPolicies?.interactiveDenial?.(
+		ids.filter((id) => {
+			try {
+				return !shared.sessionPolicies?.interactiveDenial?.(
 					shared.registry.resolve(id, shared.domainContext),
-				),
-		),
+				);
+			} catch {
+				return false;
+			}
+		}),
 	);
 	return selected ?? undefined;
 }

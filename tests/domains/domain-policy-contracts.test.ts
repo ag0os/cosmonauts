@@ -50,7 +50,7 @@ function runtime(domains: LoadedDomain[]) {
 	return { domains } as unknown as CosmonautsRuntime;
 }
 
-test("runnable selection accepts an ordinary declared lead beside fallback and empty providers", () => {
+test("runnable selection accepts ordinary providers with or without a lead and excludes fallback-only providers", () => {
 	const support = domain({
 		id: "support",
 		description: "Fallback",
@@ -63,7 +63,8 @@ test("runnable selection accepts an ordinary declared lead beside fallback and e
 		description: "Consumer",
 		lead: "scribe",
 	});
-	expect(hasRunnableDefaultDomain(runtime([support, empty]))).toBe(false);
+	expect(hasRunnableDefaultDomain(runtime([support]))).toBe(false);
+	expect(hasRunnableDefaultDomain(runtime([support, empty]))).toBe(true);
 	expect(hasRunnableDefaultDomain(runtime([support, empty, studio]))).toBe(
 		true,
 	);

@@ -67,3 +67,17 @@ describe("no-domain guard", () => {
 		expect(runModeForDomains("shared", "main", "coding")).toBe("interactive");
 	});
 });
+
+test("a non-fallback domain remains runnable without a lead declaration", () => {
+	const runtime = {
+		domains: [{ manifest: { id: "studio", description: "No lead" } }],
+	} as unknown as CosmonautsRuntime;
+	expect(hasRunnableDefaultDomain(runtime)).toBe(true);
+	expect(
+		selectRunMode({
+			options: cliOptions({ print: true }),
+			hasRunnableDefault: hasRunnableDefaultDomain(runtime),
+			hasInteractiveTerminal: true,
+		}),
+	).toBe("print");
+});
