@@ -201,7 +201,7 @@ The native task/plan provider tier is keyed by bare extension name, with consume
 
 `NamedChain` requires exactly one of a DSL `chain` string or explicit `stages`, and accepts `episodes`. Selection looks up a named declaration first; single agent names then resolve through the declaration collection, including names with several hyphens. The parser takes no registry and returns topology only: sequence, bracket group, or fan-out. It shares declaration identity validation rather than a second agent-name grammar. Tests: `chain-parser.test.ts`, `chain-normalization.test.ts`, `chain-routing.test.ts` and CLI named-chain tests.
 
-The consumer runtime carries `chainAdapter`, `defaultModel` and `workerAgent`. Its adapter supplies `classifyStage`, `buildStagePrompt`, `terminalGates`, optional typed refusal handling, and model/thinking defaults. Current domain manifests bridge their consumer adapter/worker to runtime construction: an explicit runtime option wins; otherwise the selected domain's adapter or the sole declared active adapter is used. This bridge does not claim the disk-free runtime contract (step 4). Stage bindings and declaration defaults are collected once; classification reads that run's registry view, and execution retains its bound reference. `chain_run` admits each selected declaration before execution using that reference and the caller's existing subagent grants. Tests: normalization cache, domain binding and orchestration authorization suites.
+The consumer runtime carries `chainAdapter`, `defaultModel` and `workerAgent`. Its adapter supplies `classifyStage`, `buildStagePrompt`, `terminalGates`, optional typed refusal handling, and model/thinking defaults. Step 3b temporarily bridged domain adapter/worker hints into runtime construction. Step 4 removed that bridge: the host now supplies those runtime options explicitly, with no domain adapter selector. Session-policy metadata alone retains the separately documented inheritance rule. Stage bindings and declaration defaults are collected once; classification reads that run's registry view, and execution retains its bound reference. `chain_run` admits each selected declaration before execution using that reference and the caller's existing subagent grants. Tests: normalization cache, domain binding and orchestration authorization suites.
 
 | Stage field | Contract |
 | --- | --- |
@@ -439,7 +439,7 @@ is a later owner choice. Tests: review45-runtime-contracts and cli/runtime-host.
 Inline factories stay bound to the launch runtime after a cross-project resume;
 chain/Drive still receive ctx.cwd. The runtime does not record its root and no
 cross-project refusal guard is claimed (orchestration.test.ts). Configured chains
-are a runtime collection: config-file edits require a host reset or process restart
+are a runtime collection: config-file edits require a new session after resetting the host, or process restart
 before chain_run/lean sees them. No per-call config reread is promised.
 
 The coding manifest carries its quality-review seal for direct runtime creation;
@@ -448,3 +448,39 @@ aliases; eject rejects an unexported framework target rather than emitting a bro
 specifier. Pi catalog tests bind the actual pinned1.0.3 ToolName union to the local
 allowlist. Toolless Pi helpers and memory consolidate need the content host when
 choosing a default model; an explicit model bypasses that bootstrap.
+
+### External consumer proof (step 5)
+
+LS-5/6/7: `tests/fixtures/library-consumer/consumer.ts` imports only the named
+package's public entries and declares two qualified agents plus a stages-form
+named chain. Its explicit Drive worker is `visitor/explorer`, with no `worker` alias. `tests/library-consumer.test.ts` installs a separate copy containing
+only `lib/` and `package.json` (dependencies remain installed), rejects a private
+import, and runs the fixture with an isolated HOME/Pi directory and blocked fetch.
+No framework domains, bundled content or CLI are present in that package copy.
+The same fixture runs in process so mutation coverage does not rely on child
+process instrumentation.
+
+The ordinary agent ports the shipped explorer's readonly, ephemeral, low-thinking
+settings. The memory agent ports Cosmo's authored/episode grants and persistent,
+high-thinking settings; the consumer supplies inline instructions instead of the
+original capabilities, extensions and specialist roster. The chain ports the
+shipped verify declaration's single-stage topology, assigned to the fixture
+explorer; it does not implement quality review. These are intentionally small
+content slices, with provenance comments in the fixture.
+
+The proof executes a stage with an injected offline spawner and assembles actual
+Pi sessions without prompting a model. The explorer exposes exactly readonly
+built-ins; the memory agent exposes `recall` and `remember` without an id/path
+exception. It verifies declared episode opt-in, not model output, episode capture,
+persistent transcript creation or authored-memory writes. Their existing suites
+retain those contracts. No live model credentials or network are needed.
+
+
+Review45 fixture coverage mounts orchestration through the public extension entry,
+asserts actual stage-spawn runtime identity, and normalizes its ordinary stage with
+no adapter. Enabled and disabled knowledgeSurface settings come only from the
+consumer runtime config; both execute in the content-free external process and in
+process, pinning recall inclusion for the ordinary knowledge-granted agent.
+Package exports target TypeScript ESM source: consumers need a TypeScript-capable
+ESM runtime (such as Bun or a configured TypeScript loader); plain Node execution
+without source support is not promised, and no engines field has been added.
