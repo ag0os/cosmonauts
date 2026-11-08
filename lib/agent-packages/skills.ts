@@ -17,6 +17,7 @@ interface ResolvePackageSkillsOptions {
 	readonly sourceAgent?: Pick<AgentDefinition, "skills" | "domain">;
 	readonly projectSkills?: readonly string[];
 	readonly domainsDir?: string;
+	readonly fallbackDomains?: readonly string[];
 	readonly resolver?: DomainResolver;
 }
 
@@ -64,6 +65,7 @@ export async function resolvePackageSkills(
 	}
 
 	const effectiveProjectSkills = await resolveEffectiveProjectSkills({
+		fallbackDomains: options.fallbackDomains,
 		projectSkills: options.projectSkills,
 		domainsDir: options.domainsDir,
 		resolver: options.resolver,

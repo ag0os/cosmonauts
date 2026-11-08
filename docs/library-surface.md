@@ -234,3 +234,11 @@ A stages-form chain reference must resolve through the registry's requested iden
 The Shepherd ruled that project-config chains retain their existing coding capture default until step 6; they gain no `episodes` field. Named programmatic declarations can override the consumer default. The Shepherd also ruled that misplaced QM stages continue writing a refusal report even beside an unknown actor. Test: `chain-runner.test.ts` mixed-error refusal.
 
 Remaining vocabulary debt: QM/reviewer session profiles move behind the host session-policy port in 3c; existing plan-review terminology, historical type comments and the reserved `models.default` key remain until their consuming content is removed in step 6. Non-chain fallback model inputs and their legacy exports remain assigned to step 4.
+
+## Declared domain policy (step 3c, in progress)
+
+Domain resource fallback and activation are separate inputs: `resourceFallback` defines the final resource tier, and `alwaysActive` participates when the consumer narrows active domains. The highest-precedence provider supplies activation policy; an omitted or false higher flag replaces a lower grant. Same-precedence providers with a grant remain active conflicts, while a higher inactive override keeps their conflicts outside the active scope. Resource merge precedence remains unchanged. Tests: `tests/domains/declared-domain-policy.test.ts` and existing loader/runtime contracts.
+
+Validator capability, extension and persona checks use declared resource providers. Explicit instructions remove the persona-file requirement independently of the domain's spelling; no domain name exempts an undeclared persona. Declared fallback chains participate in contextual collections, with the contextual domain winning name collisions. Effective project skills include every declared fallback provider, in discovery order. Directory-only skill callers pass `fallbackDomains` explicitly. Tests: the declared-domain-policy contracts, validator, named-chain loader and skill/session suites.
+
+Default-domain selection, undefined domainless propagation and the host session-policy port remain incomplete at this checkpoint; these sentences do not claim LS-2 or all of step 3c is complete.

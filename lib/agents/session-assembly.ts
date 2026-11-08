@@ -61,6 +61,8 @@ export interface BuildSessionParamsOptions {
 	cwd: string;
 	/** Absolute path to the root domains directory (required when no resolver). */
 	domainsDir?: string;
+	/** Explicit directory fallback resource providers. */
+	fallbackDomains?: readonly string[];
 	/** Absolute path to framework prompt templates. Defaults to lib/prompts/framework. */
 	frameworkPromptsDir?: string;
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
@@ -267,6 +269,7 @@ export async function buildSessionParams(
 	const effectiveProjectSkills = ignoreProjectSkills
 		? undefined
 		: await resolveEffectiveProjectSkills({
+				fallbackDomains: options.fallbackDomains,
 				projectSkills,
 				domainsDir,
 				resolver,

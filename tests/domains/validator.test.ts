@@ -48,7 +48,11 @@ function makeDomain(overrides: Partial<LoadedDomain> = {}): LoadedDomain {
 /** Create a shared domain with overrides. */
 function makeShared(overrides: Partial<LoadedDomain> = {}): LoadedDomain {
 	return makeDomain({
-		manifest: { id: "shared", description: "Shared domain" },
+		manifest: {
+			id: "shared",
+			description: "Shared domain",
+			resourceFallback: true,
+		},
 		...overrides,
 	});
 }
@@ -174,9 +178,17 @@ describe("validateDomains", () => {
 			expect(match).toBeUndefined();
 		});
 
-		it("skips persona check for shared domain agents", () => {
+		it("explicit instructions remove the persona requirement regardless of domain name", () => {
 			const shared = makeShared({
-				agents: new Map([["helper", makeAgent({ id: "helper" })]]),
+				agents: new Map([
+					[
+						"helper",
+						makeAgent({
+							id: "helper",
+							instructions: { kind: "inline", content: "Help." },
+						}),
+					],
+				]),
 				prompts: new Set(), // no "helper" prompt, but shared is exempt
 			});
 
@@ -462,7 +474,15 @@ describe("validateDomains", () => {
 
 		it("passes when subagent exists in another domain", () => {
 			const shared = makeShared({
-				agents: new Map([["helper", makeAgent({ id: "helper" })]]),
+				agents: new Map([
+					[
+						"helper",
+						makeAgent({
+							id: "helper",
+							instructions: { kind: "inline", content: "Help." },
+						}),
+					],
+				]),
 			});
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
@@ -612,10 +632,15 @@ describe("validateDomains", () => {
 			expect(overlap).toBeUndefined();
 		});
 
-		it("does not warn for shared domain capabilities even if shared is marked portable", () => {
-			// shared is always excluded from portable overlap checks
+		it("does not warn for declared fallback capabilities even if the provider is portable", () => {
+			// Declared fallback providers occupy a separate resolution tier.
 			const shared: LoadedDomain = {
-				manifest: { id: "shared", description: "Shared", portable: true },
+				manifest: {
+					id: "shared",
+					description: "Shared",
+					portable: true,
+					resourceFallback: true,
+				},
 				portable: true,
 				agents: new Map(),
 				capabilities: new Set(["core"]),

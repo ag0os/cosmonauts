@@ -77,6 +77,7 @@ describe("resolveEffectiveProjectSkills", () => {
 		const result = await resolveEffectiveProjectSkills({
 			projectSkills: ["typescript"],
 			domainsDir: tmp.path,
+			fallbackDomains: ["shared"],
 		});
 
 		expect(result).toEqual(["plan", "typescript"]);
@@ -90,6 +91,7 @@ describe("resolveEffectiveProjectSkills", () => {
 		const result = await resolveEffectiveProjectSkills({
 			projectSkills: ["typescript"],
 			domainsDir: tmp.path,
+			fallbackDomains: ["shared"],
 		});
 
 		expect(result).toEqual(["typescript"]);
@@ -100,6 +102,7 @@ describe("resolveEffectiveProjectSkills", () => {
 
 		const result = await resolveEffectiveProjectSkills({
 			domainsDir: tmp.path,
+			fallbackDomains: ["shared"],
 		});
 
 		expect(result).toBeUndefined();

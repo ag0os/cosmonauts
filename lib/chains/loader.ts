@@ -48,14 +48,14 @@ export function selectDomainChains(
 	domains: readonly LoadedDomain[],
 	domainContext?: string,
 ): NamedChain[] {
-	return domains
-		.filter(
-			(domain) =>
-				domainContext === undefined ||
-				domain.manifest.id === "shared" ||
-				domain.manifest.id === domainContext,
-		)
-		.flatMap((domain) => selectPublicChains(domain, domainContext));
+	const visible = domains.filter((domain) =>
+		isDomainInContext(domain, domainContext),
+	);
+	// Map folding lets contextual chains override the declared fallback tier.
+	return [
+		...visible.filter((domain) => domain.manifest.resourceFallback),
+		...visible.filter((domain) => !domain.manifest.resourceFallback),
+	].flatMap((domain) => selectPublicChains(domain, domainContext));
 }
 
 /**
@@ -164,7 +164,7 @@ function isDomainInContext(
 ): boolean {
 	return (
 		domainContext === undefined ||
-		domain.manifest.id === "shared" ||
+		domain.manifest.resourceFallback ||
 		domain.manifest.id === domainContext
 	);
 }

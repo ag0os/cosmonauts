@@ -37,6 +37,8 @@ interface ResolveEffectiveProjectSkillsOptions {
 	readonly projectSkills?: readonly string[];
 	/** Absolute path to the root domains directory (required when no resolver). */
 	readonly domainsDir?: string;
+	/** Explicit fallback domains for directory-only callers. */
+	readonly fallbackDomains?: readonly string[];
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
 	readonly resolver?: DomainResolver;
 	/**
@@ -67,12 +69,16 @@ function isWildcard(skills: readonly string[]): boolean {
 	return skills.includes(WILDCARD);
 }
 
-function buildSyntheticSharedDomain(domainsDir: string): LoadedDomain {
-	const rootDir = join(domainsDir, "shared");
+function buildSyntheticFallbackDomain(
+	domainsDir: string,
+	domainId: string,
+): LoadedDomain {
+	const rootDir = join(domainsDir, domainId);
 	return {
 		manifest: {
-			id: "shared",
-			description: "shared",
+			id: domainId,
+			description: domainId,
+			resourceFallback: true,
 		},
 		portable: false,
 		agents: new Map(),
@@ -88,18 +94,19 @@ function buildSyntheticSharedDomain(domainsDir: string): LoadedDomain {
 	};
 }
 
-async function listSharedSkillNames(options: {
+async function listFallbackSkillNames(options: {
 	domainsDir?: string;
+	fallbackDomains?: readonly string[];
 	resolver?: DomainResolver;
 }): Promise<readonly string[]> {
-	const sharedDomain =
-		options.resolver?.registry.get("shared") ??
-		(options.domainsDir
-			? buildSyntheticSharedDomain(options.domainsDir)
-			: undefined);
-	if (!sharedDomain) return [];
-
-	const skills = await discoverSkills([sharedDomain]);
+	const domains = options.resolver
+		? options.resolver.registry.listResourceFallbacks()
+		: (options.fallbackDomains ?? []).flatMap((id) =>
+				options.domainsDir
+					? [buildSyntheticFallbackDomain(options.domainsDir, id)]
+					: [],
+			);
+	const skills = await discoverSkills(domains);
 	return [...new Set(skills.map((skill) => skill.name))];
 }
 
@@ -123,7 +130,8 @@ export async function resolveEffectiveProjectSkills(
 	if (options.projectSkills === undefined) return undefined;
 
 	return [
-		...(await listSharedSkillNames({
+		...(await listFallbackSkillNames({
+			fallbackDomains: options.fallbackDomains,
 			domainsDir: options.domainsDir,
 			resolver: options.resolver,
 		})),

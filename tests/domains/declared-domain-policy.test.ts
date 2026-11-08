@@ -1,8 +1,20 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { resolveEffectiveProjectSkills } from "../../lib/agents/skills.ts";
+import type { AgentDefinition } from "../../lib/agents/types.ts";
+import {
+	loadNamedChains,
+	selectDomainChains,
+} from "../../lib/chains/loader.ts";
+import {
+	DomainIdConflictError,
+	loadDomainsFromSources,
+} from "../../lib/domains/loader.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { DomainManifest, LoadedDomain } from "../../lib/domains/types.ts";
+import { validateDomains } from "../../lib/domains/validator.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("declared-domain-policy-");
@@ -105,4 +117,194 @@ test("multiple fallback providers retain declaration order and skill roots appea
 	expect(new DomainResolver(registry).allSkillDirs()).toEqual(
 		[own, first, second].map((d) => join(tmp.path, d.manifest.id, "skills")),
 	);
+});
+
+async function provider(
+	label: string,
+	manifest: DomainManifest,
+	precedence: number,
+) {
+	const root = join(tmp.path, label);
+	await mkdir(root, { recursive: true });
+	await writeFile(
+		join(root, "domain.ts"),
+		`export default ${JSON.stringify(manifest)};`,
+	);
+	return {
+		domainsDir: root,
+		origin: label,
+		precedence,
+		kind: "domain-root" as const,
+	};
+}
+
+test("only an effective always-active grant bypasses a narrowed active list", async () => {
+	const support = await provider(
+		"support",
+		{ id: "support", description: "Renamed support", alwaysActive: true },
+		0,
+	);
+	const ordinary = await provider(
+		"ordinary",
+		{ id: "shared", description: "No magic name" },
+		0,
+	);
+	expect(
+		(
+			await loadDomainsFromSources([ordinary, support], undefined, {
+				activeDomainIds: [],
+			})
+		).map((d) => d.manifest.id),
+	).toEqual(["support"]);
+});
+
+test.each([
+	false,
+	undefined,
+])("a higher provider's %s activation policy replaces a lower grant", async (alwaysActive) => {
+	const lower = await provider(
+		"lower",
+		{ id: "support", description: "Lower", alwaysActive: true },
+		0,
+	);
+	const higher = await provider(
+		"higher",
+		{ id: "support", description: "Higher", alwaysActive },
+		1,
+	);
+	expect(
+		await loadDomainsFromSources([higher, lower], undefined, {
+			activeDomainIds: [],
+		}),
+	).toEqual([]);
+	const [active] = await loadDomainsFromSources([higher, lower], undefined, {
+		activeDomainIds: ["support"],
+	});
+	expect(active?.manifest.description).toBe("Higher");
+	expect(active?.rootDirs).toEqual([higher.domainsDir, lower.domainsDir]);
+});
+
+test("conflicting providers are checked only when their effective policy activates them", async () => {
+	const first = await provider(
+		"first",
+		{ id: "support", description: "First", alwaysActive: true },
+		0,
+	);
+	const second = await provider(
+		"second",
+		{ id: "support", description: "Second", alwaysActive: false },
+		0,
+	);
+	await expect(
+		loadDomainsFromSources([first, second], undefined, { activeDomainIds: [] }),
+	).rejects.toBeInstanceOf(DomainIdConflictError);
+	const override = await provider(
+		"override",
+		{ id: "support", description: "Override", alwaysActive: false },
+		1,
+	);
+	expect(
+		await loadDomainsFromSources([first, second, override], undefined, {
+			activeDomainIds: [],
+		}),
+	).toEqual([]);
+});
+
+function actor(): AgentDefinition {
+	return {
+		id: "actor",
+		domain: "workspace",
+		description: "Consumer",
+		instructions: { kind: "inline", content: "Act." },
+		model: "test/model",
+		tools: "none",
+		capabilities: ["common"],
+		extensions: ["common"],
+		skills: [],
+		projectContext: false,
+		session: "ephemeral",
+		loop: false,
+	};
+}
+
+test("validator resources follow declared fallbacks without exempting a domain spelling", () => {
+	const consumer = domain({ id: "workspace", description: "Consumer" }, []);
+	consumer.agents.set("actor", actor());
+	const fallback = domain({
+		id: "support",
+		description: "Support",
+		resourceFallback: true,
+	});
+	expect(validateDomains([consumer, fallback])).toEqual([]);
+	const ordinary = domain({ id: "shared", description: "Ordinary" });
+	expect(validateDomains([consumer, ordinary]).map((d) => d.message)).toEqual([
+		'Capability "common" not found in the declared resource providers for domain "workspace"',
+		'Extension "common" not found in the declared resource providers for domain "workspace"',
+	]);
+});
+
+test("chain collections include declared fallbacks and contextual definitions win collisions", async () => {
+	const own = {
+		...domain({ id: "workspace", description: "Own" }),
+		chains: [{ name: "flow", description: "Own", chain: "actor" }],
+	};
+	const fallback = {
+		...domain({
+			id: "support",
+			description: "Fallback",
+			resourceFallback: true,
+		}),
+		chains: [{ name: "flow", description: "Fallback", chain: "helper" }],
+	};
+	const ordinary = {
+		...domain({ id: "shared", description: "Ordinary" }),
+		chains: [{ name: "other", description: "Other", chain: "helper" }],
+	};
+	const selected = selectDomainChains([own, ordinary, fallback], "workspace");
+	expect(selected).toEqual([...fallback.chains, ...own.chains]);
+	expect(await loadNamedChains(tmp.path, selected)).toEqual(own.chains);
+});
+
+test("effective project skills use every declared fallback and directory callers declare providers", async () => {
+	for (const id of ["first", "second", "shared"]) {
+		const path = join(tmp.path, id, "skills", id);
+		await mkdir(path, { recursive: true });
+		await writeFile(
+			join(path, "SKILL.md"),
+			`---\nname: ${id}\ndescription: ${id}\n---\n`,
+		);
+	}
+	const first = domain({
+		id: "first",
+		description: "First",
+		resourceFallback: true,
+	});
+	const second = domain({
+		id: "second",
+		description: "Second",
+		resourceFallback: true,
+	});
+	const ordinary = domain({ id: "shared", description: "Ordinary" });
+	const resolver = new DomainResolver(
+		new DomainRegistry([first, ordinary, second]),
+	);
+	expect(
+		await resolveEffectiveProjectSkills({
+			projectSkills: ["project"],
+			resolver,
+		}),
+	).toEqual(["first", "second", "project"]);
+	expect(
+		await resolveEffectiveProjectSkills({
+			projectSkills: [],
+			domainsDir: tmp.path,
+		}),
+	).toEqual([]);
+	expect(
+		await resolveEffectiveProjectSkills({
+			projectSkills: [],
+			domainsDir: tmp.path,
+			fallbackDomains: ["second"],
+		}),
+	).toEqual(["second"]);
 });

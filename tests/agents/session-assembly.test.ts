@@ -132,6 +132,7 @@ function makeOptions(
 		def: makeDef(),
 		cwd: tmp.path,
 		domainsDir: tmp.path,
+		fallbackDomains: ["shared"],
 		frameworkPromptsDir: join(tmp.path, "framework"),
 		...overrides,
 	};

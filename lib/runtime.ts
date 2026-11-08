@@ -231,7 +231,7 @@ function activeDomainIdSet(
 	activeDomains: ProjectConfig["activeDomains"],
 ): ReadonlySet<string> | undefined {
 	if (activeDomains === undefined) return undefined;
-	return new Set(["shared", ...activeDomains]);
+	return new Set(activeDomains);
 }
 
 function runtimeConsumerOptions(
