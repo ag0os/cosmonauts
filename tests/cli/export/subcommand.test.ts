@@ -144,12 +144,12 @@ describe("createExportProgram", () => {
 			"cosmonauts export --definition ./agent-package.json --out ./bin/agent",
 		);
 		expect(help).toContain(
-			"cosmonauts export coding/explorer --target claude-cli --out",
+			"cosmonauts export my-domain/explorer --target claude-cli --out",
 		);
 		expect(help).toContain("./bin/explorer-claude");
-		expect(help).toContain("./packages/cosmo-worker-codex/package.json");
+		expect(help).toContain("./packages/worker/package.json");
 		expect(help).toContain("--target codex --out");
-		expect(help).toContain("./bin/cosmo-worker-codex");
+		expect(help).toContain("./bin/worker-codex");
 		expect(help).toContain("ANTHROPIC_API_KEY");
 		expect(help).toContain("--allow-api-billing");
 		expect(help).toContain("model_instructions_file");
@@ -261,10 +261,10 @@ describe("createExportProgram", () => {
 
 	it("exports a Codex package definition when --target codex is selected", async () => {
 		const definitionPath = join(tmp.path, "codex.json");
-		const outPath = join(tmp.path, "cosmo-worker-codex");
+		const outPath = join(tmp.path, "worker-codex");
 		const definition = {
 			schemaVersion: 1,
-			id: "cosmo-worker-codex",
+			id: "worker-codex",
 			description: "Worker packaged for Codex.",
 			sourceAgent: "alpha/worker",
 			prompt: { kind: "inline", content: "Work safely." },
