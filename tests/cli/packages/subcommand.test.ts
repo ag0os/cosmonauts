@@ -4,6 +4,9 @@
  */
 
 import "../../helpers/readline.ts";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureCommandOutput } from "../../helpers/cli.ts";
 import {
@@ -27,15 +30,6 @@ vi.mock("../../../lib/packages/store.ts", () => ({
 	listInstalledPackages: vi.fn(),
 }));
 
-vi.mock("../../../lib/packages/catalog.ts", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("../../../lib/packages/catalog.ts")>();
-	return {
-		...actual,
-		resolveCatalogEntry: vi.fn(),
-	};
-});
-
 import {
 	createInstallProgram,
 	createPackagesProgram,
@@ -46,10 +40,8 @@ import {
 	renderInstallSuccess,
 	renderPackagesList,
 	resolveInstallRequest,
-	resolveSource,
 	uninstallAction,
 } from "../../../cli/packages/subcommand.ts";
-import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
 import {
 	installPackage,
 	uninstallPackage,
@@ -59,7 +51,6 @@ import { listInstalledPackages } from "../../../lib/packages/store.ts";
 const mockInstallPackage = vi.mocked(installPackage);
 const mockUninstallPackage = vi.mocked(uninstallPackage);
 const mockListInstalledPackages = vi.mocked(listInstalledPackages);
-const mockResolveCatalogEntry = vi.mocked(resolveCatalogEntry);
 
 // ============================================================================
 // Helpers
@@ -74,24 +65,6 @@ function answerConflictPrompts(...answers: string[]): void {
 			callback(answer);
 		},
 	);
-}
-
-function mockCatalogInstall(): void {
-	mockResolveCatalogEntry.mockReturnValue({
-		name: "alpha",
-		description: "Alpha domain",
-		source: "./bundled/alpha",
-	});
-	mockInstallPackage.mockResolvedValue({
-		manifest: {
-			name: "alpha",
-			version: "1.0.0",
-			description: "Test",
-			domains: [{ name: "alpha", path: "alpha" }],
-		},
-		installedTo: "/store/alpha",
-		domainMergeResults: [],
-	});
 }
 
 function mockSingleConflictInstall(answer: string): void {
@@ -116,7 +89,6 @@ beforeEach(() => {
 	originalExitCode = process.exitCode as number | undefined;
 
 	process.exitCode = undefined;
-	mockResolveCatalogEntry.mockReturnValue(undefined);
 	readlineMocks.close.mockReset();
 	readlineMocks.question.mockReset();
 });
@@ -128,79 +100,70 @@ afterEach(() => {
 });
 
 // ============================================================================
-// resolveSource
+// install source resolution
 // ============================================================================
 
-describe("resolveSource", () => {
-	it("passes through git URLs unchanged", () => {
-		mockResolveCatalogEntry.mockReturnValue(undefined);
-		expect(resolveSource("https://github.com/owner/repo")).toBe(
-			"https://github.com/owner/repo",
-		);
-	});
-
-	it("passes through local paths unchanged", () => {
-		mockResolveCatalogEntry.mockReturnValue(undefined);
-		expect(resolveSource("./my-pkg")).toBe("./my-pkg");
-	});
-
-	it("resolves catalog short names to an absolute path", () => {
-		mockResolveCatalogEntry.mockReturnValue({
-			name: "alpha",
-			description: "Alpha domain",
-			source: "./bundled/alpha",
-		});
-		const result = resolveSource("alpha");
-		// Should be an absolute path containing "bundled/alpha"
-		expect(result).toMatch(/bundled[\\/]alpha$/);
-	});
-
-	it("calls resolveCatalogEntry with the provided argument", () => {
-		mockResolveCatalogEntry.mockReturnValue(undefined);
-		resolveSource("some-name");
-		expect(mockResolveCatalogEntry).toHaveBeenCalledWith(
-			"some-name",
-			expect.arrayContaining([expect.objectContaining({ name: "coding" })]),
-		);
-	});
-});
-
-// ============================================================================
-// install helper rendering/resolution
-// ============================================================================
+const RETIRED_CATALOG_MESSAGE = /package-catalog installs were removed/i;
 
 describe("resolveInstallRequest", () => {
-	it("resolves catalog short names with catalog metadata", () => {
-		mockResolveCatalogEntry.mockReturnValue({
-			name: "alpha",
-			description: "Alpha domain",
-			source: "./bundled/alpha",
-		});
-
-		const request = resolveInstallRequest("alpha", {
-			projectRoot: "/project",
-		});
-
-		expect(request.scope).toBe("user");
-		expect(request.cwd).toBe("/project");
-		expect(request.catalogName).toBe("alpha");
-		expect(request.source).toMatch(/bundled[\\/]alpha$/);
+	it("passes through git URLs, github shorthand, and paths unchanged", () => {
+		for (const source of [
+			"https://github.com/owner/repo",
+			"github:owner/repo",
+			"file:///abs/repo",
+			"./my-pkg",
+			"../my-pkg",
+			"/abs/my-pkg",
+			"nested/my-pkg",
+		]) {
+			expect(
+				resolveInstallRequest(source, { projectRoot: "/project" }),
+			).toStrictEqual({ source, scope: "user", cwd: "/project" });
+		}
 	});
 
-	it("resolves project scope and passes through non-catalog sources", () => {
-		mockResolveCatalogEntry.mockReturnValue(undefined);
+	it("resolves project scope with --local", () => {
+		expect(
+			resolveInstallRequest("./my-pkg", {
+				local: true,
+				projectRoot: "/project",
+			}),
+		).toStrictEqual({ source: "./my-pkg", scope: "project", cwd: "/project" });
+	});
 
-		const request = resolveInstallRequest("./my-pkg", {
-			local: true,
-			projectRoot: "/project",
-		});
+	it("rejects a bare name that is not a local path as a retired catalog install", () => {
+		expect(() =>
+			resolveInstallRequest("some-package", {
+				projectRoot: "/nonexistent-project-root",
+			}),
+		).toThrow(RETIRED_CATALOG_MESSAGE);
+	});
 
-		expect(request).toEqual({
-			source: "./my-pkg",
-			scope: "project",
-			cwd: "/project",
-			catalogName: undefined,
-		});
+	it("names the rejected argument and the supported install sources", () => {
+		let message = "";
+		try {
+			resolveInstallRequest("some-package", {
+				projectRoot: "/nonexistent-project-root",
+			});
+		} catch (err: unknown) {
+			message = err instanceof Error ? err.message : String(err);
+		}
+		expect(message).toContain('"some-package"');
+		expect(message).toContain("local path");
+		expect(message).toContain("git URL");
+		expect(message).toContain("github:owner/repo");
+	});
+
+	it("accepts a bare name that exists as a local path under the project root", async () => {
+		const root = await mkdtemp(join(tmpdir(), "install-bare-name-"));
+		try {
+			await mkdir(join(root, "some-package"));
+			expect(
+				resolveInstallRequest("some-package", { projectRoot: root }),
+			).toStrictEqual({ source: "some-package", scope: "user", cwd: root });
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -341,27 +304,7 @@ describe("installAction — success", () => {
 		);
 	});
 
-	it("resolves catalog short name before calling installPackage", async () => {
-		mockCatalogInstall();
-
-		await installAction("alpha", { projectRoot: "/project" });
-
-		const call = mockInstallPackage.mock.calls[0]?.[0];
-		expect(call?.source).toMatch(/bundled[\\/]alpha$/);
-	});
-
-	it("passes catalogName to installPackage for catalog entries", async () => {
-		mockCatalogInstall();
-
-		await installAction("alpha", { projectRoot: "/project" });
-
-		expect(mockInstallPackage).toHaveBeenCalledWith(
-			expect.objectContaining({ catalogName: "alpha" }),
-		);
-	});
-
-	it("does not pass catalogName for non-catalog sources", async () => {
-		mockResolveCatalogEntry.mockReturnValue(undefined);
+	it("does not pass catalog metadata to installPackage", async () => {
 		mockInstallPackage.mockResolvedValue({
 			manifest: {
 				name: "my-pkg",
@@ -378,7 +321,36 @@ describe("installAction — success", () => {
 		});
 
 		const call = mockInstallPackage.mock.calls[0]?.[0];
-		expect(call?.catalogName).toBeUndefined();
+		expect(call).not.toHaveProperty("catalogName");
+	});
+});
+
+// ============================================================================
+// installAction — retired package catalog
+// ============================================================================
+
+describe("installAction — retired package catalog", () => {
+	it("fails a bare-name install without calling installPackage", async () => {
+		await installAction("some-package", {
+			projectRoot: "/nonexistent-project-root",
+		});
+
+		expect(mockInstallPackage).not.toHaveBeenCalled();
+		expect(output.stderr()).toContain("cosmonauts install");
+		expect(output.stderr()).toMatch(RETIRED_CATALOG_MESSAGE);
+		expect(output.stderr()).toContain('"some-package"');
+		expect(output.stdout()).not.toContain("Installed");
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("rejects every bare name the same way, with no special-cased names", async () => {
+		for (const name of ["alpha", "coding", "my-domain"]) {
+			mockInstallPackage.mockClear();
+			await installAction(name, { projectRoot: "/nonexistent-project-root" });
+			expect(mockInstallPackage).not.toHaveBeenCalled();
+			expect(output.stderr()).toContain(`"${name}"`);
+		}
+		expect(process.exitCode).toBe(1);
 	});
 });
 

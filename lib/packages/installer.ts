@@ -42,8 +42,6 @@ export interface InstallOptions {
 	link?: boolean;
 	/** Git branch or tag to checkout (git sources only) */
 	branch?: string;
-	/** When installing from a catalog, the catalog entry short name (e.g., "coding") */
-	catalogName?: string;
 }
 
 /** A domain ID conflict detected during installation */
@@ -66,6 +64,7 @@ export interface InstallResult {
 // ============================================================================
 
 export type InstallMeta =
+	/** Legacy metadata from the retired package catalog; read only to reject it. */
 	| { source: "catalog"; catalogName: string; installedAt: string }
 	| { source: "git"; url: string; branch: string | null; installedAt: string }
 	| { source: "local"; originalPath: string; installedAt: string }
@@ -120,7 +119,6 @@ export async function installPackage(
 		projectRoot,
 		link = false,
 		branch,
-		catalogName,
 	} = options;
 
 	const isGitSource =
@@ -179,12 +177,6 @@ export async function installPackage(
 					source: "git",
 					url: resolveGitUrl(source),
 					branch: branch ?? null,
-					installedAt,
-				});
-			} else if (catalogName !== undefined) {
-				await writeInstallMeta(installPath, {
-					source: "catalog",
-					catalogName,
 					installedAt,
 				});
 			} else {

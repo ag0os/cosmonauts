@@ -7,18 +7,12 @@
 
 import { spawn } from "node:child_process";
 import { Command } from "commander";
-import { resolveCatalogEntry } from "../../lib/packages/catalog.ts";
-import {
-	installPackage,
-	loadInstallMeta,
-	uninstallPackage,
-} from "../../lib/packages/installer.ts";
+import { loadInstallMeta } from "../../lib/packages/installer.ts";
 import {
 	listInstalledPackages,
 	resolveStorePath,
 } from "../../lib/packages/store.ts";
 import type { PackageScope } from "../../lib/packages/types.ts";
-import { getBundledCatalog, resolveCatalogSource } from "../package-catalog.ts";
 
 // ============================================================================
 // Types
@@ -76,27 +70,10 @@ async function updateOne(
 
 	switch (meta.source) {
 		case "catalog": {
-			const entry = resolveCatalogEntry(meta.catalogName, getBundledCatalog());
-			const source = entry
-				? resolveCatalogSource(entry.source)
-				: resolveCatalogSource(`./bundled/${meta.catalogName}`);
-
-			try {
-				await uninstallPackage(name, scope, cwd);
-				await installPackage({
-					source,
-					scope,
-					projectRoot: cwd,
-					catalogName: meta.catalogName,
-				});
-				console.log(`Updated "${name}" from catalog "${meta.catalogName}"`);
-			} catch (err: unknown) {
-				const message = err instanceof Error ? err.message : String(err);
-				process.stderr.write(
-					`cosmonauts update: failed to update "${name}": ${message}\n`,
-				);
-				process.exitCode = 1;
-			}
+			process.stderr.write(
+				`cosmonauts update: "${name}" was installed from the retired package catalog and cannot be updated. Reinstall it from a local path, a git URL, or github:owner/repo: \`cosmonauts uninstall ${name}\` then \`cosmonauts install <source>\`.\n`,
+			);
+			process.exitCode = 1;
 			break;
 		}
 

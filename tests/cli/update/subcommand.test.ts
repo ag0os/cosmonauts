@@ -1,6 +1,6 @@
 /**
  * Tests for cli/update/subcommand.ts
- * Covers each source type branch: catalog, git, link, local, missing metadata.
+ * Covers each source type branch: retired catalog, git, link, local, missing metadata.
  */
 
 import { EventEmitter } from "node:events";
@@ -30,21 +30,11 @@ vi.mock("../../../lib/packages/store.ts", () => ({
 	resolveStorePath: vi.fn(),
 }));
 
-vi.mock("../../../lib/packages/catalog.ts", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("../../../lib/packages/catalog.ts")>();
-	return {
-		...actual,
-		resolveCatalogEntry: vi.fn(),
-	};
-});
-
 import { spawn } from "node:child_process";
 import {
 	createUpdateProgram,
 	updateAction,
 } from "../../../cli/update/subcommand.ts";
-import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
 import {
 	installPackage,
 	loadInstallMeta,
@@ -61,7 +51,6 @@ const mockInstallPackage = vi.mocked(installPackage);
 const mockUninstallPackage = vi.mocked(uninstallPackage);
 const mockListInstalledPackages = vi.mocked(listInstalledPackages);
 const mockResolveStorePath = vi.mocked(resolveStorePath);
-const mockResolveCatalogEntry = vi.mocked(resolveCatalogEntry);
 
 // ============================================================================
 // Helpers
@@ -94,8 +83,6 @@ beforeEach(() => {
 
 	// Default: resolveStorePath returns a path based on the package name
 	mockResolveStorePath.mockImplementation((name: string) => `/store/${name}`);
-	// Default: catalog entry not found
-	mockResolveCatalogEntry.mockReturnValue(undefined);
 	// Default: install/uninstall succeed
 	mockInstallPackage.mockResolvedValue({
 		manifest: {
@@ -117,63 +104,36 @@ afterEach(() => {
 });
 
 // ============================================================================
-// catalog source
+// retired catalog source
 // ============================================================================
 
-describe("catalog source", () => {
-	it("uninstalls and re-installs from the catalog source path", async () => {
+describe("retired catalog source", () => {
+	it("refuses to update a package installed from the retired catalog", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
 			createInstallMetaFixture("catalog", { catalogName: "alpha" }),
 		);
-		mockResolveCatalogEntry.mockReturnValue({
-			name: "alpha",
-			description: "Alpha domain",
-			source: "./bundled/alpha",
-		});
 
-		await updateAction({ target: "alpha", projectRoot: "/project" });
+		await updateAction({ target: "my-pkg", projectRoot: "/project" });
 
-		expect(mockUninstallPackage).toHaveBeenCalledWith(
-			"alpha",
-			"user",
-			"/project",
-		);
-		expect(mockInstallPackage).toHaveBeenCalledWith(
-			expect.objectContaining({
-				scope: "user",
-				projectRoot: "/project",
-				catalogName: "alpha",
-			}),
-		);
-		expect(output.stdout()).toContain('Updated "alpha"');
-		expect(output.stdout()).toContain("catalog");
-		expect(process.exitCode).toBeUndefined();
+		expect(output.stderr()).toContain("cosmonauts update");
+		expect(output.stderr()).toContain('"my-pkg"');
+		expect(output.stderr()).toMatch(/retired package catalog/i);
+		expect(output.stderr()).toContain("cosmonauts install");
+		expect(output.stderr()).toContain("github:owner/repo");
+		expect(output.stdout()).not.toContain("Updated");
+		expect(process.exitCode).toBe(1);
 	});
 
-	it("falls back to ./bundled/<catalogName> when catalog entry not found", async () => {
+	it("leaves the installed copy untouched", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
 			createInstallMetaFixture("catalog", { catalogName: "custom-domain" }),
 		);
-		mockResolveCatalogEntry.mockReturnValue(undefined);
 
 		await updateAction({ target: "custom-domain", projectRoot: "/project" });
 
-		const call = mockInstallPackage.mock.calls[0]?.[0];
-		expect(call?.source).toMatch(/bundled[\\/]custom-domain/);
-		expect(call?.catalogName).toBe("custom-domain");
-	});
-
-	it("writes an error and sets exitCode when re-install fails", async () => {
-		mockLoadInstallMeta.mockResolvedValue(
-			createInstallMetaFixture("catalog", { catalogName: "alpha" }),
-		);
-		mockInstallPackage.mockRejectedValue(new Error("disk full"));
-
-		await updateAction({ target: "alpha", projectRoot: "/project" });
-
-		expect(output.stderr()).toContain("failed to update");
-		expect(output.stderr()).toContain("disk full");
-		expect(process.exitCode).toBe(1);
+		expect(mockUninstallPackage).not.toHaveBeenCalled();
+		expect(mockInstallPackage).not.toHaveBeenCalled();
+		expect(mockSpawn).not.toHaveBeenCalled();
 	});
 });
 
@@ -291,7 +251,7 @@ describe("--all flag", () => {
 			createInstalledPackageFixture("pkg-c"),
 		]);
 
-		// pkg-a: catalog, pkg-b: link, pkg-c: missing meta
+		// pkg-a: retired catalog, pkg-b: link, pkg-c: missing meta
 		mockLoadInstallMeta.mockImplementation((path: unknown) => {
 			const p = String(path);
 			if (p.includes("pkg-a")) {
@@ -309,13 +269,12 @@ describe("--all flag", () => {
 
 		await updateAction({ all: true, projectRoot: "/project" });
 
-		// catalog update should have been attempted
-		expect(mockUninstallPackage).toHaveBeenCalledWith(
-			"pkg-a",
-			"user",
-			"/project",
-		);
-		expect(mockInstallPackage).toHaveBeenCalledTimes(1);
+		// retired catalog: refused, installed copy untouched
+		expect(output.stderr()).toContain('"pkg-a"');
+		expect(output.stderr()).toMatch(/retired package catalog/i);
+		expect(mockUninstallPackage).not.toHaveBeenCalled();
+		expect(mockInstallPackage).not.toHaveBeenCalled();
+		expect(process.exitCode).toBe(1);
 
 		// link: skip message
 		expect(output.stdout()).toContain("already live, no update needed");

@@ -418,37 +418,6 @@ describe("install metadata — local copy", () => {
 	});
 });
 
-describe("install metadata — catalog", () => {
-	test("writes .cosmonauts-meta.json with source=catalog and catalogName", async () => {
-		const { dir } = await createPackageFixture(tmpRoot, "my-pkg");
-
-		const result = await installPackage({
-			source: dir,
-			scope: "project",
-			projectRoot,
-			catalogName: "alpha",
-		});
-
-		const meta = await readMeta(result.installedTo);
-		expect(meta.source).toBe("catalog");
-		expect(meta.catalogName).toBe("alpha");
-	});
-
-	test("installedAt is a valid ISO 8601 timestamp", async () => {
-		const { dir } = await createPackageFixture(tmpRoot, "my-pkg");
-
-		const result = await installPackage({
-			source: dir,
-			scope: "project",
-			projectRoot,
-			catalogName: "alpha",
-		});
-
-		const meta = await readMeta(result.installedTo);
-		expect(isIso8601(meta.installedAt)).toBe(true);
-	});
-});
-
 describe("install metadata — symlink", () => {
 	test("writes .cosmonauts-meta.json with source=link and targetPath", async () => {
 		const { dir } = await createPackageFixture(tmpRoot, "my-pkg");

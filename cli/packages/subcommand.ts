@@ -1,15 +1,15 @@
 /**
  * CLI subcommands: `cosmonauts install`, `cosmonauts uninstall`, `cosmonauts packages`
  *
- * install  <source>  Install a package from catalog name, git URL, or local path.
+ * install  <source>  Install a package from a git URL or local path.
  * uninstall <name>   Remove an installed package.
  * packages [list]    List all installed packages.
  */
 
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { Command } from "commander";
-import { resolveCatalogEntry } from "../../lib/packages/catalog.ts";
 import type { DomainMergeResult } from "../../lib/packages/installer.ts";
 import {
 	installPackage,
@@ -20,7 +20,6 @@ import type {
 	InstalledPackage,
 	PackageScope,
 } from "../../lib/packages/types.ts";
-import { getBundledCatalog, resolveCatalogSource } from "../package-catalog.ts";
 import { printCliError } from "../shared/errors.ts";
 import type { CliOutputMode } from "../shared/output.ts";
 import { getOutputMode, printJson, printLines } from "../shared/output.ts";
@@ -70,7 +69,6 @@ interface InstallRequest {
 	source: string;
 	scope: PackageScope;
 	cwd: string;
-	catalogName?: string;
 }
 
 type InstallPackageResult = Awaited<ReturnType<typeof installPackage>>;
@@ -81,16 +79,26 @@ type ConflictChoice = "merge" | "replace" | "skip" | "cancel";
 // Source resolution
 // ============================================================================
 
-/**
- * Resolve the install source: try catalog short name first, then pass through.
- * Returns the absolute/URL source string to pass to installPackage.
- */
-export function resolveSource(arg: string): string {
-	const entry = resolveCatalogEntry(arg, getBundledCatalog());
-	if (entry) {
-		return resolveCatalogSource(entry.source);
+const REMOTE_SOURCE_PREFIXES = ["https://", "github:", "file://"] as const;
+
+/** A bare name has no path shape and no remote-source prefix. */
+function isBareName(arg: string): boolean {
+	if (REMOTE_SOURCE_PREFIXES.some((prefix) => arg.startsWith(prefix))) {
+		return false;
 	}
-	return arg;
+	if (arg.startsWith(".") || isAbsolute(arg)) return false;
+	return !arg.includes("/") && !arg.includes("\\");
+}
+
+/**
+ * Package-catalog installs were removed: a bare name is installable only when
+ * it names an existing local path.
+ */
+function assertNotRetiredCatalogName(arg: string, cwd: string): void {
+	if (!isBareName(arg) || existsSync(resolve(cwd, arg))) return;
+	throw new Error(
+		`"${arg}" is not a local path, git URL, or github:owner/repo. Package-catalog installs were removed; install from a local path, a git URL (https://...), or github:owner/repo.`,
+	);
 }
 
 export function resolveInstallRequest(
@@ -99,15 +107,8 @@ export function resolveInstallRequest(
 ): InstallRequest {
 	const cwd = options.projectRoot ?? process.cwd();
 	const scope: PackageScope = options.local ? "project" : "user";
-	const entry = resolveCatalogEntry(arg, getBundledCatalog());
-	const source = entry ? resolveCatalogSource(entry.source) : arg;
-
-	return {
-		source,
-		scope,
-		cwd,
-		catalogName: entry?.name,
-	};
+	assertNotRetiredCatalogName(arg, cwd);
+	return { source: arg, scope, cwd };
 }
 
 // ============================================================================
@@ -167,17 +168,16 @@ export async function installAction(
 	arg: string,
 	options: InstallCliOptions,
 ): Promise<void> {
-	const request = resolveInstallRequest(arg, options);
-
+	let request: InstallRequest;
 	let result: InstallPackageResult;
 	try {
+		request = resolveInstallRequest(arg, options);
 		result = await installPackage({
 			source: request.source,
 			scope: request.scope,
 			projectRoot: request.cwd,
 			link: options.link,
 			branch: options.branch,
-			catalogName: request.catalogName,
 		});
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -432,11 +432,11 @@ export function createInstallProgram(): Command {
 	program
 		.name("cosmonauts install")
 		.description(
-			"Install a domain package from a catalog name, git URL, or local path",
+			"Install a domain package from a git URL or local path",
 		)
 		.argument(
 			"<source>",
-			"Catalog short name, https:// URL, github:owner/repo, or local path",
+			"https:// URL, github:owner/repo, or local path",
 		)
 		.option("--link", "Install as a symlink (local paths only)")
 		.option("--local", "Install to project-local scope (default: global)")
