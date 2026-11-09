@@ -679,3 +679,14 @@ it("a host preset cannot widen an exact declaration tool list", async () => {
 	expect(params.tools).toEqual(["read"]);
 	expect(params.exactTools).toBe(true);
 });
+
+it("a host preset replaces a named-preset declaration's tools", async () => {
+	await setupMinimalDomains(tmp.path);
+	const params = await buildSessionParams(
+		makeOptions({
+			def: makeDef({ tools: "coding" }),
+			sessionPolicy: { toolPreset: "readonly" },
+		}),
+	);
+	expect(params.tools).toEqual(["read", "grep", "find", "ls"]);
+});

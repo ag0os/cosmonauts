@@ -75,21 +75,14 @@ async function createResourceLoader(
 	config: SpawnConfig,
 	domainsDir: string | undefined,
 	params: Awaited<ReturnType<typeof buildSessionParams>>,
-): Promise<{
-	loader: DefaultResourceLoader;
-	policySettings: SettingsManager | undefined;
-}> {
+): Promise<DefaultResourceLoader> {
 	const policyOptions = await config.sessionPolicy?.resourceOptions?.(
 		params,
 		domainsDir,
 	);
-	const policySettings = config.sessionPolicy?.settingsManager?.() as
-		| SettingsManager
-		| undefined;
 	const loader = new DefaultResourceLoader({
 		cwd: config.cwd,
 		agentDir: getAgentDir(),
-		...(policySettings && { settingsManager: policySettings }),
 		...(params.promptContent && { systemPrompt: params.promptContent }),
 		noExtensions: true,
 		noSkills: true,
@@ -107,7 +100,7 @@ async function createResourceLoader(
 	await loader.reload();
 	if (params.knowledgeSurfaceEnabled)
 		assertEnabledRecallOwner(loader, params.recallEnabled);
-	return { loader, policySettings };
+	return loader;
 }
 
 export async function createAgentSessionFromDefinition(
@@ -118,9 +111,6 @@ export async function createAgentSessionFromDefinition(
 ): Promise<SessionCreateResult> {
 	const modelRuntime = await ModelRuntime.create();
 	const modelRegistry = new ModelRegistry(modelRuntime);
-	const skillPaths = config.sessionPolicy?.prepareSkills
-		? await config.sessionPolicy.prepareSkills(config.skillPaths, domainsDir)
-		: config.skillPaths;
 	const params = await buildSessionParams({
 		runtime: config.runtime,
 		def,
@@ -137,19 +127,14 @@ export async function createAgentSessionFromDefinition(
 					}
 				: undefined,
 		projectSkills: config.projectSkills,
-		skillPaths,
+		skillPaths: config.skillPaths,
 		modelOverride: config.model,
 		modelRegistry,
 		thinkingLevelOverride: config.thinkingLevel,
 		sessionPolicy: config.sessionPolicy,
-		loadConfig: config.sessionPolicy?.loadConfig,
 	});
 
-	const { loader, policySettings } = await createResourceLoader(
-		config,
-		domainsDir,
-		params,
-	);
+	const loader = await createResourceLoader(config, domainsDir, params);
 
 	const resolvedTools = buildToolAllowlist(
 		params.tools,
@@ -175,9 +160,7 @@ export async function createAgentSessionFromDefinition(
 		thinkingLevel: params.thinkingLevel,
 	};
 
-	if (policySettings) {
-		sessionOptions.settingsManager = policySettings;
-	} else if (config.compaction) {
+	if (config.compaction) {
 		sessionOptions.settingsManager = SettingsManager.inMemory({
 			compaction: {
 				enabled: config.compaction.enabled,

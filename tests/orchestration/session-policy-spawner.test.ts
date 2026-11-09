@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import {
@@ -48,14 +46,10 @@ function session(sessionId: string) {
 	};
 }
 
-test("consumer policy reaches creation, pre-prompt binding, completion observation and disposal", async () => {
+test("consumer policy reaches creation, is bound with its runtime before the prompt, and is unbound at disposal", async () => {
 	const child = session("consumer-hooks");
 	const runtime = {} as import("../../lib/runtime.ts").CosmonautsRuntime;
-	const policy: SessionPolicy = {
-		onCreated: vi.fn(),
-		onDisposed: vi.fn(),
-		onCompletionWait: vi.fn(),
-	};
+	const policy: SessionPolicy = { toolPreset: "readonly" };
 	child.prompt.mockImplementationOnce(async () => {
 		expect(getSessionPolicy(child.sessionId)).toBe(policy);
 		expect(getSessionRuntime(child.sessionId)).toBe(runtime);
@@ -77,40 +71,13 @@ test("consumer policy reaches creation, pre-prompt binding, completion observati
 	expect(result.success).toBe(true);
 	expect(selectPolicy).toHaveBeenCalledWith(actor);
 	expect(mocks.factory.mock.calls.at(-1)?.[1].sessionPolicy).toBe(policy);
-	expect(policy.onCreated).toHaveBeenCalledWith(child);
-	expect(policy.onCompletionWait).toHaveBeenCalledWith(
-		[expect.stringContaining("finished")],
-		300000,
+	expect(child.prompt).toHaveBeenLastCalledWith(
+		expect.stringContaining("finished"),
 	);
-	expect(policy.onDisposed).toHaveBeenCalledWith(child.sessionId);
 	expect(getSessionPolicy(child.sessionId)).toBeUndefined();
 	expect(getSessionRuntime(child.sessionId)).toBeUndefined();
 	expect(child.dispose).toHaveBeenCalledOnce();
 });
-
-for (const retainTranscript of [true, false]) {
-	test(`transcript retention obeys the explicit host choice (${retainTranscript})`, async () => {
-		const child = session(`transcript-${retainTranscript}`);
-		const path = join(tmp.path, "captured.jsonl");
-		mocks.factory.mockResolvedValue({ session: child, sessionFilePath: path });
-		const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path);
-		await expect(
-			spawner.spawn({
-				role: actor.id,
-				cwd: tmp.path,
-				prompt: "archive",
-				sessionPolicy: { retainTranscript },
-			}),
-		).resolves.toMatchObject({ success: true });
-		const transcript = readFile(
-			join(tmp.path, "captured.transcript.md"),
-			"utf8",
-		);
-		if (retainTranscript)
-			await expect(transcript).resolves.toContain("archivist");
-		else await expect(transcript).rejects.toMatchObject({ code: "ENOENT" });
-	});
-}
 
 test("unknown actors return a spawn failure with an optional consumer provider", async () => {
 	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path, {
@@ -124,7 +91,7 @@ test("unknown actors return a spawn failure with an optional consumer provider",
 	});
 });
 
-test("completion delivery accepts a host policy without optional observation callbacks", async () => {
+test("completion delivery accepts an empty host policy", async () => {
 	const child = session("optional-observers");
 	child.prompt.mockImplementationOnce(async () => {
 		const tracker = getOrCreateTracker(child.sessionId);
@@ -145,7 +112,7 @@ test("completion delivery accepts a host policy without optional observation cal
 
 test("ordinary sessions leave the host binding slot vacant until a host registers a real policy", async () => {
 	const child = session("late-host-binding");
-	const policy = { retainTranscript: false };
+	const policy: SessionPolicy = { toolPreset: "none" };
 	child.prompt.mockImplementationOnce(async () => {
 		expect(getSessionPolicy(child.sessionId)).toBeUndefined();
 		registerSessionPolicy(child.sessionId, policy);

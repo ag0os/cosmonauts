@@ -30,19 +30,11 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 			const pathExtensions = (this.options.additionalExtensionPaths ?? []).map(
 				(path) => ({
 					path,
-					tools: path.includes("quality-tools")
+					tools: path.includes("consumer-tools")
 						? new Map([
-								...[
-									"spawn_agent",
-									"analysis_audit",
-									"bash",
-									"edit",
-									"write",
-									"chain_run",
-									"drive_run",
-									"task_create",
-									"plan_edit",
-								].map((name): [string, object] => [name, {}]),
+								...["consumer_status", "consumer_write"].map(
+									(name): [string, object] => [name, {}],
+								),
 							])
 						: path.includes("conflict")
 							? new Map([["recall", {}]])
@@ -287,15 +279,11 @@ test("applies a consumer host policy to an arbitrary declared actor", async () =
 	mocks.createAgentSession.mockResolvedValue({
 		session: { model: { provider: "test", id: "model" } },
 	});
-	const settings = { source: "consumer-settings" };
-	const loadConfig = vi.fn();
 	const policy = createConsumerSessionPolicy({
 		toolPreset: "readonly" as const,
 		filterTools: vi.fn((tools: readonly string[]) =>
 			tools.filter((name) => name === "read"),
 		),
-		loadConfig,
-		prepareSkills: vi.fn(async () => ["/consumer/skills"]),
 		resourceOptions: vi.fn(async () => ({
 			cwd: "/hostile",
 			noExtensions: false,
@@ -305,7 +293,6 @@ test("applies a consumer host policy to an arbitrary declared actor", async () =
 			additionalExtensionPaths: ["/policy/provider"],
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		})),
-		settingsManager: () => settings,
 	});
 	mocks.buildSessionParams.mockResolvedValue({
 		promptContent: "consumer persona",
@@ -328,14 +315,9 @@ test("applies a consumer host policy to an arbitrary declared actor", async () =
 		},
 		"/consumer/providers",
 	);
-	expect(policy.prepareSkills).toHaveBeenCalledWith(
-		["/request/skills"],
-		"/consumer/providers",
-	);
 	expect(mocks.buildSessionParams.mock.calls.at(-1)?.[0]).toMatchObject({
 		sessionPolicy: policy,
-		loadConfig,
-		skillPaths: ["/consumer/skills"],
+		skillPaths: ["/request/skills"],
 	});
 	expect(policy.resourceOptions).toHaveBeenCalledWith(
 		expect.objectContaining({ promptContent: "consumer persona" }),
@@ -347,11 +329,49 @@ test("applies a consumer host policy to an arbitrary declared actor", async () =
 		cwd: "/consumer",
 		noExtensions: true,
 		noSkills: true,
-		settingsManager: settings,
 	});
+	expect(mocks.loaderOptions.mock.calls.at(-1)?.[0]).not.toHaveProperty(
+		"settingsManager",
+	);
 	expect(mocks.createAgentSession.mock.calls.at(-1)?.[0]).toMatchObject({
 		tools: ["read"],
-		settingsManager: settings,
+		settingsManager: { setProjectTrusted: expect.any(Function) },
+	});
+});
+
+test("a host tool filter receives extension-registered tools and its result is the session allowlist", async () => {
+	mocks.createAgentSession.mockResolvedValue({
+		session: { model: { provider: "test", id: "model" } },
+	});
+	const filterTools = vi.fn((tools: readonly string[]) =>
+		tools.filter((name) => name !== "consumer_write"),
+	);
+	mocks.buildSessionParams.mockResolvedValue({
+		promptContent: "consumer",
+		tools: ["read"],
+		extensionPaths: ["/consumer/consumer-tools/index.ts"],
+		extensionFactories: [],
+		knowledgeSurfaceEnabled: false,
+		projectContext: false,
+		model: { provider: "test", id: "model" },
+	});
+	await createAgentSessionFromDefinition(
+		TEST_AGENT,
+		{
+			role: TEST_AGENT.id,
+			cwd: "/consumer",
+			prompt: "work",
+			sessionPolicy: { filterTools },
+		},
+		"/consumer/domains",
+	);
+	expect(filterTools).toHaveBeenCalledWith([
+		"read",
+		"consumer_status",
+		"consumer_write",
+	]);
+	expect(mocks.createAgentSession.mock.calls.at(-1)?.[0]).toMatchObject({
+		tools: ["read", "consumer_status"],
 	});
 });
 
@@ -383,7 +403,7 @@ test("ordinary session context opt-out is independent of whether a host policy e
 	}
 });
 
-test("consumer policy hooks reach transcript persistence, validation and both privileged loader overrides", async () => {
+test("consumer policy hooks reach transcript persistence and both privileged loader overrides", async () => {
 	mocks.sessionOpen.mockReturnValue({ kind: "file-backed" });
 	mocks.createAgentSession.mockResolvedValue({
 		session: { model: { provider: "test", id: "model" } },
@@ -392,10 +412,8 @@ test("consumer policy hooks reach transcript persistence, validation and both pr
 		agentsFiles: [{ path: "/consumer/AGENTS.md", content: "Consumer context" }],
 	});
 	const extensionFactory = () => {};
-	const validateDefinition = vi.fn();
 	const policy = createConsumerSessionPolicy({
 		transcriptPath: async () => "/consumer/host-session.jsonl",
-		validateDefinition,
 		resourceOptions: async () => ({
 			agentsFilesOverride,
 			extensionFactories: [extensionFactory],
@@ -429,21 +447,7 @@ test("consumer policy hooks reach transcript persistence, validation and both pr
 		agentsFiles: [{ path: "/consumer/AGENTS.md", content: "Consumer context" }],
 	});
 	expect(loader.extensionFactories).toEqual([extensionFactory]);
-	const actual = await vi.importActual<
-		typeof import("../../lib/agents/session-assembly.ts")
-	>("../../lib/agents/session-assembly.ts");
-	mocks.buildSessionParams.mockImplementation(actual.buildSessionParams);
-	validateDefinition.mockImplementation(() => {
-		throw new Error("Consumer definition refused");
+	expect(mocks.createAgentSession.mock.calls.at(-1)?.[0]).toMatchObject({
+		sessionManager: { kind: "file-backed" },
 	});
-	const before = mocks.createAgentSession.mock.calls.length;
-	await expect(
-		createAgentSessionFromDefinition(
-			actor,
-			{ role: "consumer", cwd: "/consumer", prompt: "", sessionPolicy: policy },
-			undefined,
-		),
-	).rejects.toThrow("Consumer definition refused");
-	expect(validateDefinition).toHaveBeenCalledWith(actor);
-	expect(mocks.createAgentSession).toHaveBeenCalledTimes(before);
 });

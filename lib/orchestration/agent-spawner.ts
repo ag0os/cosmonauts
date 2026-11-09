@@ -200,7 +200,6 @@ async function prepareSpawnSession(
 			config.sessionPolicy,
 			config.runtime,
 		);
-	config.sessionPolicy?.onCreated?.(session);
 	emitSpawnEvent(config, {
 		type: "agent_resolved",
 		sessionId: session.sessionId,
@@ -244,7 +243,6 @@ async function runSpawnSession(
 			const messages = await cancellation.waitFor(
 				awaitNextCompletionMessages(tracker, spawnTimeoutMs),
 			);
-			config.sessionPolicy?.onCompletionWait?.(messages, spawnTimeoutMs);
 			for (const message of messages) {
 				await cancellation.waitFor(session.prompt(message));
 			}
@@ -319,7 +317,6 @@ function cleanupSpawnSession(
 
 	prepared.unsubscribe?.();
 	removeTracker(session.sessionId);
-	config.sessionPolicy?.onDisposed?.(session.sessionId);
 	removeSessionPolicy(session.sessionId);
 	if (config.planSlug) {
 		removePlanContext(session.sessionId);
@@ -336,21 +333,7 @@ async function persistPlanLinkedSpawn(
 	finalMessages: FinalMessages,
 	config: SpawnConfig,
 ): Promise<void> {
-	if (!config.planSlug || !prepared.sessionFilePath) {
-		if (config.sessionPolicy?.retainTranscript && prepared.sessionFilePath) {
-			const directory = dirname(prepared.sessionFilePath);
-			const name = basename(prepared.sessionFilePath).replace(
-				/\.jsonl$/,
-				".transcript.md",
-			);
-			await writeTranscript(
-				directory,
-				name,
-				generateTranscript(finalMessages, config.role),
-			);
-		}
-		return;
-	}
+	if (!config.planSlug || !prepared.sessionFilePath) return;
 
 	try {
 		const planSessionsDir = dirname(prepared.sessionFilePath);
@@ -440,10 +423,7 @@ function subscribeToSpawnEvents(
 	}
 
 	return session.subscribe((event) => {
-		const mapped = mapSessionEvent(
-			event,
-			config.sessionPolicy?.observeToolResult,
-		);
+		const mapped = mapSessionEvent(event);
 		if (!mapped) {
 			return;
 		}
@@ -486,7 +466,6 @@ type SpawnEventPayload =
 			toolName: string;
 			toolCallId: string;
 			isError: boolean;
-			result?: unknown;
 	  }
 	| { type: "compaction_start"; reason: CompactionReason }
 	| {
@@ -510,7 +489,6 @@ function attachSessionId(
  */
 function mapSessionEvent(
 	event: AgentSessionEvent,
-	observeToolResult: import("../agents/session-policy.ts").SessionPolicy["observeToolResult"],
 ): SpawnEventPayload | undefined {
 	switch (event.type) {
 		case "turn_start":
@@ -525,7 +503,12 @@ function mapSessionEvent(
 				...(event.args !== undefined && { args: event.args }),
 			};
 		case "tool_execution_end":
-			return mapToolEndEvent(event, observeToolResult);
+			return {
+				type: "tool_execution_end",
+				toolName: event.toolName as string,
+				toolCallId: event.toolCallId as string,
+				isError: event.isError as boolean,
+			};
 		case "compaction_start":
 			return {
 				type: "compaction_start",
@@ -544,23 +527,6 @@ function mapSessionEvent(
 		default:
 			return undefined;
 	}
-}
-
-function mapToolEndEvent(
-	event: Extract<AgentSessionEvent, { type: "tool_execution_end" }>,
-	observeToolResult: import("../agents/session-policy.ts").SessionPolicy["observeToolResult"],
-): SpawnEventPayload {
-	const observation = observeToolResult?.(
-		event.toolName as string,
-		event.result,
-	);
-	return {
-		type: "tool_execution_end",
-		toolName: event.toolName as string,
-		toolCallId: event.toolCallId as string,
-		isError: event.isError as boolean,
-		...(observation === undefined ? {} : { result: observation }),
-	};
 }
 
 function bindSpawnConfig(

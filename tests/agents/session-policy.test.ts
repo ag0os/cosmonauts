@@ -26,7 +26,7 @@ test("keeps host policy across module reloads used by extension loaders", async 
 });
 
 test("rejects a duplicate host binding without replacing the original policy", () => {
-	const original: SessionPolicy = { retainTranscript: true };
+	const original: SessionPolicy = { toolPreset: "readonly" };
 	const runtime = {} as import("../../lib/runtime.ts").CosmonautsRuntime;
 	registerSessionPolicy(sessionId, original, runtime);
 	expect(() =>

@@ -93,7 +93,7 @@ export interface BuildSessionParamsOptions {
 	extraExtensionPaths?: readonly string[];
 	/** Injectable project config loader for frozen gate tests. */
 	loadConfig?: (projectRoot: string) => Promise<ProjectConfig>;
-	/** Set only by the host when launching a panel child. */
+	/** Host-supplied session policy; never accepted from model tool arguments. */
 	sessionPolicy?: SessionPolicy;
 }
 
@@ -162,7 +162,6 @@ export async function buildSessionParams(
 		sessionPolicy,
 	} = options;
 	validateAgentDefinition(def);
-	sessionPolicy?.validateDefinition?.(def);
 
 	const identity = splitRole(qualifyAgentId(def.id, def.domain));
 

@@ -6,11 +6,7 @@ import type {
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
-import {
-	getSessionPolicy,
-	getSessionRuntime,
-	type SessionSpawnPolicy,
-} from "../../agents/session-policy.ts";
+import { getSessionRuntime } from "../../agents/session-policy.ts";
 import type { AgentDefinition } from "../../agents/types.ts";
 import {
 	activityBus,
@@ -112,9 +108,6 @@ interface DetachedChildSessionParams extends ChildActivityBase {
 	planSlug: string | undefined;
 	tracker: SpawnTracker;
 	pi: ExtensionAPI;
-	resolvedRole?: string;
-	resolvedModel?: { provider: string; id: string };
-	spawnPolicy?: SessionSpawnPolicy;
 }
 
 interface ChildPromptRequest {
@@ -196,11 +189,9 @@ async function runDetachedChildSession(
 			...result,
 			stats: captureLineageStats(params, startMs),
 		};
-		await params.spawnPolicy?.onCompleted?.(params);
 		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
-		params.spawnPolicy?.onFailure?.(message);
 		result = {
 			role: params.role,
 			startedAt,
@@ -209,7 +200,6 @@ async function runDetachedChildSession(
 		};
 		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
 	} finally {
-		params.spawnPolicy?.onSettled?.(params.spawnId);
 		unsubscribeActivity?.();
 		removeTracker(session.sessionId);
 		sessionDepths.delete(session.sessionId);
@@ -689,7 +679,6 @@ export function registerSpawnTool(
 				const registerChild = () => {
 					try {
 						tracker.register(spawnId, params.role, childDepth);
-						spawnPolicy?.onRegistered?.(spawnId, resolvedTargetRole);
 					} catch (err: unknown) {
 						const reason = err instanceof Error ? err.message : String(err);
 						return {
@@ -720,78 +709,15 @@ export function registerSpawnTool(
 			// artifacts land in the same missions/sessions/<planSlug>/ directory.
 			const planSlug = getPlanSlugForSession(parentSessionId);
 			const launchSpawn = () => {
-				const delegated = runtime.sessionPolicies?.launchTarget?.(
-					targetResolution.reference,
-					{
-						projectRoot: ctx.cwd,
-						operatorNote: params.prompt,
-						planSlug,
-						signal: _signal,
-					},
-				);
-				if (delegated) {
-					void delegated
-						.then((review) => {
-							const summary = review.summary;
-							settleSpawnTracker(
-								tracker,
-								spawnId,
-								{
-									role: params.role,
-									startedAt: new Date().toISOString(),
-									outcome: review.outcome === "success" ? "success" : "failed",
-									summary,
-								},
-								pi,
-							);
-						})
-						.catch((error: unknown) => {
-							settleSpawnTracker(
-								tracker,
-								spawnId,
-								{
-									role: params.role,
-									startedAt: new Date().toISOString(),
-									outcome: "failed",
-									summary:
-										error instanceof Error ? error.message : String(error),
-								},
-								pi,
-							);
-						});
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: `Accepted spawn of ${params.role} (spawnId: ${spawnId})`,
-							},
-						],
-						details: {
-							role: params.role,
-							status: "accepted",
-							spawnId,
-							taskId,
-						} as SpawnProgressDetails,
-					};
-				}
-
-				const childPolicy = spawnPolicy?.prepare?.(policyRequest) ?? {
-					cwd: ctx.cwd,
-					prompt: params.prompt,
-					model: params.model,
-					sessionPolicy: undefined,
-				};
-				const childSessionPolicy =
-					childPolicy.sessionPolicy ??
-					runtime.sessionPolicies?.forAgent(targetDef);
+				const childSessionPolicy = runtime.sessionPolicies?.forAgent(targetDef);
 				const buildChildConfig = () => ({
 					runtime,
 					role: params.role,
 					agentReference: targetResolution.reference,
 					domainContext: runtime.domainContext,
-					cwd: childPolicy.cwd,
-					prompt: childPolicy.prompt,
-					model: childPolicy.model ?? params.model,
+					cwd: ctx.cwd,
+					prompt: params.prompt,
+					model: params.model,
 					thinkingLevel: params.thinkingLevel,
 					runtimeContext: params.runtimeContext,
 					projectSkills: runtime.projectSkills,
@@ -810,7 +736,7 @@ export function registerSpawnTool(
 					runtime.domainsDir,
 					runtime.domainResolver,
 				)
-					.then(({ session, sessionFilePath, resolvedModel }) =>
+					.then(({ session, sessionFilePath }) =>
 						runDetachedChildSession({
 							session,
 							sessionFilePath,
@@ -818,9 +744,6 @@ export function registerSpawnTool(
 							parentSessionId,
 							childDepth,
 							role: params.role,
-							resolvedRole: resolvedTargetRole,
-							resolvedModel,
-							spawnPolicy,
 							prompt: spawnConfig.prompt,
 							planSlug,
 							tracker,
@@ -832,7 +755,6 @@ export function registerSpawnTool(
 						// createAgentSessionFromDefinition() itself failed
 						const message = err instanceof Error ? err.message : String(err);
 						tracker.fail(spawnId, message);
-						spawnPolicy?.onSettled?.(spawnId);
 						if (tracker.deliveryMode === "self") {
 							sendSpawnCompletion(
 								pi,
@@ -919,14 +841,11 @@ async function resolveSpawnHost(options: {
 	cwd: string;
 	getRuntime: (cwd: string) => Promise<CosmonautsRuntime>;
 }) {
-	const boundPolicy = getSessionPolicy(options.sessionId)?.spawn;
-	const boundRuntime = getSessionRuntime(options.sessionId);
-	if (boundPolicy && !boundRuntime)
-		throw new Error("Host spawn policy runtime is missing");
-	const runtime = boundRuntime ?? (await options.getRuntime(options.cwd));
+	const runtime =
+		getSessionRuntime(options.sessionId) ??
+		(await options.getRuntime(options.cwd));
 	return {
 		runtime,
-		spawnPolicy:
-			boundPolicy ?? runtime.sessionPolicies?.spawnPolicy?.(options.sessionId),
+		spawnPolicy: runtime.sessionPolicies?.spawnPolicy?.(options.sessionId),
 	};
 }
