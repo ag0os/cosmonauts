@@ -503,11 +503,13 @@ describe.each(runners)("$name chain deadline", ({ name, run }) => {
 		return [{ name: "scribe" }, { name: "critic" }, { name: "translator" }];
 	}
 
-	test("a deadline that passes between steps stops scheduling and fails with the reason", async () => {
-		const root = join(tmp.path, `${name}-deadline`);
+	test.each([
+		3000, 5000,
+	])("a deadline that passes between steps (elapsed %ims) stops scheduling and fails with the reason", async (elapsed) => {
+		const root = join(tmp.path, `${name}-deadline-${elapsed}`);
 		await mkdir(root, { recursive: true });
 		host.spawn.mockImplementation(async (config) => {
-			vi.setSystemTime(FIXED_NOW + 5000);
+			vi.setSystemTime(FIXED_NOW + elapsed);
 			return { success: true, sessionId: `s-${config.role}`, messages: [] };
 		});
 		const events: ChainEvent[] = [];
@@ -534,6 +536,31 @@ describe.each(runners)("$name chain deadline", ({ name, run }) => {
 			});
 			expect((await store.loadRun(result.run))?.status).toBe("failed");
 		}
+	});
+
+	test.each([
+		{ elapsed: 30 * 60 * 1000 - 1, timedOut: false },
+		{ elapsed: 30 * 60 * 1000, timedOut: true },
+	])("the default deadline is 30 minutes (elapsed $elapsed ms)", async ({
+		elapsed,
+		timedOut,
+	}) => {
+		const root = join(tmp.path, `${name}-default-${elapsed}`);
+		await mkdir(root, { recursive: true });
+		host.spawn.mockImplementation(async (config) => {
+			vi.setSystemTime(FIXED_NOW + elapsed);
+			return { success: true, sessionId: `s-${config.role}`, messages: [] };
+		});
+		const result = await run({
+			...options(root, steps()),
+			planSlug: undefined,
+		});
+
+		expect(result.success).toBe(!timedOut);
+		expect(result.errors).toEqual(
+			timedOut ? ["Chain timed out after 1800000ms before step 2 of 3"] : [],
+		);
+		expect(host.spawn).toHaveBeenCalledTimes(timedOut ? 1 : 3);
 	});
 
 	test("a chain that finishes before its deadline still succeeds", async () => {
