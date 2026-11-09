@@ -12,6 +12,10 @@ import {
 	summarizeAssistantText,
 } from "./assistant-text.ts";
 import {
+	chainTimeoutError,
+	DEFAULT_CHAIN_TIMEOUT_MS,
+} from "./chain-deadline.ts";
+import {
 	createInlineChainEpisodeLifecycle,
 	withChainEpisode,
 } from "./chain-episodes.ts";
@@ -62,7 +66,6 @@ export { derivePlanSlug } from "./stage-prompts.ts";
 // ============================================================================
 
 const DEFAULT_MAX_TOTAL_ITERATIONS = 50;
-const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // ============================================================================
 // Default Completion Check
@@ -153,7 +156,7 @@ interface ChainStepOutcome {
 function createChainExecutionState(config: ChainConfig): ChainExecutionState {
 	return {
 		chainStart: Date.now(),
-		timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		timeoutMs: config.timeoutMs ?? DEFAULT_CHAIN_TIMEOUT_MS,
 		maxTotalIterations:
 			config.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS,
 		stageResults: [],
@@ -174,7 +177,11 @@ function stopBeforeStep(
 	if (Date.now() - state.chainStart < state.timeoutMs) return false;
 	state.failed = true;
 	state.errors.push(
-		`Chain timed out after ${state.timeoutMs}ms before step ${stepIndex + 1} of ${config.steps.length}`,
+		chainTimeoutError({
+			timeoutMs: state.timeoutMs,
+			stepIndex,
+			stepCount: config.steps.length,
+		}),
 	);
 	return true;
 }
@@ -1202,7 +1209,8 @@ async function runLoopStage(
 ): Promise<StageResult> {
 	const iterationBudget =
 		constraints?.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
-	const deadline = constraints?.deadlineMs ?? Date.now() + DEFAULT_TIMEOUT_MS;
+	const deadline =
+		constraints?.deadlineMs ?? Date.now() + DEFAULT_CHAIN_TIMEOUT_MS;
 	let loopState = await evaluateLoopState(context.stage, context.config);
 
 	if (loopState.status !== "pending") {

@@ -59,7 +59,7 @@ cosmonauts run chain "coordinator -> reviewer[3]" "review with multiple reviewer
 
 ### Safety caps
 
-`maxTotalIterations` (default 50) and `timeoutMs` (default 30 min) are global, not per-stage. When the deadline passes between steps of an inline chain (one with a loop or completion check), the remaining steps do not run, the result has `success: false`, and `errors` names the timeout. The durable runner, which runs chains without loops or completion checks, does not yet enforce `timeoutMs`. `chain_run` also accepts `spawnTimeoutMs` for each stage's child-spawn completion wait (default 300000ms / 5 min). For implementation batches of roughly four or more tasks, prefer Drive: long coordinator loops can spend the shared chain deadline waiting on worker dispatches, while Drive tracks each task as its own driver step.
+`maxTotalIterations` (default 50) and `timeoutMs` (default 30 min) are global, not per-stage. Both the inline and the durable runner enforce the deadline between steps: once it passes, no new step starts, a step already running finishes, the result has `success: false`, and `errors` names the timeout. A durable run that times out is recorded as failed. An abort takes precedence and adds no timeout error. `chain_run` also accepts `spawnTimeoutMs` for each stage's child-spawn completion wait (default 300000ms / 5 min). For implementation batches of roughly four or more tasks, prefer Drive: long coordinator loops can spend the shared chain deadline waiting on worker dispatches, while Drive tracks each task as its own driver step.
 
 ### Events & stats
 

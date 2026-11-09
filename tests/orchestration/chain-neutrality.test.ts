@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
@@ -487,6 +487,92 @@ test("durable addressed evidence requires the producer's persisted plan-revision
 	} finally {
 		read.mockRestore();
 	}
+});
+
+describe.each(runners)("$name chain deadline", ({ name, run }) => {
+	const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+	beforeEach(() => {
+		// Only Date is faked: the durable store's real timers keep running.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(FIXED_NOW);
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+	function steps(): ChainStep[] {
+		return [{ name: "scribe" }, { name: "critic" }, { name: "translator" }];
+	}
+
+	test("a deadline that passes between steps stops scheduling and fails with the reason", async () => {
+		const root = join(tmp.path, `${name}-deadline`);
+		await mkdir(root, { recursive: true });
+		host.spawn.mockImplementation(async (config) => {
+			vi.setSystemTime(FIXED_NOW + 5000);
+			return { success: true, sessionId: `s-${config.role}`, messages: [] };
+		});
+		const events: ChainEvent[] = [];
+		const result = await run({
+			...options(root, steps()),
+			planSlug: undefined,
+			timeoutMs: 3000,
+			onEvent: (event) => events.push(event),
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.errors).toEqual([
+			"Chain timed out after 3000ms before step 2 of 3",
+		]);
+		expect(result.stageResults.map((stage) => stage.stage.name)).toEqual([
+			"scribe",
+		]);
+		expect(host.spawn).toHaveBeenCalledTimes(1);
+		const end = events.findLast((event) => event.type === "chain_end");
+		expect(end).toMatchObject({ result: { success: false } });
+		if (result.run) {
+			const store = new FileRunStore({
+				rootDir: join(root, "missions", "sessions"),
+			});
+			expect((await store.loadRun(result.run))?.status).toBe("failed");
+		}
+	});
+
+	test("a chain that finishes before its deadline still succeeds", async () => {
+		const root = join(tmp.path, `${name}-in-time`);
+		await mkdir(root, { recursive: true });
+		host.spawn.mockImplementation(async (config) => {
+			vi.setSystemTime(Date.now() + 999);
+			return { success: true, sessionId: `s-${config.role}`, messages: [] };
+		});
+		const result = await run({
+			...options(root, steps()),
+			planSlug: undefined,
+			timeoutMs: 3000,
+		});
+
+		expect(result).toMatchObject({ success: true, errors: [] });
+		expect(host.spawn).toHaveBeenCalledTimes(3);
+	});
+
+	test("an abort that coincides with an expired deadline reports the abort", async () => {
+		const root = join(tmp.path, `${name}-abort-deadline`);
+		await mkdir(root, { recursive: true });
+		const controller = new AbortController();
+		host.spawn.mockImplementation(async (config) => {
+			vi.setSystemTime(FIXED_NOW + 5000);
+			controller.abort();
+			return { success: true, sessionId: `s-${config.role}`, messages: [] };
+		});
+		const result = await run({
+			...options(root, steps()),
+			planSlug: undefined,
+			timeoutMs: 3000,
+			signal: controller.signal,
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.errors).toEqual([]);
+		expect(host.spawn).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe.each(runners)("bounded $name host execution", ({ name, run }) => {

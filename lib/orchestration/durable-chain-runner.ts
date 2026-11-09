@@ -11,12 +11,20 @@ import type {
 	StepRecord,
 	StepResult,
 } from "../durable-runtime/index.ts";
-import { FileRunStore, runStart } from "../durable-runtime/index.ts";
+import {
+	FileRunStore,
+	type RunStartStopPolicy,
+	runStart,
+} from "../durable-runtime/index.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
 import {
 	extractAssistantText,
 	summarizeAssistantText,
 } from "./assistant-text.ts";
+import {
+	chainTimeoutError,
+	DEFAULT_CHAIN_TIMEOUT_MS,
+} from "./chain-deadline.ts";
 import {
 	createDurableChainEpisodeLifecycle,
 	withChainEpisode,
@@ -70,6 +78,7 @@ import type {
 const CHAIN_RUN_SCOPE = "chain";
 const DEFAULT_HOLDER_ID = "chain-runner";
 const DEFAULT_MAX_SCHEDULER_PASSES = 1_000;
+const CHAIN_TIMEOUT_REASON = "chain_timeout";
 
 export async function runDurableChain(
 	config: ChainConfig,
@@ -128,6 +137,7 @@ async function executeDurableChain(
 		sessionPolicies: config.sessionPolicies,
 	});
 
+	let timeoutError: string | undefined;
 	try {
 		const backend = createChainSchedulerBackend({
 			store,
@@ -141,6 +151,12 @@ async function executeDurableChain(
 		const scheduler = await runStart({
 			store,
 			ref,
+			stopPolicy: chainDeadlinePolicy({
+				timeoutMs: config.timeoutMs ?? DEFAULT_CHAIN_TIMEOUT_MS,
+				signal: config.signal,
+				steps: compiled.steps,
+				stepCount: config.steps.length,
+			}),
 			graph: compiled.graph,
 			createRun: {
 				status: "pending",
@@ -169,6 +185,16 @@ async function executeDurableChain(
 		) {
 			// Terminal and caller-aborted chain results are reconstructed from
 			// durable state below.
+		} else if (
+			scheduler.type === "interrupted" &&
+			scheduler.interruption.reason === CHAIN_TIMEOUT_REASON
+		) {
+			timeoutError = String(scheduler.interruption.details);
+			await store.appendEvent(ref, {
+				type: "run_failed",
+				runId,
+				reason: timeoutError,
+			});
 		} else if (scheduler.type === "interrupted") {
 			throw new Error(
 				`Durable chain run interrupted: ${scheduler.interruption.reason}`,
@@ -188,7 +214,42 @@ async function executeDurableChain(
 	}
 	return {
 		...reconstructed.result,
+		...(timeoutError !== undefined && {
+			errors: [...reconstructed.result.errors, timeoutError],
+		}),
 		run: { runId, scope: CHAIN_RUN_SCOPE },
+	};
+}
+
+/**
+ * Stops scheduling once the deadline passes; a step already running finishes.
+ * An abort takes precedence and records no timeout.
+ */
+function chainDeadlinePolicy(options: {
+	timeoutMs: number;
+	signal: AbortSignal | undefined;
+	steps: readonly ChainCompilerStepMetadata[];
+	stepCount: number;
+}): RunStartStopPolicy {
+	const deadline = Date.now() + options.timeoutMs;
+	return {
+		async beforePass(state) {
+			if (options.signal?.aborted || Date.now() < deadline) return undefined;
+			const status = new Map(state.steps.map((step) => [step.id, step.status]));
+			const next = options.steps.find(
+				(step) => status.get(step.stepId) !== "completed",
+			);
+			if (!next) return undefined;
+			return {
+				reason: CHAIN_TIMEOUT_REASON,
+				exitReason: "interrupted",
+				details: chainTimeoutError({
+					timeoutMs: options.timeoutMs,
+					stepIndex: next.topologyIndex,
+					stepCount: options.stepCount,
+				}),
+			};
+		},
 	};
 }
 
