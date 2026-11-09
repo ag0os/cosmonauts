@@ -3,11 +3,20 @@ import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import {
 	getSessionRuntime,
 	registerSessionRuntime,
+	removeSessionRuntime,
 	type SessionPolicy,
 } from "../../lib/agents/session-policy.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
-import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
+import {
+	getPlanSlugForSession,
+	registerPlanContext,
+	removePlanContext,
+} from "../../lib/orchestration/plan-session-context.ts";
+import {
+	getOrCreateTracker,
+	removeTracker,
+} from "../../lib/orchestration/spawn-tracker.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { runtimeDouble } from "../helpers/runtime-double.ts";
 
@@ -120,13 +129,11 @@ test("completion delivery accepts an empty host policy", async () => {
 	).resolves.toMatchObject({ success: true });
 });
 
-test("ordinary sessions leave the runtime binding vacant until a host binds one", async () => {
-	const child = session("late-host-binding");
-	const lateRuntime = runtimeDouble();
+test("a policy-free spawn binds its runtime before the prompt and unbinds at disposal", async () => {
+	const child = session("policy-free-binding");
+	const seen: unknown[] = [];
 	child.prompt.mockImplementationOnce(async () => {
-		expect(getSessionRuntime(child.sessionId)).toBeUndefined();
-		registerSessionRuntime(child.sessionId, lateRuntime);
-		expect(getSessionRuntime(child.sessionId)).toBe(lateRuntime);
+		seen.push(getSessionRuntime(child.sessionId));
 	});
 	mocks.factory.mockResolvedValue({ session: child });
 	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path, {
@@ -140,5 +147,60 @@ test("ordinary sessions leave the runtime binding vacant until a host binds one"
 			prompt: "work",
 		}),
 	).resolves.toMatchObject({ success: true });
+	expect(mocks.factory.mock.calls.at(-1)?.[1].sessionPolicy).toBeUndefined();
+	expect(seen).toEqual([TEST_RUNTIME]);
 	expect(getSessionRuntime(child.sessionId)).toBeUndefined();
+});
+
+test("a failed policy-free spawn still unbinds its runtime", async () => {
+	const child = session("policy-free-failure");
+	child.prompt.mockRejectedValueOnce(new Error("prompt failed"));
+	mocks.factory.mockResolvedValue({ session: child });
+	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path, {
+		runtime: TEST_RUNTIME,
+	});
+	await expect(
+		spawner.spawn({
+			runtime: TEST_RUNTIME,
+			role: actor.id,
+			cwd: tmp.path,
+			prompt: "work",
+		}),
+	).resolves.toMatchObject({ success: false, error: "prompt failed" });
+	expect(getSessionRuntime(child.sessionId)).toBeUndefined();
+	expect(child.dispose).toHaveBeenCalledOnce();
+});
+
+test("a session id that is already bound is disposed and refused, and the other session keeps its state", async () => {
+	const child = session("already-bound");
+	const original = runtimeDouble();
+	registerSessionRuntime(child.sessionId, original);
+	const otherTracker = getOrCreateTracker(child.sessionId);
+	registerPlanContext(child.sessionId, "other-plan");
+	try {
+		mocks.factory.mockResolvedValue({ session: child });
+		const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path, {
+			runtime: TEST_RUNTIME,
+		});
+		await expect(
+			spawner.spawn({
+				runtime: TEST_RUNTIME,
+				role: actor.id,
+				cwd: tmp.path,
+				prompt: "work",
+			}),
+		).resolves.toMatchObject({
+			success: false,
+			error: "Duplicate host session binding: already-bound",
+		});
+		expect(child.dispose).toHaveBeenCalledOnce();
+		expect(child.prompt).not.toHaveBeenCalled();
+		expect(getSessionRuntime(child.sessionId)).toBe(original);
+		expect(getOrCreateTracker(child.sessionId)).toBe(otherTracker);
+		expect(getPlanSlugForSession(child.sessionId)).toBe("other-plan");
+	} finally {
+		removeSessionRuntime(child.sessionId);
+		removeTracker(child.sessionId);
+		removePlanContext(child.sessionId);
+	}
 });

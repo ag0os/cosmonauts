@@ -7,7 +7,9 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
 import {
+	bindSessionRuntimeOrDispose,
 	getSessionRuntime,
+	removeSessionRuntime,
 	type SpawnPolicyRequest,
 } from "../../agents/session-policy.ts";
 import type { AgentDefinition } from "../../agents/types.ts";
@@ -105,6 +107,7 @@ interface ChildActivityBase {
 
 interface DetachedChildSessionParams extends ChildActivityBase {
 	session: AgentSession;
+	runtime: CosmonautsRuntime;
 	sessionFilePath: string | undefined;
 	childDepth: number;
 	prompt: string;
@@ -165,6 +168,7 @@ async function runDetachedChildSession(
 	params: DetachedChildSessionParams,
 ): Promise<void> {
 	const { session, childDepth, planSlug } = params;
+	bindSessionRuntimeOrDispose(session, params.runtime);
 	sessionDepths.set(session.sessionId, childDepth);
 	const childTracker = getOrCreateTracker(session.sessionId, undefined, {
 		deliveryMode: "external",
@@ -207,6 +211,7 @@ async function runDetachedChildSession(
 		removeTracker(session.sessionId);
 		sessionDepths.delete(session.sessionId);
 		removePlanContext(session.sessionId);
+		removeSessionRuntime(session.sessionId);
 		const finalMessages = [...session.messages];
 		runSessionCleanup(session.sessionId);
 		session.dispose();
@@ -742,6 +747,7 @@ export function registerSpawnTool(
 					.then(({ session, sessionFilePath }) =>
 						runDetachedChildSession({
 							session,
+							runtime,
 							sessionFilePath,
 							spawnId,
 							parentSessionId,

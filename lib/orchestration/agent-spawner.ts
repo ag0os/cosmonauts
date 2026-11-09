@@ -15,7 +15,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
 import {
-	registerSessionRuntime,
+	bindSessionRuntimeOrDispose,
 	removeSessionRuntime,
 } from "../agents/session-policy.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
@@ -203,8 +203,7 @@ async function prepareSpawnSession(
 		domainsDir,
 		resolver,
 	);
-	if (config.sessionPolicy)
-		registerSessionRuntime(session.sessionId, config.runtime);
+	bindSessionRuntimeOrDispose(session, config.runtime);
 	emitSpawnEvent(config, {
 		type: "agent_resolved",
 		sessionId: session.sessionId,

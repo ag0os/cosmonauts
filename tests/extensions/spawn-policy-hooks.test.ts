@@ -1,12 +1,18 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import {
+	getSessionRuntime,
 	registerSessionRuntime,
 	removeSessionRuntime,
 	type SessionSpawnPolicy,
 } from "../../lib/agents/session-policy.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { registerSpawnTool } from "../../lib/extensions/orchestration/spawn-tool.ts";
+import {
+	getPlanSlugForSession,
+	registerPlanContext,
+	removePlanContext,
+} from "../../lib/orchestration/plan-session-context.ts";
 import {
 	getOrCreateTracker,
 	removeTracker,
@@ -272,4 +278,65 @@ test("an ordinary child resolves its host session policy exactly once even when 
 	await pi.callTool("spawn_agent", { role: "reader", prompt: "work" });
 	await tracker.nextCompletion();
 	expect(select).toHaveBeenCalledOnce();
+});
+
+for (const [label, bound] of [
+	["bound", true],
+	["discovered", false],
+] as const) {
+	for (const failing of [false, true]) {
+		test(`a detached child binds the ${label} parent runtime while it runs and unbinds at disposal (prompt fails: ${failing})`, async () => {
+			const { pi, tracker, bootstrap, runtime } = setup(
+				{ authorize: () => undefined },
+				{ authorize: () => undefined },
+			);
+			if (!bound) removeSessionRuntime(parentId);
+			const session = child();
+			const seen: unknown[] = [];
+			session.prompt.mockImplementation(async () => {
+				seen.push(getSessionRuntime(session.sessionId));
+				if (failing) throw new Error("prompt failed");
+			});
+			mocks.factory.mockResolvedValue({ session });
+			await pi.callTool("spawn_agent", { role: "reader", prompt: "work" });
+			expect((await tracker.nextCompletion()).type).toBe(
+				failing ? "spawn_failed" : "spawn_completed",
+			);
+			await flushAsync();
+			const discovered = await bootstrap.mock.results[0]?.value;
+			expect(bootstrap).toHaveBeenCalledTimes(bound ? 0 : 1);
+			expect(discovered).not.toBe(runtime);
+			expect(seen[0]).toBe(bound ? runtime : discovered);
+			expect(seen).toHaveLength(1);
+			expect(getSessionRuntime(session.sessionId)).toBeUndefined();
+			expect(session.dispose).toHaveBeenCalledOnce();
+		});
+	}
+}
+
+test("a detached child whose session id is already bound is disposed and refused, and the other session keeps its state", async () => {
+	const { pi, tracker } = setup({ authorize: () => undefined });
+	const session = child();
+	const original = {} as CosmonautsRuntime;
+	registerSessionRuntime(session.sessionId, original);
+	const otherTracker = getOrCreateTracker(session.sessionId);
+	registerPlanContext(session.sessionId, "other-plan");
+	try {
+		mocks.factory.mockResolvedValue({ session });
+		await pi.callTool("spawn_agent", { role: "reader", prompt: "work" });
+		await expect(tracker.nextCompletion()).resolves.toMatchObject({
+			type: "spawn_failed",
+			error: "Duplicate host session binding: consumer-child",
+		});
+		await flushAsync();
+		expect(session.dispose).toHaveBeenCalledOnce();
+		expect(session.prompt).not.toHaveBeenCalled();
+		expect(getSessionRuntime(session.sessionId)).toBe(original);
+		expect(getOrCreateTracker(session.sessionId)).toBe(otherTracker);
+		expect(getPlanSlugForSession(session.sessionId)).toBe("other-plan");
+	} finally {
+		removeSessionRuntime(session.sessionId);
+		removeTracker(session.sessionId);
+		removePlanContext(session.sessionId);
+	}
 });

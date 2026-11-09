@@ -1,5 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import {
+	bindSessionRuntimeOrDispose,
 	getSessionRuntime,
 	registerSessionRuntime,
 	removeSessionRuntime,
@@ -40,4 +41,23 @@ test("a removed binding frees the session id for a new runtime", () => {
 	const next = {} as CosmonautsRuntime;
 	registerSessionRuntime(sessionId, next);
 	expect(getSessionRuntime(sessionId)).toBe(next);
+});
+
+test("binding a new session leaves it undisposed", () => {
+	const runtime = {} as CosmonautsRuntime;
+	const session = { sessionId, dispose: vi.fn() };
+	bindSessionRuntimeOrDispose(session, runtime);
+	expect(getSessionRuntime(sessionId)).toBe(runtime);
+	expect(session.dispose).not.toHaveBeenCalled();
+});
+
+test("a refused binding disposes only the new session and rethrows", () => {
+	const original = {} as CosmonautsRuntime;
+	registerSessionRuntime(sessionId, original);
+	const session = { sessionId, dispose: vi.fn() };
+	expect(() =>
+		bindSessionRuntimeOrDispose(session, {} as CosmonautsRuntime),
+	).toThrow(`Duplicate host session binding: ${sessionId}`);
+	expect(session.dispose).toHaveBeenCalledOnce();
+	expect(getSessionRuntime(sessionId)).toBe(original);
 });
