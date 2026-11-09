@@ -388,6 +388,7 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 			chainAdapter: { terminalGates: { approval: gate } },
 		});
 		expect(result.success).toBe(response.success);
+		expect(result.errors).toEqual("error" in response ? [response.error] : []);
 
 		expect(result.stageResults[0]?.summary).toBe(summaries[name]);
 		if (name === "durable") expect(result.run).toBeDefined();

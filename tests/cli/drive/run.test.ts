@@ -937,6 +937,10 @@ describe("cosmonauts run drive compat run", () => {
 				}),
 			}),
 		);
+		const deps = backendMocks.createCosmonautsSubagentBackend.mock.calls.at(
+			-1,
+		) as unknown as [{ runtime: unknown }] | undefined;
+		expect(deps?.[0].runtime).toBe(runtime);
 	});
 
 	test("external resume skips unavailable frozen capture without minting fallback provenance", async () => {

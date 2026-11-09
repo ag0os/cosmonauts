@@ -192,12 +192,14 @@ describe("createPiSpawner — completion loop", () => {
 			if (callCount === 1) {
 				// Simulate agent spawning a child during the first prompt.
 				// Use setTimeout so the child is still "running" when prompt returns.
-				const tracker = getOrCreateTracker(sessionId, bus);
+				const tracker = getOrCreateTracker(sessionId);
 				tracker.register("spawn-abc", "worker", 1);
 				setTimeout(() => tracker.complete("spawn-abc", "Task done"), 0);
 			}
 		});
 		mocks.createAgentSession.mockResolvedValue({ session });
+		const registered = vi.fn();
+		bus.subscribe("spawn_registered", registered);
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
 			runtime: TEST_RUNTIME,
@@ -213,6 +215,8 @@ describe("createPiSpawner — completion loop", () => {
 
 		// initial prompt + one completion prompt
 		expect(session.prompt).toHaveBeenCalledTimes(2);
+		// The spawner's tracker publishes on the bus the caller supplied.
+		expect(registered).toHaveBeenCalledOnce();
 
 		const calls = session.prompt.mock.calls as unknown[][];
 		const completionMsg = calls[1]?.[0] as string;

@@ -420,6 +420,10 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.createCosmonautsSubagentBackend).toHaveBeenCalledWith(
 			expect.objectContaining({ workerAgent: "coding/assembler" }),
 		);
+		const deps = backendMocks.createCosmonautsSubagentBackend.mock.calls.at(
+			-1,
+		) as unknown as [{ runtime: unknown }] | undefined;
+		expect(deps?.[0].runtime).toBe(runtime);
 		expect(backendMocks.run).toHaveBeenCalled();
 	});
 	test("denies an undeclared consumer worker before backend execution", async () => {
