@@ -38,25 +38,6 @@ export interface ProjectKnowledgeSurfaceConfig {
 	readonly enabled?: boolean;
 }
 
-export interface QualityReviewCommand {
-	readonly id: string;
-	readonly command: string;
-	readonly args: readonly string[];
-	readonly timeoutMs?: number;
-}
-
-interface ProjectQualityReviewConfig {
-	readonly analysisPrepare?: readonly QualityReviewCommand[];
-	readonly prepare?: readonly QualityReviewCommand[];
-	readonly checks?: readonly QualityReviewCommand[];
-	readonly gateOwnedPaths?: readonly string[];
-	readonly reviewerModel?: string;
-	readonly assessmentTimeoutMs?: number;
-	readonly panelTimeoutMs?: number;
-	readonly qmSettleGraceMs?: number;
-	readonly workspaceRemovalTimeoutMs?: number;
-}
-
 /** Project-level configuration loaded from `.cosmonauts/config.json`. */
 export interface ProjectConfig {
 	/** Default domain for this project (e.g. "coding"). */
@@ -83,5 +64,4 @@ export interface ProjectConfig {
 	readonly analysis?: ProjectAnalysisConfig;
 	/** Project-only knowledge surface. Only literal true enables it. */
 	readonly knowledgeSurface?: ProjectKnowledgeSurfaceConfig;
-	readonly qualityReview?: ProjectQualityReviewConfig;
 }

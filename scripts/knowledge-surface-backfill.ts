@@ -19,7 +19,6 @@ import {
 } from "../lib/memory/knowledge-records.ts";
 import { createPiSpawner } from "../lib/orchestration/agent-spawner.ts";
 import type { AgentSpawner } from "../lib/orchestration/types.ts";
-import { discoverFrameworkBundledPackageDirs } from "../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../lib/runtime.ts";
 
 const CONFIG_RESOURCE = join(".cosmonauts", "config.json");
@@ -356,7 +355,6 @@ async function runProductionBackfill(): Promise<KnowledgeSurfaceBackfillResult> 
 			const runtime = await CosmonautsRuntime.create({
 				builtinDomainsDir: domainsDir,
 				projectRoot,
-				bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
 			});
 			spawner = createPiSpawner(runtime.agentRegistry, domainsDir, {
 				resolver: runtime.domainResolver,

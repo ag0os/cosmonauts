@@ -11,24 +11,11 @@ import { captureCliOutput } from "../../helpers/cli.ts";
 
 const runtimeMocks = vi.hoisted(() => ({
 	create: vi.fn(),
-	discoverFrameworkBundledPackageDirs: vi.fn(),
 }));
 
 vi.mock("../../../lib/runtime.ts", () => ({
 	CosmonautsRuntime: { create: runtimeMocks.create },
 }));
-
-vi.mock("../../../lib/packages/dev-bundled.ts", async (importOriginal) => {
-	const actual =
-		await importOriginal<
-			typeof import("../../../lib/packages/dev-bundled.ts")
-		>();
-	return {
-		...actual,
-		discoverFrameworkBundledPackageDirs:
-			runtimeMocks.discoverFrameworkBundledPackageDirs,
-	};
-});
 
 function skill(overrides: Partial<DiscoveredSkill> = {}): DiscoveredSkill {
 	return {
@@ -176,9 +163,6 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		setRuntimeHost(runtimeMocks.create);
 		output = captureCliOutput();
 		process.exitCode = undefined;
-		runtimeMocks.discoverFrameworkBundledPackageDirs.mockResolvedValue([
-			"/framework/bundled/alpha",
-		]);
 		runtimeMocks.create.mockResolvedValue({
 			domains: [
 				makeDomain("shared", "/framework/domains/shared"),
@@ -199,9 +183,6 @@ describe("createSkillsProgram list — runtime discovery", () => {
 			from: "user",
 		});
 
-		expect(
-			runtimeMocks.discoverFrameworkBundledPackageDirs,
-		).not.toHaveBeenCalled();
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
 				projectRoot: process.cwd(),
@@ -296,7 +277,6 @@ describe("createSkillsProgram export — compatibility facade", () => {
 				domains: [makeDomain("alpha", domainRoot)],
 				projectConfig: {},
 			});
-			runtimeMocks.discoverFrameworkBundledPackageDirs.mockResolvedValue([]);
 
 			await createSkillsProgram().parseAsync(
 				["export", "--target", "claude", "plan"],

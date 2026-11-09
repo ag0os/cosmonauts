@@ -6,9 +6,6 @@
 		"pi-package"
 	],
 	"pi": {
-		"extensions": [
-			"./domains/shared/extensions"
-		],
 		"themes": [
 			"./themes"
 		]
@@ -17,7 +14,6 @@
 		"cosmonauts": "./bin/cosmonauts"
 	},
 	"files": [
-		"bundled/",
 		"domains/",
 		"external-commands/",
 		"external-skills/",

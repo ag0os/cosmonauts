@@ -40,19 +40,6 @@ import { domainBindingsExtensionPath } from "../lib/extensions/domain-bindings/i
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { setSharedDomainBindings } from "../lib/interactive/domain-bindings.ts";
-import {
-	isQualityReviewReference,
-	launchQualityReview,
-	qualityReviewPlanSlug,
-} from "../lib/orchestration/quality-review-launch.ts";
-import type {
-	QualityReviewRunOptions,
-	QualityReviewRunResult,
-} from "../lib/orchestration/quality-review-run.ts";
-import {
-	discoverBundledPackageDirs,
-	isCosmonautsFrameworkRepo,
-} from "../lib/packages/dev-bundled.ts";
 import type { CosmonautsRuntime } from "../lib/runtime.ts";
 import { type PiFlagParseResult, parsePiFlags } from "./pi-flags.ts";
 import {
@@ -70,8 +57,6 @@ import {
 	printLines,
 } from "./shared/output.ts";
 import type { CliOptions } from "./types.ts";
-
-export { discoverBundledPackageDirs, isCosmonautsFrameworkRepo };
 
 // ============================================================================
 // Argument Parsing
@@ -612,27 +597,6 @@ async function handleInitMode(
 	await interactive.run();
 }
 
-export async function runCliQualityReview(
-	options: Pick<
-		QualityReviewRunOptions,
-		"projectRoot" | "planSlug" | "operatorNote"
-	>,
-	launch: (
-		options: QualityReviewRunOptions,
-	) => Promise<QualityReviewRunResult> = launchQualityReview,
-): Promise<QualityReviewRunResult> {
-	const controller = new AbortController();
-	const interrupt = () => controller.abort();
-	process.on("SIGINT", interrupt);
-	process.on("SIGTERM", interrupt);
-	try {
-		return await launch({ ...options, signal: controller.signal });
-	} finally {
-		process.off("SIGINT", interrupt);
-		process.off("SIGTERM", interrupt);
-	}
-}
-
 async function handlePrintMode(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
@@ -643,10 +607,6 @@ async function handlePrintMode(
 	}
 
 	const definition = resolveCliAgent(runtime, options);
-	if (isCliQualityReview(runtime, options, definition)) {
-		await runCliQualityReviewMode(cwd, options, options.prompt);
-		return;
-	}
 	const { createSession } = await import("./session.ts");
 	const printRuntime = await createSession({
 		definition,
@@ -677,10 +637,6 @@ async function handleInteractiveMode(
 	cwd: string,
 ): Promise<void> {
 	const definition = resolveCliAgent(runtime, options);
-	if (isCliQualityReview(runtime, options, definition)) {
-		await runCliQualityReviewMode(cwd, options);
-		return;
-	}
 
 	// Expose the main registry to extensions via process-global slot.
 	// This ensures the /agent command validates against the same registry
@@ -726,43 +682,11 @@ async function handleInteractiveMode(
 	await interactive.run();
 }
 
-async function runCliQualityReviewMode(
-	cwd: string,
-	options: CliOptions,
-	operatorNote?: string,
-): Promise<void> {
-	const result = await runCliQualityReview({
-		projectRoot: cwd,
-		...(operatorNote === undefined ? {} : { operatorNote }),
-		planSlug: qualityReviewPlanSlug({
-			completionLabel: options.completionLabel,
-		}),
-	});
-	process.stdout.write(`${result.ref.runId}: ${result.stepResult.summary}\n`);
-	if (result.stepResult.outcome !== "success") process.exitCode = 1;
-}
-
 function resolveCliAgent(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
 ): AgentDefinition {
 	return resolveDefaultLead(runtime, options);
-}
-
-function isCliQualityReview(
-	runtime: CosmonautsRuntime,
-	options: CliOptions,
-	definition: AgentDefinition,
-): boolean {
-	const requested =
-		options.agent ??
-		(definition.domain
-			? `${definition.domain}/${definition.id}`
-			: definition.id);
-	return isQualityReviewReference(
-		runtime.agentRegistry.resolveReference(requested, runtime.domainContext)
-			?.reference,
-	);
 }
 
 // ============================================================================

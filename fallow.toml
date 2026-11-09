@@ -35,10 +35,6 @@ production = { dupes = true }
 # Cosmonauts/Pi through runtime discovery and dynamic import, not static imports.
 dynamicallyLoaded = [
   "lib/extensions/*/index.ts",
-  "bundled/*/agents/*.ts",
-  "bundled/*/chains.ts",
-  "bundled/*/domain.ts",
-  "bundled/*/workflows.ts",
   "domains/*/agents/*.ts",
   "domains/*/chains.ts",
   "domains/*/domain.ts",

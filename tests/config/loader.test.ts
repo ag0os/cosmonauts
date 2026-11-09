@@ -17,117 +17,22 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("config-test-");
 
 describe("loadProjectConfig", () => {
-	test("parses and validates quality review preparation commands", async () => {
+	test("ignores a legacy qualityReview key like other unknown input", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		const path = join(tmp.path, ".cosmonauts", "config.json");
-		await writeFile(
-			path,
-			JSON.stringify({
-				qualityReview: {
-					prepare: [
-						{
-							id: "dependencies",
-							command: "bun",
-							args: ["install", "--frozen-lockfile"],
-							timeoutMs: 120000,
-						},
-					],
-				},
-			}),
-		);
-		expect((await loadProjectConfig(tmp.path)).qualityReview?.prepare).toEqual([
-			{
-				id: "dependencies",
-				command: "bun",
-				args: ["install", "--frozen-lockfile"],
-				timeoutMs: 120000,
-			},
-		]);
-		await writeFile(
-			path,
-			JSON.stringify({
-				qualityReview: {
-					prepare: [{ id: "dependencies", argv: ["bun", "install"] }],
-				},
-			}),
-		);
-		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
-			"expected id, command, args",
-		);
-	});
-
-	test("parses configured quality checks and rejects duplicate check IDs", async () => {
-		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
-		const path = join(tmp.path, ".cosmonauts", "config.json");
-		const check = { id: "test", command: "bun", args: ["run", "test"] };
-		await writeFile(
-			path,
-			JSON.stringify({
-				qualityReview: {
-					checks: [check],
-					reviewerModel: "anthropic/test-model",
-				},
-			}),
-		);
-		expect((await loadProjectConfig(tmp.path)).qualityReview).toMatchObject({
-			checks: [check],
-			reviewerModel: "anthropic/test-model",
-		});
-		await writeFile(
-			path,
-			JSON.stringify({ qualityReview: { checks: [check, check] } }),
-		);
-		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
-			"duplicate step id",
-		);
-	});
-
-	test("validates quality review assessment and panel deadlines", async () => {
-		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
-		const path = join(tmp.path, ".cosmonauts", "config.json");
-		await writeFile(
-			path,
-			JSON.stringify({
-				qualityReview: { assessmentTimeoutMs: 900, panelTimeoutMs: 300 },
-			}),
-		);
-		expect((await loadProjectConfig(tmp.path)).qualityReview).toMatchObject({
-			assessmentTimeoutMs: 900,
-			panelTimeoutMs: 300,
-		});
-		await writeFile(
-			path,
-			JSON.stringify({ qualityReview: { panelTimeoutMs: 0 } }),
-		);
-		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
-			"Invalid qualityReview.panelTimeoutMs",
-		);
-	});
-
-	test("accepts a reviewer model id that contains slashes", async () => {
-		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
-		await writeFile(
-			join(tmp.path, ".cosmonauts", "config.json"),
-			JSON.stringify({
-				qualityReview: {
-					reviewerModel: "openrouter/anthropic/claude-sonnet-4.5",
-				},
-			}),
-		);
-		expect((await loadProjectConfig(tmp.path)).qualityReview).toEqual({
-			reviewerModel: "openrouter/anthropic/claude-sonnet-4.5",
-		});
-	});
-
-	test("rejects a reviewer model that is not provider/id", async () => {
-		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
-		await writeFile(
-			join(tmp.path, ".cosmonauts", "config.json"),
-			JSON.stringify({ qualityReview: { reviewerModel: "no-provider" } }),
-		);
-		await expect(loadProjectConfig(tmp.path)).rejects.toThrow(
-			"Invalid qualityReview.reviewerModel: expected <provider>/<model-id>",
-		);
+		for (const qualityReview of [
+			{ checks: [{ id: "test", command: "bun", args: ["run", "test"] }] },
+			{ panelTimeoutMs: 0, reviewerModel: "no-provider" },
+			"not-an-object",
+		]) {
+			await writeFile(
+				path,
+				JSON.stringify({ domain: "alpha", qualityReview, unknownKey: 1 }),
+			);
+			const config = await loadProjectConfig(tmp.path);
+			expect(config).toEqual({ domain: "alpha" });
+			expect(config).not.toHaveProperty("qualityReview");
+		}
 	});
 
 	test("enables the knowledge surface only for literal true", async () => {
