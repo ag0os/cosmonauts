@@ -26,9 +26,17 @@ const TEST_RUNTIME = runtimeDouble();
 const host = vi.hoisted(() => ({
 	spawn: vi.fn<(config: SpawnConfig) => Promise<SpawnResult>>(),
 	dispose: vi.fn(),
+	spawnerOptions: [] as { runtime?: unknown }[],
 }));
 vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
-	createPiSpawner: () => host,
+	createPiSpawner: (
+		_registry: unknown,
+		_domainsDir: unknown,
+		options: { runtime?: unknown },
+	) => {
+		host.spawnerOptions.push(options);
+		return host;
+	},
 }));
 const tmp = useTempDir("neutral-chain-");
 const actors = ["scribe", "critic", "translator", "dispatcher"];
@@ -58,6 +66,7 @@ const runners = [
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	host.spawnerOptions.length = 0;
 });
 async function fixture(projectRoot: string): Promise<void> {
 	const directory = join(projectRoot, "missions", "plans", "sample");
@@ -124,6 +133,31 @@ function options(projectRoot: string, steps: ChainStep[]): ChainConfig {
 	};
 }
 describe.each(runners)("neutral $name execution", ({ name, run }) => {
+	test("each chain hands its own runtime object to its spawner and every stage spawn", async () => {
+		configureSpawn();
+		const first = runtimeDouble();
+		const second = runtimeDouble();
+		for (const [project, runtime] of [
+			["first", first],
+			["second", second],
+		] as const) {
+			const root = join(tmp.path, name, project);
+			await fixture(root);
+			const result = await run({
+				...options(root, stages(["revise/final"])),
+				runtime,
+			});
+			expect(result.success, JSON.stringify(result.errors)).toBe(true);
+		}
+		expect(host.spawnerOptions).toHaveLength(2);
+		expect(host.spawnerOptions[0]?.runtime).toBe(first);
+		expect(host.spawnerOptions[1]?.runtime).toBe(second);
+		const runtimes = host.spawn.mock.calls.map(([config]) => config.runtime);
+		expect(runtimes).toHaveLength(actors.length * 2);
+		for (const [index, runtime] of runtimes.entries())
+			expect(runtime).toBe(index < actors.length ? first : second);
+	});
+
 	test("uses explicit semantics and mapped producer identities for arbitrary actors", async () => {
 		const root = join(tmp.path, name);
 		await fixture(root);

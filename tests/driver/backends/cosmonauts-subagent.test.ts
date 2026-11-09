@@ -106,8 +106,9 @@ describe("cosmonauts-subagent backend", () => {
 		const signal = new AbortController().signal;
 		const projectSkills = ["typescript", "testing"];
 		const skillPaths = ["/skills/typescript", "/skills/testing"];
+		const runtime = runtimeDouble();
 		const backend = createCosmonautsSubagentBackend({
-			runtime: TEST_RUNTIME,
+			runtime,
 			spawner,
 			workerAgent: "reviewer",
 			cwd: "/repo",
@@ -128,6 +129,8 @@ describe("cosmonauts-subagent backend", () => {
 
 		expect(spawn).toHaveBeenCalledTimes(1);
 		const config = firstSpawnConfig(spawn);
+		expect(config.runtime).toBe(runtime);
+		expect(config.runtime).not.toBe(TEST_RUNTIME);
 		expect(config.role).toBe("reviewer");
 		expect(config.prompt).toBe("Task prompt");
 		expect(config.cwd).toBe("/repo");

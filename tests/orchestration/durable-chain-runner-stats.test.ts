@@ -174,6 +174,8 @@ describe("runDurableChain stage stats", () => {
 		expect(spawnerMocks.createPiSpawner.mock.calls[0]?.[2].runtime).toBe(
 			runtime,
 		);
+		expect(spawnerMocks.spawn).toHaveBeenCalledOnce();
+		expect(spawnerMocks.spawn.mock.calls[0]?.[0].runtime).toBe(runtime);
 		if (!result.run) throw new Error("Missing durable run reference");
 		const store = new FileRunStore({
 			rootDir: join(projectRoot, "missions", "sessions"),

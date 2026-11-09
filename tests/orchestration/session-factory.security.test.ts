@@ -120,6 +120,20 @@ describe("session-factory planSlug validation", () => {
 		});
 	});
 
+	test("assembles the session with the spawn's own runtime object", async () => {
+		const runtime = runtimeDouble();
+		await createAgentSessionFromDefinition(
+			TEST_AGENT,
+			{ runtime, role: "planner", cwd: "/tmp/project", prompt: "Plan." },
+			"/tmp/domains",
+		);
+		expect(mocks.buildSessionParams).toHaveBeenCalledOnce();
+		expect(mocks.buildSessionParams.mock.calls[0]?.[0].runtime).toBe(runtime);
+		expect(mocks.buildSessionParams.mock.calls[0]?.[0].runtime).not.toBe(
+			TEST_RUNTIME,
+		);
+	});
+
 	test("attributes the model exposed by Pi after session creation", async () => {
 		const result = await createAgentSessionFromDefinition(
 			TEST_AGENT,
