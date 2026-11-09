@@ -1997,18 +1997,13 @@ async function createBackend(
 		throw new Error(
 			"Cosmonauts runtime is required for cosmonauts-subagent backend",
 		);
-	const spawner = createPiSpawner(
-		runtime.agentRegistry,
-		runtime.domainsDir,
-		{
-			resolver: runtime.domainResolver,
-			runtime,
-			sessionPolicies: runtime.sessionPolicies,
-		},
-	);
+	const spawner = createPiSpawner(runtime.agentRegistry, runtime.domainsDir, {
+		resolver: runtime.domainResolver,
+		runtime,
+		sessionPolicies: runtime.sessionPolicies,
+	});
 	const executionWorker =
-		workerResolution ??
-		resolveDriveWorker(runtime, frozenWorkerSource);
+		workerResolution ?? resolveDriveWorker(runtime, frozenWorkerSource);
 	if (!executionWorker)
 		throw new Error(
 			"Declared Drive worker is unavailable; no fallback is permitted.",

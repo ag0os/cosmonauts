@@ -647,7 +647,9 @@ function normalizeStage({
 	return stage;
 }
 /** Bind a run-scoped declaration collection before consumer classification or execution. */
-export function normalizeChain(config: NormalizationConfig): ChainNormalizationResult {
+export function normalizeChain(
+	config: NormalizationConfig,
+): ChainNormalizationResult {
 	if (!config.steps.length)
 		return {
 			ok: false,
