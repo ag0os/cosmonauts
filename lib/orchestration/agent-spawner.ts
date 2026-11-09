@@ -122,12 +122,14 @@ export function createPiSpawner(
 		resolver?: import("../domains/resolver.ts").DomainResolver;
 	},
 ): AgentSpawner {
-	const bus = options.bus ?? new MessageBus();
-	const spawnTimeoutMs = options.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
+	// Captured once: later edits to the caller's options cannot change the spawner.
+	const own = { ...options };
+	const bus = own.bus ?? new MessageBus();
+	const spawnTimeoutMs = own.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
 
 	return {
 		async spawn(input: SpawnConfig): Promise<SpawnResult> {
-			if (input.runtime !== options.runtime) {
+			if (input.runtime !== own.runtime) {
 				return toSpawnFailure(
 					new Error(
 						"Spawn runtime differs from the spawner's runtime; a spawner serves only the project runtime it was created with.",
@@ -135,7 +137,7 @@ export function createPiSpawner(
 				);
 			}
 			const definition = resolveSpawnAgent(registry, input)?.definition;
-			const config = bindSpawnConfig(input, { definition, options });
+			const config = bindSpawnConfig(input, { definition, options: own });
 			if (config.signal?.aborted) {
 				return toSpawnFailure(new Error("Aborted before spawn"));
 			}
@@ -148,7 +150,7 @@ export function createPiSpawner(
 					registry,
 					config,
 					domainsDir,
-					options.resolver,
+					own.resolver,
 					bus,
 				);
 

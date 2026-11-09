@@ -7,6 +7,7 @@ import {
 	type SessionPolicyProvider,
 } from "../../lib/agents/session-policy.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import type { DomainResolver } from "../../lib/domains/resolver.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { runtimeDouble } from "../helpers/runtime-double.ts";
@@ -140,4 +141,44 @@ test("an explicit policy provider overrides the runtime's own", async () => {
 
 	expect(mocks.factory.mock.calls[0]?.[1].sessionPolicy).toBe(override);
 	expect(current.sessionPolicies.forAgent).not.toHaveBeenCalled();
+});
+
+test("a spawner keeps the runtime it was created with when the caller's options change", async () => {
+	mocks.factory.mockClear();
+	const original = project("original");
+	const replacement = project("replacement");
+	const originalResolver = {} as DomainResolver;
+	const options = { runtime: original.runtime, resolver: originalResolver };
+	const spawner = createPiSpawner(registry, tmp.path, options);
+	options.runtime = replacement.runtime;
+	options.resolver = {} as DomainResolver;
+	const probe = (runtime: typeof original.runtime) =>
+		spawner.spawn({
+			runtime,
+			role: actor.id,
+			cwd: tmp.path,
+			prompt: "",
+			signal: AbortSignal.abort(),
+		});
+
+	await expect(probe(original.runtime)).resolves.toMatchObject({
+		success: false,
+		error: "Aborted before spawn",
+	});
+	await expect(probe(replacement.runtime)).resolves.toMatchObject({
+		success: false,
+		error: expect.stringContaining("Spawn runtime differs"),
+	});
+	expect(original.sessionPolicies.forAgent).toHaveBeenCalledOnce();
+	expect(replacement.sessionPolicies.forAgent).not.toHaveBeenCalled();
+	expect(mocks.factory).not.toHaveBeenCalled();
+
+	mocks.factory.mockResolvedValueOnce({ session: original.child });
+	await spawner.spawn({
+		runtime: original.runtime,
+		role: actor.id,
+		cwd: tmp.path,
+		prompt: "archive",
+	});
+	expect(mocks.factory.mock.calls[0]?.[3]).toBe(originalResolver);
 });

@@ -21,6 +21,7 @@ function fixture(withRuntime: boolean): string {
 		`export const chain: ChainConfig = { ${field}steps: [], projectRoot: "/", registry };`,
 		`export const options: PiSpawnerOptions = { ${field} };`,
 		`export const spawner = createPiSpawner(registry, undefined${options});`,
+		`export const spawnerEmpty = createPiSpawner(registry, undefined, { ${field} });`,
 	].join("\n");
 }
 
@@ -60,5 +61,6 @@ test("spawn, chain and spawner options reject an omitted runtime at compile time
 		"chain",
 		"options",
 		"spawner",
+		"spawnerEmpty",
 	]);
 }, 60_000);
