@@ -2236,6 +2236,12 @@ interface PlanHarnessSyncOptions {
 	readonly projectRoot: string;
 	readonly request: SyncRequest;
 	readonly inventory: readonly HarnessSyncInventoryRow[];
+	/**
+	 * Every supplied asset, across all owner groups. An entry's ownership comes
+	 * from here, since its asset may now be supplied at another location.
+	 * Defaults to the assets of `inventory`.
+	 */
+	readonly suppliedAssets?: readonly HarnessAsset[];
 	readonly manifestEntries: readonly HarnessManifestEntry[];
 	readonly targetObservations?: readonly ObservedHarnessTarget[];
 	readonly sourceHealth: readonly Pick<
@@ -2415,7 +2421,7 @@ export async function planHarnessSync(
 							request,
 							entry,
 							currentProjectOwner,
-							descriptor: suppliedAssetFor(options.inventory, entry.assetId),
+							descriptor: suppliedAssetFor(options, entry.assetId),
 							observation: observations.get(entry.outputPath) ?? {
 								state: "absent",
 							},
@@ -2681,7 +2687,7 @@ function planForgets(options: SpecialPlanContext): ClassifiedHarnessSyncPlan {
 		const invokingOwner = expectedOwnerForEntry(
 			entry,
 			options.currentProjectOwner,
-			descriptor?.asset ?? suppliedAssetFor(options.inventory, entry.assetId),
+			descriptor?.asset ?? suppliedAssetFor(options, entry.assetId),
 		);
 		const context = contextFromEntry(
 			options.request,
@@ -2750,10 +2756,12 @@ function contextFromEntry(
 }
 
 function suppliedAssetFor(
-	inventory: readonly HarnessSyncInventoryRow[],
+	options: Pick<PlanHarnessSyncOptions, "inventory" | "suppliedAssets">,
 	assetId: string,
 ): HarnessAsset | undefined {
-	return inventory.find((row) => row.asset.assetId === assetId)?.asset;
+	const assets =
+		options.suppliedAssets ?? options.inventory.map((row) => row.asset);
+	return assets.find((asset) => asset.assetId === assetId);
 }
 
 /**

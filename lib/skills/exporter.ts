@@ -645,6 +645,7 @@ async function evaluateGroup(
 		projectRoot: options.projectRoot,
 		request: options.request,
 		inventory,
+		suppliedAssets: options.assets,
 		manifestEntries,
 		targetObservations: observations,
 		sourceHealth: options.sourceHealth,

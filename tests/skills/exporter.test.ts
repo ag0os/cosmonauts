@@ -30,6 +30,7 @@ import type {
 } from "../../lib/harness-adapters/types.ts";
 import {
 	exportSkill,
+	type HarnessSyncReport,
 	resolveTargetDir,
 	runHarnessSync,
 } from "../../lib/skills/exporter.ts";
@@ -1029,6 +1030,94 @@ describe("runHarnessSync selection", () => {
 		);
 		await expect(exists(emptyOwnerRoot)).resolves.toBe(false);
 		await expect(exists(emptyTransactionPaths.lockPath)).resolves.toBe(false);
+	});
+});
+
+describe("runHarnessSync supplied ownership", () => {
+	test("an asset supplied at another scope decides who may reconcile or forget a recorded entry in a different owner group", async () => {
+		const projectRoot = join(tmp.path, "cross-group-project");
+		const homeRoot = join(tmp.path, "cross-group-home");
+		const sourceRoot = join(projectRoot, "src");
+		await mkdir(join(sourceRoot, "moved"), { recursive: true });
+		await mkdir(homeRoot, { recursive: true });
+		await writeFile(join(sourceRoot, "moved", "SKILL.md"), "# Moved\n");
+		const recorded: HarnessAsset = {
+			assetId: "skill:moved",
+			kind: "skill",
+			ownership: { kind: "authority", authorityId: "cosmonauts/core" },
+			sourceRootId: "root:moved",
+			sourceRoot,
+			sourcePath: "moved",
+			logicalPath: "moved",
+			outputIdentity: "moved",
+			defaultScope: "project",
+		};
+		const sourceHealth: SourceHealthRow[] = [
+			{
+				sourceRootId: "root:moved",
+				sourceRoot,
+				domain: "fixture",
+				status: "complete",
+				issues: [],
+			},
+		];
+		const recordedRun = await runHarnessSync({
+			projectRoot,
+			homeRoot,
+			request: {
+				targetIds: ["claude"],
+				scopes: ["project"],
+				reconciliation: "complete",
+				check: false,
+				requestedMode: "copy",
+			},
+			assets: [recorded],
+			sourceHealth,
+		});
+		expect(recordedRun.exitCode).toBe(0);
+		const targetPath = join(projectRoot, ".claude", "skills", "moved");
+		const manifestPath = join(
+			projectRoot,
+			".claude",
+			".cosmonauts-harness-manifest.json",
+		);
+		const targetBefore = await readFile(join(targetPath, "SKILL.md"), "utf8");
+		const manifestBefore = await readFile(manifestPath, "utf8");
+		expect(manifestBefore).toContain('"ownerId": "authority:cosmonauts/core"');
+
+		// The same id is now supplied with project ownership at personal scope,
+		// so the recorded project entry sits in an owner group with no row for it.
+		const supplied: HarnessAsset = {
+			...recorded,
+			ownership: { kind: "project" },
+			defaultScope: "personal",
+		};
+		const projectEntryRow = (report: HarnessSyncReport) =>
+			report.rows.find(
+				(row) => row.asset === "skill:moved" && row.scope === "project",
+			);
+		for (const forgetRemovedAssetIds of [undefined, ["skill:moved"]]) {
+			const report = await runHarnessSync({
+				projectRoot,
+				homeRoot,
+				request: {
+					targetIds: ["claude"],
+					reconciliation: "complete",
+					check: false,
+					...(forgetRemovedAssetIds ? { forgetRemovedAssetIds } : {}),
+				},
+				assets: [supplied],
+				sourceHealth,
+			});
+			expect(
+				projectEntryRow(report),
+				String(forgetRemovedAssetIds),
+			).toMatchObject({ reason: "foreign-owner", action: "none" });
+			expect(await readFile(join(targetPath, "SKILL.md"), "utf8")).toBe(
+				targetBefore,
+			);
+			expect(await readFile(manifestPath, "utf8")).toBe(manifestBefore);
+		}
 	});
 });
 
