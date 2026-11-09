@@ -469,3 +469,32 @@ test("a host's own agent-switch provider still loads when the library directory 
 	});
 	expect(params.extensionFactories).toContain(hostFactory);
 });
+
+test("a runtime without extension providers mounts agent-switch once in an interactive session", async () => {
+	const { CosmonautsRuntime } = await import("../../lib/runtime.ts");
+	const def = { ...definition(["agent-switch"]), resourceDomain: undefined };
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+		agents: [def],
+	});
+	expect(runtime.extensionProviders).toBeUndefined();
+	const interactivePaths = resolveInteractiveExtensionPaths();
+	const params = await buildSessionParams({
+		def,
+		runtime,
+		cwd: tmp.path,
+		resolver: runtime.domainResolver,
+		loadConfig: async () => ({}),
+		extraExtensionPaths: interactivePaths,
+	});
+	expect(params.extensionPaths).toEqual(interactivePaths);
+	const commands: string[] = [];
+	const pi = {
+		...createMockPi({ cwd: tmp.path }),
+		registerCommand: (name: string) => commands.push(name),
+	};
+	for (const ext of params.extensionFactories)
+		await (typeof ext === "function" ? ext : ext.factory)(pi as never);
+	expect(commands).not.toContain("agent");
+});
