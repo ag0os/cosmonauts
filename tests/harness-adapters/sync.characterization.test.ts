@@ -1,7 +1,10 @@
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
+import type { MaterializedHarnessManifestEntry } from "../../lib/harness-adapters/provenance.ts";
 import {
+	manifestEntryKey,
+	resolveAssetOwnerIdentity,
 	resolveHarnessTransactionPaths,
 	sha256,
 } from "../../lib/harness-adapters/provenance.ts";
@@ -124,6 +127,110 @@ describe("single-asset classification characterization", () => {
 			wroteTarget: false,
 			wroteManifest: false,
 		});
+	});
+
+	test("a link entry is current only while it records a direct link to the same source and shape", async () => {
+		const projectRoot = join(tmp.path, "link-map-project");
+		const sourceRoot = join(projectRoot, "skills");
+		await Promise.all(
+			["bundle", "moved"].map(async (name) => {
+				await mkdir(join(sourceRoot, name), { recursive: true });
+				await writeFile(join(sourceRoot, name, "SKILL.md"), `# ${name}\n`);
+			}),
+		);
+		const asset: HarnessAsset = {
+			assetId: "skill:bundle",
+			kind: "skill",
+			ownership: { kind: "project" },
+			sourceRootId: "fixture:skills",
+			sourceRoot,
+			sourcePath: "bundle",
+			logicalPath: "bundle",
+			outputIdentity: "bundle",
+			defaultScope: "project",
+		};
+		const target = resolveHarnessAssetTarget({
+			targetId: "claude",
+			asset,
+			roots: { projectRoot, homeRoot: join(tmp.path, "link-map-home") },
+		});
+		const owner = await resolveAssetOwnerIdentity(asset, projectRoot);
+		const source = await realpath(join(sourceRoot, "bundle"));
+		const checkRecorded = (
+			provenance: MaterializedHarnessManifestEntry["provenance"],
+		) =>
+			syncHarnessAsset({
+				projectRoot,
+				asset,
+				target,
+				check: true,
+				checkObservation: {
+					manifest: {
+						schemaVersion: 1,
+						entries: {
+							[manifestEntryKey(owner, asset.assetId)]: {
+								schemaVersion: 1,
+								owner,
+								assetId: asset.assetId,
+								kind: "skill",
+								target: "claude",
+								scope: "project",
+								sourceRootId: asset.sourceRootId,
+								sourcePath: asset.sourcePath,
+								logicalPath: asset.logicalPath,
+								outputIdentity: asset.outputIdentity,
+								outputPath: target.targetPath,
+								mode: "link",
+								exportedAt: "2026-08-26T00:00:00.000Z",
+								provenance,
+							},
+						},
+					},
+					target: { state: "exact-baseline" },
+				},
+			});
+		const directLink = {
+			kind: "direct-link",
+			expectedCanonicalSource: source,
+			linkShape: "directory",
+		} as const;
+
+		await expect(checkRecorded(directLink)).resolves.toMatchObject({
+			beforeStatus: "current",
+			reason: "current",
+		});
+		for (const [label, provenance] of [
+			[
+				"moved source",
+				{
+					...directLink,
+					expectedCanonicalSource: await realpath(join(sourceRoot, "moved")),
+				},
+			],
+			["changed shape", { ...directLink, linkShape: "flat-skill" }],
+			[
+				"non-direct-link provenance carrying matching link fields",
+				{
+					...directLink,
+					kind: "generated-wrapper",
+					baselineDigest: "recorded",
+					authoredLinks: [],
+					generatedNodes: [],
+				},
+			],
+		] as const) {
+			await expect(
+				checkRecorded(
+					provenance as unknown as MaterializedHarnessManifestEntry["provenance"],
+				),
+				label,
+			).resolves.toMatchObject({
+				beforeStatus: "source-ahead",
+				reason: "link-map-changed",
+				wroteTarget: false,
+				wroteManifest: false,
+			});
+		}
 	});
 });
 

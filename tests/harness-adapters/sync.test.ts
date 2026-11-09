@@ -1105,6 +1105,96 @@ describe("harness sync planning", () => {
 		}
 	});
 
+	test("an asset supplied at another location decides who may reconcile or forget its entry", async () => {
+		const fixture = await createFixture();
+		const currentOwner = await resolveAssetOwnerIdentity(
+			projectAsset("skill:first", "first"),
+			fixture.projectA,
+		);
+		const authorityOwner = await resolveAssetOwnerIdentity(
+			authorityAsset("skill:bundle", "bundle"),
+			fixture.projectA,
+		);
+		const first = projectAsset("skill:first", "first");
+		const bundle = authorityAsset("skill:bundle", "bundle");
+		const shared = authorityAsset("skill:shared", "shared");
+		const personalPath = (asset: HarnessAsset) =>
+			join(fixture.projectA, "personal", asset.outputIdentity);
+		// The first row is an unrelated asset, so a lookup that ignores the
+		// asset ID would answer with the wrong ownership.
+		const rows = [
+			inventory(first, "present", fixture, "absent"),
+			inventory(
+				bundle,
+				"present",
+				fixture,
+				"absent",
+				undefined,
+				personalPath(bundle),
+			),
+			inventory(
+				shared,
+				"present",
+				fixture,
+				"absent",
+				undefined,
+				personalPath(shared),
+			),
+		];
+		// Both entries sit at a project-scope location no supplied row covers.
+		const bundleEntry = entry(bundle, authorityOwner, fixture, "project");
+		const sharedEntry = entry(shared, currentOwner, fixture, "project");
+		const observations = [
+			observation(bundleEntry, "absent"),
+			observation(sharedEntry, "absent"),
+		];
+
+		const complete = await planHarnessSync({
+			projectRoot: fixture.projectA,
+			request: { reconciliation: "complete", check: false },
+			inventory: rows,
+			manifestEntries: [bundleEntry, sharedEntry],
+			targetObservations: observations,
+			sourceHealth: [health("root:healthy", "complete")],
+		});
+		const stale = (assetId: string) =>
+			complete.rows.find(
+				(row) =>
+					row.assetId === assetId &&
+					row.targetPath ===
+						join(fixture.projectA, "outputs", assetId.replace("skill:", "")),
+			);
+		expect(stale("skill:bundle")).toMatchObject({
+			reason: "source-removed",
+			action: "forget-entry",
+		});
+		expect(stale("skill:shared")).toMatchObject({
+			reason: "foreign-owner",
+			action: "none",
+		});
+
+		const forget = await planHarnessSync({
+			projectRoot: fixture.projectA,
+			request: {
+				reconciliation: "complete",
+				check: false,
+				forgetRemovedAssetIds: ["skill:bundle", "skill:shared"],
+			},
+			inventory: rows,
+			manifestEntries: [bundleEntry, sharedEntry],
+			targetObservations: observations,
+			sourceHealth: [health("root:healthy", "complete")],
+		});
+		expect(planRow(forget.rows, "skill:bundle")).toMatchObject({
+			reason: "explicit-forget",
+			action: "forget-entry",
+		});
+		expect(planRow(forget.rows, "skill:shared")).toMatchObject({
+			reason: "foreign-owner",
+			action: "none",
+		});
+	});
+
 	test("reconciles healthy complete partial transfer and source-removed inventories without destructive inference", async () => {
 		const fixture = await createFixture();
 		const currentOwner = await resolveAssetOwnerIdentity(

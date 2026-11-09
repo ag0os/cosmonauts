@@ -279,6 +279,7 @@ describe("cosmonauts harness sync", () => {
 		expect(first.rows[0]).toMatchObject({
 			before: "missing",
 			final: "current",
+			ownerDiagnostics: [`projectRoot=${await realpath(fixture.projectRoot)}`],
 		});
 		firstOutput.restore();
 
@@ -608,6 +609,7 @@ describe("cosmonauts harness sync", () => {
 		expect(report.rows).toEqual([
 			expect.objectContaining({
 				asset: "command:supplied",
+				ownerDiagnostics: ["authority=cosmonauts/core"],
 				before: "missing",
 				final: "current",
 			}),
