@@ -5,6 +5,7 @@ import {
 	readdir,
 	readFile,
 	readlink,
+	realpath,
 	rm,
 	writeFile,
 } from "node:fs/promises";
@@ -15,9 +16,8 @@ import {
 	parseSyncRequest,
 } from "../../../cli/harness/subcommand.ts";
 import type { RuntimeSkillExportDiscovery } from "../../../cli/skills/subcommand.ts";
-import type { GeneratedHarnessNode } from "../../../lib/harness-adapters/render.ts";
+import type { RuntimeInventorySnapshot } from "../../../lib/harness-adapters/types.ts";
 import {
-	type HarnessSyncOptions,
 	type HarnessSyncReport,
 	runHarnessSync,
 } from "../../../lib/skills/exporter.ts";
@@ -398,213 +398,110 @@ describe("cosmonauts harness sync", () => {
 		forgetOutput.restore();
 	});
 
-	test("exports the lean bundle with its contract templates to Claude Code and Codex project scope", async () => {
-		const projectRoot = join(tmp.path, "lean-project");
-		const homeRoot = join(tmp.path, "lean-home");
-		await Promise.all([
-			mkdir(projectRoot, { recursive: true }),
-			mkdir(homeRoot, { recursive: true }),
-		]);
-		const dependencies = {
-			projectRoot,
-			homeRoot,
-			discover: async () => emptyDiscovery(),
-		};
-		const args = [
-			"--json",
-			"sync",
-			"--target",
-			"claude",
-			"--target",
-			"codex",
-			"--scope",
-			"project",
-			"--asset",
-			"external-skill:cosmonauts-lean",
-		];
-		const syncOutput = captureCliOutput();
-		await createHarnessProgram(dependencies).parseAsync(args, { from: "user" });
-		const synced = JSON.parse(syncOutput.stdout()) as HarnessSyncReport;
-		syncOutput.restore();
-		expect(synced.exitCode).toBe(0);
-		expect(synced.rows.map((row) => [row.target, row.final])).toEqual([
-			["claude", "current"],
-			["codex", "current"],
-		]);
-
-		const contract = await readFile(
-			join(process.cwd(), "bundled", "lean", "skills", "contract", "SKILL.md"),
-		);
-		for (const ownerDirectory of [".claude", ".agents"]) {
-			const bundle = join(
-				projectRoot,
-				ownerDirectory,
-				"skills",
-				"cosmonauts-lean",
-			);
-			expect((await readdir(bundle)).sort()).toEqual([
-				"SKILL.md",
-				"contract.md",
-			]);
-			expect(
-				(await readFile(join(bundle, "contract.md"))).equals(contract),
-			).toBe(true);
-			expect(await readFile(join(bundle, "SKILL.md"), "utf8")).toMatch(
-				/^---\nname: cosmonauts-lean\n/,
-			);
-		}
-		expect(await readdir(homeRoot)).toEqual([]);
-
-		const checkOutput = captureCliOutput();
-		await createHarnessProgram(dependencies).parseAsync([...args, "--check"], {
-			from: "user",
-		});
-		const checked = JSON.parse(checkOutput.stdout()) as HarnessSyncReport;
-		checkOutput.restore();
-		expect(checked.exitCode).toBe(0);
-		expect(checked.rows.map((row) => row.before)).toEqual([
-			"current",
-			"current",
-		]);
-	});
-
-	test("a personal lean bundle synced from one project checks current from another", async () => {
-		const homeRoot = join(tmp.path, "lean-shared-home");
-		const projects = [join(tmp.path, "lean-a"), join(tmp.path, "lean-b")];
-		await Promise.all(
-			[homeRoot, ...projects].map((dir) => mkdir(dir, { recursive: true })),
-		);
-		const run = async (projectRoot: string, extra: string[]) => {
-			const output = captureCliOutput();
-			await createHarnessProgram({
-				projectRoot,
-				homeRoot,
-				discover: async () => emptyDiscovery(),
-			}).parseAsync(
-				[
-					"--json",
-					"sync",
-					"--target",
-					"claude",
-					"--asset",
-					"external-skill:cosmonauts-lean",
-					...extra,
-				],
-				{ from: "user" },
-			);
-			const report = JSON.parse(output.stdout()) as HarnessSyncReport;
-			output.restore();
-			return report;
-		};
-
-		expect((await run(projects[0] as string, [])).exitCode).toBe(0);
-		const checked = await run(projects[1] as string, ["--check"]);
-		expect(checked.exitCode).toBe(0);
-		expect(checked.rows[0]).toMatchObject({
-			scope: "personal",
-			before: "current",
-			reason: "current",
-		});
-	});
-
-	async function syncWithContractSpy(selectors: string[]) {
-		const node: GeneratedHarnessNode = {
-			relativePath: "contract.md",
-			inputBytes: Buffer.from("# contract\n"),
-			renderedBytes: Buffer.from("# contract\n"),
-		};
-		const leanContractNode = vi.fn(async () => node);
-		const sync = vi.fn(
-			async (_options: HarnessSyncOptions): Promise<HarnessSyncReport> => ({
-				...reportFixture(),
-				exitCode: 0,
-			}),
-		);
-		const output = captureCliOutput();
-		await createHarnessProgram({
-			projectRoot: tmp.path,
-			homeRoot: join(tmp.path, "home"),
-			discover: async () => emptyDiscovery(),
-			sync,
-			leanContractNode,
-		}).parseAsync(["--json", "sync", ...selectors], { from: "user" });
-		output.restore();
-		expect(process.exitCode).toBeUndefined();
-		return {
-			node,
-			leanContractNode,
-			nodes: sync.mock.calls[0]?.[0].generatedNodesByAssetId,
-		};
-	}
-
-	test("a sync with no --asset or --kind reads the contract skill for the lean bundle", async () => {
-		const { node, leanContractNode, nodes } = await syncWithContractSpy([]);
-		expect(leanContractNode).toHaveBeenCalledTimes(1);
-		expect(nodes).toHaveProperty(["external-skill:cosmonauts-lean"], [node]);
-	});
-
 	test.each([
-		[
-			"--asset external-skill:cosmonauts",
-			["--asset", "external-skill:cosmonauts"],
-		],
-		["--kind command", ["--kind", "command"]],
-	])("a sync with %s does not select the lean bundle and never reads the contract skill", async (_, selectors) => {
-		const { leanContractNode, nodes } = await syncWithContractSpy(selectors);
-		expect(leanContractNode).not.toHaveBeenCalled();
-		expect(nodes).not.toHaveProperty("external-skill:cosmonauts-lean");
-	});
-
-	test("a change to the contract skill shows the synced lean bundle as drift on check", async () => {
-		const projectRoot = join(tmp.path, "lean-drift-project");
-		const homeRoot = join(tmp.path, "lean-drift-home");
-		await Promise.all([
-			mkdir(projectRoot, { recursive: true }),
-			mkdir(homeRoot, { recursive: true }),
-		]);
-		const run = async (
-			leanContractNode: (() => Promise<GeneratedHarnessNode>) | undefined,
-			extra: string[],
-		) => {
-			const output = captureCliOutput();
-			await createHarnessProgram({
-				projectRoot,
-				homeRoot,
-				discover: async () => emptyDiscovery(),
-				...(leanContractNode ? { leanContractNode } : {}),
-			}).parseAsync(
-				[
-					"--json",
-					"sync",
-					"--target",
-					"claude",
-					"--scope",
-					"project",
-					"--asset",
-					"external-skill:cosmonauts-lean",
-					...extra,
-				],
-				{ from: "user" },
-			);
-			const report = JSON.parse(output.stdout()) as HarnessSyncReport;
-			output.restore();
-			return report;
-		};
-		expect((await run(undefined, [])).exitCode).toBe(0);
-
-		const edited = Buffer.from("# edited contract\n");
-		const checked = await run(
-			async () => ({
-				relativePath: "contract.md",
-				inputBytes: edited,
-				renderedBytes: edited,
-			}),
-			["--check"],
+		"claude",
+		"codex",
+	])("generated inventory drift is read-only on check and repaired by sync for %s", async (target) => {
+		const fixture = await runtimeSkillFixture("inventory-drift");
+		const inventory = syntheticInventory("initial-chain");
+		const run = (snapshot: RuntimeInventorySnapshot, extra: string[] = []) =>
+			syncInventory({
+				...fixture,
+				inventory: snapshot,
+				target,
+				extra: ["--scope", "project", ...extra],
+			});
+		expect((await run(inventory)).exitCode).toBe(0);
+		const ownerDirectory = target === "claude" ? ".claude" : ".agents";
+		const generated = join(
+			fixture.projectRoot,
+			ownerDirectory,
+			"skills",
+			"cosmonauts",
+			"references",
+			"generated-inventory.md",
 		);
-		expect(checked.exitCode).toBe(1);
-		expect(checked.rows[0]).toMatchObject({
+		expect(await readFile(generated, "utf8")).toContain("initial-chain");
+		const current = await run(inventory, ["--check"]);
+		expect(current.exitCode).toBe(0);
+		expect(current.rows[0]?.before).toBe("current");
+
+		const before = await snapshotRoots(fixture.projectRoot, fixture.homeRoot);
+		const changed = syntheticInventory("updated-chain");
+		const drift = await run(changed, ["--check"]);
+		expect(drift.exitCode).toBe(1);
+		expect(drift.rows[0]).toMatchObject({
 			before: "source-ahead",
 			reason: "source-changed",
+			action: "none",
+		});
+		expect(await snapshotRoots(fixture.projectRoot, fixture.homeRoot)).toEqual(
+			before,
+		);
+
+		const repaired = await run(changed);
+		expect(repaired.exitCode).toBe(0);
+		expect(repaired.rows[0]).toMatchObject({
+			before: "source-ahead",
+			final: "current",
+		});
+		expect(await readFile(generated, "utf8")).toContain("updated-chain");
+		expect(await readFile(generated, "utf8")).not.toContain("initial-chain");
+		expect((await run(changed, ["--check"])).exitCode).toBe(0);
+	});
+
+	test("a personal generated inventory reports the other project and regenerates from its runtime", async () => {
+		const fixture = await runtimeSkillFixture("inventory-a");
+		const otherProject = join(tmp.path, "inventory-b");
+		await mkdir(otherProject);
+		const run = (
+			projectRoot: string,
+			inventory: RuntimeInventorySnapshot,
+			extra: string[] = [],
+		) =>
+			syncInventory({
+				...fixture,
+				projectRoot,
+				inventory,
+				target: "claude",
+				extra,
+			});
+		expect(
+			(await run(fixture.projectRoot, syntheticInventory("project-a-chain")))
+				.exitCode,
+		).toBe(0);
+		const generated = join(
+			fixture.homeRoot,
+			".claude",
+			"skills",
+			"cosmonauts",
+			"references",
+			"generated-inventory.md",
+		);
+		expect(await readFile(generated, "utf8")).toContain("project-a-chain");
+		const before = await snapshotRoots(otherProject, fixture.homeRoot);
+		const inventory = syntheticInventory("project-b-chain");
+		const checked = await run(otherProject, inventory, ["--check"]);
+		expect(checked.exitCode).toBe(1);
+		expect(checked.rows[0]).toMatchObject({
+			scope: "personal",
+			before: "source-ahead",
+			reason: "regenerated-from-other-project",
+			action: "none",
+			generatingProjectRoot: await realpath(otherProject),
+			previousGeneratingProjectRoot: await realpath(fixture.projectRoot),
+		});
+		expect(await snapshotRoots(otherProject, fixture.homeRoot)).toEqual(before);
+		const synced = await run(otherProject, inventory);
+		expect(synced.exitCode).toBe(0);
+		expect(synced.rows[0]?.final).toBe("current");
+		expect(await readFile(generated, "utf8")).toContain("project-b-chain");
+		expect(await readFile(generated, "utf8")).not.toContain("project-a-chain");
+		const current = await run(otherProject, inventory, ["--check"]);
+		expect(current.exitCode).toBe(0);
+		expect(current.rows[0]).toMatchObject({
+			before: "current",
+			reason: "current",
 		});
 	});
 
@@ -758,4 +655,74 @@ function reportFixture(): HarnessSyncReport {
 			},
 		],
 	};
+}
+
+function syntheticInventory(chainName: string): RuntimeInventorySnapshot {
+	return {
+		chains: [
+			{
+				name: chainName,
+				description: "Synthetic chain",
+				expression: "studio/author -> studio/reviewer",
+			},
+		],
+		effectiveSkills: [],
+		candidates: [],
+		sourceHealth: [],
+		paths: [
+			{
+				target: "claude",
+				kind: "command",
+				project: ".claude/commands",
+				personal: "~/.claude/commands",
+			},
+			{
+				target: "claude",
+				kind: "skill",
+				project: ".claude/skills",
+				personal: "~/.claude/skills",
+			},
+			{
+				target: "codex",
+				kind: "skill",
+				project: ".agents/skills",
+				personal: "~/.agents/skills",
+			},
+		],
+	};
+}
+
+async function syncInventory(options: {
+	projectRoot: string;
+	homeRoot: string;
+	inventory: RuntimeInventorySnapshot;
+	target: string;
+	extra: string[];
+}): Promise<HarnessSyncReport> {
+	process.exitCode = undefined;
+	const output = captureCliOutput();
+	try {
+		await createHarnessProgram({
+			projectRoot: options.projectRoot,
+			homeRoot: options.homeRoot,
+			discover: async () => ({
+				...emptyDiscovery(),
+				runtimeInventory: options.inventory,
+			}),
+		}).parseAsync(
+			[
+				"--json",
+				"sync",
+				"--target",
+				options.target,
+				"--asset",
+				"external-skill:cosmonauts",
+				...options.extra,
+			],
+			{ from: "user" },
+		);
+		return JSON.parse(output.stdout()) as HarnessSyncReport;
+	} finally {
+		output.restore();
+	}
 }

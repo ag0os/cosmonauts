@@ -37,6 +37,7 @@
 		"compile:drive-step": "bun build --compile lib/driver/run-step.ts --outfile bin/cosmonauts-drive-step",
 		"test": "node ./scripts/vitest-runner.mjs",
 		"test:watch": "vitest",
+		"test:mutation": "STRYKER_VITEST_POOL=forks stryker run stryker.config.mjs",
 		"test:coverage": "vitest run --coverage",
 		"check:reachability": "bun scripts/check-reachability.ts",
 		"check:suppressions": "bun scripts/check-new-suppressions.ts",
@@ -61,7 +62,6 @@
 		"@vitest/coverage-v8": "^3.0.0",
 		"fallow": "2.54.2",
 		"jsdom": "29.1.1",
-		"mermaid": "11.17.2",
 		"vitest": "^3.0.0"
 	},
 	"patchedDependencies": {
@@ -118,7 +118,6 @@
 		"./packages/scanner": "./lib/packages/scanner.ts",
 		"./lib/packages/scanner.ts": "./lib/packages/scanner.ts",
 		"./runtime-host": "./lib/runtime-host.ts",
-		"./lib/lean-run/providers/default.ts": "./lib/lean-run/providers/default.ts",
 		"./chains": "./lib/chains/index.ts",
 		"./orchestration/chain-runner": "./lib/orchestration/chain-runner.ts",
 		"./orchestration/durable-chain-runner": "./lib/orchestration/durable-chain-runner.ts",

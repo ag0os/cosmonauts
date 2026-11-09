@@ -11,8 +11,8 @@ Vitest's own `poolMatchGlobs` does not help: Stryker's pool setting wins.
 
 The patch makes the pool switchable: `STRYKER_VITEST_POOL=forks` runs the
 tests in a single fork, where `chdir` works. Without the variable the runner
-behaves as upstream. The lean mutation provider
-(`lib/lean-run/providers/mutation.ts`) always sets it.
+behaves as upstream. `bun run test:mutation` sets it automatically. Set it
+explicitly for direct scoped runs; see `docs/testing.md`, Scoped mutation testing.
 
 Only the runner's `vitest <4.1` branch is patched, which covers the pinned
 vitest major (3). **Redo the patch whenever vitest or the runner is

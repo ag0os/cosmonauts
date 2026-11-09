@@ -5,12 +5,10 @@
  */
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { buildSessionParams } from "../../lib/agents/session-assembly.ts";
-import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 
 vi.mock("@earendil-works/pi-ai/providers/all", () => ({
@@ -19,15 +17,7 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
 	}),
 }));
 
-const REPOSITORY_ROOT = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-);
-
-/** A project allowlist from before the lean domain: no `contract`, no `git-workflow`. */
-const ALLOWLIST = ["tdd", "typescript", "react", "plan"];
+const ALLOWLIST = ["listed"];
 
 let projectRoot: string;
 let runtime: CosmonautsRuntime;
@@ -39,10 +29,33 @@ beforeAll(async () => {
 		join(projectRoot, ".cosmonauts/config.json"),
 		JSON.stringify({ skills: ALLOWLIST }),
 	);
+
+	const domainsRoot = join(projectRoot, "synthetic-domains");
+	for (const [domain, id, skills, resources] of [
+		["studio", "lead", ["own", "foreign"], ["own"]],
+		["reference", "worker", ["*"], ["foreign", "listed"]],
+	] as const) {
+		const root = join(domainsRoot, domain);
+		await mkdir(join(root, "agents"), { recursive: true });
+		await writeFile(
+			join(root, "domain.ts"),
+			`export default ${JSON.stringify({ id: domain, description: "Synthetic skills", lead: id })};`,
+		);
+		await writeFile(
+			join(root, "agents", `${id}.ts`),
+			`export default ${JSON.stringify({ id, description: "Synthetic agent", instructions: { kind: "inline", content: "Use the supplied skills." }, model: "anthropic/test-sonnet", tools: "none", extensions: [], capabilities: [], skills, memory: {}, projectContext: false, session: "ephemeral", loop: false })};`,
+		);
+		for (const name of resources) {
+			await mkdir(join(root, "skills", name), { recursive: true });
+			await writeFile(
+				join(root, "skills", name, "SKILL.md"),
+				`---\nname: ${name}\ndescription: Synthetic ${name} skill\n---\n# ${name}\n`,
+			);
+		}
+	}
 	runtime = await CosmonautsRuntime.create({
-		builtinDomainsDir: join(REPOSITORY_ROOT, "domains"),
+		builtinDomainsDir: domainsRoot,
 		projectRoot,
-		bundledDirs: await discoverFrameworkBundledPackageDirs(REPOSITORY_ROOT),
 		includeUserSources: false,
 	});
 });
@@ -89,24 +102,13 @@ async function visibleSkills(role: string, domain: string): Promise<string[]> {
 }
 
 describe("a domain's own skills under a project allowlist", () => {
-	test("the lean lead sees the contract skill its domain ships", async () => {
-		expect(await visibleSkills("lead", "lean")).toContain("contract");
+	test("a named agent retains the own-domain skill it explicitly declares", async () => {
+		expect(await visibleSkills("lead", "studio")).toEqual(["own"]);
 	});
-
-	test("the lean lead's coding-domain skills stay filtered by the allowlist", async () => {
-		const skills = await visibleSkills("lead", "lean");
-
-		expect(skills).not.toContain("rails-api");
-		expect(skills).not.toContain("git-workflow");
+	test("an explicitly named foreign skill stays filtered by the project allowlist", async () => {
+		expect(await visibleSkills("lead", "studio")).not.toContain("foreign");
 	});
-
-	test("a wildcard agent gains no domain skill outside the allowlist", async () => {
-		const skills = await visibleSkills("worker", "coding");
-
-		expect(skills).toContain("tdd");
-		expect(skills).toContain("plan");
-		expect(skills).not.toContain("contract");
-		expect(skills).not.toContain("git-workflow");
-		expect(skills).not.toContain("rails-api");
+	test("a wildcard agent gains only the project's listed skill", async () => {
+		expect(await visibleSkills("worker", "reference")).toEqual(["listed"]);
 	});
 });

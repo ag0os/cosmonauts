@@ -1,8 +1,6 @@
 /**
- * The modules the check CLI runs on the claude-cli and codex-cli lean
- * backends reach no `@earendil-works/*` package, at runtime or through
- * `import type`. The lean Pi backend is the one exception, and only a
- * dynamic `import()` may reach it.
+ * The independent analysis and runtime modules reach no `@earendil-works/*` package, at runtime or through
+ * type-only imports. Synthetic fixtures also pin optional dynamic-backend exceptions.
  */
 
 import {
@@ -22,7 +20,6 @@ import { useTempDir } from "./helpers/fs.ts";
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..");
 const PI_FREE_ROOTS = [
 	"lib/envelope",
-	"lib/lean-run",
 	"lib/code-health",
 	"lib/architecture-map",
 	"lib/analysis",
@@ -30,7 +27,6 @@ const PI_FREE_ROOTS = [
 	"lib/config",
 	"lib/durable-runtime",
 ] as const;
-const PI_BACKEND = "lib/lean-run/backends/pi.ts";
 const PI_PACKAGE = /^@earendil-works\//;
 
 interface ImportEdge {
@@ -46,7 +42,7 @@ function listTypeScriptFiles(dir: string): string[] {
 	});
 }
 
-/** Every import, re-export, `import type` and `import("…")` in a file. */
+/** Every import, re-export, type-only imports and dynamic-import expressions in a file. */
 function importEdges(file: string): ImportEdge[] {
 	const source = ts.createSourceFile(
 		file,
@@ -55,27 +51,21 @@ function importEdges(file: string): ImportEdge[] {
 		true,
 	);
 	const edges: ImportEdge[] = [];
+
+	const addLiteral = (node: ts.Node | undefined, dynamic = false): void => {
+		if (node && ts.isStringLiteralLike(node))
+			edges.push({ specifier: node.text, dynamic });
+	};
 	const visit = (node: ts.Node): void => {
-		if (
-			(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-			node.moduleSpecifier &&
-			ts.isStringLiteral(node.moduleSpecifier)
-		) {
-			edges.push({ specifier: node.moduleSpecifier.text, dynamic: false });
-		} else if (
-			ts.isImportTypeNode(node) &&
-			ts.isLiteralTypeNode(node.argument) &&
-			ts.isStringLiteral(node.argument.literal)
-		) {
-			edges.push({ specifier: node.argument.literal.text, dynamic: false });
-		} else if (
+		if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+			addLiteral(node.moduleSpecifier);
+		else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument))
+			addLiteral(node.argument.literal);
+		else if (
 			ts.isCallExpression(node) &&
 			node.expression.kind === ts.SyntaxKind.ImportKeyword
-		) {
-			const [argument] = node.arguments;
-			if (argument && ts.isStringLiteralLike(argument))
-				edges.push({ specifier: argument.text, dynamic: true });
-		}
+		)
+			addLiteral(node.arguments[0], true);
 		ts.forEachChild(node, visit);
 	};
 	visit(source);
@@ -94,12 +84,14 @@ interface WalkOptions {
 	/** Directories whose files start the walk, relative to `root`. */
 	readonly from: readonly string[];
 	/** The one Pi module a dynamic `import()` may reach, relative to `root`. */
-	readonly piBackend: string;
+	readonly piBackend?: string;
 }
 
 /** Each Pi package or static Pi-backend import reached, as an import chain. */
 function piReachingChains(options: WalkOptions): string[] {
-	const piBackend = resolve(options.root, options.piBackend);
+	const piBackend = options.piBackend
+		? resolve(options.root, options.piBackend)
+		: undefined;
 	const parents = new Map<string, string | undefined>();
 	const queue = options.from
 		.flatMap((dir) => listTypeScriptFiles(resolve(options.root, dir)))
@@ -114,23 +106,27 @@ function piReachingChains(options: WalkOptions): string[] {
 	};
 
 	const chains: string[] = [];
-	for (const file of queue) {
-		for (const { specifier, dynamic } of importEdges(file)) {
-			if (PI_PACKAGE.test(specifier)) {
-				chains.push(chainTo(file, specifier));
-				continue;
-			}
-			if (!specifier.startsWith(".")) continue;
-			const target = resolveRelative(file, specifier);
-			if (target === piBackend) {
-				if (!dynamic) chains.push(chainTo(file, options.piBackend));
-				continue;
-			}
-			if (!target || parents.has(target)) continue;
-			parents.set(target, file);
-			queue.push(target);
+
+	const follow = (file: string, { specifier, dynamic }: ImportEdge): void => {
+		if (PI_PACKAGE.test(specifier)) {
+			chains.push(chainTo(file, specifier));
+			return;
 		}
+		if (!specifier.startsWith(".")) return;
+		const target = resolveRelative(file, specifier);
+		if (piBackend && target === piBackend) {
+			if (!dynamic)
+				chains.push(chainTo(file, relative(options.root, piBackend)));
+			return;
+		}
+		if (!target || parents.has(target)) return;
+		parents.set(target, file);
+		queue.push(target);
+	};
+	for (const file of queue) {
+		for (const edge of importEdges(file)) follow(file, edge);
 	}
+
 	return chains;
 }
 
@@ -150,7 +146,6 @@ describe("Pi-free check-CLI modules", () => {
 			piReachingChains({
 				root: REPO_ROOT,
 				from: PI_FREE_ROOTS,
-				piBackend: PI_BACKEND,
 			}),
 		).toEqual([]);
 	});

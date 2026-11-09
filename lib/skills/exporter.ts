@@ -454,7 +454,7 @@ async function reportIncompleteGroup(
 }
 
 /** Whether a sync request's kind and asset selectors include the asset. */
-export function requestSelectsAsset(
+function requestSelectsAsset(
 	request: SyncRequest,
 	asset: Pick<HarnessAsset, "assetId" | "kind">,
 ): boolean {

@@ -1,14 +1,13 @@
-// Scoped mutation testing (lean run, ruling D-2). The lean mutation provider
-// (lib/lean-run/providers/mutation.ts) always runs this file, whatever config
-// the target worktree has, and passes `--mutate` (changed-function line
-// ranges) and `--testFiles` on the command line. Run with
-// STRYKER_VITEST_POOL=forks (patches/README.md) so tests that call
-// process.chdir() work.
+// Independent scoped mutation tooling. Always supply --mutate and --testFiles.
+// Use STRYKER_VITEST_POOL=forks for process.chdir() tests (patches/README.md).
+import { createRequire } from "node:module";
 import { availableParallelism } from "node:os";
+
+const require = createRequire(import.meta.url);
 
 export default {
 	testRunner: "vitest",
-	plugins: ["@stryker-mutator/vitest-runner"],
+	plugins: [require.resolve("@stryker-mutator/vitest-runner")],
 	// No configFile: vitest finds the target project's own vitest/vite config.
 	vitest: { related: false },
 	coverageAnalysis: "perTest",

@@ -7,11 +7,9 @@ import {
 	prepareSkillExportAssets,
 } from "../../lib/harness-adapters/inventory.ts";
 import {
-	createLeanContractGeneratedNode,
 	listImplementedHarnessTargetIds,
 	listStaticHarnessAssets,
 } from "../../lib/harness-adapters/registry.ts";
-import type { GeneratedHarnessNode } from "../../lib/harness-adapters/render.ts";
 import type {
 	HarnessScope,
 	HarnessTargetId,
@@ -23,7 +21,6 @@ import {
 	type HarnessSyncOptions,
 	type HarnessSyncReport,
 	type HarnessSyncReportRow,
-	requestSelectsAsset,
 	runHarnessSync,
 } from "../../lib/skills/exporter.ts";
 import { getOutputMode, printJson, printLines } from "../shared/output.ts";
@@ -39,7 +36,6 @@ interface HarnessProgramDependencies {
 		projectRoot: string,
 	) => Promise<RuntimeSkillExportDiscovery>;
 	readonly sync?: (options: HarnessSyncOptions) => Promise<HarnessSyncReport>;
-	readonly leanContractNode?: () => Promise<GeneratedHarnessNode>;
 }
 
 interface HarnessSyncCliOptions {
@@ -53,8 +49,6 @@ interface HarnessSyncCliOptions {
 	readonly forgetRemoved: readonly string[];
 	readonly transferOwner?: string;
 }
-
-const LEAN_ASSET_ID = "external-skill:cosmonauts-lean";
 
 export function createHarnessProgram(
 	dependencies: HarnessProgramDependencies = {},
@@ -155,11 +149,6 @@ export function createHarnessProgram(
 					issues: [],
 				},
 			];
-			const leanSelected = assets.some(
-				(asset) =>
-					asset.assetId === LEAN_ASSET_ID &&
-					requestSelectsAsset(request, asset),
-			);
 			const report = await (dependencies.sync ?? runHarnessSync)({
 				projectRoot,
 				homeRoot,
@@ -167,16 +156,6 @@ export function createHarnessProgram(
 				sourceHealth,
 				request,
 				generatedNodesByAssetId: {
-					...(leanSelected
-						? {
-								[LEAN_ASSET_ID]: [
-									await (
-										dependencies.leanContractNode ??
-										createLeanContractGeneratedNode
-									)(),
-								],
-							}
-						: {}),
 					...(discovery.runtimeInventory
 						? {
 								"external-skill:cosmonauts": [
