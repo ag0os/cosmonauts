@@ -115,8 +115,7 @@ function renderStatusText(
 		summary.diagnostics.length > 0
 			? `, diagnostics ${summary.diagnostics.length}`
 			: "";
-	const disposition = summary.postTerminalDisposition;
-	return `${summary.scope}/${summary.runId}: ${summary.status}${source}${diagnostics}${disposition ? `; disposition ${disposition.disposition}${disposition.reason ? ` (${disposition.reason})` : ""}${disposition.workspace ? ` at ${disposition.workspace}` : ""}` : ""}`;
+	return `${summary.scope}/${summary.runId}: ${summary.status}${source}${diagnostics}`;
 }
 
 function renderWatchText(summary: RunWatchSummary): string {

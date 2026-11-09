@@ -293,8 +293,6 @@ export interface StageResult {
 	stats?: SpawnStats;
 	/** Condensed text from the stage agent's final message (last iteration for loops) */
 	summary?: string;
-	/** Child durable run produced by a delegated terminal stage. */
-	run?: import("../durable-runtime/types.ts").RunRef;
 	artifacts?: import("../durable-runtime/types.ts").ArtifactRef[];
 	/** Typed plan-review gate failure, including a pre-spawn task-decomposition block. */
 	reviewRoundBlock?: ReviewRoundBlock;
@@ -349,7 +347,6 @@ export type SpawnEvent =
 			toolName: string;
 			toolCallId: string;
 			isError: boolean;
-			result?: unknown;
 	  })
 	| (SpawnEventBase & {
 			type: "compaction_start";

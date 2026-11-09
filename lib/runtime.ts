@@ -71,7 +71,7 @@ export interface CosmonautsRuntimeOptions {
 	pluginDirs?: string[];
 	/** CLI-level domain override (takes priority over project config). */
 	domainOverride?: string;
-	/** Base-owned quality review runtime excludes user package and domain overrides. */
+	/** `false` excludes user-installed packages and ~/.cosmonauts/domains from discovery. */
 	includeUserSources?: boolean;
 }
 

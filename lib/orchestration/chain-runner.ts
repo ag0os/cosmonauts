@@ -688,11 +688,6 @@ async function executeChain(config: ChainConfig): Promise<ChainResult> {
 	}
 
 	const chainResult = finalizeChainResult(state, config, chainStart);
-	const qualityRun = chainResult.stageResults.findLast(
-		(result) => result.run,
-	)?.run;
-	if (qualityRun?.scope === "chain")
-		chainResult.run = { runId: qualityRun.runId, scope: "chain" };
 
 	emit(config, { type: "chain_end", result: chainResult });
 
@@ -1004,7 +999,6 @@ export async function runStage(
 			iterations: 0,
 			durationMs: failure.totalDurationMs,
 			error: failure.errors.join("\n"),
-			...(failure.run ? { run: failure.run } : {}),
 		};
 	}
 	const first = normalized.stages[0];

@@ -180,14 +180,13 @@ describe("declared chain normalization", () => {
 		});
 		expect(spawn).not.toHaveBeenCalled();
 	});
-	test("direct stage validation preserves a host's durable refusal result before spawning", async () => {
+	test("direct stage validation preserves a host's refusal result before spawning", async () => {
 		const stage = { name: definition.id, loop: true };
 		const refuse = vi.fn().mockResolvedValue({
 			success: false,
 			totalDurationMs: 0,
 			stageResults: [],
 			errors: ["declared refusal"],
-			run: { scope: "chain", runId: "refusal" },
 		});
 		const spawn = vi.fn();
 		const result = await runStage(
@@ -197,7 +196,8 @@ describe("declared chain normalization", () => {
 		);
 		expect(result).toMatchObject({
 			success: false,
-			run: { scope: "chain", runId: "refusal" },
+			iterations: 0,
+			error: "declared refusal",
 		});
 		expect(refuse).toHaveBeenCalledWith(
 			expect.objectContaining({ steps: [stage] }),

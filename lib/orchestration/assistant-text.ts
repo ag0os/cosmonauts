@@ -1,8 +1,6 @@
 interface AssistantMessageLike {
 	role?: string;
 	content?: unknown;
-	stopReason?: string;
-	errorMessage?: string;
 }
 
 function ownText(message: AssistantMessageLike): string {
@@ -37,33 +35,6 @@ export function extractAssistantText(
 		if (text) return text;
 	}
 	return `${role} completed`;
-}
-
-const INCOMPLETE_STOP_REASONS = new Map([
-	["error", "error"],
-	["aborted", "aborted"],
-	["length", "stopped at the token limit"],
-]);
-
-/**
- * The session's final message text, only when that message is a completed
- * assistant turn with text of its own. Never falls back to earlier messages.
- */
-export function finalAssistantEvidence(
-	messages: unknown[],
-): { text: string } | { failure: string } {
-	const final = messages.at(-1) as AssistantMessageLike | undefined;
-	if (final?.role !== "assistant")
-		return { failure: "no final assistant message" };
-	const incomplete = INCOMPLETE_STOP_REASONS.get(final.stopReason ?? "");
-	if (incomplete)
-		return {
-			failure: `final assistant message ${incomplete}${final.errorMessage ? `: ${final.errorMessage}` : ""}`,
-		};
-	const text = ownText(final);
-	return text
-		? { text }
-		: { failure: "final assistant message has no text of its own" };
 }
 
 const DEFAULT_SUMMARY_LENGTH = 200;

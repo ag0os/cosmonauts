@@ -33,7 +33,7 @@ export interface ScanDomainSourcesOptions {
 	bundledDirs?: string[];
 	/** Optional extra domain source directories (e.g. from --plugin-dir flag). */
 	pluginDirs?: string[];
-	/** Exclude user-installed packages and domains for a base-owned review runtime. */
+	/** `false` excludes user-installed packages and ~/.cosmonauts/domains. */
 	includeUserSources?: boolean;
 	/** Include project-installed packages and the project domains directory. */
 	includeProjectSources?: boolean;
