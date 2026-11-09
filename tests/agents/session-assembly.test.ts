@@ -390,9 +390,16 @@ describe("buildSessionParams", () => {
 				throw new Error("Expected a named inline knowledge extension");
 			}
 			const pi = createMockPi({ cwd: tmp.path });
+			pi.registerTool({
+				name: "unrelated",
+				execute: async () => ({ details: { unrelated: true } }),
+			});
 			await inline.factory(pi as never);
 
-			expect([...pi.tools.keys()]).toEqual(["recall"]);
+			expect([...pi.tools.keys()]).toEqual(["unrelated", "recall"]);
+			await expect(pi.callTool("unrelated", {})).resolves.toMatchObject({
+				details: { unrelated: true },
+			});
 			await expect(pi.callTool("remember", { content: "no" })).rejects.toThrow(
 				"Tool not found",
 			);
@@ -678,4 +685,15 @@ it("a host preset cannot widen an exact declaration tool list", async () => {
 	);
 	expect(params.tools).toEqual(["read"]);
 	expect(params.exactTools).toBe(true);
+});
+
+it("a host preset replaces a named-preset declaration's tools", async () => {
+	await setupMinimalDomains(tmp.path);
+	const params = await buildSessionParams(
+		makeOptions({
+			def: makeDef({ tools: "coding" }),
+			sessionPolicy: { toolPreset: "readonly" },
+		}),
+	);
+	expect(params.tools).toEqual(["read", "grep", "find", "ls"]);
 });

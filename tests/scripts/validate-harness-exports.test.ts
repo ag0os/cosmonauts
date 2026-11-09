@@ -27,11 +27,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
-const PLAYWRIGHT_FOREIGN_ASSET_ID = [
-	"skill:",
-	"cod" + "ing",
-	"/playwright-cli",
-].join("");
+const PROVISIONED_FOREIGN_ASSET_ID = "skill:shared/plan";
 
 afterEach(async () => {
 	await Promise.all(
@@ -203,13 +199,13 @@ describe("repository harness export validation", () => {
 			localExclude,
 			`${await readFile(localExclude, "utf8")}node_modules\n`,
 		);
-		await mkdir(join(provisionProject, ".claude/skills/playwright-cli"), {
+		await mkdir(join(provisionProject, ".claude/skills/plan"), {
 			recursive: true,
 		});
 		await mkdir(provisionHome, { recursive: true });
 		const provisionedConflict = join(
 			provisionProject,
-			".claude/skills/playwright-cli/SKILL.md",
+			".claude/skills/plan/SKILL.md",
 		);
 		await writeFile(provisionedConflict, "ratified foreign bytes\n");
 		const sync = await execJsonAllowFailure(
@@ -228,7 +224,7 @@ describe("repository harness export validation", () => {
 			expect(report.body.rows.filter((row) => row.final !== "current")).toEqual(
 				[
 					expect.objectContaining({
-						asset: PLAYWRIGHT_FOREIGN_ASSET_ID,
+						asset: PROVISIONED_FOREIGN_ASSET_ID,
 						target: "claude",
 						scope: "project",
 						reason: "foreign-or-untraceable",
@@ -951,12 +947,27 @@ async function execJsonAllowFailure(
 	cwd: string,
 	home: string,
 ): Promise<{ readonly processExit: number; readonly body: HarnessJsonReport }> {
-	// This retained shipped-asset acceptance uses the explicit content consumer;
-	// the content-free bin intentionally has no shipped skill catalog.
-	const entry = join(dirname(cwd), "content-entry.ts");
+	// The content-free bin discovers no built-ins, so this test owns a host
+	// that loads only the clone's remaining domains/ built-ins.
+	const entry = join(dirname(cwd), "builtin-domains-entry.ts");
+	const at = (path: string) => JSON.stringify(join(cwd, path));
 	await writeFile(
 		entry,
-		`import ${JSON.stringify(join(cwd, "domains/host-runtime.ts"))};\nimport ${JSON.stringify(join(cwd, "cli/main.ts"))};\n`,
+		[
+			`import { loadProjectConfig } from ${at("lib/config/index.ts")};`,
+			`import { CosmonautsRuntime } from ${at("lib/runtime.ts")};`,
+			`import { setRuntimeHost } from ${at("lib/runtime-host.ts")};`,
+			"setRuntimeHost(async (request) =>",
+			"\tCosmonautsRuntime.create({",
+			"\t\tprojectRoot: request.projectRoot,",
+			"\t\tprojectConfig: await loadProjectConfig(request.projectRoot),",
+			`\t\tbuiltinDomainsDir: ${at("domains")},`,
+			"\t\tdomainOverride: request.domainOverride,",
+			"\t}),",
+			");",
+			`await import(${at("cli/main.ts")});`,
+			"",
+		].join("\n"),
 	);
 	try {
 		const { stdout } = await execFileAsync("bun", [entry, ...args], {

@@ -8,7 +8,7 @@ import {
 	utimes,
 	writeFile,
 } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import { AgentRegistry } from "../../../lib/agents/index.ts";
@@ -599,17 +599,17 @@ describe("cosmonauts run drive compat run", () => {
 		expect(spec.promptTemplate.envelopeContent).toBe(expectedContent);
 	});
 
-	test("honors an explicit legacy bundled envelope path", async () => {
+	test("honors an explicit envelope path verbatim instead of the default", async () => {
 		const fixture = await setupFixture(1);
-		const legacyEnvelopePath = join(
-			originalCwd,
-			"bundled",
-			"coding",
+		const explicitEnvelopePath = join(
+			temp.path,
+			"explicit",
 			"drivers",
 			"templates",
 			"envelope.md",
 		);
-		const legacyContent = await readFile(legacyEnvelopePath, "utf-8");
+		await mkdir(dirname(explicitEnvelopePath), { recursive: true });
+		await writeFile(explicitEnvelopePath, "Explicit envelope\n", "utf-8");
 
 		await parseDrive([
 			"--plan",
@@ -619,18 +619,15 @@ describe("cosmonauts run drive compat run", () => {
 			"--mode",
 			"inline",
 			"--envelope",
-			legacyEnvelopePath,
+			explicitEnvelopePath,
 		]);
 
 		const spec = firstRunInlineSpec();
-		expect(spec.promptTemplate.envelopePath).toBe(legacyEnvelopePath);
-		expect(spec.promptTemplate.envelopePath).toContain(
-			"bundled/coding/drivers/templates/envelope.md",
+		expect(spec.promptTemplate.envelopePath).toBe(explicitEnvelopePath);
+		expect(spec.promptTemplate.envelopePath).not.toBe(
+			resolveDefaultDriveEnvelopePath(),
 		);
-		expect(spec.promptTemplate.envelopePath).not.toContain(
-			"bundled/coding/coding",
-		);
-		expect(spec.promptTemplate.envelopeContent).toBe(legacyContent);
+		expect(spec.promptTemplate.envelopeContent).toBe("Explicit envelope\n");
 	});
 
 	test("keeps absent-inline and false-detached CLI specs layout and output exact", async () => {

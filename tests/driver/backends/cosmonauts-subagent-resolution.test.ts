@@ -20,6 +20,7 @@ import { runInline } from "../../../lib/driver/driver.ts";
 import { createPiSpawner } from "../../../lib/orchestration/agent-spawner.ts";
 import { resolveSpawnAgent } from "../../../lib/orchestration/spawn-resolution.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
+import { writeSyntheticInstallableDomainPackage } from "../../helpers/packages.ts";
 
 const REPO_ROOT = resolve(
 	fileURLToPath(import.meta.url),
@@ -29,7 +30,6 @@ const REPO_ROOT = resolve(
 	"..",
 );
 const DOMAINS_DIR = join(REPO_ROOT, "domains");
-const BUNDLED_CODING_DIR = join(REPO_ROOT, "bundled", "coding");
 
 const sessionFactoryMocks = vi.hoisted(() => ({
 	createAgentSessionFromDefinition: vi.fn(),
@@ -41,6 +41,48 @@ vi.mock("../../../lib/orchestration/session-factory.ts", () => ({
 }));
 
 let tempDir: string | undefined;
+const domainRoots: string[] = [];
+
+/**
+ * A synthetic default-lead domain without a worker and a second domain that
+ * provides one, beside the framework built-ins.
+ */
+async function loadSyntheticWorkerDomains() {
+	const root = await mkdtemp(join(tmpdir(), "subagent-resolution-domains-"));
+	domainRoots.push(root);
+	const lead = await writeSyntheticInstallableDomainPackage(
+		join(root, "studio"),
+		{
+			domainId: "studio",
+			lead: "scribe",
+			agents: [{ id: "scribe" }],
+			prompts: { scribe: "Synthetic lead persona" },
+		},
+	);
+	const workers = await writeSyntheticInstallableDomainPackage(
+		join(root, "alpha"),
+		{
+			domainId: "alpha",
+			agents: [{ id: "worker" }],
+			prompts: { worker: "Synthetic worker persona" },
+		},
+	);
+	return loadDomainsFromSources([
+		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
+		{
+			domainsDir: lead.domainRoot,
+			sourceType: "domain-root",
+			origin: "synthetic-lead",
+			precedence: 2,
+		},
+		{
+			domainsDir: workers.domainRoot,
+			sourceType: "domain-root",
+			origin: "synthetic-workers",
+			precedence: 3,
+		},
+	]);
+}
 
 beforeEach(() => {
 	sessionFactoryMocks.createAgentSessionFromDefinition.mockReset();
@@ -95,6 +137,11 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+	await Promise.all(
+		domainRoots
+			.splice(0)
+			.map((path) => rm(path, { recursive: true, force: true })),
+	);
 	if (tempDir) {
 		await rm(tempDir, { recursive: true, force: true });
 		tempDir = undefined;
@@ -102,22 +149,16 @@ afterEach(async () => {
 });
 
 describe("cosmonauts-subagent dogfood worker resolution", () => {
-	test("resolves default unqualified Drive worker with no domain context to coding/worker", async () => {
-		const domains = await loadDomainsFromSources([
-			{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
-			{
-				domainsDir: BUNDLED_CODING_DIR,
-				sourceType: "domain-root",
-				origin: "bundled",
-				precedence: 2,
-			},
-		]);
-		const mainDomain = domains.find((domain) => domain.manifest.id === "main");
-		const codingDomain = domains.find(
-			(domain) => domain.manifest.id === "coding",
+	test("resolves default unqualified Drive worker with no domain context to the domain that provides it", async () => {
+		const domains = await loadSyntheticWorkerDomains();
+		const leadDomain = domains.find(
+			(domain) => domain.manifest.id === "studio",
 		);
-		expect(mainDomain?.agents.has("worker")).toBe(false);
-		expect(codingDomain?.agents.has("worker")).toBe(true);
+		const workerDomain = domains.find(
+			(domain) => domain.manifest.id === "alpha",
+		);
+		expect(leadDomain?.agents.has("worker")).toBe(false);
+		expect(workerDomain?.agents.has("worker")).toBe(true);
 
 		const registry = createRegistryFromDomains(domains);
 		const spawner = createPiSpawner(registry, DOMAINS_DIR);
@@ -135,7 +176,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		const [resolvedDefinition, spawnConfig] =
 			sessionFactoryMocks.createAgentSessionFromDefinition.mock.calls[0] ?? [];
 		const agent = resolvedDefinition as AgentDefinition;
-		expect(`${agent.domain}/${agent.id}`).toBe("coding/worker");
+		expect(`${agent.domain}/${agent.id}`).toBe("alpha/worker");
 		expect(spawnConfig).toMatchObject({
 			role: "worker",
 			domainContext: undefined,
@@ -146,24 +187,16 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 	// become the spawner `role`, which session-factory bakes into the session
 	// file path (`${role}-<uuid>.jsonl`). Worker SELECTION rides `agentReference`.
 	test("keeps the plain-worker session and manifest layout when a qualified worker resolution is frozen", async () => {
-		const domains = await loadDomainsFromSources([
-			{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
-			{
-				domainsDir: BUNDLED_CODING_DIR,
-				sourceType: "domain-root",
-				origin: "bundled",
-				precedence: 2,
-			},
-		]);
+		const domains = await loadSyntheticWorkerDomains();
 		const registry = createRegistryFromDomains(domains);
 		const spawner = createPiSpawner(registry, DOMAINS_DIR);
 		const frozen = resolveSpawnAgent(registry, {
-			role: "coding/worker",
+			role: "alpha/worker",
 			domainContext: undefined,
 			agentReference: undefined,
 		});
-		if (!frozen) throw new Error("expected coding/worker to resolve");
-		expect(frozen.reference?.requested.qualifiedId).toBe("coding/worker");
+		if (!frozen) throw new Error("expected alpha/worker to resolve");
+		expect(frozen.reference?.requested.qualifiedId).toBe("alpha/worker");
 
 		const backend = createCosmonautsSubagentBackend({
 			workerAgent: "worker",
@@ -175,7 +208,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 
 		const [, spawnConfig] =
 			sessionFactoryMocks.createAgentSessionFromDefinition.mock.calls[0] ?? [];
-		// role stays the plain worker (never "coding/worker") so session/manifest
+		// role stays the plain worker (never "alpha/worker") so session/manifest
 		// paths are unchanged, while the frozen reference still selects the agent.
 		expect((spawnConfig as { role: string }).role).toBe("worker");
 		expect(
@@ -212,15 +245,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 	});
 
 	test("runs inline Drive with cosmonauts-subagent, omitted envelope input, and no domain override", async () => {
-		const domains = await loadDomainsFromSources([
-			{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
-			{
-				domainsDir: BUNDLED_CODING_DIR,
-				sourceType: "domain-root",
-				origin: "bundled",
-				precedence: 2,
-			},
-		]);
+		const domains = await loadSyntheticWorkerDomains();
 		const registry = createRegistryFromDomains(domains);
 		const spawner = createPiSpawner(registry, DOMAINS_DIR);
 		const backend = createCosmonautsSubagentBackend({
@@ -277,7 +302,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		const [resolvedDefinition, spawnConfig] =
 			sessionFactoryMocks.createAgentSessionFromDefinition.mock.calls[0] ?? [];
 		const agent = resolvedDefinition as AgentDefinition;
-		expect(`${agent.domain}/${agent.id}`).toBe("coding/worker");
+		expect(`${agent.domain}/${agent.id}`).toBe("alpha/worker");
 		expect(spawnConfig).toMatchObject({
 			role: "worker",
 			domainContext: undefined,
@@ -290,7 +315,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		expect(events).toContain(`"taskId":"${task.id}"`);
 		expect(events).toContain('"kind":"agent_resolved"');
 		expect(events).toContain('"requestedRole":"worker"');
-		expect(events).toContain('"resolvedAgentId":"coding/worker"');
+		expect(events).toContain('"resolvedAgentId":"alpha/worker"');
 	});
 });
 

@@ -436,7 +436,6 @@ function terminalStepResult(result: Omit<StageResult, "stage">): StepResult {
 			: {}),
 		summary: result.summary ?? result.error ?? "",
 		artifacts: result.artifacts ?? [],
-		...(result.run ? { childRun: result.run } : {}),
 	};
 }
 
@@ -883,7 +882,6 @@ function stageResultsFromStepRecords(
 				...(record.result.summary !== "" && {
 					summary: record.result.summary,
 				}),
-				...(record.result.childRun && { run: record.result.childRun }),
 				...(record.result.artifacts.length > 0 && {
 					artifacts: record.result.artifacts,
 				}),

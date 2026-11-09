@@ -283,10 +283,36 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 			>,
 			backendSummary: "",
 		},
+		{
+			outcome: "blocked",
+			response: {
+				success: false,
+				outcome: "blocked",
+				nextAction: "wait_for_human",
+				error: "held",
+			},
+			summaries: { inline: undefined, durable: "held" } as Record<
+				string,
+				string | undefined
+			>,
+			backendSummary: "held",
+			stepResult: { outcome: "blocked", nextAction: "wait_for_human" },
+		},
+		{
+			outcome: "cancelled",
+			response: { success: false, outcome: "cancelled", error: "stopped" },
+			summaries: { inline: undefined, durable: "stopped" } as Record<
+				string,
+				string | undefined
+			>,
+			backendSummary: "stopped",
+			stepResult: { outcome: "cancelled" },
+		},
 	])("terminal $outcome retains summary, artifacts and stage slug", async ({
 		response,
 		summaries,
 		backendSummary,
+		stepResult,
 	}) => {
 		const root = join(tmp.path, name);
 		await mkdir(root, { recursive: true });
@@ -306,6 +332,7 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 		expect(result.success).toBe(response.success);
 
 		expect(result.stageResults[0]?.summary).toBe(summaries[name]);
+		if (name === "durable") expect(result.run).toBeDefined();
 		if (result.run) {
 			const store = new FileRunStore({
 				rootDir: join(root, "missions", "sessions"),
@@ -317,7 +344,10 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 			expect(record?.result).toMatchObject({
 				summary: backendSummary,
 				artifacts: [],
+				...stepResult,
 			});
+			if (stepResult && !("nextAction" in stepResult))
+				expect(record?.result).not.toHaveProperty("nextAction");
 		}
 
 		expect(gate).toHaveBeenCalledWith(

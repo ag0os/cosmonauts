@@ -283,19 +283,13 @@ test("session host paths do not import review policy or name review actors", asy
 	}
 });
 
-// The remaining QM CLI dependencies retire with D2.
-const CONTENT_IMPORT_EXCEPTIONS = [
-	{
-		from: "cli/main.ts",
-		to: "lib/orchestration/quality-review-launch.ts",
-		removal: "step6: delete QM CLI content",
-	},
-	{
-		from: "cli/main.ts",
-		to: "lib/orchestration/quality-review-run.ts",
-		removal: "step6: delete QM CLI content",
-	},
-] as const;
+// Named LS-2 exceptions, each with its removal step. D2 retired the last ones
+// (the QM CLI edges); the list stays so the guard still checks observed == named.
+const CONTENT_IMPORT_EXCEPTIONS: readonly {
+	readonly from: string;
+	readonly to: string;
+	readonly removal: string;
+}[] = [];
 function isContentCode(path: string): boolean {
 	return /^(?:lib\/lean-run\/|cli\/lean\/|lib\/orchestration\/quality-review-)/.test(
 		path,

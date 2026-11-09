@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -528,36 +528,34 @@ describe("driver e2e run_driver integration", () => {
 		);
 	});
 
-	test("run_driver honors an explicit legacy bundled envelopePath", async () => {
+	test("run_driver honors an explicit envelopePath verbatim instead of the default", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const frameworkRoot = process.cwd();
-		const legacyEnvelopePath = join(
-			frameworkRoot,
-			"bundled",
-			"coding",
+		const explicitEnvelopePath = join(
+			temp.path,
+			"explicit",
 			"drivers",
 			"templates",
 			"envelope.md",
 		);
+		await mkdir(dirname(explicitEnvelopePath), { recursive: true });
+		await writeFile(explicitEnvelopePath, "Explicit envelope\n", "utf-8");
 		backendMocks.run.mockResolvedValue(successResult());
 
 		const result = await runDriver(fixture, {
-			envelopePath: legacyEnvelopePath,
+			envelopePath: explicitEnvelopePath,
 			frameworkRoot,
 		});
 		await waitForCompletion(result.workdir);
 		const spec = await readSpec(result.workdir);
 
-		expect(spec.promptTemplate.envelopePath).toBe(legacyEnvelopePath);
-		expect(spec.promptTemplate.envelopePath).toContain(
-			"bundled/coding/drivers/templates/envelope.md",
-		);
-		expect(spec.promptTemplate.envelopePath).not.toContain(
-			"bundled/coding/coding",
+		expect(spec.promptTemplate.envelopePath).toBe(explicitEnvelopePath);
+		expect(spec.promptTemplate.envelopePath).not.toBe(
+			resolveDefaultDriveEnvelopePath({ frameworkRoot }),
 		);
 		await expect(
 			readFile(spec.promptTemplate.envelopePath, "utf-8"),
-		).resolves.toBe(await readFile(legacyEnvelopePath, "utf-8"));
+		).resolves.toBe("Explicit envelope\n");
 	});
 
 	test("run_driver uses the project root for repository commit locking", async () => {

@@ -6,7 +6,7 @@ episodic log of consequential project and user events. Files remain human-owned,
 current disk is the source of truth, and Pi session state remains responsible
 for short-term conversational continuity.
 
-Only main/cosmo consumes authored agent memory. The extension still exposes
+Authored agent memory is consumed only by an agent that declares the agent-memory extension (the former `main/cosmo` was removed in D2). The extension still exposes
 exactly two tools: remember for explicit saves and recall for pull retrieval.
 
 ## Fixed Store Layout
@@ -301,9 +301,9 @@ explicit-save contracts remain authoritative.
 When enabled, every Cosmonauts-assembled agent receives the compact knowledge
 index and the shared `recall` tool. Dedicated knowledge and memory tools, plus
 framework retrieval and injection paths, use `MemoryStore`; no second
-framework knowledge path exists. Existing narrow legacy authorization remains:
-authored `remember` stays limited to Cosmo, and architecture-map detail reads
-stay limited to their established agent set. A matching profile is pinned
+framework knowledge path exists. Authorization comes from declaration grants:
+authored `remember` and architecture-map detail reads are available only to
+agents whose declaration grants them. A matching profile is pinned
 outside the combined recall limit, preserving full-profile recovery while
 knowledge and other matching records compete within the requested result
 window.
@@ -572,7 +572,7 @@ edits are not captured. Pi session state remains the session-scope answer; W3
 does not capture raw sessions or create a session-scoped markdown store.
 
 Plans and tasks use the qualified Pi actor at interactive tool edges and
-`cosmonauts/cli` at CLI edges. Authored saves use `main/cosmo`. A chain uses its
+`cosmonauts/cli` at CLI edges. Authored saves use the declaring agent's qualified id. A chain uses its
 first executable stage's resolved qualified id (the first member for a
 group-first chain), with the raw stage name only when resolution is unavailable.
 A Drive launch freezes the exact execution-resolved qualified worker id,
@@ -691,8 +691,9 @@ trigger; W2 does not add a cache, registry, or alternative backend in advance.
 
 The combined memory system preserves these limits:
 
-- Only main/cosmo declares the agent-memory extension. Factory registration
-  keeps remember and recall host-visible, but both reject non-Cosmo execution
+- Only the agent that declares the agent-memory extension (formerly `main/cosmo`,
+  removed in D2) consumes it. Factory registration
+  keeps remember and recall host-visible, but both reject other execution
   before store access.
 - The shared `MemoryStore` remains the public write, retrieve, and consolidate
   seam. Only configured knowledge consolidation runs living-memory; unconfigured

@@ -733,7 +733,7 @@ describe("resolveModel", () => {
 	});
 });
 
-test("consumer session hooks observe tool output and pair creation with disposal", async () => {
+test("spawn events from a policy session never forward raw tool output", async () => {
 	mocks.getModel.mockReturnValue({ id: "mock-model" });
 	const session = createMockSession({ sessionId: "consumer-hooks" });
 	let listener: ((event: unknown) => void) | undefined;
@@ -751,15 +751,8 @@ test("consumer session hooks observe tool output and pair creation with disposal
 		});
 	});
 	mocks.createAgentSession.mockResolvedValue({ session });
-	const onCreated = vi.fn();
-	const onDisposed = vi.fn();
-	const observeToolResult = vi.fn(() => ({ approved: true }));
 	const events: unknown[] = [];
-	const policy = createConsumerSessionPolicy({
-		onCreated,
-		onDisposed,
-		observeToolResult,
-	});
+	const policy = createConsumerSessionPolicy();
 	const spawner = createPiSpawner(FIXTURE_REGISTRY, undefined, {
 		resolver: realResolver,
 	});
@@ -772,18 +765,15 @@ test("consumer session hooks observe tool output and pair creation with disposal
 			onEvent: (event) => events.push(event),
 		});
 		expect(result.success, result.error).toBe(true);
-		expect(onCreated).toHaveBeenCalledWith(session);
-		expect(onDisposed).toHaveBeenCalledWith("consumer-hooks");
-		expect(observeToolResult).toHaveBeenCalledWith("fixture_status", {
-			private: "not forwarded",
+		expect(events).toContainEqual({
+			type: "tool_execution_end",
+			sessionId: "consumer-hooks",
+			toolName: "fixture_status",
+			toolCallId: "fixture",
+			isError: false,
 		});
-		expect(events).toContainEqual(
-			expect.objectContaining({
-				type: "tool_execution_end",
-				result: { approved: true },
-			}),
-		);
 		expect(JSON.stringify(events)).not.toContain("not forwarded");
+		expect(session.dispose).toHaveBeenCalledOnce();
 	} finally {
 		spawner.dispose();
 	}

@@ -20,7 +20,6 @@ const packageMocks = vi.hoisted(() => ({
 
 const runtimeMocks = vi.hoisted(() => ({
 	create: vi.fn(),
-	discoverFrameworkBundledPackageDirs: vi.fn(),
 }));
 
 vi.mock("../../../lib/agent-packages/build.ts", async (importOriginal) => {
@@ -48,18 +47,6 @@ vi.mock("../../../lib/agent-packages/export.ts", async (importOriginal) => {
 vi.mock("../../../lib/runtime.ts", () => ({
 	CosmonautsRuntime: { create: runtimeMocks.create },
 }));
-
-vi.mock("../../../lib/packages/dev-bundled.ts", async (importOriginal) => {
-	const actual =
-		await importOriginal<
-			typeof import("../../../lib/packages/dev-bundled.ts")
-		>();
-	return {
-		...actual,
-		discoverFrameworkBundledPackageDirs:
-			runtimeMocks.discoverFrameworkBundledPackageDirs,
-	};
-});
 
 const tmp = useTempDir("export-subcommand-");
 
@@ -115,9 +102,6 @@ function makePackage(overrides: Partial<AgentPackage> = {}): AgentPackage {
 function setupRuntime(
 	agents: readonly AgentDefinition[] = [explorerAgent],
 ): void {
-	runtimeMocks.discoverFrameworkBundledPackageDirs.mockResolvedValue([
-		"/framework/bundled/alpha",
-	]);
 	runtimeMocks.create.mockResolvedValue({
 		agentRegistry: new AgentRegistry(agents),
 		domainContext: "alpha",
@@ -221,9 +205,6 @@ describe("createExportProgram", () => {
 			outPath,
 		]);
 
-		expect(
-			runtimeMocks.discoverFrameworkBundledPackageDirs,
-		).not.toHaveBeenCalled();
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
 				projectRoot: process.cwd(),

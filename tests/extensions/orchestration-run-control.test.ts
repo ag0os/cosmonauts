@@ -28,7 +28,7 @@ type FilesystemSnapshot = Record<
 >;
 
 describe("orchestration run control tools", () => {
-	test("reports consumer artifact metadata and post-terminal disposition without content-specific artifact ids", async () => {
+	test("reports consumer artifact metadata without content-specific artifact ids", async () => {
 		const store = new FileRunStore({
 			rootDir: join(temp.path, "missions", "sessions"),
 		});
@@ -53,16 +53,6 @@ describe("orchestration run control tools", () => {
 			runId: record.runId,
 			result: { outcome: "completed" },
 		});
-		const disposition = {
-			disposition: "removal-timed-out",
-			reason: "consumer cleanup deadline",
-			workspace: "/tmp/consumer-workspace",
-		};
-		await store.appendEvent(ref(record), {
-			type: "run_activity",
-			runId: record.runId,
-			details: { kind: "artifact-disposition", ...disposition },
-		});
 		const pi = createMockPi(temp.path);
 		orchestrationExtension(pi as never);
 		const status = (await pi.callTool(
@@ -70,9 +60,8 @@ describe("orchestration run control tools", () => {
 			ref(record),
 		)) as ToolResult<RunStatusSummary>;
 		expect(status.details.artifacts).toEqual([artifact]);
-		expect(status.details.postTerminalDisposition).toEqual(disposition);
-		expect(status.content[0]?.text).toContain(
-			"; disposition removal-timed-out (consumer cleanup deadline) at /tmp/consumer-workspace",
+		expect(status.content[0]?.text).toBe(
+			"consumer-plan/consumer-observe: completed (event)",
 		);
 	});
 

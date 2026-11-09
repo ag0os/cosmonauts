@@ -1,12 +1,9 @@
 import { existsSync } from "node:fs";
 /**
- * Tests for CLI argument parsing (parseCliArgs) and framework dev-mode
- * detection helpers (isCosmonautsFrameworkRepo, discoverBundledPackageDirs).
+ * Tests for CLI argument parsing (parseCliArgs) and CLI rendering helpers.
  */
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createHarnessProgram } from "../../cli/harness/subcommand.ts";
 import {
 	type AgentListItem,
@@ -14,14 +11,11 @@ import {
 	buildInitSessionConfig,
 	buildNoInteractiveTerminalMessage,
 	type DomainListItem,
-	discoverBundledPackageDirs,
-	isCosmonautsFrameworkRepo,
 	parseCliArgs,
 	renderAgentsList,
 	renderDomainsList,
 	resolveDumpPromptDomain,
 	resolveInteractiveExtensionPaths,
-	runCliQualityReview,
 	selectNoTtyCause,
 	selectRunMode,
 } from "../../cli/main.ts";
@@ -46,31 +40,6 @@ function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 }
 
 type ExpectedRunMode = ReturnType<typeof selectRunMode>;
-
-test("CLI quality review carries the print prompt and aborts on SIGINT", async () => {
-	let capturedPrompt: string | undefined;
-	const result = await runCliQualityReview(
-		{ projectRoot: "/tmp/project", operatorNote: "check this change" },
-		async (options) => {
-			capturedPrompt = options.operatorNote;
-			expect(options.signal?.aborted).toBe(false);
-			const interrupt = process.listeners("SIGINT").at(-1);
-			expect(interrupt).toBeTypeOf("function");
-			interrupt?.("SIGINT");
-			expect(options.signal?.aborted).toBe(true);
-			return {
-				ref: { scope: "chain", runId: "qm-test" },
-				stepResult: {
-					outcome: "cancelled",
-					summary: "cancelled",
-					artifacts: [],
-				},
-			};
-		},
-	);
-	expect(capturedPrompt).toBe("check this change");
-	expect(result.stepResult.outcome).toBe("cancelled");
-});
 
 function makeDomain(id: string): LoadedDomain {
 	return {
@@ -864,200 +833,5 @@ describe("selectRunMode", () => {
 				expected: "interactive",
 			},
 		]);
-	});
-});
-
-// ============================================================================
-// isCosmonautsFrameworkRepo
-// ============================================================================
-
-async function createTempDir(name: string): Promise<string> {
-	const tmpDir = join(
-		import.meta.dirname,
-		`.tmp-${name}-${Math.random().toString(36).slice(2)}`,
-	);
-	await mkdir(tmpDir, { recursive: true });
-	return tmpDir;
-}
-
-async function writeFrameworkPackage(
-	root: string,
-	name = "cosmonauts",
-): Promise<void> {
-	await writeFile(
-		join(root, "package.json"),
-		JSON.stringify({ name, version: "0.1.0" }),
-	);
-	await mkdir(join(root, "bundled"));
-	await mkdir(join(root, ".git"));
-}
-
-describe("isCosmonautsFrameworkRepo", () => {
-	let tmpDir: string;
-
-	beforeEach(async () => {
-		tmpDir = await createTempDir("framework-repo");
-	});
-
-	afterEach(async () => {
-		await rm(tmpDir, { recursive: true, force: true });
-	});
-
-	test("returns true when package.json name is 'cosmonauts', bundled/ exists, and .git/ is present", async () => {
-		await writeFile(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
-		);
-		await mkdir(join(tmpDir, "bundled"));
-		await mkdir(join(tmpDir, ".git"));
-
-		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(true);
-	});
-
-	test("returns true in a git worktree, where .git is a file rather than a directory", async () => {
-		await writeFile(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
-		);
-		await mkdir(join(tmpDir, "bundled"));
-		await writeFile(
-			join(tmpDir, ".git"),
-			"gitdir: /somewhere/else/.git/worktrees/example\n",
-		);
-
-		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(true);
-	});
-
-	test("returns true without .git when tests/ is present, as in a Stryker sandbox", async () => {
-		await writeFile(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
-		);
-		await mkdir(join(tmpDir, "bundled"));
-		await mkdir(join(tmpDir, "tests"));
-
-		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(true);
-	});
-
-	test("returns false when package.json name is not 'cosmonauts'", async () => {
-		await writeFrameworkPackage(tmpDir, "my-project");
-
-		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
-	});
-
-	test("returns false when bundled/ directory does not exist", async () => {
-		await writeFile(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
-		);
-		await mkdir(join(tmpDir, ".git"));
-
-		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
-	});
-
-	test("returns false for installed package shape with neither .git nor tests/", async () => {
-		await writeFile(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
-		);
-		await mkdir(join(tmpDir, "bundled"));
-
-		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
-	});
-
-	test("returns false when package.json is absent", async () => {
-		await mkdir(join(tmpDir, "bundled"));
-		await mkdir(join(tmpDir, ".git"));
-
-		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
-	});
-
-	test("returns false when package.json is malformed JSON", async () => {
-		await writeFile(join(tmpDir, "package.json"), "not json {{{");
-		await mkdir(join(tmpDir, "bundled"));
-		await mkdir(join(tmpDir, ".git"));
-
-		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
-	});
-
-	test("returns false when root directory does not exist", async () => {
-		expect(await isCosmonautsFrameworkRepo("/no/such/path")).toBe(false);
-	});
-});
-
-// ============================================================================
-// discoverBundledPackageDirs
-// ============================================================================
-
-describe("discoverBundledPackageDirs", () => {
-	let tmpDir: string;
-
-	beforeEach(async () => {
-		tmpDir = await createTempDir("bundled");
-	});
-
-	afterEach(async () => {
-		await rm(tmpDir, { recursive: true, force: true });
-	});
-
-	test("returns directories that contain cosmonauts.json", async () => {
-		await mkdir(join(tmpDir, "coding"));
-		await writeFile(
-			join(tmpDir, "coding", "cosmonauts.json"),
-			JSON.stringify({ name: "coding" }),
-		);
-
-		const dirs = await discoverBundledPackageDirs(tmpDir);
-
-		expect(dirs).toEqual([join(tmpDir, "coding")]);
-	});
-
-	test("returns multiple package directories", async () => {
-		for (const pkg of ["coding", "review"]) {
-			await mkdir(join(tmpDir, pkg));
-			await writeFile(
-				join(tmpDir, pkg, "cosmonauts.json"),
-				JSON.stringify({ name: pkg }),
-			);
-		}
-
-		const dirs = await discoverBundledPackageDirs(tmpDir);
-
-		expect(dirs.sort()).toEqual(
-			[join(tmpDir, "coding"), join(tmpDir, "review")].sort(),
-		);
-	});
-
-	test("skips directories without cosmonauts.json", async () => {
-		await mkdir(join(tmpDir, "with-manifest"));
-		await writeFile(
-			join(tmpDir, "with-manifest", "cosmonauts.json"),
-			JSON.stringify({ name: "with-manifest" }),
-		);
-		await mkdir(join(tmpDir, "no-manifest"));
-
-		const dirs = await discoverBundledPackageDirs(tmpDir);
-
-		expect(dirs).toEqual([join(tmpDir, "with-manifest")]);
-	});
-
-	test("skips files (non-directories)", async () => {
-		await writeFile(join(tmpDir, "cosmonauts.json"), "{}");
-
-		const dirs = await discoverBundledPackageDirs(tmpDir);
-
-		expect(dirs).toEqual([]);
-	});
-
-	test("returns empty array when bundledDir does not exist", async () => {
-		const dirs = await discoverBundledPackageDirs("/no/such/bundled/dir");
-
-		expect(dirs).toEqual([]);
-	});
-
-	test("returns empty array when bundledDir is empty", async () => {
-		const dirs = await discoverBundledPackageDirs(tmpDir);
-
-		expect(dirs).toEqual([]);
 	});
 });

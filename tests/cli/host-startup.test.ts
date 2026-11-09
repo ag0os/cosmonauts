@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
 import { writeProjectInstalledDomainPackage } from "../helpers/domain-package-fixture.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { writeProjectInstalledSyntheticDomainPackage } from "../helpers/packages.ts";
 
 const tmp = useTempDir("library-cli-startup-");
 const exec = promisify(execFile);
@@ -87,17 +88,15 @@ test.each([
 	["--list-domains", "--json"],
 	["--list-agents", "--json"],
 	["--print", "hello"],
-])("an installed coding package without shared fails loudly for %s", async (...args) => {
+])("an installed package whose agent needs an absent capability fails loudly for %s", async (...args) => {
 	const home = join(tmp.path, "home");
 	await mkdir(home);
-	const installed = join(tmp.path, ".cosmonauts", "packages", "coding");
-	await mkdir(join(tmp.path, ".cosmonauts", "packages"), { recursive: true });
-	// Keep the actual package's relative library imports intact, without installing shared.
-	await symlink(
-		fileURLToPath(new URL("../../bundled/coding", import.meta.url)),
-		installed,
-		"dir",
-	);
+	await writeProjectInstalledSyntheticDomainPackage(tmp.path, {
+		domainId: "studio",
+		lead: "scribe",
+		agents: [{ id: "scribe", capabilities: ["absent-capability"] }],
+		prompts: { scribe: "Synthetic persona" },
+	});
 	await expect(
 		exec("bun", [bin, ...args], {
 			cwd: tmp.path,
@@ -106,7 +105,7 @@ test.each([
 	).rejects.toMatchObject({
 		code: 1,
 		stderr: expect.stringMatching(
-			/Domain validation failed[\s\S]*Capability "framework-base" not found/,
+			/Domain validation failed[\s\S]*Capability "absent-capability" not found/,
 		),
 	});
 });

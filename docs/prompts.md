@@ -26,42 +26,14 @@ A capability that doesn't exist in either tier raises an error — capabilities 
 
 ## Examples
 
-### `main/cosmo` — executive assistant
-
-Definition: `domains/main/agents/cosmo.ts`
-Capabilities: `[core, tasks, spawning, todo, drive]`
-
-Final stack:
-- L0 `lib/prompts/framework/base.md`
-- L1 `domains/shared/capabilities/core.md`
-- L1 `domains/shared/capabilities/tasks.md`
-- L1 `domains/shared/capabilities/spawning.md`
-- L1 `domains/shared/capabilities/todo.md`
-- L1 `domains/shared/capabilities/drive.md`
-- L2 `domains/main/prompts/cosmo.md`
-
-### `coding/cody` — coding-domain lead
-
-Definition: `bundled/coding/agents/cody.ts`
-Capabilities: `[core, engineering-discipline, coding-readwrite, tasks, spawning, todo]`
-
-Final stack:
-- L0 `lib/prompts/framework/base.md`
-- L1 `domains/shared/capabilities/core.md`
-- L1 `bundled/coding/capabilities/engineering-discipline.md`
-- L1 `bundled/coding/capabilities/coding-readwrite.md`
-- L1 `domains/shared/capabilities/tasks.md`
-- L1 `domains/shared/capabilities/spawning.md`
-- L1 `domains/shared/capabilities/todo.md`
-- L2 `bundled/coding/prompts/cody.md`
+The worked examples (`main/cosmo` and `coding/cody`) were removed in D2 with their domains. A consumer agent with capabilities `[core, tasks]` and a persona composes as: L0 `lib/prompts/framework/base.md`, L1 `domains/shared/capabilities/core.md` and `tasks.md`, then L2 the domain's persona prompt.
 
 ## Inspecting a composed prompt
 
 To see the assembled prompt for any agent:
 
 ```bash
-cosmonauts --dump-prompt -a coding/cody --file /tmp/cody-prompt.txt
-cosmonauts --dump-prompt -a cosmo --file /tmp/cosmo-prompt.txt
+cosmonauts --dump-prompt -a <domain>/<agent> --file /tmp/agent-prompt.txt
 ```
 
 Omit `--file` to print to stdout.

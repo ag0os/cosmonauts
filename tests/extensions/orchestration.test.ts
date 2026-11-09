@@ -8,12 +8,6 @@ import { consumerChainAdapter } from "../fixtures/library-consumer/policies.ts";
 
 import "./orchestration-mocks.ts";
 
-vi.mock("../../lib/packages/dev-bundled.ts", () => ({
-	discoverFrameworkBundledPackageDirs: vi.fn(async () => [
-		"/framework/bundled/alpha",
-	]),
-}));
-
 import type { AgentDefinition } from "../../lib/agents/index.ts";
 import { AgentRegistry } from "../../lib/agents/index.ts";
 import type { DomainRegistry } from "../../lib/domains/registry.ts";

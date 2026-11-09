@@ -98,9 +98,6 @@ Reason: framework convention.
 Cosmonauts and Pi load these files by convention through runtime discovery and
 dynamic import:
 
-- `bundled/*/agents/*.ts`
-- `bundled/*/domain.ts`
-- `bundled/*/workflows.ts`
 - `domains/shared/domain.ts`
 - `domains/shared/extensions/*/index.ts`
 - `domains/shared/workflows.ts`

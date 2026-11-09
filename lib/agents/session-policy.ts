@@ -1,4 +1,3 @@
-import type { ProjectConfig } from "../config/types.ts";
 import type { AgentDefinition } from "./types.ts";
 
 /** SDK values stay opaque here so consumer discovery and non-Pi backends remain Pi-free. */
@@ -16,47 +15,20 @@ export interface SessionPolicyResourceOptions {
 	additionalExtensionPaths?: readonly string[];
 	extensionFactories?: readonly unknown[];
 }
-interface HostSessionEvidence {
-	sessionId: string;
-	model?: { provider: string; id: string };
-	messages: readonly unknown[];
-}
 
 /** Host-only hooks, carried by runtime code; never accepted as model tool arguments. */
 export interface SessionPolicy {
-	validateDefinition?: (definition: AgentDefinition) => void;
-	spawn?: SessionSpawnPolicy;
 	toolPreset?: import("./types.ts").AgentToolSet;
 	filterTools?: (tools: readonly string[]) => string[];
-	loadConfig?: (cwd: string) => Promise<ProjectConfig>;
-	prepareSkills?: (
-		paths: string[] | undefined,
-		domainsDir: string | undefined,
-	) => Promise<string[] | undefined>;
 	resourceOptions?: (
 		params: SessionPolicyResources,
 		domainsDir: string | undefined,
 	) => Promise<SessionPolicyResourceOptions>;
-	settingsManager?: () => unknown;
 	transcriptPath?: () => Promise<string>;
-	retainTranscript?: boolean;
-	onCreated?: (session: HostSessionEvidence) => void;
-	onDisposed?: (sessionId: string) => void;
-	onCompletionWait?: (messages: readonly string[], timeoutMs: number) => void;
-	observeToolResult?: (toolName: string, result: unknown) => unknown;
 }
 
 export interface SessionPolicyProvider {
 	spawnPolicy?: (sessionId: string) => SessionSpawnPolicy;
-	launchTarget?: (
-		reference: import("../domains/bindings.ts").ResolvedAgentReference,
-		options: {
-			projectRoot: string;
-			operatorNote: string;
-			planSlug?: string;
-			signal?: AbortSignal;
-		},
-	) => Promise<{ outcome: "success" | "failed"; summary: string }> | undefined;
 	forAgent: (definition: AgentDefinition) => SessionPolicy | undefined;
 	interactiveDenial?: (definition: AgentDefinition) => string | undefined;
 }
@@ -69,26 +41,9 @@ export interface SpawnPolicyRequest {
 	thinkingLevel?: import("./types.ts").ThinkingLevel;
 }
 
-export interface ChildSessionEvidence {
-	session: HostSessionEvidence;
-	spawnId: string;
-	resolvedRole?: string;
-	resolvedModel?: { provider: string; id: string };
-}
-
 /** A bound host policy, obtained before any checkout-owned runtime is loaded. */
 export interface SessionSpawnPolicy {
 	authorize: (request: SpawnPolicyRequest) => string | undefined;
-	prepare?: (request: SpawnPolicyRequest) => {
-		cwd: string;
-		prompt: string;
-		model?: string;
-		sessionPolicy: SessionPolicy;
-	};
-	onRegistered?: (spawnId: string, resolvedRole: string) => void;
-	onFailure?: (message: string) => void;
-	onSettled?: (spawnId: string) => void;
-	onCompleted?: (evidence: ChildSessionEvidence) => Promise<void>;
 }
 
 // Pi may load the same extension through a separate module cache.

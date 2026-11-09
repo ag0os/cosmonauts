@@ -416,7 +416,6 @@ describe("discoverSkills", () => {
 		await writeSkill(alphaSkills, "synthetic-alpha", "Synthetic alpha skill");
 		const skillRoots = [
 			alphaSkills,
-			join(process.cwd(), "domains", "main", "skills"),
 			join(process.cwd(), "domains", "shared", "skills"),
 		];
 		const skillFiles = (

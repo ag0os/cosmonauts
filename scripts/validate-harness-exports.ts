@@ -62,7 +62,6 @@ import type {
 	ResolvedHarnessAssetTarget,
 } from "../lib/harness-adapters/types.ts";
 import { composeHarnessRuntimeInventory } from "../lib/harness-runtime-inventory.ts";
-import { discoverFrameworkBundledPackageDirs } from "../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../lib/runtime.ts";
 
 const execFileAsync = promisify(execFile);
@@ -1903,7 +1902,6 @@ async function createLiveExternalBundleGeneratedNodes(
 	const runtime = await CosmonautsRuntime.create({
 		builtinDomainsDir: join(frameworkRoot, "domains"),
 		projectRoot,
-		bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
 	});
 	const inventory = await composeHarnessRuntimeInventory({
 		projectRoot,

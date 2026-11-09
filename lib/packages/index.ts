@@ -3,8 +3,6 @@
  * Re-exports all package types and manifest utilities
  */
 
-export type { CatalogEntry } from "./catalog.ts";
-export { getBundledCatalog, resolveCatalogEntry } from "./catalog.ts";
 export type { EjectOptions, EjectResult } from "./eject.ts";
 export { ejectDomain } from "./eject.ts";
 export type {

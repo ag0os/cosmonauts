@@ -464,7 +464,7 @@ describe("createPiSpawner — completion loop", () => {
 	});
 });
 
-test("consumer completion policy observes timed-out children without cancelling the parent", async () => {
+test("a timed-out child is reported to the parent without cancelling it", async () => {
 	mocks.getModel.mockReturnValue({ id: "mock-model" });
 	const sessionId = nextSessionId();
 	const session = createMockSession(sessionId);
@@ -473,7 +473,6 @@ test("consumer completion policy observes timed-out children without cancelling 
 			getOrCreateTracker(sessionId).register("consumer-child", "worker", 1);
 	});
 	mocks.createAgentSession.mockResolvedValue({ session });
-	const onCompletionWait = vi.fn();
 	const spawner = createPiSpawner(FIXTURE_REGISTRY, undefined, {
 		resolver: realResolver,
 		spawnTimeoutMs: 20,
@@ -483,14 +482,13 @@ test("consumer completion policy observes timed-out children without cancelling 
 			role: "planner",
 			cwd: "/tmp",
 			prompt: "inspect",
-			sessionPolicy: createConsumerSessionPolicy({ onCompletionWait }),
+			sessionPolicy: createConsumerSessionPolicy(),
 		});
 		expect(result.success, result.error).toBe(true);
-		expect(onCompletionWait).toHaveBeenCalledWith(
-			[expect.stringContaining("Timed out after 20ms")],
-			20,
-		);
 		expect(session.prompt).toHaveBeenCalledTimes(2);
+		expect(session.prompt).toHaveBeenLastCalledWith(
+			expect.stringContaining("Timed out after 20ms"),
+		);
 	} finally {
 		spawner.dispose();
 	}

@@ -232,7 +232,6 @@ delivered by the runtime slice.
 | Worker / refactorer | Run changed-scope analysis after behavior tests pass and after the refactor step; trace before deletion or extraction. | Running broad auto-fix or refactoring passing code solely for a score. |
 | Coordinator | Run an audit at task/wave boundaries to catch cross-task cycles, clones, and interface drift. | Re-running full health after every small edit. |
 | Integration verifier | Check declared boundary and integration contracts against real configured findings. | Claiming boundary conformance when boundaries are unconfigured. |
-| Quality Manager | Resolve gates and run the reviewer panel, then record structured findings and a verdict in a durable report; the host adds its check results after the panel's evidence is sealed. | Fixing findings or claiming a clean tree. |
 | CI | Enforce the changed-scope regression lane and publish SARIF or annotations. | Making historical project debt fail every unrelated pull request. |
 | Archive / distiller | Record the final gate evidence and meaningful metric delta. | Copying thousands of raw findings into durable memory. |
 | Scheduled maintenance | Save snapshots, review trends/hotspots/targets/flags, and remove stale suppressions. | Creating unbounded “clean everything” projects. |
@@ -296,30 +295,7 @@ cycle or duplicate path. At the end of a task wave:
 Do not use a full-project result to assign unrelated historical findings to the
 current wave.
 
-### Quality Manager Protocol
-
-The Quality Manager is a review-only stage. No reviewed code runs while review
-evidence is open, so the host works in this order:
-
-1. It captures the review base and a stable snapshot of the source tree.
-2. The QM obtains the current project-tool bindings, resolves applicable gate
-   kinds, marks unavailable bindings explicitly, and calls the changed-scope
-   audit with the literal captured base SHA. It runs the specialist panel.
-3. The host seals the panel's reviewer evidence and verifies every material
-   digest.
-4. Only then does the host run the base-owned `qualityReview.prepare` and
-   `checks` in the private clone. These execute reviewed code.
-5. The host merges the check results into the report. A failing or not-run
-   check forces `not-ready`.
-
-The durable findings report carries the verdict, gate status, structured
-results, panel triage, and specialist reviews. A missing base-owned check is a
-visible human-decision item that blocks a `ready` verdict. Model choice never
-affects the verdict.
-
-The QM does not fix code, commit, complete a plan, or promise a clean tree.
-Callers turn actionable findings into tasks, run remediation through Drive, and
-obtain an independent re-review. The new review assesses the resulting changes.
+The Quality Manager review stage and its protocol were removed in D2.
 
 The adapter must treat:
 
@@ -374,19 +350,16 @@ Cosmonauts already declares three conceptual layers:
 
 - framework under `lib/`;
 - built-in domains under `domains/`;
-- installable domains under `bundled/`;
-- the executive layer under `domains/main/`;
+- consumer-supplied domains (the `bundled/` and `domains/main/` layers were removed in D2);
 - CLI entry points above those layers.
 
 Before writing Fallow rules, run a dependency-direction audit and distinguish
 intended composition roots from leaks. Candidate invariants to validate include:
 
 - `lib/` does not import `domains/`, `bundled/`, or `cli/`;
-- `domains/shared/` does not depend on `domains/main/` or a bundled domain;
-- `domains/main/` may depend on framework/shared contracts but remains free of
-  coding-domain assumptions;
-- bundled domains depend inward on stable framework/shared contracts rather than
-  the executive layer;
+- `domains/shared/` does not depend on a consumer domain;
+- consumer domains depend inward on stable framework/shared contracts rather than
+  a lead-agent layer;
 - `cli/` is an outer composition layer and does not become a dependency of
   framework or domain code.
 
@@ -495,7 +468,7 @@ The integration is successful when:
   actions;
 - runtime errors cannot masquerade as passing gates;
 - public and dynamically loaded APIs are traced before removal;
-- workers receive feedback before final Quality Manager review;
+- workers receive feedback before final review;
 - cross-task regressions are caught at wave integration;
 - full-project debt is visible and trending without blocking unrelated work;
 - architecture conformance becomes real enforcement rather than a zero from an
