@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import ts from "typescript";
 import type { DomainResolver } from "../domains/resolver.ts";
@@ -31,6 +32,8 @@ const NATIVE_PROVIDERS: Readonly<Record<string, SessionExtensionProvider>> = {
 
 interface BindingOptions {
 	names: readonly string[];
+	/** Extension directories the host already loads by path. */
+	mountedPaths?: readonly string[];
 	domain?: string;
 	fallbackDomains?: readonly string[];
 	domainsDir?: string;
@@ -121,9 +124,9 @@ async function selectProvider(
 	try {
 		path = resolveExtensionPaths([name], options)[0] as string;
 	} catch (error) {
-		if (error instanceof UnknownExtensionError && native)
-			return { factory: extensionFactory(await native(options.context), name) };
-		throw error;
+		if (!(error instanceof UnknownExtensionError) || !native) throw error;
+		if (isLibraryExtensionMounted(name, options)) return {};
+		return { factory: extensionFactory(await native(options.context), name) };
 	}
 	const entry = ["index.ts", "index.js", "index.mjs"]
 		.map((file) => join(path, file))
@@ -137,6 +140,23 @@ async function selectProvider(
 	if (typeof provider === "function")
 		return { factory: extensionFactory(await provider(options.context), name) };
 	return { path };
+}
+
+/**
+ * A host that mounts a library extension by path (the CLI mounts agent-switch)
+ * already loads it, and a second copy would make Pi rename its commands.
+ */
+function isLibraryExtensionMounted(
+	name: string,
+	options: BindingOptions,
+): boolean {
+	if (options.context.runtime?.extensionProviders?.[name]) return false;
+	const directory = fileURLToPath(
+		new URL(`../extensions/${name}`, import.meta.url),
+	);
+	return (options.mountedPaths ?? []).some(
+		(path) => resolve(path) === directory,
+	);
 }
 
 /** Preserve directory/provider precedence; only the selected provider is imported. */

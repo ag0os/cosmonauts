@@ -209,6 +209,7 @@ export async function buildSessionParams(
 	const memoryExtensions = buildMemoryExtensions(def, knowledgeSurfaceEnabled);
 	const selected = await bindSessionExtensions({
 		names: def.extensions,
+		mountedPaths: extraExtensionPaths,
 		domain: resourceDomain,
 		fallbackDomains: options.fallbackDomains,
 		domainsDir,
