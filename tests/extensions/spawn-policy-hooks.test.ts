@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import {
+	getSessionRuntime,
 	registerSessionRuntime,
 	removeSessionRuntime,
 	type SessionSpawnPolicy,
@@ -273,3 +274,37 @@ test("an ordinary child resolves its host session policy exactly once even when 
 	await tracker.nextCompletion();
 	expect(select).toHaveBeenCalledOnce();
 });
+
+for (const [label, bound] of [
+	["bound", true],
+	["discovered", false],
+] as const) {
+	for (const failing of [false, true]) {
+		test(`a detached child binds the ${label} parent runtime while it runs and unbinds at disposal (prompt fails: ${failing})`, async () => {
+			const { pi, tracker, bootstrap, runtime } = setup(
+				{ authorize: () => undefined },
+				{ authorize: () => undefined },
+			);
+			if (!bound) removeSessionRuntime(parentId);
+			const session = child();
+			const seen: unknown[] = [];
+			session.prompt.mockImplementation(async () => {
+				seen.push(getSessionRuntime(session.sessionId));
+				if (failing) throw new Error("prompt failed");
+			});
+			mocks.factory.mockResolvedValue({ session });
+			await pi.callTool("spawn_agent", { role: "reader", prompt: "work" });
+			expect((await tracker.nextCompletion()).type).toBe(
+				failing ? "spawn_failed" : "spawn_completed",
+			);
+			await flushAsync();
+			const discovered = await bootstrap.mock.results[0]?.value;
+			expect(bootstrap).toHaveBeenCalledTimes(bound ? 0 : 1);
+			expect(discovered).not.toBe(runtime);
+			expect(seen[0]).toBe(bound ? runtime : discovered);
+			expect(seen).toHaveLength(1);
+			expect(getSessionRuntime(session.sessionId)).toBeUndefined();
+			expect(session.dispose).toHaveBeenCalledOnce();
+		});
+	}
+}

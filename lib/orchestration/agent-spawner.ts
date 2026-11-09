@@ -203,8 +203,7 @@ async function prepareSpawnSession(
 		domainsDir,
 		resolver,
 	);
-	if (config.sessionPolicy)
-		registerSessionRuntime(session.sessionId, config.runtime);
+	registerSessionRuntime(session.sessionId, config.runtime);
 	emitSpawnEvent(config, {
 		type: "agent_resolved",
 		sessionId: session.sessionId,
