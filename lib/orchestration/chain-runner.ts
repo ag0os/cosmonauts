@@ -164,14 +164,19 @@ function createChainExecutionState(config: ChainConfig): ChainExecutionState {
 	};
 }
 
-function shouldStopBeforeStep(
+/** An abort stops silently; an expired timeout fails the chain with its reason. */
+function stopBeforeStep(
 	state: ChainExecutionState,
 	config: ChainConfig,
+	stepIndex: number,
 ): boolean {
-	return (
-		config.signal?.aborted === true ||
-		Date.now() - state.chainStart >= state.timeoutMs
+	if (config.signal?.aborted) return true;
+	if (Date.now() - state.chainStart < state.timeoutMs) return false;
+	state.failed = true;
+	state.errors.push(
+		`Chain timed out after ${state.timeoutMs}ms before step ${stepIndex + 1} of ${config.steps.length}`,
 	);
+	return true;
 }
 
 /** Wrap a single stage's result as this step's outcome. */
@@ -679,7 +684,7 @@ async function executeChain(config: ChainConfig): Promise<ChainResult> {
 
 	try {
 		for (const [i, step] of config.steps.entries()) {
-			if (shouldStopBeforeStep(state, config)) break;
+			if (stopBeforeStep(state, config, i)) break;
 
 			const outcome = await runChainStep(step, i, config, spawner, state);
 			recordChainStepOutcome(state, outcome);

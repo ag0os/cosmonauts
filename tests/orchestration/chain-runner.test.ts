@@ -2612,10 +2612,42 @@ Review complete.
 		// Timeout skips remaining stages — only the first stage ran
 		expect(result.stageResults).toHaveLength(1);
 		expect(result.stageResults[0]?.success).toBe(true);
-		// Chain reports success since no stage actually failed (timeout is
-		// a silent exit, not an error — matching abort signal behavior)
-		expect(result.success).toBe(true);
+		// Unrun stages make the chain a failure, and the timeout says why.
+		expect(result.success).toBe(false);
+		expect(result.errors).toEqual([
+			"Chain timed out after 3000ms before step 2 of 3",
+		]);
 		expect(spawnCount).toBe(1);
+	});
+
+	test("an abort that coincides with an expired timeout reports the abort", async () => {
+		vi.useFakeTimers();
+		const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+		vi.setSystemTime(FIXED_NOW);
+		const controller = new AbortController();
+		spawnerRef.current = {
+			spawn: vi.fn(async () => {
+				vi.setSystemTime(FIXED_NOW + 5000);
+				controller.abort();
+				return { success: true, sessionId: "s-1", messages: [] };
+			}),
+			dispose: vi.fn(),
+		};
+		const stages = [makeStage("planner", false), makeStage("worker", false)];
+		const config = makeConfig(stages, {
+			timeoutMs: 3000,
+			signal: controller.signal,
+		});
+
+		try {
+			const result = await runChain(withConsumerChain(config));
+
+			expect(result.success).toBe(false);
+			expect(result.errors).toEqual([]);
+			expect(result.stageResults).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	test("blocks sequential and parallel task decomposition until earlier plan review is addressed", async () => {
