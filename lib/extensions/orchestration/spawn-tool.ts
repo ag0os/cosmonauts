@@ -6,7 +6,10 @@ import type {
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
-import { getSessionRuntime } from "../../agents/session-policy.ts";
+import {
+	getSessionRuntime,
+	type SpawnPolicyRequest,
+} from "../../agents/session-policy.ts";
 import type { AgentDefinition } from "../../agents/types.ts";
 import {
 	activityBus,
@@ -576,7 +579,7 @@ export function registerSpawnTool(
 				authorization;
 			const resolvedTargetRole =
 				targetResolution.reference.resolved.qualifiedId;
-			const policyRequest = {
+			const policyRequest: SpawnPolicyRequest = {
 				callerRole,
 				resolvedTargetRole,
 				prompt: params.prompt,

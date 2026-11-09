@@ -1,3 +1,4 @@
+import type { SessionPolicyProvider } from "./agents/session-policy.ts";
 import type { AgentDefinition } from "./agents/types.ts";
 import type { DomainSource } from "./domains/types.ts";
 import {
@@ -53,7 +54,7 @@ export interface CosmonautsRuntimeOptions {
 	projectConfig?: ProjectConfig;
 	/** Opt into project/user package and domain stores. Explicit roots never require this. */
 	discoverPackages?: boolean;
-	sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
+	sessionPolicies?: SessionPolicyProvider;
 	chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	defaultModel?: string;
 	workerAgent?: string;
@@ -88,7 +89,7 @@ export class CosmonautsRuntime {
 			import("./agents/resource-providers.ts").HostExtensionProvider
 		>
 	>;
-	readonly sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
+	readonly sessionPolicies?: SessionPolicyProvider;
 	readonly chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	readonly defaultModel?: string;
 	readonly workerAgent?: string;
@@ -127,7 +128,7 @@ export class CosmonautsRuntime {
 				import("./agents/resource-providers.ts").HostExtensionProvider
 			>
 		>;
-		sessionPolicies?: import("./agents/session-policy.ts").SessionPolicyProvider;
+		sessionPolicies?: SessionPolicyProvider;
 		chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 		defaultModel?: string;
 		workerAgent?: string;
@@ -336,7 +337,7 @@ export class AmbiguousSessionPolicyProviderError extends Error {
 
 function selectSessionPolicies(
 	domains: readonly LoadedDomain[],
-): import("./agents/session-policy.ts").SessionPolicyProvider | undefined {
+): SessionPolicyProvider | undefined {
 	const declaring = domains.filter(
 		(domain) => domain.manifest.sessionPolicies !== undefined,
 	);

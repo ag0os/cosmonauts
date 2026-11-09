@@ -143,6 +143,22 @@ test("an unbound session is authorized by the discovered runtime's provider", as
 	expect(mocks.factory).not.toHaveBeenCalled();
 });
 
+test("a host provider without a spawn policy leaves delegation to ordinary authorization", async () => {
+	const session = child();
+	const { pi, tracker, runtime } = setup({ authorize: () => "unused" });
+	if (!runtime.sessionPolicies) throw new Error("Missing test policy provider");
+	delete (runtime.sessionPolicies as { spawnPolicy?: unknown }).spawnPolicy;
+	mocks.factory.mockResolvedValue({ session, resolvedModel: session.model });
+	const result = (await pi.callTool("spawn_agent", {
+		role: "reader",
+		prompt: "work",
+	})) as { details: { status: string } };
+	expect(result.details.status).toBe("accepted");
+	await tracker.nextCompletion();
+	await flushAsync();
+	expect(mocks.factory).toHaveBeenCalledOnce();
+});
+
 test("an authorized detached child runs with the request and the target's host session policy", async () => {
 	const session = child();
 	const childPolicy = { toolPreset: "none" as const };
