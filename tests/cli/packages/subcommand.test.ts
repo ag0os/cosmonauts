@@ -165,6 +165,30 @@ describe("resolveInstallRequest", () => {
 			await rm(root, { recursive: true, force: true });
 		}
 	});
+
+	it("leaves a slashless github: source to the installer instead of rejecting it as a catalog name", () => {
+		expect(
+			resolveInstallRequest("github:my-pkg", {
+				projectRoot: "/nonexistent-project-root",
+			}),
+		).toStrictEqual({
+			source: "github:my-pkg",
+			scope: "user",
+			cwd: "/nonexistent-project-root",
+		});
+	});
+
+	it("treats a slashless dot-prefixed argument as a path, not a catalog name", () => {
+		expect(
+			resolveInstallRequest(".my-pkg", {
+				projectRoot: "/nonexistent-project-root",
+			}),
+		).toStrictEqual({
+			source: ".my-pkg",
+			scope: "user",
+			cwd: "/nonexistent-project-root",
+		});
+	});
 });
 
 describe("renderInstallSuccess", () => {
