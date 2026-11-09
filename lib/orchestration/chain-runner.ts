@@ -136,6 +136,7 @@ interface ChainExecutionState {
 	maxTotalIterations: number;
 	stageResults: StageResult[];
 	errors: string[];
+	failed: boolean;
 	totalIterations: number;
 	statsDurationMs: number;
 	activePlanReview?: InlinePlanReviewState;
@@ -157,6 +158,7 @@ function createChainExecutionState(config: ChainConfig): ChainExecutionState {
 			config.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS,
 		stageResults: [],
 		errors: [],
+		failed: false,
 		totalIterations: 0,
 		statsDurationMs: 0,
 	};
@@ -625,9 +627,9 @@ function recordChainStepOutcome(
 	state.totalIterations += outcome.loopIterations;
 	state.statsDurationMs += outcome.statsDurationMs;
 
-	if (!outcome.success && outcome.error) {
-		state.errors.push(outcome.error);
-	}
+	if (outcome.success) return;
+	state.failed = true;
+	if (outcome.error) state.errors.push(outcome.error);
 }
 
 function finalizeChainResult(
@@ -638,7 +640,8 @@ function finalizeChainResult(
 	const chainStats = buildChainStats(state.stageResults, state.statsDurationMs);
 
 	return {
-		success: state.errors.length === 0 && !config.signal?.aborted,
+		success:
+			!state.failed && state.errors.length === 0 && !config.signal?.aborted,
 		stageResults: state.stageResults,
 		totalDurationMs: Date.now() - chainStart,
 		errors: state.errors,

@@ -308,6 +308,26 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 			backendSummary: "stopped",
 			stepResult: { outcome: "cancelled" },
 		},
+		{
+			outcome: "silent cancellation",
+			response: { success: false, outcome: "cancelled" },
+			summaries: { inline: undefined, durable: undefined } as Record<
+				string,
+				string | undefined
+			>,
+			backendSummary: "",
+			stepResult: { outcome: "cancelled" },
+		},
+		{
+			outcome: "silent failure",
+			response: { success: false },
+			summaries: { inline: undefined, durable: undefined } as Record<
+				string,
+				string | undefined
+			>,
+			backendSummary: "",
+			stepResult: { outcome: "failed" },
+		},
 	])("terminal $outcome retains summary, artifacts and stage slug", async ({
 		response,
 		summaries,
