@@ -707,7 +707,133 @@ describe("cosmonauts harness sync", () => {
 			targetBefore,
 		);
 	});
+
+	test("a supplied copy-mode skill reusing the legacy id external-skill:cosmonauts writes a manifest the next check reads", async () => {
+		const projectRoot = join(tmp.path, "legacy-id-project");
+		const homeRoot = join(tmp.path, "legacy-id-home");
+		const assetRoot = join(projectRoot, "assets");
+		await Promise.all([
+			mkdir(projectRoot, { recursive: true }),
+			mkdir(homeRoot, { recursive: true }),
+		]);
+		await writeSuppliedSkillSource(assetRoot, "cosmonauts");
+		const asset: HarnessAsset = {
+			...suppliedSkill(assetRoot, "cosmonauts"),
+			assetId: "external-skill:cosmonauts",
+		};
+		const run = (args: readonly string[]) =>
+			runSupplied({ projectRoot, homeRoot, assets: [asset] }, [
+				"--target",
+				"claude",
+				"--scope",
+				"project",
+				...args,
+			]);
+
+		const synced = await run(["--copy"]);
+		expect(synced.exitCode).toBe(0);
+		expect(synced.rows).toEqual([
+			expect.objectContaining({
+				asset: "external-skill:cosmonauts",
+				final: "current",
+			}),
+		]);
+		const manifestPath = join(
+			projectRoot,
+			".claude",
+			".cosmonauts-harness-manifest.json",
+		);
+		const entries = Object.values(
+			(await readHarnessManifest(manifestPath)).entries,
+		);
+		expect(entries).toEqual([
+			expect.objectContaining({
+				assetId: "external-skill:cosmonauts",
+				provenance: expect.objectContaining({ kind: "copy" }),
+			}),
+		]);
+		expect(entries[0]).not.toHaveProperty("generatingProjectRoot");
+
+		const checked = await run(["--check"]);
+		expect(checked).toEqual({
+			exitCode: 0,
+			rows: [
+				expect.objectContaining({
+					asset: "external-skill:cosmonauts",
+					before: "current",
+					action: "none",
+				}),
+			],
+		});
+	});
+
+	test("a supplied copy-mode asset that replaces a recorded generated-wrapper entry writes a manifest the next check reads", async () => {
+		const fixture = await recordedGeneratedWrapperFixture();
+		await writeSuppliedSkillSource(fixture.assetRoot, "cosmonauts");
+		const asset: HarnessAsset = {
+			...suppliedSkill(fixture.assetRoot, "cosmonauts"),
+			assetId: "external-skill:cosmonauts",
+			ownership: { kind: "authority", authorityId: "cosmonauts/core" },
+			sourceRootId: "cosmonauts:package",
+			defaultScope: "personal",
+		};
+		const run = (args: readonly string[]) =>
+			runSupplied(
+				{
+					projectRoot: fixture.projectRoot,
+					homeRoot: fixture.homeRoot,
+					assets: [asset],
+				},
+				["--target", "claude", "--scope", "personal", ...args],
+			);
+
+		const synced = await run(["--copy"]);
+		expect(synced.exitCode).toBe(0);
+		expect(synced.rows).toEqual([
+			expect.objectContaining({
+				asset: "external-skill:cosmonauts",
+				final: "current",
+			}),
+		]);
+		const entry = (await readHarnessManifest(fixture.manifestPath)).entries[
+			fixture.key
+		];
+		expect(entry).toMatchObject({ provenance: { kind: "copy" } });
+
+		const checked = await run(["--check"]);
+		expect(checked).toEqual({
+			exitCode: 0,
+			rows: [
+				expect.objectContaining({
+					asset: "external-skill:cosmonauts",
+					before: "current",
+					action: "none",
+				}),
+			],
+		});
+	});
 });
+
+async function runSupplied(
+	options: {
+		readonly projectRoot: string;
+		readonly homeRoot: string;
+		readonly assets: readonly HarnessAsset[];
+	},
+	args: readonly string[],
+): Promise<HarnessSyncReport> {
+	process.exitCode = undefined;
+	const output = captureCliOutput();
+	try {
+		await createHarnessProgram({
+			...options,
+			discover: async () => emptyDiscovery(),
+		}).parseAsync(["--json", "sync", ...args], { from: "user" });
+		return JSON.parse(output.stdout()) as HarnessSyncReport;
+	} finally {
+		output.restore();
+	}
+}
 
 async function snapshotRoots(
 	projectRoot: string,
@@ -870,6 +996,17 @@ async function writeSuppliedCommandSource(sourceRoot: string): Promise<void> {
 	await writeFile(
 		join(sourceRoot, "supplied.md"),
 		"---\ndescription: Supplied\nargument-hint: <arg>\n---\n# Supplied\n",
+	);
+}
+
+async function writeSuppliedSkillSource(
+	sourceRoot: string,
+	name: string,
+): Promise<void> {
+	await mkdir(join(sourceRoot, name), { recursive: true });
+	await writeFile(
+		join(sourceRoot, name, "SKILL.md"),
+		`---\nname: ${name}\ndescription: Supplied\n---\n# Supplied\n`,
 	);
 }
 

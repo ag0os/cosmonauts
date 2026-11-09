@@ -357,14 +357,12 @@ async function isManifestEntryPathValid(
 	}
 }
 
-function isGeneratingProjectRootValid(value: Record<string, unknown>): boolean {
-	if (value.assetId === "external-skill:cosmonauts") {
-		return (
-			typeof value.generatingProjectRoot === "string" &&
-			isAbsolute(value.generatingProjectRoot)
-		);
-	}
-	return isOptionalString(value, "generatingProjectRoot");
+function isGeneratingProjectRootValid(
+	value: Record<string, unknown> & { provenance: Record<string, unknown> },
+): boolean {
+	const root = value.generatingProjectRoot;
+	if (root === undefined) return value.provenance.kind !== "generated-wrapper";
+	return typeof root === "string" && isAbsolute(root);
 }
 
 function isManifestEntryMetadataValid(
