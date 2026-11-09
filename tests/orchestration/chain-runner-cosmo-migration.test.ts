@@ -9,6 +9,9 @@ import type {
 	SpawnResult,
 } from "../../lib/orchestration/types.ts";
 import { withConsumerChain } from "../helpers/consumer-chain.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const spawnerRef = vi.hoisted(() => ({
 	current: undefined as AgentSpawner | undefined,
@@ -49,6 +52,7 @@ function makeDef(id: string, domain: string): AgentDefinition {
 
 function makeConfig(overrides: Partial<ChainConfig>): ChainConfig {
 	return {
+		runtime: TEST_RUNTIME,
 		steps: [],
 		projectRoot: "/tmp/test-project",
 		registry: new AgentRegistry([]),

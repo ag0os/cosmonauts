@@ -11,6 +11,9 @@ import {
 	resolveFrozenDriveEpisodeWorker,
 } from "../../lib/driver/episode-identity.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const tmp = useTempDir("declared-drive-worker-");
 function actor(domain: string | undefined, episodes: boolean): AgentDefinition {
@@ -155,6 +158,7 @@ describe("declared Drive worker identity", () => {
 		const promptPath = join(tmp.path, "prompt.md");
 		await writeFile(promptPath, "Build the selected task.");
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: runtime.workerAgent,
 			workerResolution,
 			spawner: { spawn, dispose() {} },

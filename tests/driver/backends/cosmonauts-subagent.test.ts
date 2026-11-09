@@ -10,6 +10,9 @@ import type {
 	SpawnConfig,
 	SpawnResult,
 } from "../../../lib/orchestration/types.ts";
+import { runtimeDouble } from "../../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 let tempDir: string | undefined;
 
@@ -73,6 +76,7 @@ describe("cosmonauts-subagent backend", () => {
 			messages: [],
 		});
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: "worker",
 			spawner,
 			cwd: "/repo",
@@ -103,6 +107,7 @@ describe("cosmonauts-subagent backend", () => {
 		const projectSkills = ["typescript", "testing"];
 		const skillPaths = ["/skills/typescript", "/skills/testing"];
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			spawner,
 			workerAgent: "reviewer",
 			cwd: "/repo",
@@ -157,6 +162,7 @@ describe("cosmonauts-subagent backend", () => {
 			return { success: true, sessionId: "child-session-1", messages: [] };
 		});
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: "worker",
 			spawner: { spawn, dispose: vi.fn() },
 			cwd: "/repo",
@@ -205,6 +211,7 @@ describe("cosmonauts-subagent backend", () => {
 			],
 		});
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: "worker",
 			spawner,
 			cwd: "/repo",

@@ -19,6 +19,9 @@ import type {
 	SpawnResult,
 } from "../../lib/orchestration/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const host = vi.hoisted(() => ({
 	spawn: vi.fn<(config: SpawnConfig) => Promise<SpawnResult>>(),
@@ -109,6 +112,7 @@ function configureSpawn(): void {
 }
 function options(projectRoot: string, steps: ChainStep[]): ChainConfig {
 	return {
+		runtime: TEST_RUNTIME,
 		projectRoot,
 		registry,
 		domainContext: "studio",

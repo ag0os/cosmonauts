@@ -1993,30 +1993,34 @@ async function createBackend(
 		throw new Error("cosmonauts-subagent cannot run in detached mode");
 	}
 
-	const executionRuntime = runtime ?? (await createDriveRuntime(projectRoot));
+	if (!runtime)
+		throw new Error(
+			"Cosmonauts runtime is required for cosmonauts-subagent backend",
+		);
 	const spawner = createPiSpawner(
-		executionRuntime.agentRegistry,
-		executionRuntime.domainsDir,
+		runtime.agentRegistry,
+		runtime.domainsDir,
 		{
-			resolver: executionRuntime.domainResolver,
-			runtime: executionRuntime,
-			sessionPolicies: executionRuntime.sessionPolicies,
+			resolver: runtime.domainResolver,
+			runtime,
+			sessionPolicies: runtime.sessionPolicies,
 		},
 	);
 	const executionWorker =
 		workerResolution ??
-		resolveDriveWorker(executionRuntime, frozenWorkerSource);
+		resolveDriveWorker(runtime, frozenWorkerSource);
 	if (!executionWorker)
 		throw new Error(
 			"Declared Drive worker is unavailable; no fallback is permitted.",
 		);
 	return createCosmonautsSubagentBackend({
-		workerAgent: requireDriveWorkerAgent(executionRuntime),
+		workerAgent: requireDriveWorkerAgent(runtime),
 		spawner,
+		runtime,
 		cwd: projectRoot,
-		domainContext: executionRuntime.domainContext,
-		projectSkills: executionRuntime.projectSkills,
-		skillPaths: executionRuntime.skillPaths,
+		domainContext: runtime.domainContext,
+		projectSkills: runtime.projectSkills,
+		skillPaths: runtime.skillPaths,
 		workerResolution: executionWorker,
 	});
 }

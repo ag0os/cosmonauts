@@ -19,6 +19,10 @@ import type {
 	NormalizedChainStage,
 } from "./types.ts";
 
+/** Normalization reads declarations only, so it accepts a config with or without the runtime. */
+type NormalizationConfig = Omit<ChainConfig, "runtime"> &
+	Partial<Pick<ChainConfig, "runtime">>;
+
 type AgentResolutionResult = ReturnType<
 	AgentRegistry["resolveReferenceResult"]
 >;
@@ -34,7 +38,7 @@ interface BoundDeclaration {
 	identity: string;
 }
 interface NormalizationRun {
-	config: ChainConfig;
+	config: NormalizationConfig;
 	errors: ChainNormalizationError[];
 	ids: Set<string>;
 	declarations: Map<string, BoundDeclaration>;
@@ -486,7 +490,7 @@ function firstDefined<T>(values: readonly (T | undefined)[]): T | undefined {
 }
 function assignedModel(
 	{ stage, definition }: ChainStageContext,
-	config: ChainConfig,
+	config: NormalizationConfig,
 ): string | undefined {
 	const id = stage.declarationId ?? stage.name;
 	return firstDefined([
@@ -502,7 +506,7 @@ function assignedModel(
 }
 function assignedThinking(
 	{ stage, definition }: ChainStageContext,
-	config: ChainConfig,
+	config: NormalizationConfig,
 ): ChainStage["thinkingLevel"] {
 	const id = stage.declarationId ?? stage.name;
 	return firstDefined([
@@ -517,7 +521,7 @@ function assignedThinking(
 }
 function modelAssignments(
 	context: ChainStageContext,
-	config: ChainConfig,
+	config: NormalizationConfig,
 ): Pick<ChainStage, "model" | "thinkingLevel"> {
 	return {
 		model: assignedModel(context, config),
@@ -552,7 +556,7 @@ function stageSemantics({
 }
 function stageInstruction(
 	context: ChainStageContext,
-	config: ChainConfig,
+	config: NormalizationConfig,
 ): string {
 	return (
 		context.stage.instruction ??
@@ -643,7 +647,7 @@ function normalizeStage({
 	return stage;
 }
 /** Bind a run-scoped declaration collection before consumer classification or execution. */
-export function normalizeChain(config: ChainConfig): ChainNormalizationResult {
+export function normalizeChain(config: NormalizationConfig): ChainNormalizationResult {
 	if (!config.steps.length)
 		return {
 			ok: false,
@@ -730,7 +734,7 @@ export function assertNormalizedStage(
 
 /** Declaration failures are outcomes, never partially executed chains. */
 function normalizationFailure(
-	config: ChainConfig,
+	config: NormalizationConfig,
 	errors: readonly ChainNormalizationError[],
 ): import("./types.ts").ChainResult {
 	const messages = errors.map((error) => error.message);

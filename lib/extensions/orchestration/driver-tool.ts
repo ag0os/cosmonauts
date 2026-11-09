@@ -530,6 +530,7 @@ function createBackend(
 			return createCosmonautsSubagentBackend({
 				workerAgent: requireDriveWorkerAgent(runtime),
 				spawner,
+				runtime,
 				cwd,
 				domainContext: runtime.domainContext,
 				projectSkills: runtime.projectSkills,

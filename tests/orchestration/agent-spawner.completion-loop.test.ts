@@ -63,6 +63,9 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { awaitNextCompletionMessages } from "../../lib/orchestration/spawn-completion-loop.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const DOMAINS_DIR = join(
 	tmpdir(),
@@ -163,10 +166,12 @@ describe("createPiSpawner — completion loop", () => {
 		mocks.createAgentSession.mockResolvedValue({ session });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			bus,
 			resolver: realResolver,
 		});
 		const result = await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp",
 			prompt: "go",
@@ -195,10 +200,16 @@ describe("createPiSpawner — completion loop", () => {
 		mocks.createAgentSession.mockResolvedValue({ session });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			bus,
 			resolver: realResolver,
 		});
-		await spawner.spawn({ role: "planner", cwd: "/tmp", prompt: "go" });
+		await spawner.spawn({
+			runtime: TEST_RUNTIME,
+			role: "planner",
+			cwd: "/tmp",
+			prompt: "go",
+		});
 
 		// initial prompt + one completion prompt
 		expect(session.prompt).toHaveBeenCalledTimes(2);
@@ -228,10 +239,16 @@ describe("createPiSpawner — completion loop", () => {
 		mocks.createAgentSession.mockResolvedValue({ session });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			bus,
 			resolver: realResolver,
 		});
-		await spawner.spawn({ role: "planner", cwd: "/tmp", prompt: "go" });
+		await spawner.spawn({
+			runtime: TEST_RUNTIME,
+			role: "planner",
+			cwd: "/tmp",
+			prompt: "go",
+		});
 
 		expect(session.prompt).toHaveBeenCalledTimes(2);
 		const calls = session.prompt.mock.calls as unknown[][];
@@ -261,10 +278,16 @@ describe("createPiSpawner — completion loop", () => {
 		mocks.createAgentSession.mockResolvedValue({ session });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			bus,
 			resolver: realResolver,
 		});
-		await spawner.spawn({ role: "planner", cwd: "/tmp", prompt: "go" });
+		await spawner.spawn({
+			runtime: TEST_RUNTIME,
+			role: "planner",
+			cwd: "/tmp",
+			prompt: "go",
+		});
 
 		// initial + one message per child
 		expect(session.prompt).toHaveBeenCalledTimes(3);
@@ -290,10 +313,16 @@ describe("createPiSpawner — completion loop", () => {
 		mocks.createAgentSession.mockResolvedValue({ session });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			bus,
 			resolver: realResolver,
 		});
-		await spawner.spawn({ role: "planner", cwd: "/tmp", prompt: "go" });
+		await spawner.spawn({
+			runtime: TEST_RUNTIME,
+			role: "planner",
+			cwd: "/tmp",
+			prompt: "go",
+		});
 
 		expect(prompts.filter((p) => p.includes("spawnId=spawn-1"))).toHaveLength(
 			1,
@@ -343,11 +372,13 @@ describe("createPiSpawner — completion loop", () => {
 		mocks.createAgentSession.mockResolvedValue({ session });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			bus,
 			resolver: realResolver,
 			spawnTimeoutMs: 50, // very short for test
 		});
 		const result = await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp",
 			prompt: "go",
@@ -383,11 +414,17 @@ describe("createPiSpawner — completion loop", () => {
 		mocks.createAgentSession.mockResolvedValue({ session });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			bus,
 			resolver: realResolver,
 			spawnTimeoutMs: 50,
 		});
-		await spawner.spawn({ role: "planner", cwd: "/tmp", prompt: "go" });
+		await spawner.spawn({
+			runtime: TEST_RUNTIME,
+			role: "planner",
+			cwd: "/tmp",
+			prompt: "go",
+		});
 
 		// initial + one message per timed-out child
 		expect(session.prompt).toHaveBeenCalledTimes(3);
@@ -408,10 +445,12 @@ describe("createPiSpawner — completion loop", () => {
 		mocks.createAgentSession.mockResolvedValue({ session });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			bus,
 			resolver: realResolver,
 		});
 		const result = await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp",
 			prompt: "go",
@@ -446,10 +485,12 @@ describe("createPiSpawner — completion loop", () => {
 		mocks.createAgentSession.mockResolvedValue({ session });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			bus,
 			resolver: realResolver,
 		});
 		const result = await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp",
 			prompt: "go",
@@ -474,11 +515,13 @@ test("a timed-out child is reported to the parent without cancelling it", async 
 	});
 	mocks.createAgentSession.mockResolvedValue({ session });
 	const spawner = createPiSpawner(FIXTURE_REGISTRY, undefined, {
+		runtime: TEST_RUNTIME,
 		resolver: realResolver,
 		spawnTimeoutMs: 20,
 	});
 	try {
 		const result = await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp",
 			prompt: "inspect",

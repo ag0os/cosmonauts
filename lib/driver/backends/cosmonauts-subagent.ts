@@ -14,6 +14,8 @@ import type { Backend } from "./types.ts";
 
 interface CosmonautsSubagentBackendDeps {
 	spawner: AgentSpawner;
+	/** The spawner's own runtime; every worker spawn carries it. */
+	runtime: SpawnConfig["runtime"];
 	workerAgent: string;
 	cwd: string;
 	domainContext?: string;
@@ -43,6 +45,7 @@ export function createCosmonautsSubagentBackend(
 			const prompt = await readFile(invocation.promptPath, "utf-8");
 			const start = Date.now();
 			const result = await deps.spawner.spawn({
+				runtime: deps.runtime,
 				role,
 				agentReference: deps.workerResolution?.reference,
 				prompt,

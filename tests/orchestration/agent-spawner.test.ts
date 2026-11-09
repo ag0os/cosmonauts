@@ -21,6 +21,9 @@ import {
 	buildToolAllowlist,
 } from "../../lib/orchestration/definition-resolution.ts";
 import { loadPrompt, renderRuntimeTemplate } from "../../lib/prompts/loader.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const DOMAINS_DIR = resolve(
 	fileURLToPath(import.meta.url),
@@ -155,8 +158,11 @@ describe("createPiSpawner", () => {
 			},
 		});
 
-		const spawner = createPiSpawner(registry, DOMAINS_DIR);
+		const spawner = createPiSpawner(registry, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
+		});
 		const result = await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "a/worker",
 			agentReference: reference,
 			cwd: "/tmp/project",
@@ -203,8 +209,11 @@ describe("createPiSpawner", () => {
 		});
 
 		const controller = new AbortController();
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
+		});
 		const spawned = spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/project",
 			model: "test/model",

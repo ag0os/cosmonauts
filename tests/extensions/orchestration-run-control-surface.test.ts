@@ -21,11 +21,14 @@ import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { consumerChainAdapter } from "../fixtures/library-consumer/policies.ts";
 import { withConsumerChain } from "../helpers/consumer-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
 import {
 	authorizedToolRegistry,
 	createMockPi,
 	TEST_CALLER_MARKER,
 } from "./orchestration-helpers.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const spawnerMocks = vi.hoisted(() => ({
 	createPiSpawner: vi.fn(),
@@ -101,6 +104,7 @@ describe("orchestration run control surface", () => {
 		await mkdir(projectRoot, { recursive: true });
 		const chainResult = await runDurableChain(
 			withConsumerChain({
+				runtime: TEST_RUNTIME,
 				steps: parseChain("planner"),
 				projectRoot,
 				registry,

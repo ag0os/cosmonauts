@@ -37,6 +37,9 @@ import {
 } from "../fixtures/library-consumer/policies.ts";
 import { withConsumerChain } from "../helpers/consumer-chain.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const spawnerMocks = vi.hoisted(() => ({
 	createPiSpawner: vi.fn(),
@@ -110,6 +113,7 @@ describe("runStart durable chain characterization", () => {
 
 		const result = await runDurableChain(
 			withConsumerChain({
+				runtime: TEST_RUNTIME,
 				steps: parseChain("planner -> reviewer -> integration-verifier"),
 				projectRoot,
 				registry,
@@ -210,6 +214,7 @@ describe("runStart durable chain characterization", () => {
 
 		const result = await runDurableChain(
 			withConsumerChain({
+				runtime: TEST_RUNTIME,
 				steps,
 				projectRoot,
 				registry,
@@ -247,6 +252,7 @@ describe("runStart durable chain characterization", () => {
 
 		const successful = await runDurableChain(
 			withConsumerChain({
+				runtime: TEST_RUNTIME,
 				steps: parseChain(
 					"planner -> plan-reviewer -> planner -> task-manager",
 				),
@@ -339,6 +345,7 @@ describe("runStart durable chain characterization", () => {
 
 			const result = await runDurableChain(
 				withConsumerChain({
+					runtime: TEST_RUNTIME,
 					steps: parseChain(expression),
 					projectRoot,
 					planSlug: slug,
@@ -395,6 +402,7 @@ describe("runStart durable chain characterization", () => {
 			});
 			const result = await runDurableChain(
 				withConsumerChain({
+					runtime: TEST_RUNTIME,
 					steps: parseChain(
 						"planner -> plan-reviewer -> planner -> task-manager",
 					),
@@ -721,6 +729,7 @@ describe("runStart durable chain characterization", () => {
 
 		const success = await runDurableChain(
 			withConsumerChain({
+				runtime: TEST_RUNTIME,
 				steps: parseChain("[planner, reviewer] -> integration-verifier"),
 				projectRoot: successRoot,
 				registry,
@@ -797,6 +806,7 @@ describe("runStart durable chain characterization", () => {
 		);
 		const failure = await runDurableChain(
 			withConsumerChain({
+				runtime: TEST_RUNTIME,
 				steps: parseChain("planner -> reviewer"),
 				projectRoot: failureRoot,
 				registry,
@@ -825,6 +835,7 @@ describe("runStart durable chain characterization", () => {
 		configureSpawner(async (config) => successfulSpawn(config));
 		const withCaptureFailure = await runDurableChain(
 			withConsumerChain({
+				runtime: TEST_RUNTIME,
 				steps: parseChain("planner -> reviewer"),
 				projectRoot: captureFailureRoot,
 				registry,
@@ -1061,6 +1072,7 @@ async function runWithActivityHook(options: {
 	try {
 		return await runDurableChain(
 			withConsumerChain({
+				runtime: TEST_RUNTIME,
 				steps: parseChain(options.expression),
 				projectRoot: options.projectRoot,
 				planSlug: basename(options.projectRoot),
@@ -1120,6 +1132,7 @@ async function captureDisabledBaselines(
 	const inlineEvents: ChainEvent[] = [];
 	const inlineResult = await runChain(
 		withConsumerChain({
+			runtime: TEST_RUNTIME,
 			steps: parseChain("planner -> reviewer"),
 			projectRoot,
 			registry,
@@ -1129,6 +1142,7 @@ async function captureDisabledBaselines(
 	const durableEvents: ChainEvent[] = [];
 	const durableResult = await runDurableChain(
 		withConsumerChain({
+			runtime: TEST_RUNTIME,
 			steps: parseChain("planner -> reviewer"),
 			projectRoot,
 			registry,

@@ -75,7 +75,7 @@ export { createAgentSessionFromDefinition } from "./session-factory.ts";
 
 /** Options for {@link createPiSpawner}. */
 export interface PiSpawnerOptions {
-	runtime?: import("../runtime.ts").CosmonautsRuntime;
+	runtime: import("../runtime.ts").CosmonautsRuntime;
 	sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider;
 	/** Shared message bus for parallel spawn coordination. */
 	bus?: MessageBus;
@@ -118,15 +118,22 @@ type FinalMessages = unknown[];
 export function createPiSpawner(
 	registry: AgentRegistry,
 	domainsDir: string | undefined,
-	options?: PiSpawnerOptions & {
+	options: PiSpawnerOptions & {
 		resolver?: import("../domains/resolver.ts").DomainResolver;
 	},
 ): AgentSpawner {
-	const bus = options?.bus ?? new MessageBus();
-	const spawnTimeoutMs = options?.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
+	const bus = options.bus ?? new MessageBus();
+	const spawnTimeoutMs = options.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
 
 	return {
 		async spawn(input: SpawnConfig): Promise<SpawnResult> {
+			if (input.runtime !== options.runtime) {
+				return toSpawnFailure(
+					new Error(
+						"Spawn runtime differs from the spawner's runtime; a spawner serves only the project runtime it was created with.",
+					),
+				);
+			}
 			const definition = resolveSpawnAgent(registry, input)?.definition;
 			const config = bindSpawnConfig(input, { definition, options });
 			if (config.signal?.aborted) {
@@ -141,7 +148,7 @@ export function createPiSpawner(
 					registry,
 					config,
 					domainsDir,
-					options?.resolver,
+					options.resolver,
 					bus,
 				);
 
@@ -533,14 +540,13 @@ function bindSpawnConfig(
 	input: SpawnConfig,
 	context: {
 		definition?: import("../agents/types.ts").AgentDefinition;
-		options?: PiSpawnerOptions;
+		options: PiSpawnerOptions;
 	},
 ): SpawnConfig {
-	const runtime = input.runtime ?? context.options?.runtime;
-	const policies = context.options?.sessionPolicies ?? runtime?.sessionPolicies;
+	const policies =
+		context.options.sessionPolicies ?? context.options.runtime.sessionPolicies;
 	return {
 		...input,
-		runtime,
 		sessionPolicy:
 			input.sessionPolicy ??
 			(context.definition ? policies?.forAgent(context.definition) : undefined),

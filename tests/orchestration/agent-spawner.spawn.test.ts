@@ -62,6 +62,9 @@ import {
 	createPiSpawner,
 	resolveModel,
 } from "../../lib/orchestration/agent-spawner.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const DOMAINS_DIR = join(
 	tmpdir(),
@@ -161,10 +164,12 @@ describe("createPiSpawner", () => {
 
 	test("uses definition thinkingLevel when spawn thinkingLevel is omitted", async () => {
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			resolver: realResolver,
 		});
 
 		await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/test-project",
 			prompt: "Plan the work.",
@@ -179,10 +184,12 @@ describe("createPiSpawner", () => {
 
 	test("populates stats on successful spawn result", async () => {
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			resolver: realResolver,
 		});
 
 		const result = await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/test-project",
 			prompt: "Plan the work.",
@@ -216,9 +223,11 @@ describe("createPiSpawner", () => {
 		mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			resolver: realResolver,
 		});
 		await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/test-project",
 			prompt: "Plan the work.",
@@ -229,10 +238,12 @@ describe("createPiSpawner", () => {
 
 	test("stats not populated on failed spawn", async () => {
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			resolver: realResolver,
 		});
 
 		const result = await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/test-project",
 			prompt: "Plan the work.",
@@ -245,10 +256,12 @@ describe("createPiSpawner", () => {
 
 	test("passes settingsManager with compaction settings when compaction config is provided", async () => {
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			resolver: realResolver,
 		});
 
 		await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/test-project",
 			prompt: "Plan the work.",
@@ -273,10 +286,12 @@ describe("createPiSpawner", () => {
 
 	test("passes settingsManager with compaction enabled only (no keepRecentTokens)", async () => {
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			resolver: realResolver,
 		});
 
 		await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/test-project",
 			prompt: "Plan the work.",
@@ -300,10 +315,12 @@ describe("createPiSpawner", () => {
 
 	test("does not pass settingsManager when compaction config is not provided", async () => {
 		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
 			resolver: realResolver,
 		});
 
 		await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/test-project",
 			prompt: "Plan the work.",
@@ -328,9 +345,11 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -350,9 +369,11 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -374,9 +395,11 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -395,9 +418,11 @@ describe("createPiSpawner", () => {
 
 			const receivedEvents: unknown[] = [];
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -434,9 +459,11 @@ describe("createPiSpawner", () => {
 
 			const receivedEvents: unknown[] = [];
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -476,9 +503,11 @@ describe("createPiSpawner", () => {
 
 			const receivedEvents: unknown[] = [];
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -528,9 +557,11 @@ describe("createPiSpawner", () => {
 
 			const receivedEvents: unknown[] = [];
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -572,9 +603,11 @@ describe("createPiSpawner", () => {
 
 			const receivedEvents: unknown[] = [];
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -605,9 +638,11 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			const result = await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -630,9 +665,11 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			const result = await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -652,9 +689,11 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
 				resolver: realResolver,
 			});
 			const result = await spawner.spawn({
+				runtime: TEST_RUNTIME,
 				role: "planner",
 				cwd: "/tmp/test-project",
 				prompt: "Plan the work.",
@@ -754,10 +793,12 @@ test("spawn events from a policy session never forward raw tool output", async (
 	const events: unknown[] = [];
 	const policy = createConsumerSessionPolicy();
 	const spawner = createPiSpawner(FIXTURE_REGISTRY, undefined, {
+		runtime: TEST_RUNTIME,
 		resolver: realResolver,
 	});
 	try {
 		const result = await spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp",
 			prompt: "inspect",
