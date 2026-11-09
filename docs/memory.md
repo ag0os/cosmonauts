@@ -301,9 +301,9 @@ explicit-save contracts remain authoritative.
 When enabled, every Cosmonauts-assembled agent receives the compact knowledge
 index and the shared `recall` tool. Dedicated knowledge and memory tools, plus
 framework retrieval and injection paths, use `MemoryStore`; no second
-framework knowledge path exists. Existing narrow legacy authorization remains:
-authored `remember` stays limited to Cosmo, and architecture-map detail reads
-stay limited to their established agent set. A matching profile is pinned
+framework knowledge path exists. Authorization comes from declaration grants:
+authored `remember` and architecture-map detail reads are available only to
+agents whose declaration grants them. A matching profile is pinned
 outside the combined recall limit, preserving full-profile recovery while
 knowledge and other matching records compete within the requested result
 window.

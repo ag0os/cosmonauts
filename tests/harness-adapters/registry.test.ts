@@ -252,7 +252,10 @@ describe("harness adapter registry", () => {
 				(raw) =>
 					JSON.parse(raw) as {
 						readonly files?: readonly string[];
-						readonly pi?: { readonly extensions?: readonly string[] };
+						readonly pi?: {
+							readonly extensions?: readonly string[];
+							readonly themes?: readonly string[];
+						};
 						readonly scripts?: Readonly<Record<string, string>>;
 					},
 			),
@@ -265,6 +268,7 @@ describe("harness adapter registry", () => {
 		expect(packageManifest.pi?.extensions ?? []).not.toContain(
 			"external-commands/",
 		);
+		expect(packageManifest.pi).toEqual({ themes: ["./themes"] });
 		expect(Object.keys(packageManifest.scripts ?? {})).not.toContain(
 			"harness:check",
 		);

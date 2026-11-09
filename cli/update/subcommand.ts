@@ -70,8 +70,9 @@ async function updateOne(
 
 	switch (meta.source) {
 		case "catalog": {
+			const scopeFlag = scope === "project" ? " --local" : "";
 			process.stderr.write(
-				`cosmonauts update: "${name}" was installed from the retired package catalog and cannot be updated. Reinstall it from a local path, a git URL, or github:owner/repo: \`cosmonauts uninstall ${name}\` then \`cosmonauts install <source>\`.\n`,
+				`cosmonauts update: "${name}" was installed from the retired package catalog and cannot be updated. Reinstall it from a local path, a git URL, or github:owner/repo: \`cosmonauts uninstall ${name}${scopeFlag}\` then \`cosmonauts install <source>${scopeFlag}\`.\n`,
 			);
 			process.exitCode = 1;
 			break;

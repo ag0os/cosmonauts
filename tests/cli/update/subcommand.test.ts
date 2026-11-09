@@ -124,6 +124,35 @@ describe("retired catalog source", () => {
 		expect(process.exitCode).toBe(1);
 	});
 
+	it("suggests user-scope reinstall commands for a user-scope install", async () => {
+		mockLoadInstallMeta.mockResolvedValue(
+			createInstallMetaFixture("catalog", { catalogName: "alpha" }),
+		);
+
+		await updateAction({ target: "my-pkg", projectRoot: "/project" });
+
+		expect(output.stderr()).toContain(
+			"`cosmonauts uninstall my-pkg` then `cosmonauts install <source>`.",
+		);
+	});
+
+	it("suggests project-scope reinstall commands for a --local install", async () => {
+		mockLoadInstallMeta.mockResolvedValue(
+			createInstallMetaFixture("catalog", { catalogName: "alpha" }),
+		);
+
+		await updateAction({
+			target: "my-pkg",
+			local: true,
+			projectRoot: "/project",
+		});
+
+		expect(output.stderr()).toContain(
+			"`cosmonauts uninstall my-pkg --local` then `cosmonauts install <source> --local`.",
+		);
+		expect(process.exitCode).toBe(1);
+	});
+
 	it("leaves the installed copy untouched", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
 			createInstallMetaFixture("catalog", { catalogName: "custom-domain" }),
