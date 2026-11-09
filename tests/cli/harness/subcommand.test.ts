@@ -687,6 +687,37 @@ describe("cosmonauts harness sync", () => {
 			action: "none",
 		});
 
+		expect(await snapshotTree(fixture.targetPath, "target")).toEqual(
+			targetBefore,
+		);
+
+		// An edited generated node makes the bundle the user's: a sync with the
+		// root re-declared must not remove it.
+		await writeFile(
+			join(fixture.targetPath, "references", "generated-inventory.md"),
+			"# Edited by hand\n",
+		);
+		const editedBefore = await snapshotTree(fixture.targetPath, "target");
+		const editedSync = await run(
+			[],
+			[
+				{
+					...suppliedCommand(fixture.assetRoot),
+					sourceRootId: "cosmonauts:package",
+				},
+			],
+		);
+		expect(recordedRow(editedSync)).toMatchObject({
+			before: "locally-edited",
+			action: "none",
+		});
+		expect(await snapshotTree(fixture.targetPath, "target")).toEqual(
+			editedBefore,
+		);
+		expect(
+			(await readHarnessManifest(fixture.manifestPath)).entries[fixture.key],
+		).toMatchObject({ provenance: { kind: "generated-wrapper" } });
+
 		const forgotten = await run([
 			"--forget-removed",
 			"external-skill:cosmonauts",
@@ -700,11 +731,14 @@ describe("cosmonauts harness sync", () => {
 				final: "current",
 			}),
 		]);
-		expect((await readHarnessManifest(fixture.manifestPath)).entries).toEqual(
-			{},
-		);
+		// Only the command the edited-bundle sync installed remains.
+		expect(
+			Object.values(
+				(await readHarnessManifest(fixture.manifestPath)).entries,
+			).map((entry) => entry.assetId),
+		).toEqual(["command:supplied"]);
 		expect(await snapshotTree(fixture.targetPath, "target")).toEqual(
-			targetBefore,
+			editedBefore,
 		);
 	});
 
