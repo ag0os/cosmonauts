@@ -640,8 +640,7 @@ function finalizeChainResult(
 	const chainStats = buildChainStats(state.stageResults, state.statsDurationMs);
 
 	return {
-		success:
-			!state.failed && state.errors.length === 0 && !config.signal?.aborted,
+		success: !state.failed && !config.signal?.aborted,
 		stageResults: state.stageResults,
 		totalDurationMs: Date.now() - chainStart,
 		errors: state.errors,
