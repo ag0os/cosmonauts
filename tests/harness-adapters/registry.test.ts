@@ -262,7 +262,9 @@ describe("harness adapter registry", () => {
 		expect(exporterSource).not.toMatch(/switch\s*\(options\.target\)/);
 		expect(cliSource).not.toMatch(/VALID_TARGETS/);
 		expect(packageManifest.files).toContain("external-commands/");
-		expect(packageManifest.pi?.extensions).not.toContain("external-commands/");
+		expect(packageManifest.pi?.extensions ?? []).not.toContain(
+			"external-commands/",
+		);
 		expect(Object.keys(packageManifest.scripts ?? {})).not.toContain(
 			"harness:check",
 		);

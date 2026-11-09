@@ -6,8 +6,6 @@ import { discoverSkills } from "../../lib/skills/discovery.ts";
 
 const DISCOVERED_ROOTS = [
 	{ domain: "shared", skillsDir: join("domains", "shared", "skills") },
-	{ domain: "main", skillsDir: join("domains", "main", "skills") },
-	{ domain: "coding", skillsDir: join("bundled", "coding", "skills") },
 ].map((root) => ({
 	...root,
 	skillsDir: join(process.cwd(), root.skillsDir),
