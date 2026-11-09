@@ -137,7 +137,7 @@ record filtering; it does not acquire universal knowledge recall merely because
 that group's default is on. Knowledge opt-out disables both the knowledge index
 and knowledge recall, while authored recall remains available with its own grant.
 A proposal writer must be a qualified identity under the existing storage
-contract; the current content retains `coding/distiller` as its declared writer,
+contract; a consumer declares its writer (the former `coding/distiller` was removed in D2),
 so its canonical proposal identities do not change. No migration rewrites stores.
 
 A selected provider may explicitly value-export `createSessionExtension(context)`
@@ -195,7 +195,7 @@ The native task/plan provider tier is keyed by bare extension name, with consume
 
 ## Chain and Drive declarations (step 3b)
 
-**LS-2, chain scope:** Core parsing, normalization, compilation and execution do not infer a coding actor's purpose, prompt, completion policy, terminal executor or model key. The coding consumer owns those conventions in `bundled/coding/chain-adapter.ts`, `chain-prompts.ts` and `chain-completion.ts`. Arbitrary `studio/scribe`, `studio/critic`, `studio/translator` and `studio/dispatcher` declarations exercise both runners, artifact gating and producer correlation in `tests/orchestration/chain-neutrality.test.ts`.
+**LS-2, chain scope:** Core parsing, normalization, compilation and execution do not infer a coding actor's purpose, prompt, completion policy, terminal executor or model key. The consumer owns those conventions (the former coding consumer in `bundled/coding/` was removed in D2). Arbitrary `studio/scribe`, `studio/critic`, `studio/translator` and `studio/dispatcher` declarations exercise both runners, artifact gating and producer correlation in `tests/orchestration/chain-neutrality.test.ts`.
 
 `NamedChain` requires exactly one of a DSL `chain` string or explicit `stages`, and accepts `episodes`. Selection looks up a named declaration first; single agent names then resolve through the declaration collection, including names with several hyphens. The parser takes no registry and returns topology only: sequence, bracket group, or fan-out. It shares declaration identity validation rather than a second agent-name grammar. Tests: `chain-parser.test.ts`, `chain-normalization.test.ts`, `chain-routing.test.ts` and CLI named-chain tests.
 
@@ -210,14 +210,14 @@ The consumer runtime carries `chainAdapter`, `defaultModel` and `workerAgent`. I
 | `expectedPlanSlug` | Top-level restriction on every normalized stage. Core retains the `plan:<slug>` completion-label convention as part of its plans-tool protocol. |
 | `completionPolicy` | `once` or function-bearing `state`; boolean `completionCheck` is wrapped into state and cannot conflict with an explicit policy. A public loop without a state policy is an immediate error outcome, with no implicit task-store evaluator. |
 | `prompt`, `instruction` | Raw stage override and adapter-built operational instruction respectively. `User request:` retains append semantics. Terminal executors receive the raw override; both strings persist separately. |
-| `terminalGate` | Consumer executor key; terminal sequential non-loop placement and key availability validate before any execution. Errors remain typed values so the coding consumer can retain its durable QM refusal artifacts. |
+| `terminalGate` | Consumer executor key; terminal sequential non-loop placement and key availability validate before any execution. Errors remain typed values so a consumer can retain durable refusal artifacts. |
 | `model`, `thinkingLevel` | Resolved once from stage/consumer overrides, the bound declaration and host defaults. Model/thinking maps accept open declaration keys; coding camelCase aliases live in the consumer. Missing model/default is an input error. |
 
 All function-bearing policies, loops and completion labels route inline. The durable compiler refuses inline-only input before graph writes; callbacks and opaque terminal host context are never serialized. Budgets, deadline, abort, task-state terminal outcomes, exact report-token parsing, review freshness and same-index reviewer ambiguity remain pinned in both execution paths. Projections default missing fields and accept legacy metadata; no graph migration or legacy execution occurs, and durable chains still cannot resume. Tests: compiler, inline runner, run-start characterization, durable stats and neutral-chain suites.
 
 Normalization failures correlate repeated display names by their supplied or generated occurrence id, preserve consumer diagnostics, and return a typed refusal before dispatch. Mixed normalized/raw input still validates the raw stages. Tests: `chain-normalization.test.ts`; declared sequential/parallel actor validation is covered in `domains/validator.test.ts`. Coding adapter contracts separately pin bound aliases, only-prior plan revision producers, model aliases and the QM host port in `domains/coding-chain-adapter.test.ts`. Consumer CLI execution without an adapter remains valid (`cli/chain-execution-neutral.test.ts`).
 
-**Runner-owned capture:** New consumers default `episodes` to false. The coding consumer explicitly opts shipped named chains in, including verify/QM. Its adapter's `defaultEpisodes: true` translates the current anonymous DSL and project-chain behavior into an explicit per-run flag; a declaration's `episodes: false` overrides that consumer default. Attribution uses the normalized first declaration, independently of that actor's episode grant. An unresolved declaration cannot own a new episode. No agent received a new grant. Tests: neutral-chain capture cases, normalization selection cases and the existing inline/durable episode suites.
+**Runner-owned capture:** New consumers default `episodes` to false. A consumer explicitly opts its named chains in (the former coding consumer was removed in D2). Its adapter's `defaultEpisodes: true` translates the current anonymous DSL and project-chain behavior into an explicit per-run flag; a declaration's `episodes: false` overrides that consumer default. Attribution uses the normalized first declaration, independently of that actor's episode grant. An unresolved declaration cannot own a new episode. No agent received a new grant. Tests: neutral-chain capture cases, normalization selection cases and the existing inline/durable episode suites.
 
 **LS-4:** Drive requires consumer `workerAgent`, with no worker spelling or domain fallback. Live and frozen execution resolution is independent of episode permission; capture still requires the selected declaration's episodes grant. A frozen actor resolves by its stored identity without live rebinding; an unavailable actor skips capture non-fatally, and subagent execution cannot substitute a different worker. Terminal-only reconciliation retains prior attempt provenance. Backend labels remain safe plain ids while execution receives the bound declaration reference. Tests: `tests/driver/declared-worker.test.ts`, episode grants, backend resolution, CLI Drive, graph resume and delegated driver suites.
 
@@ -239,9 +239,9 @@ Domain resource fallback and activation are separate inputs: `resourceFallback` 
 
 Validator capability, extension and persona checks use declared resource providers. Explicit instructions remove the persona-file requirement independently of the domain's spelling; no domain name exempts an undeclared persona. Declared fallback chains participate in contextual collections, with the contextual domain winning name collisions. Effective project skills include every declared fallback provider, in discovery order. Directory-only skill callers pass `fallbackDomains` explicitly. Tests: the declared-domain-policy contracts, validator, named-chain loader and skill/session suites.
 
-The host session-policy port supplies `SessionPolicy` and `SessionPolicyProvider` callbacks for assembly validation, tool presets/effective filtering, configuration and resource isolation, settings, transcripts, lifecycle, observation and child admission. Core session assembly, the session factory/spawner, spawn tool and interactive switch consume these hooks without importing review content or naming review actors. Coding content declares its provider through the interim manifest bridge. Test: `tests/coding-agnostic-framework.test.ts` enforces this boundary; session assembly, session-factory security, orchestration extension, QM prompt/settings and durable lifecycle suites retain the existing safeguards. Final evidence and named inherited failures are recorded in the step 3c review artifact.
+The host session-policy port supplies `SessionPolicy` and `SessionPolicyProvider` callbacks for assembly validation, tool presets/effective filtering, configuration and resource isolation, settings, transcripts, lifecycle, observation and child admission. Core session assembly, the session factory/spawner, spawn tool and interactive switch consume these hooks without importing review content or naming review actors. A consumer declares its provider through the interim manifest bridge. Test: `tests/coding-agnostic-framework.test.ts` enforces this boundary; session assembly, session-factory security, orchestration extension, QM prompt/settings and durable lifecycle suites retain the existing safeguards. Final evidence and named inherited failures are recorded in the step 3c review artifact.
 
-Bound host policy is registered before prompting, lets the parent supply its base runtime before loading reviewed configuration, and is removed at disposal. Spawn tool arguments expose no policy/context fields. The coding host retains missing-context denial, actual bound reviewer/lens checks, override refusal, duplicate tracking, sealed prompts, transcript/evidence correlation, model identity checks, timeout integrity and delegated launcher behavior. Tests: `tests/extensions/orchestration.test.ts`, inline-compiler, spawner and session-factory security suites.
+Bound host policy is registered before prompting, lets the parent supply its base runtime before loading reviewed configuration, and is removed at disposal. Spawn tool arguments expose no policy/context fields. A consumer host can retain missing-context denial, actual bound reviewer/lens checks, override refusal, duplicate tracking, sealed prompts, transcript/evidence correlation, model identity checks, timeout integrity and delegated launcher behavior. Tests: `tests/extensions/orchestration.test.ts`, inline-compiler, spawner and session-factory security suites.
 
 Custom domain merge strategies decide whether incoming providers are retained before activation is calculated. Their decisions are reused during resource merging; a skipped incoming flag has no activation authority. Callback decisions may therefore be needed even for a candidate that ends inactive. Default merging, same-precedence active conflicts and higher inactive overrides retain their contracts. Test: declared-domain-policy includes both directions of competing activation flags with `skip`.
 
@@ -257,7 +257,7 @@ The host policy binding survives extension-loader module caches and cannot be re
 
 Host denial remains effective when ordinary delegation would allow a target. Detached children receive sealed host parameters and preserve evidence correlation, admission cleanup, delegated results and optional-hook failure handling. Spawner registration precedes prompting, completion observations are forwarded, and explicit retention controls transcripts. Tests: `tests/extensions/spawn-policy-hooks.test.ts` and `tests/orchestration/session-policy-spawner.test.ts`.
 
-The coding policy independently denies unbound managers, wrong callers/actual reviewers/lenses, model/thinking overrides and duplicate attempts; it validates child roles, clears append text, uses untrusted in-memory settings and forwards the exact run-local analysis consent. Tests: `tests/orchestration/host-review-policy.test.ts`, `tests/orchestration/host-review-provider.test.ts` and existing session-factory security/QM suites. Exact declaration tool lists are preserved even when a host supplies a preset. Test: `tests/agents/session-assembly.test.ts`.
+The former coding policy (removed in D2) independently denied unbound managers, wrong callers/actual reviewers/lenses, model/thinking overrides and duplicate attempts; it validates child roles, clears append text, uses untrusted in-memory settings and forwards the exact run-local analysis consent. Tests: `tests/orchestration/host-review-policy.test.ts`, `tests/orchestration/host-review-provider.test.ts` and existing session-factory security/QM suites. Exact declaration tool lists are preserved even when a host supplies a preset. Test: `tests/agents/session-assembly.test.ts`.
 
 Custom merge callbacks see exact resource overlap metadata and the accumulated merge/replace provenance, and same-precedence active conflicts are checked before a skip callback can hide them. Domain module evaluation order remains deterministic. Portable own providers occur once; omitted directory providers invent no paths; prompt I/O failures other than not-found propagate. Tests: `tests/domains/domain-policy-contracts.test.ts`. Source-agent package resource selection prefers its declared resource scope, then actual identity, then caller context. Test: `tests/agent-packages/build.test.ts`.
 
@@ -276,12 +276,11 @@ The policy resource hook returns only `SessionPolicyResourceOptions`:
 `extensionFactories`. Session creation applies those four keys explicitly; unknown
 keys cannot override cwd, noExtensions, noSkills or the dedicated settings hook.
 Test: `tests/orchestration/session-factory.security.test.ts`; duplicate settings
-were removed from the QM resource hook, with host-review-policy coverage.
+were removed from the (since removed) QM resource hook.
 
 LS-2 imports are guarded across all core TypeScript files, including type and
-dynamic/resolver imports. Named temporary debt is CLI main importing QM
-launch/run (remove in D2). The catalog's coding entry
-moves from `lib/packages/catalog.ts` to the CLI host in step4. The coding tool
+dynamic/resolver imports. The named QM import debt was removed in D2, along with
+the catalog's coding entry and `lib/packages/catalog.ts`. The coding tool
 preset is a preset vocabulary item, recorded as debt rather than a domain default.
 Test: `tests/coding-agnostic-framework.test.ts`.
 
@@ -307,8 +306,8 @@ execution; this does not change `AgentRegistry.register`'s layering overwrite
 contract. Qualified programmatic agents need no resource domain manifest.
 Tests: `tests/consumer-runtime.test.ts`.
 
-The current content consumer lives in `domains/host-runtime.ts`: it chooses roots,
-model default, coding chain adapter, worker and session policies. Library/CLI entry
+The content consumer (`domains/host-runtime.ts`) was removed in D2; a consumer
+chooses roots, model default, chain adapter, worker and session policies. Library/CLI entry
 points request the host runtime through `setRuntimeHost`/`getHostRuntime`; equal
 project/domain/plugin requests share construction, failed construction can retry,
 and an unconfigured host fails explicitly. Explicit library session assembly and nested spawns, chains and Drive retain the supplied runtime. The current CLI mounts inline extensions with its base execution runtime, excluding interactive --domain/--plugin-dir additions, preserving pre-step4 reach. Tests: `tests/runtime-host.test.ts`, orchestration/CLI suites and extension
@@ -392,12 +391,10 @@ Real-path existence, missing shared state/targets, malformed and stale restore
 entries, live rebinding and persistence are pinned by the CLI mount, domain-policy
 and domain-bindings suites. Replay applies each validated entry through
 `bindLiveRole` before writing the slot's live store, even if the resolver and slot
-own different stores; a later invalid entry leaves the previous valid binding intact. Its content catalog is
-owned by `cli/package-catalog.ts`; core catalog lookup takes explicit entries and
-relative sources require an explicit root. Current CLI install/update behavior
-and its catalog entries remain pinned by package/update/catalog tests. The library
-ships no implicit catalog content. Catalog's step4 name debt is closed; the named
-QM import exceptions remain.
+own different stores; a later invalid entry leaves the previous valid binding intact. The CLI package catalog
+(`cli/package-catalog.ts`), catalog installs and the named QM import exceptions
+were removed in D2; `update` refuses catalog installs. The library ships no
+catalog content.
 
 Runtime collection admission validates each supplied actor before adding its ID to
 the collision collection, so an invalid duplicate reports its declaration error.
@@ -437,8 +434,7 @@ cross-project refusal guard is claimed (orchestration.test.ts). Configured chain
 are a runtime collection: config-file edits require a new session after resetting the host, or process restart
 before chain_run/lean sees them. No per-call config reread is promised.
 
-The coding manifest carries its quality-review seal for direct runtime creation;
-the content host's explicit provider still wins. Scaffold/eject outputs use public
+Scaffold/eject outputs use public
 aliases; eject rejects an unexported framework target rather than emitting a broken
 specifier. Pi catalog tests bind the actual pinned1.0.3 ToolName union to the local
 allowlist. Toolless Pi helpers and memory consolidate use the selected host when
@@ -491,9 +487,9 @@ these outcomes, tool filtering and consumer delegation denial. The fixture's own
 policy module imports library types only through public package exports.
 
 Retained orchestration suites select this synthetic policy. Coding/QM prompt,
-completion, transcript and audit acceptance assertions remain in adjacent
-`*.content.test.ts` suites with an explicit `tests/helpers/content-chain.ts` helper;
-these are content retirement homes for D2, not additional library contracts.
+completion, transcript and audit acceptance assertions lived in adjacent
+`*.content.test.ts` retirement homes with a `tests/helpers/content-chain.ts` helper;
+D2 retired them with the content, as they were never library contracts.
 At P1, generic session factory/spawner suites pinned config/skill/settings
 inputs, tool filtering, creation/disposal, observed tool-result projection and
 child completion timeout delivery. The P2 review-fix commit adds explicit assertions
@@ -522,18 +518,16 @@ interactive definition/runtime and policy in init, print and interactive session
 The default test host owns one synthetic reader and has no worker or content
 policy. Lean build/review and backend acceptance explicitly select the old host while
 that content remains; direct-import content suites use the synthetic host.
-Subprocess content tests generate an explicit content entry. A generic
+Subprocess content tests generated an explicit content entry until D2. A generic
 Drive characterization instead declares the synthetic reader as its worker.
 Discovered domains continue declaring their extension resource entry; the synthetic
 plugin fixture forwards that entry to its host's orchestration provider. Resource
 precedence and validation are unchanged.
 
-P3 deliberately removes the bin's implicit cosmo/cody, lean build/review, QM,
-shipped coding/skill export and Drive worker defaults before D1/D2 retire their
-content. A coding install that relies on shared resources fails validation loudly,
-including list commands (`cli/host-startup`). Explicitly adding both repository
-`domains` and `bundled` roots restores resource discovery for inspection while
-content remains; it does not restore the old adapter or default worker. Inline
+P3 removed the bin's implicit cosmo/cody, lean build/review, QM,
+shipped coding/skill export and Drive worker defaults; D1/D2 then deleted that
+content. A domain install that relies on shared resources fails validation loudly,
+including list commands (`cli/host-startup`). Inline
 tools keep base scope even when a plugin lead was selected interactively.
 
 P2's P1-review follow-up returns the entire sequential/parallel review-gating case
@@ -542,7 +536,7 @@ bound identities, stale/unsafe artifacts and unaffected shapes. The external and
 in-process consumer proof now enforces delegation denial through `spawn_agent` and
 pins terminal completion after one successful iteration. Retained spawner/resource
 fixtures pass nonexistent temporary resource roots, exposing any hidden content read.
-Additional QM-only cases now have explicit `.content.test.ts` retirement homes.
+Additional QM-only cases moved to `.content.test.ts` retirement homes, retired in D2.
 
 P2 consumer memory proof uses only synthetic temporary records and the public
 session factory. `tests/library-consumer.test.ts` exercises the same scenarios
@@ -582,9 +576,9 @@ of content-hash work. The consumer transcript proof asserts distinct user sentin
 it makes no claim about persistence of tool outputs invoked outside those sessions.
 
 P2b's retained-suite boundary also rejects literal `domains/` and `bundled/`
-resource paths, including split join arguments. Shipped-definition scans live in
+resource paths, including split join arguments. Shipped-definition scans moved to
 `tests/agents/session-assembly.content.test.ts` and
-`tests/extensions/architecture-memory.content.test.ts` for D2 retirement.
+`tests/extensions/architecture-memory.content.test.ts`, both retired in D2.
 Both restored and live bindings validate through the resolver before updating the
 slot store, even when the resolver owns a different store; the two distinct-store
 cases in `tests/extensions/domain-bindings.test.ts` pin valid writes and stale-target

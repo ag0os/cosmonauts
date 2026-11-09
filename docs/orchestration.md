@@ -23,8 +23,8 @@ The source of truth is an `AgentPackageDefinition` JSON file. A definition decla
 There are two export invocation forms:
 
 ```bash
-cosmonauts export --definition packages/cosmo-planner/agent-package.json --out bin/cosmo-planner
-cosmonauts export coding/explorer --target claude-cli --out bin/explorer-claude
+cosmonauts export --definition packages/my-agent/agent-package.json --out bin/my-agent
+cosmonauts export <domain>/<agent> --target claude-cli --out bin/agent-claude
 ```
 
 Every export flows through an `AgentPackageDefinition`. The `<agent-id>` shorthand generates one from the source agent and is compatibility-gated because raw internal prompts may mention Cosmonauts-only tools, extensions, or subagents. Planner-like packages should use an explicit definition with a reviewed external-safe prompt.
@@ -36,7 +36,7 @@ Phase 1 export is intentionally separate from orchestration execution. Existing 
 Runs agent pipelines using Pi sessions. The DSL is pure topology — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops until all tasks are Done or Cancelled; others run once).
 
 ```
-cosmonauts run chain "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "design and implement auth"
+cosmonauts run chain "planner -> task-manager -> coordinator" "design and implement auth"
 ```
 
 ### Bracket groups (parallel at the same stage)
@@ -83,25 +83,13 @@ Both chain paths report it the same way. `runChain` (inline) emits `stage_stats`
 
 `SpawnStats.durationMs` is agent time: it runs from the prompt to completion and leaves out session creation, spawner cleanup, and the durable runner's post-spawn work. `ChainStats.totalDurationMs` (printed as `agent time=` on `chain_end`) sums those agent times; on the inline path a parallel group contributes its group wall-clock instead. A stage's true wall time is the `durationMs` on its `stage_end` (and, on the durable path, the gap between its step timestamps). Quality-review stages and failed spawns carry no `SpawnStats` on either path, so they emit no `stage_stats` and add nothing to the `ChainStats` totals.
 
-`SpawnStats` come from Pi's `session.getSessionStats()`, so they include Pi's prompt-cache warming (default `cacheWarming: "streaming"` since Pi 0.86): while a session waits in a long tool call — a parent blocked on `spawn_agent`, a chain, `run_driver`, or a slow test run — Pi may send small cache-refresh requests when it estimates they save more than they cost. They add tokens and cost to that session's stats (and use subscription quota), not model context. Cosmonauts keeps Pi's default. It is a global Pi setting (`cacheWarming: off | streaming | idle` in `~/.pi/agent/settings.json`); spawns built with in-memory settings (compaction config, quality review) do not read that file and always use the default.
+`SpawnStats` come from Pi's `session.getSessionStats()`, so they include Pi's prompt-cache warming (default `cacheWarming: "streaming"` since Pi 0.86): while a session waits in a long tool call — a parent blocked on `spawn_agent`, a chain, `run_driver`, or a slow test run — Pi may send small cache-refresh requests when it estimates they save more than they cost. They add tokens and cost to that session's stats (and use subscription quota), not model context. Cosmonauts keeps Pi's default. It is a global Pi setting (`cacheWarming: off | streaming | idle` in `~/.pi/agent/settings.json`); spawns built with in-memory settings (compaction config) do not read that file and always use the default.
 
 ## Named Chains
 
-The primary CLI interface for multi-agent pipelines is `cosmonauts run chain`. Built-in defaults live in `bundled/coding/chains.ts` and are inherited automatically. Add a `chains` block to `.cosmonauts/config.json` only to override a chain by name or define a new one; project entries take precedence over domain entries on name collision.
+The primary CLI interface for multi-agent pipelines is `cosmonauts run chain`. Named chains come from installed or supplied domains (the coding domain's chains were removed in D2). Add a `chains` block to `.cosmonauts/config.json` only to override a chain by name or define a new one; project entries take precedence over domain entries on name collision.
 
-| Name | Chain | Purpose |
-|------|-------|---------|
-| `plan-and-build` | `planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Full pipeline with adversarial plan review |
-| `implement` | `task-manager → coordinator → integration-verifier → quality-manager` | From an existing approved plan |
-| `verify` | `quality-manager` | Durable findings report on existing changes |
-| `spec-and-build` | `spec-writer → planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Interactive spec capture then reviewed build |
-| `adapt` | `planner → task-manager → coordinator → integration-verifier → quality-manager` | Planner studies a reference codebase path and adapts patterns |
-
-Test-first is the `planner`'s baseline: every plan it produces is behavior-driven and implemented test-first, so `plan-and-build` and `spec-and-build` cover what used to be a separate TDD workflow. Adaptation is likewise a `planner` mode — point it at a reference codebase path and the `adapt` named chain handles it.
-
-Every design-driven default includes `plan-reviewer` as a mandatory adversarial step before task creation. For code-time review, `quality-manager` internally triages which specialist lenses (security, performance, UX) apply to the diff and spawns the applicable ones in parallel alongside the generalist `reviewer`.
-
-All five named chains end at the QM's durable findings report. The QM reviews a private local clone and never edits code, commits, completes a plan, or guarantees a clean tree. Findings require separate remediation through tasks and Drive, followed by independent re-review. The review retains host-run project checks, direct gate resolution, panel triage, and specialist evidence. Missing base-owned `qualityReview` checks are visible as not configured and as a human-decision item blocking `ready`. The optional `qualityReview.reviewerModel` runs the generalist reviewer on any model Pi can reach; the report records which models reviewed, and model choice never affects the verdict.
+The former built-in named chains (`plan-and-build`, `implement`, `verify`, `spec-and-build`, `adapt`) and the `planner`/`plan-reviewer`/`quality-manager` roles they used shipped with the coding domain and were removed in D2.
 
 Run `cosmonauts run chain list` for the live list, including any project-level overrides.
 
@@ -179,18 +167,17 @@ Each Drive task has a per-backend invocation timeout. The default is 1800000ms (
 ## CLI Surface
 
 ```
-cosmonauts                                   # Interactive REPL with main/cosmo
-cosmonauts -d coding                          # Interactive REPL with coding/cody
-cosmonauts "design an auth system"           # Initial prompt to main/cosmo
-cosmonauts -d coding "implement this task"    # Initial prompt to coding/cody
+cosmonauts                                   # Interactive REPL with the default domain lead
+cosmonauts -d <domain>                        # Interactive REPL for a domain
+cosmonauts "design an auth system"           # Initial prompt
 cosmonauts --print "create tasks and go"     # Non-interactive (fire-and-forget)
-cosmonauts run chain plan-and-build "auth"    # Named chain
+cosmonauts run chain <name> "auth"           # Named chain
 cosmonauts run chain "planner -> coordinator" # Raw chain DSL
 cosmonauts run drive --plan auth-system       # Driver task runs
 cosmonauts run status run-abc --scope chain   # Normalized run status
 cosmonauts harness sync --check --json        # Read-only harness drift report
 cosmonauts export --definition agent-package.json --out bin/agent
-cosmonauts export coding/explorer --target claude-cli --out bin/explorer
+cosmonauts export <domain>/<agent> --target claude-cli --out bin/agent
 ```
 
 Key flags:

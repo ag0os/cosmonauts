@@ -14,9 +14,9 @@ What makes it different from using a single assistant directly:
 
 Cosmonauts is domain-agnostic. A **domain** (`domain.ts` at a domain root) packages its own agents, persona prompts, capabilities, skills, extensions, and named chains — and domains are pluggable, not shipped with the framework itself. The framework provides the substrate: declarative agent definitions, four-layer prompt composition, on-demand skills, multi-agent orchestration (chains and Drive runs), and a persistent plan/task/memory spine so work compounds instead of drifting.
 
-**Coding is the current reference domain** — it's what's built out today because it's the maintainer's daily work, and it doubles as the worked example of how to build a domain. (It's slated to be extracted out of this repo.) The rest of this README uses the coding domain to show the framework in action; the same machinery applies to any domain you define.
+**The coding domain, the `main` domain (Cosmo) and the bundled-package catalog were removed from this repo in D2.** The framework now ships no domain content of its own beyond `domains/shared/` (until D3); you supply the domain. The workflow below is an illustrative example of what a coding domain built on the framework looks like; the same machinery applies to any domain you define.
 
-### The coding domain, as an example
+### A coding workflow, as an example
 
 Here, you handle the creative work (requirements, design decisions, architecture) and agents handle the execution (implementation, testing, commits, code review). The workflow:
 
@@ -27,33 +27,30 @@ Here, you handle the creative work (requirements, design decisions, architecture
 5. **A coordinator delegates tasks to worker agents** — respecting dependencies, routing skills.
 6. **Workers implement, test, and commit** — each in a fresh context with the right tools.
 7. **An integration verifier checks plan-level contracts** — comparing the implemented changes against the approved plan.
-8. **A quality manager reviews the result** — host-run checks and independent review produce a durable findings report. Remediation goes through tasks, Drive, and another independent review.
+8. **A reviewer checks the result** — independent review produces findings. Remediation goes through tasks, Drive, and another review.
 
 The key insight: **the design phase is where humans add the most value.** Once the plan is solid and tasks are well-defined, execution is mechanical. Cosmonauts optimizes for great planning and reliable autonomous execution.
 
 ## Current Status
 
-**Phase 0 is complete.** The core loop works end-to-end: you can start Cosmonauts, chat with `main/cosmo` (Cosmo), trigger multi-agent pipelines, and have agents implement tasks on real projects. The maintainer has dogfooded it daily since late February 2026 — the typical loop is bouncing design and plan ideas with an agent, turning that into a technical plan, revising it, and automating the implementation.
+**Phase 0 is complete.** The core loop works end-to-end: you can start Cosmonauts, trigger multi-agent pipelines, and have agents implement tasks on real projects. The maintainer has dogfooded it daily since late February 2026 — the typical loop is bouncing design and plan ideas with an agent, turning that into a technical plan, revising it, and automating the implementation.
 
-**Coding is the only built-out domain so far.** The framework is domain-agnostic by design, but the coding domain is the only fully-realized example today — and it's slated to be extracted out of this repo. Building additional domains is supported through the contract in [docs/domains.md](./docs/domains.md).
+**The framework is domain-agnostic and ships no coding domain.** Building domains is supported through the contract in [docs/domains.md](./docs/domains.md).
 
 What's built:
 - Task system with markdown files, YAML frontmatter, dependencies, and acceptance criteria
-- Chain runner for multi-agent pipelines (planner → task-manager → coordinator → workers → integration-verifier → quality-manager)
+- Chain runner for multi-agent pipelines (a consumer-defined role sequence)
 - Agent spawner creating scoped Pi sessions from declarative agent definitions
-- `main/cosmo` cross-domain orchestration, `coding/cody` coding-domain coordination, and specialist roles such as planner, task-manager, worker, reviewer, and fixer
 - Four-layer system prompt architecture with capability-aligned composition
 - Plan lifecycle: create plans, link tasks, archive completed work, submit machine proposals under `memory/`, and promote reviewed knowledge by a human act into `knowledge/`
 - Drive runs for approved plan-linked task batches via `run_driver`, normalized `run_status`/`run_watch` observation, deprecated `watch_events` compatibility, and `cosmonauts run drive`
-- Named chains for common pipelines (`plan-and-build`, `spec-and-build`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
+- Named chains supplied by a domain or project config
 - CLI with interactive and non-interactive modes
 - Todo tool for in-session task tracking
 - Vitest test suite passing
 
 Before it's ready for a wider audience (the maintainer's bar):
 - A **memory system** — built out, ideally automatic
-- **Extract the coding domain into its own plugin** so the framework ships domain-free (see the `domain-plugins` idea in the roadmap)
-- Make **Cosmo** (`main/cosmo`, the executive agent) genuinely useful — it has to carry more weight once there's no embedded domain
 - **Documentation** — with the honest expectation that writing it will surface rough edges
 
 See [ROADMAP.md](./ROADMAP.md) for the full backlog.
@@ -80,13 +77,10 @@ After installing, initialize your project:
 # 1. Initialize local directories and project config
 cosmonauts scaffold missions
 
-# 2. Install the coding domain if your project has not installed one yet
-cosmonauts install coding
+# 2. (Optional) Customize .cosmonauts/config.json — adjust skills and named chains
 
-# 3. (Optional) Customize .cosmonauts/config.json — adjust skills and named chains
-
-# 4. Run your first named chain
-cosmonauts run chain plan-and-build "describe what you want to build"
+# 3. Run a chain from a domain you have installed or supplied
+cosmonauts run chain <chain-name> "describe what you want to build"
 ```
 
 The `scaffold missions` command creates `missions/`, `memory/`, and `knowledge/` for tasks, plans, machine memory/proposals, and curated knowledge, plus a minimal `.cosmonauts/config.json`. The knowledge surface remains OFF unless `knowledgeSurface.enabled` is literally `true`; see [docs/memory.md](./docs/memory.md).
@@ -95,26 +89,12 @@ The `scaffold missions` command creates `missions/`, `memory/`, and `knowledge/`
 
 ### Interactive Mode (default)
 
-Start a REPL session with Cosmo (`main/cosmo`), the cross-domain orchestrator:
+Start a REPL session with the lead agent of your installed or supplied domain (the `main/cosmo` and `coding/cody` leads were removed in D2):
 
 ```bash
 cosmonauts
-```
-
-For a coding-focused REPL session with Cody (`coding/cody`):
-
-```bash
-cosmonauts -d coding
-```
-
-Chat naturally — Cosmo clarifies goals and delegates across installed domains; Cody can read/write code and coordinate coding specialists.
-
-```bash
-# Start with an initial prompt to main/cosmo
+cosmonauts -d <domain>
 cosmonauts "explain how the task system works"
-
-# Start with an initial prompt to coding/cody
-cosmonauts -d coding "explain the worker agent"
 ```
 
 ### Non-Interactive Mode
@@ -130,26 +110,20 @@ cosmonauts --print "create tasks from the plan and implement them"
 Run named chains defined by installed domains or `.cosmonauts/config.json`:
 
 ```bash
-# Full pipeline: design → tasks → implement → verify
-cosmonauts run chain plan-and-build "design an auth system for this project"
-
-# Implement an existing plan
-cosmonauts run chain implement "implement the plan in missions/plans/auth-system/"
-
-# Review current changes and get a durable findings report
-cosmonauts run chain verify "review current changes against main"
+# Run a named chain (names come from your domains/config)
+cosmonauts run chain <chain-name> "design an auth system for this project"
 
 # List available named chains
 cosmonauts run chain list
 
-# List agents with qualified IDs such as main/cosmo and coding/cody
+# List agents with qualified IDs such as <domain>/<agent>
 cosmonauts --list-agents
 ```
 
 Or pass a raw chain DSL expression for custom pipelines:
 
 ```bash
-cosmonauts run chain "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "custom pipeline"
+cosmonauts run chain "planner -> task-manager -> coordinator" "custom pipeline"
 ```
 
 The chain DSL supports **bracket groups** for parallel steps and **fan-out** for multiple instances of the same role:
@@ -243,7 +217,7 @@ cosmonauts export --definition packages/cosmo-planner/package.json --out bin/cos
 Export from a source agent shorthand:
 
 ```bash
-cosmonauts export coding/explorer --target claude-cli --out bin/explorer-claude
+cosmonauts export <domain>/<agent> --target claude-cli --out bin/explorer-claude
 ```
 
 `--target` defaults to `claude-cli`; the supported serialized labels are `claude-cli, codex`, and other values are rejected before compiling. Provide exactly one of `--definition <path>` or `<agent-id>`. The shorthand normalizes through a generated package definition that uses the source agent prompt, tools, and skills, so it is compatibility-gated and rejects agents whose raw internal prompts depend on Cosmonauts-only extensions, subagents, or extension-backed capabilities. For planner-like exports, write an explicit definition with an external-safe prompt instead.
@@ -255,7 +229,7 @@ Package definitions are JSON:
   "schemaVersion": 1,
   "id": "cosmo-planner-claude",
   "description": "Cosmonauts planning discipline packaged for Claude Code subscription use.",
-  "sourceAgent": "coding/planner",
+  "sourceAgent": "<domain>/planner",
   "prompt": {
     "kind": "file",
     "path": "planner-claude-system.md"
@@ -320,7 +294,7 @@ Bootstrap project instructions for a new codebase:
 cosmonauts init
 ```
 
-This launches an interactive bootstrap session with the default domain lead (`main/cosmo`, or `coding/cody` when using `-d coding`). The agent scans the project, asks clarifying questions, proposes `AGENTS.md` content and skill suggestions, and waits for your confirmation before writing any files. Re-running `cosmonauts init` reviews the existing setup and proposes improvements instead of stopping when `AGENTS.md` already exists.
+This launches an interactive bootstrap session with the default domain lead. The agent scans the project, asks clarifying questions, proposes `AGENTS.md` content and skill suggestions, and waits for your confirmation before writing any files. Re-running `cosmonauts init` reviews the existing setup and proposes improvements instead of stopping when `AGENTS.md` already exists.
 
 ## Architecture
 
@@ -329,8 +303,7 @@ Cosmonauts is built as a [Pi package](https://github.com/earendil-works/pi) — 
 ```
 cosmonauts/
 ├── lib/              Core libraries (tasks, orchestration, plans, chains, agents)
-├── domains/          Built-in domains: shared/ and main/
-├── bundled/coding/   Installable root-domain package (coding/cody and specialists)
+├── domains/          Built-in domain content (shared/, until D3)
 ├── cli/              CLI implementation
 ├── bin/              CLI entry points (cosmonauts)
 ├── tests/            Test suites (Vitest)
@@ -345,18 +318,7 @@ cosmonauts/
 
 Every agent is a Pi session configured by a declarative definition — model, tools, system prompt layers, extensions, skill access, and sub-agent permissions.
 
-| Agent | Role |
-|-------|------|
-| **Cosmo (`main/cosmo`)** | Cross-domain orchestrator and top-level assistant. Clarifies goals and delegates directly to specialists. |
-| **Cody (`coding/cody`)** | Coding-domain coordinator for `cosmonauts -d coding`. Handles coding sessions and delegates to coding specialists. |
-| **Planner** | Designs solutions. Explores code, proposes approaches, writes plans. Read-only tools. |
-| **Task Manager** | Breaks plans into atomic, implementable tasks with dependencies and ACs. |
-| **Coordinator** | Delegates tasks to workers, monitors progress, verifies completion. |
-| **Worker** | Implements one task. Full coding tools, ephemeral session. |
-| **Integration Verifier** | Checks implemented changes against the approved plan and plan-level contracts. |
-| **Quality Manager** | Spawns reviewers and writes a durable findings report and verdict. The host runs configured checks only after the reviewers' evidence is sealed. It does not change the reviewed checkout. |
-| **Reviewer** | Clean-context code review against main. Writes findings, does not fix. |
-| **Fixer** | Applies targeted remediation from review findings. |
+Agent definitions come from the domains you install or supply. The coding agents (cody, planner, worker, reviewers, quality manager and the rest) and the `main/cosmo` lead were removed in D2.
 
 ### Task System
 

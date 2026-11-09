@@ -21,11 +21,9 @@ As Pi evolves (lockstep versioning), re-audit its API before each phase for feat
 
 - **Three layers**:
   - **Framework** (`lib/`) — orchestration, persistence, tasks, CLI, agent loading. Domain-agnostic.
-  - **Domain agents** — built-in domains live in `domains/` (`shared/`, `main/`); installable domains live in `bundled/` (`coding/`). Each domain ships its own agents, prompts, capabilities, and skills.
-  - **Executive layer** (`domains/main/`) — hosts `cosmo`, the cross-domain top-level assistant.
+  - **Domain content** — domains live in `domains/` (`shared/` remains until D3) or are supplied by a consumer. Each domain ships its own agents, prompts, capabilities, and skills. The coding domain, `main` domain (cosmo) and bundled-package catalog were removed in D2.
 - **Three pillars** — agent definitions (declarative config), system prompts (composable layers), and skills (on-demand knowledge). See `docs/prompts.md` for the four-layer composition.
 - **Adding a new domain = adding a new domain directory with a `domain.ts` manifest.** No framework changes needed.
-- **Built-in leads**: `main/cosmo` (executive, cross-domain) and `coding/cody` (coding-domain interactive lead).
 
 ## Tech Stack
 
@@ -66,14 +64,11 @@ Work flows: **roadmap → plan → tasks → sessions → archive → proposals/
 - For non-trivial features (multi-file or design decisions), scope into tasks before implementing — see `/skill:plan` and `/skill:task`.
 - For small, self-contained changes, skip the task system.
 
-The Quality Manager reviews a private local clone and ends with a durable findings report. It does not fix code, commit, complete plans, or promise a clean tree. Route findings through tasks, Drive, and independent re-review. Review-base `qualityReview` checks must be configured for a `ready` verdict; missing checks are reported visibly as a human-decision item. The QM and its reviewers may run on any model Pi can reach; model choice never affects the verdict.
-
 ## Key Directories
 
 **Source code:**
 - `lib/` — framework code (agents, orchestration, tasks, plans, workflows, domains, config)
-- `domains/` — built-in domains (`shared/`, `main/`)
-- `bundled/` — installable domain packages (`coding/`)
+- `domains/` — `shared/` (remaining built-in domain content)
 - `cli/`, `bin/` — CLI implementation and entry points
 - `tests/` — Vitest suites mirroring source
 - `docs/` — reference documentation
