@@ -6,7 +6,6 @@ import { describe, expect, test } from "vitest";
 import {
 	createRuntimeSkillDescriptor,
 	getHarnessTarget,
-	getStaticHarnessAsset,
 	isHarnessPackageDefinitionKey,
 	isImplementedHarnessTargetId,
 	listHarnessPackageDefinitionKeys,
@@ -14,6 +13,7 @@ import {
 	resolveHarnessAssetTarget,
 	resolveHarnessTargetDirectory,
 } from "../../lib/harness-adapters/registry.ts";
+import type { HarnessAsset } from "../../lib/harness-adapters/types.ts";
 import { resolveTargetDir } from "../../lib/skills/exporter.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -116,7 +116,7 @@ describe("harness adapter registry", () => {
 			targetDirectory: join(PROJECT_ROOT, ".claude", "skills"),
 			transform: "identity",
 			supportedModes: ["copy", "link"],
-			supportedLinkShapes: ["directory", "flat-skill", "generated-wrapper"],
+			supportedLinkShapes: ["directory", "flat-skill"],
 		});
 		expect(
 			resolveHarnessTargetDirectory({
@@ -154,37 +154,31 @@ describe("harness adapter registry", () => {
 			sourcePath: join(PROJECT_ROOT, "domains", "shared", "skills", "plan"),
 			logicalPath: "plan",
 		});
-		const bundle = getStaticHarnessAsset("external-skill:cosmonauts");
-		const specCommand = getStaticHarnessAsset("command:spec-to-backlog");
-		const implementCommand = getStaticHarnessAsset("command:implement-plan");
+		const bundle: HarnessAsset = {
+			assetId: "skill:supplied-bundle",
+			kind: "skill",
+			ownership: { kind: "authority", authorityId: "cosmonauts/core" },
+			sourceRootId: "consumer:assets",
+			sourceRoot: "/consumer/assets",
+			sourcePath: "supplied-bundle",
+			logicalPath: "supplied-bundle",
+			outputIdentity: "supplied-bundle",
+			defaultScope: "personal",
+		};
+		const specCommand: HarnessAsset = {
+			...bundle,
+			assetId: "command:supplied-command",
+			kind: "command",
+			sourcePath: "supplied-command.md",
+			logicalPath: "supplied-command.md",
+			outputIdentity: "supplied-command.md",
+		};
 
 		expect(runtimeSkill).toMatchObject({
 			assetId: "skill:plan",
 			defaultScope: "project",
 			ownership: { kind: "project" },
 		});
-		expect(bundle).toMatchObject({
-			assetId: "external-skill:cosmonauts",
-			defaultScope: "personal",
-			sourceRootId: "cosmonauts:package",
-			sourcePath: "external-skills/cosmonauts",
-			ownership: { kind: "authority", authorityId: "cosmonauts/core" },
-		});
-		expect(bundle?.sourceRoot).toBe(process.cwd());
-		expect(specCommand).toMatchObject({
-			assetId: "command:spec-to-backlog",
-			defaultScope: "personal",
-			sourcePath: "external-commands/spec-to-backlog.md",
-		});
-		expect(implementCommand).toMatchObject({
-			assetId: "command:implement-plan",
-			defaultScope: "personal",
-			sourcePath: "external-commands/implement-plan.md",
-		});
-
-		if (!bundle || !specCommand) {
-			throw new Error("Expected registered authority descriptors");
-		}
 		expect(
 			resolveHarnessAssetTarget({
 				targetId: "claude",
@@ -227,7 +221,7 @@ describe("harness adapter registry", () => {
 				requestedMode: "link",
 				roots: writeRoots,
 			}),
-		).toThrow(/command:spec-to-backlog.*link.*copy/i);
+		).toThrow(/command:supplied-command.*link.*copy/i);
 		expect(() =>
 			resolveHarnessAssetTarget({
 				targetId: "claude",
@@ -264,7 +258,8 @@ describe("harness adapter registry", () => {
 		expect(exporterSource).toMatch(/harness-adapters\/registry\.ts/);
 		expect(exporterSource).not.toMatch(/switch\s*\(options\.target\)/);
 		expect(cliSource).not.toMatch(/VALID_TARGETS/);
-		expect(packageManifest.files).toContain("external-commands/");
+		expect(packageManifest.files).not.toContain("external-commands/");
+		expect(packageManifest.files).not.toContain("external-skills/");
 		expect(packageManifest.pi?.extensions ?? []).not.toContain(
 			"external-commands/",
 		);

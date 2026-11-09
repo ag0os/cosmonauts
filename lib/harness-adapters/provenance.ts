@@ -12,12 +12,12 @@ import type {
 	OwnerIdentity,
 } from "./types.ts";
 
-export interface HarnessAuthoredLink {
+interface HarnessAuthoredLink {
 	readonly relativePath: string;
 	readonly expectedCanonicalSource: string;
 }
 
-export interface HarnessGeneratedNodeProvenance {
+interface HarnessGeneratedNodeProvenance {
 	readonly relativePath: string;
 	readonly inputDigest: string;
 	readonly renderedDigest: string;

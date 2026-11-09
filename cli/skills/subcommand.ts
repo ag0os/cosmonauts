@@ -14,10 +14,7 @@ import {
 	listImplementedHarnessTargetIds,
 } from "../../lib/harness-adapters/registry.ts";
 import { createSkillsExportSyncRequest } from "../../lib/harness-adapters/sync.ts";
-import type {
-	RuntimeInventorySnapshot,
-	SourceHealthRow,
-} from "../../lib/harness-adapters/types.ts";
+import type { SourceHealthRow } from "../../lib/harness-adapters/types.ts";
 import { composeHarnessRuntimeInventory } from "../../lib/harness-runtime-inventory.ts";
 import { getHostRuntime } from "../../lib/runtime-host.ts";
 import type {
@@ -114,7 +111,6 @@ export interface RuntimeSkillExportDiscovery {
 		ReturnType<typeof discoverSkillCandidatesStrict>
 	>["candidates"];
 	readonly sourceHealth: readonly SourceHealthRow[];
-	readonly runtimeInventory?: RuntimeInventorySnapshot;
 }
 
 /** Strict runtime discovery shared by harness sync and compatibility export. */
@@ -134,7 +130,6 @@ export async function discoverRuntimeSkillExports(
 	return {
 		candidates: runtimeInventory.candidates,
 		sourceHealth: runtimeInventory.sourceHealth,
-		runtimeInventory,
 	};
 }
 

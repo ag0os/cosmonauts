@@ -21,7 +21,7 @@ const CLAUDE_SKILL_ADAPTER = {
 	directory: "skills",
 	transform: "identity",
 	supportedModes: ["copy", "link"],
-	supportedLinkShapes: ["directory", "flat-skill", "generated-wrapper"],
+	supportedLinkShapes: ["directory", "flat-skill"],
 } as const satisfies HarnessAssetAdapter;
 
 const CODEX_SKILL_ADAPTER = {

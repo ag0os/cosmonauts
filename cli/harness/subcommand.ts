@@ -2,18 +2,14 @@
 
 import { homedir } from "node:os";
 import { Command, Option } from "commander";
-import {
-	createCosmonautsInventoryGeneratedNode,
-	prepareSkillExportAssets,
-} from "../../lib/harness-adapters/inventory.ts";
-import {
-	listImplementedHarnessTargetIds,
-	listStaticHarnessAssets,
-} from "../../lib/harness-adapters/registry.ts";
+import { prepareSkillExportAssets } from "../../lib/harness-adapters/inventory.ts";
+import { listImplementedHarnessTargetIds } from "../../lib/harness-adapters/registry.ts";
 import type {
+	HarnessAsset,
 	HarnessScope,
 	HarnessTargetId,
 	MaterializedAssetKind,
+	SourceHealthRow,
 	SyncMode,
 	SyncRequest,
 } from "../../lib/harness-adapters/types.ts";
@@ -32,6 +28,8 @@ import {
 interface HarnessProgramDependencies {
 	readonly projectRoot?: string;
 	readonly homeRoot?: string;
+	/** Caller-supplied assets synced alongside runtime-discovered skills. */
+	readonly assets?: readonly HarnessAsset[];
 	readonly discover?: (
 		projectRoot: string,
 	) => Promise<RuntimeSkillExportDiscovery>;
@@ -107,10 +105,10 @@ export function createHarnessProgram(
 				dependencies.discover ??
 				((root: string) => discoverRuntimeSkillExports({}, root))
 			)(projectRoot);
-			const staticAssets = listStaticHarnessAssets();
+			const injectedAssets = dependencies.assets ?? [];
 			const prepared = prepareSkillExportAssets({
 				...discovery,
-				staticAssets,
+				injectedAssets,
 			});
 			const selectedAssetIds = new Set(request.assetIds ?? []);
 			const relevantCollisions = prepared.collisions.filter((collision) =>
@@ -128,7 +126,7 @@ export function createHarnessProgram(
 			}
 			const assets = [
 				...prepared.assets,
-				...staticAssets.filter((asset) => asset.kind === "command"),
+				...injectedAssets.filter((asset) => asset.kind === "command"),
 			];
 			if (request.assetIds) {
 				const known = new Set(assets.map((asset) => asset.assetId));
@@ -141,13 +139,7 @@ export function createHarnessProgram(
 			}
 			const sourceHealth = [
 				...discovery.sourceHealth,
-				{
-					sourceRootId: "cosmonauts:package",
-					sourceRoot: process.cwd(),
-					domain: "cosmonauts",
-					status: "complete" as const,
-					issues: [],
-				},
+				...injectedSourceHealth(injectedAssets, discovery.sourceHealth),
 			];
 			const report = await (dependencies.sync ?? runHarnessSync)({
 				projectRoot,
@@ -155,17 +147,6 @@ export function createHarnessProgram(
 				assets,
 				sourceHealth,
 				request,
-				generatedNodesByAssetId: {
-					...(discovery.runtimeInventory
-						? {
-								"external-skill:cosmonauts": [
-									createCosmonautsInventoryGeneratedNode(
-										discovery.runtimeInventory,
-									),
-								],
-							}
-						: {}),
-				},
 			});
 			renderHarnessReport(report, getOutputMode(program.opts()));
 			if (report.exitCode !== 0) process.exitCode = 1;
@@ -176,6 +157,32 @@ export function createHarnessProgram(
 	});
 
 	return program;
+}
+
+/**
+ * The caller vouches for the roots it injects: each one discovery does not
+ * already report gets a complete row, so recorded entries from that root whose
+ * asset is no longer supplied reconcile as removed.
+ */
+function injectedSourceHealth(
+	assets: readonly HarnessAsset[],
+	discovered: readonly SourceHealthRow[],
+): SourceHealthRow[] {
+	const rows = new Map<string, SourceHealthRow>();
+	const reported = new Set(discovered.map((row) => row.sourceRootId));
+	for (const asset of assets) {
+		if (reported.has(asset.sourceRootId) || rows.has(asset.sourceRootId)) {
+			continue;
+		}
+		rows.set(asset.sourceRootId, {
+			sourceRootId: asset.sourceRootId,
+			sourceRoot: asset.sourceRoot,
+			domain: "injected",
+			status: "complete",
+			issues: [],
+		});
+	}
+	return [...rows.values()];
 }
 
 export function parseSyncRequest(options: HarnessSyncCliOptions): SyncRequest {

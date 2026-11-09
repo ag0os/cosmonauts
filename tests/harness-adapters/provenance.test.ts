@@ -1045,9 +1045,7 @@ function target(
 		transform: asset.kind === "skill" ? "identity" : "claude-command",
 		supportedModes: asset.kind === "skill" ? ["copy", "link"] : ["copy"],
 		supportedLinkShapes:
-			asset.kind === "skill"
-				? ["directory", "flat-skill", "generated-wrapper"]
-				: [],
+			asset.kind === "skill" ? ["directory", "flat-skill"] : [],
 		assetId: asset.assetId,
 		targetPath: join(targetDirectory, asset.outputIdentity),
 		...(requestedMode ? { requestedMode } : {}),
