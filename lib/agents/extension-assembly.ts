@@ -18,6 +18,15 @@ import {
 const NATIVE_PROVIDERS: Readonly<Record<string, SessionExtensionProvider>> = {
 	tasks: tasksProvider,
 	plans: plansProvider,
+	// Library extensions with no session context, imported only when selected.
+	"agent-switch": async () =>
+		(await import("../extensions/agent-switch/index.ts")).default,
+	init: async () => (await import("../extensions/init/index.ts")).default,
+	observability: async () =>
+		(await import("../extensions/observability/index.ts")).default,
+	"project-tools": async () =>
+		(await import("../extensions/project-tools/index.ts")).default,
+	todo: async () => (await import("../extensions/todo/index.ts")).default,
 };
 
 interface BindingOptions {

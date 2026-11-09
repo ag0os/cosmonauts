@@ -386,3 +386,31 @@ test("an ordinary provider without an index remains a directory without deprecat
 		process.removeListener("warning", warning);
 	}
 });
+
+test("resolves the library's own extensions by name without a domain directory", async () => {
+	const params = await buildSessionParams({
+		def: definition([
+			"agent-switch",
+			"init",
+			"observability",
+			"project-tools",
+			"todo",
+		]),
+		cwd: tmp.path,
+		resolver: new DomainResolver(new DomainRegistry([])),
+		loadConfig: async () => ({}),
+	});
+	expect(params.extensionPaths).toEqual([]);
+	const commands = new Set<string>();
+	const pi = {
+		...createMockPi({ cwd: tmp.path }),
+		registerCommand: (name: string) => commands.add(name),
+	};
+	for (const ext of params.extensionFactories)
+		await (typeof ext === "function" ? ext : ext.factory)(pi as never);
+	expect([...commands].sort()).toEqual(["agent", "handoff", "init"]);
+	expect([...pi.tools.keys()]).toEqual(
+		expect.arrayContaining(["analysis_status", "todo_read", "todo_write"]),
+	);
+	expect(pi.events.get("turn_start")).toHaveLength(1);
+});
