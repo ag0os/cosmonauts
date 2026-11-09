@@ -312,10 +312,6 @@ describe("session-factory planSlug validation", () => {
 		expect(mocks.sessionOpen).not.toHaveBeenCalled();
 		expect(mocks.createAgentSession).not.toHaveBeenCalled();
 	});
-
-	// @cosmo-behavior plan:qm-chain-safety#B-001
-
-	// @cosmo-behavior plan:qm-chain-safety#B-003
 });
 
 test("applies a consumer host policy to an arbitrary declared actor", async () => {

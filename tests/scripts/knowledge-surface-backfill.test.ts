@@ -80,14 +80,8 @@ describe("knowledge surface recoverable backfill", () => {
 		expect(index.missingSlugs).toEqual(EXPECTED_MISSING_SLUGS);
 		expect(index.noPromotion).toBe(true);
 		expect(index.afterConfigDigest).toBe(index.beforeConfigDigest);
-		// The receipt pins the config the backfill ran under. A later deliberate
-		// config change is legal only when a human records the new digest on the
-		// same audit trail (kind: knowledge-surface-backfill-amendment); an
-		// unrecorded change still trips this wire.
-		const amendedConfigDigests = await recordedConfigAmendments(REPO_ROOT);
-		expect([index.beforeConfigDigest, ...amendedConfigDigests]).toContain(
-			sha256(await readFile(join(REPO_ROOT, ".cosmonauts", "config.json"))),
-		);
+		// D3 deleted the repository's .cosmonauts/config.json, so the receipt's
+		// pin on the live config digest has no input left and is retired.
 
 		// A proposal exits the proposals area only by a recorded human act:
 		// promotion (byte-identical move, still readable at its recorded curated
@@ -621,34 +615,6 @@ async function recordedPromotions(
 		}
 	}
 	return moves;
-}
-
-/**
- * Deliberate post-receipt config changes recorded under `missions/reviews/`
- * (kind: knowledge-surface-backfill-amendment, `configDigest`). The receipt's
- * config pin stays a tripwire: only digests a human recorded here are legal.
- */
-async function recordedConfigAmendments(
-	projectRoot: string,
-): Promise<string[]> {
-	const reviews = join(projectRoot, "missions", "reviews");
-	const digests: string[] = [];
-	let entries: string[];
-	try {
-		entries = await readdir(reviews);
-	} catch {
-		return digests;
-	}
-	for (const entry of entries.sort()) {
-		if (!entry.endsWith(".md")) continue;
-		const data = matter(await readFile(join(reviews, entry), "utf-8")).data as {
-			kind?: unknown;
-			configDigest?: unknown;
-		};
-		if (data.kind !== "knowledge-surface-backfill-amendment") continue;
-		if (typeof data.configDigest === "string") digests.push(data.configDigest);
-	}
-	return digests;
 }
 
 /**

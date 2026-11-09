@@ -642,7 +642,6 @@ describe("bundled dirs", () => {
 
 		try {
 			const sources = await scanDomainSources({
-				builtinDomainsDir: join(process.cwd(), "domains"),
 				projectRoot: PROJECT_ROOT,
 				bundledDirs: [bundledAlphaDir],
 			});
