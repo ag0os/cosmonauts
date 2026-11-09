@@ -95,6 +95,10 @@ describe("harness manifest entry characterization", () => {
 				},
 			],
 			[
+				"non-string generating project root",
+				{ ...fixture.entry, generatingProjectRoot: 7 },
+			],
+			[
 				"generated-wrapper without its generating project root",
 				{
 					...fixture.entry,
