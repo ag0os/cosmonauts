@@ -1,46 +1,43 @@
 import { afterEach, expect, test, vi } from "vitest";
 import {
-	getSessionPolicy,
 	getSessionRuntime,
-	registerSessionPolicy,
-	removeSessionPolicy,
-	type SessionPolicy,
+	registerSessionRuntime,
+	removeSessionRuntime,
 } from "../../lib/agents/session-policy.ts";
+import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 
-const sessionId = "consumer-policy-test";
+const sessionId = "consumer-runtime-binding-test";
 afterEach(() => {
-	removeSessionPolicy(sessionId);
+	removeSessionRuntime(sessionId);
 });
 
-test("keeps host policy across module reloads used by extension loaders", async () => {
-	const policy: SessionPolicy = { toolPreset: "none" };
-	const runtime = {} as import("../../lib/runtime.ts").CosmonautsRuntime;
-	registerSessionPolicy(sessionId, policy, runtime);
+test("keeps the runtime binding across module reloads used by extension loaders", async () => {
+	const runtime = {} as CosmonautsRuntime;
+	registerSessionRuntime(sessionId, runtime);
 	vi.resetModules();
 	const reloaded = await import("../../lib/agents/session-policy.ts");
-	expect(reloaded.getSessionPolicy(sessionId)).toBe(policy);
 	expect(reloaded.getSessionRuntime(sessionId)).toBe(runtime);
-	reloaded.removeSessionPolicy(sessionId);
-	expect(getSessionPolicy(sessionId)).toBeUndefined();
+	reloaded.removeSessionRuntime(sessionId);
 	expect(getSessionRuntime(sessionId)).toBeUndefined();
 });
 
-test("rejects a duplicate host binding without replacing the original policy", () => {
-	const original: SessionPolicy = { toolPreset: "readonly" };
-	const runtime = {} as import("../../lib/runtime.ts").CosmonautsRuntime;
-	registerSessionPolicy(sessionId, original, runtime);
+test("rejects a duplicate binding without replacing the original runtime", () => {
+	const runtime = {} as CosmonautsRuntime;
+	registerSessionRuntime(sessionId, runtime);
 	expect(() =>
-		registerSessionPolicy(
-			sessionId,
-			{},
-			{} as import("../../lib/runtime.ts").CosmonautsRuntime,
-		),
-	).toThrow(`Duplicate host session policy: ${sessionId}`);
-	expect(getSessionPolicy(sessionId)).toBe(original);
+		registerSessionRuntime(sessionId, {} as CosmonautsRuntime),
+	).toThrow(`Duplicate host session binding: ${sessionId}`);
 	expect(getSessionRuntime(sessionId)).toBe(runtime);
-	removeSessionPolicy(sessionId);
-	expect(getSessionPolicy(sessionId)).toBeUndefined();
+	removeSessionRuntime(sessionId);
 	expect(getSessionRuntime(sessionId)).toBeUndefined();
 	// Repeated disposal remains harmless.
-	removeSessionPolicy(sessionId);
+	removeSessionRuntime(sessionId);
+});
+
+test("a removed binding frees the session id for a new runtime", () => {
+	registerSessionRuntime(sessionId, {} as CosmonautsRuntime);
+	removeSessionRuntime(sessionId);
+	const next = {} as CosmonautsRuntime;
+	registerSessionRuntime(sessionId, next);
+	expect(getSessionRuntime(sessionId)).toBe(next);
 });

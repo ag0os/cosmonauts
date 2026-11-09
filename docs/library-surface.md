@@ -252,7 +252,7 @@ Domainless resource identity is `undefined` throughout session assembly, prompt 
 
 The LS-1 AST boundary checks `require.resolve`, `import.meta.resolve`, module-relative `new URL(..., import.meta.url)`, import-equals, absolute/file URL references and self-package or bare content roots, while retaining legitimate library domain APIs and ignoring comments/prose. Test: `tests/coding-agnostic-framework.test.ts`.
 
-The host policy binding survives extension-loader module caches and cannot be replaced by a duplicate registration. Tests: `tests/agents/session-policy.test.ts`. Initial CLI, print/init and switched sessions carry the consumer provider and apply the selected effective tool filter; optional denial hooks remain optional. Tests: `tests/cli/host-policy-dispatch.test.ts`, `tests/cli/session.test.ts` and `tests/extensions/agent-switch.test.ts`.
+A spawned session that carries a host policy binds its runtime; the binding survives extension-loader module caches and cannot be replaced by a duplicate registration. The registry holds only that runtime binding (F1): the policy itself travels on the spawn config and is not stored. Tests: `tests/agents/session-policy.test.ts`. Initial CLI, print/init and switched sessions carry the consumer provider and apply the selected effective tool filter; optional denial hooks remain optional. Tests: `tests/cli/host-policy-dispatch.test.ts`, `tests/cli/session.test.ts` and `tests/extensions/agent-switch.test.ts`.
 
 Host denial remains effective when ordinary delegation would allow a target, with the exact request passed to `authorize`; a nested session is authorized by its bound runtime's provider, and a provider without `spawnPolicy` leaves delegation to ordinary authorization. Spawner registration precedes prompting and is removed on disposal. D2 pruned sealed child parameters, evidence and lifecycle callbacks, completion observation and transcript retention with the QM. Tests: `tests/extensions/spawn-policy-hooks.test.ts`, `tests/orchestration/session-policy-spawner.test.ts` and `tests/library-consumer.test.ts`.
 
@@ -392,7 +392,7 @@ metadata while the actual current host always supplies its policy explicitly.
 The internal policy port has no dedicated package export. Tests: runtime policy,
 consumer-runtime and content-runtime suites.
 
-A registered session binds its host runtime alongside the policy, shared across
+A registered session binds its host runtime, shared across
 extension module caches and removed on disposal; a bound spawn policy with no
 runtime fails before checkout discovery. Spawn policy no longer exposes a runtime
 getter. Detached child policy selection occurs once, including an absent result.

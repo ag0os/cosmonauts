@@ -1,9 +1,8 @@
 import { expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import {
-	getSessionPolicy,
 	getSessionRuntime,
-	registerSessionPolicy,
+	registerSessionRuntime,
 	type SessionPolicy,
 } from "../../lib/agents/session-policy.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
@@ -49,12 +48,11 @@ function session(sessionId: string) {
 	};
 }
 
-test("consumer policy reaches creation, is bound with its runtime before the prompt, and is unbound at disposal", async () => {
+test("consumer policy reaches creation, its runtime is bound before the prompt, and is unbound at disposal", async () => {
 	const child = session("consumer-hooks");
 	const runtime = {} as import("../../lib/runtime.ts").CosmonautsRuntime;
 	const policy: SessionPolicy = { toolPreset: "readonly" };
 	child.prompt.mockImplementationOnce(async () => {
-		expect(getSessionPolicy(child.sessionId)).toBe(policy);
 		expect(getSessionRuntime(child.sessionId)).toBe(runtime);
 		const tracker = getOrCreateTracker(child.sessionId);
 		tracker.register("nested", "scribe", 1);
@@ -78,7 +76,6 @@ test("consumer policy reaches creation, is bound with its runtime before the pro
 	expect(child.prompt).toHaveBeenLastCalledWith(
 		expect.stringContaining("finished"),
 	);
-	expect(getSessionPolicy(child.sessionId)).toBeUndefined();
 	expect(getSessionRuntime(child.sessionId)).toBeUndefined();
 	expect(child.dispose).toHaveBeenCalledOnce();
 });
@@ -123,13 +120,13 @@ test("completion delivery accepts an empty host policy", async () => {
 	).resolves.toMatchObject({ success: true });
 });
 
-test("ordinary sessions leave the host binding slot vacant until a host registers a real policy", async () => {
+test("ordinary sessions leave the runtime binding vacant until a host binds one", async () => {
 	const child = session("late-host-binding");
-	const policy: SessionPolicy = { toolPreset: "none" };
+	const lateRuntime = runtimeDouble();
 	child.prompt.mockImplementationOnce(async () => {
-		expect(getSessionPolicy(child.sessionId)).toBeUndefined();
-		registerSessionPolicy(child.sessionId, policy);
-		expect(getSessionPolicy(child.sessionId)).toBe(policy);
+		expect(getSessionRuntime(child.sessionId)).toBeUndefined();
+		registerSessionRuntime(child.sessionId, lateRuntime);
+		expect(getSessionRuntime(child.sessionId)).toBe(lateRuntime);
 	});
 	mocks.factory.mockResolvedValue({ session: child });
 	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path, {
@@ -143,5 +140,5 @@ test("ordinary sessions leave the host binding slot vacant until a host register
 			prompt: "work",
 		}),
 	).resolves.toMatchObject({ success: true });
-	expect(getSessionPolicy(child.sessionId)).toBeUndefined();
+	expect(getSessionRuntime(child.sessionId)).toBeUndefined();
 });

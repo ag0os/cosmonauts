@@ -47,11 +47,8 @@ export interface SessionSpawnPolicy {
 }
 
 // Pi may load the same extension through a separate module cache.
-const POLICY_KEY = Symbol.for("cosmonauts:session-policies");
-const hostGlobals = globalThis as Record<symbol, unknown>;
-hostGlobals[POLICY_KEY] ??= new Map<string, SessionPolicy>();
-const policies = hostGlobals[POLICY_KEY] as Map<string, SessionPolicy>;
 const RUNTIME_KEY = Symbol.for("cosmonauts:session-runtimes");
+const hostGlobals = globalThis as Record<symbol, unknown>;
 hostGlobals[RUNTIME_KEY] ??= new Map<
 	string,
 	import("../runtime.ts").CosmonautsRuntime
@@ -60,25 +57,20 @@ const runtimes = hostGlobals[RUNTIME_KEY] as Map<
 	string,
 	import("../runtime.ts").CosmonautsRuntime
 >;
-export function registerSessionPolicy(
+/** Binds a host session to its runtime so nested spawns resolve the same project. */
+export function registerSessionRuntime(
 	sessionId: string,
-	policy: SessionPolicy,
-	runtime?: import("../runtime.ts").CosmonautsRuntime,
+	runtime: import("../runtime.ts").CosmonautsRuntime,
 ): void {
-	if (policies.has(sessionId))
-		throw new Error(`Duplicate host session policy: ${sessionId}`);
-	policies.set(sessionId, policy);
-	if (runtime) runtimes.set(sessionId, runtime);
-}
-export function getSessionPolicy(sessionId: string): SessionPolicy | undefined {
-	return policies.get(sessionId);
+	if (runtimes.has(sessionId))
+		throw new Error(`Duplicate host session binding: ${sessionId}`);
+	runtimes.set(sessionId, runtime);
 }
 export function getSessionRuntime(
 	sessionId: string,
 ): import("../runtime.ts").CosmonautsRuntime | undefined {
 	return runtimes.get(sessionId);
 }
-export function removeSessionPolicy(sessionId: string): void {
-	policies.delete(sessionId);
+export function removeSessionRuntime(sessionId: string): void {
 	runtimes.delete(sessionId);
 }

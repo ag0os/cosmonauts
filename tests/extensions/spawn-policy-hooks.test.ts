@@ -1,8 +1,8 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import {
-	registerSessionPolicy,
-	removeSessionPolicy,
+	registerSessionRuntime,
+	removeSessionRuntime,
 	type SessionSpawnPolicy,
 } from "../../lib/agents/session-policy.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
@@ -20,7 +20,7 @@ vi.mock("../../lib/orchestration/session-factory.ts", () => ({
 }));
 const parentId = "consumer-spawn-policy";
 afterEach(() => {
-	removeSessionPolicy(parentId);
+	removeSessionRuntime(parentId);
 	removeTracker(parentId);
 	vi.clearAllMocks();
 });
@@ -66,7 +66,7 @@ function setup(policy: SessionSpawnPolicy, bootstrapPolicy = policy) {
 		sessionId: parentId,
 		systemPrompt: "<!-- COSMONAUTS_AGENT_ID:studio/lead -->",
 	});
-	registerSessionPolicy(parentId, {}, runtime);
+	registerSessionRuntime(parentId, runtime);
 	registerSpawnTool(pi as never, bootstrap);
 	const tracker = getOrCreateTracker(parentId, undefined, {
 		deliveryMode: "external",
@@ -131,7 +131,7 @@ test("an unbound session is authorized by the discovered runtime's provider", as
 		{ authorize: () => undefined },
 		{ authorize: () => "discovered host refused" },
 	);
-	removeSessionPolicy(parentId);
+	removeSessionRuntime(parentId);
 	await expect(
 		pi.callTool("spawn_agent", { role: "reader", prompt: "work" }),
 	).resolves.toMatchObject({
@@ -209,8 +209,8 @@ for (const bound of [false, true]) {
 		const { pi, tracker, bootstrap, runtime } = setup({
 			authorize: () => undefined,
 		});
-		removeSessionPolicy(parentId);
-		if (bound) registerSessionPolicy(parentId, {}, runtime);
+		removeSessionRuntime(parentId);
+		if (bound) registerSessionRuntime(parentId, runtime);
 		const session = child();
 		mocks.factory.mockResolvedValue({ session });
 		await expect(
@@ -226,7 +226,7 @@ for (const bound of [false, true]) {
 
 test("ordinary child prompt failures still dispose the child without optional host callbacks", async () => {
 	const { pi, tracker } = setup({ authorize: () => undefined });
-	removeSessionPolicy(parentId);
+	removeSessionRuntime(parentId);
 	const session = child();
 	session.prompt.mockRejectedValue(new Error("prompt failed"));
 	mocks.factory.mockResolvedValue({ session });
@@ -242,7 +242,7 @@ test("ordinary child prompt failures still dispose the child without optional ho
 for (const bound of [false, true]) {
 	test(`factory failures without a settlement hook produce no unhandled rejection (${bound})`, async () => {
 		const { pi, tracker } = setup({ authorize: () => undefined });
-		if (!bound) removeSessionPolicy(parentId);
+		if (!bound) removeSessionRuntime(parentId);
 		const errors: unknown[] = [];
 		const observe = (reason: unknown) => {
 			errors.push(reason);
