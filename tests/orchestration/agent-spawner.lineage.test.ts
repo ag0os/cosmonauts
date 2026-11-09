@@ -54,6 +54,9 @@ vi.mock("../../lib/sessions/manifest.ts", () => ({
 }));
 
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const FIXTURE_AGENT: AgentDefinition = {
 	id: "planner",
@@ -127,6 +130,7 @@ describe("agent-spawner session persistence lineage recording", () => {
 
 	describe("plan-linked spawn (planSlug set)", () => {
 		const PLAN_CONFIG = {
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/project",
 			prompt: "Plan the work.",
@@ -134,7 +138,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 		};
 
 		test("writes transcript to plan sessions dir after successful spawn (AC#1)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(PLAN_CONFIG);
 
 			expect(mocks.writeTranscript).toHaveBeenCalledOnce();
@@ -146,7 +152,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 		});
 
 		test("transcript filename is <role>-<uuid>.transcript.md (AC#1)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(PLAN_CONFIG);
 
 			const [, filename] = firstCall(mocks.writeTranscript.mock.calls);
@@ -154,7 +162,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 		});
 
 		test("appends manifest record with correct fields after successful spawn (AC#2)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(PLAN_CONFIG);
 
 			expect(mocks.appendSession).toHaveBeenCalledOnce();
@@ -173,7 +183,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 		});
 
 		test("manifest record contains stats on success (AC#2)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(PLAN_CONFIG);
 
 			const [, , record] = firstCall(mocks.appendSession.mock.calls);
@@ -190,7 +202,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 		});
 
 		test("manifest record stats tokens exclude cacheRead/cacheWrite fields (AC#2)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(PLAN_CONFIG);
 
 			const [, , record] = firstCall(mocks.appendSession.mock.calls);
@@ -199,7 +213,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 		});
 
 		test("manifest record contains startedAt and completedAt ISO timestamps (AC#2)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(PLAN_CONFIG);
 
 			const [, , record] = firstCall(mocks.appendSession.mock.calls);
@@ -218,7 +234,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 				sessionFilePath: SESSION_FILE_PATH,
 			});
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			const result = await spawner.spawn(PLAN_CONFIG);
 
 			expect(result.success).toBe(false);
@@ -238,7 +256,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 				sessionFilePath: SESSION_FILE_PATH,
 			});
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(PLAN_CONFIG);
 
 			expect(mocks.writeTranscript).toHaveBeenCalledOnce();
@@ -255,7 +275,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 				sessionFilePath: SESSION_FILE_PATH,
 			});
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(PLAN_CONFIG);
 
 			const [, , record] = firstCall(mocks.appendSession.mock.calls);
@@ -263,15 +285,22 @@ describe("agent-spawner session persistence lineage recording", () => {
 		});
 
 		test("includes parentSessionId in manifest record when provided", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
-			await spawner.spawn({ ...PLAN_CONFIG, parentSessionId: "parent-xyz" });
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
+			await spawner.spawn({
+				...PLAN_CONFIG,
+				parentSessionId: "parent-xyz",
+			});
 
 			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.parentSessionId).toBe("parent-xyz");
 		});
 
 		test("includes taskId in manifest record when provided via runtimeContext", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn({
 				...PLAN_CONFIG,
 				runtimeContext: {
@@ -288,7 +317,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 		test("lineage errors do not crash the spawn", async () => {
 			mocks.appendSession.mockRejectedValue(new Error("disk full"));
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			const result = await spawner.spawn(PLAN_CONFIG);
 
 			// Spawn still reports success despite lineage error
@@ -298,6 +329,7 @@ describe("agent-spawner session persistence lineage recording", () => {
 
 	describe("non-plan spawn (no planSlug) — AC#4, AC#5", () => {
 		const NO_PLAN_CONFIG = {
+			runtime: TEST_RUNTIME,
 			role: "planner",
 			cwd: "/tmp/project",
 			prompt: "Plan the work.",
@@ -313,21 +345,27 @@ describe("agent-spawner session persistence lineage recording", () => {
 		});
 
 		test("does not write transcript when planSlug is absent (AC#4)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(NO_PLAN_CONFIG);
 
 			expect(mocks.writeTranscript).not.toHaveBeenCalled();
 		});
 
 		test("does not append manifest when planSlug is absent (AC#4)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(NO_PLAN_CONFIG);
 
 			expect(mocks.appendSession).not.toHaveBeenCalled();
 		});
 
 		test("non-plan spawn still succeeds normally (AC#5)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			const result = await spawner.spawn(NO_PLAN_CONFIG);
 
 			expect(result.success).toBe(true);
@@ -335,7 +373,9 @@ describe("agent-spawner session persistence lineage recording", () => {
 		});
 
 		test("generateTranscript is not called when planSlug is absent (AC#4)", async () => {
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				runtime: TEST_RUNTIME,
+			});
 			await spawner.spawn(NO_PLAN_CONFIG);
 
 			expect(mocks.generateTranscript).not.toHaveBeenCalled();

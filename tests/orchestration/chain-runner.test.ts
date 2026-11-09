@@ -41,6 +41,9 @@ import {
 	parseConsumerChain,
 	withConsumerChain,
 } from "../helpers/consumer-chain.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 /**
  * Tests for chain-runner.ts
@@ -153,6 +156,7 @@ function makeConfig(
 	overrides?: Partial<ChainConfig>,
 ): ChainConfig {
 	return {
+		runtime: TEST_RUNTIME,
 		steps,
 		projectRoot: "/tmp/test-project",
 		registry: defaultRegistry,

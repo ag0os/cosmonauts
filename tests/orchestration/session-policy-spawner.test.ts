@@ -10,6 +10,9 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const mocks = vi.hoisted(() => ({ factory: vi.fn() }));
 vi.mock("../../lib/orchestration/session-factory.ts", () => ({
@@ -64,6 +67,7 @@ test("consumer policy reaches creation, is bound with its runtime before the pro
 		runtime,
 	});
 	const result = await spawner.spawn({
+		runtime,
 		role: actor.id,
 		cwd: tmp.path,
 		prompt: "archive",
@@ -82,9 +86,15 @@ test("consumer policy reaches creation, is bound with its runtime before the pro
 test("unknown actors return a spawn failure with an optional consumer provider", async () => {
 	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path, {
 		sessionPolicies: { forAgent: vi.fn(() => undefined) },
+		runtime: TEST_RUNTIME,
 	});
 	await expect(
-		spawner.spawn({ role: "missing", cwd: tmp.path, prompt: "archive" }),
+		spawner.spawn({
+			runtime: TEST_RUNTIME,
+			role: "missing",
+			cwd: tmp.path,
+			prompt: "archive",
+		}),
 	).resolves.toMatchObject({
 		success: false,
 		error: expect.stringContaining("Unknown agent role"),
@@ -99,9 +109,12 @@ test("completion delivery accepts an empty host policy", async () => {
 		tracker.complete("nested", "finished");
 	});
 	mocks.factory.mockResolvedValue({ session: child });
-	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path);
+	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path, {
+		runtime: TEST_RUNTIME,
+	});
 	await expect(
 		spawner.spawn({
+			runtime: TEST_RUNTIME,
 			role: actor.id,
 			cwd: tmp.path,
 			prompt: "work",
@@ -119,9 +132,16 @@ test("ordinary sessions leave the host binding slot vacant until a host register
 		expect(getSessionPolicy(child.sessionId)).toBe(policy);
 	});
 	mocks.factory.mockResolvedValue({ session: child });
-	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path);
+	const spawner = createPiSpawner(new AgentRegistry([actor]), tmp.path, {
+		runtime: TEST_RUNTIME,
+	});
 	await expect(
-		spawner.spawn({ role: actor.id, cwd: tmp.path, prompt: "work" }),
+		spawner.spawn({
+			runtime: TEST_RUNTIME,
+			role: actor.id,
+			cwd: tmp.path,
+			prompt: "work",
+		}),
 	).resolves.toMatchObject({ success: true });
 	expect(getSessionPolicy(child.sessionId)).toBeUndefined();
 });

@@ -39,6 +39,7 @@ import {
 import { registerDriverTool } from "../../lib/extensions/orchestration/driver-tool.ts";
 import { registerWatchEventsTool } from "../../lib/extensions/orchestration/watch-events-tool.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
+import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
@@ -420,6 +421,14 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.createCosmonautsSubagentBackend).toHaveBeenCalledWith(
 			expect.objectContaining({ workerAgent: "coding/assembler" }),
 		);
+		const deps = backendMocks.createCosmonautsSubagentBackend.mock.calls.at(
+			-1,
+		) as unknown as [{ runtime: CosmonautsRuntime }] | undefined;
+		expect(deps?.[0].runtime).toBe(runtime);
+		// This suite mocks createPiSpawner, so pin the spawner's own runtime
+		// through its options: it must be the object the backend forwards.
+		const spawnerOptions = vi.mocked(createPiSpawner).mock.calls.at(-1)?.[2];
+		expect(spawnerOptions?.runtime).toBe(deps?.[0].runtime);
 		expect(backendMocks.run).toHaveBeenCalled();
 	});
 	test("denies an undeclared consumer worker before backend execution", async () => {

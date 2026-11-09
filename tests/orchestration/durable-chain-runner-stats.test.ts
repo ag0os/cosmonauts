@@ -21,6 +21,9 @@ import type {
 	SpawnStats,
 } from "../../lib/orchestration/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 // The durable runner builds its spawner internally; replace it so stages run
 // without Pi and report deterministic stats.
@@ -79,6 +82,7 @@ async function runExpression(
 ): Promise<ChainResult> {
 	return runDurableChain(
 		withConsumerChain({
+			runtime: TEST_RUNTIME,
 			steps: parseChain(expression),
 			projectRoot: join(temp.path, "project"),
 			registry,
@@ -113,6 +117,7 @@ async function runPlannerThenReviewer(
 ): Promise<ChainResult> {
 	return runDurableChain(
 		withConsumerChain({
+			runtime: TEST_RUNTIME,
 			steps: parseChain("planner -> reviewer"),
 			projectRoot: join(temp.path, "project"),
 			registry,
@@ -169,6 +174,8 @@ describe("runDurableChain stage stats", () => {
 		expect(spawnerMocks.createPiSpawner.mock.calls[0]?.[2].runtime).toBe(
 			runtime,
 		);
+		expect(spawnerMocks.spawn).toHaveBeenCalledOnce();
+		expect(spawnerMocks.spawn.mock.calls[0]?.[0].runtime).toBe(runtime);
 		if (!result.run) throw new Error("Missing durable run reference");
 		const store = new FileRunStore({
 			rootDir: join(projectRoot, "missions", "sessions"),

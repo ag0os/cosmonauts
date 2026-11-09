@@ -75,7 +75,7 @@ export { createAgentSessionFromDefinition } from "./session-factory.ts";
 
 /** Options for {@link createPiSpawner}. */
 export interface PiSpawnerOptions {
-	runtime?: import("../runtime.ts").CosmonautsRuntime;
+	runtime: import("../runtime.ts").CosmonautsRuntime;
 	sessionPolicies?: import("../agents/session-policy.ts").SessionPolicyProvider;
 	/** Shared message bus for parallel spawn coordination. */
 	bus?: MessageBus;
@@ -118,17 +118,26 @@ type FinalMessages = unknown[];
 export function createPiSpawner(
 	registry: AgentRegistry,
 	domainsDir: string | undefined,
-	options?: PiSpawnerOptions & {
+	options: PiSpawnerOptions & {
 		resolver?: import("../domains/resolver.ts").DomainResolver;
 	},
 ): AgentSpawner {
-	const bus = options?.bus ?? new MessageBus();
-	const spawnTimeoutMs = options?.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
+	// Captured once: later edits to the caller's options cannot change the spawner.
+	const own = { ...options };
+	const bus = own.bus ?? new MessageBus();
+	const spawnTimeoutMs = own.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
 
 	return {
 		async spawn(input: SpawnConfig): Promise<SpawnResult> {
+			if (input.runtime !== own.runtime) {
+				return toSpawnFailure(
+					new Error(
+						"Spawn runtime differs from the spawner's runtime; a spawner serves only the project runtime it was created with.",
+					),
+				);
+			}
 			const definition = resolveSpawnAgent(registry, input)?.definition;
-			const config = bindSpawnConfig(input, { definition, options });
+			const config = bindSpawnConfig(input, { definition, options: own });
 			if (config.signal?.aborted) {
 				return toSpawnFailure(new Error("Aborted before spawn"));
 			}
@@ -141,7 +150,7 @@ export function createPiSpawner(
 					registry,
 					config,
 					domainsDir,
-					options?.resolver,
+					own.resolver,
 					bus,
 				);
 
@@ -533,14 +542,13 @@ function bindSpawnConfig(
 	input: SpawnConfig,
 	context: {
 		definition?: import("../agents/types.ts").AgentDefinition;
-		options?: PiSpawnerOptions;
+		options: PiSpawnerOptions;
 	},
 ): SpawnConfig {
-	const runtime = input.runtime ?? context.options?.runtime;
-	const policies = context.options?.sessionPolicies ?? runtime?.sessionPolicies;
+	const policies =
+		context.options.sessionPolicies ?? context.options.runtime.sessionPolicies;
 	return {
 		...input,
-		runtime,
 		sessionPolicy:
 			input.sessionPolicy ??
 			(context.definition ? policies?.forAgent(context.definition) : undefined),

@@ -347,20 +347,25 @@ export async function readBackfillSnapshot(
 async function runProductionBackfill(): Promise<KnowledgeSurfaceBackfillResult> {
 	const projectRoot = process.cwd();
 	const frameworkRoot = resolve(fileURLToPath(import.meta.url), "..", "..");
-	let spawner: AgentSpawner | undefined;
+	let host: { runtime: CosmonautsRuntime; spawner: AgentSpawner } | undefined;
 	const distillSlug = async (slug: string, signal: AbortSignal | undefined) => {
 		process.stderr.write(`[backfill] distilling ${slug}\n`);
-		if (!spawner) {
+		if (!host) {
 			const domainsDir = join(frameworkRoot, "domains");
 			const runtime = await CosmonautsRuntime.create({
 				builtinDomainsDir: domainsDir,
 				projectRoot,
 			});
-			spawner = createPiSpawner(runtime.agentRegistry, domainsDir, {
-				resolver: runtime.domainResolver,
-			});
+			host = {
+				runtime,
+				spawner: createPiSpawner(runtime.agentRegistry, domainsDir, {
+					resolver: runtime.domainResolver,
+					runtime,
+				}),
+			};
 		}
-		const result = await spawner.spawn({
+		const result = await host.spawner.spawn({
+			runtime: host.runtime,
 			role: QUALIFIED_DISTILLER_ID,
 			cwd: projectRoot,
 			prompt: `Distill the archived plan ${JSON.stringify(slug)} into 3-15 attributable OKF proposals for human review.`,
@@ -379,7 +384,7 @@ async function runProductionBackfill(): Promise<KnowledgeSurfaceBackfillResult> 
 	try {
 		return await runKnowledgeSurfaceBackfill({ projectRoot, distillSlug });
 	} finally {
-		spawner?.dispose();
+		host?.spawner.dispose();
 	}
 }
 

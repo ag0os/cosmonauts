@@ -19,13 +19,24 @@ import type {
 	SpawnResult,
 } from "../../lib/orchestration/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const host = vi.hoisted(() => ({
 	spawn: vi.fn<(config: SpawnConfig) => Promise<SpawnResult>>(),
 	dispose: vi.fn(),
+	spawnerOptions: [] as { runtime?: unknown }[],
 }));
 vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
-	createPiSpawner: () => host,
+	createPiSpawner: (
+		_registry: unknown,
+		_domainsDir: unknown,
+		options: { runtime?: unknown },
+	) => {
+		host.spawnerOptions.push(options);
+		return host;
+	},
 }));
 const tmp = useTempDir("neutral-chain-");
 const actors = ["scribe", "critic", "translator", "dispatcher"];
@@ -55,6 +66,7 @@ const runners = [
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	host.spawnerOptions.length = 0;
 });
 async function fixture(projectRoot: string): Promise<void> {
 	const directory = join(projectRoot, "missions", "plans", "sample");
@@ -109,6 +121,7 @@ function configureSpawn(): void {
 }
 function options(projectRoot: string, steps: ChainStep[]): ChainConfig {
 	return {
+		runtime: TEST_RUNTIME,
 		projectRoot,
 		registry,
 		domainContext: "studio",
@@ -120,6 +133,31 @@ function options(projectRoot: string, steps: ChainStep[]): ChainConfig {
 	};
 }
 describe.each(runners)("neutral $name execution", ({ name, run }) => {
+	test("each chain hands its own runtime object to its spawner and every stage spawn", async () => {
+		configureSpawn();
+		const first = runtimeDouble();
+		const second = runtimeDouble();
+		for (const [project, runtime] of [
+			["first", first],
+			["second", second],
+		] as const) {
+			const root = join(tmp.path, name, project);
+			await fixture(root);
+			const result = await run({
+				...options(root, stages(["revise/final"])),
+				runtime,
+			});
+			expect(result.success, JSON.stringify(result.errors)).toBe(true);
+		}
+		expect(host.spawnerOptions).toHaveLength(2);
+		expect(host.spawnerOptions[0]?.runtime).toBe(first);
+		expect(host.spawnerOptions[1]?.runtime).toBe(second);
+		const runtimes = host.spawn.mock.calls.map(([config]) => config.runtime);
+		expect(runtimes).toHaveLength(actors.length * 2);
+		for (const [index, runtime] of runtimes.entries())
+			expect(runtime).toBe(index < actors.length ? first : second);
+	});
+
 	test("uses explicit semantics and mapped producer identities for arbitrary actors", async () => {
 		const root = join(tmp.path, name);
 		await fixture(root);
@@ -308,6 +346,26 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 			backendSummary: "stopped",
 			stepResult: { outcome: "cancelled" },
 		},
+		{
+			outcome: "silent cancellation",
+			response: { success: false, outcome: "cancelled" },
+			summaries: { inline: undefined, durable: undefined } as Record<
+				string,
+				string | undefined
+			>,
+			backendSummary: "",
+			stepResult: { outcome: "cancelled" },
+		},
+		{
+			outcome: "silent failure",
+			response: { success: false },
+			summaries: { inline: undefined, durable: undefined } as Record<
+				string,
+				string | undefined
+			>,
+			backendSummary: "",
+			stepResult: { outcome: "failed" },
+		},
 	])("terminal $outcome retains summary, artifacts and stage slug", async ({
 		response,
 		summaries,
@@ -330,6 +388,7 @@ describe.each(runners)("neutral $name execution", ({ name, run }) => {
 			chainAdapter: { terminalGates: { approval: gate } },
 		});
 		expect(result.success).toBe(response.success);
+		expect(result.errors).toEqual("error" in response ? [response.error] : []);
 
 		expect(result.stageResults[0]?.summary).toBe(summaries[name]);
 		if (name === "durable") expect(result.run).toBeDefined();

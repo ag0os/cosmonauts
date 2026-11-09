@@ -10,6 +10,9 @@ import type {
 	SpawnConfig,
 	SpawnResult,
 } from "../../../lib/orchestration/types.ts";
+import { runtimeDouble } from "../../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 let tempDir: string | undefined;
 
@@ -73,6 +76,7 @@ describe("cosmonauts-subagent backend", () => {
 			messages: [],
 		});
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: "worker",
 			spawner,
 			cwd: "/repo",
@@ -102,7 +106,9 @@ describe("cosmonauts-subagent backend", () => {
 		const signal = new AbortController().signal;
 		const projectSkills = ["typescript", "testing"];
 		const skillPaths = ["/skills/typescript", "/skills/testing"];
+		const runtime = runtimeDouble();
 		const backend = createCosmonautsSubagentBackend({
+			runtime,
 			spawner,
 			workerAgent: "reviewer",
 			cwd: "/repo",
@@ -123,6 +129,8 @@ describe("cosmonauts-subagent backend", () => {
 
 		expect(spawn).toHaveBeenCalledTimes(1);
 		const config = firstSpawnConfig(spawn);
+		expect(config.runtime).toBe(runtime);
+		expect(config.runtime).not.toBe(TEST_RUNTIME);
 		expect(config.role).toBe("reviewer");
 		expect(config.prompt).toBe("Task prompt");
 		expect(config.cwd).toBe("/repo");
@@ -157,6 +165,7 @@ describe("cosmonauts-subagent backend", () => {
 			return { success: true, sessionId: "child-session-1", messages: [] };
 		});
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: "worker",
 			spawner: { spawn, dispose: vi.fn() },
 			cwd: "/repo",
@@ -205,6 +214,7 @@ describe("cosmonauts-subagent backend", () => {
 			],
 		});
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: "worker",
 			spawner,
 			cwd: "/repo",

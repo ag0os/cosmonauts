@@ -32,6 +32,7 @@ import {
 	type StepAttemptRecord,
 	type StepRecord,
 } from "../../../lib/durable-runtime/index.ts";
+import type { AgentSpawner } from "../../../lib/orchestration/types.ts";
 import { CosmonautsRuntime } from "../../../lib/runtime.ts";
 import { setRuntimeHost } from "../../../lib/runtime-host.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
@@ -937,6 +938,22 @@ describe("cosmonauts run drive compat run", () => {
 				}),
 			}),
 		);
+		const deps = backendMocks.createCosmonautsSubagentBackend.mock.calls.at(
+			-1,
+		) as unknown as
+			| [{ runtime: CosmonautsRuntime; spawner: AgentSpawner }]
+			| undefined;
+		expect(deps?.[0].runtime).toBe(runtime);
+		// The backend's spawner must accept the runtime the backend forwards.
+		await expect(
+			deps?.[0].spawner.spawn({
+				runtime: deps[0].runtime,
+				role: "live-coding/worker",
+				cwd: process.cwd(),
+				prompt: "",
+				signal: AbortSignal.abort(),
+			}),
+		).resolves.toMatchObject({ success: false, error: "Aborted before spawn" });
 	});
 
 	test("external resume skips unavailable frozen capture without minting fallback provenance", async () => {

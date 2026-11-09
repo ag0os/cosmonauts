@@ -13,6 +13,9 @@ import { runStage } from "../../lib/orchestration/chain-runner.ts";
 import { selectChain } from "../../lib/orchestration/chain-selection.ts";
 import { compileChainToGraph } from "../../lib/orchestration/durable-chain-compiler.ts";
 import type { ChainConfig, ChainStage } from "../../lib/orchestration/types.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const definition: AgentDefinition = {
 	id: "spec-writer-pro",
@@ -30,6 +33,7 @@ const definition: AgentDefinition = {
 };
 const registry = new AgentRegistry([definition]);
 const config = (steps: ChainConfig["steps"]): ChainConfig => ({
+	runtime: TEST_RUNTIME,
 	steps,
 	projectRoot: "/tmp",
 	registry,

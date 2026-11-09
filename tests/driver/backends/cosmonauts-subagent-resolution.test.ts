@@ -21,6 +21,9 @@ import { createPiSpawner } from "../../../lib/orchestration/agent-spawner.ts";
 import { resolveSpawnAgent } from "../../../lib/orchestration/spawn-resolution.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import { writeSyntheticInstallableDomainPackage } from "../../helpers/packages.ts";
+import { runtimeDouble } from "../../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const REPO_ROOT = resolve(
 	fileURLToPath(import.meta.url),
@@ -161,8 +164,11 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		expect(workerDomain?.agents.has("worker")).toBe(true);
 
 		const registry = createRegistryFromDomains(domains);
-		const spawner = createPiSpawner(registry, DOMAINS_DIR);
+		const spawner = createPiSpawner(registry, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
+		});
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: "worker",
 			spawner,
 			cwd: REPO_ROOT,
@@ -189,7 +195,9 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 	test("keeps the plain-worker session and manifest layout when a qualified worker resolution is frozen", async () => {
 		const domains = await loadSyntheticWorkerDomains();
 		const registry = createRegistryFromDomains(domains);
-		const spawner = createPiSpawner(registry, DOMAINS_DIR);
+		const spawner = createPiSpawner(registry, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
+		});
 		const frozen = resolveSpawnAgent(registry, {
 			role: "alpha/worker",
 			domainContext: undefined,
@@ -199,6 +207,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		expect(frozen.reference?.requested.qualifiedId).toBe("alpha/worker");
 
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: "worker",
 			spawner,
 			cwd: REPO_ROOT,
@@ -247,8 +256,11 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 	test("runs inline Drive with cosmonauts-subagent, omitted envelope input, and no domain override", async () => {
 		const domains = await loadSyntheticWorkerDomains();
 		const registry = createRegistryFromDomains(domains);
-		const spawner = createPiSpawner(registry, DOMAINS_DIR);
+		const spawner = createPiSpawner(registry, DOMAINS_DIR, {
+			runtime: TEST_RUNTIME,
+		});
 		const backend = createCosmonautsSubagentBackend({
+			runtime: TEST_RUNTIME,
 			workerAgent: "worker",
 			spawner,
 			cwd: REPO_ROOT,

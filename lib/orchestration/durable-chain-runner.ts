@@ -133,6 +133,7 @@ async function executeDurableChain(
 			store,
 			ref,
 			spawner,
+			runtime: config.runtime,
 			signal: config.signal,
 			chainAdapter: config.chainAdapter,
 			terminalGateContext: config.terminalGateContext,
@@ -195,6 +196,7 @@ interface ChainSchedulerBackendOptions {
 	store: RunStore;
 	ref: RunRef;
 	spawner: AgentSpawner;
+	runtime: ChainConfig["runtime"];
 	signal?: AbortSignal;
 	chainAdapter?: ChainConfig["chainAdapter"];
 	terminalGateContext?: unknown;
@@ -204,6 +206,7 @@ function createChainSchedulerBackend({
 	store,
 	ref,
 	spawner,
+	runtime,
 	signal,
 	chainAdapter,
 	terminalGateContext,
@@ -236,6 +239,7 @@ function createChainSchedulerBackend({
 					store,
 					ref,
 					spawner,
+					runtime,
 					prepared,
 					signal,
 					chainAdapter,
@@ -250,6 +254,7 @@ async function executeChainStep({
 	store,
 	ref,
 	spawner,
+	runtime,
 	prepared,
 	signal,
 	chainAdapter,
@@ -258,6 +263,7 @@ async function executeChainStep({
 	store: RunStore;
 	ref: RunRef;
 	spawner: AgentSpawner;
+	runtime: ChainConfig["runtime"];
 	prepared: PreparedStep<SchedulerStepInput>;
 	signal?: AbortSignal;
 	chainAdapter?: ChainConfig["chainAdapter"];
@@ -336,6 +342,7 @@ async function executeChainStep({
 
 	const spawnResult = await spawner.spawn({
 		...materializedSpawn,
+		runtime,
 		signal,
 		onEvent: (event) => {
 			const chainEvent = chainAgentEventType(event);

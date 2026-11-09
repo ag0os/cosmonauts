@@ -77,6 +77,9 @@ vi.mock("../../lib/agents/session-assembly.ts", () => ({
 }));
 
 import { createAgentSessionFromDefinition } from "../../lib/orchestration/session-factory.ts";
+import { runtimeDouble } from "../helpers/runtime-double.ts";
+
+const TEST_RUNTIME = runtimeDouble();
 
 const TEST_AGENT: AgentDefinition = {
 	id: "planner",
@@ -117,10 +120,29 @@ describe("session-factory planSlug validation", () => {
 		});
 	});
 
+	test("assembles the session with the spawn's own runtime object", async () => {
+		const runtime = runtimeDouble();
+		await createAgentSessionFromDefinition(
+			TEST_AGENT,
+			{ runtime, role: "planner", cwd: "/tmp/project", prompt: "Plan." },
+			"/tmp/domains",
+		);
+		expect(mocks.buildSessionParams).toHaveBeenCalledOnce();
+		expect(mocks.buildSessionParams.mock.calls[0]?.[0].runtime).toBe(runtime);
+		expect(mocks.buildSessionParams.mock.calls[0]?.[0].runtime).not.toBe(
+			TEST_RUNTIME,
+		);
+	});
+
 	test("attributes the model exposed by Pi after session creation", async () => {
 		const result = await createAgentSessionFromDefinition(
 			TEST_AGENT,
-			{ role: "planner", cwd: "/tmp/project", prompt: "plan" },
+			{
+				runtime: TEST_RUNTIME,
+				role: "planner",
+				cwd: "/tmp/project",
+				prompt: "plan",
+			},
 			"/tmp/domains",
 		);
 		expect(result.resolvedModel).toEqual({
@@ -144,7 +166,12 @@ describe("session-factory planSlug validation", () => {
 		mocks.buildSessionParams.mockResolvedValue(params);
 		await createAgentSessionFromDefinition(
 			TEST_AGENT,
-			{ role: "planner", cwd: "/tmp/project", prompt: "work" },
+			{
+				runtime: TEST_RUNTIME,
+				role: "planner",
+				cwd: "/tmp/project",
+				prompt: "work",
+			},
 			"/tmp/domains",
 		);
 		expect(mocks.createAgentSession).toHaveBeenCalledWith(
@@ -157,7 +184,12 @@ describe("session-factory planSlug validation", () => {
 		await expect(
 			createAgentSessionFromDefinition(
 				TEST_AGENT,
-				{ role: "planner", cwd: "/tmp/project", prompt: "work" },
+				{
+					runtime: TEST_RUNTIME,
+					role: "planner",
+					cwd: "/tmp/project",
+					prompt: "work",
+				},
 				"/tmp/domains",
 			),
 		).rejects.toThrow("Unknown tool");
@@ -203,7 +235,12 @@ describe("session-factory planSlug validation", () => {
 
 		const result = await createAgentSessionFromDefinition(
 			TEST_AGENT,
-			{ role: "planner", cwd: "/tmp/project", prompt: "plan" },
+			{
+				runtime: TEST_RUNTIME,
+				role: "planner",
+				cwd: "/tmp/project",
+				prompt: "plan",
+			},
 			"/tmp/domains",
 		);
 
@@ -242,7 +279,12 @@ describe("session-factory planSlug validation", () => {
 		await expect(
 			createAgentSessionFromDefinition(
 				TEST_AGENT,
-				{ role: "planner", cwd: "/tmp/project", prompt: "plan" },
+				{
+					runtime: TEST_RUNTIME,
+					role: "planner",
+					cwd: "/tmp/project",
+					prompt: "plan",
+				},
 				"/tmp/domains",
 			),
 		).rejects.toThrow(
@@ -257,6 +299,7 @@ describe("session-factory planSlug validation", () => {
 			createAgentSessionFromDefinition(
 				TEST_AGENT,
 				{
+					runtime: TEST_RUNTIME,
 					role: "planner",
 					cwd: "/tmp/project",
 					prompt: "plan",
@@ -306,6 +349,7 @@ test("applies a consumer host policy to an arbitrary declared actor", async () =
 	await createAgentSessionFromDefinition(
 		{ ...TEST_AGENT, id: "archivist", domain: "studio" },
 		{
+			runtime: TEST_RUNTIME,
 			role: "studio/archivist",
 			cwd: "/consumer",
 			prompt: "catalogue",
@@ -358,6 +402,7 @@ test("a host tool filter receives extension-registered tools and its result is t
 	await createAgentSessionFromDefinition(
 		TEST_AGENT,
 		{
+			runtime: TEST_RUNTIME,
 			role: TEST_AGENT.id,
 			cwd: "/consumer",
 			prompt: "work",
@@ -391,7 +436,12 @@ test("ordinary session context opt-out is independent of whether a host policy e
 		});
 		await createAgentSessionFromDefinition(
 			TEST_AGENT,
-			{ role: TEST_AGENT.id, cwd: "/consumer", prompt: "work" },
+			{
+				runtime: TEST_RUNTIME,
+				role: TEST_AGENT.id,
+				cwd: "/consumer",
+				prompt: "work",
+			},
 			"/consumer/domains",
 		);
 		const loader = mocks.loaderOptions.mock.calls.at(-1)?.[0];
@@ -435,7 +485,13 @@ test("consumer policy hooks reach transcript persistence and both privileged loa
 	};
 	await createAgentSessionFromDefinition(
 		actor,
-		{ role: "consumer", cwd: "/consumer", prompt: "", sessionPolicy: policy },
+		{
+			runtime: TEST_RUNTIME,
+			role: "consumer",
+			cwd: "/consumer",
+			prompt: "",
+			sessionPolicy: policy,
+		},
 		undefined,
 	);
 	expect(mocks.sessionOpen).toHaveBeenCalledWith(

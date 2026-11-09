@@ -313,6 +313,20 @@ and an unconfigured host fails explicitly. Explicit library session assembly and
 binding contracts. Restore-by-id continues to use the current declaration; no
 snapshots are introduced.
 
+R1 makes the runtime mandatory where execution starts: `SpawnConfig.runtime`,
+`ChainConfig.runtime`, `PiSpawnerOptions.runtime` and the `createPiSpawner`
+options argument are required, and an omitted runtime is a compile error
+(`tests/orchestration/required-runtime.types.test.ts`). A spawner accepts only
+the runtime object it was created with; a spawn carrying another runtime fails
+without creating a session. The durable chain runner and the Drive subagent backend
+forward the runtime into each spawn, and Drive no longer rediscovers one for that
+backend. Chain normalization still accepts a config without a runtime. Session
+assembly's provider context keeps an optional runtime, and the orchestration
+provider throws without one. The path-loaded Pi extension entry remains the
+deliberate host-discovery bridge. Tests: `spawner-runtime-isolation`,
+`chain-neutrality`, `durable-chain-runner-stats`, the Drive subagent backend and
+`orchestration-session-extension` suites.
+
 QM's sealed base-owned review runtime is the named temporary R1 content exemption
 until step 6: replacing it with the reviewed project's live runtime would weaken
 its trust boundary. Lean takes the host runtime; neither is generalized.
