@@ -496,6 +496,12 @@ child completion timeout delivery. The P2 review-fix commit adds explicit assert
 for transcriptPath, validateDefinition, agentsFilesOverride and extensionFactories
 through `createConsumerSessionPolicy`; those four targets were not pinned at P1. Runtime policy composition uses the same consumer
 provider. No library policy field or package export changed in this test-only PR.
+D2 later pruned the hooks only the QM implemented (`validateDefinition`, config,
+skill and settings inputs, creation/disposal and tool-result observation,
+completion-timeout observation, retained transcripts, `launchTarget`, and the child
+spawn `prepare`/lifecycle callbacks). The surviving policy surface is `toolPreset`,
+`filterTools`, `transcriptPath`, `resourceOptions`, and the provider's `forAgent`,
+`spawnPolicy` (`authorize`) and `interactiveDenial`.
 
 ### Content-free executable and test hosts (step 6 P3)
 
