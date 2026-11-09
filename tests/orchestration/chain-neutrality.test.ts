@@ -580,6 +580,79 @@ describe.each(runners)("$name chain deadline", ({ name, run }) => {
 		expect(host.spawn).toHaveBeenCalledTimes(3);
 	});
 
+	test.each([
+		{
+			expiresIn: "scribe",
+			success: false,
+			errors: ["Chain timed out after 3000ms before step 2 of 3"],
+			stages: ["scribe"],
+			group: undefined,
+		},
+		{
+			expiresIn: "critic",
+			success: false,
+			errors: ["Chain timed out after 3000ms before step 3 of 3"],
+			stages: ["scribe", "critic", "translator"],
+			group: ["critic", "translator"],
+		},
+		{
+			expiresIn: "dispatcher",
+			success: true,
+			errors: [],
+			stages: ["scribe", "critic", "translator", "dispatcher"],
+			group: ["critic", "translator"],
+		},
+	])("a deadline that passes in $expiresIn lets a started parallel group finish", async ({
+		expiresIn,
+		success,
+		errors,
+		stages,
+		group,
+	}) => {
+		const root = join(tmp.path, `${name}-group-${expiresIn}`);
+		await mkdir(root, { recursive: true });
+		host.spawn.mockImplementation(async (config) => {
+			if (config.role === expiresIn) vi.setSystemTime(FIXED_NOW + 5000);
+			return { success: true, sessionId: `s-${config.role}`, messages: [] };
+		});
+		const events: ChainEvent[] = [];
+		const result = await run({
+			...options(root, [
+				{ name: "scribe" },
+				{
+					kind: "parallel",
+					stages: [{ name: "critic" }, { name: "translator" }],
+					syntax: { kind: "group" },
+				},
+				{ name: "dispatcher" },
+			]),
+			planSlug: undefined,
+			timeoutMs: 3000,
+			onEvent: (event) => events.push(event),
+		});
+
+		const names = (results: readonly { stage: { name: string } }[]) =>
+			results.map((stage) => stage.stage.name);
+		expect(result.success).toBe(success);
+		expect(result.errors).toEqual(errors);
+		expect(names(result.stageResults)).toEqual(stages);
+		expect(host.spawn).toHaveBeenCalledTimes(stages.length);
+		const groupEnd = events.find((event) => event.type === "parallel_end");
+		if (group) {
+			expect(groupEnd).toMatchObject({ success: true });
+			expect(
+				groupEnd?.type === "parallel_end" && names(groupEnd.results),
+			).toEqual(group);
+		} else {
+			expect(groupEnd).toBeUndefined();
+		}
+		const end = events.findLast((event) => event.type === "chain_end");
+		expect(end?.type === "chain_end" && end.result.success).toBe(success);
+		expect(end?.type === "chain_end" && names(end.result.stageResults)).toEqual(
+			stages,
+		);
+	});
+
 	test("an abort that coincides with an expired deadline reports the abort", async () => {
 		const root = join(tmp.path, `${name}-abort-deadline`);
 		await mkdir(root, { recursive: true });

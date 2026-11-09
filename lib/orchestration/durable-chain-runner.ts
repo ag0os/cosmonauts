@@ -233,8 +233,9 @@ async function settleSchedulerExit(
 }
 
 /**
- * Stops scheduling once the deadline passes; a step already running finishes.
- * An abort takes precedence and records no timeout.
+ * Stops scheduling once the deadline passes, checked only on entry to a new
+ * chain step: a step already running, or a parallel group already started,
+ * finishes. An abort takes precedence and records no timeout.
  */
 function chainDeadlinePolicy(options: {
 	timeoutMs: number | undefined;
@@ -252,6 +253,12 @@ function chainDeadlinePolicy(options: {
 				(step) => status.get(step.stepId) !== "completed",
 			);
 			if (!next) return undefined;
+			const groupStarted = options.steps.some(
+				(step) =>
+					step.topologyIndex === next.topologyIndex &&
+					status.get(step.stepId) === "completed",
+			);
+			if (groupStarted) return undefined;
 			return {
 				reason: CHAIN_TIMEOUT_REASON,
 				exitReason: "interrupted",
