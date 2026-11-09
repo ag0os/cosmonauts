@@ -1,7 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import {
-	getSessionPolicy,
 	getSessionRuntime,
 	type SessionPolicy,
 	type SessionPolicyProvider,
@@ -55,10 +54,9 @@ function project(name: string) {
 	};
 	const runtime = runtimeDouble({ sessionPolicies });
 	const child = session(`${name}-session`);
-	const bound: { runtime?: unknown; policy?: unknown } = {};
+	const bound: { runtime?: unknown } = {};
 	child.prompt.mockImplementationOnce(async () => {
 		bound.runtime = getSessionRuntime(child.sessionId);
-		bound.policy = getSessionPolicy(child.sessionId);
 	});
 	return { runtime, policy, sessionPolicies, child, bound };
 }
@@ -85,7 +83,6 @@ test("each project's spawner binds and assembles with its own runtime and polici
 	expect(firstCall?.[1].sessionPolicy).toBe(first.policy);
 	expect(secondCall?.[1].runtime).toBe(second.runtime);
 	expect(secondCall?.[1].sessionPolicy).toBe(second.policy);
-	expect(first.bound).toEqual({ runtime: first.runtime, policy: first.policy });
 	expect(first.bound.runtime).toBe(first.runtime);
 	expect(second.bound.runtime).toBe(second.runtime);
 	expect(first.sessionPolicies.forAgent).toHaveBeenCalledExactlyOnceWith(actor);

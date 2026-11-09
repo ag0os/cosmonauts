@@ -15,8 +15,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
 import {
-	registerSessionPolicy,
-	removeSessionPolicy,
+	registerSessionRuntime,
+	removeSessionRuntime,
 } from "../agents/session-policy.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { appendSession } from "../sessions/manifest.ts";
@@ -204,11 +204,7 @@ async function prepareSpawnSession(
 		resolver,
 	);
 	if (config.sessionPolicy)
-		registerSessionPolicy(
-			session.sessionId,
-			config.sessionPolicy,
-			config.runtime,
-		);
+		registerSessionRuntime(session.sessionId, config.runtime);
 	emitSpawnEvent(config, {
 		type: "agent_resolved",
 		sessionId: session.sessionId,
@@ -326,7 +322,7 @@ function cleanupSpawnSession(
 
 	prepared.unsubscribe?.();
 	removeTracker(session.sessionId);
-	removeSessionPolicy(session.sessionId);
+	removeSessionRuntime(session.sessionId);
 	if (config.planSlug) {
 		removePlanContext(session.sessionId);
 	}
