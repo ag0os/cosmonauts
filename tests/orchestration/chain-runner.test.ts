@@ -2620,6 +2620,33 @@ Review complete.
 		expect(spawnCount).toBe(1);
 	});
 
+	test("a chain whose elapsed time equals its timeout has timed out", async () => {
+		vi.useFakeTimers();
+		const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+		vi.setSystemTime(FIXED_NOW);
+		spawnerRef.current = {
+			spawn: vi.fn(async () => {
+				vi.setSystemTime(FIXED_NOW + 3000);
+				return { success: true, sessionId: "s-1", messages: [] };
+			}),
+			dispose: vi.fn(),
+		};
+		const stages = [makeStage("planner", false), makeStage("worker", false)];
+		const config = makeConfig(stages, { timeoutMs: 3000 });
+
+		try {
+			const result = await runChain(withConsumerChain(config));
+
+			expect(result.success).toBe(false);
+			expect(result.errors).toEqual([
+				"Chain timed out after 3000ms before step 2 of 2",
+			]);
+			expect(result.stageResults).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	test("an abort that coincides with an expired timeout reports the abort", async () => {
 		vi.useFakeTimers();
 		const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
