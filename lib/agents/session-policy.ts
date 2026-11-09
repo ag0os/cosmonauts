@@ -66,6 +66,21 @@ export function registerSessionRuntime(
 		throw new Error(`Duplicate host session binding: ${sessionId}`);
 	runtimes.set(sessionId, runtime);
 }
+/**
+ * Binds a session it has just created. A refused binding (a duplicate id)
+ * leaves the existing session's binding alone and disposes only the new one.
+ */
+export function bindSessionRuntimeOrDispose(
+	session: { readonly sessionId: string; dispose(): void },
+	runtime: import("../runtime.ts").CosmonautsRuntime,
+): void {
+	try {
+		registerSessionRuntime(session.sessionId, runtime);
+	} catch (error) {
+		session.dispose();
+		throw error;
+	}
+}
 export function getSessionRuntime(
 	sessionId: string,
 ): import("../runtime.ts").CosmonautsRuntime | undefined {

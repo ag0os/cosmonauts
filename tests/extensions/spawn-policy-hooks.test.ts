@@ -9,6 +9,11 @@ import {
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { registerSpawnTool } from "../../lib/extensions/orchestration/spawn-tool.ts";
 import {
+	getPlanSlugForSession,
+	registerPlanContext,
+	removePlanContext,
+} from "../../lib/orchestration/plan-session-context.ts";
+import {
 	getOrCreateTracker,
 	removeTracker,
 } from "../../lib/orchestration/spawn-tracker.ts";
@@ -308,3 +313,30 @@ for (const [label, bound] of [
 		});
 	}
 }
+
+test("a detached child whose session id is already bound is disposed and refused, and the other session keeps its state", async () => {
+	const { pi, tracker } = setup({ authorize: () => undefined });
+	const session = child();
+	const original = {} as CosmonautsRuntime;
+	registerSessionRuntime(session.sessionId, original);
+	const otherTracker = getOrCreateTracker(session.sessionId);
+	registerPlanContext(session.sessionId, "other-plan");
+	try {
+		mocks.factory.mockResolvedValue({ session });
+		await pi.callTool("spawn_agent", { role: "reader", prompt: "work" });
+		await expect(tracker.nextCompletion()).resolves.toMatchObject({
+			type: "spawn_failed",
+			error: "Duplicate host session binding: consumer-child",
+		});
+		await flushAsync();
+		expect(session.dispose).toHaveBeenCalledOnce();
+		expect(session.prompt).not.toHaveBeenCalled();
+		expect(getSessionRuntime(session.sessionId)).toBe(original);
+		expect(getOrCreateTracker(session.sessionId)).toBe(otherTracker);
+		expect(getPlanSlugForSession(session.sessionId)).toBe("other-plan");
+	} finally {
+		removeSessionRuntime(session.sessionId);
+		removeTracker(session.sessionId);
+		removePlanContext(session.sessionId);
+	}
+});

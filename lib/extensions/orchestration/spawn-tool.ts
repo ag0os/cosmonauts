@@ -7,8 +7,8 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
 import {
+	bindSessionRuntimeOrDispose,
 	getSessionRuntime,
-	registerSessionRuntime,
 	removeSessionRuntime,
 	type SpawnPolicyRequest,
 } from "../../agents/session-policy.ts";
@@ -168,7 +168,7 @@ async function runDetachedChildSession(
 	params: DetachedChildSessionParams,
 ): Promise<void> {
 	const { session, childDepth, planSlug } = params;
-	registerSessionRuntime(session.sessionId, params.runtime);
+	bindSessionRuntimeOrDispose(session, params.runtime);
 	sessionDepths.set(session.sessionId, childDepth);
 	const childTracker = getOrCreateTracker(session.sessionId, undefined, {
 		deliveryMode: "external",
