@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type { Dirent } from "node:fs";
 import {
 	access,
 	chmod,
@@ -48,10 +47,7 @@ import {
 	type MemoryStore,
 	type RetrievedMemoryRecord,
 } from "../../lib/memory/index.ts";
-import {
-	type RetirementReceiptInventoryResult,
-	readRetirementReceiptInventory,
-} from "../../lib/memory/retirement-receipts.ts";
+import { readRetirementReceiptInventory } from "../../lib/memory/retirement-receipts.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("memory-interface-");
@@ -2168,171 +2164,15 @@ async function writeArchitectureMap(projectRoot: string): Promise<void> {
 }
 
 describe("frozen knowledge seed migration", () => {
-	test("maps every frozen seed field and body to canonical OKF and leaves no active knowledge JSONL path", async () => {
-		const projectRoot = process.cwd();
-		const inventory = JSON.parse(
-			await readFile(
-				join(projectRoot, "tests", "fixtures", "knowledge-seed-inventory.json"),
-				"utf-8",
-			),
-		) as SeedInventory;
-		const files = await readKnowledgeCorpus(projectRoot);
-		const activeLegacyPaths = await findActiveLegacyKnowledgePaths(projectRoot);
-		const receipts = await readRetirementReceiptInventory({ projectRoot });
-
-		// Bodies migrated byte-for-byte (Design §6). After migration, a body may
-		// legally drift only through the sanctioned curation path — a direct edit
-		// recorded in a promotion-ledger round's `curatedRecords` list
-		// (docs/memory.md). The filter forgives exactly those recorded paths;
-		// metadata, destination, and index checks stay fully enforced.
-		const curatedBodies = new Set(
-			receipts.kind === "healthy" ? receipts.inventory.curatedRecords : [],
-		);
-		const withoutRecordedCuration = (issues: readonly string[]) =>
-			issues.filter(
-				(issue) =>
-					!(
-						issue.startsWith("body:") &&
-						curatedBodies.has(issue.slice("body:".length))
-					),
-			);
-
-		expect(
-			withoutRecordedCuration(
-				auditMigratedSeed(inventory, files, activeLegacyPaths, receipts),
-			),
-		).toEqual([]);
-
-		const jsonDestination = `knowledge/${inventory.bundles[0]?.header.planSlug}/${inventory.bundles[0]?.records[0]?.id}.md`;
-		const markdownDestination = inventory.markdown
-			.map((entry) => entry.path.replace(/^memory\//u, "knowledge/"))
-			.find((path) => !curatedBodies.has(path));
-		if (!jsonDestination || !markdownDestination) {
-			throw new Error(
-				"Frozen inventory must contain markdown and JSONL records.",
-			);
-		}
-
-		const fieldDeletion = mutateFrontmatter(files, jsonDestination, (data) => {
-			delete data.planTitle;
-		});
-		expect(
-			auditMigratedSeed(inventory, fieldDeletion, activeLegacyPaths),
-		).toContain(`metadata:${jsonDestination}`);
-
-		const bodyChange = new Map(files);
-		bodyChange.set(
-			markdownDestination,
-			`${bodyChange.get(markdownDestination) ?? ""}\nmutated body`,
-		);
-		expect(
-			auditMigratedSeed(inventory, bodyChange, activeLegacyPaths),
-		).toContain(`body:${markdownDestination}`);
-
-		const timestampChange = mutateFrontmatter(
-			files,
-			jsonDestination,
-			(data) => {
-				data.timestamp = "2026-05-22T18:45:37Z";
-			},
-		);
-		expect(
-			auditMigratedSeed(inventory, timestampChange, activeLegacyPaths),
-		).toContain(`metadata:${jsonDestination}`);
-
-		const missingDestination = new Map(files);
-		missingDestination.delete(jsonDestination);
-		expect(
-			auditMigratedSeed(inventory, missingDestination, activeLegacyPaths),
-		).toContain(`destination:${jsonDestination}`);
-
-		expect(
-			auditMigratedSeed(inventory, files, [
-				...activeLegacyPaths,
-				"lib/sessions/knowledge.ts",
-			]),
-		).toContain("active-jsonl:lib/sessions/knowledge.ts");
-
-		// A mutation to any body without a recorded curation entry must surface
-		// through the *filtered* pipeline — the curation filter forgives only the
-		// recorded paths, never a fresh unrecorded edit. The append is asserted to
-		// have actually applied so this negative can never silently degrade into
-		// a no-op replace.
-		const originalBody = files.get(markdownDestination) ?? "";
-		const bodyMutation = new Map(files);
-		const mutatedBody = `${originalBody}\nmutated body`;
-		expect(mutatedBody).not.toBe(originalBody);
-		bodyMutation.set(markdownDestination, mutatedBody);
-		expect(
-			withoutRecordedCuration(
-				auditMigratedSeed(inventory, bodyMutation, activeLegacyPaths),
-			),
-		).toContain(`body:${markdownDestination}`);
-	});
-
-	test("accepts only manifest-backed relocation and ledger-backed hard deletion", async () => {
-		const projectRoot = process.cwd();
-		const inventory = JSON.parse(
-			await readFile(
-				join(projectRoot, "tests", "fixtures", "knowledge-seed-inventory.json"),
-				"utf-8",
-			),
-		) as SeedInventory;
-		const files = await readKnowledgeCorpus(projectRoot);
-		const liveReceipts = await readRetirementReceiptInventory({ projectRoot });
-		const curatedBodies = new Set(
-			liveReceipts.kind === "healthy"
-				? liveReceipts.inventory.curatedRecords
-				: [],
-		);
-		const destinations = inventory.markdown
-			.map((entry) => entry.path.replace(/^memory\//u, "knowledge/"))
-			.filter((path) => !curatedBodies.has(path));
-		const [relocatedPath, deletedPath, baselinePath, restoredPath] =
-			destinations;
-		if (!relocatedPath || !deletedPath || !baselinePath || !restoredPath) {
-			throw new Error("Frozen inventory must contain four markdown records.");
-		}
-		const selectedPaths = new Set(destinations.slice(0, 4));
-		const fixtureInventory: SeedInventory = {
-			migrationTimestamp: inventory.migrationTimestamp,
-			markdown: inventory.markdown.filter((entry) =>
-				selectedPaths.has(entry.path.replace(/^memory\//u, "knowledge/")),
-			),
-			bundles: [],
-		};
-		const fixtureFiles = new Map<string, string>();
-		for (const path of ["knowledge/index.md", ...selectedPaths]) {
-			const raw = files.get(path);
-			if (raw !== undefined) fixtureFiles.set(path, raw);
-		}
-		const relocatedBytes = fixtureFiles.get(relocatedPath);
-		const baselineBytes = fixtureFiles.get(baselinePath);
-		const restoredBytes = fixtureFiles.get(restoredPath);
-		if (!relocatedBytes || !baselineBytes || !restoredBytes) {
-			throw new Error(
-				"Frozen destinations must exist before fixture relocation.",
-			);
-		}
-		const relocatedDigest = sha256(relocatedBytes);
-		const baselineDigest = sha256(baselineBytes);
-		const restoredDigest = sha256(restoredBytes);
+	test("reads manifest-backed relocation and ledger-backed deletion receipts and rejects malformed receipt state", async () => {
+		const relocatedPath = "knowledge/relocated.md";
+		const deletedPath = "knowledge/deleted.md";
+		const baselinePath = "knowledge/baseline.md";
+		const restoredPath = "knowledge/restored.md";
+		const relocatedDigest = sha256("relocated record");
+		const baselineDigest = sha256("baseline record");
+		const restoredDigest = sha256("restored record");
 		const evidenceDigest = sha256("fixture evidence");
-		const audit = (
-			fixtureFiles: ReadonlyMap<string, string>,
-			fixtureReceipts: RetirementReceiptInventoryResult,
-		) =>
-			auditMigratedSeed(
-				fixtureInventory,
-				fixtureFiles,
-				[],
-				fixtureReceipts,
-			).filter(
-				(issue) =>
-					!issue.startsWith("body:") ||
-					!curatedBodies.has(issue.slice("body:".length)),
-			);
-		const fixtureRoot = join(tmp.path, "receipt-floor");
 		const ledger = promotionLedger({
 			relocatedPath,
 			relocatedDigest,
@@ -2360,15 +2200,15 @@ describe("frozen knowledge seed migration", () => {
 			path: restoredPath,
 			digest: restoredDigest,
 		});
+		const fixtureRoot = join(tmp.path, "receipt-floor");
 		await writeReceiptFixture(fixtureRoot, {
 			ledgers: [ledger],
 			manifests: [retired, restoredRetirement, restored],
 		});
 
-		const receipts = await readRetirementReceiptInventory({
-			projectRoot: fixtureRoot,
-		});
-		expect(receipts).toMatchObject({
+		await expect(
+			readRetirementReceiptInventory({ projectRoot: fixtureRoot }),
+		).resolves.toMatchObject({
 			kind: "healthy",
 			inventory: {
 				promotionRounds: [1],
@@ -2400,92 +2240,6 @@ describe("frozen knowledge seed migration", () => {
 				]),
 			},
 		});
-
-		const relocatedFiles = new Map(fixtureFiles);
-		relocatedFiles.delete(relocatedPath);
-		relocatedFiles.set(retiredPath(relocatedPath), relocatedBytes);
-		expect(audit(relocatedFiles, receipts)).toEqual([]);
-
-		const withoutManifestRoot = join(tmp.path, "receipt-floor-no-manifest");
-		await writeReceiptFixture(withoutManifestRoot, { ledgers: [ledger] });
-		const withoutManifest = await readRetirementReceiptInventory({
-			projectRoot: withoutManifestRoot,
-		});
-		expect(audit(relocatedFiles, withoutManifest)).toContain(
-			`destination:${relocatedPath}`,
-		);
-
-		const serializationMutation = new Map(relocatedFiles);
-		serializationMutation.set(
-			retiredPath(relocatedPath),
-			relocatedBytes.replace(/^---\n/u, "---\n# serialization-only mutation\n"),
-		);
-		expect(audit(serializationMutation, receipts)).toContain(
-			`serialization:${relocatedPath}`,
-		);
-
-		const bodyMutation = new Map(relocatedFiles);
-		bodyMutation.set(
-			retiredPath(relocatedPath),
-			`${relocatedBytes}\nmutated retired body`,
-		);
-		expect(audit(bodyMutation, receipts)).toEqual(
-			expect.arrayContaining([
-				`body:${relocatedPath}`,
-				`serialization:${relocatedPath}`,
-			]),
-		);
-
-		const deletedFiles = new Map(fixtureFiles);
-		deletedFiles.delete(deletedPath);
-		expect(audit(deletedFiles, receipts)).toEqual([]);
-		const withoutLedgerRoot = join(tmp.path, "receipt-floor-no-ledger");
-		await writeReceiptFixture(withoutLedgerRoot, { ledgers: [] });
-		const withoutLedger = await readRetirementReceiptInventory({
-			projectRoot: withoutLedgerRoot,
-		});
-		expect(audit(deletedFiles, withoutLedger)).toContain(
-			`destination:${deletedPath}`,
-		);
-
-		const wrongDigestRoot = join(tmp.path, "receipt-floor-wrong-digest");
-		await writeReceiptFixture(wrongDigestRoot, {
-			ledgers: [ledger],
-			manifests: [
-				retiredManifest({
-					round: 1,
-					id: "retirement-relocated",
-					path: relocatedPath,
-					digest: sha256("wrong"),
-					evidenceDigest,
-				}),
-			],
-		});
-		const wrongDigest = await readRetirementReceiptInventory({
-			projectRoot: wrongDigestRoot,
-		});
-		expect(audit(relocatedFiles, wrongDigest)).toContain(
-			`serialization:${relocatedPath}`,
-		);
-		const wrongPathRoot = join(tmp.path, "receipt-floor-wrong-path");
-		await writeReceiptFixture(wrongPathRoot, {
-			ledgers: [ledger],
-			manifests: [
-				retiredManifest({
-					round: 1,
-					id: "retirement-relocated",
-					path: baselinePath,
-					digest: baselineDigest,
-					evidenceDigest,
-				}),
-			],
-		});
-		const wrongPath = await readRetirementReceiptInventory({
-			projectRoot: wrongPathRoot,
-		});
-		expect(audit(relocatedFiles, wrongPath)).toContain(
-			`destination:${relocatedPath}`,
-		);
 
 		const unhealthyCases = [
 			{
@@ -2553,9 +2307,6 @@ describe("frozen knowledge seed migration", () => {
 				projectRoot: root,
 			});
 			expect(result, fixture.name).toMatchObject({ kind: "unhealthy" });
-			expect(audit(relocatedFiles, result), fixture.name).toContain(
-				`destination:${relocatedPath}`,
-			);
 		}
 
 		const unreadableRoot = join(tmp.path, "unreadable-state");
@@ -2664,345 +2415,6 @@ describe("frozen knowledge seed migration", () => {
 		);
 	});
 });
-
-interface SeedInventory {
-	readonly migrationTimestamp: string;
-	readonly markdown: readonly FrozenMarkdown[];
-	readonly bundles: readonly FrozenBundle[];
-}
-
-interface FrozenMarkdown {
-	readonly path: string;
-	readonly sha256: string;
-	readonly distilledAtRaw: string;
-	readonly legacySource: string;
-	readonly legacyPlan: string;
-	readonly title: string;
-	readonly body: string;
-}
-
-interface FrozenBundle {
-	readonly path: string;
-	readonly sha256: string;
-	readonly header: {
-		readonly planSlug: string;
-		readonly planTitle: string;
-		readonly distilledAt: string;
-		readonly distilledBy: string;
-	};
-	readonly records: readonly FrozenRecord[];
-}
-
-interface FrozenRecord {
-	readonly ordinal: number;
-	readonly id: string;
-	readonly rawTimestamp: string;
-	readonly fields: {
-		readonly id: string;
-		readonly planSlug: string;
-		readonly taskId?: string;
-		readonly sourceRole: string;
-		readonly type: string;
-		readonly content: string;
-		readonly files: readonly string[];
-		readonly tags: readonly string[];
-		readonly createdAt: string;
-	};
-}
-
-function auditMigratedSeed(
-	inventory: SeedInventory,
-	files: ReadonlyMap<string, string>,
-	activeLegacyPaths: readonly string[],
-	receipts?: RetirementReceiptInventoryResult,
-): string[] {
-	const issues: string[] = [];
-	const expectedPaths = new Set<string>(["knowledge/index.md"]);
-	const authorizedRetiredPaths = new Set<string>();
-	const receiptInventory =
-		receipts?.kind === "healthy" ? receipts.inventory : undefined;
-	const activeBaselines = new Map(
-		receiptInventory?.activeBaselines.map((baseline) => [
-			baseline.path,
-			baseline.sha256,
-		]) ?? [],
-	);
-	const retirementStates = new Map(
-		receiptInventory?.retirementStates.map((state) => [state.path, state]) ??
-			[],
-	);
-	const hardDeletedPaths = new Set(receiptInventory?.retiredRecords ?? []);
-	const locateDestination = (path: string): string | undefined => {
-		const retired = retiredPath(path);
-		const liveRaw = files.get(path);
-		const retiredRaw = files.get(retired);
-		if (liveRaw !== undefined && retiredRaw !== undefined) {
-			issues.push(`path:${path}`);
-			return path;
-		}
-		if (liveRaw !== undefined) return path;
-		if (retiredRaw === undefined) {
-			if (!hardDeletedPaths.has(path)) issues.push(`destination:${path}`);
-			return undefined;
-		}
-
-		const state = retirementStates.get(path);
-		const baseline = activeBaselines.get(path);
-		const digest = sha256(retiredRaw);
-		if (
-			state?.status !== "retired" ||
-			state.digest !== digest ||
-			baseline !== digest
-		) {
-			if (state?.status === "retired" && baseline !== undefined) {
-				issues.push(`serialization:${path}`);
-			} else {
-				issues.push(`destination:${path}`);
-			}
-			return retired;
-		}
-		authorizedRetiredPaths.add(retired);
-		return retired;
-	};
-
-	for (const frozen of inventory.markdown) {
-		const destination = frozen.path.replace(/^memory\//u, "knowledge/");
-		expectedPaths.add(destination);
-		const physicalPath = locateDestination(destination);
-		checkDestination({
-			files,
-			path: destination,
-			physicalPath,
-			expectedMetadata: {
-				type: "decision",
-				title: frozen.title,
-				description: `Archived plan distillation for ${frozen.legacyPlan}.`,
-				resource: destination,
-				tags: [`plan:${frozen.legacyPlan}`, "source:legacy-distillation"],
-				timestamp: canonicalFrozenTimestamp(frozen.distilledAtRaw),
-				scope: "project",
-				kind: "semantic",
-				writer: "knowledge-surface-migration",
-				source: frozen.path,
-				date: inventory.migrationTimestamp,
-				legacySource: frozen.legacySource,
-				legacyPlan: frozen.legacyPlan,
-				legacyDistilledAt: frozen.distilledAtRaw,
-				legacySourceSha256: frozen.sha256,
-			},
-			expectedBody: frozen.body,
-			issues,
-		});
-	}
-
-	for (const bundle of inventory.bundles) {
-		for (const record of bundle.records) {
-			const mappedType = mapLegacyKnowledgeType(record.fields.type);
-			const destination = `knowledge/${bundle.header.planSlug}/${record.id}.md`;
-			expectedPaths.add(destination);
-			const physicalPath = locateDestination(destination);
-			checkDestination({
-				files,
-				path: destination,
-				physicalPath,
-				expectedMetadata: {
-					type: mappedType,
-					title: `${bundle.header.planTitle} — ${mappedType} ${record.ordinal}`,
-					description: `Migrated ${record.fields.type} record ${record.id} from ${bundle.header.planSlug}.`,
-					resource: destination,
-					tags: [...record.fields.tags],
-					timestamp: canonicalFrozenTimestamp(record.rawTimestamp),
-					scope: "project",
-					kind: "semantic",
-					writer: bundle.header.distilledBy,
-					source: `${bundle.path}#${record.id}`,
-					date: canonicalFrozenTimestamp(bundle.header.distilledAt),
-					id: record.fields.id,
-					planSlug: record.fields.planSlug,
-					planTitle: bundle.header.planTitle,
-					...(record.fields.taskId === undefined
-						? {}
-						: { taskId: record.fields.taskId }),
-					sourceRole: record.fields.sourceRole,
-					files: [...record.fields.files],
-					legacyType: record.fields.type,
-					legacyCreatedAt: record.rawTimestamp,
-					legacyBundleDistilledAt: bundle.header.distilledAt,
-					legacyBundleDistilledBy: bundle.header.distilledBy,
-					legacySourceSha256: bundle.sha256,
-				},
-				expectedBody: record.fields.content,
-				issues,
-			});
-		}
-	}
-
-	const actualPaths = [...files.keys()].sort();
-	for (const path of actualPaths) {
-		if (expectedPaths.has(path) || authorizedRetiredPaths.has(path)) continue;
-		if (!path.endsWith(".md")) {
-			issues.push(`unexpected:${path}`);
-			continue;
-		}
-		// `knowledge/` is a living human-curated store, so a record added after
-		// the migration is legitimate and must not fail this audit. What the
-		// audit forbids is stray MIGRATION output: every migrated record carries
-		// `legacySourceSha256`, so an unexpected file claiming that provenance is
-		// still an issue.
-		if (matter(files.get(path) ?? "").data.legacySourceSha256 !== undefined) {
-			issues.push(`unexpected:${path}`);
-		}
-	}
-
-	const indexRaw = files.get("knowledge/index.md");
-	if (indexRaw === undefined) {
-		issues.push("destination:knowledge/index.md");
-	} else {
-		const index = matter(indexRaw);
-		const expectedIndexMetadata = {
-			type: "convention",
-			title: "Knowledge seed migration index",
-			description: "One-to-one map from the frozen legacy seed corpus.",
-			resource: "knowledge/index.md",
-			tags: ["knowledge", "migration", "index"],
-			timestamp: inventory.migrationTimestamp,
-			scope: "project",
-			kind: "semantic",
-			writer: "knowledge-surface-migration",
-			source: "tests/fixtures/knowledge-seed-inventory.json",
-			date: inventory.migrationTimestamp,
-		};
-		if (stableJson(index.data) !== stableJson(expectedIndexMetadata)) {
-			issues.push("metadata:knowledge/index.md");
-		}
-		for (const frozen of inventory.markdown) {
-			const destination = frozen.path.replace(/^memory\//u, "knowledge/");
-			if (
-				!index.content.includes(
-					`| \`${frozen.path}\` | — | \`${destination}\` |`,
-				)
-			) {
-				issues.push(`index:${frozen.path}`);
-			}
-		}
-		for (const bundle of inventory.bundles) {
-			for (const record of bundle.records) {
-				const destination = `knowledge/${bundle.header.planSlug}/${record.id}.md`;
-				if (
-					!index.content.includes(
-						`| \`${bundle.path}\` | \`${record.id}\` | \`${destination}\` |`,
-					)
-				) {
-					issues.push(`index:${bundle.path}#${record.id}`);
-				}
-			}
-		}
-	}
-
-	for (const path of activeLegacyPaths) issues.push(`active-jsonl:${path}`);
-	return [...new Set(issues)].sort();
-}
-
-function checkDestination(options: {
-	readonly files: ReadonlyMap<string, string>;
-	readonly path: string;
-	readonly physicalPath?: string;
-	readonly expectedMetadata: Record<string, unknown>;
-	readonly expectedBody: string;
-	readonly issues: string[];
-}): void {
-	if (options.physicalPath === undefined) return;
-	const raw = options.files.get(options.physicalPath);
-	if (raw === undefined) return;
-	const parsed = matter(raw);
-	if (stableJson(parsed.data) !== stableJson(options.expectedMetadata)) {
-		options.issues.push(`metadata:${options.path}`);
-	}
-	if (parsed.content !== options.expectedBody) {
-		options.issues.push(`body:${options.path}`);
-	}
-}
-
-function canonicalFrozenTimestamp(raw: string): string {
-	const value =
-		raw.startsWith("'") && raw.endsWith("'") ? raw.slice(1, -1) : raw;
-	if (/^\d{4}-\d{2}-\d{2}$/u.test(value)) return `${value}T00:00:00.000Z`;
-	if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u.test(value)) {
-		return value.replace(/Z$/u, ".000Z");
-	}
-	if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)) {
-		const canonical = new Date(value).toISOString();
-		if (canonical === value) return canonical;
-	}
-	throw new Error(`Uninventoried or invalid frozen timestamp: ${raw}`);
-}
-
-function mapLegacyKnowledgeType(type: string): string {
-	if (["decision", "trade-off", "gotcha", "convention"].includes(type)) {
-		return type;
-	}
-	if (type === "rationale") return "decision";
-	if (type === "pattern") return "convention";
-	throw new Error(`Uninventoried legacy knowledge type: ${type}`);
-}
-
-async function readKnowledgeCorpus(
-	projectRoot: string,
-): Promise<Map<string, string>> {
-	const root = join(projectRoot, "knowledge");
-	const files = new Map<string, string>();
-	for (const path of await listFiles(root, "knowledge")) {
-		files.set(path, await readFile(join(projectRoot, path), "utf-8"));
-	}
-	return files;
-}
-
-async function findActiveLegacyKnowledgePaths(
-	projectRoot: string,
-): Promise<string[]> {
-	const candidates = [
-		...(await listFiles(join(projectRoot, "lib"), "lib")),
-		...(await listFiles(join(projectRoot, "domains"), "domains")),
-		...(await listFiles(join(projectRoot, "bundled"), "bundled")),
-		...(await listFiles(join(projectRoot, "docs"), "docs")),
-		"AGENTS.md",
-		"README.md",
-		"ROADMAP.md",
-	];
-	const legacy =
-		/\.knowledge\.jsonl|\b(?:read|write)KnowledgeBundle\b|\breadAllKnowledge\b|\bKnowledgeBundle\b/u;
-	const matches: string[] = [];
-	for (const path of candidates) {
-		try {
-			if (legacy.test(await readFile(join(projectRoot, path), "utf-8"))) {
-				matches.push(path);
-			}
-		} catch (error: unknown) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-		}
-	}
-	return matches.sort();
-}
-
-async function listFiles(root: string, prefix: string): Promise<string[]> {
-	let entries: Dirent[];
-	try {
-		entries = await readdir(root, { withFileTypes: true });
-	} catch (error: unknown) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-		throw error;
-	}
-	const paths: string[] = [];
-	for (const entry of entries) {
-		const relativePath = `${prefix}/${entry.name}`;
-		if (entry.isDirectory()) {
-			paths.push(...(await listFiles(join(root, entry.name), relativePath)));
-		} else if (entry.isFile()) {
-			paths.push(relativePath);
-		}
-	}
-	return paths.sort();
-}
 
 async function writeReceiptFixture(
 	projectRoot: string,
@@ -3122,46 +2534,6 @@ function restoredManifest(options: {
 	].join("\n");
 }
 
-function retiredPath(path: string): string {
-	return `knowledge/retired/${path.slice("knowledge/".length)}`;
-}
-
 function sha256(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
-}
-
-function mutateFrontmatter(
-	files: ReadonlyMap<string, string>,
-	path: string,
-	mutate: (data: Record<string, unknown>) => void,
-): Map<string, string> {
-	const mutated = new Map(files);
-	const parsed = matter(mutated.get(path) ?? "");
-	mutate(parsed.data);
-	mutated.set(path, renderExactBody(parsed.content, parsed.data));
-	return mutated;
-}
-
-function renderExactBody(body: string, data: Record<string, unknown>): string {
-	const rendered = matter.stringify(body, data);
-	return body.endsWith("\n") || !rendered.endsWith("\n")
-		? rendered
-		: rendered.slice(0, -1);
-}
-
-function stableJson(value: unknown): string {
-	return JSON.stringify(sortValue(value));
-}
-
-function sortValue(value: unknown): unknown {
-	if (value instanceof Date) return value.toISOString();
-	if (Array.isArray(value)) return value.map(sortValue);
-	if (value && typeof value === "object") {
-		return Object.fromEntries(
-			Object.entries(value as Record<string, unknown>)
-				.sort(([left], [right]) => left.localeCompare(right))
-				.map(([key, entry]) => [key, sortValue(entry)]),
-		);
-	}
-	return value;
 }

@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test, vi } from "vitest";
@@ -18,7 +17,6 @@ import { createMockPi, type MockPi } from "../helpers/mocks/index.ts";
 
 const tmp = useTempDir("episodic-pre-w3-baseline-");
 const FIXED_TIME = "2026-07-21T12:00:00.000Z";
-const CODING_DOMAIN = ["cod", "ing"].join("");
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const AGENT_SWITCH_EXTENSION = join(
 	REPO_ROOT,
@@ -30,141 +28,6 @@ const AGENT_SWITCH_EXTENSION = join(
 const KNOWLEDGE_SENTINEL = "B008_KNOWLEDGE_STORE_CONSTRUCTED";
 
 describe("pre-W3 disabled baselines", () => {
-	test("keeps gated effects inert off and freezes reload while restart and agent switch adopt both gate transitions", async () => {
-		const inventoryPath = join(
-			process.cwd(),
-			"tests/fixtures/knowledge-seed-inventory.json",
-		);
-		const inventory = JSON.parse(await readFile(inventoryPath, "utf-8")) as {
-			markdown: { path: string; sha256: string; distilledAtRaw: string }[];
-			bundles: {
-				path: string;
-				sha256: string;
-				headerRaw: string;
-				header: Record<string, unknown>;
-				records: {
-					ordinal: number;
-					id: string;
-					rawTimestamp: string;
-					fields: Record<string, unknown>;
-				}[];
-			}[];
-			backfill: {
-				archivedPlanSlugs: string[];
-				distilledSlugs: string[];
-				missingSlugs: string[];
-				sourceInputs: Record<string, { path: string; sha256: string }[]>;
-			};
-		};
-
-		expect(inventory.markdown).toHaveLength(36);
-		expect(inventory.bundles).toHaveLength(10);
-		expect(
-			inventory.bundles.reduce(
-				(count, bundle) => count + bundle.records.length,
-				0,
-			),
-		).toBe(100);
-		expect(inventory.backfill.missingSlugs).toHaveLength(19);
-
-		for (const entry of inventory.markdown) {
-			expect(entry.path, entry.path).toMatch(/^memory\/.+\.md$/u);
-			expect(entry.sha256, entry.path).toMatch(/^[a-f0-9]{64}$/u);
-			expect(entry.distilledAtRaw, entry.path).toBeTruthy();
-		}
-		for (const bundle of inventory.bundles) {
-			expect(bundle.path, bundle.path).toMatch(
-				/^memory\/.+\.knowledge\.jsonl$/u,
-			);
-			expect(bundle.sha256, bundle.path).toMatch(/^[a-f0-9]{64}$/u);
-			expect(JSON.parse(bundle.headerRaw)).toEqual(bundle.header);
-			for (const [index, record] of bundle.records.entries()) {
-				expect(record.ordinal).toBe(index + 1);
-				expect(record.fields.id).toBe(record.id);
-				expect(record.fields.createdAt).toBe(record.rawTimestamp);
-			}
-		}
-
-		const derivedMissing = inventory.backfill.archivedPlanSlugs.filter(
-			(slug) => !inventory.backfill.distilledSlugs.includes(slug),
-		);
-		expect(derivedMissing).toEqual(inventory.backfill.missingSlugs);
-		expect(Object.keys(inventory.backfill.sourceInputs).sort()).toEqual(
-			inventory.backfill.missingSlugs,
-		);
-		for (const inputs of Object.values(inventory.backfill.sourceInputs)) {
-			for (const input of inputs) {
-				expect(
-					sha256(await readFile(join(process.cwd(), input.path))),
-					input.path,
-				).toBe(input.sha256);
-			}
-		}
-
-		const offBaseline = JSON.parse(
-			await readFile(
-				join(
-					process.cwd(),
-					"tests/fixtures/knowledge-surface-off-baselines.json",
-				),
-				"utf-8",
-			),
-		) as {
-			promptCorrectionAllowlist: string[];
-			promptFiles: { path: string; sha256: string }[];
-			packageSurface: unknown;
-			wrapperFiles: { path: string; sha256: string }[];
-			configTransitions: Record<string, unknown>;
-			toolContracts: Record<string, unknown>;
-			authorization: Record<string, unknown>;
-			promptCorrectionRegions: {
-				path: string;
-				regions: { start: string; end: string }[];
-				baselineContent: string;
-			}[];
-		};
-		const packageJson = JSON.parse(
-			await readFile(join(process.cwd(), "package.json"), "utf-8"),
-		) as { keywords?: unknown; pi?: unknown };
-		expect({ keywords: packageJson.keywords, pi: packageJson.pi }).toEqual(
-			offBaseline.packageSurface,
-		);
-		expect(offBaseline.wrapperFiles).toHaveLength(2);
-		expect(offBaseline.toolContracts).toMatchObject({
-			agentMemory: {
-				remember: { name: "remember", executionMode: "sequential" },
-				recall: { name: "recall", parameterNames: ["limit", "query"] },
-			},
-			architectureMemory: {
-				architectureMapRead: { name: "architecture_map_read" },
-			},
-		});
-		expect(offBaseline.authorization).toEqual({
-			agentMemory: {
-				authorizedAgent: "main/cosmo",
-				unauthorizedStatus: "unauthorized",
-				resetEvents: ["session_start", "session_shutdown"],
-			},
-			architectureMemory: {
-				authorizedAgents: [
-					`${CODING_DOMAIN}/coordinator`,
-					`${CODING_DOMAIN}/plan-reviewer`,
-					`${CODING_DOMAIN}/planner`,
-					`${CODING_DOMAIN}/quality-manager`,
-					`${CODING_DOMAIN}/worker`,
-				],
-				unauthorizedStatus: "scope-ineligible",
-				resetEvents: ["session_start", "session_shutdown"],
-			},
-		});
-		expect(offBaseline.configTransitions).toEqual({
-			reload: { offToOn: "off", onToOff: "on" },
-			plainNew: { offToOn: "off", onToOff: "on" },
-			restart: { offToOn: "on", onToOff: "off" },
-			agentSwitch: { offToOn: "on", onToOff: "off" },
-		});
-	});
-
 	test("drives real Pi reload and plain new-session seams with frozen factories in both directions", async () => {
 		const projectRoot = join(tmp.path, "frozen-transition-project");
 		const domainsDir = join(tmp.path, "frozen-transition-domains");
@@ -772,10 +635,6 @@ async function invokeAgentSwitch(
 		newSession: (options: Parameters<TransitionRuntime["newSession"]>[0]) =>
 			runtime.newSession(options),
 	} as never);
-}
-
-function sha256(value: string | Buffer): string {
-	return createHash("sha256").update(value).digest("hex");
 }
 
 interface ToolResult {

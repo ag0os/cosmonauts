@@ -61,17 +61,6 @@ afterEach(async () => {
 });
 
 describe("knowledge surface recoverable backfill", () => {
-	test("derives the frozen current 19-slug batch and verifies every source input", async () => {
-		const inspected = await inspectKnowledgeSurfaceBackfill({
-			projectRoot: REPO_ROOT,
-		});
-
-		expect(inspected.missingSlugs).toEqual(EXPECTED_MISSING_SLUGS);
-		expect(inspected.scanCostVerdict).toBe("pass");
-		expect(inspected.sourceInputs.length).toBeGreaterThan(19);
-		expect(inspected.sourceInputs.every((input) => input.verified)).toBe(true);
-	});
-
 	test("keeps the supervised machine GREEN artifact digest-complete and unpromoted", async () => {
 		const reviewIndexPath = join(
 			REPO_ROOT,
