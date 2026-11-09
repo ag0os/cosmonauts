@@ -125,8 +125,7 @@ async function selectProvider(
 		path = resolveExtensionPaths([name], options)[0] as string;
 	} catch (error) {
 		if (!(error instanceof UnknownExtensionError) || !native) throw error;
-		if (isLibraryExtensionMounted(name, options)) return {};
-		return { factory: extensionFactory(await native(options.context), name) };
+		return selectNative(name, native, options);
 	}
 	const entry = ["index.ts", "index.js", "index.mjs"]
 		.map((file) => join(path, file))
@@ -140,6 +139,15 @@ async function selectProvider(
 	if (typeof provider === "function")
 		return { factory: extensionFactory(await provider(options.context), name) };
 	return { path };
+}
+
+async function selectNative(
+	name: string,
+	native: (context: SessionProviderContext) => unknown,
+	options: BindingOptions,
+): Promise<{ factory?: InlineExtension }> {
+	if (isLibraryExtensionMounted(name, options)) return {};
+	return { factory: extensionFactory(await native(options.context), name) };
 }
 
 /**
