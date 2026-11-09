@@ -999,7 +999,7 @@ type EntityLockRunner = <T>(
 	options: EntityFileLockOptions,
 ) => Promise<T>;
 
-export interface WithOwnerRootTransactionOptions {
+interface WithOwnerRootTransactionOptions {
 	readonly ownerRoot: string;
 	readonly targetId: ResolvedHarnessAssetTarget["targetId"];
 	readonly waitTimeoutMs?: number;

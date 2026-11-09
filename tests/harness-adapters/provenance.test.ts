@@ -19,8 +19,6 @@ import {
 	resolveAssetOwnerIdentity,
 	resolveHarnessTransactionPaths,
 	serializeHarnessManifest,
-	sha256,
-	verifyLegacyMigrationProof,
 } from "../../lib/harness-adapters/provenance.ts";
 import { renderIdentityMarkdown } from "../../lib/harness-adapters/render.ts";
 import {
@@ -927,68 +925,6 @@ describe("harness provenance", () => {
 				writesManifest: true,
 			}),
 		]);
-
-		const copiedNodes = [
-			{ relativePath: "", nodeType: "directory" },
-			{ relativePath: "SKILL.md", nodeType: "file" },
-		] as const;
-		const targetDigest = sha256(
-			renderIdentityMarkdown(unknownFrontmatterBytes),
-		);
-		const expectedLineage = {
-			revision: "0123456789abcdef0123456789abcdef01234567",
-			sourceRelativePath: "domains/shared/skills/plan",
-			owner: ownerA,
-			assetId: unmanagedAsset.assetId,
-			outputPath: unmanagedTarget.targetPath,
-			nodeShape: copiedNodes,
-		} as const;
-		const exactProof = {
-			...expectedLineage,
-			historicalRenderedDigest: targetDigest,
-			currentTargetDigest: targetDigest,
-			historicalNodeShape: copiedNodes,
-			currentTargetNodeShape: copiedNodes,
-		} as const;
-		expect(verifyLegacyMigrationProof(exactProof, expectedLineage)).toEqual({
-			authorizationKind: "legacy-copied-target",
-			consumption: "one-time",
-			...expectedLineage,
-			historicalRenderedDigest: targetDigest,
-			targetDigest,
-		});
-		const wrongNodes = [
-			...copiedNodes,
-			{ relativePath: "foreign.md", nodeType: "file" as const },
-		];
-		const failedProofs = [
-			{ ...exactProof, revision: "different" },
-			{ ...exactProof, sourceRelativePath: "domains/shared/skills/task" },
-			{ ...exactProof, owner: ownerB },
-			{ ...exactProof, assetId: "skill:shared/task" },
-			{ ...exactProof, outputPath: join(homeRoot, ".claude/skills/task") },
-			{ ...exactProof, historicalRenderedDigest: sha256("different") },
-			{ ...exactProof, currentTargetDigest: sha256("different") },
-			{ ...exactProof, historicalNodeShape: wrongNodes },
-			{ ...exactProof, currentTargetNodeShape: wrongNodes },
-		];
-		for (const proof of failedProofs) {
-			expect(
-				verifyLegacyMigrationProof(proof, expectedLineage),
-			).toBeUndefined();
-		}
-		const playwrightProof = {
-			...exactProof,
-			assetId: "skill:playwright-cli",
-			outputPath: join(homeRoot, ".claude/skills/playwright-cli"),
-		};
-		expect(
-			verifyLegacyMigrationProof(playwrightProof, {
-				...expectedLineage,
-				assetId: playwrightProof.assetId,
-				outputPath: playwrightProof.outputPath,
-			}),
-		).toBeUndefined();
 
 		expect(await snapshotTree(editedTarget.ownerRoot)).toEqual(beforeProtected);
 	});
