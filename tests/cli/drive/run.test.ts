@@ -8,16 +8,13 @@ import {
 	utimes,
 	writeFile,
 } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import { AgentRegistry } from "../../../lib/agents/index.ts";
 import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import type { Backend } from "../../../lib/driver/backends/types.ts";
-import {
-	DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
-	resolveDefaultDriveEnvelopePath,
-} from "../../../lib/driver/default-envelope.ts";
+import { DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH } from "../../../lib/driver/default-envelope.ts";
 import type { DriverDeps } from "../../../lib/driver/driver.ts";
 import { resolveDriveEpisodeWorker } from "../../../lib/driver/episode-identity.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../lib/driver/run-one-task.ts";
@@ -577,27 +574,22 @@ describe("cosmonauts run drive compat run", () => {
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 	});
 
-	test("uses the framework default envelope when --envelope is omitted", async () => {
+	test("refuses to run without --envelope now that no default envelope ships", async () => {
 		const fixture = await setupFixture(1);
-		const expectedEnvelopePath = resolveDefaultDriveEnvelopePath();
-		const expectedContent = await readFile(expectedEnvelopePath, "utf-8");
 
-		await parseDrive([
-			"--plan",
-			PLAN,
-			"--task-ids",
-			fixture.tasks[0]?.id ?? "TASK-001",
-			"--mode",
-			"inline",
-		]);
-
-		const spec = firstRunInlineSpec();
-		expect(spec.promptTemplate.envelopePath).toBe(expectedEnvelopePath);
-		expect(relative(originalCwd, spec.promptTemplate.envelopePath)).toBe(
-			DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
+		await expect(
+			parseDrive([
+				"--plan",
+				PLAN,
+				"--task-ids",
+				fixture.tasks[0]?.id ?? "TASK-001",
+				"--mode",
+				"inline",
+			]),
+		).rejects.toThrow(
+			`Missing default Drive envelope at ${join(originalCwd, DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH)}. Pass --envelope <path> (CLI) or envelopePath (run_driver) to provide an explicit envelope.`,
 		);
-		expect(spec.promptTemplate.envelopePath).not.toContain("bundled/coding");
-		expect(spec.promptTemplate.envelopeContent).toBe(expectedContent);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
 	});
 
 	test("honors an explicit envelope path verbatim instead of the default", async () => {
@@ -625,9 +617,6 @@ describe("cosmonauts run drive compat run", () => {
 
 		const spec = firstRunInlineSpec();
 		expect(spec.promptTemplate.envelopePath).toBe(explicitEnvelopePath);
-		expect(spec.promptTemplate.envelopePath).not.toBe(
-			resolveDefaultDriveEnvelopePath(),
-		);
 		expect(spec.promptTemplate.envelopeContent).toBe("Explicit envelope\n");
 	});
 
@@ -917,7 +906,7 @@ describe("cosmonauts run drive compat run", () => {
 	});
 
 	test("live subagent execution resolves the declared worker even with capture disabled", async () => {
-		await setupFixture(1);
+		const fixture = await setupFixture(1);
 		await writeEpisodicConfig(process.cwd(), false);
 		const runtime = workerRuntime("coding", "live-coding", []);
 		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue(
@@ -930,6 +919,8 @@ describe("cosmonauts run drive compat run", () => {
 			"cosmonauts-subagent",
 			"--mode",
 			"inline",
+			"--envelope",
+			fixture.envelopePath,
 		]);
 		expect(backendMocks.createCosmonautsSubagentBackend).toHaveBeenCalledWith(
 			expect.objectContaining({

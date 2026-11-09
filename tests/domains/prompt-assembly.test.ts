@@ -70,6 +70,9 @@ function makeResolver(domains: LoadedDomain[]): DomainResolver {
 	return new DomainResolver(new DomainRegistry(domains));
 }
 
+const SUB_AGENT_TEMPLATE =
+	"Parent: {{parentRole}}\nObjective: {{objective}}\n{{#taskId}}Task: {{taskId}}{{/taskId}}";
+
 function frameworkPromptsDir(): string {
 	return join(tmp.path, "framework");
 }
@@ -104,12 +107,14 @@ describe("assemblePrompts", () => {
 					parentRole: "coordinator",
 					objective: "Verify default framework prompts",
 				},
+				subAgentTemplate: "Spawned by {{parentRole}}: {{objective}}",
 			});
 
 			expect(result).not.toContain("You are an agent in Cosmonauts");
 			expect(result).toContain("Default framework base persona.");
-			expect(result).toContain("coordinator");
-			expect(result).toContain("Verify default framework prompts");
+			expect(result).toBe(
+				"Default framework base persona.\n\nSpawned by coordinator: Verify default framework prompts",
+			);
 		});
 
 		it("can override framework base prompt directory for fixtures", async () => {
@@ -400,11 +405,9 @@ describe("assemblePrompts", () => {
 	});
 
 	describe("Layer 3: Runtime context", () => {
-		it("renders sub-agent runtime template when mode is sub-agent", async () => {
+		it("renders the supplied sub-agent template when mode is sub-agent", async () => {
 			await setupFiles(tmp.path, {
 				"framework/base.md": "You are a helpful agent.",
-				"framework/runtime/sub-agent.md":
-					"Parent: {{parentRole}}\nObjective: {{objective}}\n{{#taskId}}Task: {{taskId}}{{/taskId}}",
 				"coding/prompts/worker.md": "You are a worker agent.",
 			});
 
@@ -426,11 +429,37 @@ describe("assemblePrompts", () => {
 				capabilities: [],
 				resolver,
 				runtimeContext,
+				subAgentTemplate: SUB_AGENT_TEMPLATE,
 			});
 
-			expect(result).toContain("Parent: coordinator");
-			expect(result).toContain("Objective: Implement the auth module");
-			expect(result).toContain("Task: TASK-042");
+			expect(result).toBe(
+				"You are a helpful agent.\n\nYou are a worker agent.\n\nParent: coordinator\nObjective: Implement the auth module\nTask: TASK-042",
+			);
+		});
+
+		it("adds no runtime layer and reads no template file when the template is absent", async () => {
+			await setupFiles(tmp.path, {
+				"framework/base.md": "You are a helpful agent.",
+				"framework/runtime/sub-agent.md": "Parent: {{parentRole}}",
+				"coding/prompts/worker.md": "You are a worker agent.",
+			});
+
+			const resolver = makeResolver([
+				makeDomain(tmp.path, "shared"),
+				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
+			]);
+
+			const result = await assembleTestPrompts({
+				agentId: "worker",
+				domain: "coding",
+				capabilities: [],
+				resolver,
+				runtimeContext: { mode: "sub-agent", parentRole: "coordinator" },
+			});
+
+			expect(result).toBe(
+				"You are a helpful agent.\n\nYou are a worker agent.",
+			);
 		});
 
 		it("omits runtime layer for top-level mode", async () => {
@@ -455,6 +484,7 @@ describe("assemblePrompts", () => {
 				capabilities: [],
 				resolver,
 				runtimeContext,
+				subAgentTemplate: SUB_AGENT_TEMPLATE,
 			});
 
 			expect(result).not.toContain("Parent:");
@@ -476,6 +506,7 @@ describe("assemblePrompts", () => {
 				domain: "coding",
 				capabilities: [],
 				resolver,
+				subAgentTemplate: SUB_AGENT_TEMPLATE,
 			});
 
 			expect(result).not.toContain("Parent:");
@@ -489,8 +520,6 @@ describe("assemblePrompts", () => {
 				"framework/base.md": "You are a helpful agent.",
 				"shared/capabilities/core.md": "Core capability content.",
 				"shared/capabilities/tasks.md": "Tasks capability content.",
-				"framework/runtime/sub-agent.md":
-					"Parent: {{parentRole}}\nObjective: {{objective}}\n{{#taskId}}Task: {{taskId}}{{/taskId}}",
 				"coding/capabilities/coding-readwrite.md":
 					"Coding readwrite capability.",
 				"coding/prompts/worker.md": "You are a worker agent.",
@@ -516,6 +545,7 @@ describe("assemblePrompts", () => {
 					parentRole: "coordinator",
 					objective: "Build feature X",
 				},
+				subAgentTemplate: SUB_AGENT_TEMPLATE,
 			});
 
 			// Verify order: base -> capabilities -> persona -> runtime

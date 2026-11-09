@@ -3,10 +3,18 @@
  * Covers helper functions: resolveTools, resolveExtensionPaths, getModelForRole.
  */
 
-import { mkdirSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+	afterAll,
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	test,
+	vi,
+} from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
@@ -20,18 +28,19 @@ import {
 	assertEnabledRecallOwner,
 	buildToolAllowlist,
 } from "../../lib/orchestration/definition-resolution.ts";
-import { loadPrompt, renderRuntimeTemplate } from "../../lib/prompts/loader.ts";
+import { renderRuntimeTemplate } from "../../lib/prompts/loader.ts";
 import { runtimeDouble } from "../helpers/runtime-double.ts";
 
 const TEST_RUNTIME = runtimeDouble();
 
-const DOMAINS_DIR = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"domains",
-);
+/** Synthetic domains root: the repository ships no domain content. */
+const DOMAINS_ROOT = mkdtempSync(join(tmpdir(), "agent-spawner-"));
+const DOMAINS_DIR = join(DOMAINS_ROOT, "domains");
+for (const name of ["tasks", "plans", "orchestration", "todo", "init"])
+	mkdirSync(join(DOMAINS_DIR, "shared", "extensions", name), {
+		recursive: true,
+	});
+afterAll(() => rmSync(DOMAINS_ROOT, { recursive: true, force: true }));
 
 const SHARED_EXTENSIONS_DIR = join(DOMAINS_DIR, "shared", "extensions");
 
@@ -699,12 +708,6 @@ describe("getThinkingForRole", () => {
 });
 
 describe("runtime sub-agent layer", () => {
-	test("runtime/sub-agent.md template loads successfully", async () => {
-		const template = await loadPrompt("runtime/sub-agent");
-		expect(template).toContain("{{parentRole}}");
-		expect(template).toContain("{{objective}}");
-	});
-
 	test("rendered template includes parent role and objective", () => {
 		const rendered = renderRuntimeTemplate(
 			"Spawned by {{parentRole}}. Goal: {{objective}}. {{#taskId}}Task: {{taskId}}{{/taskId}}",

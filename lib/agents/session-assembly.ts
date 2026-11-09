@@ -69,7 +69,7 @@ export interface BuildSessionParamsOptions {
 	fallbackDomains?: readonly string[];
 	/** Explicit default for directory-only resource lookup. */
 	defaultDomain?: string;
-	/** Absolute path to framework prompt templates. Defaults to lib/prompts/framework. */
+	/** Consumer prompt directory whose base.md becomes layer 0; no default. */
 	frameworkPromptsDir?: string;
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
 	resolver?: DomainResolver;
@@ -192,6 +192,7 @@ export async function buildSessionParams(
 		frameworkPromptsDir,
 		resolver,
 		runtimeContext,
+		subAgentTemplate: options.runtime?.subAgentTemplate,
 		instructions: def.instructions,
 		cwd,
 	});

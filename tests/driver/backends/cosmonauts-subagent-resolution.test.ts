@@ -15,7 +15,6 @@ import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import { loadDomainsFromSources } from "../../../lib/domains/index.ts";
 import { createCosmonautsSubagentBackend } from "../../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { BackendInvocation } from "../../../lib/driver/backends/types.ts";
-import { resolveDefaultDriveEnvelopePath } from "../../../lib/driver/default-envelope.ts";
 import { runInline } from "../../../lib/driver/driver.ts";
 import { createPiSpawner } from "../../../lib/orchestration/agent-spawner.ts";
 import { resolveSpawnAgent } from "../../../lib/orchestration/spawn-resolution.ts";
@@ -32,7 +31,6 @@ const REPO_ROOT = resolve(
 	"..",
 	"..",
 );
-const DOMAINS_DIR = join(REPO_ROOT, "domains");
 
 const sessionFactoryMocks = vi.hoisted(() => ({
 	createAgentSessionFromDefinition: vi.fn(),
@@ -48,7 +46,7 @@ const domainRoots: string[] = [];
 
 /**
  * A synthetic default-lead domain without a worker and a second domain that
- * provides one, beside the framework built-ins.
+ * provides one. The framework ships no built-in domains.
  */
 async function loadSyntheticWorkerDomains() {
 	const root = await mkdtemp(join(tmpdir(), "subagent-resolution-domains-"));
@@ -71,7 +69,6 @@ async function loadSyntheticWorkerDomains() {
 		},
 	);
 	return loadDomainsFromSources([
-		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
 		{
 			domainsDir: lead.domainRoot,
 			sourceType: "domain-root",
@@ -164,7 +161,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		expect(workerDomain?.agents.has("worker")).toBe(true);
 
 		const registry = createRegistryFromDomains(domains);
-		const spawner = createPiSpawner(registry, DOMAINS_DIR, {
+		const spawner = createPiSpawner(registry, undefined, {
 			runtime: TEST_RUNTIME,
 		});
 		const backend = createCosmonautsSubagentBackend({
@@ -195,7 +192,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 	test("keeps the plain-worker session and manifest layout when a qualified worker resolution is frozen", async () => {
 		const domains = await loadSyntheticWorkerDomains();
 		const registry = createRegistryFromDomains(domains);
-		const spawner = createPiSpawner(registry, DOMAINS_DIR, {
+		const spawner = createPiSpawner(registry, undefined, {
 			runtime: TEST_RUNTIME,
 		});
 		const frozen = resolveSpawnAgent(registry, {
@@ -253,10 +250,10 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		]);
 	});
 
-	test("runs inline Drive with cosmonauts-subagent, omitted envelope input, and no domain override", async () => {
+	test("runs inline Drive with cosmonauts-subagent, an explicit envelope, and no domain override", async () => {
 		const domains = await loadSyntheticWorkerDomains();
 		const registry = createRegistryFromDomains(domains);
-		const spawner = createPiSpawner(registry, DOMAINS_DIR, {
+		const spawner = createPiSpawner(registry, undefined, {
 			runtime: TEST_RUNTIME,
 		});
 		const backend = createCosmonautsSubagentBackend({
@@ -272,9 +269,8 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 			title: "B-021 dogfood Drive smoke",
 			labels: ["review-round:1", "plan:coding-agnostic-framework"],
 		});
-		const envelopePath = resolveDefaultDriveEnvelopePath({
-			frameworkRoot: REPO_ROOT,
-		});
+		const envelopePath = join(projectRoot, "envelope.md");
+		await writeFile(envelopePath, "Synthetic Drive envelope\n", "utf-8");
 		const runId = "run-b021-cosmonauts-subagent-smoke";
 		const workdir = join(projectRoot, "runs", runId);
 		const eventLogPath = join(workdir, "events.jsonl");
@@ -319,9 +315,6 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 			role: "worker",
 			domainContext: undefined,
 		});
-		expect(envelopePath).toBe(
-			join(REPO_ROOT, "lib", "prompts", "framework", "drive", "envelope.md"),
-		);
 		const events = await readFile(eventLogPath, "utf-8");
 		expect(events).toContain('"backend":"cosmonauts-subagent"');
 		expect(events).toContain(`"taskId":"${task.id}"`);
