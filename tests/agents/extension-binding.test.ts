@@ -1,7 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test, vi } from "vitest";
+import { resolveInteractiveExtensionPaths } from "../../cli/main.ts";
 import { buildSessionParams } from "../../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
@@ -385,4 +387,114 @@ test("an ordinary provider without an index remains a directory without deprecat
 	} finally {
 		process.removeListener("warning", warning);
 	}
+});
+
+test("resolves the library's own extensions by name without a domain directory", async () => {
+	const params = await buildSessionParams({
+		def: definition([
+			"agent-switch",
+			"init",
+			"observability",
+			"project-tools",
+			"todo",
+		]),
+		cwd: tmp.path,
+		resolver: new DomainResolver(new DomainRegistry([])),
+		loadConfig: async () => ({}),
+	});
+	expect(params.extensionPaths).toEqual([]);
+	const commands = new Set<string>();
+	const pi = {
+		...createMockPi({ cwd: tmp.path }),
+		registerCommand: (name: string) => commands.add(name),
+	};
+	for (const ext of params.extensionFactories)
+		await (typeof ext === "function" ? ext : ext.factory)(pi as never);
+	expect([...commands].sort()).toEqual(["agent", "handoff", "init"]);
+	expect([...pi.tools.keys()]).toEqual(
+		expect.arrayContaining(["analysis_status", "todo_read", "todo_write"]),
+	);
+	expect(pi.events.get("turn_start")).toHaveLength(1);
+});
+
+test("an interactive session mounts agent-switch once when an agent also names it", async () => {
+	const interactivePaths = resolveInteractiveExtensionPaths();
+	const agentSwitchPath = fileURLToPath(
+		new URL("../../lib/extensions/agent-switch", import.meta.url),
+	);
+	expect(interactivePaths).toContain(agentSwitchPath);
+	const params = await buildSessionParams({
+		def: definition(["agent-switch", "todo"]),
+		cwd: tmp.path,
+		resolver: new DomainResolver(new DomainRegistry([])),
+		loadConfig: async () => ({}),
+		extraExtensionPaths: interactivePaths,
+	});
+	const commands: string[] = [];
+	const pi = {
+		...createMockPi({ cwd: tmp.path }),
+		registerCommand: (name: string) => commands.push(name),
+	};
+	for (const ext of params.extensionFactories)
+		await (typeof ext === "function" ? ext : ext.factory)(pi as never);
+	const pathLoads = params.extensionPaths.filter(
+		(path) => path === agentSwitchPath,
+	).length;
+	const factoryLoads = commands.filter((name) => name === "agent").length;
+	expect(pathLoads + factoryLoads).toBe(1);
+	expect(params.extensionPaths).toEqual(interactivePaths);
+	// Other named library extensions still resolve natively.
+	expect([...pi.tools.keys()]).toEqual(
+		expect.arrayContaining(["todo_read", "todo_write"]),
+	);
+});
+
+test("a host's own agent-switch provider still loads when the library directory is mounted", async () => {
+	const { CosmonautsRuntime } = await import("../../lib/runtime.ts");
+	const hostFactory = vi.fn();
+	const def = { ...definition(["agent-switch"]), resourceDomain: undefined };
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+		agents: [def],
+		extensionProviders: { "agent-switch": async () => hostFactory },
+	});
+	const params = await buildSessionParams({
+		def,
+		runtime,
+		cwd: tmp.path,
+		resolver: runtime.domainResolver,
+		loadConfig: async () => ({}),
+		extraExtensionPaths: resolveInteractiveExtensionPaths(),
+	});
+	expect(params.extensionFactories).toContain(hostFactory);
+});
+
+test("a runtime without extension providers mounts agent-switch once in an interactive session", async () => {
+	const { CosmonautsRuntime } = await import("../../lib/runtime.ts");
+	const def = { ...definition(["agent-switch"]), resourceDomain: undefined };
+	const runtime = await CosmonautsRuntime.create({
+		projectRoot: tmp.path,
+		projectConfig: {},
+		agents: [def],
+	});
+	expect(runtime.extensionProviders).toBeUndefined();
+	const interactivePaths = resolveInteractiveExtensionPaths();
+	const params = await buildSessionParams({
+		def,
+		runtime,
+		cwd: tmp.path,
+		resolver: runtime.domainResolver,
+		loadConfig: async () => ({}),
+		extraExtensionPaths: interactivePaths,
+	});
+	expect(params.extensionPaths).toEqual(interactivePaths);
+	const commands: string[] = [];
+	const pi = {
+		...createMockPi({ cwd: tmp.path }),
+		registerCommand: (name: string) => commands.push(name),
+	};
+	for (const ext of params.extensionFactories)
+		await (typeof ext === "function" ? ext : ext.factory)(pi as never);
+	expect(commands).not.toContain("agent");
 });

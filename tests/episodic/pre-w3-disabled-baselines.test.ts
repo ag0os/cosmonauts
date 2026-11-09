@@ -18,10 +18,10 @@ import { createMockPi, type MockPi } from "../helpers/mocks/index.ts";
 const tmp = useTempDir("episodic-pre-w3-baseline-");
 const FIXED_TIME = "2026-07-21T12:00:00.000Z";
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+// The same library path the CLI mounts for live sessions.
 const AGENT_SWITCH_EXTENSION = join(
 	REPO_ROOT,
-	"domains",
-	"shared",
+	"lib",
 	"extensions",
 	"agent-switch",
 );

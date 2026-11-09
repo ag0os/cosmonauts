@@ -71,6 +71,16 @@ export class DomainBindingTargetError
 	}
 }
 
+/**
+ * Match by name, not `instanceof`: Pi loads extensions through jiti with
+ * `moduleCache: false`, so under Node an extension sees its own copy of the class.
+ */
+export function isDomainBindingTargetError(
+	error: unknown,
+): error is DomainBindingTargetError {
+	return error instanceof Error && error.name === "DomainBindingTargetError";
+}
+
 export class DomainBindingResolver {
 	private readonly registry: DomainRegistry;
 	private readonly projectBindings: Readonly<Record<string, string>>;

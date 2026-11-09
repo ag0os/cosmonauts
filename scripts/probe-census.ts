@@ -11,7 +11,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import ts from "typescript";
 
-const PRODUCTION_ROOTS = ["lib/", "cli/", "domains/", "scripts/", "bundled/"];
+const PRODUCTION_ROOTS = ["lib/", "cli/", "scripts/"];
 const IMPORT_RE =
 	/(?:import|export)\s[^;]*?from\s*["']([^"']+)["']|import\(\s*["'`]([^"'`]+)["'`]\s*\)|import\s*["']([^"']+)["']|vi\.mock\(\s*["']([^"']+)["']/g;
 const SUBPROCESS_RE = /\b(?:spawn|execFile|exec)\w*\s*\(/;

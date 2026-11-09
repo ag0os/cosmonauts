@@ -14,7 +14,7 @@ import {
 	consumerSessionPolicies,
 } from "./policies.ts";
 
-// Port of bundled/coding/agents/explorer.ts: readonly, ephemeral, low effort.
+// A readonly, ephemeral, low-effort explorer.
 // The consumer supplies its own voice rather than borrowing content resources.
 export const explorer: AgentDefinition = {
 	id: "visitor/explorer",
@@ -33,8 +33,8 @@ export const explorer: AgentDefinition = {
 	memory: {},
 };
 
-// Port of domains/main/agents/cosmo.ts's memory/session slice, without its
-// content-specific tasks, Drive, specialists or orchestration resources.
+// A memory/session-focused agent with no tasks, Drive, specialists or
+// orchestration resources.
 export const notebook: AgentDefinition = {
 	...explorer,
 	id: "visitor/notebook",

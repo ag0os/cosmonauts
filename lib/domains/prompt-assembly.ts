@@ -10,7 +10,7 @@ import { directoryResourcePaths } from "./resource-paths.ts";
  *            → three-tier resolution via resolver (domain → portable → declared fallback)
  *              OR declared directory fallback when no resolver is provided
  *   Layer 2: explicit instructions, or domain persona convention
- *   Layer 3: lib/prompts/framework/runtime/sub-agent.md   (if sub-agent mode)
+ *   Layer 3: consumer-supplied sub-agent template          (sub-agent mode only)
  */
 
 import { readFile } from "node:fs/promises";
@@ -19,7 +19,7 @@ import matter from "gray-matter";
 import { stripAgentIdentityMarkers } from "../agents/runtime-identity.ts";
 import type { AgentInstructions } from "../agents/types.ts";
 import type { RuntimeTemplateContext } from "../prompts/loader.ts";
-import { PROMPTS_DIR, renderRuntimeTemplate } from "../prompts/loader.ts";
+import { renderRuntimeTemplate } from "../prompts/loader.ts";
 import type { DomainResolver } from "./resolver.ts";
 
 // ============================================================================
@@ -46,10 +46,12 @@ export interface AssemblePromptsOptions {
 	capabilities: readonly string[];
 	/** Absolute path to the domains/ directory. Required when no resolver is provided. */
 	domainsDir?: string;
-	/** Absolute path to framework prompt templates. Defaults to lib/prompts/framework. */
+	/** Consumer prompt directory whose base.md becomes layer 0; no default. */
 	frameworkPromptsDir?: string;
 	/** Optional runtime context for sub-agent mode. */
 	runtimeContext?: RuntimeContext;
+	/** Sub-agent runtime template text; without it no layer 3 is added. */
+	subAgentTemplate?: string;
 	/**
 	 * Optional domain resolver for three-tier capability lookup
 	 * (agent domain → portable domains → shared). When omitted,
@@ -75,8 +77,8 @@ export async function assemblePrompts(
 		domain,
 		capabilities,
 		domainsDir,
-		frameworkPromptsDir = PROMPTS_DIR,
 		runtimeContext,
+		subAgentTemplate,
 		resolver,
 	} = options;
 	const parts: string[] = [];
@@ -112,16 +114,14 @@ export async function assemblePrompts(
 
 	parts.push(await loadPersona(options));
 
-	// Layer 3: Runtime context (sub-agent mode only)
-	if (runtimeContext?.mode === "sub-agent") {
-		const templatePath = join(frameworkPromptsDir, "runtime", "sub-agent.md");
-		const template = await loadPromptFile(templatePath);
+	// Layer 3: Runtime context (sub-agent mode with a consumer template only)
+	if (runtimeContext?.mode === "sub-agent" && subAgentTemplate !== undefined) {
 		const ctx: RuntimeTemplateContext = {
 			parentRole: runtimeContext.parentRole,
 			objective: runtimeContext.objective,
 			taskId: runtimeContext.taskId,
 		};
-		parts.push(renderRuntimeTemplate(template, ctx));
+		parts.push(renderRuntimeTemplate(subAgentTemplate, ctx));
 	}
 
 	return parts.join("\n\n");

@@ -7,7 +7,10 @@ import {
 } from "../../lib/harness-adapters/provenance.ts";
 import { resolveHarnessAssetTarget } from "../../lib/harness-adapters/registry.ts";
 import { syncHarnessAsset } from "../../lib/harness-adapters/sync.ts";
-import type { HarnessAsset } from "../../lib/harness-adapters/types.ts";
+import type {
+	HarnessAsset,
+	OwnerIdentity,
+} from "../../lib/harness-adapters/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("harness-provenance-characterization-");
@@ -15,42 +18,51 @@ const tmp = useTempDir("harness-provenance-characterization-");
 describe("harness manifest entry characterization", () => {
 	test("accepts each provenance variant through the persisted manifest reader", async () => {
 		const fixture = await createInstalledCopy();
+		const generatedWrapper = {
+			kind: "generated-wrapper",
+			baselineDigest: "baseline",
+			authoredLinks: [
+				{
+					relativePath: "references/source.md",
+					expectedCanonicalSource: join(fixture.sourceRoot, "source.md"),
+				},
+			],
+			generatedNodes: [
+				{
+					relativePath: "SKILL.md",
+					inputDigest: "input",
+					renderedDigest: "rendered",
+					targetDigest: "target",
+				},
+			],
+		} as const;
 		const variants = [
-			fixture.entry.provenance,
+			{ provenance: fixture.entry.provenance },
 			{
-				kind: "direct-link",
-				expectedCanonicalSource: fixture.sourceRoot,
-				linkShape: "directory",
+				provenance: {
+					kind: "direct-link",
+					expectedCanonicalSource: fixture.sourceRoot,
+					linkShape: "directory",
+				},
 			},
 			{
-				kind: "generated-wrapper",
-				baselineDigest: "baseline",
-				authoredLinks: [
-					{
-						relativePath: "references/source.md",
-						expectedCanonicalSource: join(fixture.sourceRoot, "source.md"),
-					},
-				],
-				generatedNodes: [
-					{
-						relativePath: "SKILL.md",
-						inputDigest: "input",
-						renderedDigest: "rendered",
-						targetDigest: "target",
-					},
-				],
+				provenance: generatedWrapper,
+				generatingProjectRoot: fixture.projectRoot,
 			},
+			{ assetId: "external-skill:cosmonauts" },
+			{ generatingProjectRoot: fixture.projectRoot },
 		] as const;
 
-		for (const provenance of variants) {
-			await writeManifest(fixture, { ...fixture.entry, provenance });
+		for (const variant of variants) {
+			const entry: Record<string, unknown> = { ...fixture.entry, ...variant };
+			const key = manifestEntryKey(
+				fixture.entry.owner as unknown as OwnerIdentity,
+				String(entry.assetId),
+			);
+			await writeManifest(fixture, entry, key);
 			await expect(
 				readHarnessManifest(fixture.manifestPath),
-			).resolves.toMatchObject({
-				entries: {
-					[fixture.key]: { provenance },
-				},
-			});
+			).resolves.toMatchObject({ entries: { [key]: entry } });
 		}
 	});
 
@@ -76,11 +88,26 @@ describe("harness manifest entry characterization", () => {
 				},
 			],
 			[
-				"generated asset project root",
+				"relative generating project root",
 				{
 					...fixture.entry,
-					assetId: "external-skill:cosmonauts",
 					generatingProjectRoot: "relative/project",
+				},
+			],
+			[
+				"non-string generating project root",
+				{ ...fixture.entry, generatingProjectRoot: 7 },
+			],
+			[
+				"generated-wrapper without its generating project root",
+				{
+					...fixture.entry,
+					provenance: {
+						kind: "generated-wrapper",
+						baselineDigest: "baseline",
+						authoredLinks: [],
+						generatedNodes: [],
+					},
 				},
 			],
 			[
@@ -194,9 +221,10 @@ async function createInstalledCopy(): Promise<InstalledCopyFixture> {
 async function writeManifest(
 	fixture: InstalledCopyFixture,
 	entry: unknown,
+	key: string,
 ): Promise<void> {
 	await writeFile(
 		fixture.manifestPath,
-		`${JSON.stringify({ schemaVersion: 1, entries: { [fixture.key]: entry } }, null, 2)}\n`,
+		`${JSON.stringify({ schemaVersion: 1, entries: { [key]: entry } }, null, 2)}\n`,
 	);
 }

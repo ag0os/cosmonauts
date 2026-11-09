@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -13,10 +13,7 @@ import type {
 	BackendInvocation,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
-import {
-	DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
-	resolveDefaultDriveEnvelopePath,
-} from "../../lib/driver/default-envelope.ts";
+import { DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH } from "../../lib/driver/default-envelope.ts";
 import { resolveDriveEpisodeWorker } from "../../lib/driver/episode-identity.ts";
 import type {
 	DriverActivityBusEvent,
@@ -318,31 +315,16 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.run).not.toHaveBeenCalled();
 	});
 
-	test("run_driver uses the framework default envelope when envelopePath is omitted", async () => {
+	test("run_driver refuses an omitted envelopePath now that no default envelope ships", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const frameworkRoot = process.cwd();
-		const expectedEnvelopePath = resolveDefaultDriveEnvelopePath({
-			frameworkRoot,
-		});
-		backendMocks.run.mockResolvedValue(successResult());
 
-		const result = await runDriver(fixture, {
-			frameworkRoot,
-			omitEnvelopePath: true,
-		});
-		await waitForCompletion(result.workdir);
-		const spec = await readSpec(result.workdir);
-
-		expect(spec.promptTemplate.envelopePath).toBe(expectedEnvelopePath);
-		expect(relative(frameworkRoot, spec.promptTemplate.envelopePath)).toBe(
-			DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
-		);
-		expect(spec.promptTemplate.envelopePath).not.toContain(
-			"bundled/coding/coding",
-		);
 		await expect(
-			readFile(spec.promptTemplate.envelopePath, "utf-8"),
-		).resolves.toBe(await readFile(expectedEnvelopePath, "utf-8"));
+			launchDriver(fixture, { frameworkRoot, omitEnvelopePath: true }),
+		).rejects.toThrow(
+			`Missing default Drive envelope at ${join(frameworkRoot, DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH)}. Pass --envelope <path> (CLI) or envelopePath (run_driver) to provide an explicit envelope.`,
+		);
+		expect(backendMocks.run).not.toHaveBeenCalled();
 	});
 
 	test("freezes the execution-resolved worker for enabled default main project-bound and live-bound launches", async () => {
@@ -559,9 +541,6 @@ describe("driver e2e run_driver integration", () => {
 		const spec = await readSpec(result.workdir);
 
 		expect(spec.promptTemplate.envelopePath).toBe(explicitEnvelopePath);
-		expect(spec.promptTemplate.envelopePath).not.toBe(
-			resolveDefaultDriveEnvelopePath({ frameworkRoot }),
-		);
 		await expect(
 			readFile(spec.promptTemplate.envelopePath, "utf-8"),
 		).resolves.toBe("Explicit envelope\n");

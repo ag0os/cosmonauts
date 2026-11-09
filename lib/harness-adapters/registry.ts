@@ -1,6 +1,4 @@
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { COSMONAUTS_BUNDLE_RESERVED_NAMES } from "./inventory.ts";
+import { join } from "node:path";
 import { getHarnessTarget } from "./target-registry.ts";
 import type {
 	HarnessAsset,
@@ -16,50 +14,6 @@ import type {
 } from "./types.ts";
 
 export * from "./target-registry.ts";
-
-const PACKAGE_ROOT = resolve(
-	dirname(fileURLToPath(import.meta.url)),
-	"..",
-	"..",
-);
-
-const STATIC_HARNESS_ASSETS = [
-	{
-		assetId: "external-skill:cosmonauts",
-		kind: "skill",
-		ownership: { kind: "authority", authorityId: "cosmonauts/core" },
-		sourceRootId: "cosmonauts:package",
-		sourceRoot: PACKAGE_ROOT,
-		sourcePath: "external-skills/cosmonauts",
-		logicalPath: "external-skills/cosmonauts",
-		outputIdentity: "cosmonauts",
-		defaultScope: "personal",
-		generatedInputs: "cosmonauts-inventory",
-		reservedNames: COSMONAUTS_BUNDLE_RESERVED_NAMES,
-	},
-	{
-		assetId: "command:spec-to-backlog",
-		kind: "command",
-		ownership: { kind: "authority", authorityId: "cosmonauts/core" },
-		sourceRootId: "cosmonauts:package",
-		sourceRoot: PACKAGE_ROOT,
-		sourcePath: "external-commands/spec-to-backlog.md",
-		logicalPath: "spec-to-backlog.md",
-		outputIdentity: "spec-to-backlog.md",
-		defaultScope: "personal",
-	},
-	{
-		assetId: "command:implement-plan",
-		kind: "command",
-		ownership: { kind: "authority", authorityId: "cosmonauts/core" },
-		sourceRootId: "cosmonauts:package",
-		sourceRoot: PACKAGE_ROOT,
-		sourcePath: "external-commands/implement-plan.md",
-		logicalPath: "implement-plan.md",
-		outputIdentity: "implement-plan.md",
-		defaultScope: "personal",
-	},
-] as const satisfies readonly HarnessAsset[];
 
 interface RuntimeSkillDescriptorOptions {
 	readonly name: string;
@@ -82,16 +36,6 @@ interface ResolveHarnessAssetTargetOptions {
 	readonly roots: ScopeRoots;
 	readonly scope?: HarnessScope;
 	readonly requestedMode?: SyncMode;
-}
-
-export function listStaticHarnessAssets(): readonly HarnessAsset[] {
-	return STATIC_HARNESS_ASSETS;
-}
-
-export function getStaticHarnessAsset(
-	assetId: string,
-): HarnessAsset | undefined {
-	return STATIC_HARNESS_ASSETS.find((asset) => asset.assetId === assetId);
 }
 
 export function createRuntimeSkillDescriptor(

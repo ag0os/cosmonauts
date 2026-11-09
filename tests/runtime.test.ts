@@ -203,10 +203,12 @@ describe("consumer chain runtime inputs", () => {
 			chainAdapter,
 			defaultModel: "host/model",
 			workerAgent: "host/dispatcher",
+			subAgentTemplate: "Spawned by {{parentRole}}",
 		});
 		expect(runtime.chainAdapter).toBe(chainAdapter);
 		expect(runtime.defaultModel).toBe("host/model");
 		expect(runtime.workerAgent).toBe("host/dispatcher");
+		expect(runtime.subAgentTemplate).toBe("Spawned by {{parentRole}}");
 		expect(runtime.domainContext).toBe("vendor");
 	});
 
@@ -218,6 +220,7 @@ describe("consumer chain runtime inputs", () => {
 		});
 		expect(defaults.chainAdapter).toBeUndefined();
 		expect(defaults.workerAgent).toBeUndefined();
+		expect(defaults.subAgentTemplate).toBeUndefined();
 		expect(defaults.defaultModel).toBeUndefined();
 		expect(defaults.sessionPolicies).toBeUndefined();
 		const chainAdapter = { defaultModel: "host/adapter" };

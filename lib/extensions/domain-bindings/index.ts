@@ -4,7 +4,10 @@ import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import { DomainBindingTargetError } from "../../domains/bindings.ts";
+import {
+	type DomainBindingTargetError,
+	isDomainBindingTargetError,
+} from "../../domains/bindings.ts";
 import { getSharedDomainBindings } from "../../interactive/domain-bindings.ts";
 
 /** Pi loads this directory; CLI imports the mount path as an explicit runtime dependency. */
@@ -100,8 +103,7 @@ function restoreBinding(options: {
 }
 
 function restoreFailureMessage(error: unknown): string {
-	if (error instanceof DomainBindingTargetError)
-		return unavailableTargetMessage(error);
+	if (isDomainBindingTargetError(error)) return unavailableTargetMessage(error);
 	return error instanceof Error ? error.message : String(error);
 }
 
@@ -140,7 +142,7 @@ export default function domainBindingsExtension(pi: ExtensionAPI): void {
 				shared.bindingResolver.bindLiveRole(parsed.role, parsed.targetDomain);
 				shared.liveBindings.set(parsed.role, parsed.targetDomain);
 			} catch (error: unknown) {
-				if (error instanceof DomainBindingTargetError) {
+				if (isDomainBindingTargetError(error)) {
 					notifyUnavailable(ctx, error);
 					return;
 				}

@@ -31,13 +31,8 @@ entry = [
 # to keep behavior cases local and readable.
 production = { dupes = true }
 
-# Framework convention: domain packages and extension entry points are loaded by
+# Framework convention: library extension entry points are loaded by
 # Cosmonauts/Pi through runtime discovery and dynamic import, not static imports.
 dynamicallyLoaded = [
   "lib/extensions/*/index.ts",
-  "domains/*/agents/*.ts",
-  "domains/*/chains.ts",
-  "domains/*/domain.ts",
-  "domains/*/extensions/*/index.ts",
-  "domains/*/workflows.ts",
 ]

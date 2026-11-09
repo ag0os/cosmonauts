@@ -10,10 +10,6 @@ import {
 } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { isPathInsideRoot } from "./path-safety.ts";
-import type {
-	HarnessAuthoredLink,
-	HarnessGeneratedNodeProvenance,
-} from "./provenance.ts";
 import { sha256 } from "./provenance.ts";
 import type {
 	HarnessAsset,
@@ -27,12 +23,6 @@ export const GENERATED_BY_MARKER = Buffer.from(
 );
 export const GENERATED_BY_MARKER_VERSION = 1 as const;
 
-export interface GeneratedHarnessNode {
-	readonly relativePath: string;
-	readonly inputBytes: Uint8Array;
-	readonly renderedBytes: Uint8Array;
-}
-
 export interface PreparedHarnessMaterialization {
 	readonly mode: SyncMode;
 	readonly sourceShape: "directory" | "file";
@@ -42,8 +32,6 @@ export interface PreparedHarnessMaterialization {
 	readonly baselineDigest: string;
 	readonly copyNodes: readonly RenderedFileNode[];
 	readonly directLinkShape?: "directory" | "flat-skill";
-	readonly authoredLinks: readonly HarnessAuthoredLink[];
-	readonly generatedNodes: readonly PreparedGeneratedNode[];
 }
 
 interface SourceFileNode {
@@ -54,10 +42,6 @@ interface SourceFileNode {
 
 export interface RenderedFileNode {
 	readonly relativePath: string;
-	readonly bytes: Buffer;
-}
-
-interface PreparedGeneratedNode extends HarnessGeneratedNodeProvenance {
 	readonly bytes: Buffer;
 }
 
@@ -76,102 +60,28 @@ export function renderIdentityMarkdown(source: Uint8Array): Buffer {
 	]);
 }
 
-export function stripGeneratedByMarker(rendered: Uint8Array): Buffer {
-	const bytes = Buffer.from(rendered);
-	const offset = frontmatterEndOffset(bytes);
-	if (
-		offset === 0 ||
-		!bytes
-			.subarray(offset, offset + GENERATED_BY_MARKER.length)
-			.equals(GENERATED_BY_MARKER)
-	) {
-		throw new Error(
-			"Rendered Markdown does not contain the generated-by marker at the deterministic frontmatter boundary.",
-		);
-	}
-	if (
-		bytes.indexOf(GENERATED_BY_MARKER, offset + GENERATED_BY_MARKER.length) !==
-		-1
-	) {
-		throw new Error(
-			"Rendered Markdown contains more than one generated-by marker.",
-		);
-	}
-	return Buffer.concat([
-		bytes.subarray(0, offset),
-		bytes.subarray(offset + GENERATED_BY_MARKER.length),
-	]);
-}
-
-export function assertClaudeCommandFrontmatter(source: Uint8Array): void {
-	const bytes = Buffer.from(source);
-	const offset = frontmatterEndOffset(bytes);
-	if (offset === 0) {
-		throw new Error("Claude command source requires YAML frontmatter.");
-	}
-	const frontmatter = bytes.subarray(0, offset).toString("utf8");
-	if (!/^description:[^\r\n]+$/m.test(frontmatter)) {
-		throw new Error("Claude command source requires a non-empty description.");
-	}
-	if (!/^argument-hint:[^\r\n]+$/m.test(frontmatter)) {
-		throw new Error(
-			"Claude command source requires a non-empty argument-hint.",
-		);
-	}
-}
-
 export async function prepareHarnessMaterialization(options: {
 	readonly projectRoot: string;
 	readonly asset: HarnessAsset;
 	readonly target: ResolvedHarnessAssetTarget;
 	readonly mode: SyncMode;
-	readonly generatedNodes?: readonly GeneratedHarnessNode[];
 }): Promise<PreparedHarnessMaterialization> {
 	validateTargetShape(options.asset, options.target, options.mode);
 	const source = await readRegisteredSource(options.projectRoot, options.asset);
-	const linkShape = resolveLinkShape(options.asset, source.shape);
+	const linkShape: HarnessLinkShape =
+		source.shape === "directory" ? "directory" : "flat-skill";
 	validateLinkShape(options.asset, options.target, options.mode, linkShape);
-	const generated = prepareGeneratedNodes(options.generatedNodes ?? []);
-	validateGeneratedShape(options.asset, source, generated);
-
-	const generatedPaths = new Set(generated.map((node) => node.relativePath));
-	const authored = source.files.filter(
-		(node) => !generatedPaths.has(node.relativePath),
-	);
-	const authoredLinks = authored.map((node) => ({
-		relativePath: node.relativePath,
-		expectedCanonicalSource: node.canonicalSource,
-	}));
 
 	const copyNodes = source.files
-		.map((node): RenderedFileNode | undefined => {
-			const generatedNode = generated.find(
-				(candidate) => candidate.relativePath === node.relativePath,
-			);
-			if (generatedNode) {
-				return {
-					relativePath: node.relativePath,
-					bytes: generatedNode.bytes,
-				};
-			}
-			return {
+		.map(
+			(node): RenderedFileNode => ({
 				relativePath: node.relativePath,
 				bytes: shouldAddMarker(options.asset, source.shape, node.relativePath)
 					? renderIdentityMarkdown(node.bytes)
 					: node.bytes,
-			};
-		})
-		.filter((node): node is RenderedFileNode => node !== undefined);
-	for (const node of generated) {
-		if (
-			!copyNodes.some(
-				(candidate) => candidate.relativePath === node.relativePath,
-			)
-		) {
-			copyNodes.push({ relativePath: node.relativePath, bytes: node.bytes });
-		}
-	}
-	copyNodes.sort(compareRelativePath);
+			}),
+		)
+		.sort(compareRelativePath);
 
 	const sourceDigest = digestSource(source.files);
 	const renderedDigest = digestFiles(copyNodes);
@@ -184,34 +94,12 @@ export async function prepareHarnessMaterialization(options: {
 		baselineDigest:
 			options.mode === "copy"
 				? renderedDigest
-				: options.asset.generatedInputs
-					? digestWrapper(authoredLinks, generated)
-					: sha256(
-							Buffer.from(
-								JSON.stringify([
-									source.canonicalSource,
-									source.shape === "directory" ? "directory" : "flat-skill",
-								]),
-							),
-						),
+				: sha256(
+						Buffer.from(JSON.stringify([source.canonicalSource, linkShape])),
+					),
 		copyNodes,
-		directLinkShape:
-			options.mode === "link" && !options.asset.generatedInputs
-				? source.shape === "directory"
-					? "directory"
-					: "flat-skill"
-				: undefined,
-		authoredLinks: authoredLinks.sort(compareRelativePath),
-		generatedNodes: generated,
+		directLinkShape: options.mode === "link" ? linkShape : undefined,
 	};
-}
-
-function resolveLinkShape(
-	asset: HarnessAsset,
-	sourceShape: "directory" | "file",
-): HarnessLinkShape {
-	if (asset.generatedInputs) return "generated-wrapper";
-	return sourceShape === "directory" ? "directory" : "flat-skill";
 }
 
 function validateLinkShape(
@@ -239,10 +127,6 @@ export async function writePreparedTarget(options: {
 	const { prepared } = options;
 	if (prepared.mode === "copy") {
 		await writeCopyTarget(options.targetPath, prepared);
-		return;
-	}
-	if (prepared.generatedNodes.length > 0) {
-		await writeGeneratedWrapper(options.targetPath, prepared);
 		return;
 	}
 	if (prepared.directLinkShape === "directory") {
@@ -440,67 +324,6 @@ async function resolveSafeDescendant(
 	return canonicalPath;
 }
 
-function prepareGeneratedNodes(
-	nodes: readonly GeneratedHarnessNode[],
-): PreparedGeneratedNode[] {
-	const seen = new Set<string>();
-	const prepared = nodes.map((node) => {
-		validateRelativeNodePath(node.relativePath, "generated node");
-		if (seen.has(node.relativePath)) {
-			throw new Error(`Duplicate generated node path: ${node.relativePath}.`);
-		}
-		seen.add(node.relativePath);
-		const bytes = Buffer.from(node.renderedBytes);
-		return {
-			relativePath: node.relativePath,
-			inputDigest: sha256(node.inputBytes),
-			renderedDigest: sha256(bytes),
-			targetDigest: sha256(bytes),
-			bytes,
-		};
-	});
-	return prepared.sort(compareRelativePath);
-}
-
-function validateGeneratedShape(
-	asset: HarnessAsset,
-	source: {
-		readonly shape: "directory" | "file";
-		readonly files: readonly SourceFileNode[];
-	},
-	generated: readonly PreparedGeneratedNode[],
-): void {
-	if (!asset.generatedInputs && generated.length > 0) {
-		throw new Error(
-			`Asset "${asset.assetId}" does not declare generated inputs but generated nodes were supplied.`,
-		);
-	}
-	if (asset.generatedInputs && source.shape !== "directory") {
-		throw new Error(
-			`Generated-wrapper asset "${asset.assetId}" must use a directory source.`,
-		);
-	}
-	if (asset.generatedInputs && generated.length === 0) {
-		throw new Error(
-			`Generated-wrapper asset "${asset.assetId}" requires at least one generated node.`,
-		);
-	}
-	const sourcePaths = new Set(source.files.map((node) => node.relativePath));
-	for (const node of generated) {
-		for (const sourcePath of sourcePaths) {
-			if (
-				sourcePath !== node.relativePath &&
-				(sourcePath.startsWith(`${node.relativePath}/`) ||
-					node.relativePath.startsWith(`${sourcePath}/`))
-			) {
-				throw new Error(
-					`Generated node "${node.relativePath}" conflicts with authored node "${sourcePath}".`,
-				);
-			}
-		}
-	}
-}
-
 function shouldAddMarker(
 	asset: HarnessAsset,
 	shape: "directory" | "file",
@@ -524,19 +347,6 @@ async function writeCopyTarget(
 	}
 	await mkdir(targetPath, { recursive: true });
 	await writeFileNodes(targetPath, prepared.copyNodes);
-}
-
-async function writeGeneratedWrapper(
-	targetPath: string,
-	prepared: PreparedHarnessMaterialization,
-): Promise<void> {
-	await mkdir(targetPath, { recursive: true });
-	for (const link of prepared.authoredLinks) {
-		const output = join(targetPath, ...link.relativePath.split("/"));
-		await mkdir(join(output, ".."), { recursive: true });
-		await symlink(link.expectedCanonicalSource, output, "file");
-	}
-	await writeFileNodes(targetPath, prepared.generatedNodes);
 }
 
 async function writeFileNodes(
@@ -572,27 +382,6 @@ function digestFiles(nodes: readonly RenderedFileNode[]): string {
 	);
 }
 
-function digestWrapper(
-	authoredLinks: readonly HarnessAuthoredLink[],
-	generatedNodes: readonly PreparedGeneratedNode[],
-): string {
-	return sha256(
-		Buffer.from(
-			JSON.stringify({
-				authoredLinks,
-				generatedNodes: generatedNodes.map(
-					({ relativePath, inputDigest, renderedDigest, targetDigest }) => ({
-						relativePath,
-						inputDigest,
-						renderedDigest,
-						targetDigest,
-					}),
-				),
-			}),
-		),
-	);
-}
-
 function assertLocalPath(value: string, label: string): void {
 	if (/^(?:[a-z][a-z0-9+.-]*:|git@)/i.test(value)) {
 		throw new Error(
@@ -608,19 +397,6 @@ function assertContainedPath(
 ): void {
 	if (isPathInsideRoot(root, candidate)) return;
 	throw new Error(`${label} escapes its registered root: ${candidate}.`);
-}
-
-function validateRelativeNodePath(path: string, label: string): void {
-	if (
-		path.length === 0 ||
-		isAbsolute(path) ||
-		path.includes("\\") ||
-		path.split("/").some((part) => part === "" || part === "." || part === "..")
-	) {
-		throw new Error(
-			`${label} path must be a safe relative POSIX path: ${path}.`,
-		);
-	}
 }
 
 function compareRelativePath(

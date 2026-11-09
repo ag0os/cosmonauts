@@ -58,6 +58,11 @@ export interface CosmonautsRuntimeOptions {
 	chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	defaultModel?: string;
 	workerAgent?: string;
+	/**
+	 * Runtime-context template appended to sub-agent prompts ({{parentRole}},
+	 * {{objective}}, {{#taskId}}…{{/taskId}}). Absent: no sub-agent layer.
+	 */
+	subAgentTemplate?: string;
 	/** Absolute path to the framework's built-in domains directory. */
 	builtinDomainsDir?: string;
 	/** Absolute path to the project root (where .cosmonauts/ lives). */
@@ -93,6 +98,7 @@ export class CosmonautsRuntime {
 	readonly chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 	readonly defaultModel?: string;
 	readonly workerAgent?: string;
+	readonly subAgentTemplate?: string;
 	readonly projectConfig: ProjectConfig;
 	readonly domains: readonly LoadedDomain[];
 	readonly domainRegistry: DomainRegistry;
@@ -132,6 +138,7 @@ export class CosmonautsRuntime {
 		chainAdapter?: import("./orchestration/types.ts").ChainAdapter;
 		defaultModel?: string;
 		workerAgent?: string;
+		subAgentTemplate?: string;
 		projectConfig: ProjectConfig;
 		domains: readonly LoadedDomain[];
 		domainRegistry: DomainRegistry;
@@ -150,6 +157,7 @@ export class CosmonautsRuntime {
 		this.chainAdapter = fields.chainAdapter;
 		this.defaultModel = fields.defaultModel;
 		this.workerAgent = fields.workerAgent;
+		this.subAgentTemplate = fields.subAgentTemplate;
 		this.projectConfig = fields.projectConfig;
 		this.domains = fields.domains;
 		this.domainRegistry = fields.domainRegistry;
@@ -322,6 +330,7 @@ function runtimeConsumerOptions(
 		chainAdapter: options.chainAdapter,
 		defaultModel: options.defaultModel ?? options.chainAdapter?.defaultModel,
 		workerAgent: options.workerAgent,
+		subAgentTemplate: options.subAgentTemplate,
 	};
 }
 

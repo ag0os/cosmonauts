@@ -18,6 +18,7 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
+import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
@@ -140,11 +141,34 @@ function makeOptions(
 // ============================================================================
 
 describe("buildSessionParams", () => {
+	it("renders the runtime's sub-agent template only for a sub-agent session", async () => {
+		await setupMinimalDomains(tmp.path);
+		const runtime = {
+			subAgentTemplate: "Spawned by {{parentRole}} for {{objective}}.",
+			projectConfig: {},
+		} as unknown as CosmonautsRuntime;
+		const subAgent = {
+			mode: "sub-agent",
+			parentRole: "lead",
+			objective: "x",
+		} as const;
+
+		const spawned = await buildSessionParams(
+			makeOptions({ runtime, runtimeContext: subAgent }),
+		);
+		const topLevel = await buildSessionParams(makeOptions({ runtime }));
+		const withoutTemplate = await buildSessionParams(
+			makeOptions({ runtimeContext: subAgent }),
+		);
+
+		expect(spawned.promptContent).toContain("Spawned by lead for x.");
+		expect(topLevel.promptContent).not.toContain("Spawned by");
+		expect(withoutTemplate.promptContent).not.toContain("Spawned by");
+		expect(withoutTemplate.promptContent).toBe(topLevel.promptContent);
+	});
+
 	it("names the latest task snapshot rather than a different task's ref", async () => {
 		await setupMinimalDomains(tmp.path);
-		await setupFiles(tmp.path, {
-			"framework/runtime/sub-agent.md": "Subagent",
-		});
 		const cwd = join(tmp.path, "git-project");
 		await mkdir(cwd);
 		const git = (args: string[]) =>
@@ -190,9 +214,6 @@ describe("buildSessionParams", () => {
 
 	it("blocks destructive Bash only for a Drive worker while preserving ordinary Git", async () => {
 		await setupMinimalDomains(tmp.path);
-		await setupFiles(tmp.path, {
-			"framework/runtime/sub-agent.md": "Subagent",
-		});
 		const drive = await buildSessionParams(
 			makeOptions({
 				runtimeContext: {

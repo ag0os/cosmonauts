@@ -42,7 +42,7 @@ export function createExportProgram(): Command {
 	program
 		.name("cosmonauts export")
 		.description(
-			`Export a Cosmonauts agent package as a standalone binary. Provide exactly one input: [agent-id] or --definition <path>. Supported targets: ${SUPPORTED_TARGET_LABEL}. Examples: cosmonauts export --definition ./agent-package.json --out ./bin/agent; cosmonauts export coding/explorer --target claude-cli --out ./bin/explorer-claude; cosmonauts export --definition ./packages/cosmo-worker-codex/package.json --target codex --out ./bin/cosmo-worker-codex. Claude exports omit ANTHROPIC_API_KEY by default to preserve subscription auth; pass --allow-api-billing to the exported Claude binary to opt into API billing. Codex exports pass package instructions through -c model_instructions_file=<temp-system-prompt> while preserving normal Codex CLI flags.`,
+			`Export a Cosmonauts agent package as a standalone binary. Provide exactly one input: [agent-id] or --definition <path>. Supported targets: ${SUPPORTED_TARGET_LABEL}. Examples: cosmonauts export --definition ./agent-package.json --out ./bin/agent; cosmonauts export my-domain/explorer --target claude-cli --out ./bin/explorer-claude; cosmonauts export --definition ./packages/worker/package.json --target codex --out ./bin/worker-codex. Claude exports omit ANTHROPIC_API_KEY by default to preserve subscription auth; pass --allow-api-billing to the exported Claude binary to opt into API billing. Codex exports pass package instructions through -c model_instructions_file=<temp-system-prompt> while preserving normal Codex CLI flags.`,
 		)
 		.argument("[agent-id]", "Source agent id to export as shorthand")
 		.option("--definition <path>", "Agent package definition JSON path")

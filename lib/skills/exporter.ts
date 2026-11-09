@@ -22,7 +22,6 @@ import {
 	resolveHarnessTargetDirectory,
 } from "../harness-adapters/registry.ts";
 import {
-	type GeneratedHarnessNode,
 	prepareHarnessMaterialization,
 	writePreparedTarget,
 } from "../harness-adapters/render.ts";
@@ -81,9 +80,6 @@ export interface HarnessSyncOptions {
 	readonly assets: readonly HarnessAsset[];
 	readonly sourceHealth: readonly SourceHealthRow[];
 	readonly request: SyncRequest;
-	readonly generatedNodesByAssetId?: Readonly<
-		Record<string, readonly GeneratedHarnessNode[]>
-	>;
 	/** Injectable synchronization point for deterministic observation tests. */
 	readonly onOwnerGroupTargetsObserved?: (group: {
 		readonly ownerRoot: string;
@@ -112,8 +108,6 @@ export interface HarnessSyncReportRow {
 	readonly evidence?: string;
 	readonly discovery: readonly string[];
 	readonly releaseWarning?: string;
-	readonly generatingProjectRoot?: string;
-	readonly previousGeneratingProjectRoot?: string;
 }
 
 export interface HarnessSyncReport {
@@ -651,6 +645,7 @@ async function evaluateGroup(
 		projectRoot: options.projectRoot,
 		request: options.request,
 		inventory,
+		suppliedAssets: options.assets,
 		manifestEntries,
 		targetObservations: observations,
 		sourceHealth: options.sourceHealth,
@@ -689,7 +684,6 @@ async function evaluateGroup(
 					manifest: stable.manifest,
 					target: inventoryByPath.get(row.targetPath) ?? { state: "edited" },
 				},
-				generatedNodes: generatedNodesFor(options, catalogue.asset),
 			});
 			const refreshLegacyEntry =
 				checked.beforeStatus === "current" &&
@@ -754,12 +748,6 @@ function classifyCheckedRow(
 		action,
 		recordedMode: checked.recordedMode,
 		requestedMode: checked.requestedMode,
-		...(checked.generatingProjectRoot
-			? { generatingProjectRoot: checked.generatingProjectRoot }
-			: {}),
-		...(checked.previousGeneratingProjectRoot
-			? { previousGeneratingProjectRoot: checked.previousGeneratingProjectRoot }
-			: {}),
 		writesTarget: action === "create" || action === "replace",
 		writesManifest: action !== "none",
 	};
@@ -956,7 +944,6 @@ async function applyEvaluatedGroup(
 			asset: catalogue.asset,
 			target: catalogue.target,
 			mode: desired.mode,
-			generatedNodes: generatedNodesFor(options, catalogue.asset),
 		});
 		const scratch = await mkdtemp(join(tmpdir(), "cosmonauts-harness-render-"));
 		const scratchTarget = join(scratch, "target");
@@ -991,13 +978,6 @@ async function applyEvaluatedGroup(
 	});
 }
 
-function generatedNodesFor(
-	options: HarnessSyncOptions,
-	asset: HarnessAsset,
-): readonly GeneratedHarnessNode[] | undefined {
-	return options.generatedNodesByAssetId?.[asset.assetId];
-}
-
 function reportRow(
 	options: HarnessSyncOptions,
 	row: ClassifiedHarnessSyncPlanRow,
@@ -1008,15 +988,9 @@ function reportRow(
 	return {
 		owner: row.owner,
 		ownerDiagnostics: [
-			...(row.owner.kind === "project"
-				? [`projectRoot=${row.owner.projectRoot}`]
-				: [`authority=${row.owner.authorityId}`]),
-			...(row.generatingProjectRoot
-				? [`generatingProjectRoot=${row.generatingProjectRoot}`]
-				: []),
-			...(row.previousGeneratingProjectRoot
-				? [`previousGeneratingProjectRoot=${row.previousGeneratingProjectRoot}`]
-				: []),
+			row.owner.kind === "project"
+				? `projectRoot=${row.owner.projectRoot}`
+				: `authority=${row.owner.authorityId}`,
 		],
 		target: row.targetId,
 		scope: row.scope,
@@ -1035,14 +1009,6 @@ function reportRow(
 					(issue) => `${issue.kind}:${issue.path}:${issue.message}`,
 				)
 			: [],
-		...(row.generatingProjectRoot
-			? { generatingProjectRoot: row.generatingProjectRoot }
-			: {}),
-		...(row.previousGeneratingProjectRoot
-			? {
-					previousGeneratingProjectRoot: row.previousGeneratingProjectRoot,
-				}
-			: {}),
 	};
 }
 

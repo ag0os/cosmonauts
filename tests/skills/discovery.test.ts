@@ -2,15 +2,8 @@
  * Tests for skill discovery across domains.
  */
 
-import {
-	chmod,
-	mkdir,
-	readdir,
-	readFile,
-	symlink,
-	writeFile,
-} from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { chmod, mkdir, symlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { discoverSkills } from "../../lib/skills/discovery.ts";
@@ -48,22 +41,6 @@ async function writeSkill(
 		join(dir, "SKILL.md"),
 		`---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`,
 	);
-}
-
-async function findSkillFiles(dirPath: string): Promise<string[]> {
-	const files: string[] = [];
-	const entries = await readdir(dirPath, { withFileTypes: true });
-
-	for (const entry of entries) {
-		const entryPath = join(dirPath, entry.name);
-		if (entry.isDirectory()) {
-			files.push(...(await findSkillFiles(entryPath)));
-		} else if (entry.isFile() && entry.name === "SKILL.md") {
-			files.push(entryPath);
-		}
-	}
-
-	return files;
 }
 
 describe("discoverSkills", () => {
@@ -409,29 +386,5 @@ describe("discoverSkills", () => {
 		);
 
 		expect(skills.map((s) => s.name)).toEqual(["plan"]);
-	});
-
-	test("packaged skill directory names match frontmatter names", async () => {
-		const alphaSkills = join(tmp.path, "alpha", "skills");
-		await writeSkill(alphaSkills, "synthetic-alpha", "Synthetic alpha skill");
-		const skillRoots = [
-			alphaSkills,
-			join(process.cwd(), "domains", "shared", "skills"),
-		];
-		const skillFiles = (
-			await Promise.all(skillRoots.map(findSkillFiles))
-		).flat();
-		const mismatches: string[] = [];
-
-		for (const skillFile of skillFiles) {
-			const content = await readFile(skillFile, "utf-8");
-			const name = content.match(/^name:\s*(.+)$/m)?.[1]?.trim();
-			const dirName = basename(dirname(skillFile));
-			if (name !== undefined && name !== dirName) {
-				mismatches.push(`${skillFile}: ${name} != ${dirName}`);
-			}
-		}
-
-		expect(mismatches).toEqual([]);
 	});
 });

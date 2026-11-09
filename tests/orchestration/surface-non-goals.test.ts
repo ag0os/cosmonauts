@@ -3,12 +3,7 @@ import { describe, expect, test } from "vitest";
 import { createRunProgram } from "../../cli/run/subcommand.ts";
 import { KNOWN_BACKEND_NAMES } from "../../lib/durable-runtime/types.ts";
 
-const DEFERRED_SURFACE_GUIDANCE_PATHS = [
-	"docs/orchestration.md",
-	"domains/shared/capabilities/spawning.md",
-	"domains/shared/skills/spawning/SKILL.md",
-	"external-skills/cosmonauts/chains/SKILL.md",
-] as const;
+const DEFERRED_SURFACE_GUIDANCE_PATHS = ["docs/orchestration.md"] as const;
 
 async function readRepoFile(path: string): Promise<string> {
 	return readFile(new URL(`../../${path}`, import.meta.url), "utf-8");

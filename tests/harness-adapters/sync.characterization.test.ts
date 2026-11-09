@@ -1,7 +1,10 @@
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
+import type { MaterializedHarnessManifestEntry } from "../../lib/harness-adapters/provenance.ts";
 import {
+	manifestEntryKey,
+	resolveAssetOwnerIdentity,
 	resolveHarnessTransactionPaths,
 	sha256,
 } from "../../lib/harness-adapters/provenance.ts";
@@ -12,7 +15,6 @@ import type {
 	OwnerRootTransactionJournal,
 } from "../../lib/harness-adapters/sync.ts";
 import {
-	runClaudeCommandPairBootstrap,
 	serializeOwnerRootJournal,
 	syncHarnessAsset,
 	withOwnerRootTransaction,
@@ -126,220 +128,108 @@ describe("single-asset classification characterization", () => {
 			wroteManifest: false,
 		});
 	});
-});
 
-describe("Claude command preparation and evidence identity characterization", () => {
-	test("creates both native sources and completes one durable command-pair transaction", async () => {
-		const fixture = await createCommandFixture("complete");
-		const evidence = await runClaudeCommandPairBootstrap(fixture);
-
-		expect(evidence).toMatchObject({
-			phase: "complete",
-			manifestKeys: [expect.any(String), expect.any(String)],
-			commands: [
-				{
-					assetId: "command:spec-to-backlog",
-					backupExit: "removed-exact",
-				},
-				{
-					assetId: "command:implement-plan",
-					backupExit: "removed-exact",
-				},
-			],
-		});
-		for (let index = 0; index < 2; index += 1) {
-			expect(await readFile(fixture.nativePaths[index] ?? "")).toEqual(
-				fixture.liveBytes[index],
-			);
-		}
-		await expect(readFile(fixture.journalPath)).rejects.toMatchObject({
-			code: "ENOENT",
-		});
-	});
-
-	test("rejects partial native sources and missing lock-held native sources without moving live commands", async () => {
-		const partial = await createCommandFixture("partial");
-		await mkdir(dirname(partial.nativePaths[0] ?? ""), { recursive: true });
-		await writeFile(partial.nativePaths[0] ?? "", partial.liveBytes[0] ?? "");
-		await expect(runClaudeCommandPairBootstrap(partial)).rejects.toThrow(
-			/partial/i,
-		);
-		expect(
-			await Promise.all(partial.livePaths.map((path) => readFile(path))),
-		).toEqual(partial.liveBytes);
-
-		const underLock = await createCommandFixture("under-lock");
-		await seedNativeCommands(underLock);
-		await expect(
-			runClaudeCommandPairBootstrap({
-				...underLock,
-				onTransactionLock: async () => {
-					await Promise.all(
-						underLock.nativePaths.map((path) => rm(path, { force: true })),
-					);
-				},
+	test("a link entry is current only while it records a direct link to the same source and shape", async () => {
+		const projectRoot = join(tmp.path, "link-map-project");
+		const sourceRoot = join(projectRoot, "skills");
+		await Promise.all(
+			["bundle", "moved"].map(async (name) => {
+				await mkdir(join(sourceRoot, name), { recursive: true });
+				await writeFile(join(sourceRoot, name, "SKILL.md"), `# ${name}\n`);
 			}),
-		).rejects.toThrow(/native sources are missing under the transaction lock/i);
-		expect(
-			JSON.parse(await readFile(underLock.evidencePath, "utf8")),
-		).toMatchObject({ phase: "authorized" });
-		expect(
-			await Promise.all(underLock.livePaths.map((path) => readFile(path))),
-		).toEqual(underLock.liveBytes);
-	});
+		);
+		const asset: HarnessAsset = {
+			assetId: "skill:bundle",
+			kind: "skill",
+			ownership: { kind: "project" },
+			sourceRootId: "fixture:skills",
+			sourceRoot,
+			sourcePath: "bundle",
+			logicalPath: "bundle",
+			outputIdentity: "bundle",
+			defaultScope: "project",
+		};
+		const target = resolveHarnessAssetTarget({
+			targetId: "claude",
+			asset,
+			roots: { projectRoot, homeRoot: join(tmp.path, "link-map-home") },
+		});
+		const owner = await resolveAssetOwnerIdentity(asset, projectRoot);
+		const source = await realpath(join(sourceRoot, "bundle"));
+		const checkRecorded = (
+			provenance: MaterializedHarnessManifestEntry["provenance"],
+		) =>
+			syncHarnessAsset({
+				projectRoot,
+				asset,
+				target,
+				check: true,
+				checkObservation: {
+					manifest: {
+						schemaVersion: 1,
+						entries: {
+							[manifestEntryKey(owner, asset.assetId)]: {
+								schemaVersion: 1,
+								owner,
+								assetId: asset.assetId,
+								kind: "skill",
+								target: "claude",
+								scope: "project",
+								sourceRootId: asset.sourceRootId,
+								sourcePath: asset.sourcePath,
+								logicalPath: asset.logicalPath,
+								outputIdentity: asset.outputIdentity,
+								outputPath: target.targetPath,
+								mode: "link",
+								exportedAt: "2026-08-26T00:00:00.000Z",
+								provenance,
+							},
+						},
+					},
+					target: { state: "exact-baseline" },
+				},
+			});
+		const directLink = {
+			kind: "direct-link",
+			expectedCanonicalSource: source,
+			linkShape: "directory",
+		} as const;
 
-	test("rejects every reachable command-evidence identity predicate before locking", async () => {
-		const cases: Array<readonly [string, (value: Evidence) => void]> = [
+		await expect(checkRecorded(directLink)).resolves.toMatchObject({
+			beforeStatus: "current",
+			reason: "current",
+		});
+		for (const [label, provenance] of [
 			[
-				"owner id",
-				(value) => {
-					value.ownerId = "project:wrong";
+				"moved source",
+				{
+					...directLink,
+					expectedCanonicalSource: await realpath(join(sourceRoot, "moved")),
 				},
 			],
+			["changed shape", { ...directLink, linkShape: "flat-skill" }],
 			[
-				"owner root",
-				(value) => {
-					value.ownerRoot = "/tmp/claude";
+				"non-direct-link provenance carrying matching link fields",
+				{
+					...directLink,
+					kind: "generated-wrapper",
+					baselineDigest: "recorded",
+					authoredLinks: [],
+					generatedNodes: [],
 				},
 			],
-			[
-				"target",
-				(value) => {
-					value.target = "codex";
-				},
-			],
-			[
-				"scope",
-				(value) => {
-					value.scope = "project";
-				},
-			],
-			[
-				"cleanup policy",
-				(value) => {
-					value.cleanupPolicy = "after-commit";
-				},
-			],
-			[
-				"atomic set",
-				(value) => {
-					value.atomicSet = false;
-				},
-			],
-			[
-				"marker version",
-				(value) => {
-					value.markerVersion = 2;
-				},
-			],
-			[
-				"asset id",
-				(value) => {
-					firstEvidenceRow(value).assetId = "command:wrong";
-				},
-			],
-			[
-				"live path",
-				(value) => {
-					firstEvidenceRow(value).livePath = "~/.claude/commands/wrong.md";
-				},
-			],
-			[
-				"output path",
-				(value) => {
-					firstEvidenceRow(value).outputPath = "~/.claude/commands/wrong.md";
-				},
-			],
-			[
-				"native path",
-				(value) => {
-					firstEvidenceRow(value).nativePath = "external-commands/wrong.md";
-				},
-			],
-			[
-				"native digest",
-				(value) => {
-					firstEvidenceRow(value).nativeDigest = "wrong";
-				},
-			],
-			[
-				"render digest",
-				(value) => {
-					firstEvidenceRow(value).renderDigest = "wrong";
-				},
-			],
-			[
-				"native length",
-				(value) => {
-					firstEvidenceRow(value).nativeLength += 1;
-				},
-			],
-			[
-				"render length",
-				(value) => {
-					firstEvidenceRow(value).renderLength += 1;
-				},
-			],
-			[
-				"manifest key",
-				(value) => {
-					value.manifestKeys[0] = "wrong-key";
-				},
-			],
-		];
-
-		for (const [label, mutate] of cases) {
-			const fixture = await createCommandFixture(`identity-${label}`);
-			const evidence = makeAuthorizedEvidence(fixture);
-			mutate(evidence);
-			await writeFile(fixture.evidencePath, `${JSON.stringify(evidence)}\n`);
-			const lock = vi.fn();
+		] as const) {
 			await expect(
-				runClaudeCommandPairBootstrap({ ...fixture, onTransactionLock: lock }),
+				checkRecorded(
+					provenance as unknown as MaterializedHarnessManifestEntry["provenance"],
+				),
 				label,
-			).rejects.toThrow(/evidence (identity|path identity) is invalid/i);
-			expect(lock).not.toHaveBeenCalled();
-		}
-	});
-
-	test("applies installed-only final-byte and backup identity predicates", async () => {
-		const cases: Array<readonly [string, (value: Evidence) => void]> = [
-			[
-				"final digest",
-				(value) => {
-					firstEvidenceRow(value).finalDigest = "wrong";
-				},
-			],
-			[
-				"final length",
-				(value) => {
-					firstEvidenceRow(value).finalLength = 1;
-				},
-			],
-			[
-				"backup path",
-				(value) => {
-					firstEvidenceRow(value).backupPath = "~/.wrong.backup";
-				},
-			],
-		];
-		for (const [label, mutate] of cases) {
-			const fixture = await createCommandFixture(`installed-${label}`);
-			const evidence = makeAuthorizedEvidence(fixture);
-			evidence.phase = "installed";
-			for (let index = 0; index < evidence.commands.length; index += 1) {
-				const row = evidence.commands[index];
-				if (!row) continue;
-				row.finalDigest = row.liveDigest;
-				row.finalLength = row.liveLength;
-				row.backupPath = `~/.cosmonauts-harness-claude-${evidence.transactionId}-${index}.backup`;
-			}
-			mutate(evidence);
-			await writeFile(fixture.evidencePath, `${JSON.stringify(evidence)}\n`);
-			await expect(
-				runClaudeCommandPairBootstrap(fixture),
-				label,
-			).rejects.toThrow(/path identity is invalid/i);
+			).resolves.toMatchObject({
+				beforeStatus: "source-ahead",
+				reason: "link-map-changed",
+				wroteTarget: false,
+				wroteManifest: false,
+			});
 		}
 	});
 });
@@ -482,152 +372,6 @@ async function snapshotPaths(fixture: AssetFixture) {
 			},
 		),
 	);
-}
-
-interface CommandFixture {
-	readonly projectRoot: string;
-	readonly homeRoot: string;
-	readonly livePaths: readonly [string, string];
-	readonly nativePaths: readonly [string, string];
-	readonly liveBytes: readonly [Buffer, Buffer];
-	readonly evidencePath: string;
-	readonly journalPath: string;
-}
-
-async function createCommandFixture(label: string): Promise<CommandFixture> {
-	const projectRoot = join(tmp.path, `${label}-project`);
-	const homeRoot = join(tmp.path, `${label}-home`);
-	const liveDirectory = join(homeRoot, ".claude", "commands");
-	const evidenceDirectory = join(
-		projectRoot,
-		"missions/plans/harness-adapters",
-	);
-	await Promise.all([
-		mkdir(liveDirectory, { recursive: true }),
-		mkdir(evidenceDirectory, { recursive: true }),
-	]);
-	await writeFile(
-		join(evidenceDirectory, "repo-export-validation-evidence.json"),
-		`${JSON.stringify({
-			schemaVersion: 1,
-			phase: "complete",
-			externalBundle: { phase: "complete" },
-		})}\n`,
-	);
-	const names = ["spec-to-backlog", "implement-plan"] as const;
-	const livePaths = names.map((name) =>
-		join(liveDirectory, `${name}.md`),
-	) as unknown as readonly [string, string];
-	const nativePaths = names.map((name) =>
-		join(projectRoot, "external-commands", `${name}.md`),
-	) as unknown as readonly [string, string];
-	const liveBytes = names.map((name) =>
-		Buffer.from(
-			`---\ndescription: ${name}\nargument-hint: <plan>\n---\n\n# ${name}\n`,
-		),
-	) as unknown as readonly [Buffer, Buffer];
-	await Promise.all(
-		livePaths.map((path, index) => writeFile(path, liveBytes[index] ?? "")),
-	);
-	return {
-		projectRoot,
-		homeRoot,
-		livePaths,
-		nativePaths,
-		liveBytes,
-		evidencePath: join(evidenceDirectory, "command-migration-evidence.json"),
-		journalPath: resolveHarnessTransactionPaths(
-			join(homeRoot, ".claude"),
-			"claude",
-		).journalPath,
-	};
-}
-
-async function seedNativeCommands(fixture: CommandFixture): Promise<void> {
-	await mkdir(dirname(fixture.nativePaths[0]), { recursive: true });
-	await Promise.all(
-		fixture.nativePaths.map((path, index) =>
-			writeFile(path, fixture.liveBytes[index] ?? ""),
-		),
-	);
-}
-
-interface EvidenceRow extends Record<string, unknown> {
-	assetId: string;
-	livePath: string;
-	nativePath: string;
-	outputPath: string;
-	liveLength: number;
-	nativeLength: number;
-	renderLength: number;
-	liveDigest: string;
-	nativeDigest: string;
-	renderDigest: string;
-	finalDigest?: string;
-	finalLength?: number;
-	backupPath?: string;
-	manifestKey: string;
-}
-
-interface Evidence extends Record<string, unknown> {
-	phase: string;
-	transactionId: string;
-	ownerId: string;
-	ownerRoot: string;
-	target: string;
-	scope: string;
-	cleanupPolicy: string;
-	atomicSet: boolean;
-	markerVersion: number;
-	manifestKeys: string[];
-	commands: EvidenceRow[];
-}
-
-function firstEvidenceRow(value: Evidence): EvidenceRow {
-	const row = value.commands[0];
-	if (!row) throw new Error("Expected command evidence row.");
-	return row;
-}
-
-function makeAuthorizedEvidence(fixture: CommandFixture): Evidence {
-	const names = ["spec-to-backlog", "implement-plan"] as const;
-	const commands = names.map((name, index) => {
-		const bytes = fixture.liveBytes[index] ?? Buffer.alloc(0);
-		const digest = sha256(bytes);
-		return {
-			assetId: `command:${name}`,
-			livePath: `~/.claude/commands/${name}.md`,
-			nativePath: `external-commands/${name}.md`,
-			outputPath: `~/.claude/commands/${name}.md`,
-			liveLength: bytes.length,
-			nativeLength: bytes.length,
-			renderLength: bytes.length,
-			liveDigest: digest,
-			nativeDigest: digest,
-			renderDigest: digest,
-			materializedDigest: digest,
-			manifestKey: `manifest-${index}`,
-			oldState: { kind: "file", digest },
-			newState: { kind: "file", digest },
-		};
-	});
-	return {
-		schemaVersion: 1,
-		authorizationKind: "ratified-live-bootstrap",
-		phase: "authorized",
-		transactionId: "tx-evidence",
-		ownerId: "authority:cosmonauts/core",
-		ownerRoot: "~/.claude",
-		target: "claude",
-		scope: "personal",
-		cleanupPolicy: "after-evidence",
-		atomicSet: true,
-		markerVersion: 1,
-		newManifestDigest: "manifest-digest",
-		manifestKeys: commands.map((row) => row.manifestKey),
-		commands,
-		authorizedAt: "2026-01-01T00:00:00.000Z",
-	};
 }
 
 interface RecoveryFixture {

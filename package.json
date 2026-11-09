@@ -14,9 +14,6 @@
 		"cosmonauts": "./bin/cosmonauts"
 	},
 	"files": [
-		"domains/",
-		"external-commands/",
-		"external-skills/",
 		"lib/",
 		"cli/",
 		"bin/",

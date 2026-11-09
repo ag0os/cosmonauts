@@ -1,10 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
 	loadPrompt,
 	loadPrompts,
-	PROMPTS_DIR,
 	renderRuntimeTemplate,
 } from "../../lib/prompts/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -154,16 +153,6 @@ describe("loadPrompts", () => {
 });
 
 // ============================================================================
-// PROMPTS_DIR
-// ============================================================================
-
-describe("PROMPTS_DIR", () => {
-	it("points to lib/prompts/framework directory", () => {
-		expect(PROMPTS_DIR).toMatch(/lib\/prompts\/framework$/);
-	});
-});
-
-// ============================================================================
 // renderRuntimeTemplate
 // ============================================================================
 
@@ -224,37 +213,10 @@ describe("renderRuntimeTemplate", () => {
 // Domain-based prompt file paths
 // ============================================================================
 
-/** Resolve domain directories relative to the framework prompts directory. */
-const PROJECT_ROOT = resolve(PROMPTS_DIR, "..", "..", "..");
-const SHARED_CAPABILITIES_DIR = join(
-	PROJECT_ROOT,
-	"domains",
-	"shared",
-	"capabilities",
-);
 const alphaCapabilitiesDir = () => join(tmp.path, "alpha", "capabilities");
 const alphaPromptsDir = () => join(tmp.path, "alpha", "prompts");
 
 describe("domain-based prompt file paths", () => {
-	it("loads the current consumer base as an explicit capability input", async () => {
-		const content = await loadPrompt("framework-base", SHARED_CAPABILITIES_DIR);
-		expect(content.length).toBeGreaterThan(0);
-	});
-
-	it("loads runtime sub-agent template from lib/prompts/framework", async () => {
-		const content = await loadPrompt("runtime/sub-agent");
-		expect(content.length).toBeGreaterThan(0);
-		expect(content).toContain("{{parentRole}}");
-	});
-
-	it("loads shared capability files from domains/shared/capabilities", async () => {
-		const capabilities = ["tasks", "spawning", "todo"];
-		for (const ref of capabilities) {
-			const content = await loadPrompt(ref, SHARED_CAPABILITIES_DIR);
-			expect(content.length).toBeGreaterThan(0);
-		}
-	});
-
 	it("loads synthetic domain capability files from a domain capabilities directory", async () => {
 		const capabilities = ["alpha-readwrite", "alpha-readonly"];
 		for (const ref of capabilities) {

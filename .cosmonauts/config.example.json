@@ -1,47 +1,5 @@
 {
-	"qualityReview": {
-		"prepare": [
-			{
-				"id": "dependencies",
-				"command": "bun",
-				"args": ["install", "--frozen-lockfile"],
-				"timeoutMs": 120000
-			}
-		],
-		"checks": [
-			{
-				"id": "suppressions",
-				"command": "bun",
-				"args": ["scripts/check-new-suppressions.ts", "--base", "{base}"]
-			},
-			{ "id": "test", "command": "bun", "args": ["run", "test"] },
-			{ "id": "lint", "command": "bun", "args": ["run", "lint"] },
-			{ "id": "typecheck", "command": "bun", "args": ["run", "typecheck"] }
-		]
-	},
 	"knowledgeSurface": {
 		"enabled": false
-	},
-	"workflows": {
-		"plan-and-build": {
-			"description": "Full pipeline with adversarial plan review: design, review, revise, task creation, implementation, and verification",
-			"chain": "planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager"
-		},
-		"implement": {
-			"description": "Create tasks from existing plan, implement, and run merge-readiness quality gates",
-			"chain": "task-manager -> coordinator -> integration-verifier -> quality-manager"
-		},
-		"verify": {
-			"description": "Run lint/format checks, clean-context review, and remediation on existing changes, falling back to fixer-only remediation when no active plan exists",
-			"chain": "quality-manager"
-		},
-		"spec-and-build": {
-			"description": "Full pipeline with interactive spec capture and adversarial plan review",
-			"chain": "spec-writer -> planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager"
-		},
-		"adapt": {
-			"description": "Adapt a feature from a reference codebase: the planner studies the reference codebase path and designs an adaptation plan, then implement and review",
-			"chain": "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager"
-		}
 	}
 }

@@ -16,22 +16,4 @@ describe("default Drive envelope", () => {
 			`Missing default Drive envelope at ${missingPath}. Pass --envelope <path> (CLI) or envelopePath (run_driver) to provide an explicit envelope.`,
 		);
 	});
-
-	test("resolves the framework default envelope outside bundled coding", () => {
-		const resolvedPath = resolveDefaultDriveEnvelopePath({
-			frameworkRoot: process.cwd(),
-		});
-
-		expect(resolvedPath).toBe(
-			join(
-				process.cwd(),
-				"lib",
-				"prompts",
-				"framework",
-				"drive",
-				"envelope.md",
-			),
-		);
-		expect(resolvedPath).not.toContain(join("bundled", "coding"));
-	});
 });

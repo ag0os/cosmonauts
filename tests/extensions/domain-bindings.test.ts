@@ -757,3 +757,97 @@ test("the live binding command writes the slot store only after resolver validat
 		clearSharedDomainBindings();
 	}
 });
+
+/**
+ * Pi loads this extension through jiti with `moduleCache: false`. Under Node
+ * that gives the extension its own copy of `DomainBindingTargetError`, so the
+ * host's resolver throws an instance of a different class with the same name
+ * (probe: d3-evidence/d3-jiti-probe-before.log).
+ */
+class ForeignDomainBindingTargetError extends Error {
+	readonly role: string;
+	readonly targetDomain: string;
+	constructor(role: string, targetDomain: string) {
+		super(
+			`Domain binding target "${targetDomain}" for role "${role}" is not active or installed.`,
+		);
+		this.name = "DomainBindingTargetError";
+		this.role = role;
+		this.targetDomain = targetDomain;
+	}
+}
+
+describe("domain-bindings across a second module instance", () => {
+	function installThrowingResolver(error: () => Error): void {
+		setSharedDomainBindings({
+			domainRegistry: { listIds: () => [] } as never,
+			bindingResolver: {
+				resolveKnownRole: () => undefined,
+				bindLiveRole: () => {
+					throw error();
+				},
+			} as never,
+			liveBindings: { set: vi.fn() } as never,
+		});
+	}
+
+	beforeEach(() => {
+		clearSharedDomainBindings();
+	});
+
+	test("/domain-bind reports an unavailable target thrown by another copy of the error class", async () => {
+		installThrowingResolver(
+			() => new ForeignDomainBindingTargetError("worker", "ghost"),
+		);
+		const pi = createMockPi();
+		domainBindingsExtension(pi as never);
+		const ctx = createCommandContext();
+
+		await getCommand(pi, "domain-bind").handler("worker ghost", ctx);
+
+		expect(ctx.ui.notify).toHaveBeenCalledExactlyOnceWith(
+			'Domain binding target "ghost" for role "worker" is not active or installed. Install or activate "ghost" before binding "worker" to it.',
+			"error",
+		);
+		expect(pi.entries).toEqual([]);
+		clearSharedDomainBindings();
+	});
+
+	test("session_start explains a stale target thrown by another copy of the error class", async () => {
+		installThrowingResolver(
+			() => new ForeignDomainBindingTargetError("worker", "ghost"),
+		);
+		const pi = createMockPi();
+		domainBindingsExtension(pi as never);
+		const ctx = createCommandContext([
+			{
+				type: "custom",
+				customType: "cosmonauts.domain-binding",
+				data: { role: "worker", targetDomain: "ghost", timestamp: 1 },
+			},
+		]);
+
+		await pi.fireEvent("session_start", {}, ctx);
+
+		expect(ctx.ui.notify).toHaveBeenCalledExactlyOnceWith(
+			'Skipping invalid stale domain binding entry for `worker`: Domain binding target "ghost" for role "worker" is not active or installed. Install or activate "ghost" before binding "worker" to it.',
+			"warning",
+		);
+		clearSharedDomainBindings();
+	});
+
+	test("an unrelated error with other fields is reported generically", async () => {
+		installThrowingResolver(() => new Error("disk full"));
+		const pi = createMockPi();
+		domainBindingsExtension(pi as never);
+		const ctx = createCommandContext();
+
+		await getCommand(pi, "domain-bind").handler("worker ghost", ctx);
+
+		expect(ctx.ui.notify).toHaveBeenCalledExactlyOnceWith(
+			"Domain binding failed: disk full",
+			"error",
+		);
+		clearSharedDomainBindings();
+	});
+});

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import ts from "typescript";
 import type { DomainResolver } from "../domains/resolver.ts";
@@ -18,10 +19,21 @@ import {
 const NATIVE_PROVIDERS: Readonly<Record<string, SessionExtensionProvider>> = {
 	tasks: tasksProvider,
 	plans: plansProvider,
+	// Library extensions with no session context, imported only when selected.
+	"agent-switch": async () =>
+		(await import("../extensions/agent-switch/index.ts")).default,
+	init: async () => (await import("../extensions/init/index.ts")).default,
+	observability: async () =>
+		(await import("../extensions/observability/index.ts")).default,
+	"project-tools": async () =>
+		(await import("../extensions/project-tools/index.ts")).default,
+	todo: async () => (await import("../extensions/todo/index.ts")).default,
 };
 
 interface BindingOptions {
 	names: readonly string[];
+	/** Extension directories the host already loads by path. */
+	mountedPaths?: readonly string[];
 	domain?: string;
 	fallbackDomains?: readonly string[];
 	domainsDir?: string;
@@ -112,9 +124,8 @@ async function selectProvider(
 	try {
 		path = resolveExtensionPaths([name], options)[0] as string;
 	} catch (error) {
-		if (error instanceof UnknownExtensionError && native)
-			return { factory: extensionFactory(await native(options.context), name) };
-		throw error;
+		if (!(error instanceof UnknownExtensionError) || !native) throw error;
+		return selectNative(name, native, options);
 	}
 	const entry = ["index.ts", "index.js", "index.mjs"]
 		.map((file) => join(path, file))
@@ -128,6 +139,32 @@ async function selectProvider(
 	if (typeof provider === "function")
 		return { factory: extensionFactory(await provider(options.context), name) };
 	return { path };
+}
+
+async function selectNative(
+	name: string,
+	native: (context: SessionProviderContext) => unknown,
+	options: BindingOptions,
+): Promise<{ factory?: InlineExtension }> {
+	if (isLibraryExtensionMounted(name, options)) return {};
+	return { factory: extensionFactory(await native(options.context), name) };
+}
+
+/**
+ * A host that mounts a library extension by path (the CLI mounts agent-switch)
+ * already loads it, and a second copy would make Pi rename its commands.
+ */
+function isLibraryExtensionMounted(
+	name: string,
+	options: BindingOptions,
+): boolean {
+	if (options.context.runtime?.extensionProviders?.[name]) return false;
+	const directory = fileURLToPath(
+		new URL(`../extensions/${name}`, import.meta.url),
+	);
+	return (options.mountedPaths ?? []).some(
+		(path) => resolve(path) === directory,
+	);
 }
 
 /** Preserve directory/provider precedence; only the selected provider is imported. */

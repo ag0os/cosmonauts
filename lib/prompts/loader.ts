@@ -7,20 +7,8 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import matter from "gray-matter";
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-/** Default framework prompts directory, resolved relative to this package. */
-export const PROMPTS_DIR: string = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"framework",
-);
 
 // ============================================================================
 // Public API
@@ -30,13 +18,13 @@ export const PROMPTS_DIR: string = resolve(
  * Load a single prompt file by reference.
  *
  * @param promptRef - Prompt reference (e.g. "cosmonauts" → reads cosmonauts.md)
- * @param promptsDir - Base directory to resolve from (defaults to PROMPTS_DIR)
+ * @param promptsDir - Base directory to resolve from
  * @returns The prompt file content with any YAML frontmatter stripped
  * @throws If the file does not exist or cannot be read
  */
 export async function loadPrompt(
 	promptRef: string,
-	promptsDir: string = PROMPTS_DIR,
+	promptsDir: string,
 ): Promise<string> {
 	const filePath = join(promptsDir, `${promptRef}.md`);
 
@@ -60,12 +48,12 @@ export async function loadPrompt(
  * Load and concatenate multiple prompt files in order.
  *
  * @param promptRefs - Array of prompt references to load
- * @param promptsDir - Base directory to resolve from (defaults to PROMPTS_DIR)
+ * @param promptsDir - Base directory to resolve from
  * @returns Concatenated prompt content separated by double newlines
  */
 export async function loadPrompts(
 	promptRefs: readonly string[],
-	promptsDir: string = PROMPTS_DIR,
+	promptsDir: string,
 ): Promise<string> {
 	if (promptRefs.length === 0) return "";
 

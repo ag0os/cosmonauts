@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 describe("harness asset rendering", () => {
-	test("materializes sticky copy direct-link flat and generated-wrapper shapes safely", async () => {
+	test("materializes sticky copy direct-link and flat shapes safely", async () => {
 		const root = await mkdtemp(join(tmpdir(), "cosmonauts-render-"));
 		tempRoots.push(root);
 		const projectRoot = join(root, "project");
@@ -307,184 +307,6 @@ describe("harness asset rendering", () => {
 			join(flatTarget.targetPath, "SKILL.md"),
 		);
 
-		const wrapperSource = join(sourceRoot, "bundle");
-		await mkdir(join(wrapperSource, "references"), { recursive: true });
-		await writeFile(join(wrapperSource, "SKILL.md"), reordered);
-		await writeFile(join(wrapperSource, "references", "authored.md"), bare);
-		await writeFile(
-			join(wrapperSource, "references", "generated.md"),
-			Buffer.from("stale generated source\n"),
-		);
-		const wrapperAsset = {
-			...asset("bundle", sourceRoot, "bundle"),
-			generatedInputs: "cosmonauts-inventory",
-		} as const satisfies HarnessAsset;
-		const wrapperTarget = target(wrapperAsset, projectRoot, homeRoot, "link");
-		const generatedInput = Buffer.from('{"chains":["verify"]}');
-		const generatedBytes = Buffer.from("# Generated\n");
-		const wrapper = await syncHarnessAsset({
-			projectRoot,
-			asset: wrapperAsset,
-			target: wrapperTarget,
-			generatedNodes: [
-				{
-					relativePath: "references/generated.md",
-					inputBytes: generatedInput,
-					renderedBytes: generatedBytes,
-				},
-			],
-			now: fixedNow,
-		});
-		expect(
-			(
-				await lstat(join(wrapperTarget.targetPath, "SKILL.md"))
-			).isSymbolicLink(),
-		).toBe(true);
-		expect(
-			(
-				await lstat(join(wrapperTarget.targetPath, "references", "authored.md"))
-			).isSymbolicLink(),
-		).toBe(true);
-		expect(
-			(
-				await lstat(
-					join(wrapperTarget.targetPath, "references", "generated.md"),
-				)
-			).isFile(),
-		).toBe(true);
-		expect(
-			await readFile(
-				join(wrapperTarget.targetPath, "references", "generated.md"),
-			),
-		).toEqual(generatedBytes);
-		expect(wrapper.manifestEntry.provenance).toMatchObject({
-			kind: "generated-wrapper",
-			authoredLinks: expect.arrayContaining([
-				{
-					relativePath: "SKILL.md",
-					expectedCanonicalSource: await realpath(
-						join(wrapperSource, "SKILL.md"),
-					),
-				},
-			]),
-			generatedNodes: [
-				{
-					relativePath: "references/generated.md",
-					inputDigest: sha256(generatedInput),
-					renderedDigest: sha256(generatedBytes),
-					targetDigest: sha256(generatedBytes),
-				},
-			],
-		});
-		expect(await readFile(join(wrapperSource, "SKILL.md"))).toEqual(reordered);
-		expect(
-			await readFile(join(wrapperSource, "references", "generated.md")),
-		).toEqual(Buffer.from("stale generated source\n"));
-
-		const wrapperNoopBefore = await snapshot([
-			join(wrapperTarget.ownerRoot, ".cosmonauts-harness-manifest.json"),
-			wrapperTarget.targetPath,
-			join(wrapperTarget.targetPath, "SKILL.md"),
-			join(wrapperTarget.targetPath, "references"),
-			join(wrapperTarget.targetPath, "references", "authored.md"),
-			join(wrapperTarget.targetPath, "references", "generated.md"),
-		]);
-		await writeFile(join(wrapperSource, "references", "authored.md"), crlf);
-		const wrapperAgain = await syncHarnessAsset({
-			projectRoot,
-			asset: wrapperAsset,
-			target: wrapperTarget,
-			generatedNodes: [
-				{
-					relativePath: "references/generated.md",
-					inputBytes: generatedInput,
-					renderedBytes: generatedBytes,
-				},
-			],
-			now: () => new Date("2030-01-01T00:00:00.000Z"),
-		});
-		expect(wrapperAgain.beforeStatus).toBe("current");
-		expect(
-			await readFile(
-				join(wrapperTarget.targetPath, "references", "authored.md"),
-			),
-		).toEqual(crlf);
-		expect(await snapshot(Object.keys(wrapperNoopBefore))).toEqual(
-			wrapperNoopBefore,
-		);
-		await writeFile(join(wrapperSource, "references", "added.md"), bare);
-		const changedLinkMap = await syncHarnessAsset({
-			projectRoot,
-			asset: wrapperAsset,
-			target: wrapperTarget,
-			check: true,
-			generatedNodes: [
-				{
-					relativePath: "references/generated.md",
-					inputBytes: generatedInput,
-					renderedBytes: generatedBytes,
-				},
-			],
-			now: fixedNow,
-		});
-		expect(changedLinkMap).toMatchObject({
-			beforeStatus: "source-ahead",
-			reason: "link-map-changed",
-			wroteTarget: false,
-			wroteManifest: false,
-		});
-		await rm(join(wrapperSource, "references", "added.md"));
-		const generatedTargetPath = join(
-			wrapperTarget.targetPath,
-			"references",
-			"generated.md",
-		);
-		await writeFile(
-			generatedTargetPath,
-			Buffer.from("edited generated target\n"),
-		);
-		const editedGenerated = await syncHarnessAsset({
-			projectRoot,
-			asset: wrapperAsset,
-			target: wrapperTarget,
-			check: true,
-			generatedNodes: [
-				{
-					relativePath: "references/generated.md",
-					inputBytes: generatedInput,
-					renderedBytes: generatedBytes,
-				},
-			],
-			now: fixedNow,
-		});
-		expect(editedGenerated).toMatchObject({
-			beforeStatus: "locally-edited",
-			reason: "locally-edited",
-			wroteTarget: false,
-			wroteManifest: false,
-		});
-		await writeFile(generatedTargetPath, generatedBytes);
-		const changedGeneratedCheck = await syncHarnessAsset({
-			projectRoot,
-			asset: wrapperAsset,
-			target: wrapperTarget,
-			check: true,
-			generatedNodes: [
-				{
-					relativePath: "references/generated.md",
-					inputBytes: Buffer.from('{"chains":["changed"]}'),
-					renderedBytes: generatedBytes,
-				},
-			],
-			now: fixedNow,
-		});
-		expect(changedGeneratedCheck).toMatchObject({
-			beforeStatus: "source-ahead",
-			reason: "generated-input-changed",
-			wroteTarget: false,
-			wroteManifest: false,
-		});
-
 		const codexOwner = join(projectRoot, ".agents");
 		const codexManifest = join(codexOwner, ".cosmonauts-harness-manifest.json");
 		const codexFlatTarget = resolveHarnessAssetTarget({
@@ -503,31 +325,6 @@ describe("harness asset rendering", () => {
 		).rejects.toThrow(/skill:flat.*flat-skill.*directory/i);
 		expect(await pathExists(codexOwner)).toBe(false);
 		expect(await pathExists(codexFlatTarget.targetPath)).toBe(false);
-		expect(await pathExists(codexManifest)).toBe(false);
-
-		const codexWrapperTarget = resolveHarnessAssetTarget({
-			targetId: "codex",
-			asset: wrapperAsset,
-			roots: { projectRoot, homeRoot },
-			requestedMode: "link",
-		});
-		await expect(
-			syncHarnessAsset({
-				projectRoot,
-				asset: wrapperAsset,
-				target: codexWrapperTarget,
-				generatedNodes: [
-					{
-						relativePath: "references/generated.md",
-						inputBytes: generatedInput,
-						renderedBytes: generatedBytes,
-					},
-				],
-				now: fixedNow,
-			}),
-		).rejects.toThrow(/skill:bundle.*generated-wrapper.*directory/i);
-		expect(await pathExists(codexOwner)).toBe(false);
-		expect(await pathExists(codexWrapperTarget.targetPath)).toBe(false);
 		expect(await pathExists(codexManifest)).toBe(false);
 
 		const codexDirectoryTarget = resolveHarnessAssetTarget({
@@ -565,39 +362,6 @@ describe("harness asset rendering", () => {
 		expect(codexFlatCopy.manifestEntry.provenance.kind).toBe("copy");
 		expect(
 			(await lstat(join(codexFlatCopyTarget.targetPath, "SKILL.md"))).isFile(),
-		).toBe(true);
-
-		const codexWrapperCopyTarget = resolveHarnessAssetTarget({
-			targetId: "codex",
-			asset: wrapperAsset,
-			roots: { projectRoot, homeRoot },
-			requestedMode: "copy",
-		});
-		const codexWrapperCopy = await syncHarnessAsset({
-			projectRoot,
-			asset: wrapperAsset,
-			target: codexWrapperCopyTarget,
-			generatedNodes: [
-				{
-					relativePath: "references/generated.md",
-					inputBytes: generatedInput,
-					renderedBytes: generatedBytes,
-				},
-			],
-			now: fixedNow,
-		});
-		expect(codexWrapperCopy.manifestEntry.provenance.kind).toBe("copy");
-		expect(
-			(
-				await lstat(join(codexWrapperCopyTarget.targetPath, "SKILL.md"))
-			).isFile(),
-		).toBe(true);
-		expect(
-			(
-				await lstat(
-					join(codexWrapperCopyTarget.targetPath, "references", "generated.md"),
-				)
-			).isFile(),
 		).toBe(true);
 
 		const bareLink = target(copyAsset, projectRoot, homeRoot, "link");
@@ -640,11 +404,6 @@ describe("harness asset rendering", () => {
 			name: string;
 			asset: HarnessAsset;
 			target: ResolvedHarnessAssetTarget;
-			generatedNodes?: Array<{
-				relativePath: string;
-				inputBytes: Buffer;
-				renderedBytes: Buffer;
-			}>;
 		}> = [];
 		const remoteAsset = asset("remote", "https://example.com/repo", "skill");
 		invalidCases.push({
@@ -682,25 +441,12 @@ describe("harness asset rendering", () => {
 				targetPath: join(invalidRoot, "..", "escaped-target"),
 			},
 		});
-		invalidCases.push({
-			name: "invalid generated shape",
-			asset: wrapperAsset,
-			target: fakeTarget(wrapperAsset, invalidRoot, "link"),
-			generatedNodes: [
-				{
-					relativePath: "../generated.md",
-					inputBytes: Buffer.from("input"),
-					renderedBytes: Buffer.from("output"),
-				},
-			],
-		});
 		for (const invalid of invalidCases) {
 			await expect(
 				syncHarnessAsset({
 					projectRoot,
 					asset: invalid.asset,
 					target: invalid.target,
-					generatedNodes: invalid.generatedNodes,
 					now: fixedNow,
 				}),
 				invalid.name,
@@ -794,7 +540,7 @@ function fakeTarget(
 		targetDirectory: join(ownerRoot, "skills"),
 		transform: "identity",
 		supportedModes: ["copy", "link"],
-		supportedLinkShapes: ["directory", "flat-skill", "generated-wrapper"],
+		supportedLinkShapes: ["directory", "flat-skill"],
 		assetId: asset.assetId,
 		targetPath: join(ownerRoot, "skills", asset.outputIdentity),
 		requestedMode,

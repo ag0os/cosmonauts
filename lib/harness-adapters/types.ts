@@ -7,7 +7,7 @@ export type ImplementedHarnessTargetId = "claude" | "codex";
 export type HarnessScope = "project" | "personal";
 export type MaterializedAssetKind = "skill" | "command";
 export type SyncMode = "copy" | "link";
-export type HarnessLinkShape = "directory" | "flat-skill" | "generated-wrapper";
+export type HarnessLinkShape = "directory" | "flat-skill";
 export type SyncStatus =
 	| "missing"
 	| "current"
@@ -49,9 +49,6 @@ export interface HarnessAsset {
 	readonly logicalPath: string;
 	readonly outputIdentity: string;
 	readonly defaultScope: HarnessScope;
-	readonly generatedInputs?: "cosmonauts-inventory";
-	/** Additional names reserved by one asset in the output collision namespace. */
-	readonly reservedNames?: readonly string[];
 }
 
 export type SkillCandidateShape = "directory" | "flat-wrapper";
@@ -205,7 +202,7 @@ interface ProvenanceBase {
 	readonly outputPath: string;
 	readonly mode: SyncMode;
 	readonly exportedAt: string;
-	/** Canonical project whose live runtime supplied generated bundle facts. */
+	/** Recorded by retired generated bundles; parsed but no longer written. */
 	readonly generatingProjectRoot?: string;
 }
 

@@ -7,6 +7,7 @@ import {
 	readlink,
 	realpath,
 	rm,
+	symlink,
 	writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,7 +17,16 @@ import {
 	parseSyncRequest,
 } from "../../../cli/harness/subcommand.ts";
 import type { RuntimeSkillExportDiscovery } from "../../../cli/skills/subcommand.ts";
-import type { RuntimeInventorySnapshot } from "../../../lib/harness-adapters/types.ts";
+import {
+	manifestEntryKey,
+	readHarnessManifest,
+	serializeHarnessManifest,
+	sha256,
+} from "../../../lib/harness-adapters/provenance.ts";
+import type {
+	HarnessAsset,
+	OwnerIdentity,
+} from "../../../lib/harness-adapters/types.ts";
 import {
 	type HarnessSyncReport,
 	runHarnessSync,
@@ -180,6 +190,7 @@ describe("cosmonauts harness sync", () => {
 			const program = createHarnessProgram({
 				projectRoot: fixture.projectRoot,
 				homeRoot: fixture.homeRoot,
+				assets: [suppliedCommand(fixture.projectRoot)],
 				discover: async () => fixture.discovery,
 			});
 			program.exitOverride();
@@ -268,6 +279,7 @@ describe("cosmonauts harness sync", () => {
 		expect(first.rows[0]).toMatchObject({
 			before: "missing",
 			final: "current",
+			ownerDiagnostics: [`projectRoot=${await realpath(fixture.projectRoot)}`],
 		});
 		firstOutput.restore();
 
@@ -398,113 +410,6 @@ describe("cosmonauts harness sync", () => {
 		forgetOutput.restore();
 	});
 
-	test.each([
-		"claude",
-		"codex",
-	])("generated inventory drift is read-only on check and repaired by sync for %s", async (target) => {
-		const fixture = await runtimeSkillFixture("inventory-drift");
-		const inventory = syntheticInventory("initial-chain");
-		const run = (snapshot: RuntimeInventorySnapshot, extra: string[] = []) =>
-			syncInventory({
-				...fixture,
-				inventory: snapshot,
-				target,
-				extra: ["--scope", "project", ...extra],
-			});
-		expect((await run(inventory)).exitCode).toBe(0);
-		const ownerDirectory = target === "claude" ? ".claude" : ".agents";
-		const generated = join(
-			fixture.projectRoot,
-			ownerDirectory,
-			"skills",
-			"cosmonauts",
-			"references",
-			"generated-inventory.md",
-		);
-		expect(await readFile(generated, "utf8")).toContain("initial-chain");
-		const current = await run(inventory, ["--check"]);
-		expect(current.exitCode).toBe(0);
-		expect(current.rows[0]?.before).toBe("current");
-
-		const before = await snapshotRoots(fixture.projectRoot, fixture.homeRoot);
-		const changed = syntheticInventory("updated-chain");
-		const drift = await run(changed, ["--check"]);
-		expect(drift.exitCode).toBe(1);
-		expect(drift.rows[0]).toMatchObject({
-			before: "source-ahead",
-			reason: "source-changed",
-			action: "none",
-		});
-		expect(await snapshotRoots(fixture.projectRoot, fixture.homeRoot)).toEqual(
-			before,
-		);
-
-		const repaired = await run(changed);
-		expect(repaired.exitCode).toBe(0);
-		expect(repaired.rows[0]).toMatchObject({
-			before: "source-ahead",
-			final: "current",
-		});
-		expect(await readFile(generated, "utf8")).toContain("updated-chain");
-		expect(await readFile(generated, "utf8")).not.toContain("initial-chain");
-		expect((await run(changed, ["--check"])).exitCode).toBe(0);
-	});
-
-	test("a personal generated inventory reports the other project and regenerates from its runtime", async () => {
-		const fixture = await runtimeSkillFixture("inventory-a");
-		const otherProject = join(tmp.path, "inventory-b");
-		await mkdir(otherProject);
-		const run = (
-			projectRoot: string,
-			inventory: RuntimeInventorySnapshot,
-			extra: string[] = [],
-		) =>
-			syncInventory({
-				...fixture,
-				projectRoot,
-				inventory,
-				target: "claude",
-				extra,
-			});
-		expect(
-			(await run(fixture.projectRoot, syntheticInventory("project-a-chain")))
-				.exitCode,
-		).toBe(0);
-		const generated = join(
-			fixture.homeRoot,
-			".claude",
-			"skills",
-			"cosmonauts",
-			"references",
-			"generated-inventory.md",
-		);
-		expect(await readFile(generated, "utf8")).toContain("project-a-chain");
-		const before = await snapshotRoots(otherProject, fixture.homeRoot);
-		const inventory = syntheticInventory("project-b-chain");
-		const checked = await run(otherProject, inventory, ["--check"]);
-		expect(checked.exitCode).toBe(1);
-		expect(checked.rows[0]).toMatchObject({
-			scope: "personal",
-			before: "source-ahead",
-			reason: "regenerated-from-other-project",
-			action: "none",
-			generatingProjectRoot: await realpath(otherProject),
-			previousGeneratingProjectRoot: await realpath(fixture.projectRoot),
-		});
-		expect(await snapshotRoots(otherProject, fixture.homeRoot)).toEqual(before);
-		const synced = await run(otherProject, inventory);
-		expect(synced.exitCode).toBe(0);
-		expect(synced.rows[0]?.final).toBe("current");
-		expect(await readFile(generated, "utf8")).toContain("project-b-chain");
-		expect(await readFile(generated, "utf8")).not.toContain("project-a-chain");
-		const current = await run(otherProject, inventory, ["--check"]);
-		expect(current.exitCode).toBe(0);
-		expect(current.rows[0]).toMatchObject({
-			before: "current",
-			reason: "current",
-		});
-	});
-
 	test("rejects command link mode before owner-root or manifest writes", async () => {
 		const projectRoot = join(tmp.path, "command-project");
 		const homeRoot = join(tmp.path, "command-home");
@@ -516,13 +421,14 @@ describe("cosmonauts harness sync", () => {
 		await createHarnessProgram({
 			projectRoot,
 			homeRoot,
+			assets: [suppliedCommand(join(tmp.path, "command-assets"))],
 			discover: async () => emptyDiscovery(),
 		}).parseAsync(
 			["sync", "--target", "claude", "--kind", "command", "--link"],
 			{ from: "user" },
 		);
 		expect(error).toHaveBeenCalledWith(
-			expect.stringMatching(/command:spec-to-backlog.*link.*copy/i),
+			expect.stringMatching(/command:supplied.*link.*copy/i),
 		);
 		expect(existsSync(join(homeRoot, ".claude"))).toBe(false);
 		expect(existsSync(join(homeRoot, ".cosmonauts-harness-claude.lock"))).toBe(
@@ -533,7 +439,435 @@ describe("cosmonauts harness sync", () => {
 		).toBe(false);
 		expect(existsSync(join(homeRoot, ".agents"))).toBe(false);
 	});
+
+	test("an empty supplied catalog reports no rows and leaves no file behind", async () => {
+		const projectRoot = join(tmp.path, "empty-project");
+		const homeRoot = join(tmp.path, "empty-home");
+		await Promise.all([
+			mkdir(projectRoot, { recursive: true }),
+			mkdir(homeRoot, { recursive: true }),
+		]);
+		const run = async (extra: readonly string[]) => {
+			process.exitCode = undefined;
+			const output = captureCliOutput();
+			try {
+				await createHarnessProgram({
+					projectRoot,
+					homeRoot,
+					discover: async () => emptyDiscovery(),
+				}).parseAsync(["--json", "sync", ...extra], { from: "user" });
+				return JSON.parse(output.stdout()) as HarnessSyncReport;
+			} finally {
+				output.restore();
+			}
+		};
+		const before = await snapshotRoots(projectRoot, homeRoot);
+
+		expect(await run(["--check"])).toEqual({ rows: [], exitCode: 0 });
+		expect(process.exitCode).toBeUndefined();
+		expect(await snapshotRoots(projectRoot, homeRoot)).toEqual(before);
+
+		// Complete reconciliation still takes and releases each owner-root lock.
+		expect(await run([])).toEqual({ rows: [], exitCode: 0 });
+		expect(process.exitCode).toBeUndefined();
+		expect(Object.keys(await snapshotRoots(projectRoot, homeRoot))).toEqual(
+			Object.keys(before),
+		);
+	});
+
+	test("hands supplied assets to sync with one complete health row per unreported root", async () => {
+		const fixture = await runtimeSkillFixture("supplied-catalog");
+		const assetRoot = join(tmp.path, "supplied-catalog-assets");
+		const skill = suppliedSkill(assetRoot, "supplied-skill");
+		const command = suppliedCommand(assetRoot);
+		const reportedRootCommand: HarnessAsset = {
+			...suppliedCommand(assetRoot),
+			assetId: "command:reported-root",
+			sourceRootId: "alpha:test",
+		};
+		const sync = vi.fn(
+			async (
+				_options: Parameters<typeof runHarnessSync>[0],
+			): Promise<HarnessSyncReport> => ({ rows: [], exitCode: 0 }),
+		);
+		await createHarnessProgram({
+			projectRoot: fixture.projectRoot,
+			homeRoot: fixture.homeRoot,
+			assets: [skill, command, reportedRootCommand],
+			discover: async () => fixture.discovery,
+			sync,
+		}).parseAsync(["sync"], { from: "user" });
+
+		expect(sync).toHaveBeenCalledTimes(1);
+		const options = sync.mock.calls[0]?.[0];
+		if (!options) throw new Error("Expected one sync call.");
+		expect(options.assets.map((asset) => asset.assetId)).toEqual([
+			"skill:alpha/plan",
+			skill.assetId,
+			command.assetId,
+			reportedRootCommand.assetId,
+		]);
+		expect(options.sourceHealth).toEqual([
+			...fixture.discovery.sourceHealth,
+			{
+				sourceRootId: "consumer:assets",
+				sourceRoot: assetRoot,
+				domain: "injected",
+				status: "complete",
+				issues: [],
+			},
+		]);
+		expect(process.exitCode).toBeUndefined();
+	});
+
+	test("a supplied skill that collides with a discovered skill blocks sync", async () => {
+		const fixture = await runtimeSkillFixture("supplied-collision");
+		const sync = vi.fn();
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		await createHarnessProgram({
+			projectRoot: fixture.projectRoot,
+			homeRoot: fixture.homeRoot,
+			assets: [suppliedSkill(join(tmp.path, "collision-assets"), "plan")],
+			discover: async () => fixture.discovery,
+			sync,
+		}).parseAsync(["sync"], { from: "user" });
+		expect(sync).not.toHaveBeenCalled();
+		expect(error).toHaveBeenCalledWith(
+			expect.stringContaining("Skill output collisions: plan."),
+		);
+		expect(process.exitCode).toBe(1);
+	});
+
+	test("a supplied asset whose source is missing fails observation without writing", async () => {
+		const projectRoot = join(tmp.path, "missing-source-project");
+		const homeRoot = join(tmp.path, "missing-source-home");
+		const assetRoot = join(tmp.path, "missing-source-assets");
+		await Promise.all([
+			mkdir(projectRoot, { recursive: true }),
+			mkdir(homeRoot, { recursive: true }),
+			mkdir(assetRoot, { recursive: true }),
+		]);
+		const before = await snapshotRoots(projectRoot, homeRoot);
+		const output = captureCliOutput();
+		await createHarnessProgram({
+			projectRoot,
+			homeRoot,
+			assets: [{ ...suppliedCommand(assetRoot), sourcePath: "absent.md" }],
+			discover: async () => emptyDiscovery(),
+		}).parseAsync(
+			["--json", "sync", "--target", "claude", "--kind", "command"],
+			{
+				from: "user",
+			},
+		);
+		const report = JSON.parse(output.stdout()) as HarnessSyncReport;
+		output.restore();
+		expect(report.exitCode).toBe(1);
+		expect(report.rows).toHaveLength(1);
+		expect(report.rows[0]).toMatchObject({
+			action: "failed",
+			final: "source-ahead",
+		});
+		expect(report.rows[0]?.reason).toMatch(
+			/^observation-failure:.*command:supplied.*missing or broken registered local source/,
+		);
+		expect(process.exitCode).toBe(1);
+		expect(await snapshotRoots(projectRoot, homeRoot)).toEqual(before);
+	});
+
+	test("syncing a supplied command leaves unrelated target files alone", async () => {
+		const projectRoot = join(tmp.path, "unrelated-project");
+		const homeRoot = join(tmp.path, "unrelated-home");
+		const assetRoot = join(tmp.path, "unrelated-assets");
+		const commands = join(homeRoot, ".claude", "commands");
+		const skills = join(homeRoot, ".claude", "skills", "hand-made");
+		await Promise.all([
+			mkdir(projectRoot, { recursive: true }),
+			mkdir(commands, { recursive: true }),
+			mkdir(skills, { recursive: true }),
+		]);
+		await writeSuppliedCommandSource(assetRoot);
+		await writeFile(join(commands, "unrelated.md"), "hand-written command\n");
+		await writeFile(join(skills, "SKILL.md"), "hand-written skill\n");
+		const unrelatedBefore = {
+			...(await snapshotTree(join(commands, "unrelated.md"), "command")),
+			...(await snapshotTree(skills, "skill")),
+		};
+		const output = captureCliOutput();
+		await createHarnessProgram({
+			projectRoot,
+			homeRoot,
+			assets: [suppliedCommand(assetRoot)],
+			discover: async () => emptyDiscovery(),
+		}).parseAsync(
+			["--json", "sync", "--target", "claude", "--scope", "personal"],
+			{ from: "user" },
+		);
+		const report = JSON.parse(output.stdout()) as HarnessSyncReport;
+		output.restore();
+		expect(report).toMatchObject({ exitCode: 0 });
+		expect(report.rows).toEqual([
+			expect.objectContaining({
+				asset: "command:supplied",
+				ownerDiagnostics: ["authority=cosmonauts/core"],
+				before: "missing",
+				final: "current",
+			}),
+		]);
+		expect(await readFile(join(commands, "supplied.md"), "utf8")).toContain(
+			"Generated by cosmonauts",
+		);
+		expect({
+			...(await snapshotTree(join(commands, "unrelated.md"), "command")),
+			...(await snapshotTree(skills, "skill")),
+		}).toEqual(unrelatedBefore);
+	});
+
+	test("a recorded generated-wrapper entry whose asset is no longer supplied parses, reports, and is forgotten without touching its target", async () => {
+		const fixture = await recordedGeneratedWrapperFixture();
+		const manifest = await readHarnessManifest(fixture.manifestPath);
+		expect(manifest.entries[fixture.key]).toMatchObject({
+			assetId: "external-skill:cosmonauts",
+			owner: { kind: "authority", ownerId: "authority:cosmonauts/core" },
+			provenance: { kind: "generated-wrapper" },
+		});
+		const targetBefore = await snapshotTree(fixture.targetPath, "target");
+		const run = async (
+			args: readonly string[],
+			assets: readonly HarnessAsset[] = [],
+		) => {
+			process.exitCode = undefined;
+			const output = captureCliOutput();
+			try {
+				await createHarnessProgram({
+					projectRoot: fixture.projectRoot,
+					homeRoot: fixture.homeRoot,
+					assets,
+					discover: async () => emptyDiscovery(),
+				}).parseAsync(
+					[
+						"--json",
+						"sync",
+						"--target",
+						"claude",
+						"--scope",
+						"personal",
+						...args,
+					],
+					{ from: "user" },
+				);
+				return JSON.parse(output.stdout()) as HarnessSyncReport;
+			} finally {
+				output.restore();
+			}
+		};
+		const recordedRow = (report: HarnessSyncReport) =>
+			report.rows.find((row) => row.asset === "external-skill:cosmonauts");
+
+		const undeclared = await run(["--check"]);
+		expect(recordedRow(undeclared)).toMatchObject({
+			owner: { kind: "authority", ownerId: "authority:cosmonauts/core" },
+			before: "source-ahead",
+			reason: "source-unavailable",
+			action: "none",
+		});
+
+		const declaredRoot = await run(
+			["--check"],
+			[
+				{
+					...suppliedCommand(fixture.assetRoot),
+					sourceRootId: "cosmonauts:package",
+				},
+			],
+		);
+		expect(recordedRow(declaredRoot)).toMatchObject({
+			before: "source-ahead",
+			reason: "source-removed",
+			action: "none",
+		});
+
+		expect(await snapshotTree(fixture.targetPath, "target")).toEqual(
+			targetBefore,
+		);
+
+		// An edited generated node makes the bundle the user's: a sync with the
+		// root re-declared must not remove it.
+		await writeFile(
+			join(fixture.targetPath, "references", "generated-inventory.md"),
+			"# Edited by hand\n",
+		);
+		const editedBefore = await snapshotTree(fixture.targetPath, "target");
+		const editedSync = await run(
+			[],
+			[
+				{
+					...suppliedCommand(fixture.assetRoot),
+					sourceRootId: "cosmonauts:package",
+				},
+			],
+		);
+		expect(recordedRow(editedSync)).toMatchObject({
+			before: "locally-edited",
+			action: "none",
+		});
+		expect(await snapshotTree(fixture.targetPath, "target")).toEqual(
+			editedBefore,
+		);
+		expect(
+			(await readHarnessManifest(fixture.manifestPath)).entries[fixture.key],
+		).toMatchObject({ provenance: { kind: "generated-wrapper" } });
+
+		const forgotten = await run([
+			"--forget-removed",
+			"external-skill:cosmonauts",
+		]);
+		expect(forgotten.exitCode).toBe(0);
+		expect(forgotten.rows).toEqual([
+			expect.objectContaining({
+				asset: "external-skill:cosmonauts",
+				reason: "explicit-forget",
+				action: "forget-entry",
+				final: "current",
+			}),
+		]);
+		// Only the command the edited-bundle sync installed remains.
+		expect(
+			Object.values(
+				(await readHarnessManifest(fixture.manifestPath)).entries,
+			).map((entry) => entry.assetId),
+		).toEqual(["command:supplied"]);
+		expect(await snapshotTree(fixture.targetPath, "target")).toEqual(
+			editedBefore,
+		);
+	});
+
+	test("a supplied copy-mode skill reusing the legacy id external-skill:cosmonauts writes a manifest the next check reads", async () => {
+		const projectRoot = join(tmp.path, "legacy-id-project");
+		const homeRoot = join(tmp.path, "legacy-id-home");
+		const assetRoot = join(projectRoot, "assets");
+		await Promise.all([
+			mkdir(projectRoot, { recursive: true }),
+			mkdir(homeRoot, { recursive: true }),
+		]);
+		await writeSuppliedSkillSource(assetRoot, "cosmonauts");
+		const asset: HarnessAsset = {
+			...suppliedSkill(assetRoot, "cosmonauts"),
+			assetId: "external-skill:cosmonauts",
+		};
+		const run = (args: readonly string[]) =>
+			runSupplied({ projectRoot, homeRoot, assets: [asset] }, [
+				"--target",
+				"claude",
+				"--scope",
+				"project",
+				...args,
+			]);
+
+		const synced = await run(["--copy"]);
+		expect(synced.exitCode).toBe(0);
+		expect(synced.rows).toEqual([
+			expect.objectContaining({
+				asset: "external-skill:cosmonauts",
+				final: "current",
+			}),
+		]);
+		const manifestPath = join(
+			projectRoot,
+			".claude",
+			".cosmonauts-harness-manifest.json",
+		);
+		const entries = Object.values(
+			(await readHarnessManifest(manifestPath)).entries,
+		);
+		expect(entries).toEqual([
+			expect.objectContaining({
+				assetId: "external-skill:cosmonauts",
+				provenance: expect.objectContaining({ kind: "copy" }),
+			}),
+		]);
+		expect(entries[0]).not.toHaveProperty("generatingProjectRoot");
+
+		const checked = await run(["--check"]);
+		expect(checked).toEqual({
+			exitCode: 0,
+			rows: [
+				expect.objectContaining({
+					asset: "external-skill:cosmonauts",
+					before: "current",
+					action: "none",
+				}),
+			],
+		});
+	});
+
+	test("a supplied copy-mode asset that replaces a recorded generated-wrapper entry writes a manifest the next check reads", async () => {
+		const fixture = await recordedGeneratedWrapperFixture();
+		await writeSuppliedSkillSource(fixture.assetRoot, "cosmonauts");
+		const asset: HarnessAsset = {
+			...suppliedSkill(fixture.assetRoot, "cosmonauts"),
+			assetId: "external-skill:cosmonauts",
+			ownership: { kind: "authority", authorityId: "cosmonauts/core" },
+			sourceRootId: "cosmonauts:package",
+			defaultScope: "personal",
+		};
+		const run = (args: readonly string[]) =>
+			runSupplied(
+				{
+					projectRoot: fixture.projectRoot,
+					homeRoot: fixture.homeRoot,
+					assets: [asset],
+				},
+				["--target", "claude", "--scope", "personal", ...args],
+			);
+
+		const synced = await run(["--copy"]);
+		expect(synced.exitCode).toBe(0);
+		expect(synced.rows).toEqual([
+			expect.objectContaining({
+				asset: "external-skill:cosmonauts",
+				final: "current",
+			}),
+		]);
+		const entry = (await readHarnessManifest(fixture.manifestPath)).entries[
+			fixture.key
+		];
+		expect(entry).toMatchObject({ provenance: { kind: "copy" } });
+
+		const checked = await run(["--check"]);
+		expect(checked).toEqual({
+			exitCode: 0,
+			rows: [
+				expect.objectContaining({
+					asset: "external-skill:cosmonauts",
+					before: "current",
+					action: "none",
+				}),
+			],
+		});
+	});
 });
+
+async function runSupplied(
+	options: {
+		readonly projectRoot: string;
+		readonly homeRoot: string;
+		readonly assets: readonly HarnessAsset[];
+	},
+	args: readonly string[],
+): Promise<HarnessSyncReport> {
+	process.exitCode = undefined;
+	const output = captureCliOutput();
+	try {
+		await createHarnessProgram({
+			...options,
+			discover: async () => emptyDiscovery(),
+		}).parseAsync(["--json", "sync", ...args], { from: "user" });
+		return JSON.parse(output.stdout()) as HarnessSyncReport;
+	} finally {
+		output.restore();
+	}
+}
 
 async function snapshotRoots(
 	projectRoot: string,
@@ -657,72 +991,137 @@ function reportFixture(): HarnessSyncReport {
 	};
 }
 
-function syntheticInventory(chainName: string): RuntimeInventorySnapshot {
+const CORE_AUTHORITY = {
+	kind: "authority",
+	ownerId: "authority:cosmonauts/core",
+	authorityId: "cosmonauts/core",
+} as const satisfies OwnerIdentity;
+
+function suppliedSkill(sourceRoot: string, name: string): HarnessAsset {
 	return {
-		chains: [
-			{
-				name: chainName,
-				description: "Synthetic chain",
-				expression: "studio/author -> studio/reviewer",
-			},
-		],
-		effectiveSkills: [],
-		candidates: [],
-		sourceHealth: [],
-		paths: [
-			{
-				target: "claude",
-				kind: "command",
-				project: ".claude/commands",
-				personal: "~/.claude/commands",
-			},
-			{
-				target: "claude",
-				kind: "skill",
-				project: ".claude/skills",
-				personal: "~/.claude/skills",
-			},
-			{
-				target: "codex",
-				kind: "skill",
-				project: ".agents/skills",
-				personal: "~/.agents/skills",
-			},
-		],
+		assetId: `skill:supplied/${name}`,
+		kind: "skill",
+		ownership: { kind: "project" },
+		sourceRootId: "consumer:assets",
+		sourceRoot,
+		sourcePath: name,
+		logicalPath: name,
+		outputIdentity: name,
+		defaultScope: "project",
 	};
 }
 
-async function syncInventory(options: {
-	projectRoot: string;
-	homeRoot: string;
-	inventory: RuntimeInventorySnapshot;
-	target: string;
-	extra: string[];
-}): Promise<HarnessSyncReport> {
-	process.exitCode = undefined;
-	const output = captureCliOutput();
-	try {
-		await createHarnessProgram({
-			projectRoot: options.projectRoot,
-			homeRoot: options.homeRoot,
-			discover: async () => ({
-				...emptyDiscovery(),
-				runtimeInventory: options.inventory,
-			}),
-		}).parseAsync(
-			[
-				"--json",
-				"sync",
-				"--target",
-				options.target,
-				"--asset",
-				"external-skill:cosmonauts",
-				...options.extra,
-			],
-			{ from: "user" },
-		);
-		return JSON.parse(output.stdout()) as HarnessSyncReport;
-	} finally {
-		output.restore();
-	}
+function suppliedCommand(sourceRoot: string): HarnessAsset {
+	return {
+		assetId: "command:supplied",
+		kind: "command",
+		ownership: { kind: "authority", authorityId: "cosmonauts/core" },
+		sourceRootId: "consumer:assets",
+		sourceRoot,
+		sourcePath: "supplied.md",
+		logicalPath: "supplied.md",
+		outputIdentity: "supplied.md",
+		defaultScope: "personal",
+	};
+}
+
+async function writeSuppliedCommandSource(sourceRoot: string): Promise<void> {
+	await mkdir(sourceRoot, { recursive: true });
+	await writeFile(
+		join(sourceRoot, "supplied.md"),
+		"---\ndescription: Supplied\nargument-hint: <arg>\n---\n# Supplied\n",
+	);
+}
+
+async function writeSuppliedSkillSource(
+	sourceRoot: string,
+	name: string,
+): Promise<void> {
+	await mkdir(join(sourceRoot, name), { recursive: true });
+	await writeFile(
+		join(sourceRoot, name, "SKILL.md"),
+		`---\nname: ${name}\ndescription: Supplied\n---\n# Supplied\n`,
+	);
+}
+
+/**
+ * A personal Claude install as an earlier release left it: a generated-wrapper
+ * bundle owned by the core authority, from a source this release no longer
+ * supplies.
+ */
+async function recordedGeneratedWrapperFixture() {
+	const projectRoot = join(tmp.path, "recorded-project");
+	const homeRoot = join(tmp.path, "recorded-home");
+	const assetRoot = join(tmp.path, "recorded-assets");
+	const retiredSource = join(tmp.path, "retired-package", "cosmonauts");
+	await Promise.all([
+		mkdir(projectRoot, { recursive: true }),
+		mkdir(retiredSource, { recursive: true }),
+		mkdir(join(homeRoot, ".claude", "skills", "cosmonauts", "references"), {
+			recursive: true,
+		}),
+	]);
+	await writeSuppliedCommandSource(assetRoot);
+	const authoredSource = join(retiredSource, "SKILL.md");
+	await writeFile(authoredSource, "---\nname: cosmonauts\n---\n# Bundle\n");
+	const ownerRoot = join(await realpath(homeRoot), ".claude");
+	const targetPath = join(ownerRoot, "skills", "cosmonauts");
+	const generatedBytes = Buffer.from("# Generated inventory\n");
+	await symlink(await realpath(authoredSource), join(targetPath, "SKILL.md"));
+	await writeFile(
+		join(targetPath, "references", "generated-inventory.md"),
+		generatedBytes,
+	);
+	const key = manifestEntryKey(CORE_AUTHORITY, "external-skill:cosmonauts");
+	const manifestPath = join(ownerRoot, ".cosmonauts-harness-manifest.json");
+	await writeFile(
+		manifestPath,
+		serializeHarnessManifest({
+			schemaVersion: 1,
+			entries: {
+				[key]: {
+					schemaVersion: 1,
+					owner: CORE_AUTHORITY,
+					assetId: "external-skill:cosmonauts",
+					kind: "skill",
+					target: "claude",
+					scope: "personal",
+					sourceRootId: "cosmonauts:package",
+					sourcePath: "external-skills/cosmonauts",
+					logicalPath: "external-skills/cosmonauts",
+					outputIdentity: "cosmonauts",
+					outputPath: targetPath,
+					mode: "link",
+					exportedAt: "2026-08-26T00:00:00.000Z",
+					generatingProjectRoot: await realpath(projectRoot),
+					provenance: {
+						kind: "generated-wrapper",
+						baselineDigest: "recorded-baseline",
+						authoredLinks: [
+							{
+								relativePath: "SKILL.md",
+								expectedCanonicalSource: await realpath(authoredSource),
+							},
+						],
+						generatedNodes: [
+							{
+								relativePath: "references/generated-inventory.md",
+								inputDigest: "recorded-input",
+								renderedDigest: sha256(generatedBytes),
+								targetDigest: sha256(generatedBytes),
+							},
+						],
+					},
+				},
+			},
+		}),
+	);
+	return {
+		projectRoot,
+		homeRoot,
+		assetRoot,
+		key,
+		manifestPath,
+		targetPath,
+	};
 }
