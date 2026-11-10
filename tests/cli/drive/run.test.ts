@@ -14,7 +14,6 @@ import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import { AgentRegistry } from "../../../lib/agents/index.ts";
 import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import type { Backend } from "../../../lib/driver/backends/types.ts";
-import { DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH } from "../../../lib/driver/default-envelope.ts";
 import type { DriverDeps } from "../../../lib/driver/driver.ts";
 import { resolveDriveEpisodeWorker } from "../../../lib/driver/episode-identity.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../lib/driver/run-one-task.ts";
@@ -587,7 +586,7 @@ describe("cosmonauts run drive compat run", () => {
 				"inline",
 			]),
 		).rejects.toThrow(
-			`Missing default Drive envelope at ${join(originalCwd, DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH)}. Pass --envelope <path> (CLI) or envelopePath (run_driver) to provide an explicit envelope.`,
+			"Drive needs an envelope. Pass --envelope <path> (CLI) or envelopePath (run_driver).",
 		);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
 	});

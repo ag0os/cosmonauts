@@ -7,7 +7,6 @@ import { Command } from "commander";
 import { resolveConfiguredExternalBackend } from "../../lib/driver/backend-resolution.ts";
 import { createCosmonautsSubagentBackend } from "../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../lib/driver/backends/types.ts";
-import { resolveDefaultDriveEnvelopePath } from "../../lib/driver/default-envelope.ts";
 import {
 	recordDriveTerminalEpisode,
 	stampDriveEpisodeResult,
@@ -39,6 +38,7 @@ import {
 	acquireRepoCommitLock,
 	isProcessAlive,
 } from "../../lib/driver/lock.ts";
+import { requireDriveEnvelope } from "../../lib/driver/require-envelope.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../lib/driver/run-one-task.ts";
 import {
 	clearPendingFinalization,
@@ -240,7 +240,7 @@ function configureRunCommand(command: Command): void {
 		)
 		.option(
 			"--envelope <path>",
-			"Prompt envelope path (omit for the framework default Drive envelope)",
+			"Prompt envelope path (required; Cosmonauts ships no default envelope)",
 		)
 		.option("--precondition <path>", "Prompt precondition path")
 		.option("--overrides <dir>", "Per-task prompt override directory")
@@ -1265,9 +1265,9 @@ async function resolveEnvelopeSnapshot({
 
 	const envelopePath = resolve(
 		projectRoot,
-		options.envelope ??
-			resumePromptTemplate?.envelopePath ??
-			resolveDefaultDriveEnvelopePath(),
+		requireDriveEnvelope(
+			options.envelope ?? resumePromptTemplate?.envelopePath,
+		),
 	);
 	return {
 		envelopePath,

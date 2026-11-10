@@ -13,7 +13,6 @@ import type {
 	BackendInvocation,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
-import { DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH } from "../../lib/driver/default-envelope.ts";
 import { resolveDriveEpisodeWorker } from "../../lib/driver/episode-identity.ts";
 import type {
 	DriverActivityBusEvent,
@@ -322,7 +321,7 @@ describe("driver e2e run_driver integration", () => {
 		await expect(
 			launchDriver(fixture, { frameworkRoot, omitEnvelopePath: true }),
 		).rejects.toThrow(
-			`Missing default Drive envelope at ${join(frameworkRoot, DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH)}. Pass --envelope <path> (CLI) or envelopePath (run_driver) to provide an explicit envelope.`,
+			"Drive needs an envelope. Pass --envelope <path> (CLI) or envelopePath (run_driver).",
 		);
 		expect(backendMocks.run).not.toHaveBeenCalled();
 	});
