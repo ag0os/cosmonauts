@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import ts from "typescript";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
 	installPackedPackage,
@@ -87,6 +88,30 @@ test("the tarball ships exactly the bin, the library and CLI source, the theme, 
 			),
 		),
 	).toEqual([]);
+});
+
+test("shipped source imports only node: builtins, declared dependencies and relative paths", async () => {
+	const pkg = JSON.parse(
+		await readFile(join(packed.installed, "package.json"), "utf8"),
+	);
+	const allowed = new Set(Object.keys(pkg.dependencies));
+	const undeclared: string[] = [];
+	for (const path of packed.files.filter((file) =>
+		/^(lib|cli)\/.*\.ts$/.test(file),
+	)) {
+		const source = await readFile(join(packed.installed, path), "utf8");
+		const specifiers = ts
+			.preProcessFile(source, true, true)
+			.importedFiles.map((file) => file.fileName);
+		for (const specifier of specifiers) {
+			if (specifier.startsWith(".") || specifier.startsWith("node:")) continue;
+			const name = specifier.startsWith("@")
+				? specifier.split("/").slice(0, 2).join("/")
+				: (specifier.split("/")[0] ?? "");
+			if (!allowed.has(name)) undeclared.push(`${path}: ${specifier}`);
+		}
+	}
+	expect(undeclared).toEqual([]);
 });
 
 describe("the installed bin", () => {
