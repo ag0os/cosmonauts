@@ -314,8 +314,8 @@ describe("memory owner CLI", () => {
 		);
 		const indexedTitles =
 			renderedKnowledge.match(/Synthetic corpus record \d+/g) ?? [];
-		expect(indexedTitles.length).toBeGreaterThan(0);
-		expect(indexedTitles.length).toBeLessThan(recordCount);
+		expect(indexedTitles).toHaveLength(KNOWLEDGE_INDEX_LIMIT);
+		expect(result.details.indexPressure.recordCount).toBe(recordCount);
 
 		await expect(corpusSnapshot(sourceKnowledgeRoot)).resolves.toEqual(
 			sourceBefore,
@@ -1066,7 +1066,7 @@ async function writeSyntheticKnowledgeCorpus(
 				`type: ${type}`,
 				`title: Synthetic corpus record ${index}`,
 				"description: >-",
-				`  A generated ${type} used to measure index pressure against`,
+				`  A generated ${type} — used to measure index pressure against`,
 				"  the injected knowledge context.",
 				`resource: knowledge/${relativePath}`,
 				"tags:",
