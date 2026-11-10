@@ -82,7 +82,7 @@ type KnowledgeRetireWhen =
 			readonly check: KnowledgeRetireWhenCheck;
 	  };
 
-export interface KnowledgeRecordFields {
+interface KnowledgeRecordFields {
 	readonly type: KnowledgeRecordType;
 	readonly title: string;
 	readonly description: string;
