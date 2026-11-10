@@ -90,6 +90,65 @@ describe("memory owner CLI", () => {
 		});
 	});
 
+	test("consolidates a root with no knowledge or memory store to an empty no-op without creating either", async () => {
+		const projectRoot = join(tmp.path, "empty-store-project");
+		const home = join(tmp.path, "empty-store-home");
+		await mkdir(projectRoot, { recursive: true });
+
+		const { stdout } = await execFileAsync(
+			"bun",
+			[
+				join(process.cwd(), "bin", "cosmonauts"),
+				"memory",
+				"consolidate",
+				"--no-model",
+				"--json",
+			],
+			{
+				cwd: projectRoot,
+				env: { ...process.env, HOME: home },
+			},
+		);
+		const result = JSON.parse(stdout);
+
+		expect(result).toMatchObject({
+			kind: "noop",
+			details: {
+				dryRun: false,
+				sources: [
+					{
+						sourceId: "project-corpus",
+						admitted: 0,
+						omitted: 0,
+						inventoryComplete: true,
+					},
+					{
+						sourceId: "project-episodes",
+						admitted: 0,
+						omitted: 0,
+						inventoryComplete: true,
+					},
+				],
+				observations: [],
+				proposals: [],
+				retirements: [],
+				warnings: [],
+				writesCommitted: false,
+				indexPressure: {
+					kind: "measured",
+					recordCount: 0,
+					renderedBytes: 0,
+				},
+			},
+		});
+		const created = await readdir(projectRoot);
+		expect(created).not.toContain("knowledge");
+		expect(created).not.toContain("memory");
+		await expect(readdir(join(home, ".cosmonauts"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+	});
+
 	test("runs the production corpus source before episodes in a deterministic dry run", async () => {
 		const projectRoot = join(tmp.path, "corpus-cli-project");
 		const home = join(tmp.path, "corpus-cli-home");
