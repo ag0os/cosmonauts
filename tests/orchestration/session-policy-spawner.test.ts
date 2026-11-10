@@ -103,7 +103,24 @@ test("unknown actors return a spawn failure with an optional consumer provider",
 		}),
 	).resolves.toMatchObject({
 		success: false,
-		error: expect.stringContaining("Unknown agent role"),
+		error: 'Unknown agent role "missing". Available agents: archivist',
+	});
+});
+
+test("an unknown actor in an empty registry names the empty available list", async () => {
+	const spawner = createPiSpawner(new AgentRegistry([]), tmp.path, {
+		runtime: TEST_RUNTIME,
+	});
+	await expect(
+		spawner.spawn({
+			runtime: TEST_RUNTIME,
+			role: "missing",
+			cwd: tmp.path,
+			prompt: "archive",
+		}),
+	).resolves.toMatchObject({
+		success: false,
+		error: 'Unknown agent role "missing". Available agents: (none)',
 	});
 });
 
