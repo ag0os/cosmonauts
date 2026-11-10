@@ -5,6 +5,7 @@ import {
 	readdir,
 	readFile,
 	realpath,
+	rm,
 	writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -98,8 +99,11 @@ test("the fixture's library imports resolve exclusively through the public expor
 	for (const specifier of imports) assertConsumerImport(specifier, pkg.exports);
 });
 
-test("an external consumer of the packed tarball executes its chain and assembles granted memory tools with no framework content", async () => {
+test("an external consumer of the packed library, without the CLI host, executes its chain and assembles granted memory tools with no framework content", async () => {
 	const { installed } = await installPackedPackage(tmp.path);
+	// The library must run without the CLI host shipped beside it.
+	for (const hostOnly of ["cli", "bin", "themes"])
+		await rm(join(installed, hostOnly), { recursive: true });
 	for (const file of ["consumer.ts", "policies.ts", "grants.ts"])
 		await cp(
 			new URL(`./fixtures/library-consumer/${file}`, import.meta.url),
@@ -107,12 +111,9 @@ test("an external consumer of the packed tarball executes its chain and assemble
 		);
 	expect((await readdir(installed)).sort()).toEqual([
 		"README.md",
-		"bin",
-		"cli",
 		"lib",
 		"node_modules",
 		"package.json",
-		"themes",
 	]);
 	const externalRequire = createRequire(join(tmp.path, "run.ts"));
 	expect(externalRequire.resolve("cosmonauts")).toBe(
