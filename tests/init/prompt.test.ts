@@ -89,6 +89,31 @@ describe("resolveInitInstructions", () => {
 		});
 	});
 
+	test("reads the file, not a stray content field, for a file source", async () => {
+		const path = join(tmp.path, "init.md");
+		await writeFile(path, "From the file.");
+		const runtime = runtimeWith(
+			{ init: { kind: "file", path, content: "Stray." } as never },
+			"ops",
+		);
+		await expect(resolveInitInstructions(runtime)).resolves.toEqual({
+			ok: true,
+			instructions: "From the file.",
+		});
+	});
+
+	test("names a lead domain that is not in the registry", async () => {
+		await expect(
+			resolveInitInstructions(
+				runtimeWith({ init: { kind: "inline", content: "x" } }, "elsewhere"),
+			),
+		).resolves.toEqual({
+			ok: false,
+			message:
+				'Domain "elsewhere" declares no init instructions. Add init: { kind: "inline", content } or { kind: "file", path } to its domain.ts manifest, then run init again.',
+		});
+	});
+
 	test("refuses a relative file path", async () => {
 		const runtime = runtimeWith(
 			{ init: { kind: "file", path: "init.md" } },

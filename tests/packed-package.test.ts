@@ -98,6 +98,13 @@ describe("the installed bin", () => {
 		);
 	});
 
+	test("says Drive needs an explicit envelope", async () => {
+		const { stdout } = await cosmonauts(["run", "drive", "--help"]);
+		expect(stdout.replace(/\s+/g, " ")).toContain(
+			"Prompt envelope path (required; Cosmonauts ships no default envelope)",
+		);
+	});
+
 	test.each([
 		"--list-domains",
 		"--list-agents",

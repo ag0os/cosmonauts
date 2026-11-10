@@ -314,6 +314,21 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.run).not.toHaveBeenCalled();
 	});
 
+	test("run_driver describes the envelope as required and names no skill", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const pi = createMockPi(fixture.projectRoot);
+		registerDriverTool(pi as never, async () => ({}) as never, process.cwd());
+		const tool = pi.getTool("run_driver") as unknown as {
+			description: string;
+			parameters: { properties: { envelopePath: { description: string } } };
+		};
+
+		expect(tool.description).not.toContain("/skill:");
+		expect(tool.parameters.properties.envelopePath.description).toContain(
+			"Required at run time: Cosmonauts ships no default envelope.",
+		);
+	});
+
 	test("run_driver refuses an omitted envelopePath now that no default envelope ships", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const frameworkRoot = process.cwd();
