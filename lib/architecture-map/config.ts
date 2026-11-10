@@ -31,7 +31,13 @@ type MutableArchitectureMapConfig = {
 	-readonly [K in keyof ArchitectureMapConfig]: ArchitectureMapConfig[K];
 };
 
-const DEFAULT_SOURCE_ROOTS = ["src", "lib", "cli", "packages"] as const;
+const DEFAULT_SOURCE_ROOTS = [
+	"src",
+	"lib",
+	"cli",
+	"domains",
+	"packages",
+] as const;
 
 const DEFAULT_EXCLUDE = [
 	"node_modules",

@@ -60,19 +60,35 @@ describe("resolveArchitectureMapConfig", () => {
 
 		expect(config.sourceRoots).toEqual(["src/keep"]);
 	});
-	test("defaults to the conventional source roots that exist and skips retired content roots", async () => {
+	test("defaults to the conventional source roots that exist, consumer domains included, and skips bundled/", async () => {
 		const projectRoot = join(tmp.path, "project-default-roots");
 		for (const root of ["packages", "domains", "bundled", "cli", "lib", "src"])
 			await mkdir(join(projectRoot, root), { recursive: true });
 
 		const config = await resolveArchitectureMapConfig({ projectRoot });
 
-		expect(config.sourceRoots).toEqual(["src", "lib", "cli", "packages"]);
+		expect(config.sourceRoots).toEqual([
+			"src",
+			"lib",
+			"cli",
+			"domains",
+			"packages",
+		]);
+	});
+
+	test("covers a mixed src/ and domains/ project", async () => {
+		const projectRoot = join(tmp.path, "project-mixed-roots");
+		await mkdir(join(projectRoot, "src"), { recursive: true });
+		await mkdir(join(projectRoot, "domains", "ops"), { recursive: true });
+
+		const config = await resolveArchitectureMapConfig({ projectRoot });
+
+		expect(config.sourceRoots).toEqual(["src", "domains"]);
 	});
 
 	test("falls back to the project root when no conventional source root exists", async () => {
 		const projectRoot = join(tmp.path, "project-no-roots");
-		await mkdir(join(projectRoot, "domains"), { recursive: true });
+		await mkdir(join(projectRoot, "bundled"), { recursive: true });
 
 		const config = await resolveArchitectureMapConfig({ projectRoot });
 
