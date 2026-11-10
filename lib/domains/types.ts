@@ -31,6 +31,8 @@ export interface DomainManifest {
 	readonly portable?: boolean;
 	/** Asset names hidden from callers outside this domain. Omitted lists default to public. */
 	readonly internal?: DomainInternalDenyList;
+	/** Instructions `cosmonauts init` and `/init` give this domain's lead. File paths must be absolute. */
+	readonly init?: import("../agents/types.ts").AgentInstructions;
 }
 
 /** Domain public-surface deny-list. Omitted asset lists expose all discovered assets of that type. */
