@@ -60,4 +60,22 @@ describe("resolveArchitectureMapConfig", () => {
 
 		expect(config.sourceRoots).toEqual(["src/keep"]);
 	});
+	test("defaults to the conventional source roots that exist and skips retired content roots", async () => {
+		const projectRoot = join(tmp.path, "project-default-roots");
+		for (const root of ["packages", "domains", "bundled", "cli", "lib", "src"])
+			await mkdir(join(projectRoot, root), { recursive: true });
+
+		const config = await resolveArchitectureMapConfig({ projectRoot });
+
+		expect(config.sourceRoots).toEqual(["src", "lib", "cli", "packages"]);
+	});
+
+	test("falls back to the project root when no conventional source root exists", async () => {
+		const projectRoot = join(tmp.path, "project-no-roots");
+		await mkdir(join(projectRoot, "domains"), { recursive: true });
+
+		const config = await resolveArchitectureMapConfig({ projectRoot });
+
+		expect(config.sourceRoots).toEqual(["."]);
+	});
 });
