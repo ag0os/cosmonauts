@@ -1,5 +1,6 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MissionsScaffoldResult } from "../../../cli/scaffold/commands/missions.ts";
 import {
@@ -21,6 +22,7 @@ import {
 	createCommandTestContext,
 	expectNoCommandDiagnostics,
 } from "../../helpers/cli.ts";
+import { useTempDir } from "../../helpers/fs.ts";
 import { createInitializedTaskManager } from "../../helpers/tasks.ts";
 
 const COSMO_OPTIONS = ["--prefix", "COSMO", "--name", "Cosmonauts"] as const;
@@ -171,6 +173,47 @@ describe("missions scaffold helpers", () => {
 			).rejects.toThrow();
 		}
 	});
+});
+
+describe("a consumer scaffolding fresh records through the CLI", () => {
+	const BIN = resolve(import.meta.dirname, "../../../bin/cosmonauts");
+	const tmp = useTempDir("scaffold-fresh-records-");
+
+	function cosmonauts(...args: string[]): string {
+		const result = spawnSync("bun", [BIN, ...args], {
+			cwd: join(tmp.path, "project"),
+			env: { ...process.env, HOME: join(tmp.path, "home") },
+			encoding: "utf-8",
+		});
+		if (result.status !== 0)
+			throw new Error(
+				`cosmonauts ${args.join(" ")} exited ${result.status}: ${result.stderr}`,
+			);
+		return result.stdout;
+	}
+
+	it("creates a plan and a task in a project that had no records", async () => {
+		await mkdir(join(tmp.path, "project"));
+		await mkdir(join(tmp.path, "home"));
+
+		cosmonauts("scaffold", "missions", "--prefix", "FRESH");
+		cosmonauts("plan", "create", "--slug", "first-plan", "--title", "First");
+		cosmonauts("task", "create", "First task", "-l", "plan:first-plan");
+
+		const missions = join(tmp.path, "project", "missions");
+		await expect(
+			readFile(join(missions, "plans", "first-plan", "plan.md"), "utf-8"),
+		).resolves.toContain("First");
+		expect(await readdir(join(missions, "tasks"))).toEqual([
+			"FRESH-001 - First task.md",
+			"config.json",
+		]);
+		expect(
+			JSON.parse(cosmonauts("task", "list", "--json")).map(
+				(task: { id: string; labels: string[] }) => [task.id, task.labels],
+			),
+		).toEqual([["FRESH-001", ["plan:first-plan"]]]);
+	}, 30_000);
 });
 
 describe("scaffold missions command", () => {

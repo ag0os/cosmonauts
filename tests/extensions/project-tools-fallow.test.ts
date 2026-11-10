@@ -3233,7 +3233,6 @@ describe("Fallow capability execution", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:qm-chain-safety#B-007
 	test("analysis_audit fails visibly before spawn when a baseline is missing", async () => {
 		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 		await recordConsent();

@@ -27,7 +27,6 @@ function agent(id: string, subagents: string[] = []): AgentDefinition {
 }
 
 describe("run_driver caller authority", () => {
-	// @cosmo-behavior plan:qm-chain-safety#B-001
 	test("denies a caller without worker authority before task discovery", async () => {
 		const init = vi.spyOn(TaskManager.prototype, "init");
 		const pi = createMockPi(temp.path, {

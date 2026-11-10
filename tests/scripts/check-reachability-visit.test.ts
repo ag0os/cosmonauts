@@ -27,7 +27,7 @@ afterEach(() => {
 function createProject(mainSource: string): string {
 	const root = mkdtempSync(join(tmpdir(), "reachability-visit-"));
 	roots.push(root);
-	for (const dir of ["lib", "cli", "bin", "missions/architecture"])
+	for (const dir of ["lib", "cli", "bin", ".cosmonauts"])
 		mkdirSync(join(root, dir), { recursive: true });
 	writeFileSync(
 		join(root, "package.json"),
@@ -38,10 +38,7 @@ function createProject(mainSource: string): string {
 		'#!/usr/bin/env bun\nimport "../cli/main.ts";\n',
 	);
 	writeFileSync(join(root, "fallow.toml"), "entry = []\n");
-	writeFileSync(
-		join(root, "missions/architecture/staged-code.toml"),
-		"public = []\n",
-	);
+	writeFileSync(join(root, ".cosmonauts/staged-code.toml"), "public = []\n");
 	writeFileSync(
 		join(root, "lib/probe.ts"),
 		"export interface Shape { id: string }\nexport const probe = 1;\n",
@@ -189,7 +186,7 @@ describe("reachability verdict for the shipped repository", () => {
 	test("reaches every runtime lib module under the committed staged-code registry", () => {
 		const result = run(projectRoot);
 		const registry = readFileSync(
-			join(projectRoot, "missions/architecture/staged-code.toml"),
+			join(projectRoot, ".cosmonauts/staged-code.toml"),
 			"utf8",
 		);
 		const stagedRows = registry.match(/^\[\[staged\]\]/gm)?.length ?? 0;

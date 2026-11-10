@@ -72,7 +72,6 @@ describe("chain_run durable tool routing", () => {
 			[],
 		);
 	});
-	// @cosmo-behavior plan:qm-chain-safety#B-001
 	test("refuses a forbidden sequential stage before allocating a run", async () => {
 		spawnerMocks.createPiSpawner.mockReturnValue({
 			spawn: spawnerMocks.spawn,

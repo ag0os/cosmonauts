@@ -12,6 +12,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { binEntryImports } from "../../scripts/project-path.ts";
 
 const projectRoot = resolve(".");
+const REGISTRY = ".cosmonauts/staged-code.toml";
 const roots: string[] = [];
 
 afterEach(() => {
@@ -22,12 +23,7 @@ afterEach(() => {
 function fixture(owner = "plan:future-work") {
 	const root = mkdtempSync(join(tmpdir(), "reachability-"));
 	roots.push(root);
-	for (const dir of [
-		"lib",
-		"cli",
-		"missions/architecture",
-		"missions/plans/future-work",
-	])
+	for (const dir of ["lib", "cli", ".cosmonauts", "missions/plans/future-work"])
 		mkdirSync(join(root, dir), { recursive: true });
 	writeFileSync(
 		join(root, "package.json"),
@@ -47,7 +43,7 @@ function fixture(owner = "plan:future-work") {
 		'entry = ["lib/public.ts", "lib/staged.ts"]\n',
 	);
 	writeFileSync(
-		join(root, "missions/architecture/staged-code.toml"),
+		join(root, REGISTRY),
 		`public = ["lib/public.ts"]\n[[staged]]\npath = "lib/staged.ts"\nowner = "${owner}"\n`,
 	);
 	writeFileSync(
@@ -159,7 +155,7 @@ describe("reachability command", () => {
 		const { root } = fixture();
 		writeFileSync(join(root, "fallow.toml"), 'entry = ["lib/public.ts"]\n');
 		writeFileSync(
-			join(root, "missions/architecture/staged-code.toml"),
+			join(root, REGISTRY),
 			'public = ["lib/public.ts"]\n[[staged ]]\npath = "lib/staged.ts"\nowner = "plan:future-work"\n',
 		);
 		const result = run(root);
@@ -171,7 +167,7 @@ describe("reachability command", () => {
 	test("fails loudly on a staged row whose owner is not a string", () => {
 		const { root } = fixture();
 		writeFileSync(
-			join(root, "missions/architecture/staged-code.toml"),
+			join(root, REGISTRY),
 			'public = ["lib/public.ts"]\n[[staged]]\npath = "lib/staged.ts"\nowner = 7\n',
 		);
 		const result = run(root);
@@ -189,10 +185,7 @@ describe("reachability command", () => {
 
 	test("fails loudly on malformed TOML", () => {
 		const { root } = fixture();
-		writeFileSync(
-			join(root, "missions/architecture/staged-code.toml"),
-			'public = ["lib/public.ts"\n',
-		);
+		writeFileSync(join(root, REGISTRY), 'public = ["lib/public.ts"\n');
 		const result = run(root);
 		expect(result.status).toBe(1);
 		expect(result.stderr).toContain("staged-code.toml");
@@ -476,6 +469,113 @@ describe("reachability command", () => {
 		expect(result.stdout).toContain(
 			"reachability: 2/2 runtime lib modules reached; 1 type-only lib module exempt; 1 staged",
 		);
+	});
+});
+
+function recordFreeRoot(registry = 'public = ["lib/public.ts"]\n') {
+	const root = mkdtempSync(join(tmpdir(), "reachability-record-free-"));
+	roots.push(root);
+	write(
+		root,
+		"package.json",
+		'{"type":"module","bin":{"fixture":"bin/fixture"}}',
+	);
+	write(root, "bin/fixture", '#!/usr/bin/env bun\nimport "../cli/main.ts";\n');
+	write(root, "cli/main.ts", "export const main = 1;\n");
+	write(root, "lib/public.ts", "export const publicValue = 1;\n");
+	write(root, "fallow.toml", 'entry = ["lib/public.ts"]\n');
+	write(root, REGISTRY, registry);
+	return root;
+}
+
+describe("reachability on a package root without project records", () => {
+	test("passes with no missions directory and no roadmap", () => {
+		const root = recordFreeRoot();
+
+		const result = run(root);
+
+		expect(existsSync(join(root, "missions"))).toBe(false);
+		expect(existsSync(join(root, "ROADMAP.md"))).toBe(false);
+		expect(result.stderr).not.toContain("staged-code.toml");
+		expect(result.status).toBe(0);
+		expect(result.stdout.trim()).toBe(
+			"reachability: 1/1 runtime lib modules reached; 0 type-only lib modules exempt; 0 staged",
+		);
+	});
+
+	test.each([
+		"plan:future-work",
+		"roadmap:Future work",
+	])("reports a staged row owned by %s as absent", (owner) => {
+		const root = recordFreeRoot(
+			`public = ["lib/public.ts"]\n[[staged]]\npath = "lib/staged.ts"\nowner = "${owner}"\n`,
+		);
+		write(root, "lib/staged.ts", "export const stagedValue = 1;\n");
+		write(root, "fallow.toml", 'entry = ["lib/public.ts", "lib/staged.ts"]\n');
+
+		const result = run(root);
+
+		expect(result.status).toBe(1);
+		expect(result.stdout).toContain(
+			`staged owner archived or absent: lib/staged.ts -> ${owner}`,
+		);
+		expect(result.stdout).toContain(
+			"reachability: 2/2 runtime lib modules reached; 0 type-only lib modules exempt; 1 staged",
+		);
+	});
+
+	test("does not fall back to a registry left under missions/architecture", () => {
+		const root = recordFreeRoot();
+		write(
+			root,
+			"missions/architecture/staged-code.toml",
+			'public = ["lib/public.ts"]\n',
+		);
+		rmSync(join(root, REGISTRY));
+
+		const result = run(root);
+
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain(".cosmonauts/staged-code.toml");
+	});
+
+	test.each([
+		{
+			name: "a public path declared twice",
+			registry: 'public = ["lib/public.ts", "lib/public.ts"]\n',
+			entry: 'entry = ["lib/public.ts"]\n',
+			diagnostic: "duplicate public/staged: lib/public.ts",
+		},
+		{
+			name: "a Fallow entry listed twice",
+			registry: 'public = ["lib/public.ts"]\n',
+			entry: 'entry = ["lib/public.ts", "lib/public.ts"]\n',
+			diagnostic: "duplicate entry: lib/public.ts",
+		},
+		{
+			name: "a declared path with no file",
+			registry: 'public = ["lib/public.ts", "lib/missing.ts"]\n',
+			entry: 'entry = ["lib/public.ts", "lib/missing.ts"]\n',
+			diagnostic: "missing declared module: lib/missing.ts",
+		},
+	])("rejects $name", ({ registry, entry, diagnostic }) => {
+		const root = recordFreeRoot(registry);
+		write(root, "fallow.toml", entry);
+
+		const result = run(root);
+
+		expect(result.status).toBe(1);
+		expect(result.stdout).toContain(diagnostic);
+	});
+
+	test("fails and names the registry when .cosmonauts/staged-code.toml is missing", () => {
+		const root = recordFreeRoot();
+		rmSync(join(root, REGISTRY));
+
+		const result = run(root);
+
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain(".cosmonauts/staged-code.toml");
 	});
 });
 

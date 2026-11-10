@@ -13,7 +13,6 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("suppression policy", () => {
-	// @cosmo-behavior plan:qm-chain-safety#B-008
 	test.each([
 		[
 			"triple-slash TypeScript",
@@ -52,7 +51,6 @@ describe("suppression policy", () => {
 		expect(checkSuppressions([], current, [])).toHaveLength(1);
 	});
 
-	// @cosmo-behavior plan:qm-chain-safety#B-008
 	test("rejects a new directive that is absent from the base registry", () => {
 		const current = scanSuppressions(
 			"lib/a.ts",
