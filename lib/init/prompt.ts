@@ -12,7 +12,7 @@ interface InitPromptOptions {
 	instructions: string;
 }
 
-type InitInstructionsResolution =
+export type InitInstructionsResolution =
 	| { readonly ok: true; readonly instructions: string }
 	| { readonly ok: false; readonly message: string };
 
@@ -60,11 +60,19 @@ export async function resolveInitInstructions(
 			ok: false,
 			message: `The init lead "${lead.id}" belongs to no domain, so it has no init instructions.`,
 		};
-	const source = runtime.domainRegistry.get(lead.domain)?.manifest.init;
+	return resolveDomainInitInstructions(runtime, lead.domain);
+}
+
+/** Reads the `init` instructions a domain's manifest declares. */
+export async function resolveDomainInitInstructions(
+	runtime: Pick<CosmonautsRuntime, "domainRegistry">,
+	domainId: string,
+): Promise<InitInstructionsResolution> {
+	const source = runtime.domainRegistry.get(domainId)?.manifest.init;
 	if (!source)
 		return {
 			ok: false,
-			message: `Domain "${lead.domain}" declares no init instructions. Add init: { kind: "inline", content } or { kind: "file", path } to its domain.ts manifest, then run init again.`,
+			message: `Domain "${domainId}" declares no init instructions. Add init: { kind: "inline", content } or { kind: "file", path } to its domain.ts manifest, then run init again.`,
 		};
 	return { ok: true, instructions: await readInitInstructions(source) };
 }

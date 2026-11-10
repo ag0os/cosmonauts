@@ -1,11 +1,12 @@
 import { describe, expect, test, vi } from "vitest";
+import { bindSessionExtensions } from "../../lib/agents/extension-assembly.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import {
 	buildInitPrompt,
 	default as initExtension,
 } from "../../lib/extensions/init/index.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
-import { setRuntimeHost } from "../../lib/runtime-host.ts";
+import { getHostRuntime, setRuntimeHost } from "../../lib/runtime-host.ts";
 
 describe("buildInitPrompt", () => {
 	test("includes the project directory and the consumer's instructions", () => {
@@ -25,84 +26,152 @@ describe("buildInitPrompt", () => {
 	});
 });
 
-function hostWith(init: LoadedDomain["manifest"]["init"]) {
-	const domain = {
-		manifest: {
-			id: "ops",
-			description: "Ops",
-			lead: "lead",
-			default: true,
-			init,
-		},
-	} as LoadedDomain;
-	const runtime = {
-		domains: [domain],
-		domainContext: undefined,
-		domainRegistry: {
-			get: (id: string) => (id === "ops" ? domain : undefined),
-		},
-		agentRegistry: { resolve: () => ({ id: "lead", domain: "ops" }) },
-	} as unknown as CosmonautsRuntime;
-	const factory = vi.fn(async () => runtime);
-	setRuntimeHost(factory);
-	return factory;
-}
+describe("init extension loaded by path", () => {
+	test("/init without session context reports it and sends nothing", async () => {
+		const commands = new Map<
+			string,
+			{ handler: (args: string, ctx: unknown) => Promise<void> }
+		>();
+		const sendUserMessage = vi.fn();
+		initExtension({
+			registerCommand: (name: string, def: never) => commands.set(name, def),
+			sendUserMessage,
+		} as never);
+		const ctx = { cwd: "/tmp/project", ui: { notify: vi.fn() } };
 
-function registerInit() {
-	const commands = new Map<
-		string,
-		{ handler: (args: string, ctx: unknown) => Promise<void> }
-	>();
-	const sendUserMessage = vi.fn();
-	initExtension({
-		registerCommand: (name: string, def: never) => commands.set(name, def),
-		sendUserMessage,
-	} as never);
-	const command = commands.get("init");
-	if (!command) throw new Error("init command not registered");
-	const ctx = { cwd: "/tmp/project", ui: { notify: vi.fn() } };
-	return { command, ctx, sendUserMessage };
-}
-
-describe("init extension", () => {
-	test("/init sends the bootstrap prompt with the domain's instructions", async () => {
-		const factory = hostWith({ kind: "inline", content: "Consumer steps." });
-		const { command, ctx, sendUserMessage } = registerInit();
-
-		await command.handler("", ctx);
-
-		expect(factory).toHaveBeenCalledWith(
-			expect.objectContaining({ projectRoot: "/tmp/project" }),
-		);
-		expect(sendUserMessage).toHaveBeenCalledExactlyOnceWith(
-			buildInitPrompt("/tmp/project", "Consumer steps."),
-		);
-		expect(ctx.ui.notify).not.toHaveBeenCalled();
-	});
-
-	test("/init reports a domain without init instructions and sends nothing", async () => {
-		hostWith(undefined);
-		const { command, ctx, sendUserMessage } = registerInit();
-
-		await command.handler("", ctx);
+		await commands.get("init")?.handler("", ctx);
 
 		expect(ctx.ui.notify).toHaveBeenCalledExactlyOnceWith(
-			expect.stringContaining('Domain "ops" declares no init instructions.'),
+			"/init needs a Cosmonauts runtime to find the active agent's init instructions.",
+			"error",
+		);
+		expect(sendUserMessage).not.toHaveBeenCalled();
+	});
+});
+
+describe("/init in a session whose agent is outside the default domain", () => {
+	const NO_MEMORY = {
+		knowledge: false,
+		authored: false,
+		proposals: false,
+		architecture: false,
+		episodes: false,
+	};
+	function twoDomainRuntime(domainContext: string | undefined) {
+		const domain = (id: string, lead: string, content: string) =>
+			({
+				manifest: {
+					id,
+					description: id,
+					lead,
+					default: id === "a",
+					init: { kind: "inline", content },
+				},
+			}) as LoadedDomain;
+		const domains = [
+			domain("a", "lead", "A steps."),
+			domain("b", "helper", "B steps."),
+		];
+		return {
+			domains,
+			domainContext,
+			domainRegistry: {
+				get: (id: string) => domains.find((d) => d.manifest.id === id),
+			},
+			agentRegistry: {
+				resolve: (id: string) => ({
+					id: id.split("/").at(-1),
+					domain: id.endsWith("helper") ? "b" : "a",
+				}),
+			},
+		} as unknown as CosmonautsRuntime;
+	}
+
+	async function runInit(
+		agentId: string,
+		runtime: CosmonautsRuntime | undefined,
+	) {
+		const { factories } = await bindSessionExtensions({
+			names: ["init"],
+			context: { agentId, memory: NO_MEMORY, runtime },
+		});
+		const commands = new Map<
+			string,
+			{ handler: (args: string, ctx: unknown) => Promise<void> }
+		>();
+		const sendUserMessage = vi.fn();
+		const pi = {
+			registerCommand: (name: string, def: never) => commands.set(name, def),
+			sendUserMessage,
+		};
+		for (const extension of factories)
+			await (typeof extension === "function"
+				? extension(pi as never)
+				: extension.factory(pi as never));
+		const ctx = { cwd: "/tmp/project", ui: { notify: vi.fn() } };
+		await commands.get("init")?.handler("", ctx);
+		return { sendUserMessage, notify: ctx.ui.notify };
+	}
+
+	test.each([
+		["-d b", { projectRoot: "/tmp/project", domainOverride: "b" }],
+		["-a b/helper", { projectRoot: "/tmp/project" }],
+	])("%s: sends the active agent's domain instructions", async (_label, request) => {
+		setRuntimeHost(async (req) => twoDomainRuntime(req.domainOverride));
+		const runtime = await getHostRuntime(request);
+
+		const { sendUserMessage, notify } = await runInit("b/helper", runtime);
+
+		expect(notify).not.toHaveBeenCalled();
+		expect(sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+			buildInitPrompt("/tmp/project", "B steps."),
+		);
+	});
+
+	test("an agent whose domain the session runtime lacks fails loudly", async () => {
+		const { sendUserMessage, notify } = await runInit(
+			"plugin/helper",
+			twoDomainRuntime(undefined),
+		);
+
+		expect(notify).toHaveBeenCalledExactlyOnceWith(
+			'/init: the active agent "plugin/helper" belongs to domain "plugin", which this session\'s runtime does not have.',
 			"error",
 		);
 		expect(sendUserMessage).not.toHaveBeenCalled();
 	});
 
-	test("/init without a runtime host reports it and sends nothing", async () => {
-		delete (globalThis as Record<symbol, unknown>)[
-			Symbol.for("cosmonauts:runtime-host")
-		];
-		const { command, ctx, sendUserMessage } = registerInit();
+	test("an agent whose domain declares no init fails loudly", async () => {
+		const runtime = {
+			domainRegistry: { get: () => ({ manifest: { id: "b" } }) },
+		} as unknown as CosmonautsRuntime;
+		const { sendUserMessage, notify } = await runInit("b/helper", runtime);
 
-		await command.handler("", ctx);
+		expect(notify).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining('Domain "b" declares no init instructions.'),
+			"error",
+		);
+		expect(sendUserMessage).not.toHaveBeenCalled();
+	});
 
-		expect(ctx.ui.notify).toHaveBeenCalledExactlyOnceWith(
-			"/init needs a Cosmonauts runtime host to find the domain's init instructions.",
+	test("an agent with no domain fails loudly", async () => {
+		const { sendUserMessage, notify } = await runInit(
+			"solo",
+			twoDomainRuntime(undefined),
+		);
+
+		expect(notify).toHaveBeenCalledExactlyOnceWith(
+			'/init: the active agent "solo" belongs to no domain, so it has no init instructions.',
+			"error",
+		);
+		expect(sendUserMessage).not.toHaveBeenCalled();
+	});
+
+	test("a session without a runtime fails loudly", async () => {
+		const { sendUserMessage, notify } = await runInit("b/helper", undefined);
+
+		expect(notify).toHaveBeenCalledExactlyOnceWith(
+			"/init needs a Cosmonauts runtime to find the active agent's init instructions.",
 			"error",
 		);
 		expect(sendUserMessage).not.toHaveBeenCalled();
