@@ -90,28 +90,48 @@ test("the tarball ships exactly the bin, the library and CLI source, the theme, 
 	).toEqual([]);
 });
 
+function declarationSpecifier(node: ts.Node): string | undefined {
+	if (!ts.isImportDeclaration(node) && !ts.isExportDeclaration(node))
+		return undefined;
+	const specifier = node.moduleSpecifier;
+	return specifier && ts.isStringLiteral(specifier)
+		? specifier.text
+		: undefined;
+}
+
+function requireSpecifier(node: ts.Node): string | undefined {
+	return ts.isExternalModuleReference(node) &&
+		ts.isStringLiteral(node.expression)
+		? node.expression.text
+		: undefined;
+}
+
+function dynamicImportSpecifier(node: ts.Node): string | undefined {
+	if (
+		!ts.isCallExpression(node) ||
+		node.expression.kind !== ts.SyntaxKind.ImportKeyword
+	)
+		return undefined;
+	const [argument] = node.arguments;
+	return argument && ts.isStringLiteralLike(argument)
+		? argument.text
+		: undefined;
+}
+
+const SPECIFIER_READERS = [
+	declarationSpecifier,
+	requireSpecifier,
+	dynamicImportSpecifier,
+];
+
 /** Every module specifier a source names: import/export declarations, `import =`, `import()`. */
 function moduleSpecifiers(source: string): string[] {
 	const found: string[] = [];
 	const visit = (node: ts.Node): void => {
-		if (
-			(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-			node.moduleSpecifier &&
-			ts.isStringLiteral(node.moduleSpecifier)
-		)
-			found.push(node.moduleSpecifier.text);
-		else if (
-			ts.isExternalModuleReference(node) &&
-			ts.isStringLiteral(node.expression)
-		)
-			found.push(node.expression.text);
-		else if (
-			ts.isCallExpression(node) &&
-			node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-			node.arguments[0] &&
-			ts.isStringLiteralLike(node.arguments[0])
-		)
-			found.push(node.arguments[0].text);
+		for (const read of SPECIFIER_READERS) {
+			const specifier = read(node);
+			if (specifier !== undefined) found.push(specifier);
+		}
 		ts.forEachChild(node, visit);
 	};
 	visit(ts.createSourceFile("source.ts", source, ts.ScriptTarget.Latest));
