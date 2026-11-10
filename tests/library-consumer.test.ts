@@ -5,7 +5,6 @@ import {
 	readdir,
 	readFile,
 	realpath,
-	symlink,
 	writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -20,6 +19,7 @@ import {
 	exerciseConsumerGrants,
 } from "./fixtures/library-consumer/consumer.ts";
 import { useTempDir } from "./helpers/fs.ts";
+import { installPackedPackage } from "./helpers/packed-install.ts";
 
 const tmp = useTempDir("library-consumer-");
 const exec = promisify(execFile);
@@ -98,33 +98,21 @@ test("the fixture's library imports resolve exclusively through the public expor
 	for (const specifier of imports) assertConsumerImport(specifier, pkg.exports);
 });
 
-test("an external consumer executes its chain and assembles granted memory tools with no framework content", async () => {
-	const installed = join(tmp.path, "node_modules", "cosmonauts");
-	await mkdir(installed, { recursive: true });
-	await cp(new URL("lib", root), join(installed, "lib"), { recursive: true });
-	await cp(new URL("package.json", root), join(installed, "package.json"));
-	// Dependencies remain installed; the library package itself is a separate copy.
-	await symlink(
-		new URL("node_modules", root).pathname,
-		join(installed, "node_modules"),
-	);
-	await cp(
-		new URL("./fixtures/library-consumer/consumer.ts", import.meta.url),
-		join(tmp.path, "consumer.ts"),
-	);
-	await cp(
-		new URL("./fixtures/library-consumer/policies.ts", import.meta.url),
-		join(tmp.path, "policies.ts"),
-	);
-
-	await cp(
-		new URL("./fixtures/library-consumer/grants.ts", import.meta.url),
-		join(tmp.path, "grants.ts"),
-	);
+test("an external consumer of the packed tarball executes its chain and assembles granted memory tools with no framework content", async () => {
+	const { installed } = await installPackedPackage(tmp.path);
+	for (const file of ["consumer.ts", "policies.ts", "grants.ts"])
+		await cp(
+			new URL(`./fixtures/library-consumer/${file}`, import.meta.url),
+			join(tmp.path, file),
+		);
 	expect((await readdir(installed)).sort()).toEqual([
+		"README.md",
+		"bin",
+		"cli",
 		"lib",
 		"node_modules",
 		"package.json",
+		"themes",
 	]);
 	const externalRequire = createRequire(join(tmp.path, "run.ts"));
 	expect(externalRequire.resolve("cosmonauts")).toBe(
