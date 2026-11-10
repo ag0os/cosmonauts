@@ -50,7 +50,8 @@ function registerInitCommand(
 async function resolveSessionInit(
 	context: SessionProviderContext | undefined,
 ): Promise<InitInstructionsResolution> {
-	const runtime = context?.runtime;
+	// The agent's own domain lives in the runtime that resolved it.
+	const runtime = context?.discoveryRuntime ?? context?.runtime;
 	if (!context || !runtime)
 		return {
 			ok: false,

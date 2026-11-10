@@ -216,6 +216,7 @@ export async function buildSessionParams(
 		resolver,
 		context: {
 			runtime: options.extensionRuntime ?? options.runtime,
+			discoveryRuntime: options.runtime,
 			agentId: qualifyAgentId(def.id, def.domain),
 			memory: resolveMemoryGrants(def.memory),
 		},
