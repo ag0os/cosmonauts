@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
 	type DomainBindingResolution,
 	DomainBindingResolver,
+	DomainBindingTargetError,
+	isDomainBindingTargetError,
 	type ResolvedAgentReference,
 } from "../../lib/domains/bindings.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
@@ -58,5 +60,66 @@ describe("DomainBindingResolver", () => {
 			},
 			binding: roleResolution,
 		});
+	});
+});
+
+describe("isDomainBindingTargetError", () => {
+	function namedError(fields: Record<string, unknown>): Error {
+		return Object.assign(new Error("binding"), {
+			name: "DomainBindingTargetError",
+			...fields,
+		});
+	}
+
+	it("accepts the library's own error", () => {
+		expect(
+			isDomainBindingTargetError(
+				new DomainBindingTargetError("worker", "ghost"),
+			),
+		).toBe(true);
+	});
+
+	it("accepts a same-name error from another module instance that carries both fields", () => {
+		expect(
+			isDomainBindingTargetError(
+				namedError({ role: "worker", targetDomain: "ghost" }),
+			),
+		).toBe(true);
+	});
+
+	it("rejects a same-name error missing its role", () => {
+		expect(
+			isDomainBindingTargetError(namedError({ targetDomain: "ghost" })),
+		).toBe(false);
+	});
+
+	it("rejects a same-name error missing its target domain", () => {
+		expect(isDomainBindingTargetError(namedError({ role: "worker" }))).toBe(
+			false,
+		);
+	});
+
+	it("rejects a same-name error whose fields are not strings", () => {
+		expect(
+			isDomainBindingTargetError(
+				namedError({ role: 1, targetDomain: "ghost" }),
+			),
+		).toBe(false);
+		expect(
+			isDomainBindingTargetError(
+				namedError({ role: "worker", targetDomain: {} }),
+			),
+		).toBe(false);
+	});
+
+	it("rejects an error with both fields but another name", () => {
+		expect(
+			isDomainBindingTargetError(
+				Object.assign(new Error("binding"), {
+					role: "worker",
+					targetDomain: "ghost",
+				}),
+			),
+		).toBe(false);
 	});
 });
