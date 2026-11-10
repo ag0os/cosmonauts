@@ -41,7 +41,10 @@ import {
 	type MemoryConsolidationStoreOptions,
 } from "../../../cli/memory/subcommand.ts";
 import { buildAgentIdentityMarker } from "../../../lib/agents/runtime-identity.ts";
-import { COMBINED_CONTEXT_PREFIX } from "../../../lib/extensions/knowledge-surface/index-policy.ts";
+import {
+	COMBINED_CONTEXT_PREFIX,
+	KNOWLEDGE_INDEX_LIMIT,
+} from "../../../lib/extensions/knowledge-surface/index-policy.ts";
 import { createKnowledgeSurfaceSessionExtension } from "../../../lib/extensions/knowledge-surface/session-extension.ts";
 import {
 	createConsolidationProposalStore,
@@ -84,6 +87,65 @@ describe("memory owner CLI", () => {
 				recovery: "none",
 				writesCommitted: false,
 			},
+		});
+	});
+
+	test("consolidates a root with no knowledge or memory store to an empty no-op without creating either", async () => {
+		const projectRoot = join(tmp.path, "empty-store-project");
+		const home = join(tmp.path, "empty-store-home");
+		await mkdir(projectRoot, { recursive: true });
+
+		const { stdout } = await execFileAsync(
+			"bun",
+			[
+				join(process.cwd(), "bin", "cosmonauts"),
+				"memory",
+				"consolidate",
+				"--no-model",
+				"--json",
+			],
+			{
+				cwd: projectRoot,
+				env: { ...process.env, HOME: home },
+			},
+		);
+		const result = JSON.parse(stdout);
+
+		expect(result).toMatchObject({
+			kind: "noop",
+			details: {
+				dryRun: false,
+				sources: [
+					{
+						sourceId: "project-corpus",
+						admitted: 0,
+						omitted: 0,
+						inventoryComplete: true,
+					},
+					{
+						sourceId: "project-episodes",
+						admitted: 0,
+						omitted: 0,
+						inventoryComplete: true,
+					},
+				],
+				observations: [],
+				proposals: [],
+				retirements: [],
+				warnings: [],
+				writesCommitted: false,
+				indexPressure: {
+					kind: "measured",
+					recordCount: 0,
+					renderedBytes: 0,
+				},
+			},
+		});
+		const created = await readdir(projectRoot);
+		expect(created).not.toContain("knowledge");
+		expect(created).not.toContain("memory");
+		await expect(readdir(join(home, ".cosmonauts"))).rejects.toMatchObject({
+			code: "ENOENT",
 		});
 	});
 
@@ -179,21 +241,17 @@ describe("memory owner CLI", () => {
 		expect(await readdir(join(home, ".cosmonauts"))).toEqual(["knowledge"]);
 	});
 
-	test("matches real-corpus injection pressure through the CLI composition root on a copy", async () => {
-		const repositoryRoot = process.cwd();
-		const sourceKnowledgeRoot = join(repositoryRoot, "knowledge");
-		const projectRoot = join(tmp.path, "real-corpus-copy-project");
+	test("matches corpus injection pressure through the CLI composition root on a copy", async () => {
+		const sourceKnowledgeRoot = join(tmp.path, "corpus-source", "knowledge");
+		const projectRoot = join(tmp.path, "corpus-copy-project");
 		const copiedKnowledgeRoot = join(projectRoot, "knowledge");
-		const home = join(tmp.path, "real-corpus-copy-home");
+		const home = join(tmp.path, "corpus-copy-home");
 		const userCosmonautsRoot = join(home, ".cosmonauts");
-		const expectedCorpusDigest =
-			"1cf7a0706f7e22d8cd7079f3531f1ad1f5a51bf45f0ad7c436750fa122ffe2a9";
+		const recordCount = KNOWLEDGE_INDEX_LIMIT + 14;
+		await writeSyntheticKnowledgeCorpus(sourceKnowledgeRoot, recordCount);
 
 		const sourceBefore = await corpusSnapshot(sourceKnowledgeRoot);
-		expect(sourceBefore).toMatchObject({
-			fileCount: 237,
-			digest: expectedCorpusDigest,
-		});
+		expect(sourceBefore.fileCount).toBe(recordCount);
 		await cp(sourceKnowledgeRoot, copiedKnowledgeRoot, { recursive: true });
 		await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
 		await writeFile(
@@ -207,7 +265,7 @@ describe("memory owner CLI", () => {
 		const { stdout } = await execFileAsync(
 			"bun",
 			[
-				join(repositoryRoot, "bin", "cosmonauts"),
+				join(process.cwd(), "bin", "cosmonauts"),
 				"memory",
 				"consolidate",
 				"--dry-run",
@@ -254,6 +312,10 @@ describe("memory owner CLI", () => {
 		expect(result.details.indexPressure.renderedBytes).toBe(
 			Buffer.byteLength(renderedKnowledge, "utf-8"),
 		);
+		const indexedTitles =
+			renderedKnowledge.match(/Synthetic corpus record \d+/g) ?? [];
+		expect(indexedTitles).toHaveLength(KNOWLEDGE_INDEX_LIMIT);
+		expect(result.details.indexPressure.recordCount).toBe(recordCount);
 
 		await expect(corpusSnapshot(sourceKnowledgeRoot)).resolves.toEqual(
 			sourceBefore,
@@ -982,6 +1044,46 @@ function installKnowledgeSurface(
 		return;
 	}
 	extension.factory(pi as never);
+}
+
+/** Mixed record types, flat and nested paths, folded scalars; more records than the index shows. */
+async function writeSyntheticKnowledgeCorpus(
+	knowledgeRoot: string,
+	count: number,
+): Promise<void> {
+	const types = ["decision", "trade-off", "gotcha", "convention"] as const;
+	for (let index = 0; index < count; index += 1) {
+		const type = types[index % types.length];
+		const directory = index % 3 === 0 ? "" : `topic-${index % 3}`;
+		const fileName = `${type}-synthetic-record-${index}.md`;
+		const relativePath = directory ? `${directory}/${fileName}` : fileName;
+		const day = String((index % 28) + 1).padStart(2, "0");
+		await mkdir(join(knowledgeRoot, directory), { recursive: true });
+		await writeFile(
+			join(knowledgeRoot, relativePath),
+			[
+				"---",
+				`type: ${type}`,
+				`title: Synthetic corpus record ${index}`,
+				"description: >-",
+				`  A generated ${type} — used to measure index pressure against`,
+				"  the injected knowledge context.",
+				`resource: knowledge/${relativePath}`,
+				"tags:",
+				"  - fixture",
+				`  - ${type}`,
+				`timestamp: '2026-09-${day}T12:00:00.000Z'`,
+				"scope: project",
+				"kind: semantic",
+				"---",
+				"",
+				`# Synthetic corpus record ${index}`,
+				"",
+				"Body text is not part of the compact index.",
+				"",
+			].join("\n"),
+		);
+	}
 }
 
 async function corpusSnapshot(knowledgeRoot: string): Promise<{
