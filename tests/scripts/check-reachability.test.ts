@@ -538,6 +538,45 @@ describe("reachability on a package root without project records", () => {
 		expect(result.status).toBe(1);
 		expect(result.stderr).toContain(".cosmonauts/staged-code.toml");
 	});
+
+	test.each([
+		{
+			name: "a public path declared twice",
+			registry: 'public = ["lib/public.ts", "lib/public.ts"]\n',
+			entry: 'entry = ["lib/public.ts"]\n',
+			diagnostic: "duplicate public/staged: lib/public.ts",
+		},
+		{
+			name: "a Fallow entry listed twice",
+			registry: 'public = ["lib/public.ts"]\n',
+			entry: 'entry = ["lib/public.ts", "lib/public.ts"]\n',
+			diagnostic: "duplicate entry: lib/public.ts",
+		},
+		{
+			name: "a declared path with no file",
+			registry: 'public = ["lib/public.ts", "lib/missing.ts"]\n',
+			entry: 'entry = ["lib/public.ts", "lib/missing.ts"]\n',
+			diagnostic: "missing declared module: lib/missing.ts",
+		},
+	])("rejects $name", ({ registry, entry, diagnostic }) => {
+		const root = recordFreeRoot(registry);
+		write(root, "fallow.toml", entry);
+
+		const result = run(root);
+
+		expect(result.status).toBe(1);
+		expect(result.stdout).toContain(diagnostic);
+	});
+
+	test("fails and names the registry when .cosmonauts/staged-code.toml is missing", () => {
+		const root = recordFreeRoot();
+		rmSync(join(root, REGISTRY));
+
+		const result = run(root);
+
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain(".cosmonauts/staged-code.toml");
+	});
 });
 
 describe("binEntryImports", () => {
