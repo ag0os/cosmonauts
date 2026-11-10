@@ -11,7 +11,6 @@ afterEach(async () => {
 	);
 });
 
-// @cosmo-behavior plan:qm-chain-safety#B-002
 it("maps source consent to one verified snapshot for one run only", async () => {
 	const root = await mkdtemp(join(tmpdir(), "snapshot-consent-"));
 	roots.push(root);

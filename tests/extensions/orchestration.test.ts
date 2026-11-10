@@ -889,8 +889,6 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		};
 	}
 
-	// @cosmo-behavior plan:qm-chain-safety#B-003
-
 	test.each([
 		[
 			"errored",

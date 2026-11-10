@@ -53,7 +53,6 @@ function fixture(): string {
 	return root;
 }
 
-// @cosmo-behavior plan:qm-chain-safety#B-007
 test("refresh rejects a missing base or reason without changing the baseline", () => {
 	const root = fixture();
 	const path = join(root, ".fallow-baselines", "dead-code.json");
