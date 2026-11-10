@@ -67,7 +67,7 @@ Fallow, Biome, and TypeScript directives by directive and target fingerprint.
 
 ### Public API entry points
 
-Declared in `missions/architecture/staged-code.toml` under `public` and
+Declared in `.cosmonauts/staged-code.toml` under `public` and
 configured in `fallow.toml` under `entry`. The reachability command checks that
 `entry` contains exactly these public paths plus the owner-backed `staged` paths.
 

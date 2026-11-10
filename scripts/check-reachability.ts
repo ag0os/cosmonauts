@@ -261,7 +261,7 @@ try {
 		parseToml("fallow.toml").entry,
 		"fallow.toml: entry",
 	);
-	const registry = parseToml("missions/architecture/staged-code.toml");
+	const registry = parseToml(".cosmonauts/staged-code.toml");
 	const publicPaths = stringArray(registry.public, "staged-code.toml: public");
 	const staged = stagedRows(registry.staged);
 	const declared = [...publicPaths, ...staged.map((row) => row.path)];
