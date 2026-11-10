@@ -438,6 +438,21 @@ describe("plugin dirs", () => {
 		});
 	});
 
+	test("relative plugin dirs resolve against the project root", async () => {
+		mockListInstalledPackages.mockResolvedValue([]);
+
+		const sources = await scanDomainSources({
+			projectRoot: PROJECT_ROOT,
+			pluginDirs: ["./domains"],
+		});
+
+		expect(sources.at(-1)).toMatchObject({
+			domainsDir: join(PROJECT_ROOT, "domains"),
+			origin: join(PROJECT_ROOT, "domains"),
+			precedence: 3,
+		});
+	});
+
 	test("full ordering: built-in → global → local → plugin", async () => {
 		mockListInstalledPackages.mockImplementation(async (scope) => {
 			if (scope === "user") {

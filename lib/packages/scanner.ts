@@ -6,7 +6,7 @@
 
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
 	hasNonExclusiveRootDomain,
 	loadManifest,
@@ -31,7 +31,7 @@ export interface ScanDomainSourcesOptions {
 	 * overrides global.
 	 */
 	bundledDirs?: string[];
-	/** Optional extra domain source directories (e.g. from --plugin-dir flag). */
+	/** Optional extra domain source directories (e.g. from --plugin-dir flag); relative paths resolve against projectRoot. */
 	pluginDirs?: string[];
 	/** `false` excludes user-installed packages and ~/.cosmonauts/domains. */
 	includeUserSources?: boolean;
@@ -120,11 +120,8 @@ export async function scanDomainSources(
 	// Plugin dirs: session-only sources, not stored in the package store
 	if (pluginDirs) {
 		for (const dir of pluginDirs) {
-			sources.push({
-				domainsDir: dir,
-				origin: dir,
-				precedence: 3,
-			});
+			const domainsDir = resolve(projectRoot, dir);
+			sources.push({ domainsDir, origin: domainsDir, precedence: 3 });
 		}
 	}
 
