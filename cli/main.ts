@@ -98,7 +98,7 @@ function buildCliParser(): Command {
 
 	program
 		.name("cosmonauts")
-		.description("AI coding orchestration system")
+		.description("Host for Cosmonauts agents, chains and domains you supply")
 		.version("0.1.0");
 
 	program
