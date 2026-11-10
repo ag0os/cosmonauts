@@ -90,27 +90,100 @@ test("the tarball ships exactly the bin, the library and CLI source, the theme, 
 	).toEqual([]);
 });
 
+/** Every module specifier a source names: import/export declarations, `import =`, `import()`. */
+function moduleSpecifiers(source: string): string[] {
+	const found: string[] = [];
+	const visit = (node: ts.Node): void => {
+		if (
+			(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+			node.moduleSpecifier &&
+			ts.isStringLiteral(node.moduleSpecifier)
+		)
+			found.push(node.moduleSpecifier.text);
+		else if (
+			ts.isExternalModuleReference(node) &&
+			ts.isStringLiteral(node.expression)
+		)
+			found.push(node.expression.text);
+		else if (
+			ts.isCallExpression(node) &&
+			node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+			node.arguments[0] &&
+			ts.isStringLiteralLike(node.arguments[0])
+		)
+			found.push(node.arguments[0].text);
+		ts.forEachChild(node, visit);
+	};
+	visit(ts.createSourceFile("source.ts", source, ts.ScriptTarget.Latest));
+	return found;
+}
+
+function undeclaredSpecifiers(
+	source: string,
+	dependencies: ReadonlySet<string>,
+): string[] {
+	return moduleSpecifiers(source).filter((specifier) => {
+		if (specifier.startsWith(".") || specifier.startsWith("node:"))
+			return false;
+		const name = specifier.startsWith("@")
+			? specifier.split("/").slice(0, 2).join("/")
+			: (specifier.split("/")[0] ?? "");
+		return !dependencies.has(name);
+	});
+}
+
+test("the import check sees every module-specifier form and ignores strings", () => {
+	const source = `import a from "a";
+import type { b } from "b";
+import c = require("c");
+export * from "d";
+export * as e from "e";
+export { f } from "f";
+export type { g } from "g";
+await import("h");
+const text = \`import x from "not-an-import"\`;
+import "./relative.ts";
+import "node:fs";
+import "declared/sub";
+import "@scope/declared/sub";
+`;
+	expect(moduleSpecifiers(source)).toEqual([
+		"a",
+		"b",
+		"c",
+		"d",
+		"e",
+		"f",
+		"g",
+		"h",
+		"./relative.ts",
+		"node:fs",
+		"declared/sub",
+		"@scope/declared/sub",
+	]);
+	expect(
+		undeclaredSpecifiers(source, new Set(["declared", "@scope/declared"])),
+	).toEqual(["a", "b", "c", "d", "e", "f", "g", "h"]);
+});
+
 test("shipped source imports only node: builtins, declared dependencies and relative paths", async () => {
 	const pkg = JSON.parse(
 		await readFile(join(packed.installed, "package.json"), "utf8"),
 	);
-	const allowed = new Set(Object.keys(pkg.dependencies));
-	const undeclared: string[] = [];
-	for (const path of packed.files.filter((file) =>
+	const dependencies = new Set(Object.keys(pkg.dependencies));
+	const sources = packed.files.filter((file) =>
 		/^(lib|cli)\/.*\.ts$/.test(file),
-	)) {
+	);
+	expect(sources.length).toBeGreaterThan(300);
+	let scanned = 0;
+	const undeclared: string[] = [];
+	for (const path of sources) {
 		const source = await readFile(join(packed.installed, path), "utf8");
-		const specifiers = ts
-			.preProcessFile(source, true, true)
-			.importedFiles.map((file) => file.fileName);
-		for (const specifier of specifiers) {
-			if (specifier.startsWith(".") || specifier.startsWith("node:")) continue;
-			const name = specifier.startsWith("@")
-				? specifier.split("/").slice(0, 2).join("/")
-				: (specifier.split("/")[0] ?? "");
-			if (!allowed.has(name)) undeclared.push(`${path}: ${specifier}`);
-		}
+		scanned += moduleSpecifiers(source).length;
+		for (const specifier of undeclaredSpecifiers(source, dependencies))
+			undeclared.push(`${path}: ${specifier}`);
 	}
+	expect(scanned).toBeGreaterThan(1000);
 	expect(undeclared).toEqual([]);
 });
 
