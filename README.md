@@ -5,22 +5,22 @@ An **agent-first** AI orchestration library built on [Pi](https://github.com/ear
 What makes it different from using a single assistant directly:
 
 - **Agent-first**: you build your *own* agents and the chains that run them automatically, instead of working inside someone else's fixed assistant.
-- **Backend-agnostic**: run whatever model is available: OpenAI, Anthropic, or open-source. Each agent names its model; nothing picks one for you.
+- **Backend-agnostic**: run whatever model is available: OpenAI, Anthropic, or open-source. Each agent names its model; the library has no default of its own (the CLI host falls back to one).
 - **Orchestrate internally *or* externally**: drive agents from your own code or the Cosmonauts CLI, or from another agent harness that calls Cosmonauts' tools (chains and the drive system).
 
 > **Alpha.** Cosmonauts is a library. It ships no agents, prompts, skills or domains of its own, and it has no stability guarantees yet.
 
 ## What It Does
 
-Cosmonauts is domain-agnostic. You supply the content, and the library provides the substrate: declarative agent definitions, four-layer prompt composition, on-demand skills, multi-agent orchestration (chains and Drive runs), and a persistent plan/task/memory spine so work compounds instead of drifting.
+Cosmonauts is domain-agnostic. A **domain** (`domain.ts` at a domain root) packages its own agents, persona prompts, capabilities, skills, extensions, and named chains, and domains are pluggable, not shipped with the library itself. The library provides the substrate: declarative agent definitions, four-layer prompt composition, on-demand skills, multi-agent orchestration (chains and Drive runs), and a persistent plan/task/memory spine so work compounds instead of drifting.
 
 What you supply:
 
-- **Agents**: declarative definitions with their own instructions (inline text or an absolute file path), model, tools, skills and sub-agent permissions.
+- **Agents**: every agent is a Pi session configured by a declarative definition: model, tools, system prompt layers, extensions, skill access, and sub-agent permissions. Its instructions are inline text or an absolute file path.
 - **Chains**: named multi-agent pipelines, each stage run by one of your agents.
 - **Memory grants**: each agent opts into authored memory, episodes, proposals or architecture memory. Knowledge recall is on by default and applies only when the project enables the knowledge surface; the other groups stay off unless you grant them.
 - **Policies and extensions**: session policies, chain adapters and extension providers, when you need them.
-- **Domains** (optional): a directory with a `domain.ts` manifest that packages agents, prompts, capabilities, skills, extensions and named chains together. The CLI loads domains; your own code can pass agents and chains directly.
+- **Domains** (optional): the CLI loads domains; your own code can pass agents and chains directly.
 
 There is no bundled persona. If no agent is declared, there is nothing to run.
 
@@ -86,7 +86,7 @@ console.log(session.getActiveToolNames());
 session.dispose();
 ```
 
-The session gets the readonly tools plus `remember` and `recall`, because the agent was granted authored memory. `cosmonauts/chains` also runs named chains (`runConfiguredChain`); see [docs/orchestration.md](./docs/orchestration.md).
+The session gets the readonly tools plus `remember` and `recall`, because the agent was granted authored memory. `cosmonauts/chains` also runs a selected chain (`runConfiguredChain`); see [docs/library-surface.md](./docs/library-surface.md).
 
 ## Imports
 
@@ -127,7 +127,7 @@ Import from `cosmonauts` and these entry points. They are the supported surface:
 Support boundary:
 
 - The entry points above are the supported spelling.
-- The `cosmonauts/lib/<path>.ts` spellings of the same modules (for example `cosmonauts/lib/agents/index.ts`) are compatibility aliases. They stay through the current library strip and may be removed later.
+- The `cosmonauts/lib/<path>.ts` spellings that exist for 24 of them (for example `cosmonauts/lib/agents/index.ts`) are compatibility aliases. They stay through the current library strip and may be removed later.
 - Every other path is private: the package `exports` map rejects it.
 
 ## The CLI
@@ -180,9 +180,9 @@ cosmonauts --plugin-dir ./domains --list-agents
 cosmonauts --plugin-dir ./domains --dump-prompt
 ```
 
-With a domain loaded, `cosmonauts --plugin-dir ./domains` starts an interactive session with its lead, and `--print "<prompt>"` processes one prompt and exits.
+Start a REPL session with the lead agent of your installed or supplied domain: `cosmonauts --plugin-dir ./domains`. With `--print "<prompt>"`, process a prompt and exit.
 
-`cosmonauts init` bootstraps project instructions with the lead. It gives the lead the `init` instructions from the lead's domain manifest, and it refuses to start when the domain declares none.
+`cosmonauts init` launches an interactive bootstrap session with the default domain lead. The agent follows the `init` instructions from its domain's manifest and waits for your confirmation before writing any files. Init refuses to start when the domain declares none; `/init` inside a session uses the active agent's domain the same way.
 
 These work with no domain at all:
 
