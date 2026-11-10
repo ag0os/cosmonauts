@@ -12,7 +12,7 @@ interface InitPromptOptions {
 	instructions: string;
 }
 
-export type InitInstructionsResolution =
+type InitInstructionsResolution =
 	| { readonly ok: true; readonly instructions: string }
 	| { readonly ok: false; readonly message: string };
 
