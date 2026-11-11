@@ -200,6 +200,6 @@ function renderInitializedHumanResult(
 
 function renderProjectConfigLine(created: boolean): string {
 	return created
-		? "- Created .cosmonauts/config.json with default named chains"
+		? "- Created .cosmonauts/config.json"
 		: "- .cosmonauts/config.json already exists (unchanged)";
 }

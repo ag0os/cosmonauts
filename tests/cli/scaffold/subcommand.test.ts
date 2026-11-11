@@ -102,7 +102,7 @@ describe("renderMissionsScaffoldResult", () => {
 			"- Created memory/",
 			"- Created knowledge/",
 			"- Created missions/tasks/config.json with prefix: COSMO",
-			"- Created .cosmonauts/config.json with default named chains",
+			"- Created .cosmonauts/config.json",
 			"- Project name: Cosmonauts",
 		]);
 	});
@@ -305,8 +305,7 @@ describe("scaffold missions command", () => {
 		expect(output.stdout()).toBe(
 			expectedHumanInitializedOutput({
 				projectRoot,
-				projectConfigLine:
-					"- Created .cosmonauts/config.json with default named chains",
+				projectConfigLine: "- Created .cosmonauts/config.json",
 				projectName: "Cosmonauts",
 			}),
 		);
