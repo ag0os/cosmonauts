@@ -383,7 +383,6 @@ Tests: `tests/cli/memory/subcommand.test.ts` provider identity contracts.
 | `resourceFallback` | Final resource-lookup tier | Highest layer wins; no implicit provider name |
 | `default` | Consumer-selected default resource domain/lead | At most one active default; omission drops and warns |
 | `internal.agents`, `.skills`, `.chains` | Hide listed assets from outside the owning domain | Resource borrowing grants no private visibility |
-| `defaultModel` | Retained domain metadata | Not an implicit runtime model default; the host supplies model policy |
 | `sessionPolicies` | Optional composed policy metadata | Omission inherits; distinct providers conflict; explicit host choice wins |
 
 Chain adapters, runtime worker and model defaults are host runtime inputs, not

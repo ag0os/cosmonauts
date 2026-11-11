@@ -60,7 +60,7 @@ alpha/
 
 | Asset | Path | Format | Declared by | Runtime use |
 | --- | --- | --- | --- | --- |
-| Manifest | `domain.ts` | TypeScript exporting `manifest` or default | `DomainManifest` | Domain identity, lead, portability, default model, and public surface |
+| Manifest | `domain.ts` | TypeScript exporting `manifest` or default | `DomainManifest` | Domain identity, lead, portability, and public surface |
 | Agent | `agents/<id>.ts` | TypeScript default export | `AgentDefinition` | Session model, tools, capabilities, extensions, skills, subagents, persistence |
 | Persona | `prompts/<id>.md` | Markdown | File name matches agent id | Layer 2 of the system prompt |
 | Capability | `capabilities/<name>.md` | Markdown | Agent `capabilities` array | Layer 1 prompt pack, resolved domain -> portable -> shared |
