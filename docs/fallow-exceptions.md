@@ -57,12 +57,6 @@ Declared in `.cosmonauts/staged-code.toml` under `public` and configured in `fal
 
 The package exports map is the import boundary; use the supported short entries in the [README](../README.md). An analyzer entry path is not by itself a package import permission.
 
-What is needed to remove this exception:
-
-- Publish a single explicit package export surface and stop supporting deep
-imports for these modules, or move public API declarations into files that
-Fallow already recognizes as package entry points.
-
 This is not temporary unless the package API strategy changes.
 
 ### Runtime-loaded extension files

@@ -84,7 +84,7 @@ that the implementation is wrong.
 
 ## Baselines, Exceptions, And Ratchets
 
-The following is generic baseline guidance. The current Cosmonauts Fallow adapter always requires `.fallow-baselines/dead-code.json`, `.fallow-baselines/health.json` and `.fallow-baselines/dupes.json` in the target project; a missing or unreadable file fails changed-scope audit. Optional-baseline guidance does not change that implemented requirement. See [Fallow](fallow.md); whether the adapter requirement should change is an open user question.
+The following is generic baseline guidance. The current Cosmonauts Fallow adapter always requires `.fallow-baselines/dead-code.json`, `.fallow-baselines/health.json` and `.fallow-baselines/dupes.json` in the target project; a missing or unreadable file fails changed-scope audit. Optional-baseline guidance does not change that implemented requirement. See [Fallow](fallow.md).
 
 Prefer the changed-scope `new-only` gate because it naturally prevents new debt.
 Use baselines only when identity tracking is necessary for an existing class of

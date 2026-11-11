@@ -85,7 +85,7 @@ Both chain paths report it the same way. `runChain` (inline) emits `stage_stats`
 
 `SpawnStats.durationMs` is agent time: it runs from the prompt to completion and leaves out session creation, spawner cleanup, and the durable runner's post-spawn work. `ChainStats.totalDurationMs` (printed as `agent time=` on `chain_end`) sums those agent times; on the inline path a parallel group contributes its group wall-clock instead. A stage's true wall time is the `durationMs` on its `stage_end` (and, on the durable path, the gap between its step timestamps). Stages without successful spawn statistics emit no `stage_stats` and add nothing to those totals.
 
-`SpawnStats` come from Pi's `session.getSessionStats()`, so they include Pi's prompt-cache warming (default `cacheWarming: "streaming"` in the installed Pi 1.0.3): while a session waits in a long tool call - a parent blocked on `spawn_agent`, a chain, `run_driver`, or a slow test run - Pi may send small cache-refresh requests when it estimates they save more than they cost. They add tokens and cost to that session's stats (and use subscription quota), not model context. Cosmonauts keeps Pi's default. It is a global Pi setting (`cacheWarming: off | streaming | idle` in `~/.pi/agent/settings.json` by default); spawns built with in-memory settings (compaction config) do not read that file and always use the default.
+`SpawnStats` come from Pi's `session.getSessionStats()`, so they include Pi's prompt-cache warming (default `cacheWarming: "streaming"` in the pinned Pi 1.0.3): while a session waits in a long tool call (a parent blocked on `spawn_agent`, a chain, `run_driver`, or a slow test run), Pi may send small cache-refresh requests when it estimates they save more than they cost. They add tokens and cost to that session's stats (and use subscription quota), not model context. Cosmonauts keeps Pi's default. It is a global Pi setting (`cacheWarming: off | streaming | idle` in `~/.pi/agent/settings.json` by default); spawns built with in-memory settings (compaction config) do not read that file and always use the default.
 
 ## Named Chains
 
@@ -116,8 +116,7 @@ COSMO_REVIEW_REVISION: {"planSlug":"<same slug>","reviewRound":<same positive in
 COSMO_REVIEW_REVISION: {"planSlug":"<same slug>","reviewRound":<same positive integer>,"status":"unaddressed","reason":"<nonempty reason>"}
 ```
 
-A guarded stage (`requiresPlanReviewTarget`) fails closed. Immediately before a guarded stage
-can spawn, the runtime rechecks the bound plan and requires matching addressed
+A guarded stage (`requiresPlanReviewTarget`) fails closed. Immediately before it can spawn, the runtime rechecks the bound plan and requires matching addressed
 evidence produced at a strictly lower top-level topology index. Missing,
 mismatched, stale, unreadable, or same-index evidence emits the typed
 `unaddressed_review_round` event, makes the step and chain unsuccessful, and

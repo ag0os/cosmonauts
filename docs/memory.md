@@ -263,12 +263,13 @@ attributable to a specific plan, task, or Tier-2 transcript. The flow is
 proposal → human review → human promotion. Promotion into curated `knowledge/`
 is a human act, either a direct edit or an explicitly reviewed file move.
 
+Proposal approval is not promotion and moves no knowledge by itself. Living-memory consolidation may perform byte-identical soft retirement only through a configured store with human ratified exact-byte authority; a machine digest is not ratification.
+
 The living-memory trust floor starts with read-only receipt evidence. Promotion
 ledgers (`kind: knowledge-surface-promotion`) at
 `missions/reviews/knowledge-surface-promotion-<n>.md` are folded in numeric round order.
 Their `promotions`, `curatedRecords`, `retiredRecords`, and
-`ratifiedBaselines` fields are authority-bearing and therefore parse
-fail-closed. A `ratifiedBaselines` row contains an original `knowledge/...md` path
+`ratifiedBaselines` fields parse fail-closed. A `ratifiedBaselines` row contains an original `knowledge/...md` path
 and the SHA-256 of its complete destination serialization; writing that row is
 also a human act. No machine-generated digest is called ratified.
 
@@ -283,8 +284,6 @@ never authority. Malformed rows, unsafe paths, unreadable files,
 duplicate or noncontiguous rounds, duplicate retirement ids, unknown restores,
 and conflicting history make the whole inventory unhealthy and authorize
 nothing.
-
-Proposal approval is not promotion and moves no knowledge by itself. Living-memory consolidation may perform byte-identical soft retirement only through a configured store with human ratified exact-byte authority; a machine digest is not ratification.
 
 When enabled, a Cosmonauts-assembled agent receives the compact knowledge
 index and shared `recall` tool unless its knowledge grant opts out or its exact tool selection excludes recall. Dedicated knowledge and memory tools, plus

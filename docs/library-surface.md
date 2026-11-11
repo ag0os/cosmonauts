@@ -17,7 +17,7 @@ import { CosmonautsRuntime, type AgentDefinition } from "cosmonauts";
 import { loadAgentDeclarations } from "cosmonauts/agents";
 ```
 
-File instructions require absolute paths and are read on assembly. Session cwd is not a declaration root; relative paths are rejected. `loadAgentDeclarations` takes an absolute consumer directory, loads default-exported TS/JS/MJS modules in deterministic order, and ignores hidden, declaration-only, nested and non-module files. File-loaded declarations require explicit `memory` grants; programmatic declarations may omit them. Discovery collects declaration errors with the agent file, domain and package/source, and active runtime validation reports `DomainValidationError`; inactive domains are filtered without halting other commands.
+File instructions require absolute paths and are read on assembly. Session cwd is not a declaration root; relative paths are rejected. `loadAgentDeclarations` takes an absolute consumer directory, loads default-exported TS/JS/MJS modules in deterministic order, and ignores hidden, declaration-only, nested and non-module files. File-loaded declarations require explicit `memory` grants; programmatic declarations may omit them. Domain discovery collects declaration errors with the agent file, domain and package/source, and active runtime validation reports `DomainValidationError`; inactive domains are filtered without halting other commands.
 
 Every identity segment uses `[a-z0-9][a-z0-9-]*`, validated without normalization before provider/model preparation. An id is one segment or exactly `segment/segment`. A supplied domain is one segment and requires a one-segment id; omit domain for a pre-qualified id. `{ domain: "archive", id: "writer" }` and `{ id: "archive/writer" }` yield the same identity. Proposals require a qualified writer. `resourceDomain` remains lookup only, never identity authority.
 
@@ -105,7 +105,7 @@ Resource policy accepts only `appendSystemPrompt`, `agentsFilesOverride`, `addit
 
 The CLI mounts `lib/extensions/agent-switch/` and `lib/extensions/domain-bindings/` directly, including with zero discovered domains. Live binding changes affect future resolution; running sessions and stages retain their resolved declarations. Resume/fork replays validated session entries through the resolver before updating the project-scoped live store.
 
-Custom domain merge strategies decide whether incoming providers are retained before activation is calculated. Their decisions are reused during resource merging; a skipped incoming flag has no activation authority. Callback decisions may therefore be needed even for a candidate that ends inactive. Default merging, same-precedence active conflicts and higher inactive overrides retain their contracts.
+`loadDomainsFromSources` accepts a custom merge strategy; `CosmonautsRuntime.create` uses the default merge. Custom domain merge strategies decide whether incoming providers are retained before activation is calculated. Their decisions are reused during resource merging; a skipped incoming flag has no activation authority. Callback decisions may therefore be needed even for a candidate that ends inactive. Default merging, same-precedence active conflicts and higher inactive overrides retain their contracts.
 
 ## Chains and Drive
 

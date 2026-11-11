@@ -13,7 +13,7 @@ Layer 2  inline/file instructions or persona    (required)
 Layer 3  consumer subAgentTemplate              (sub-agent mode only)
 ```
 
-- **Layer 0** - Consumer base. `frameworkPromptsDir` is an optional input to `assemblePrompts`; there is no default base voice. Session creation does not supply it; it applies when calling `assemblePrompts` directly or building an agent package.
+- **Layer 0** - Consumer base. `frameworkPromptsDir` is an optional input to `assemblePrompts`; there is no default base voice. Session creation does not supply it; it applies only when a caller passes it to `assemblePrompts` directly.
 - **Layer 1** - Capability packs declared in the agent's `capabilities` array, loaded in order.
 - **Layer 2** - Persona. `instructions` supplies inline content or an absolute file path. Without instructions, the assembler resolves `prompts/<agent-id>.md` from consumer resources. The persona defines role, workflow, decision rules, and gets the strongest recency weight, since it loads last for top-level sessions.
 - **Layer 3** - Runtime overlay for sub-agents. A supplied `subAgentTemplate` can render `parentRole`, `objective` and `taskId`. Top-level sessions skip it; absent template means no overlay. Set it with the `CosmonautsRuntime.create` option `subAgentTemplate`; it uses `{{parentRole}}`, `{{objective}}` and `{{#taskId}}...{{/taskId}}`.
