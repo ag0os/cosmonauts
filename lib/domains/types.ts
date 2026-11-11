@@ -25,6 +25,8 @@ export interface DomainManifest {
 	readonly description: string;
 	/** Lead agent ID for this domain (e.g. "cody"). */
 	readonly lead?: string;
+	/** Unused domain metadata; model defaults are supplied by the host. */
+	readonly defaultModel?: string;
 	/** Whether this domain is portable (can be installed as a package). Defaults to false. */
 	readonly portable?: boolean;
 	/** Asset names hidden from callers outside this domain. Omitted lists default to public. */
