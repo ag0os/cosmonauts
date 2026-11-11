@@ -5,8 +5,7 @@ dead-code analysis, dependency-graph checks, duplication detection, code-health
 metrics, architecture-boundary enforcement, and feature-flag discovery in one
 tool.
 
-This page is a practical map of the capabilities Cosmonauts can use. It is not a
-replacement for Fallow's exhaustive reference.
+This page describes the Fallow adapter Cosmonauts uses and how this repository runs Fallow. It is not a replacement for Fallow's reference.
 
 - Full documentation: <https://docs.fallow.tools>
 - Source documentation: <https://github.com/fallow-rs/docs>
@@ -44,14 +43,12 @@ correct.
 ## Cosmonauts Runtime Adapter
 
 Cosmonauts uses Fallow `2.54.2` as the reference development provider behind its
-provider-neutral analysis capabilities. Consumers install or configure their own executable. The stable public contract lives at
+provider-neutral analysis capabilities. Consumers install `fallow` as a package dependency of the target project. The stable public contract lives at
 [`../lib/analysis/index.ts`](../lib/analysis/index.ts); Fallow detection,
 process execution, and normalization remain in the `project-tools` extension.
 
 The adapter recognizes `.fallowrc.json`, `fallow.toml`, `.fallow.toml`, and a
-project package dependency. It resolves only an explicitly configured
-executable, the target project's package-installed binary, or an injected test
-binary. It never searches `PATH` and never performs a mutable package fetch.
+project package dependency. It resolves the target project's package-installed binary, or a path injected by the extension's internal dependencies (used by tests). It never searches `PATH` and never performs a mutable package fetch.
 Before executing a project-resolved binary, it requires per-project consent
 recorded outside the repository.
 
@@ -63,7 +60,7 @@ When bound, the adapter exposes:
 | `duplication` | Project or explicit paths; path results are filtered after one full project run. |
 | `complexity` | Project or explicit paths; cyclomatic, cognitive, and CRAP metrics; path results are filtered after one full project run. |
 | `boundary-conformance` | Project or explicit paths, only when zones and rules are configured and the `boundary-violation` rule is not disabled. |
-| `changed-scope-audit` | Changed scope from a required explicit base. |
+| `changed-scope-audit` | Changed scope from a required explicit base. Requires `.fallow-baselines/dead-code.json`, `health.json` and `dupes.json` in the target project; a missing or unreadable file fails the request. |
 | `trace` | Exactly one symbol (required project-relative path), file, dependency, or duplicate location (required positive line; optional column). Symbol traces address exports only. |
 | `fix-preview` | Project-only dry-run proposals. |
 
@@ -117,12 +114,29 @@ For changed-scope audit, use an explicit base and all three committed floors as 
 
 The repository's `fallow.toml` declares public entries and dynamically loaded library extensions. Duplication gates production code; repeated test setup stays local to behavior cases. Do not use broad auto-fix as proof that deletion is safe: trace a file, export or dependency before removing it, then verify behavior.
 
+Treat every suppression as maintained code:
+
+- explain why the analyzer cannot model the usage;
+- prefer configuration for repository-wide conventions;
+- enable and review stale-suppression findings;
+- remove the suppression when the underlying condition disappears.
+
 ## Boundaries
 
-- Change-scoped analysis describes changes from the selected base, not all historical debt.
-- External consumers are invisible unless public entry points are modeled.
-- Fully dynamic imports and reflection can be invisible to a static graph.
-- An unavailable or failed capability is not a pass.
-- The adapter uses CLI processes. Fallow MCP and Node bindings are not runtime dependencies of this library.
+- Fallow is syntactic analysis, not the TypeScript compiler.
+- Fully dynamic `import(variable)` and reflection can be invisible to the graph.
+- External public consumers are invisible unless the public surface is modeled.
+- Production mode intentionally excludes test and development surfaces.
+- Change-scoped analysis intentionally does not describe historical project
+  debt.
+- Semantic clone mode can surface coincidental similarity.
+- A health score compresses many signals and must not replace individual
+  evidence.
+- Static feature-flag detection cannot prove current remote state or traffic.
+- Runtime coverage is evidence from the observed workload, not proof that an
+  unobserved path is unreachable.
+- `watch` is interactive and must not be invoked by autonomous agents.
+
+An unavailable or failed capability is not a pass. The adapter uses CLI processes; Fallow MCP and Node bindings are not runtime dependencies of this library.
 
 Use the [upstream documentation](https://docs.fallow.tools) for the broader Fallow CLI, configuration, MCP and Node interfaces. This library reference does not copy those API manuals.

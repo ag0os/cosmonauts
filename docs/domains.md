@@ -84,11 +84,12 @@ export const manifest: DomainManifest = {
   description: "Coaching domain for planning and review.",
   lead: "coach",
   portable: true,
+  internal: { skills: ["playbook"] },
   init: { kind: "inline", content: "Ask about the project, then propose AGENTS.md." }
 };
 ```
 
-`lead` must name an agent in the same domain. `portable: true` lets the domain participate in portable fallback resolution for capabilities and extensions. `internal` is a deny-list: omitted means public-all, omitted asset-type lists stay public, and only named agents, skills, or chains are hidden from other domains. Same-domain consumers can still use their own internal assets.
+`lead` must name an agent in the same domain. `portable: true` lets the domain participate in portable fallback resolution for capabilities and extensions. `internal` is a deny-list: omitted means public-all, omitted asset-type lists stay public, and only named agents, skills, or chains are hidden from other domains. Same-domain consumers can still use their own internal assets. Internal names must match assets the domain defines; unknown names fail validation.
 
 `init` supplies inline instructions or an absolute instruction file for `cosmonauts init` and `/init`. `cosmonauts init` uses the selected domain lead. `/init` uses the active agent's domain in the runtime that discovered that agent. Both refuse to start without init instructions. `default: true` selects a default resource domain and lead; at most one active domain may declare it. `resourceFallback` selects a final resource tier, and `alwaysActive` keeps a domain participating when `activeDomains` narrows loading.
 
@@ -121,7 +122,7 @@ const definition: AgentDefinition = {
 export default definition;
 ```
 
-File-loaded definitions require an explicit `memory` object; `{}` keeps the default grants (knowledge on, other groups off). Programmatic agents may supply inline or absolute-file `instructions` instead of a persona file. Domain `prompts/` contains convention-based personas; optional base prompts and sub-agent templates are consumer inputs. See [Prompt Composition](prompts.md).
+File-loaded definitions require an explicit `memory` object; `{}` keeps the default grants (knowledge on, other groups off). Any agent may supply inline or absolute-file `instructions` instead of a persona file. Domain `prompts/` contains convention-based personas; optional base prompts and sub-agent templates are consumer inputs. See [Prompt Composition](prompts.md).
 
 ### Capabilities, Skills, And Extensions
 
@@ -130,6 +131,8 @@ Capabilities are markdown prompt packs listed by agent definitions. Resolution c
 Skills are directories with `SKILL.md`. Agents can use an explicit allowlist, `[]` for none, or `["*"]` for all visible skills. `internal.skills` hides named skills from cross-domain agents while preserving same-domain access. A project `skills` list in `.cosmonauts/config.json` narrows every agent's skills to it, except declared fallback-domain skills and the skills an agent names explicitly from its own domain.
 
 Extensions are Pi modules under `extensions/<name>/index.ts`, loaded by names in an agent definition. Use extensions for commands, tools, lifecycle hooks, and session event handling. They are runtime dependencies rather than public assets, so `internal` does not apply to extension names.
+
+`subagents` is the allowlist of agents this agent may delegate to; an unresolved entry or one resolving to an internal agent outside the caller's domain is a validation warning.
 
 ### Chains
 

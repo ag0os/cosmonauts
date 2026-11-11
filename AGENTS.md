@@ -28,7 +28,7 @@ As Pi evolves (lockstep versioning), re-audit its API before each phase for feat
 
 (See `package.json` for the actual dependency versions and scripts - only the non-obvious constraints are noted here.)
 
-- Runtime: a TypeScript-capable ESM runtime such as Bun. The package ships TypeScript source.
+- Runtime: a TypeScript-capable ESM runtime such as Bun. The package ships TypeScript source; the `cosmonauts` binary runs under Bun.
 - Language: TypeScript - ESM, strict mode.
 - Pi (`@earendil-works/pi-*`, repo: https://github.com/earendil-works/pi) uses **lockstep versioning**: keep all four packages (`pi-agent-core`, `pi-ai`, `pi-coding-agent`, `pi-tui`) on the same exact version and bump them together. Re-audit Pi's API on each bump (see the Pi-First principle).
 
@@ -70,13 +70,19 @@ Library plan, task and session APIs support a consumer's `missions/` layout. Mem
 - `themes/` - Pi theme
 - `tests/` - Vitest suites mirroring source
 - `docs/` - reference documentation
+- `.cosmonauts/` - repository configuration and tooling registries
+- `.fallow-baselines/` - committed analysis floors and provenance
+- `scripts/` - developer checks and tooling
+- `patches/` - dependency tooling patches
 
 The `package.json` exports map controls the public API and `files` controls the npm tarball. Tests and reference docs are developer resources and are not shipped to consumers.
 
 ## Documentation
 
+- `docs/library-surface.md` - public APIs and library contracts
+- `docs/domains.md` - consumer domain authoring, visibility and bindings
 - `docs/prompts.md` - four-layer prompt composition
-- `docs/orchestration.md` - chains, workflows, drive, CLI surface, chain events/stats
+- `docs/orchestration.md` - chains, drive, CLI surface, chain events/stats
 - `docs/testing.md` - testing standards and patterns
 - `docs/memory.md` - authored memory, curated knowledge, proposal flow, retrieval bounds, and gate policy
 - Pi framework API reference: the upstream [Pi repository and docs](https://github.com/earendil-works/pi). Check against the pinned `@earendil-works/pi-*` version; there is no in-repo copy.

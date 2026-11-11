@@ -16,7 +16,7 @@ no retry event. A finalizer resumed without the local attempt number records
 
 ## Packaged agents and export
 
-The CLI provides a standalone packaged-agent export path. A packaged agent is an external-safe agent bundle designed for a target runtime instead of a normal Pi-backed Cosmonauts session. Supported targets include `claude-cli` and `codex`: `cosmonauts export` compiles a package into a Claude Code CLI-backed binary that can be moved to another project and invoked directly.
+The CLI provides a standalone packaged-agent export path. A packaged agent is an external-safe agent bundle designed for a target runtime instead of a normal Pi-backed Cosmonauts session. Supported targets are `claude-cli` (the default) and `codex`: `cosmonauts export` compiles a package into a binary backed by the target's CLI (Claude Code or Codex) that can be moved to another project and invoked directly.
 
 The source of truth is an `AgentPackageDefinition` JSON file. A definition declares the package id, optional source-agent provenance, prompt source (`file`, `inline`, or compatible `source-agent`), tool preset, skill selection, omitted project context, and one canonical registry target block (`targets.claude` or `targets.codex`) with options such as Claude prompt mode or exact allowed tools. The serialized CLI/package labels remain `claude-cli, codex` for compatibility. The builder derives an `AgentPackage` from that definition: the compiled artifact contains final system-prompt text, embedded full skill markdown, source metadata, tool policy, and Claude target options. The binary embeds the `AgentPackage`; it does not read package data from the Cosmonauts repo at runtime.
 
@@ -85,6 +85,8 @@ Both chain paths report it the same way. `runChain` (inline) emits `stage_stats`
 
 `SpawnStats.durationMs` is agent time: it runs from the prompt to completion and leaves out session creation, spawner cleanup, and the durable runner's post-spawn work. `ChainStats.totalDurationMs` (printed as `agent time=` on `chain_end`) sums those agent times; on the inline path a parallel group contributes its group wall-clock instead. A stage's true wall time is the `durationMs` on its `stage_end` (and, on the durable path, the gap between its step timestamps). Stages without successful spawn statistics emit no `stage_stats` and add nothing to those totals.
 
+`SpawnStats` come from Pi's `session.getSessionStats()`, so they include Pi's prompt-cache warming (default `cacheWarming: "streaming"` in the installed Pi 1.0.3): while a session waits in a long tool call - a parent blocked on `spawn_agent`, a chain, `run_driver`, or a slow test run - Pi may send small cache-refresh requests when it estimates they save more than they cost. They add tokens and cost to that session's stats (and use subscription quota), not model context. Cosmonauts keeps Pi's default. It is a global Pi setting (`cacheWarming: off | streaming | idle` in `~/.pi/agent/settings.json` by default); spawns built with in-memory settings (compaction config) do not read that file and always use the default.
+
 ## Named Chains
 
 The primary CLI interface for multi-agent pipelines is `cosmonauts run chain`. Named chains come from installed or supplied domains. Add a `chains` block to `.cosmonauts/config.json` only to override a chain by name or define a new one; project entries take precedence over domain entries on name collision.
@@ -114,7 +116,7 @@ COSMO_REVIEW_REVISION: {"planSlug":"<same slug>","reviewRound":<same positive in
 COSMO_REVIEW_REVISION: {"planSlug":"<same slug>","reviewRound":<same positive integer>,"status":"unaddressed","reason":"<nonempty reason>"}
 ```
 
-Task decomposition fails closed. Immediately before a guarded stage
+A guarded stage (`requiresPlanReviewTarget`) fails closed. Immediately before a guarded stage
 can spawn, the runtime rechecks the bound plan and requires matching addressed
 evidence produced at a strictly lower top-level topology index. Missing,
 mismatched, stale, unreadable, or same-index evidence emits the typed
@@ -146,7 +148,7 @@ cosmonauts "design an auth system"           # Initial prompt
 cosmonauts --print "create tasks and go"     # Non-interactive prompt and exit
 cosmonauts run chain <name> "auth"           # Named chain
 cosmonauts run chain "planner -> coordinator" # Raw chain DSL
-cosmonauts run drive --plan auth-system --envelope ./drive-envelope.json
+cosmonauts run drive --plan auth-system --envelope ./drive-envelope.md
 cosmonauts run status run-abc --scope chain   # Normalized run status
 cosmonauts harness sync --check --json        # Read-only harness drift report
 cosmonauts export --definition agent-package.json --out bin/agent
@@ -176,17 +178,17 @@ cosmonauts harness sync [--target <id>] [--scope project|personal]
   [--json|--plain]
 ```
 
-Selectors are repeatable and deduplicated. Omitted target selects supported Claude and Codex adapters. Consumers supply skill sources; no external bundle or commands ship with the library. `--copy` and `--link` are mutually exclusive. See command help for selection and ownership operations.
+The four selectors are repeatable and deduplicated. Omitted target selects supported Claude and Codex adapters. Omitted scope applies descriptor defaults: consumer skills use project scope. Explicit scope overrides descriptor defaults. Supplying any `--asset` makes the run partial; kind and asset filters isolate only matching catalogue rows. Consumers supply skill sources; no external bundle or commands ship with the library. `--copy` and `--link` are mutually exclusive. See command help for selection and ownership operations.
 
 The report has exactly four public states: `missing`, `current`, `source-ahead`, and `locally-edited`. Each row exposes owner kind/ID/diagnostics, target/scope/kind/asset, absolute source and target, recorded/requested mode, before state and reason, action and final state, recovery/evidence/discovery detail, and release warnings. Use `--json` for structured output or `--plain` for tab-separated rows.
 
 Normal sync exits nonzero when any row has a conflict, incomplete inventory, ambiguous recovery, evidence-required state, containment or write failure, or unconfirmed release. `--check` is stricter: it exits nonzero for every non-`current` row, performs stable double-read observation, and never calls transaction or materialization code. Forget cannot combine with check, mode, explicit asset selection, or transfer. Transfer requires explicit asset IDs and cannot combine with check, mode, or forget.
 
-The legacy `cosmonauts skills export` command is a partial skill-only facade over the same discovery, descriptor, renderer, classifier, and transaction path. Named and `--all` exports never infer removal for the external bundle, commands, or omitted skills.
+The legacy `cosmonauts skills export` command is a partial skill-only facade over the same discovery, descriptor, renderer, classifier, and transaction path. Named and `--all` exports never infer removal for retired bundle entries, commands, or omitted skills.
 
 ## Tools the agents use
 
-The public entry `cosmonauts/extensions/orchestration` exports `createOrchestrationExtension(runtime)`, which binds tools to the supplied runtime. A consumer may also provide its session extension factory through runtime extension providers. The CLI mounts orchestration with its base execution runtime.
+The public entry `cosmonauts/extensions/orchestration` exports `createOrchestrationExtension(runtime)`, which binds tools to the supplied runtime. A consumer may also provide its session extension factory through runtime extension providers. The CLI registers an `orchestration` extension provider bound to its base execution runtime; an agent receives these tools only when its `extensions` list names `orchestration`. Domain-declared agents also need that name provided in their domain resource order to pass validation; see [Library surface](library-surface.md#extension-providers-and-session-policy).
 
 - **`spawn_agent`** - agent-only, non-blocking delegation; returns a spawn ID immediately. Completion arrives as a follow-up turn. It is not a public run subcommand and does not expose a nested run ID.
 - **`chain_run`** - runs a chain expression as a single tool call and checks the caller's subagent grants.

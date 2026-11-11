@@ -17,11 +17,11 @@ import { CosmonautsRuntime, type AgentDefinition } from "cosmonauts";
 import { loadAgentDeclarations } from "cosmonauts/agents";
 ```
 
-File instructions require absolute paths and are read on assembly. Session cwd is not a declaration root; relative paths are rejected. `loadAgentDeclarations` takes an absolute consumer directory, loads default-exported TS/JS/MJS modules in deterministic order, and ignores hidden, declaration-only, nested and non-module files. File-loaded declarations require explicit `memory` grants; programmatic declarations may omit them.
+File instructions require absolute paths and are read on assembly. Session cwd is not a declaration root; relative paths are rejected. `loadAgentDeclarations` takes an absolute consumer directory, loads default-exported TS/JS/MJS modules in deterministic order, and ignores hidden, declaration-only, nested and non-module files. File-loaded declarations require explicit `memory` grants; programmatic declarations may omit them. Discovery collects declaration errors with the agent file, domain and package/source, and active runtime validation reports `DomainValidationError`; inactive domains are filtered without halting other commands.
 
 Every identity segment uses `[a-z0-9][a-z0-9-]*`, validated without normalization before provider/model preparation. An id is one segment or exactly `segment/segment`. A supplied domain is one segment and requires a one-segment id; omit domain for a pre-qualified id. `{ domain: "archive", id: "writer" }` and `{ id: "archive/writer" }` yield the same identity. Proposals require a qualified writer. `resourceDomain` remains lookup only, never identity authority.
 
-`tools` is a preset or exact name array. Empty exact arrays expose no executable tools; presets retain extension-tool exposure. Capability and skill text alone does not grant executable tools. Unknown executable names fail after provider loading and before a model request. Host policies do not expand exact grants.
+`tools` is a preset or exact name array. Empty exact arrays expose no executable tools; presets retain extension-tool exposure. Capability and skill text alone does not grant executable tools. Unknown executable names fail after provider loading and before a model request. Host policies do not expand exact grants. A host tool-call hook blocks names outside an exact selection, including after activation changes.
 
 Declared instructions have identity markers stripped before the host appends its marker. Prompt markers are compatibility metadata, not a trust boundary or an operating-system sandbox. Project context can append later text. Resource-domain selection must not change delegation identity or grant internal-skill visibility.
 
@@ -30,6 +30,8 @@ Resume/fork rebuild from the current declaration: these are restore-by-id paths 
 ## Consumer runtime
 
 `CosmonautsRuntime.create` accepts explicit `agents`, `chains`, `domains`, `domainSources`, and `projectConfig`; no built-in directory is required. Explicit `domainSources` (including `[]`) overrides source scanning. Package/domain stores are opt-in via `discoverPackages`; directory and plugin roots are explicit inputs. Relative `pluginDirs` resolve against `projectRoot`.
+
+`builtinDomainsDir` and `bundledDirs` remain live, explicit consumer inputs despite their historical names. Without `domainSources`, `builtinDomainsDir` contributes a domain-directory source at precedence 0; each readable, valid package manifest in `bundledDirs` contributes its declared domain sources at precedence 0.5. Neither option requires `discoverPackages`. An explicit `domainSources` list replaces scanning from these options. Cosmonauts supplies no such directories or packages. `builtinDomainsDir` also becomes the runtime's `domainsDir` for directory-only resource lookup.
 
 Duplicate agent, domain and chain declarations in a runtime collection fail before execution. This does not change the layering overwrite contract of `AgentRegistry.register`. Qualified programmatic agents need no resource-domain manifest.
 
@@ -61,11 +63,25 @@ The enabled mode uses one grant-selected knowledge-surface composer. The disable
 
 Runner-owned chain capture is independent of agent grants. New consumers default `episodes` to false; a declaration or consumer adapter can opt in. Operator memory/architecture CLIs perform maintenance independently of model-facing grants. They do not silently confer those operations on an agent. See [Memory](memory.md) for stores, retrieval bounds and authority.
 
+Memory consolidation resolves the consumer's effective model before creating the
+judgment provider, so provider IDs and durable batch keys retain the actual model. Explicit models bypass host lookup;
+deterministic-only consolidation does not request a runtime/model.
+
+| Durable path | Group / owner |
+| --- | --- |
+| `<project>/knowledge/**`, user `~/.cosmonauts/knowledge/**` | knowledge reads; human promotion; operator retirement may move records to `retired/` |
+| `<project>/memory/agent/{notes,playbooks}/` and `index.md`; corresponding user memory root, with user-only `profile.md` and `profile.md.prev` | authored |
+| `<project>/memory/agent/proposals/**`, including `living-memory/` | proposals; operator consolidation also creates proposals |
+| `<project>/memory/agent/episodes/**`, corresponding user episodes root | episodes writes; granted recall reads retain the project gate's record-type policy |
+| `<project>/memory/architecture/{index.md,modules/**,graph.json}` | architecture reads; operator generation |
+| `<project>/memory/agent/{consolidations,retirements}/`, `.cosmonauts/living-memory.lock` | operator maintenance/receipts, not additional model grants |
+| Session/run metadata and episode actor/attempt receipts under `missions/sessions/` | host execution bookkeeping; grants do not delete or rewrite transcripts |
+
 ## Extension providers and session policy
 
-Selected directory/resolver providers take precedence. When a selected name is absent, host `extensionProviders` and native providers are fallback inputs. Native names include tasks, plans, init, agent-switch, observability, project-tools and todo. Legacy memory extension selections are rejected; use memory grants instead.
+Selected directory/resolver providers take precedence. When a selected name is absent, host `extensionProviders` and native providers are fallback inputs. The fallback applies to programmatic `agents`. For an agent declared in a domain, runtime creation reports every extension name that no domain in the agent's resource order provides as a `DomainValidationError`, native and host names included. Native names include tasks, plans, init, agent-switch, observability, project-tools and todo. Legacy memory extension selections are rejected; use memory grants instead.
 
-A provider may explicitly value-export `createSessionExtension(context)` as a named function, variable or named re-export. The context carries host identity, resolved grants, execution runtime and discovery runtime. Providers can return a Pi inline factory or `undefined` when central memory composition owns registration. Only selected providers are evaluated. Ordinary extension directories without that hook continue through Pi's path loader.
+A provider may explicitly value-export `createSessionExtension(context)` as a named function, variable or named re-export. The context carries host identity, resolved grants, execution runtime and discovery runtime. Providers can return a Pi inline factory or `undefined` when central memory composition owns registration. Directory hooks are found as `index.ts`, `index.js`, `index.mjs`, in that order. Only selected providers are evaluated. Ordinary extension directories without that hook continue through Pi's path loader.
 
 The host session-policy port provides assembly/tool/resource/transcript policy and child admission. It is host code, never model tool input. Explicit runtime `sessionPolicies` wins over manifest composition. One active declaring provider can supply policy; two distinct provider objects fail with `AmbiguousSessionPolicyProviderError`. Omitted higher-layer policy inherits the lower provider.
 
@@ -89,6 +105,8 @@ Resource policy accepts only `appendSystemPrompt`, `agentsFilesOverride`, `addit
 
 The CLI mounts `lib/extensions/agent-switch/` and `lib/extensions/domain-bindings/` directly, including with zero discovered domains. Live binding changes affect future resolution; running sessions and stages retain their resolved declarations. Resume/fork replays validated session entries through the resolver before updating the project-scoped live store.
 
+Custom domain merge strategies decide whether incoming providers are retained before activation is calculated. Their decisions are reused during resource merging; a skipped incoming flag has no activation authority. Callback decisions may therefore be needed even for a candidate that ends inactive. Default merging, same-precedence active conflicts and higher inactive overrides retain their contracts.
+
 ## Chains and Drive
 
 `NamedChain` requires exactly one DSL `chain` string or explicit `stages`, and accepts `episodes`. Import selection and dispatch from `cosmonauts/chains` (`selectChain`, `runConfiguredChain`). The parser returns topology only: sequence, bracket group or fan-out. It infers no role purpose, completion policy or terminal executor.
@@ -102,7 +120,7 @@ The runtime carries consumer `chainAdapter` and `workerAgent`. An adapter can cl
 | `reviewTarget` | Active-plan-review selector with eligible `producerStageIds`; addressed evidence must match both that occurrence and the current review round. |
 | `requiresPlanReviewTarget` | Explicit pre-spawn artifact gate, including strict preceding topology order. |
 | `expectedPlanSlug` | Top-level restriction on every normalized stage. Core retains the `plan:<slug>` completion-label convention as part of its plans-tool protocol. |
-| `completionPolicy` | `once` or function-bearing `state`; boolean `completionCheck` is wrapped into state and cannot conflict with an explicit policy. A public loop without a state policy is an immediate error outcome, with no implicit task-store evaluator. |
+| `completionPolicy` | `once` or function-bearing `state`; a boolean-returning `completionCheck` is wrapped into state and cannot conflict with an explicit policy. A public loop without a state policy is an immediate error outcome, with no implicit task-store evaluator. |
 | `prompt`, `instruction` | Raw stage override and adapter-built operational instruction respectively. `User request:` retains append semantics. Terminal executors receive the raw override; both strings persist separately. |
 | `terminalGate` | Consumer executor key; terminal sequential non-loop placement and key availability validate before any execution. Errors remain typed values so a consumer can retain durable refusal artifacts. |
 | `model`, `thinkingLevel` | Resolved once from stage/consumer overrides, the bound declaration and host defaults. Model/thinking maps accept open declaration keys. Missing model/default is an input error. |

@@ -262,6 +262,28 @@ Machine knowledge exists only as proposals under
 attributable to a specific plan, task, or Tier-2 transcript. The flow is
 proposal → human review → human promotion. Promotion into curated `knowledge/`
 is a human act, either a direct edit or an explicitly reviewed file move.
+
+The living-memory trust floor starts with read-only receipt evidence. Promotion
+ledgers (`kind: knowledge-surface-promotion`) at
+`missions/reviews/knowledge-surface-promotion-<n>.md` are folded in numeric round order.
+Their `promotions`, `curatedRecords`, `retiredRecords`, and
+`ratifiedBaselines` fields are authority-bearing and therefore parse
+fail-closed. A `ratifiedBaselines` row contains an original `knowledge/...md` path
+and the SHA-256 of its complete destination serialization; writing that row is
+also a human act. No machine-generated digest is called ratified.
+
+Retirement history is read from ordered
+`memory/agent/retirements/round-<n>.md` manifests with
+`kind: knowledge-retirement-round`. A `retired` event records a stable id,
+original live path, exact digest, allowed reason, evidence references and
+reason, and canonical date. A later `restored` event must reference that known
+id and the same path and digest. Retired destinations are derived as
+`knowledge/retired/<original-relative-path>`; persisted destination strings are
+never authority. Malformed rows, unsafe paths, unreadable files,
+duplicate or noncontiguous rounds, duplicate retirement ids, unknown restores,
+and conflicting history make the whole inventory unhealthy and authorize
+nothing.
+
 Proposal approval is not promotion and moves no knowledge by itself. Living-memory consolidation may perform byte-identical soft retirement only through a configured store with human ratified exact-byte authority; a machine digest is not ratification.
 
 When enabled, a Cosmonauts-assembled agent receives the compact knowledge
@@ -279,7 +301,9 @@ architecture map, and knowledge index together at 24,000 bytes, including
 headers and truncation notices. Non-empty sections receive a fair initial share
 and unused bytes are redistributed deterministically. Detail is omitted before
 the bound can be exceeded, and each section directs the agent to its detail
-tool. Message details expose per-section and aggregate scan statistics. The project gate is `.cosmonauts/config.json`:
+tool. Message details expose per-section and aggregate scan statistics.
+
+The project gate is `.cosmonauts/config.json`:
 
 ~~~json
 {
@@ -365,7 +389,7 @@ exact-byte, citation, or human-ledger authority. All proposal and accepted-outpu
 files stay under `memory/agent/`; no edit, merge, replacement body, or
 prescriptive observation enters `knowledge/` automatically.
 
-Living-memory `improve` proposals use the same four-column judgment and
+Living-memory `improve` proposals use the four-column judgment (observed problem, what happened, suggested improvement, why it helps) and
 remain open until a human runs `cosmonauts memory improve action` with an
 existing pointer or `cosmonauts memory improve reject` with a reason. Neither
 command performs the product edit or creates knowledge.
@@ -388,8 +412,7 @@ manifest under `memory/agent/retirements/`. A retirement event records the live
 path, exact digest, reason, evidence, and date. `cosmonauts memory restore`
 validates a prior human `git mv` back to the live path and appends a later
 restoration event; it never moves bytes itself. Hard deletion is never a machine
-operation: only a human `retiredRecords` row in a promotion ledger authorizes
-absence from both live and retired paths.
+operation; it remains a human act.
 
 Normal knowledge retrieval excludes `knowledge/retired/`. An owner or audit may
 opt in with `includeRetired: true`; returned records are marked retired while
@@ -434,7 +457,7 @@ visible note/profile/playbook writes, and no inferred save bypasses human
 assent.
 
 The data-only autonomy adapter accepts a closed payload with
-`kind: "memory.consolidate"`, `version: 1`, `scope: "project"`, `dryRun`, and
+`kind: "living-memory.consolidate"`, `version: 1`, `scope: "project"`, `dryRun`, and
 `modelMode`. Project root and dependencies are execution context, not payload.
 Validation occurs before dependency access, then the adapter invokes the same
 factory and public knowledge-store seam. The payload contains no absolute root,
@@ -444,7 +467,7 @@ timer, trigger, retry policy, gate, host state, or scheduling behavior.
 
 ### Project Gate And Store Layout
 
-Episodic capture is project-gated and OFF by default. The only gate is the
+Episodic capture is project-gated and OFF by default. The project gate is the
 current project's `.cosmonauts/config.json`:
 
 ~~~json
@@ -461,6 +484,8 @@ config, an absent object, false, or a malformed enabled value leaves capture off
 There is no user-config loader or user-level gate. An enabled project may still
 write a user-scoped episode to the injected `~/.cosmonauts` store when the event
 itself is cross-project.
+
+The project gate is necessary, not sufficient. Plan, task and authored-save capture also need the acting agent's `memory.episodes` grant (default false); Drive needs the worker's grant. A chain captures only when its effective `episodes` flag is true, supplied by its declaration or an explicit consumer default. See [Library surface](library-surface.md#memory-grants).
 
 `warningThreshold` is a positive integer and defaults to 500 when absent or
 invalid. Capture and enabled recall load the current project setting and pass
@@ -529,7 +554,7 @@ Plans and tasks use the qualified Pi actor at interactive tool edges and
 first executable stage's resolved qualified id (the first member for a
 group-first chain), with the raw stage name only when resolution is unavailable.
 A Drive launch freezes the exact execution-resolved qualified worker id,
-including project/live domain bindings; resolution failure warns and skips
+including project/live domain bindings; resolution failure, or a worker without the `episodes` grant, warns and skips
 capture instead of inventing a generic actor. `autonomy.wake` uses the future
 host/trigger actor supplied by its owner.
 
@@ -550,7 +575,7 @@ context and are never indexed in `index.md`; injection continues to request
 exactly note/profile/playbook and does not even scan episodes.
 
 With the gate absent or disabled, authored remember, recall, injection bytes, tool
-schemas, and tool results remain byte-identical, and no episode directory, file,
+schemas, and tool results remain byte-identical to their behavior without the episodic log, and no episode directory, file,
 or induced index file is created. The authored-save contract is untouched:
 remember remains an explicit, sequential tool; direct save requests may run
 immediately, inferred profile/playbook saves require explicit consent, and a
@@ -579,7 +604,7 @@ reads every eligible episode file again. Its `stats` report `filesScanned`,
 
 The large-log guard is evaluated separately for each physical project/user
 scope. When, and only when, that scope's file count is strictly greater than the
-fresh store's configured threshold, retrieval warns that the episode log is large and directs the caller to consolidation. The warning is informational; it does not skip or
+fresh store's configured threshold, retrieval warns `episode log large — N records; run consolidation`. The warning is informational; it does not skip or
 remove records.
 
 `writer:cosmonauts` is editable provenance only. A human can add, remove, or
@@ -592,7 +617,7 @@ safe-prune guarantee. Configured living-memory consolidation supplies its own ex
 A fresh process reconstructs wake state from retrieved episode content: the
 persisted `source`, subject, required payload, outcome, and timestamp. It does
 not depend on retained in-memory defaults or filesystem mtime. The future
-autonomy host reuses this store and envelope; The episodic log does not implement that host,
+autonomy host reuses this store and envelope. The episodic log does not implement that host,
 triggers, scheduling, or a second wake-state store.
 
 Drive likewise makes terminal identity content-derived. The primary result's
@@ -635,7 +660,7 @@ playbook save is worst-case three store scans:
 
 That cost is accepted while authored stores remain in the dozens of records.
 Stores approaching hundreds of records are the explicit store-size reassess
-trigger; This does not add a cache, registry, or alternative backend in advance.
+trigger. This does not add a cache, registry, or alternative backend in advance.
 
 ## Boundaries
 
@@ -648,8 +673,7 @@ The combined memory system preserves these limits:
   noops.
 - Living-memory proposals and receipts are persisted machine evidence, not an
   approval workflow or permission to edit curated knowledge. Improve closes
-  only through a human conversion or rejection, and hard deletion only through
-  the human ledger.
+  only through a human conversion or rejection, and hard deletion remains a human act.
 - There is no decay/TTL, playbook mining, embeddings/vector search, SQLite
   backend, autonomy host, user-config loader, session store, OM fork, scheduling
   behavior, new knowledge type, or additional agent wiring.

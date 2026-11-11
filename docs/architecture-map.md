@@ -91,7 +91,7 @@ Projects can add an optional `architectureMap` object to
 }
 ```
 
-Default source roots are existing directories among `src`, `lib`, `cli`, `domains` and `packages`. Consumer domain layouts are included when present. The default exclusion set includes dependency/build output and consumer artifacts (`missions`, `memory` and `.cosmonauts`). Explicit `sourceRoots` replaces default root selection.
+Default source roots are existing directories among `src`, `lib`, `cli`, `domains` and `packages`, or `.` when none exists. Consumer domain layouts are included when present. The default exclusion set includes dependency/build output and consumer artifacts (`missions`, `memory` and `.cosmonauts`). Explicit `sourceRoots` replaces default root selection.
 
 Only those primitive fields are accepted. Malformed entries are ignored with
 warnings. `sourceRoots`, `moduleRoots`, and `exclude` entries must be

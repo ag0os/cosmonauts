@@ -54,7 +54,7 @@ cleared at session start and shutdown.
 Requests are discriminated by capability. Project and path scopes are
 available only when a binding advertises them. A path scope contains at least
 one trimmed project-relative path. Changed-scope audit requires a non-empty
-`base`. Trace requires exactly one target kind: symbol, file, dependency, or
+`base`. The Fallow adapter also requires its three baseline files ([fallow.md](fallow.md)). Trace requires exactly one target kind: symbol, file, dependency, or
 duplicate location. A symbol's project-relative `path` and a duplicate
 location's positive `line` are optional provider-neutral identity fields;
 providers advertise whether each is optional or required. Complexity alone

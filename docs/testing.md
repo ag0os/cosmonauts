@@ -5,7 +5,7 @@ Guidelines for writing and maintaining tests in Cosmonauts. All tests use [Vites
 ## Project Setup
 
 - **Config**: `vitest.config.ts` at repo root.
-- **Setup file**: `tests/setup.ts` - runs before every test file. Restores mocks and reverts fake timers in `afterEach` so individual tests do not need to.
+- **Setup file**: `tests/setup.ts` - runs before every test file. Restores mocks and reverts fake timers in `afterEach` so individual tests do not need to. It also installs the library test runtime host in `beforeEach`.
 - **Coverage**: V8 provider, scoped to `lib/**`. Run with `bun run test:coverage`. See [Coverage Thresholds](#coverage-thresholds) below.
 
 ## Canonical Test Structure
@@ -186,6 +186,14 @@ Coverage thresholds are enforced in `vitest.config.ts` and checked when running 
 | Functions | 55% |
 | Lines | 65% |
 
+### Ratchet Strategy
+
+As coverage improves, ratchet thresholds upward:
+
+1. After adding tests that meaningfully increase a metric, raise the threshold to ~5 points below the new measured value.
+2. Never lower a threshold unless code is intentionally removed or restructured.
+3. Review thresholds quarterly or after major refactors.
+
 ### Running Coverage
 
 ```bash
@@ -220,11 +228,7 @@ afterEach(async () => {
 
 A test asserting planned or ratified behavior is evidence, not an obstacle.
 It changes only after the plan text it proves,
-citing the decision that changed it. Rewriting a test's expectations to make
-new behavior pass;
-without a recorded plan amendment - is drift, and reviewers treat it as such
-under the project's recorded decision.
-
+citing the decision that changed it. Rewriting a test's expectations to make new behavior pass, without a recorded plan amendment, is drift, and reviewers treat it as such.
 
 ## Scoped mutation testing
 

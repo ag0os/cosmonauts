@@ -57,9 +57,24 @@ Declared in `.cosmonauts/staged-code.toml` under `public` and configured in `fal
 
 The package exports map is the import boundary; use the supported short entries in the [README](../README.md). An analyzer entry path is not by itself a package import permission.
 
+What is needed to remove this exception:
+
+- Publish a single explicit package export surface and stop supporting deep
+imports for these modules, or move public API declarations into files that
+Fallow already recognizes as package entry points.
+
+This is not temporary unless the package API strategy changes.
+
 ### Runtime-loaded extension files
 
-Configured in `fallow.toml` under `dynamicallyLoaded`: `lib/extensions/*/index.ts`. Reason: library convention. Cosmonauts and Pi load selected extension entry points through runtime discovery and dynamic import. No domain content is shipped.
+Configured in `fallow.toml` under `dynamicallyLoaded`: `lib/extensions/*/index.ts`. Reason: framework convention. Cosmonauts and Pi load selected extension entry points through runtime discovery and dynamic import. No domain content is shipped.
+
+What is needed to remove this exception:
+
+- Replace convention-based discovery with static imports or a generated manifest
+that Fallow can follow as a normal import graph.
+
+This is not temporary while the domain/plugin architecture remains dynamic.
 
 ### Existing inline exceptions
 
