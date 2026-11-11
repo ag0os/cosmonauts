@@ -10,6 +10,8 @@ The current contract keeps declarations and configuration separate:
 
 ## Package Layouts
 
+The paths below belong to consumer packages; none of this content ships with the library.
+
 A single-domain package uses the package root as the domain root:
 
 ```text

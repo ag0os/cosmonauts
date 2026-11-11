@@ -50,11 +50,13 @@ Prefer the simplest approach that gives adequate isolation. Listed from most pre
 
 ### `vi.hoisted()` for Module-Level Mocks
 
+Module paths in angle brackets and the example dependency types/functions below are placeholders for the module under test.
+
 When using `vi.mock()`, declare mock references with `vi.hoisted()` so the hoisting intent is explicit. This avoids relying on Vitest's implicit `vi.mock()` hoisting and keeps mock setup centralized at the top of the file.
 
 ```ts
 import { describe, expect, test, vi } from "vitest";
-import type { MyDep } from "../../lib/my-dep.ts";
+import type { MyDep } from "../../lib/<dependency>.ts";
 
 // 1. Declare mock references in a hoisted block - runs before imports.
 const mocks = vi.hoisted(() => ({
@@ -63,13 +65,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // 2. Wire mocks into module replacements.
-vi.mock("../../lib/my-dep.ts", () => ({
+vi.mock("../../lib/<dependency>.ts", () => ({
   myFunction: mocks.myFunction,
   myOtherFunction: mocks.myOtherFunction,
 }));
 
 // 3. Import the mocked modules (resolved to the mocks above).
-import { myFunction, myOtherFunction } from "../../lib/my-dep.ts";
+import { myFunction, myOtherFunction } from "../../lib/<dependency>.ts";
 
 describe("consumer", () => {
   // Use vi.mocked() for typed access in assertions, or reference
@@ -91,7 +93,7 @@ const refs = vi.hoisted(() => ({
   currentSpawner: undefined as MySpawner | undefined,
 }));
 
-vi.mock("../../lib/spawner.ts", () => ({
+vi.mock("../../lib/<spawner>.ts", () => ({
   createSpawner: () => refs.currentSpawner,
 }));
 

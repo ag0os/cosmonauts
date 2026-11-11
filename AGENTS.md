@@ -71,7 +71,7 @@ Library plan, task and session APIs support a consumer's `missions/` layout. Mem
 - `tests/` - Vitest suites mirroring source
 - `docs/` - reference documentation
 
-`package.json` exports controls the public API and `files` controls the npm tarball. Tests and reference docs are developer resources and are not shipped to consumers.
+The `package.json` exports map controls the public API and `files` controls the npm tarball. Tests and reference docs are developer resources and are not shipped to consumers.
 
 ## Documentation
 
