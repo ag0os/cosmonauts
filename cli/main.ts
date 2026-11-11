@@ -103,10 +103,7 @@ function buildCliParser(): Command {
 
 	program
 		.option("-p, --print", "Non-interactive mode (run, output, exit)")
-		.option(
-			"-a, --agent <id>",
-			"Agent you supply (e.g. notes/researcher)",
-		)
+		.option("-a, --agent <id>", "Agent you supply (e.g. notes/researcher)")
 		.option(
 			"--completion-label <label>",
 			'Task label scope for loop completion checks (e.g. "plan:auth-system")',
