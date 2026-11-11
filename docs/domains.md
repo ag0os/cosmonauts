@@ -195,7 +195,3 @@ Use the error text as an authoring checklist:
 - Live `/domain-bind` target is unavailable: install or activate the target and rerun the command. The previous effective binding is left unchanged.
 - Internal asset refused: call a public agent/skill/chain, run from the owning domain, or remove the asset name from the provider's `internal` deny-list.
 - Stale session replay entry is invalid: inspect the session branch, install or activate the referenced target if it is still intended, or issue a fresh `/domain-bind`.
-
-## Compatibility model metadata
-
-`DomainManifest.defaultModel` is unused metadata. Agent declarations and explicit host runtime options supply model policy; no production reader uses the manifest field.

@@ -117,7 +117,3 @@ See [Orchestration](orchestration.md) for runners, events, CLI and observation.
 ## Consumer proof
 
 `tests/packed-package.test.ts` packs the actual package and exercises exports, the binary and a consumer without repository content. `tests/library-consumer.test.ts` verifies programmatic declarations, grant-bound memory and consumer policies; `tests/consumer-runtime.test.ts` verifies collection and runtime construction. The package includes library code, CLI and theme; developer records and domain content are not required.
-
-## Compatibility model metadata
-
-`DomainManifest.defaultModel` is unused metadata. Agent declarations and explicit host runtime options supply model policy; no production reader uses the manifest field.
