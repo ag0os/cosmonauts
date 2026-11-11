@@ -503,7 +503,7 @@ export function createSessionsProgram(): Command {
 		.description("List sessions for the current project, most recent first")
 		.option(
 			"-a, --agent <id>",
-			"Restrict to one agent or domain subdirectory (e.g. 'cosmo', 'coding')",
+			"Restrict to one agent or domain subdirectory (e.g. 'researcher', 'notes')",
 		)
 		.option(
 			"--all",

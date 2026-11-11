@@ -197,6 +197,12 @@ describe("ejectAction — --force flag", () => {
 // ============================================================================
 
 describe("createEjectProgram", () => {
+	it("help uses a consumer domain example", () => {
+		expect(createEjectProgram().helpInformation()).toContain(
+			"Domain ID to eject (e.g. notes)",
+		);
+	});
+
 	it("returns a Commander program named 'cosmonauts eject'", () => {
 		const program = createEjectProgram();
 		expect(program.name()).toBe("cosmonauts eject");

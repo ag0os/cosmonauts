@@ -71,7 +71,7 @@ export function createEjectProgram(): Command {
 		.description(
 			"Copy an installed domain to .cosmonauts/domains/ for local customization",
 		)
-		.argument("<domain>", "Domain ID to eject (e.g. coding)")
+		.argument("<domain>", "Domain ID to eject (e.g. notes)")
 		.option("--force", "Overwrite if target already exists")
 		.action(async (domain: string, options: { force?: boolean }) => {
 			await ejectAction(domain, options);

@@ -105,7 +105,7 @@ function buildCliParser(): Command {
 		.option("-p, --print", "Non-interactive mode (run, output, exit)")
 		.option(
 			"-a, --agent <id>",
-			"Agent to use (e.g. planner, worker, coordinator)",
+			"Agent you supply (e.g. notes/researcher)",
 		)
 		.option(
 			"--completion-label <label>",

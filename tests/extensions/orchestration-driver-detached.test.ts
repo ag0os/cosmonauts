@@ -84,10 +84,18 @@ describe("run_driver detached mode", () => {
 		registerDriverTool(pi as never, vi.fn(), fixture.projectRoot);
 
 		const tool = pi.getTool("run_driver") as
-			| { execute: unknown; parameters: unknown; label?: string }
+			| {
+					execute: unknown;
+					parameters: unknown;
+					label?: string;
+					description?: string;
+			  }
 			| undefined;
 		expect(tool?.execute).toBeTypeOf("function");
 		expect(tool?.label).toBe("Run Driver");
+		expect(tool?.description).toContain("`run_watch` or `run_status`");
+		expect(tool?.description).toContain("plan slug as `scope`");
+		expect(tool?.description).not.toContain("watch_events");
 		const schema = JSON.stringify(tool?.parameters);
 		expect(schema).toContain(
 			"`cosmonauts-subagent` is inline-only; `codex` and `claude-cli` are detached-only.",

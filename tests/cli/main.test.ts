@@ -92,6 +92,13 @@ function expectRunModes(scenarios: readonly RunModeScenario[]): void {
 }
 
 describe("parseCliArgs", () => {
+	test("help identifies consumer-supplied agents", () => {
+		const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		expect(() => parseCliArgs(["--help"])).toThrow();
+		const help = output.mock.calls.map(([chunk]) => String(chunk)).join("");
+		expect(help).toContain("Agent you supply (e.g. notes/researcher)");
+	});
+
 	test("registers harness sync with its full flag vocabulary", () => {
 		const harness = createHarnessProgram();
 		const sync = harness.commands.find((command) => command.name() === "sync");

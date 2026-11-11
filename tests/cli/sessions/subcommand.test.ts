@@ -718,6 +718,15 @@ describe("session info command — end to end (real fixtures)", () => {
 // ============================================================================
 
 describe("createSessionsProgram", () => {
+	it("list help describes the consumer session subdirectory filter", () => {
+		const list = createSessionsProgram().commands.find(
+			(c) => c.name() === "list",
+		);
+		expect(list?.helpInformation().replace(/\s+/g, " ")).toContain(
+			"Restrict to one agent or domain subdirectory (e.g. 'researcher', 'notes')",
+		);
+	});
+
 	it("registers list and info subcommands", () => {
 		const program = createSessionsProgram();
 		const names = program.commands.map((c) => c.name());
