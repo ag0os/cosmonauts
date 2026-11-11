@@ -84,18 +84,13 @@ export const manifest: DomainManifest = {
   description: "Coaching domain for planning and review.",
   lead: "coach",
   portable: true,
-  init: { kind: "inline", content: "Ask about the project, then propose AGENTS.md." },
-  internal: {
-    agents: ["scratchpad"],
-    skills: ["private-rubric"],
-    chains: ["internal-review"]
-  }
+  init: { kind: "inline", content: "Ask about the project, then propose AGENTS.md." }
 };
 ```
 
 `lead` must name an agent in the same domain. `portable: true` lets the domain participate in portable fallback resolution for capabilities and extensions. `internal` is a deny-list: omitted means public-all, omitted asset-type lists stay public, and only named agents, skills, or chains are hidden from other domains. Same-domain consumers can still use their own internal assets.
 
-`init` supplies inline instructions or an absolute instruction file for `cosmonauts init` and `/init`. The command uses the selected domain lead and refuses to start without init instructions. `default: true` selects a default resource domain and lead; at most one active domain may declare it. `resourceFallback` selects a final resource tier, and `alwaysActive` keeps a domain participating when `activeDomains` narrows loading.
+`init` supplies inline instructions or an absolute instruction file for `cosmonauts init` and `/init`. `cosmonauts init` uses the selected domain lead. `/init` uses the active agent's domain in the runtime that discovered that agent. Both refuse to start without init instructions. `default: true` selects a default resource domain and lead; at most one active domain may declare it. `resourceFallback` selects a final resource tier, and `alwaysActive` keeps a domain participating when `activeDomains` narrows loading.
 
 ### Agents And Personas
 
@@ -113,11 +108,10 @@ const definition: AgentDefinition = {
   id: "coach",
   description: "Interactive planning coach.",
   capabilities: ["coaching"],
-  model: "openai-codex/gpt-5.6-sol",
+  model: "anthropic/claude-sonnet-5-5",
   tools: "readonly",
   extensions: [],
   skills: ["playbook"],
-  subagents: ["reviewer"],
   projectContext: true,
   session: "persistent",
   loop: false,
