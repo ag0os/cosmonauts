@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	context: vi.fn(),
 	createSession: vi.fn(),
 	init: vi.fn(),
+	interactiveOptions: vi.fn(),
 	run: vi.fn(),
 	print: vi.fn(),
 }));
@@ -23,6 +24,9 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
 	InteractiveMode: class {
 		init = mocks.init;
 		run = mocks.run;
+		constructor(_session: unknown, options: unknown) {
+			mocks.interactiveOptions(options);
+		}
 	},
 	runPrintMode: mocks.print,
 }));
@@ -39,71 +43,74 @@ afterEach(() => {
 	vi.clearAllMocks();
 	vi.resetModules();
 });
+function startCli(argv: string[], init?: LoadedDomain["manifest"]["init"]) {
+	const actor: AgentDefinition = {
+		id: "archivist",
+		domain: "studio",
+		description: "Archive",
+		instructions: { kind: "inline", content: "Archive" },
+		model: "test/model",
+		capabilities: [],
+		extensions: [],
+		skills: [],
+		tools: "none",
+		projectContext: false,
+		session: "ephemeral",
+		loop: false,
+	};
+	const domain: LoadedDomain = {
+		manifest: {
+			id: "studio",
+			description: "Studio",
+			lead: "archivist",
+			default: true,
+			init,
+		},
+		agents: new Map([[actor.id, actor]]),
+		portable: false,
+		capabilities: new Set(),
+		prompts: new Set(),
+		skills: new Set(),
+		extensions: new Set(),
+		chains: [],
+		provenance: [],
+		rootDirs: [],
+	};
+	const provider = { forAgent: vi.fn(() => undefined) };
+	const runtime = {
+		domains: [domain],
+		domainContext: "studio",
+		domainRegistry: new DomainRegistry([domain]),
+		agentRegistry: new AgentRegistry([actor]),
+		sessionPolicies: provider,
+		domainResolver: {
+			resolveExtensionPath: (name: string) => `/consumer/${name}`,
+		},
+		domainsDir: "/consumer",
+		projectSkills: [],
+		skillPaths: [],
+	};
+	mocks.context.mockResolvedValue({ cwd: "/consumer", runtime });
+	mocks.createSession.mockResolvedValue({});
+	mocks.init.mockResolvedValue(undefined);
+	mocks.run.mockResolvedValue(undefined);
+	mocks.print.mockResolvedValue(0);
+	Object.defineProperty(process.stdin, "isTTY", {
+		configurable: true,
+		value: true,
+	});
+	process.argv = ["node", "cosmonauts", ...argv];
+	return { actor, provider };
+}
+
+const STUDIO_INIT = { kind: "inline", content: "Studio init steps." } as const;
+
 for (const mode of ["interactive", "print", "init"]) {
 	test(`${mode} startup forwards the consumer policy and interactive commands share it`, async () => {
-		const actor: AgentDefinition = {
-			id: "archivist",
-			domain: "studio",
-			description: "Archive",
-			instructions: { kind: "inline", content: "Archive" },
-			model: "test/model",
-			capabilities: [],
-			extensions: [],
-			skills: [],
-			tools: "none",
-			projectContext: false,
-			session: "ephemeral",
-			loop: false,
-		};
-		const domain: LoadedDomain = {
-			manifest: {
-				id: "studio",
-				description: "Studio",
-				lead: "archivist",
-				default: true,
-			},
-			agents: new Map([[actor.id, actor]]),
-			portable: false,
-			capabilities: new Set(),
-			prompts: new Set(),
-			skills: new Set(),
-			extensions: new Set(),
-			chains: [],
-			provenance: [],
-			rootDirs: [],
-		};
-		const provider = { forAgent: vi.fn(() => undefined) };
-		const runtime = {
-			domains: [domain],
-			domainContext: "studio",
-			domainRegistry: new DomainRegistry([domain]),
-			agentRegistry: new AgentRegistry([actor]),
-			sessionPolicies: provider,
-			domainResolver: {
-				resolveExtensionPath: (name: string) => `/consumer/${name}`,
-			},
-			domainsDir: "/consumer",
-			projectSkills: [],
-			skillPaths: [],
-		};
-		mocks.context.mockResolvedValue({ cwd: "/consumer", runtime });
-		mocks.createSession.mockResolvedValue({});
-		mocks.init.mockResolvedValue(undefined);
-		mocks.run.mockResolvedValue(undefined);
-		mocks.print.mockResolvedValue(0);
-		Object.defineProperty(process.stdin, "isTTY", {
-			configurable: true,
-			value: true,
-		});
-		process.argv = [
-			"node",
-			"cosmonauts",
-			...(mode === "print"
-				? ["--print", "hello"]
-				: mode === "init"
-					? ["init"]
-					: []),
-		];
+		const { actor, provider } = startCli(
+			mode === "print" ? ["--print", "hello"] : mode === "init" ? ["init"] : [],
+			STUDIO_INIT,
+		);
 		await import("../../cli/main.ts");
 		await vi.waitFor(() => expect(mocks.createSession).toHaveBeenCalledOnce());
 		expect(mocks.createSession.mock.calls[0]?.[0]).toMatchObject({
@@ -115,3 +122,28 @@ for (const mode of ["interactive", "print", "init"]) {
 			expect(getSharedRegistry()?.sessionPolicies).toBe(provider);
 	});
 }
+
+test("init gives the lead its domain's init instructions", async () => {
+	startCli(["init"], STUDIO_INIT);
+	await import("../../cli/main.ts");
+	await vi.waitFor(() => expect(mocks.run).toHaveBeenCalledOnce());
+	expect(mocks.interactiveOptions).toHaveBeenCalledExactlyOnceWith(
+		expect.objectContaining({
+			initialMessage: expect.stringContaining(
+				"Follow these init instructions from your domain:\n\nStudio init steps.",
+			),
+		}),
+	);
+});
+
+test("init refuses when the lead's domain declares no init instructions", async () => {
+	const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+	startCli(["init"]);
+	await import("../../cli/main.ts");
+	await vi.waitFor(() => expect(process.exitCode).toBe(1));
+	expect(stderr).toHaveBeenCalledWith(
+		expect.stringContaining('Domain "studio" declares no init instructions.'),
+	);
+	expect(mocks.createSession).not.toHaveBeenCalled();
+	expect(mocks.run).not.toHaveBeenCalled();
+});

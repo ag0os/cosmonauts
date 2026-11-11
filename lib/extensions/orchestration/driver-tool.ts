@@ -15,7 +15,6 @@ import {
 } from "../../driver/backends/codex.ts";
 import { createCosmonautsSubagentBackend } from "../../driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../driver/backends/types.ts";
-import { resolveDefaultDriveEnvelopePath } from "../../driver/default-envelope.ts";
 import { runInline, startDetached } from "../../driver/driver.ts";
 import {
 	type DriveEpisodeIdentity,
@@ -27,6 +26,7 @@ import {
 	resolveDriveWorker,
 } from "../../driver/episode-identity.ts";
 import { formatError } from "../../driver/errors.ts";
+import { requireDriveEnvelope } from "../../driver/require-envelope.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../driver/run-one-task.ts";
 import {
 	writeFallbackRunCompletion,
@@ -164,7 +164,7 @@ export function registerDriverTool(
 		name: "run_driver",
 		label: "Run Driver",
 		description:
-			"Start a plan-linked task run through the Cosmonauts driver loop. Returns a `runId` immediately; the run proceeds in the background — monitor it with `watch_events`. Load /skill:drive before configuring a run.",
+			"Start a plan-linked task run through the Cosmonauts driver loop. Returns a `runId` immediately; the run proceeds in the background — monitor it with `watch_events`.",
 		parameters: Type.Object({
 			planSlug: Type.String({ description: "Plan slug to run" }),
 			taskIds: Type.Optional(
@@ -234,7 +234,7 @@ export function registerDriverTool(
 			envelopePath: Type.Optional(
 				Type.String({
 					description:
-						"Base prompt envelope path, relative to the project root (absolute paths are honored as-is). Omit it to use the framework default Drive envelope shipped with Cosmonauts; pass a path only when the project ships its own envelope.",
+						"Base prompt envelope path, relative to the project root (absolute paths are honored as-is). Required at run time: Cosmonauts ships no default envelope.",
 				}),
 			),
 			preconditionPath: Type.Optional(
@@ -338,7 +338,6 @@ export function registerDriverTool(
 						runId,
 						planSlug,
 						taskIds,
-						frameworkRoot,
 						prepareWorkdir: mode === "inline",
 						episodeIdentity,
 					});
@@ -407,7 +406,6 @@ async function createRunSpec({
 	runId,
 	planSlug,
 	taskIds,
-	frameworkRoot,
 	prepareWorkdir,
 	episodeIdentity,
 }: {
@@ -428,7 +426,6 @@ async function createRunSpec({
 	runId: string;
 	planSlug: string;
 	taskIds: string[];
-	frameworkRoot: string;
 	prepareWorkdir: boolean;
 	episodeIdentity?: DriveEpisodeIdentity;
 }): Promise<DriverRunSpec> {
@@ -449,11 +446,7 @@ async function createRunSpec({
 		taskIds,
 		backendName: params.backend,
 		promptTemplate: {
-			envelopePath: resolveEnvelopePath(
-				params.envelopePath,
-				ctx.cwd,
-				frameworkRoot,
-			),
+			envelopePath: resolveEnvelopePath(params.envelopePath, ctx.cwd),
 			preconditionPath: params.preconditionPath
 				? resolve(ctx.cwd, params.preconditionPath)
 				: undefined,
@@ -489,15 +482,9 @@ async function createRunSpec({
 function resolveEnvelopePath(
 	envelopePath: string | undefined,
 	projectRoot: string,
-	frameworkRoot: string,
 ): string {
-	if (envelopePath) {
-		return isAbsolute(envelopePath)
-			? envelopePath
-			: resolve(projectRoot, envelopePath);
-	}
-
-	return resolveDefaultDriveEnvelopePath({ frameworkRoot });
+	const path = requireDriveEnvelope(envelopePath);
+	return isAbsolute(path) ? path : resolve(projectRoot, path);
 }
 
 function createBackend(

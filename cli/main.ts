@@ -37,7 +37,10 @@ import { resolveDefaultDomain } from "../lib/domains/default-domain.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
 import { domainBindingsExtensionPath } from "../lib/extensions/domain-bindings/index.ts";
-import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
+import {
+	buildInitBootstrapPrompt,
+	resolveInitInstructions,
+} from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { setSharedDomainBindings } from "../lib/interactive/domain-bindings.ts";
 import type { CosmonautsRuntime } from "../lib/runtime.ts";
@@ -95,7 +98,7 @@ function buildCliParser(): Command {
 
 	program
 		.name("cosmonauts")
-		.description("AI coding orchestration system")
+		.description("Host for Cosmonauts agents, chains and domains you supply")
 		.version("0.1.0");
 
 	program
@@ -215,12 +218,13 @@ function normalizeCliOptions(
 	};
 }
 
-export function buildInitSessionConfig(cwd: string) {
+export function buildInitSessionConfig(cwd: string, instructions: string) {
 	return {
 		ignoreProjectSkills: true as const,
 		initialMessage: buildInitBootstrapPrompt({
 			cwd,
 			defaultConfig: createDefaultProjectConfig(),
+			instructions,
 		}),
 	};
 }
@@ -568,7 +572,13 @@ async function handleInitMode(
 		return;
 	}
 
-	const initSessionConfig = buildInitSessionConfig(cwd);
+	const init = await resolveInitInstructions(runtime, options);
+	if (!init.ok) {
+		printLines([init.message], "stderr");
+		process.exitCode = 1;
+		return;
+	}
+	const initSessionConfig = buildInitSessionConfig(cwd, init.instructions);
 	const defaultLeadDefinition = resolveDefaultLead(runtime, options);
 	const { createSession } = await import("./session.ts");
 	const initRuntime = await createSession({

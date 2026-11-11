@@ -36,7 +36,6 @@ const DEFAULT_SOURCE_ROOTS = [
 	"lib",
 	"cli",
 	"domains",
-	"bundled",
 	"packages",
 ] as const;
 

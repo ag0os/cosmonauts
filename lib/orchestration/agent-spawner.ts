@@ -192,7 +192,7 @@ async function prepareSpawnSession(
 	const resolution = resolveSpawnAgent(registry, config);
 	if (!resolution) {
 		throw new Error(
-			`Unknown agent role "${config.role}". Available agents: ${registry.listIds().join(", ")}`,
+			`Unknown agent role "${config.role}". Available agents: ${registry.listIds().join(", ") || "(none)"}`,
 		);
 	}
 	const def = resolution.definition;

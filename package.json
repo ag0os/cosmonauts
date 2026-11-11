@@ -16,10 +16,8 @@
 	"files": [
 		"lib/",
 		"cli/",
-		"bin/",
-		"themes/",
-		"stryker.config.mjs",
-		"patches/"
+		"bin/cosmonauts",
+		"themes/"
 	],
 	"scripts": {
 		"lint": "biome check .",

@@ -125,3 +125,34 @@ test("an explicit unknown agent on an empty install names the empty available li
 		),
 	});
 });
+
+test("a relative --plugin-dir loads the consumer's domain from the working directory", async () => {
+	const home = join(tmp.path, "home");
+	const domain = join(tmp.path, "domains", "ops");
+	await mkdir(home);
+	await mkdir(join(domain, "agents"), { recursive: true });
+	await writeFile(
+		join(domain, "domain.ts"),
+		`export const manifest = { id: "ops", description: "Ops", lead: "helper", default: true };\n`,
+	);
+	await writeFile(
+		join(domain, "agents", "helper.ts"),
+		`export default { id: "helper", description: "Helps", instructions: { kind: "inline", content: "Help." }, model: "test/model", tools: "none", capabilities: [], extensions: [], skills: [], projectContext: false, session: "ephemeral", loop: false, memory: {} };\n`,
+	);
+	const result = await exec(
+		"bun",
+		[bin, "--plugin-dir", "./domains", "--list-agents", "--json"],
+		{
+			cwd: tmp.path,
+			env: {
+				...process.env,
+				HOME: home,
+				PI_CODING_AGENT_DIR: join(home, ".pi", "agent"),
+			},
+		},
+	);
+	expect(result.stderr).toBe("");
+	expect(JSON.parse(result.stdout)).toEqual([
+		expect.objectContaining({ id: "ops/helper" }),
+	]);
+});

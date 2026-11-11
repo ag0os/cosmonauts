@@ -565,13 +565,14 @@ describe("renderAgentsList", () => {
 
 describe("buildInitSessionConfig", () => {
 	test("uses the bootstrap prompt and bypasses project skill filtering", () => {
-		const config = buildInitSessionConfig("/tmp/project");
+		const config = buildInitSessionConfig("/tmp/project", "Consumer steps.");
 
 		expect(config.ignoreProjectSkills).toBe(true);
 		expect(config.initialMessage).toContain(
 			"You are running Cosmonauts init for /tmp/project.",
 		);
-		expect(config.initialMessage).toContain("Load /skill:init");
+		expect(config.initialMessage).toContain("Consumer steps.");
+		expect(config.initialMessage).not.toContain("/skill:");
 		// The injected config template is intentionally minimal, with no chain overrides.
 		expect(config.initialMessage).not.toContain('"workflows"');
 	});

@@ -72,13 +72,16 @@ export class DomainBindingTargetError
 }
 
 /**
- * Match by name, not `instanceof`: Pi loads extensions through jiti with
- * `moduleCache: false`, so under Node an extension sees its own copy of the class.
+ * Match by name and fields, not `instanceof`: Pi loads extensions through jiti
+ * with `moduleCache: false`, so under Node an extension sees its own copy of the class.
  */
 export function isDomainBindingTargetError(
 	error: unknown,
 ): error is DomainBindingTargetError {
-	return error instanceof Error && error.name === "DomainBindingTargetError";
+	if (!(error instanceof Error) || error.name !== "DomainBindingTargetError")
+		return false;
+	const { role, targetDomain } = error as Partial<DomainBindingTargetError>;
+	return typeof role === "string" && typeof targetDomain === "string";
 }
 
 export class DomainBindingResolver {

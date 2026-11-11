@@ -73,7 +73,7 @@ export interface CosmonautsRuntimeOptions {
 	 * local packages override global.
 	 */
 	bundledDirs?: string[];
-	/** Optional extra domain source directories (e.g. from --plugin-dir flag). */
+	/** Optional extra domain source directories (e.g. from --plugin-dir flag); relative paths resolve against projectRoot. */
 	pluginDirs?: string[];
 	/** CLI-level domain override (takes priority over project config). */
 	domainOverride?: string;

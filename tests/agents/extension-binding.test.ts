@@ -297,6 +297,7 @@ test("consumer runtime providers receive the same runtime and grants without a d
 	});
 	expect(seen).toHaveBeenCalledWith({
 		runtime,
+		discoveryRuntime: runtime,
 		agentId: "consumer",
 		memory: {
 			knowledge: true,
@@ -497,4 +498,56 @@ test("a runtime without extension providers mounts agent-switch once in an inter
 	for (const ext of params.extensionFactories)
 		await (typeof ext === "function" ? ext : ext.factory)(pi as never);
 	expect(commands).not.toContain("agent");
+});
+
+describe("/init in a session whose plugin domain overrides an installed domain id", () => {
+	function runtimeWithOps(content: string) {
+		const domain = {
+			manifest: {
+				id: "ops",
+				description: "ops",
+				init: { kind: "inline", content },
+			},
+		};
+		return {
+			projectConfig: {},
+			domainRegistry: {
+				get: (id: string) => (id === "ops" ? domain : undefined),
+			},
+		} as never;
+	}
+
+	test("reads init from the runtime that resolved the active agent, not the execution runtime", async () => {
+		const params = await buildSessionParams({
+			def: {
+				...definition(["init"]),
+				id: "helper",
+				domain: "ops",
+				resourceDomain: undefined,
+			},
+			cwd: tmp.path,
+			domainsDir: tmp.path,
+			loadConfig: async () => ({}),
+			runtime: runtimeWithOps("B steps."),
+			extensionRuntime: runtimeWithOps("A steps."),
+		});
+		const commands = new Map<
+			string,
+			{ handler: (args: string, ctx: unknown) => Promise<void> }
+		>();
+		const sendUserMessage = vi.fn();
+		const pi = {
+			registerCommand: (name: string, def: never) => commands.set(name, def),
+			sendUserMessage,
+		};
+		for (const ext of params.extensionFactories)
+			await (typeof ext === "function" ? ext : ext.factory)(pi as never);
+		const notify = vi.fn();
+		await commands.get("init")?.handler("", { cwd: tmp.path, ui: { notify } });
+
+		expect(notify).not.toHaveBeenCalled();
+		expect(sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining("B steps."),
+		);
+	});
 });
