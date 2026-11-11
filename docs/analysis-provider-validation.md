@@ -1,6 +1,6 @@
 # Analysis Provider Validation
 
-This record validates the delivered generic analysis result contract against
+This record validates the generic analysis result contract against
 real tool surfaces. The reference evidence is the reviewed Fallow 2.54.2
 capture set in `tests/fixtures/fallow-2.54.2/`; every independent mapping points
 to a second real tool. A mapping is structural, not a claim that two tools use
@@ -34,10 +34,10 @@ Primary independent references:
   document JSON findings, locations, severities, suggestions/fixes, version,
   exit codes, and preview-only output.
 
-## Delivered reference validation
+## Reference adapter validation
 
-The shipped Fallow adapter and fixtures exercise all seven capabilities. The
-package and lockfile pin Fallow `2.54.2`, and the adapter validates each
+The library Fallow adapter and fixtures exercise all seven capabilities. The
+development dependency and lockfile pin Fallow `2.54.2`, and the adapter validates each
 completed envelope against the schema versions captured from that engine.
 Completed provider exits `0` and `1` remain results when their JSON is
 classifiable; other execution exits, signals, timeouts, aborts, invalid JSON,
@@ -113,7 +113,7 @@ silently passing an undeclared analyzer.
 
 Fallow reports boundary violations inside its dead-code envelope, so a
 dead-code or audit invocation can evaluate boundary conformance. Whether it did
-depends on the resolved configuration — and that cannot be established soundly
+depends on the resolved configuration - and that cannot be established soundly
 from the adapter. Fallow 2.54.2 resolves `extends` from relative paths, `npm:`
 packages, and `https://` URLs, and also accepts configuration in `package.json`,
 so hashing the canonical signal files cannot detect every change that alters the
@@ -130,21 +130,21 @@ than asserting a configuration-derived guarantee it cannot back.
 This under-declares in the safe direction: the gate degrades visibly instead of
 passing without evidence, and the claim cannot be forged by a stale or
 externally inherited configuration because no configuration snapshot
-participates in it. No consumer loses anything — a bound `boundary-conformance`
+participates in it. No consumer loses anything - a bound `boundary-conformance`
 row is resolved by calling its own capability, never from the changed-scope
 audit.
 
-A gate capability is reported unbound when the provider will not evaluate it —
+A gate capability is reported unbound when the provider will not evaluate it;
 when every rule contributing to it is disabled. That determination reads
 top-level rule severities only. A configuration that leaves a rule enabled
 globally and disables it through a per-path `overrides` entry covering the
 analyzed scope is not detected, because the adapter cannot know which files the
-provider will analyze until after it runs. One spelling of this — a final
-override using the universal glob — is decidable without that knowledge, but
+provider will analyze until after it runs. One spelling of this - a final
+override using the universal glob - is decidable without that knowledge, but
 detecting only that spelling narrows the residual without changing its
 character, so the boundary is recorded instead. Audit coverage is additionally
-protected by evidence — a dead-code finding declares the category whatever the
-configuration says — so the residual is confined to a clean result under a
+protected by evidence - a dead-code finding declares the category whatever the
+configuration says - so the residual is confined to a clean result under a
 scope-wide override.
 
 A second known limitation is recorded rather than half-closed: capability bindings are
@@ -250,7 +250,7 @@ data remains accessible through the original result.
 | `trace` | Fallow 2.54.2: captured target reachability, references, chains, and reason. | dependency-cruiser JSON: module nodes, dependency edges, cycles, and via paths. |
 | `fix-preview` | Fallow 2.54.2: captured dry-run removal proposals with no applied fixes. | ESLint `--fix-dry-run`: JSON reports proposed output without writing files. |
 
-## Delivered contract decision
+## Contract decision
 
 Every leaf field in `ANALYSIS_RESULT_GENERIC_FIELDS` has reference and
 independent evidence above. The generic contract intentionally excludes every

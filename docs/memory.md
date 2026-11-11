@@ -1,13 +1,14 @@
 # Memory
 
-Cosmonauts memory is a small, plain-text substrate. W2 provides explicit
-authored notes, one user profile, and named playbooks. W3 adds an optional
+Cosmonauts memory is a small, plain-text substrate. It provides explicit
+authored notes, one user profile, and named playbooks, plus an optional
 episodic log of consequential project and user events. Files remain human-owned,
 current disk is the source of truth, and Pi session state remains responsible
 for short-term conversational continuity.
 
-Authored agent memory is consumed only by an agent that declares the agent-memory extension (the former `main/cosmo` was removed in D2). The extension still exposes
-exactly two tools: remember for explicit saves and recall for pull retrieval.
+Authored memory uses the declaration's `memory.authored` grant. Session assembly registers remember and recall for authorized agents; selecting an obsolete memory extension name is rejected. `knowledge` defaults on but applies only when the project knowledge gate is on; authored, proposals, architecture and episodes default off. Exact tool allowlists still constrain exposure.
+
+The public store entry is `cosmonauts/memory`, including `MemoryStore`, `createMarkdownMemoryStore`, `createKnowledgeMemoryStore` and `createLivingMemoryConsolidator`. The layouts below belong to consumers; this repository carries no stored memories or curated project knowledge.
 
 ## Fixed Store Layout
 
@@ -48,7 +49,7 @@ fields are type, title, description, resource, tags, timestamp, scope, and kind;
 source is optional. The markdown body is the complete content returned by
 recall.
 
-A note keeps the W1 append-style identity and may use any supported memory kind:
+A note keeps the append-style identity and may use any supported memory kind:
 
 ~~~markdown
 ---
@@ -61,7 +62,7 @@ tags:
 timestamp: 2026-07-08T14:00:00.000Z
 scope: project
 kind: semantic
-source: main/cosmo
+source: notes/helper
 ---
 Staging deploys happen from the release branch.
 ~~~
@@ -80,7 +81,7 @@ tags:
 timestamp: 2026-07-13T14:00:00.000Z
 scope: user
 kind: semantic
-source: main/cosmo
+source: notes/helper
 ---
 I prefer concise status updates with explicit risk callouts.
 ~~~
@@ -98,7 +99,7 @@ tags:
 timestamp: 2026-07-13T15:00:00.000Z
 scope: project
 kind: procedural
-source: main/cosmo
+source: notes/helper
 ---
 When to use: after release approval.
 
@@ -115,7 +116,7 @@ The supported combinations are fixed:
 
 | Type | Scope | Kind | Write identity |
 |---|---|---|---|
-| note | project or user | semantic, procedural, or episodic | W1 timestamp/slug/hash file |
+| note | project or user | semantic, procedural, or episodic | timestamp/slug/hash file |
 | profile | user only | semantic | one complete document replaced at profile.md |
 | playbook | project or user | procedural | current title's canonical key within the scope |
 
@@ -132,7 +133,7 @@ caller's changeSummary. A malformed existing profile.md is not silently
 overwritten; the user must fix or delete that human-owned file first.
 
 Before an existing profile is replaced, its prior content is copied to
-profile.md.prev next to it — exactly one previous version, overwritten on each
+profile.md.prev next to it - exactly one previous version, overwritten on each
 replacement. The sidecar is never listed, retrieved, or indexed. To recover
 from a bad overwrite, copy profile.md.prev back over profile.md by hand. If
 the sidecar cannot be written, the replacement fails and the current profile
@@ -165,7 +166,7 @@ Memory writes are always visible tool calls:
 
 - A direct user request to remember something saves immediately, subject to the
   playbook collision rule.
-- If Cosmo notices a durable preference or repeatable procedure without a save
+- If the agent notices a durable preference or repeatable procedure without a save
   request, it proposes a profile or playbook save, names the intended scope, and
   calls remember only after explicit assent.
 - A declined or unanswered proposal writes nothing, creates no pending state,
@@ -177,7 +178,7 @@ Memory writes are always visible tool calls:
   new playbook result states the created name, scope, and human-readable path.
 - If one valid playbook already has the canonical name in that scope, an
   unconfirmed call returns confirmation_required with the existing name, scope,
-  and path and writes nothing. After the user confirms, Cosmo re-calls remember
+  and path and writes nothing. After the user confirms, the agent re-calls remember
   with confirmUpdate: true. Declining or choosing another name leaves no
   confirmation state behind.
 - Malformed or misplaced records are skipped with file-specific warnings while
@@ -196,7 +197,7 @@ human-supervised, git-reviewed project-file capabilities. They are deliberately 
 by the knowledge surface; this boundary does not claim disabled
 tools, path guards, or enabled bare-host support.
 
-Cosmo uses an index-inject plus pull-recall model. On each authorized
+The agent uses an index-inject plus pull-recall model. On each authorized
 before_agent_start, the extension performs one current-disk list retrieval
 across all three authored types and renders one hidden agent-memory-context
 message:
@@ -204,7 +205,7 @@ message:
 1. the current user profile body, if present;
 2. compact metadata for at most the 50 most recent notes and playbooks, ordered
    by timestamp with a path tie-break;
-3. honest truncation notices directing Cosmo to recall; and
+3. honest truncation notices directing the agent to recall; and
 4. a memory-warnings section naming records that could not be read (at most 5
    entries, each clamped, with an overflow count). Warnings also appear in
    recall's visible text. A store whose only content is unreadable still
@@ -219,7 +220,7 @@ Tool-written profile bodies are limited to 4,000 UTF-8 bytes. A valid profile
 that a human edits beyond that bound remains readable and recallable. Injection
 includes only a UTF-8-safe 4,000-byte excerpt plus the original/included byte
 counts, path, and recall direction. That truncated excerpt is never a safe
-update source: Cosmo must recall the full body first. If the complete desired
+update source: the agent must recall the full body first. If the complete desired
 replacement still exceeds 4,000 bytes, the write is rejected, the existing file
 is preserved, and the user is asked to shorten it or provide an intentionally
 shorter complete replacement.
@@ -228,7 +229,7 @@ The compact note/playbook index never includes record bodies. recall(query)
 searches the current project and user stores and returns full bodies across
 notes, profile, and playbooks. It defaults to 5 non-profile results and caps a
 requested limit at 20; a matching profile is pinned first outside that window
-so full-profile recovery cannot be shadowed by newer records. W2 adds no type
+so full-profile recovery cannot be shadowed by newer records. Authored recall adds no type
 parameter and no automatic relevance/push-recall gate.
 
 ## Curated Knowledge Surface
@@ -237,7 +238,7 @@ Knowledge is the durable, human-curated payload carried by the memory
 substrate. Project knowledge lives at `<projectRoot>/knowledge/`; its
 user-scoped twin lives at `~/.cosmonauts/knowledge/`. The user twin starts empty:
 no project seed is copied into the user root. A missing root is an empty store,
-and reads do not create either root—there is no read-time scaffolding. Project
+and reads do not create either root. Project
 scaffolding and plan archival ensure the project `knowledge/` and `memory/`
 directories together, but retrieval never creates files or copies records.
 
@@ -261,45 +262,10 @@ Machine knowledge exists only as proposals under
 attributable to a specific plan, task, or Tier-2 transcript. The flow is
 proposal → human review → human promotion. Promotion into curated `knowledge/`
 is a human act, either a direct edit or an explicitly reviewed file move.
-Stage 7 approval is not promotion and does not move any proposal. The migrated
-seed corpus is a one-to-one conversion rather than consolidation; the retired
-root markdown distillations and JSONL knowledge bundles have no live read/write
-path.
+Proposal approval is not promotion and moves no knowledge by itself. Living-memory consolidation may perform byte-identical soft retirement only through a configured store with human ratified exact-byte authority; a machine digest is not ratification.
 
-The living-memory trust floor starts with read-only receipt evidence. Promotion
-ledgers (`kind: knowledge-surface-promotion`) are folded in numeric round order.
-Their `promotions`, `curatedRecords`, `retiredRecords`, and
-`ratifiedBaselines` fields are authority-bearing and therefore parse
-fail-closed. `retiredRecords` is the human ledger act that authorizes hard
-deletion. A `ratifiedBaselines` row contains an original `knowledge/...md` path
-and the SHA-256 of its complete destination serialization; writing that row is
-also a human act. The frozen migration inventory proves semantic field/body
-conversion, not exact destination bytes, so it is never treated as an exact
-retirement baseline by itself. No machine-generated digest is called ratified.
-
-Retirement history is read from ordered
-`memory/agent/retirements/round-<n>.md` manifests with
-`kind: knowledge-retirement-round`. A `retired` event records a stable id,
-original live path, exact digest, allowed reason, evidence references and
-reason, and canonical date. A later `restored` event must reference that known
-id and the same path and digest. Retired destinations are derived as
-`knowledge/retired/<original-relative-path>`; persisted destination strings are
-never authority. The frozen receipt audit accepts a relocated seed record only
-when an active manifest event and a human/promotion exact-byte baseline both
-match its complete bytes. Absence from both live and retired paths is accepted
-only through `retiredRecords`. Malformed rows, unsafe paths, unreadable files,
-duplicate or noncontiguous rounds, duplicate retirement ids, unknown restores,
-and conflicting history make the whole inventory unhealthy and authorize
-nothing.
-
-Living-memory may now perform byte-identical soft retirement through the
-configured knowledge-store pipeline described below. It never turns a machine
-digest into ratification, edits knowledge bytes, or treats a proposal as human
-promotion. Existing knowledge write, retrieval, index, gate, profile, and
-explicit-save contracts remain authoritative.
-
-When enabled, every Cosmonauts-assembled agent receives the compact knowledge
-index and the shared `recall` tool. Dedicated knowledge and memory tools, plus
+When enabled, a Cosmonauts-assembled agent receives the compact knowledge
+index and shared `recall` tool unless its knowledge grant opts out or its exact tool selection excludes recall. Dedicated knowledge and memory tools, plus
 framework retrieval and injection paths, use `MemoryStore`; no second
 framework knowledge path exists. Authorization comes from declaration grants:
 authored `remember` and architecture-map detail reads are available only to
@@ -313,13 +279,7 @@ architecture map, and knowledge index together at 24,000 bytes, including
 headers and truncation notices. Non-empty sections receive a fair initial share
 and unused bytes are redistributed deterministically. Detail is omitted before
 the bound can be exceeded, and each section directs the agent to its detail
-tool. Message details expose per-section and aggregate scan statistics. The
-ratified 20-turn scan evidence measured the complete eligible corpus at 413
-file operations and 423,016 bytes per turn, with p95 18.916 ms; see
-`missions/reviews/knowledge-surface-scan-cost.md` for inputs, raw rows,
-thresholds, and the `pass` verdict.
-
-The project gate is `.cosmonauts/config.json`:
+tool. Message details expose per-section and aggregate scan statistics. The project gate is `.cosmonauts/config.json`:
 
 ~~~json
 {
@@ -337,7 +297,7 @@ request preserve that frozen policy in both directions. A process restart or
 `/agent` switch reassembles the session and adopts the current project value in
 both directions.
 
-The enabled scope is every Cosmonauts-assembled agent. Bare Pi package hosts
+The enabled scope is Cosmonauts-assembled sessions, subject to grants and exact tools. Bare Pi package hosts
 are outside the enabled contract; no enabled bare-host promise is made. While
 OFF, package loading stays at its frozen baseline with no knowledge adapter,
 tool, retrieval, or injection. Generic Pi project tools and the Codex and Claude
@@ -405,14 +365,7 @@ exact-byte, citation, or human-ledger authority. All proposal and accepted-outpu
 files stay under `memory/agent/`; no edit, merge, replacement body, or
 prescriptive observation enters `knowledge/` automatically.
 
-Drive's post-run prescriptive outlet stays at
-`missions/reviews/improvements/<runId>.md`. Its body has the four columns
-observed problem → what happened in this run → suggested improvement → why it helps,
-is bounded to roughly eight ranked rows, and uses the lifecycle
-`open → actioned|rejected → closed`. The coordinator writes nothing when there
-is no signal and never moves this artifact into knowledge. Closing records the
-human-selected roadmap item, task, prompt edit, or skill edit that each row
-became. Living-memory `improve` proposals use the same four-column judgment and
+Living-memory `improve` proposals use the same four-column judgment and
 remain open until a human runs `cosmonauts memory improve action` with an
 existing pointer or `cosmonauts memory improve reject` with a reason. Neither
 command performs the product edit or creates knowledge.
@@ -487,7 +440,7 @@ Validation occurs before dependency access, then the adapter invokes the same
 factory and public knowledge-store seam. The payload contains no absolute root,
 timer, trigger, retry policy, gate, host state, or scheduling behavior.
 
-## W3 Episodic Log
+## Episodic Log
 
 ### Project Gate And Store Layout
 
@@ -504,7 +457,7 @@ current project's `.cosmonauts/config.json`:
 ~~~
 
 Capture is enabled only when `episodicLog.enabled` is literally true. An absent
-config, an absent object, false, or a malformed enabled value leaves W3 off.
+config, an absent object, false, or a malformed enabled value leaves capture off.
 There is no user-config loader or user-level gate. An enabled project may still
 write a user-scoped episode to the injected `~/.cosmonauts` store when the event
 itself is cross-project.
@@ -535,10 +488,10 @@ tags:
 timestamp: 2026-07-21T17:00:00.000Z
 scope: project
 kind: episodic
-source: coding/worker
+source: notes/worker
 ---
 Timestamp: 2026-07-21T17:00:00.000Z
-Actor: coding/worker
+Actor: notes/worker
 Action: drive.run
 Outcome: completed
 Subject: run:run-e360ace0
@@ -553,7 +506,7 @@ always episodic.
 
 ### Finite Event Vocabulary
 
-W3's event vocabulary is closed and finite. These are the only actions:
+The episode event vocabulary is closed and finite. These are the only actions:
 
 | Action | Capture rule and conventional envelope |
 |---|---|
@@ -568,7 +521,7 @@ W3's event vocabulary is closed and finite. These are the only actions:
 
 Raw Pi session start/end, turns, tool calls, chain stages, Drive task chatter,
 same-status updates, rejected/declined/failed authored saves, and arbitrary file
-edits are not captured. Pi session state remains the session-scope answer; W3
+edits are not captured. Pi session state remains the session-scope answer; the episodic log
 does not capture raw sessions or create a session-scoped markdown store.
 
 Plans and tasks use the qualified Pi actor at interactive tool edges and
@@ -588,17 +541,17 @@ non-empty tokens. Subjects and payloads are stable kind/id references encoded as
 `autonomy.wake`, where it is required. Non-reserved tags remain available for
 owner metadata such as a Drive attempt id.
 
-### Recall, Injection, And W2 Preservation
+### Recall, Injection, And Authored-Memory Preservation
 
-Episodes are recall-only. When W3 is enabled, the existing recall tool adds
+Episodes are recall-only. When the episodic log is enabled, the existing recall tool adds
 episode to its internal record-type query and can return full episode bodies,
 actor, subject, and payload. Episodes are never injected into the hidden memory
 context and are never indexed in `index.md`; injection continues to request
 exactly note/profile/playbook and does not even scan episodes.
 
-With the gate absent or disabled, W2 remember, recall, injection bytes, tool
+With the gate absent or disabled, authored remember, recall, injection bytes, tool
 schemas, and tool results remain byte-identical, and no episode directory, file,
-or induced index file is created. The W2 authored-save contract is untouched:
+or induced index file is created. The authored-save contract is untouched:
 remember remains an explicit, sequential tool; direct save requests may run
 immediately, inferred profile/playbook saves require explicit consent, and a
 declined or unanswered proposal writes nothing.
@@ -616,7 +569,7 @@ back to stderr; capture and warning delivery are both non-load-bearing.
 
 ### Append-Forever Cost And Provenance
 
-W3 is append-forever at its capture-store API. There is no episode
+The episode store is append-forever at its capture-store API. There is no episode
 cache, retention window, write cap, automatic pruning, or delete API. A separately
 configured living-memory knowledge-store pass may fold bounded project episodes
 into a durable note proposal and remove only unchanged, represented episode bytes.
@@ -626,23 +579,20 @@ reads every eligible episode file again. Its `stats` report `filesScanned`,
 
 The large-log guard is evaluated separately for each physical project/user
 scope. When, and only when, that scope's file count is strictly greater than the
-fresh store's configured threshold, retrieval warns `episode log large — N
-records; run consolidation`. The warning is informational; it does not skip or
+fresh store's configured threshold, retrieval warns that the episode log is large and directs the caller to consolidation. The warning is informational; it does not skip or
 remove records.
 
 `writer:cosmonauts` is editable provenance only. A human can add, remove, or
-copy it. The short filename hash is for naming/deduplication, not authentication;
-W3 supplies no SHA-256 integrity envelope, edit detection, trust decision, or
-safe-prune guarantee. The `living-memory` plan owns the machine-vs-human
-trust predicate, including how it combines provenance with its own consumed
-watermark.
+copy it. The short filename hash is for naming/deduplication, not authentication.
+The episode format supplies no SHA-256 integrity envelope, edit detection, trust decision, or
+safe-prune guarantee. Configured living-memory consolidation supplies its own exact-byte checks before pruning represented project episodes.
 
 ### Fresh-Process Wake And Drive Reconstruction
 
 A fresh process reconstructs wake state from retrieved episode content: the
 persisted `source`, subject, required payload, outcome, and timestamp. It does
 not depend on retained in-memory defaults or filesystem mtime. The future
-autonomy host reuses this store and envelope; W3 does not implement that host,
+autonomy host reuses this store and envelope; The episodic log does not implement that host,
 triggers, scheduling, or a second wake-state store.
 
 Drive likewise makes terminal identity content-derived. The primary result's
@@ -670,10 +620,10 @@ may leave a start-only episode.
 Markdown on disk is the only correctness state. A human may edit, retitle, or
 delete a profile or playbook; the next scan and recall reflect that change.
 Reads do not scaffold missing files, and deletion is represented by absence.
-Project memory is normally git-tracked; user memory lives outside the
-repository.
+A consumer decides whether to track project memory; user memory lives outside the
+project repository.
 
-W2 authored-memory injection intentionally uses no content cache. Each
+Authored-memory injection intentionally uses no content cache. Each
 authorized turn performs one full logical scan and parse of eligible notes/,
 playbooks/, and reserved profile paths across the project and user stores. A
 playbook save is worst-case three store scans:
@@ -684,17 +634,14 @@ playbook save is worst-case three store scans:
 3. the notes-plus-playbooks index.md regeneration scan.
 
 That cost is accepted while authored stores remain in the dozens of records.
-Stores approaching hundreds of records are the explicit post-W2 reassess
-trigger; W2 does not add a cache, registry, or alternative backend in advance.
+Stores approaching hundreds of records are the explicit store-size reassess
+trigger; This does not add a cache, registry, or alternative backend in advance.
 
 ## Boundaries
 
 The combined memory system preserves these limits:
 
-- Only the agent that declares the agent-memory extension (formerly `main/cosmo`,
-  removed in D2) consumes it. Factory registration
-  keeps remember and recall host-visible, but both reject other execution
-  before store access.
+- Only agents granted authored memory consume its model-facing tools and context. Authorization is checked before store access.
 - The shared `MemoryStore` remains the public write, retrieve, and consolidate
   seam. Only configured knowledge consolidation runs living-memory; unconfigured
   knowledge, markdown, and architecture consolidation preserve their exact
