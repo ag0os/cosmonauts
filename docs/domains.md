@@ -10,6 +10,8 @@ The current contract keeps declarations and configuration separate:
 
 ## Package Layouts
 
+The paths below belong to consumer packages; none of this content ships with the library.
+
 A single-domain package uses the package root as the domain root:
 
 ```text
@@ -60,10 +62,10 @@ alpha/
 
 | Asset | Path | Format | Declared by | Runtime use |
 | --- | --- | --- | --- | --- |
-| Manifest | `domain.ts` | TypeScript exporting `manifest` or default | `DomainManifest` | Domain identity, lead, portability, default model, and public surface |
+| Manifest | `domain.ts` | TypeScript exporting `manifest` or default | `DomainManifest` | Domain identity, lead, portability, and public surface |
 | Agent | `agents/<id>.ts` | TypeScript default export | `AgentDefinition` | Session model, tools, capabilities, extensions, skills, subagents, persistence |
 | Persona | `prompts/<id>.md` | Markdown | File name matches agent id | Layer 2 of the system prompt |
-| Capability | `capabilities/<name>.md` | Markdown | Agent `capabilities` array | Layer 1 prompt pack, resolved domain -> portable -> shared |
+| Capability | `capabilities/<name>.md` | Markdown | Agent `capabilities` array | Layer 1 prompt pack, resolved domain -> portable -> declared fallback |
 | Skill | `skills/<name>/SKILL.md` | Markdown skill package | Agent `skills` array or wildcard | On-demand skill content exposed to Pi |
 | Extension | `extensions/<name>/index.ts` | Pi extension module | Agent `extensions` array | Commands, tools, hooks, and session events |
 | Chain | `chains.ts` | TypeScript exporting `chains` or default | `NamedChain[]` | Named multi-agent pipelines |
@@ -75,26 +77,25 @@ alpha/
 `domain.ts` declares the domain id and optional public-surface settings:
 
 ```ts
-import type { DomainManifest } from "cosmonauts/lib/domains/types.ts";
+import type { DomainManifest } from "cosmonauts/domains";
 
 export const manifest: DomainManifest = {
   id: "alpha",
   description: "Coaching domain for planning and review.",
   lead: "coach",
   portable: true,
-  internal: {
-    agents: ["scratchpad"],
-    skills: ["private-rubric"],
-    chains: ["internal-review"]
-  }
+  internal: { skills: ["playbook"] },
+  init: { kind: "inline", content: "Ask about the project, then propose AGENTS.md." }
 };
 ```
 
-`lead` must name an agent in the same domain. `portable: true` lets the domain participate in portable fallback resolution for capabilities and extensions. `internal` is a deny-list: omitted means public-all, omitted asset-type lists stay public, and only named agents, skills, or chains are hidden from other domains. Same-domain consumers can still use their own internal assets.
+`lead` must name an agent in the same domain. `portable: true` lets the domain participate in portable fallback resolution for capabilities and extensions. `internal` is a deny-list: omitted means public-all, omitted asset-type lists stay public, and only named agents, skills, or chains are hidden from other domains. Same-domain consumers can still use their own internal assets. Internal names must match assets the domain defines; unknown names fail validation.
+
+`init` supplies inline instructions or an absolute instruction file for `cosmonauts init` and `/init`. `cosmonauts init` uses the selected domain lead. `/init` uses the active agent's domain in the runtime that discovered that agent. Both refuse to start without init instructions. `default: true` selects a default resource domain and lead; at most one active domain may declare it. `resourceFallback` selects a final resource tier, and `alwaysActive` keeps a domain participating when `activeDomains` narrows loading.
 
 ### Agents And Personas
 
-Every non-shared agent needs two files:
+An agent without explicit `instructions` uses the persona convention:
 
 - `agents/<id>.ts` exports an `AgentDefinition`.
 - `prompts/<id>.md` contains that agent's persona.
@@ -102,38 +103,40 @@ Every non-shared agent needs two files:
 The loader fills `definition.domain` from the manifest id. The prompt assembler uses the agent id to load the matching persona, so `agents/coach.ts` pairs with `prompts/coach.md`.
 
 ```ts
-import type { AgentDefinition } from "cosmonauts/lib/agents/types.ts";
+import type { AgentDefinition } from "cosmonauts/agents";
 
 const definition: AgentDefinition = {
   id: "coach",
   description: "Interactive planning coach.",
-  capabilities: ["coaching", "tasks"],
-  model: "openai-codex/gpt-5.6-sol",
+  capabilities: ["coaching"],
+  model: "anthropic/claude-sonnet-5-5",
   tools: "readonly",
-  extensions: ["tasks"],
+  extensions: [],
   skills: ["playbook"],
-  subagents: ["reviewer"],
   projectContext: true,
   session: "persistent",
-  loop: false
+  loop: false,
+  memory: {}
 };
 
 export default definition;
 ```
 
-Domain `prompts/` contains personas only. Framework base and runtime overlays are loaded from `lib/prompts/framework/`; do not put universal base prompts or sub-agent runtime templates in a domain's persona directory.
+File-loaded definitions require an explicit `memory` object; `{}` keeps the default grants (knowledge on, other groups off). Any agent may supply inline or absolute-file `instructions` instead of a persona file. Domain `prompts/` contains convention-based personas; optional base prompts and sub-agent templates are consumer inputs. See [Prompt Composition](prompts.md).
 
 ### Capabilities, Skills, And Extensions
 
-Capabilities are markdown prompt packs listed by agent definitions. Resolution checks the agent's domain first, then portable domains, then `shared`. Missing capabilities are validation errors because they affect prompt assembly.
+Capabilities are markdown prompt packs listed by agent definitions. Resolution checks the agent's domain first, then portable domains, then domains declaring `resourceFallback`. Missing capabilities are validation errors because they affect prompt assembly.
 
-Skills are directories with `SKILL.md`. Agents can use an explicit allowlist, `[]` for none, or `["*"]` for all visible skills. `internal.skills` hides named skills from cross-domain agents while preserving same-domain access. A project `skills` list in `.cosmonauts/config.json` narrows every agent's skills to it, except shared-domain skills and the skills an agent names explicitly from its own domain.
+Skills are directories with `SKILL.md`. Agents can use an explicit allowlist, `[]` for none, or `["*"]` for all visible skills. `internal.skills` hides named skills from cross-domain agents while preserving same-domain access. A project `skills` list in `.cosmonauts/config.json` narrows every agent's skills to it, except declared fallback-domain skills and the skills an agent names explicitly from its own domain.
 
 Extensions are Pi modules under `extensions/<name>/index.ts`, loaded by names in an agent definition. Use extensions for commands, tools, lifecycle hooks, and session event handling. They are runtime dependencies rather than public assets, so `internal` does not apply to extension names.
 
+`subagents` is the allowlist of agents this agent may delegate to; an unresolved entry or one resolving to an internal agent outside the caller's domain is a validation warning.
+
 ### Chains
 
-`chains.ts` exports named chain definitions. Chain stages use role references such as `planner` or qualified role references such as `coding/worker`. Qualified references use a domain role, not necessarily the final target domain id; bindings may redirect them.
+`chains.ts` exports named chain definitions. Chain stages use role references such as `planner` or qualified role references such as `studio/worker`. Qualified references use a domain role, not necessarily the final target domain id; bindings may redirect them.
 
 `internal.chains` hides named chains from other domains and from outside callers while keeping them usable inside the owning domain. Unknown-chain and internal-chain failures should remain distinguishable.
 
@@ -143,12 +146,12 @@ Extensions are Pi modules under `extensions/<name>/index.ts`, loaded by names in
 
 ```json
 {
-  "domain": "coding",
-  "activeDomains": ["main", "coding", "ruby-coding", "ruby-experimental"],
+  "domain": "studio",
+  "activeDomains": ["studio", "studio-next"],
   "domainBindings": {
-    "ruby-coding": "ruby-experimental"
+    "studio": "studio-next"
   },
-  "skills": ["plan", "task"],
+  "skills": ["playbook"],
   "chains": {
     "review": {
       "description": "Project review flow",
@@ -158,18 +161,20 @@ Extensions are Pi modules under `extensions/<name>/index.ts`, loaded by names in
 }
 ```
 
-`activeDomains` names non-shared domains that participate in runtime loading. `shared` is kept active automatically. Inactive providers are filtered before validation, same-precedence conflict checks, registries, prompt assembly, and binding validation. If `activeDomains` is absent, all loaded providers are active.
+`activeDomains` names participating domains. Domains declaring `alwaysActive` remain active automatically. Inactive providers are filtered before validation, same-precedence conflict checks, registries, prompt assembly, and binding validation. If `activeDomains` is absent, all loaded providers are active.
 
 `domain` is the default domain role. It can be redirected through `domainBindings` just like an explicit qualified reference. `domainBindings` maps a role to an active target domain. A role without a binding resolves to the same-named active domain.
 
-Bindings preserve requested-vs-resolved identity: a consumer may keep asking for `ruby-coding/worker` while the runtime resolves that request to `ruby-experimental/worker`. Subagent allowlists can continue to contain the requested reference.
+Bindings preserve requested-vs-resolved identity: a consumer may keep asking for `studio/worker` while the runtime resolves that request to `studio-next/worker`. Subagent allowlists can continue to contain the requested reference.
+
+The CLI mounts the library extension at `lib/extensions/domain-bindings/`; it is not domain content.
 
 ## Live Domain Bindings
 
 Use `/domain-bind <role> <target-domain>` inside an interactive session to redirect a role without restarting:
 
 ```text
-/domain-bind ruby-coding ruby-experimental
+/domain-bind studio studio-next
 ```
 
 The command validates the target against the same active-domain registry used by future resolution, writes the switch to the project-scoped live binding store, and appends a `cosmonauts.domain-binding` custom session entry. Later agent, spawn, and chain resolutions use the new target.
@@ -184,11 +189,11 @@ Use the error text as an authoring checklist:
 
 - Missing `domain.ts` for a root package: add `domain.ts` at the package root or change `cosmonauts.json` to point at the directory that contains it.
 - `path: "."` appears with other domain entries: move each domain into its own subdirectory, or make the package a single-domain root package.
-- Missing persona prompt: add `prompts/<agent-id>.md` next to `agents/<agent-id>.ts`; validation names the expected path.
-- Capability or extension not found: add the file/directory to the agent's domain, a portable domain, or `shared`, or remove the name from the agent definition.
+- Missing persona prompt: supply explicit instructions or add `prompts/<agent-id>.md` next to `agents/<agent-id>.ts`; validation names the expected path.
+- Capability or extension not found: add the file/directory to the agent's domain, a portable domain, or a declared fallback domain, or remove the name from the agent definition.
 - Same-precedence active providers share one manifest id: rename one domain, deactivate one provider, or install one at a different precedence so merge/replace rules can apply.
 - Binding target is missing or inactive: install the target domain or add it to `activeDomains`; the error names both the role and target domain.
-- Malformed `domainBindings` shape: use an object map such as `{ "coding": "ruby-coding" }`, not an array or string. A malformed top-level value warns and is skipped.
+- Malformed `domainBindings` shape: use an object map such as `{ "studio": "studio-next" }`, not an array or string. A malformed top-level value warns and is skipped.
 - Malformed `domainBindings` entry: use a non-empty string key and non-empty string target. Malformed entries warn and are skipped so valid entries can still apply.
 - Live `/domain-bind` target is unavailable: install or activate the target and rerun the command. The previous effective binding is left unchanged.
 - Internal asset refused: call a public agent/skill/chain, run from the owning domain, or remove the asset name from the provider's `internal` deny-list.

@@ -18,20 +18,20 @@ Provider identity and version appear only in runtime status and results.
 | `trace` | operational | Trace a symbol, file, dependency, or duplicate location through available evidence. |
 | `fix-preview` | operational | Return proposed changes without applying them. |
 
-The four gate-facing names are exactly the corresponding gate kinds in the
-[gate contract vocabulary](../domains/shared/skills/work-artifacts/references/gate-contracts.md).
+The four gate-facing names are exported as `ANALYSIS_GATE_CAPABILITIES` from
+`cosmonauts/analysis`.
 The operational names describe requests and do not create aliases for
 `correctness` or `mutation`.
 
 ## Public runtime surface
 
-The stable TypeScript boundary is
+The stable package entry is `cosmonauts/analysis`, implemented by
 [`lib/analysis/index.ts`](../lib/analysis/index.ts). It exports the capability
 vocabulary, requests, bindings, results, failures, and the pure binding
 resolver. Provider discovery, process execution, and result normalization stay
 outside that boundary.
 
-Pi registers one status tool and one tool per capability:
+The selected `project-tools` extension (`lib/extensions/project-tools/index.ts`) registers one status tool and one tool per capability:
 
 | Tool | Contract |
 |---|---|
@@ -54,7 +54,7 @@ cleared at session start and shutdown.
 Requests are discriminated by capability. Project and path scopes are
 available only when a binding advertises them. A path scope contains at least
 one trimmed project-relative path. Changed-scope audit requires a non-empty
-`base`. Trace requires exactly one target kind: symbol, file, dependency, or
+`base`. The Fallow adapter also requires its three baseline files ([fallow.md](fallow.md)). Trace requires exactly one target kind: symbol, file, dependency, or
 duplicate location. A symbol's project-relative `path` and a duplicate
 location's positive `line` are optional provider-neutral identity fields;
 providers advertise whether each is optional or required. Complexity alone

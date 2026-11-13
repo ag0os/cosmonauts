@@ -164,7 +164,7 @@ export function registerDriverTool(
 		name: "run_driver",
 		label: "Run Driver",
 		description:
-			"Start a plan-linked task run through the Cosmonauts driver loop. Returns a `runId` immediately; the run proceeds in the background — monitor it with `watch_events`.",
+			"Start a plan-linked task run through the Cosmonauts driver loop. Returns a `runId` immediately; monitor it with `run_watch` or `run_status`, using the plan slug as `scope`.",
 		parameters: Type.Object({
 			planSlug: Type.String({ description: "Plan slug to run" }),
 			taskIds: Type.Optional(

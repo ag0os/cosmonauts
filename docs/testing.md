@@ -5,7 +5,7 @@ Guidelines for writing and maintaining tests in Cosmonauts. All tests use [Vites
 ## Project Setup
 
 - **Config**: `vitest.config.ts` at repo root.
-- **Setup file**: `tests/setup.ts` — runs before every test file. Restores mocks and reverts fake timers in `afterEach` so individual tests do not need to.
+- **Setup file**: `tests/setup.ts` - runs before every test file. Restores mocks and reverts fake timers in `afterEach` so individual tests do not need to. It also installs the library test runtime host in `beforeEach`.
 - **Coverage**: V8 provider, scoped to `lib/**`. Run with `bun run test:coverage`. See [Coverage Thresholds](#coverage-thresholds) below.
 
 ## Canonical Test Structure
@@ -50,30 +50,32 @@ Prefer the simplest approach that gives adequate isolation. Listed from most pre
 
 ### `vi.hoisted()` for Module-Level Mocks
 
+Module paths in angle brackets and the example dependency types/functions below are placeholders for the module under test.
+
 When using `vi.mock()`, declare mock references with `vi.hoisted()` so the hoisting intent is explicit. This avoids relying on Vitest's implicit `vi.mock()` hoisting and keeps mock setup centralized at the top of the file.
 
 ```ts
 import { describe, expect, test, vi } from "vitest";
-import type { MyDep } from "../../lib/my-dep.ts";
+import type { MyDep } from "../../lib/<dependency>.ts";
 
-// 1. Declare mock references in a hoisted block — runs before imports.
+// 1. Declare mock references in a hoisted block - runs before imports.
 const mocks = vi.hoisted(() => ({
   myFunction: vi.fn(),
   myOtherFunction: vi.fn(),
 }));
 
 // 2. Wire mocks into module replacements.
-vi.mock("../../lib/my-dep.ts", () => ({
+vi.mock("../../lib/<dependency>.ts", () => ({
   myFunction: mocks.myFunction,
   myOtherFunction: mocks.myOtherFunction,
 }));
 
 // 3. Import the mocked modules (resolved to the mocks above).
-import { myFunction, myOtherFunction } from "../../lib/my-dep.ts";
+import { myFunction, myOtherFunction } from "../../lib/<dependency>.ts";
 
 describe("consumer", () => {
   // Use vi.mocked() for typed access in assertions, or reference
-  // the hoisted mocks directly — both work.
+  // the hoisted mocks directly - both work.
   const myFunctionMock = vi.mocked(myFunction);
 
   test("calls myFunction", () => {
@@ -91,7 +93,7 @@ const refs = vi.hoisted(() => ({
   currentSpawner: undefined as MySpawner | undefined,
 }));
 
-vi.mock("../../lib/spawner.ts", () => ({
+vi.mock("../../lib/<spawner>.ts", () => ({
   createSpawner: () => refs.currentSpawner,
 }));
 
@@ -128,8 +130,8 @@ test.each([
 
 ### When not to use
 
-- Two cases — just write two `test()` calls; `test.each` adds indirection for no benefit.
-- Tests with different setup or assertions — they are not truly parameterized.
+- Two cases - just write two `test()` calls; `test.each` adds indirection for no benefit.
+- Tests with different setup or assertions - they are not truly parameterized.
 
 ## Fake Timers
 
@@ -144,7 +146,7 @@ test("retries after delay", async () => {
   const result = await promise;
 
   expect(result).toBe("ok");
-  // No need to call vi.useRealTimers() — the global setup handles it.
+  // No need to call vi.useRealTimers() - the global setup handles it.
 });
 ```
 
@@ -169,24 +171,20 @@ test("updates the updatedAt timestamp", async () => {
 ### Guidelines
 
 - **Only use when necessary.** If the code under test does not use timers, do not install fake timers.
-- **Use `vi.setSystemTime()`** for tests that assert on timestamp ordering or `Date.now()` values — avoids flaky real-time sleeps.
-- **Prefer `vi.advanceTimersByTimeAsync`** over `vi.advanceTimersByTime` when the code uses `async`/`await` or Promises — the async variant flushes microtasks correctly.
+- **Use `vi.setSystemTime()`** for tests that assert on timestamp ordering or `Date.now()` values - avoids flaky real-time sleeps.
+- **Prefer `vi.advanceTimersByTimeAsync`** over `vi.advanceTimersByTime` when the code uses `async`/`await` or Promises - the async variant flushes microtasks correctly.
 - The global setup file reverts to real timers in `afterEach`, so you do not need to call `vi.useRealTimers()` manually.
 
 ## Coverage Thresholds
 
 Coverage thresholds are enforced in `vitest.config.ts` and checked when running `bun run test:coverage`. The build fails if any metric drops below its gate.
 
-### Current Baseline (March 2026)
-
-| Metric     | Threshold | Measured |
-|------------|-----------|----------|
-| Statements | 65%       | ~71%     |
-| Branches   | 85%       | ~89%     |
-| Functions  | 55%       | ~61%     |
-| Lines      | 65%       | ~71%     |
-
-Thresholds are set ~5–6 points below measured values to allow normal fluctuation without false failures.
+| Metric | Threshold |
+| --- | --- |
+| Statements | 65% |
+| Branches | 85% |
+| Functions | 55% |
+| Lines | 65% |
 
 ### Ratchet Strategy
 
@@ -195,7 +193,6 @@ As coverage improves, ratchet thresholds upward:
 1. After adding tests that meaningfully increase a metric, raise the threshold to ~5 points below the new measured value.
 2. Never lower a threshold unless code is intentionally removed or restructured.
 3. Review thresholds quarterly or after major refactors.
-4. Target trajectory: statements/lines → 75% by mid-2026, functions → 65%.
 
 ### Running Coverage
 
@@ -213,7 +210,7 @@ When tests create files or directories:
 
 - Use `mkdtemp` to create a unique temporary directory.
 - Clean up in `afterEach` with `rm(dir, { recursive: true })`.
-- Use `join` from `node:path` for all path construction — never string concatenation.
+- Use `join` from `node:path` for all path construction - never string concatenation.
 
 ```ts
 let tmpDir: string;
@@ -231,11 +228,7 @@ afterEach(async () => {
 
 A test asserting planned or ratified behavior is evidence, not an obstacle.
 It changes only after the plan text it proves,
-citing the decision that changed it. Rewriting a test's expectations to make
-new behavior pass —
-without a recorded plan amendment — is drift, and reviewers treat it as such
-(see `domains/shared/skills/work-artifacts/references/deviation-protocol.md`).
-
+citing the decision that changed it. Rewriting a test's expectations to make new behavior pass, without a recorded plan amendment, is drift, and reviewers treat it as such.
 
 ## Scoped mutation testing
 
@@ -243,10 +236,18 @@ Stryker, its Vitest runner, the forks patch and Fallow's three committed floors
 remain independent developer tools. Run one heavy job at a time. For example:
 
 ```sh
-STRYKER_VITEST_POOL=forks node node_modules/@stryker-mutator/core/bin/stryker.js run stryker.config.mjs --concurrency 4 --mutate 'lib/config/loader.ts:180:1-192:2' --testFiles 'tests/config/loader.test.ts,tests/library-strip-lean.test.ts'
+STRYKER_VITEST_POOL=forks node node_modules/@stryker-mutator/core/bin/stryker.js run stryker.config.mjs --concurrency 4 --mutate 'lib/config/loader.ts:180-192' --testFiles 'tests/config/loader.test.ts'
 ```
 
 `bun run test:mutation` sets `STRYKER_VITEST_POOL=forks` and invokes the same
 installed Stryker CLI; pass explicit `--mutate` and `--testFiles` ranges and
 `--concurrency 4`. Running it without selectors mutates the whole default glob.
 Do not count excluded mutants or timeouts as ordinary kills. Check module-level changes manually in fresh test processes.
+
+## Library checks
+
+Run `bun run typecheck`, `bun run lint`, `bun run check:reachability`, `bun run check:suppressions -- --base <revision>` and `bun run test`. Pass `--exclude '.claude/**'` to test invocations when stale local worktrees exist. Commit before a full run because some suites clone HEAD.
+
+`tests/public-surface.test.ts` pins package exports. `tests/packed-package.test.ts` exercises a packed artifact, its CLI and content-free consumer. `tests/library-consumer.test.ts` verifies consumer declarations and policies.
+
+Documentation has no mutation scope. For changed library behavior, scope mutants to the changed code and compare health, dead code and duplication with the base revision using all three committed Fallow floors. See [Fallow Exceptions](fallow-exceptions.md).
